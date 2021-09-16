@@ -1,4 +1,4 @@
-#include <AppCUI/include/AppCUI.hpp>
+#include "include/GView.hpp"
 
 using namespace AppCUI;
 using namespace AppCUI::Application;
@@ -30,6 +30,7 @@ class SimpleWin : public AppCUI::Controls::Window
 };
 int main()
 {
+    GView::Nothing();
     if (!Application::Init())
         return 1;
     Application::AddWindow(new SimpleWin());
