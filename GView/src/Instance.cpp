@@ -12,3 +12,7 @@ bool Instance::Init()
 
     return true;
 }
+void Instance::Run()
+{
+    AppCUI::Application::Run();
+}

@@ -10,6 +10,7 @@ namespace GView
             std::vector<GView::Type::Plugin> typePlugins;
         public:
             bool Init();
+            void Run();
         };
     }
 }
