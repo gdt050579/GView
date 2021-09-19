@@ -5,8 +5,6 @@ using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-#define ARRAY_LEN(x) std::extent<decltype(x)>::value
-
 struct _MenuCommand_
 {
     std::string_view name;
@@ -64,7 +62,9 @@ bool Instance::BuildMainMenus()
 bool Instance::Init()
 {
     InitializationData initData;
-    initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar;
+    initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar |
+        InitializationFlags::LoadSettingsFile | InitializationFlags::AutoHotKeyForWindow;
+
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
     this->typePlugins.reserve(128);
