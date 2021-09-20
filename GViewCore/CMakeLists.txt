@@ -55,7 +55,11 @@ target_include_directories(GViewCore PUBLIC ../AppCUI)
 target_link_libraries(GViewCore PUBLIC AppCUI)
 
 include_directories(include)
+add_subdirectory(src)
+
+
 file(GLOB_RECURSE GVIEWCORE_HEADERS include/*.hpp)
 target_sources(GViewCore PRIVATE ${GVIEWCORE_HEADERS})
+get_target_property(GVIEWCORE_SOURCES GViewCore SOURCES)
+source_group(TREE ${CMAKE_SOURCE_DIR}/GViewCore FILES ${GVIEWCORE_SOURCES} ${GVIEWCORE_HEADERS})
 
-add_subdirectory(src)

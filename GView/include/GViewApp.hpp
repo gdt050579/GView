@@ -26,6 +26,7 @@ namespace GView
             AppCUI::Controls::Menu* mnuHelp;
             std::vector<GView::Type::Plugin> typePlugins;
 
+            bool AddTypePluginFromIni(AppCUI::Utils::IniSection &section);
             bool BuildMainMenus();
             bool LoadSettings();
         public:

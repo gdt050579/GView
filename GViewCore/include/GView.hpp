@@ -28,9 +28,14 @@ namespace GView
         class Plugin
         {
             unsigned int Prioriy;
-
             bool (*CanProcess)(const Object& obj);
             Interface* (*Create)(const Object& obj);
+
+        public:
+            Plugin();
+            bool Init(const AppCUI::Utils::IniObject& obj, AppCUI::Utils::IniSection section);
+
+            inline bool operator>(const Plugin& plugin) const { return Prioriy > plugin.Prioriy; }
         };
     };
     namespace View

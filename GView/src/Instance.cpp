@@ -44,10 +44,25 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
     }
     return true;
 }
-
+bool Instance::AddTypePluginFromIni(AppCUI::Utils::IniSection& section)
+{
+    GView::Type::Plugin p;
+    
+}
 bool Instance::LoadSettings()
 {
-    // process all settings and set up plugins
+    auto ini = AppCUI::Application::GetAppSettings();
+    CHECK(ini, false, "");
+    // check plugins
+    for (auto section : ini->GetSections())
+    {
+        if (section.GetName().starts_with("type."))
+        {
+            AddTypePluginFromIni(section);
+        }
+    }
+    // sort all plugins based on their priority
+    std::sort(this->typePlugins.begin(), this->typePlugins.end());
     return true;
 }
 bool Instance::BuildMainMenus()
