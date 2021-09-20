@@ -3,6 +3,23 @@
 
 namespace GView
 {
+    namespace Type
+    {
+        constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 29;  // must be less than 255 !!!
+        class Plugin
+        {
+            unsigned char Name[PLUGIN_NAME_MAX_SIZE];
+            unsigned char NameLength;
+            unsigned short Prioriy;
+            bool Loaded, Invalid;
+            Interface* (*fnCreateTypeObject)(const Object& obj);
+
+        public:
+            Plugin();
+            bool Init(const AppCUI::Utils::IniObject& obj, AppCUI::Utils::IniSection section);
+            inline bool operator< (const Plugin& plugin) const { return Prioriy > plugin.Prioriy; }
+        };
+    }
     namespace App
     {
         namespace MenuCommands
@@ -34,4 +51,5 @@ namespace GView
             void Run();
         };
     }
+
 }

@@ -16,4 +16,10 @@ target_link_libraries(GView PUBLIC GViewCore)
 
 add_subdirectory(src)
 
+file(GLOB_RECURSE GVIEW include/*.hpp)
+target_sources(GView PRIVATE ${GVIEW_HEADERS})
+get_target_property(GVIEW_SOURCES GView SOURCES)
+source_group(TREE ${CMAKE_SOURCE_DIR}/GView FILES ${GVIEW_SOURCES} ${GVIEW_HEADERS})
+
+
 

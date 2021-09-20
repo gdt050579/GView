@@ -4,6 +4,7 @@ using namespace GView::App;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
+using namespace AppCUI::Utils;
 
 struct _MenuCommand_
 {
@@ -56,7 +57,7 @@ bool Instance::LoadSettings()
     // check plugins
     for (auto section : ini->GetSections())
     {
-        if (section.GetName().starts_with("type."))
+        if (String::StartsWith(section.GetName(),std::string_view("type."),true))
         {
             AddTypePluginFromIni(section);
         }
