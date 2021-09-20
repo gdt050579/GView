@@ -25,7 +25,7 @@ namespace GView
         public:
 
         };
-        class Plugin
+        class EXPORT Plugin
         {
             unsigned int Prioriy;
             bool (*CanProcess)(const Object& obj);
@@ -35,7 +35,7 @@ namespace GView
             Plugin();
             bool Init(const AppCUI::Utils::IniObject& obj, AppCUI::Utils::IniSection section);
 
-            inline bool operator>(const Plugin& plugin) const { return Prioriy > plugin.Prioriy; }
+            inline bool operator< (const Plugin& plugin) const { return Prioriy > plugin.Prioriy; }
         };
     };
     namespace View

@@ -47,7 +47,7 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
 bool Instance::AddTypePluginFromIni(AppCUI::Utils::IniSection& section)
 {
     GView::Type::Plugin p;
-    
+    NOT_IMPLEMENTED(false);
 }
 bool Instance::LoadSettings()
 {
