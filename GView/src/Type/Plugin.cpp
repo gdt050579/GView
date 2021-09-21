@@ -33,6 +33,8 @@ Plugin::Plugin()
 	this->Extension = EXTENSION_EMPTY_HASH;
 	this->NameLength = 0;
 	this->Name[0] = 0;
+	this->Loaded = false;
+	this->Invalid = false;
     // not implemented
 }
 bool Plugin::Init(const AppCUI::Utils::IniObject& ini, AppCUI::Utils::IniSection section)
@@ -88,6 +90,9 @@ bool Plugin::Init(const AppCUI::Utils::IniObject& ini, AppCUI::Utils::IniSection
 	else {
 		this->Extension = EXTENSION_EMPTY_HASH;
 	}
+
+	this->Loaded = false;
+	this->Invalid = false;
 
 	return true;
 }
