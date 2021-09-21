@@ -1,6 +1,8 @@
 #include <AppCUI/include/AppCUI.hpp>
 #include <../GViewCore/include/GView.hpp>
 
+#include <set>
+
 namespace GView
 {
     namespace Type
@@ -17,9 +19,13 @@ namespace GView
             bool Match(const unsigned char* buffer, unsigned int bufferSize) const;
             inline bool Empty() const { return Count == 0; }
         };
-        constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 29;  // must be less than 255 !!!
+        constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31;  // must be less than 255 !!!
         class Plugin
         {
+            SimplePattern Pattern;
+            std::vector<SimplePattern> Patterns;
+            unsigned long long Extension;
+            std::set<unsigned long long> Extensions;
             unsigned char Name[PLUGIN_NAME_MAX_SIZE];
             unsigned char NameLength;
             unsigned short Prioriy;
