@@ -5,6 +5,18 @@ namespace GView
 {
     namespace Type
     {
+        constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
+        class SimplePattern
+        {
+            unsigned char CharactersToMatch[MAX_PATTERN_VALUES];
+            unsigned char Count;
+            unsigned short Offset;
+        public:
+            SimplePattern();
+            bool Init(std::string_view text, unsigned int ofs);
+            bool Match(const unsigned char* buffer, unsigned int bufferSize) const;
+            inline bool Empty() const { return Count == 0; }
+        };
         constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 29;  // must be less than 255 !!!
         class Plugin
         {

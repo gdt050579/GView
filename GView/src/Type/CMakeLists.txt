@@ -1,2 +1,2 @@
-target_sources(GView PRIVATE Plugin.cpp)
+target_sources(GView PRIVATE Plugin.cpp SimplePattern.cpp)
 
