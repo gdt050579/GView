@@ -5,9 +5,23 @@ namespace GView
     class EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
+        unsigned long long fileSize, start, end, currentPos;
+        unsigned char* cache;
+        unsigned int cacheSize;
     public:
         FileCache();
         ~FileCache();
+
+        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
+        unsigned char* Get(unsigned long long offset, unsigned int requestedSize, unsigned int& availableSize);
+        unsigned char* Get(unsigned long long offset, unsigned int requestedSize);
+        unsigned char* Get(unsigned int requestedSize, unsigned int& availableSize);
+        unsigned char* Get(unsigned int requestedSize);
+
+        inline unsigned long long GetSize() const { return fileSize; }
+        inline unsigned long long GetCurrentPos() const { return currentPos; }
+        inline void SetCurrentPos(unsigned long long value) { currentPos = value;  }
+
             
     };
     class EXPORT Object
