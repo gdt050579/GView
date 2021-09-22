@@ -37,7 +37,7 @@ Plugin::Plugin()
 	this->Invalid = false;
     // not implemented
 }
-bool Plugin::Init(const AppCUI::Utils::IniObject& ini, AppCUI::Utils::IniSection section)
+bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
 	// set the name
 	auto name = section.GetName();

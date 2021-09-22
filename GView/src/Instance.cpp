@@ -45,11 +45,7 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
     }
     return true;
 }
-bool Instance::AddTypePluginFromIni(AppCUI::Utils::IniSection& section)
-{
-    GView::Type::Plugin p;
-    NOT_IMPLEMENTED(false);
-}
+
 bool Instance::LoadSettings()
 {
     auto ini = AppCUI::Application::GetAppSettings();
@@ -59,7 +55,9 @@ bool Instance::LoadSettings()
     {
         if (String::StartsWith(section.GetName(),std::string_view("type."),true))
         {
-            AddTypePluginFromIni(section);
+            GView::Type::Plugin p;
+            CHECK(p.Init(section), false, "Fail to initialize pluggin !");
+            this->typePlugins.push_back(p);
         }
     }
     // sort all plugins based on their priority

@@ -34,7 +34,7 @@ namespace GView
 
         public:
             Plugin();
-            bool Init(const AppCUI::Utils::IniObject& obj, AppCUI::Utils::IniSection section);
+            bool Init(AppCUI::Utils::IniSection section);
             inline bool operator< (const Plugin& plugin) const { return Prioriy > plugin.Prioriy; }
         };
     }
@@ -61,7 +61,6 @@ namespace GView
             AppCUI::Controls::Menu* mnuHelp;
             std::vector<GView::Type::Plugin> typePlugins;
 
-            bool AddTypePluginFromIni(AppCUI::Utils::IniSection &section);
             bool BuildMainMenus();
             bool LoadSettings();
         public:
