@@ -46,33 +46,28 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
     
     return true;
 }
-unsigned char* FileCache::Get(unsigned long long  offset, unsigned int requestedSize, unsigned int& availableSize)
+Buffer FileCache::Get(unsigned long long  offset, unsigned int requestedSize)
 {
-	CHECK(this->fileObj, nullptr, "File was not properly initialized !");
-	CHECK(requestedSize > 0, nullptr, "'requestedSize' has to be bigger than 0 ");
+	CHECK(this->fileObj, Buffer(), "File was not properly initialized !");
+	CHECK(requestedSize > 0, Buffer(), "'requestedSize' has to be bigger than 0 ");
 	
 	if (offset >= this->start)
 	{
 		// data is cached --> return from here
 		if ((offset + requestedSize) <= this->end)
 		{
-			availableSize = requestedSize;
 			this->currentPos = offset + requestedSize;
-			return &this->cache[offset - this->start];
+			return Buffer(&this->cache[offset - this->start], requestedSize);
 		}
 		if (this->end == this->fileSize)
 		{
-			availableSize = (unsigned int)(this->end - offset);
 			this->currentPos = this->fileSize;
-			return &this->cache[offset - this->start];
+			return Buffer(&this->cache[offset - this->start], (unsigned int)(this->end - offset));
 		}
 	}
 	// request outside file
 	if (offset >= this->fileSize)
-	{
-		availableSize = 0;
-		return nullptr;
-	}
+		return Buffer();
 	// data is not available in cache ==> read it
 	unsigned long long  _start, _end;
 	if (this->fileSize <= this->cacheSize)
@@ -100,53 +95,26 @@ unsigned char* FileCache::Get(unsigned long long  offset, unsigned int requested
 	}
 	// read new data in cache
 	if (this->fileObj->SetCurrentPos(_start) == false)
-	{
-		availableSize = 0;
-		return nullptr;
-	}
+		return Buffer();
 	if (this->fileObj->Read(this->cache, (unsigned int)(_end - _start)) == false)
 	{
-		availableSize = 0;
 		this->start = 0;
 		this->end = 0;
-		return nullptr;
+		return Buffer();
 	}
 	// return new pointer
 	this->start = _start;
 	this->end = _end;
 	if ((offset + requestedSize) <= this->end)
 	{
-		availableSize = requestedSize;
 		this->currentPos = offset + requestedSize;
-		return &this->cache[offset - this->start];
+		return Buffer(&this->cache[offset - this->start], requestedSize);
 	}
 	if (this->end == this->fileSize)
 	{
-		availableSize = (unsigned int)(this->end - offset);
 		this->currentPos = this->fileSize;
-		return &this->cache[offset - this->start];
+		return Buffer(&this->cache[offset - this->start], (unsigned int)(this->end - offset));
 	}
-	availableSize = (unsigned int)(this->end - offset);
 	this->currentPos = this->end;
-	return &this->cache[offset - this->start];
-}
-unsigned char* FileCache::Get(unsigned long long offset, unsigned int requestedSize)
-{
-	auto dataRead = 0U;
-	auto res = this->Get(offset, requestedSize, dataRead);
-	if ((res) && (dataRead == requestedSize))
-		return res;
-	return nullptr;
-}
-unsigned char* FileCache::Get(unsigned int requestedSize, unsigned int& availableSize)
-{
-	return this->Get(this->currentPos, requestedSize, availableSize);
-}
-unsigned char* FileCache::Get(unsigned int requestedSize)
-{
-	auto dataRead = 0U;
-	auto res = this->Get(this->currentPos, requestedSize, dataRead);
-	if ((res) && (dataRead == requestedSize))
-		return res;
-	return nullptr;
+	return Buffer(&this->cache[offset - this->start], (unsigned int)(this->end - offset));
 }

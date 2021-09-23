@@ -46,6 +46,11 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
     return true;
 }
 
+
+Instance::Instance()
+{
+    this->defaultCacheSize = 0x100000; // 1 MB
+}
 bool Instance::LoadSettings()
 {
     auto ini = AppCUI::Application::GetAppSettings();
@@ -62,6 +67,9 @@ bool Instance::LoadSettings()
     }
     // sort all plugins based on their priority
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
+    
+    
+
     return true;
 }
 bool Instance::BuildMainMenus()
@@ -84,7 +92,17 @@ bool Instance::Init()
     this->typePlugins.reserve(128);
     CHECK(LoadSettings(), false, "Fail to load settings !");
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
+    
     return true;
+}
+bool Instance::AddFileWindow(const std::filesystem::path& path)
+{
+    auto f = std::make_unique<AppCUI::OS::File>();
+    CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
+    GView::Object obj;
+    CHECK(obj.cache.Init(std::move(f), this->defaultCacheSize), false, "");
+    //auto obj.cache.Get(0,)
+    NOT_IMPLEMENTED(false);
 }
 void Instance::Run()
 {

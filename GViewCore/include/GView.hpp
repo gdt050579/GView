@@ -18,6 +18,14 @@
 
 namespace GView
 {
+    struct Buffer
+    {
+        const unsigned char* data;
+        const unsigned int length;
+        Buffer(): data(nullptr), length(0) { }
+        Buffer(const unsigned char *d, unsigned int l): data(d), length(l) { }
+        constexpr inline bool Empty() const { return length == 0; }
+    };
     class CORE_EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
@@ -29,10 +37,8 @@ namespace GView
         ~FileCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
-        unsigned char* Get(unsigned long long offset, unsigned int requestedSize, unsigned int& availableSize);
-        unsigned char* Get(unsigned long long offset, unsigned int requestedSize);
-        unsigned char* Get(unsigned int requestedSize, unsigned int& availableSize);
-        unsigned char* Get(unsigned int requestedSize);
+        Buffer Get(unsigned long long offset, unsigned int requestedSize);
+        inline Buffer Get(unsigned int requestedSize) { return Get(currentPos, requestedSize);  }
 
         inline unsigned long long GetSize() const { return fileSize; }
         inline unsigned long long GetCurrentPos() const { return currentPos; }
@@ -40,7 +46,7 @@ namespace GView
 
             
     };
-    class CORE_EXPORT Object
+    struct CORE_EXPORT Object
     {
         FileCache cache;
         // cursorul si pozitia lui

@@ -61,11 +61,14 @@ namespace GView
             AppCUI::Controls::Menu* mnuWindow;
             AppCUI::Controls::Menu* mnuHelp;
             std::vector<GView::Type::Plugin> typePlugins;
+            unsigned int defaultCacheSize;
 
             bool BuildMainMenus();
             bool LoadSettings();
         public:
+            Instance();
             bool Init();
+            bool AddFileWindow(const std::filesystem::path& path);
             void Run();
         };
     }
