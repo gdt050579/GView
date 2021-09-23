@@ -101,6 +101,8 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 
 bool Plugin::Validate(Buffer buf, std::string_view extension)
 {
+	if (this->Invalid)
+		return false; // a load in memory attempt was tryed and failed
 	bool matched = false;
 	// check if matches any of the existing patterns
 	if (this->Patterns.empty())
@@ -125,5 +127,13 @@ bool Plugin::Validate(Buffer buf, std::string_view extension)
 	// if initial prefilter was not matched --> exit
 	if (!matched)
 		return false; 
-	NOT_IMPLEMENTED(false);
+	if (!this->Loaded)
+	{
+		this->Invalid = !LoadPlugin();
+		this->Loaded = !this->Invalid;
+		if (this->Invalid)
+			return false; // something went wrong when loading he plugin
+	}
+	// all good -> code is loaded
+	return fnValidate(buf, extension);
 }

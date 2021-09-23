@@ -32,7 +32,8 @@ namespace GView
             bool Loaded, Invalid;
 
             bool (*fnValidate)(Buffer buf, std::string_view extension);
-
+            
+            bool LoadPlugin();
         public:
             Plugin();
             bool Init(AppCUI::Utils::IniSection section);
