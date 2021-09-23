@@ -4,11 +4,11 @@ using namespace AppCUI;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 
-bool PLUGIN_EXPORT Validate(const unsigned char* buffer, unsigned int bufferSize, std::string extension)
+bool PLUGIN_EXPORT Validate(GView::Buffer buf, std::string extension)
 {
-    if (bufferSize < 2)
+    if (buf.length < 2)
         return false;
-    return (*buffer == 'M') && (buffer[1] == 'Z');
+    return (buf[0] == 'M') && (buf[1] == 'Z');
 }
 
 int main()

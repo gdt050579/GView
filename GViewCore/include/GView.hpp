@@ -25,6 +25,7 @@ namespace GView
         Buffer(): data(nullptr), length(0) { }
         Buffer(const unsigned char *d, unsigned int l): data(d), length(l) { }
         constexpr inline bool Empty() const { return length == 0; }
+        constexpr inline unsigned char operator[](unsigned int index) const { return *(data + index); }
     };
     class CORE_EXPORT FileCache
     {
