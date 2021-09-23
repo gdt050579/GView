@@ -35,7 +35,8 @@ Plugin::Plugin()
 	this->Name[0] = 0;
 	this->Loaded = false;
 	this->Invalid = false;
-    // not implemented
+	// functions
+	this->fnValidate = nullptr;
 }
 bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
@@ -49,7 +50,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 
 	// priority
 	auto Priority = section.GetValue("Priority").ToUInt32(0xFFFF);
-	this->Prioriy = std::max<>(Priority, 0xFFFFU);
+	this->Priority = std::max<>(Priority, 0xFFFFU);
 
 	// patterns
 	auto MatchOffset = section.GetValue("MatchOffset").ToUInt32(0);

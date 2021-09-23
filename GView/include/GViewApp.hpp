@@ -28,14 +28,15 @@ namespace GView
             std::set<unsigned long long> Extensions;
             unsigned char Name[PLUGIN_NAME_MAX_SIZE];
             unsigned char NameLength;
-            unsigned short Prioriy;
+            unsigned short Priority;
             bool Loaded, Invalid;
-            Interface* (*fnCreateTypeObject)(const Object& obj);
+
+            bool (*fnValidate)(const unsigned char* buffer, unsigned int bufferSize, std::string extension);
 
         public:
             Plugin();
             bool Init(AppCUI::Utils::IniSection section);
-            inline bool operator< (const Plugin& plugin) const { return Prioriy > plugin.Prioriy; }
+            inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };
     }
     namespace App

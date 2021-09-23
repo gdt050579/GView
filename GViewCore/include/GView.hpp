@@ -1,8 +1,24 @@
 #include <AppCUI/include/AppCUI.hpp>
 
+#ifdef CORE_EXPORTABLE
+#    ifdef BUILD_FOR_WINDOWS
+#        define CORE_EXPORT __declspec(dllexport)
+#    else
+#        define CORE_EXPORT
+#    endif
+#    else
+#        define CORE_EXPORT
+#endif
+
+#ifdef BUILD_FOR_WINDOWS
+#    define PLUGIN_EXPORT __declspec(dllexport)
+#else
+#    define PLUGIN_EXPORT
+#endif
+
 namespace GView
 {
-    class EXPORT FileCache
+    class CORE_EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
         unsigned long long fileSize, start, end, currentPos;
@@ -24,7 +40,7 @@ namespace GView
 
             
     };
-    class EXPORT Object
+    class CORE_EXPORT Object
     {
         FileCache cache;
         // cursorul si pozitia lui
@@ -34,7 +50,7 @@ namespace GView
     };
     namespace Type
     {
-        class EXPORT Interface
+        class CORE_EXPORT Interface
         {
         public:
 
