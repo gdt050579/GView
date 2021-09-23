@@ -16,7 +16,7 @@ namespace GView
         public:
             SimplePattern();
             bool Init(std::string_view text, unsigned int ofs);
-            bool Match(const unsigned char* buffer, unsigned int bufferSize) const;
+            bool Match(Buffer buf) const;
             inline bool Empty() const { return Count == 0; }
         };
         constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31;  // must be less than 255 !!!
@@ -31,11 +31,12 @@ namespace GView
             unsigned short Priority;
             bool Loaded, Invalid;
 
-            bool (*fnValidate)(Buffer buf, std::string extension);
+            bool (*fnValidate)(Buffer buf, std::string_view extension);
 
         public:
             Plugin();
             bool Init(AppCUI::Utils::IniSection section);
+            bool Validate(Buffer buf, std::string_view extension);
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };
     }

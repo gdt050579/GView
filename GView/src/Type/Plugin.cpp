@@ -83,6 +83,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 			{
 				this->Extensions.insert(ExtensionToHash(ExtensionValue[index].ToStringView()));
 			}
+			this->Extension = EXTENSION_EMPTY_HASH;
 		}
 		else {
 			this->Extension = ExtensionToHash(ExtensionValue.ToStringView());
@@ -96,4 +97,33 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 	this->Invalid = false;
 
 	return true;
+}
+
+bool Plugin::Validate(Buffer buf, std::string_view extension)
+{
+	bool matched = false;
+	// check if matches any of the existing patterns
+	if (this->Patterns.empty())
+	{
+		matched = this->Pattern.Match(buf);
+	}
+	else {
+		for (auto& p : this->Patterns)
+		{
+			if ((matched = p.Match(buf)) == true)
+				break;
+		}
+	}
+	if ((!matched) && ((this->Extension != EXTENSION_EMPTY_HASH) || (!this->Extensions.empty())))
+	{
+		auto hash = ExtensionToHash(extension);
+		if (this->Extensions.empty())
+			matched = hash == this->Extension;
+		else
+			matched = this->Extensions.contains(hash);
+	}
+	// if initial prefilter was not matched --> exit
+	if (!matched)
+		return false; 
+	NOT_IMPLEMENTED(false);
 }

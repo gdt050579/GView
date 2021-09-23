@@ -101,7 +101,15 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
     GView::Object obj;
     CHECK(obj.cache.Init(std::move(f), this->defaultCacheSize), false, "");
-    //auto obj.cache.Get(0,)
+    auto buf = obj.cache.Get(0, 4096); // first 4k
+    // iterate from existing types
+    for (auto& pType : this->typePlugins)
+    {
+        if (pType.Validate(buf))
+        {
+            // found one
+        }
+    }
     NOT_IMPLEMENTED(false);
 }
 void Instance::Run()

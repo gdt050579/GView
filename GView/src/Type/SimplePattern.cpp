@@ -50,15 +50,15 @@ bool SimplePattern::Init(std::string_view text, unsigned int ofs)
     }
     return true;
 }
-bool SimplePattern::Match(const unsigned char* buffer, unsigned int bufferSize) const
+bool SimplePattern::Match(Buffer buf) const
 {
     if (this->Count == 0)
         return true; // no pattern means it matches everything
-    if (!buffer)
+    if (buf.Empty())
         return false; // null buffer
-    if (((unsigned int)this->Offset) + ((unsigned int)this->Count) > bufferSize)
+    if (((unsigned int)this->Offset) + ((unsigned int)this->Count) > buf.length)
         return false; // outside the testing buffer
-    auto s = buffer + this->Offset;
+    auto s = buf.data + this->Offset;
     auto e = s + this->Count;
     const unsigned char* p = this->CharactersToMatch;
     for (; s < e; s++, p++)
