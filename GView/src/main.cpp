@@ -6,6 +6,7 @@ int main()
     GView::App::Instance gviewApp;
     if (!gviewApp.Init())
         return 1;
+    gviewApp.AddFileWindow("./gview.exe");
     gviewApp.Run();
     
     return 0;

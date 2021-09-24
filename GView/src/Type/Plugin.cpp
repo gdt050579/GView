@@ -98,7 +98,20 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 
 	return true;
 }
-
+bool Plugin::LoadPlugin()
+{
+	AppCUI::OS::Library lib;
+	auto path = AppCUI::OS::GetCurrentApplicationPath();
+	path.remove_filename();
+	path /= "Types";
+	path /= "lib";
+	path += std::string_view((const char *)this->Name, this->NameLength);
+	path += ".tpl";
+	CHECK(lib.Load(path), false, "Unable to load: %s", path.generic_string().c_str());
+	this->fnValidate = lib.GetFunction<decltype(this->fnValidate)>("Validate");
+	CHECK(fnValidate, false, "Missing 'Validate' export !");
+	return true;
+}
 bool Plugin::Validate(Buffer buf, std::string_view extension)
 {
 	if (this->Invalid)

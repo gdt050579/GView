@@ -102,10 +102,12 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     GView::Object obj;
     CHECK(obj.cache.Init(std::move(f), this->defaultCacheSize), false, "");
     auto buf = obj.cache.Get(0, 4096); // first 4k
+    auto ext = path.extension().string();
     // iterate from existing types
+
     for (auto& pType : this->typePlugins)
     {
-        if (pType.Validate(buf))
+        if (pType.Validate(buf,ext))
         {
             // found one
         }
