@@ -4,11 +4,14 @@ using namespace AppCUI;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 
-bool PLUGIN_EXPORT Validate(GView::Buffer buf, std::string extension)
+extern "C"
 {
-    if (buf.length < 2)
-        return false;
-    return (buf[0] == 'M') && (buf[1] == 'Z');
+    bool PLUGIN_EXPORT Validate(const GView::Buffer &buf, const std::string_view &extension)
+    {
+        if (buf.length < 2)
+            return false;
+        return (buf[0] == 'M') && (buf[1] == 'Z');
+    }
 }
 
 int main()

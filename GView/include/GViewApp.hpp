@@ -31,7 +31,7 @@ namespace GView
             unsigned short Priority;
             bool Loaded, Invalid;
 
-            bool (*fnValidate)(Buffer buf, std::string_view extension);
+            bool (*fnValidate)(const Buffer &buf, const std::string_view &extension);
             
             bool LoadPlugin();
         public:
