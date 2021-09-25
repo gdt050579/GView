@@ -3,6 +3,8 @@
 
 #include <set>
 
+using namespace AppCUI::Controls;
+
 namespace GView
 {
     namespace Type
@@ -32,6 +34,7 @@ namespace GView
             bool Loaded, Invalid;
 
             bool (*fnValidate)(const Buffer &buf, const std::string_view &extension);
+            bool (*fnCreate)(GView::View::Builder& builder, const GView::Object& object);
             
             bool LoadPlugin();
         public:
@@ -73,6 +76,11 @@ namespace GView
             bool AddFileWindow(const std::filesystem::path& path);
             void Run();
         };
+        class FileWindow : public Window
+        {
+            Splitter vertical, horizontal;
+        public:
+            bool Create(const GView::Type::Plugin& type);
+        };
     }
-
 }

@@ -109,7 +109,9 @@ bool Plugin::LoadPlugin()
 	path += ".tpl";
 	CHECK(lib.Load(path), false, "Unable to load: %s", path.generic_string().c_str());
 	this->fnValidate = lib.GetFunction<decltype(this->fnValidate)>("Validate");
+	this->fnCreate = lib.GetFunction<decltype(this->fnCreate)>("Create");
 	CHECK(fnValidate, false, "Missing 'Validate' export !");
+	CHECK(fnCreate, false, "Missing 'Create' export !");
 	return true;
 }
 bool Plugin::Validate(Buffer buf, std::string_view extension)

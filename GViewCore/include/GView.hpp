@@ -6,8 +6,8 @@
 #    else
 #        define CORE_EXPORT
 #    endif
-#    else
-#        define CORE_EXPORT
+#else
+#    define CORE_EXPORT
 #endif
 
 #ifdef BUILD_FOR_WINDOWS
@@ -65,7 +65,16 @@ namespace GView
     };
     namespace View
     {
-                                
+        class CORE_EXPORT BufferViewInitData
+        {
+
+        };
+        class CORE_EXPORT Builder
+        {
+        public:
+            bool AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical = true);
+            bool AddBufferView(const BufferViewInitData& init);
+        };
     };
     EXPORT void Nothing();
 };   
@@ -80,7 +89,13 @@ namespace GView
     pas 1 ==> vad daca simple match il prinde
     pas 2 ==> daca pluginul NU e incarcat --> il incarc
     pas 3 ==> verific match-ul de la plugin
-4. Pentru pluginul obtinut --> obtin o interfata de tipul Type 
+4. Pentru pluginul obtinut --> obtin o interfata de tipul Type
+
+5. Apeles Type.Create(...) => in care setez
+    - formele de vizualizare
+    - panel-urile de sus si de jos
+    
+
 5. creez un FileWindow la care ii dau acea interfata de tipul Type
 6. in FileWindow apeles din interfata de tipul type:
     pas 1 ==> cer o lista cu toate modurile de vizualizare
@@ -91,7 +106,6 @@ namespace GView
 
     pas 2 ==> fiecare mod de vizualizare are si un info panel a lui
     pas 3 ==> creez panel-urile de infos verticale si orizontale
-
-? 
+ 
 
 */
