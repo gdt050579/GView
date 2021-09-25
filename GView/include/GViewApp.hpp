@@ -40,6 +40,7 @@ namespace GView
         public:
             Plugin();
             bool Init(AppCUI::Utils::IniSection section);
+            void Init();
             bool Validate(Buffer buf, std::string_view extension);
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };
@@ -66,6 +67,7 @@ namespace GView
             AppCUI::Controls::Menu* mnuWindow;
             AppCUI::Controls::Menu* mnuHelp;
             std::vector<GView::Type::Plugin> typePlugins;
+            GView::Type::Plugin defaultPlugin;
             unsigned int defaultCacheSize;
 
             bool BuildMainMenus();
@@ -78,9 +80,10 @@ namespace GView
         };
         class FileWindow : public Window
         {
+            std::unique_ptr<GView::Object> fileObject;
             Splitter vertical, horizontal;
         public:
-            bool Create(const GView::Type::Plugin& type);
+            bool Create(const GView::Type::Plugin& type, std::unique_ptr<GView::Object> fileObj);
         };
     }
 }

@@ -12,6 +12,10 @@ extern "C"
             return false;
         return (buf[0] == 'M') && (buf[1] == 'Z');
     }
+    bool PLUGIN_EXPORT Create(GView::View::Builder& builder, const GView::Object& object)
+    {
+        return true;
+    }
 }
 
 int main()

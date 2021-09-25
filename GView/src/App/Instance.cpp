@@ -49,7 +49,7 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
 
 Instance::Instance()
 {
-    this->defaultCacheSize = 0x100000; // 1 MB
+    this->defaultCacheSize = 0x100000; // 1 MB    
 }
 bool Instance::LoadSettings()
 {
@@ -92,6 +92,7 @@ bool Instance::Init()
     this->typePlugins.reserve(128);
     CHECK(LoadSettings(), false, "Fail to load settings !");
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
+    this->defaultPlugin.Init();
     
     return true;
 }
@@ -99,20 +100,26 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
     auto f = std::make_unique<AppCUI::OS::File>();
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
-    GView::Object obj;
-    CHECK(obj.cache.Init(std::move(f), this->defaultCacheSize), false, "");
-    auto buf = obj.cache.Get(0, 4096); // first 4k
+    auto obj = std::make_unique<GView::Object>();
+    CHECK(obj->cache.Init(std::move(f), this->defaultCacheSize), false, "");
+    auto buf = obj->cache.Get(0, 4096); // first 4k
     auto ext = path.extension().string();
+    
+    auto& plg = this->defaultPlugin;
     // iterate from existing types
-
     for (auto& pType : this->typePlugins)
     {
         if (pType.Validate(buf,ext))
         {
-            // found one
+            plg = pType;
+            break;
         }
     }
-    NOT_IMPLEMENTED(false);
+    auto win = std::make_unique<FileWindow>();
+    CHECK(win->Create(plg, std::move(obj)), false, "Fail to create window !");
+    auto res = AppCUI::Application::AddWindow(std::move(win));
+    CHECK(res != InvalidItemHandle, false, "Fail to add newly created window to desktop");
+    return true;
 }
 void Instance::Run()
 {

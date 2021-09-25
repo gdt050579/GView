@@ -4,6 +4,18 @@ using namespace GView::Type;
 
 constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
+
+//===============================================================================================
+bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& extension)
+{
+	return true; // always match everything
+}
+bool PluginDefault_Create(GView::View::Builder& builder, const GView::Object& object)
+{
+	// at least one view and one information panel
+	NOT_IMPLEMENTED(false);
+}
+
 unsigned long long ExtensionToHash(std::string_view ext)
 {
 	// use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
@@ -37,6 +49,17 @@ Plugin::Plugin()
 	this->Invalid = false;
 	// functions
 	this->fnValidate = nullptr;
+	this->fnCreate = nullptr;
+}
+void Plugin::Init()
+{
+	// default initialization
+	this->fnValidate = PluginDefault_Validate;
+	this->fnCreate = PluginDefault_Create;
+	this->Loaded = true;
+	this->Invalid = false;
+	this->NameLength = 0;
+	this->Name[0] = 0;
 }
 bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
