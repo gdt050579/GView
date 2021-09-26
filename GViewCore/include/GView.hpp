@@ -69,10 +69,10 @@ namespace GView
         {
 
         };
-        class CORE_EXPORT Builder
+        class CORE_EXPORT IBuilder
         {
         public:
-            bool AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical = true);
+            virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical) = 0;
             bool AddBufferView(const BufferViewInitData& init);
         };
     };
