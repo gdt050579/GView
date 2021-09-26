@@ -10,7 +10,7 @@ bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& ex
 {
 	return true; // always match everything
 }
-bool PluginDefault_Create(GView::View::Builder& builder, const GView::Object& object)
+bool PluginDefault_Create(GView::View::IBuilder& builder, const GView::Object& object)
 {
 	// at least one view and one information panel
 	NOT_IMPLEMENTED(false);

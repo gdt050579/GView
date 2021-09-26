@@ -34,7 +34,7 @@ namespace GView
             bool Loaded, Invalid;
 
             bool (*fnValidate)(const Buffer &buf, const std::string_view &extension);
-            bool (*fnCreate)(GView::View::Builder& builder, const GView::Object& object);
+            bool (*fnCreate)(GView::View::IBuilder& builder, const GView::Object& object);
             
             bool LoadPlugin();
         public:
