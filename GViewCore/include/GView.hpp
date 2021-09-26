@@ -65,15 +65,18 @@ namespace GView
     };
     namespace View
     {
-        class CORE_EXPORT BufferViewInitData
+        struct CORE_EXPORT IViewBuilder
+        {
+            virtual AppCUI::Controls::Control* Build() = 0;
+        };
+        struct CORE_EXPORT IBufferViewBuilder: public IViewBuilder
         {
 
         };
-        class CORE_EXPORT IBuilder
+        struct CORE_EXPORT IBuilder
         {
-        public:
             virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical) = 0;
-            bool AddBufferView(const BufferViewInitData& init);
+            virtual IBufferViewBuilder& AddBufferView(const std::string_view &name) = 0;
         };
     };
     EXPORT void Nothing();
