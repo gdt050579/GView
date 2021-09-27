@@ -13,7 +13,7 @@ public:
 	DefaultInformationPanel(const GView::Object& object)
 	{
 		this->Create(nullptr, "&Information");
-		lv.Create(this, "d:c");
+		lv.Create(this, "l:0,r:0,t:1,b:0");
 		lv.AddColumn("Field", TextAlignament::Left, 10);
 		lv.AddColumn("Value", TextAlignament::Left, 100);
 	}
