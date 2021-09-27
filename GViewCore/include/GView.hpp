@@ -71,7 +71,7 @@ namespace GView
         };
         struct CORE_EXPORT IBufferViewBuilder: public IViewBuilder
         {
-
+            virtual void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) = 0;
         };
         struct CORE_EXPORT IBuilder
         {

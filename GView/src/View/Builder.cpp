@@ -1,15 +1,21 @@
-#include "GViewInternal.hpp"
+#include "GViewApp.hpp"
 
 using namespace GView::View;
 
 Builder::Builder()
 {
-    infoPanels.reserve(32);
+    verticalPanels.reserve(32);
+    horizontalPanels.reserve(16);
     views.reserve(8);
 }
 bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical)
 {
-    NOT_IMPLEMENTED(false);
+    CHECK(ctrl, false, "Expecting a valid control !");
+    if (vertical)
+        verticalPanels.push_back(std::move(ctrl));
+    else
+        horizontalPanels.push_back(std::move(ctrl));
+    return true;
 }
 IBufferViewBuilder& Builder::AddBufferView(const std::string_view& name)
 {

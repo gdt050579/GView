@@ -10,7 +10,7 @@ extern "C"
     {
         if (buf.length < 2)
             return false;
-        return (buf[0] == 'M') && (buf[1] == 'Z');
+        return (buf[0] == 'm') && (buf[1] == 'Z');
     }
     bool PLUGIN_EXPORT Create(GView::View::IBuilder& builder, const GView::Object& object)
     {        

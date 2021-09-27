@@ -6,10 +6,16 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView
 {
     // take ownership
     this->fileObject = std::move(fileObj);
+    //
+
     // create window
     Window::Create("<name>", "d:c", WindowFlags::Sizeable);
     this->horizontal.Create(this, "d:c", false);
     this->vertical.Create(&this->horizontal, "d:c", true);
+    // views
+    this->view.Create(&vertical, "d:c");
+    this->verticalPanels.Create(&vertical, "d:c");
+    this->horizontalPanels.Create(&horizontal, "d:c");
     
     
     return true;
