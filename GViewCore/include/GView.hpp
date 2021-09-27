@@ -75,7 +75,7 @@ namespace GView
         };
         struct CORE_EXPORT IBuilder
         {
-            virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical) = 0;
+            virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) = 0;
             virtual IBufferViewBuilder& AddBufferView(const std::string_view &name) = 0;
         };
     };

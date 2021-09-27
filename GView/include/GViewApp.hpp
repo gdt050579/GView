@@ -47,6 +47,28 @@ namespace GView
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };
     }
+    namespace View
+    {
+        class BufferViewBuilder : public IViewBuilder
+        {
+        public:
+            BufferViewBuilder(const std::string_view& name);
+
+            // interface
+            AppCUI::Controls::Control* Build() override;
+        };
+        class Builder : public IBuilder
+        {
+        public:
+            std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> verticalPanels;
+            std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> horizontalPanels;
+            std::vector<std::unique_ptr<IViewBuilder>> views;
+        
+            Builder();
+            bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) override;
+            IBufferViewBuilder& AddBufferView(const std::string_view& name) override;
+        };
+    }
     namespace App
     {
         namespace MenuCommands
@@ -85,30 +107,10 @@ namespace GView
             std::unique_ptr<GView::Object> fileObject;
             Splitter vertical, horizontal;
             Tab view, verticalPanels, horizontalPanels;
-            
+            View::Builder builder;
         public:
             bool Create(const GView::Type::Plugin& type, std::unique_ptr<GView::Object> fileObj);
         };
     }
-    namespace View
-    {
-        class BufferViewBuilder : public IViewBuilder
-        {
-        public:
-            BufferViewBuilder(const std::string_view& name);
 
-            // interface
-            AppCUI::Controls::Control* Build() override;
-        };
-        class Builder : public IBuilder
-        {
-            std::vector<std::unique_ptr<AppCUI::Controls::Control>> verticalPanels;
-            std::vector<std::unique_ptr<AppCUI::Controls::Control>> horizontalPanels;
-            std::vector<std::unique_ptr<IViewBuilder>> views;
-        public:
-            Builder();
-            bool AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical) override;
-            IBufferViewBuilder& AddBufferView(const std::string_view& name) override;
-        };
-    }
 }

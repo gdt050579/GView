@@ -6,6 +6,18 @@ using namespace GView::Type;
 constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
 
+class DefaultInformationPanel : public TabPage
+{
+	ListView lv;
+public:
+	DefaultInformationPanel(const GView::Object& object)
+	{
+		this->Create(nullptr, "&Information");
+		lv.Create(this, "d:c");
+		lv.AddColumn("Field", TextAlignament::Left, 10);
+		lv.AddColumn("Value", TextAlignament::Left, 100);
+	}
+};
 //===============================================================================================
 bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& extension)
 {
@@ -13,11 +25,7 @@ bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& ex
 }
 bool PluginDefault_Create(GView::View::IBuilder& builder, const GView::Object& object)
 {
-	auto lv = std::make_unique<ListView>();
-	lv->Create(nullptr, "d:c");
-	lv->AddColumn("Field", TextAlignament::Left, 10);
-	lv->AddColumn("Value", TextAlignament::Left, 100);
-	builder.AddPanel(std::move(lv), true);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
 	// at least one view and one information panel
 	return true;
 }

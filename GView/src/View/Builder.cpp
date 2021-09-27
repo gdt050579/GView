@@ -8,7 +8,7 @@ Builder::Builder()
     horizontalPanels.reserve(16);
     views.reserve(8);
 }
-bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::Control> ctrl, bool vertical)
+bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical)
 {
     CHECK(ctrl, false, "Expecting a valid control !");
     if (vertical)
