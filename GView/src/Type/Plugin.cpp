@@ -13,7 +13,7 @@ public:
 	DefaultInformationPanel(const GView::Object& object)
 	{
 		this->Create(nullptr, "&Information");
-		lv.Create(this, "l:0,r:0,t:1,b:0");
+		lv.Create(this, "d:c");
 		lv.AddColumn("Field", TextAlignament::Left, 10);
 		lv.AddColumn("Value", TextAlignament::Left, 100);
 	}
@@ -26,6 +26,9 @@ bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& ex
 bool PluginDefault_Create(GView::View::IBuilder& builder, const GView::Object& object)
 {
 	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
 	// at least one view and one information panel
 	return true;
 }
