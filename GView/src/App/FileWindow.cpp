@@ -2,6 +2,8 @@
 
 using namespace GView::App;
 
+constexpr int HORIZONTA_PANEL_ID = 100000;
+
 bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView::Object> fileObj)
 {
     // take ownership
@@ -24,11 +26,12 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView
     }
     // 4. add horizontal panels
     auto cb = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
-    cb.AddSingleChoiceItem("<*>", 100, true);
+    //cb.AddSingleChoiceItem("<*>", 100, true);
+    int id = HORIZONTA_PANEL_ID;
     for (auto& ctrl : builder.horizontalPanels)
     {
         this->horizontalPanels.AddControl(ctrl.get());
-        cb.AddSingleChoiceItem((AppCUI::Utils::CharacterView)ctrl->GetText(), 100, false);
+        cb.AddSingleChoiceItem((AppCUI::Utils::CharacterView)ctrl->GetText(), id++, false);
     }
     return true;
 }
