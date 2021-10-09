@@ -50,22 +50,31 @@ namespace GView
     }
     namespace View
     {
+        class BufferView : public UserControl
+        {
+            GView::Object& fileObj;
+        public:
+            BufferView(GView::Object& obj);
+
+            virtual void Paint(Renderer& renderer) override;
+        };
         class BufferViewBuilder : public IViewBuilder
         {
         public:
             BufferViewBuilder(const std::string_view& name);
 
             // interface
-            AppCUI::Controls::Control* Build() override;
+            Pointer<AppCUI::Controls::Control> Build() override;
         };
         class Builder : public IBuilder
-        {
+        {            
         public:
             std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> verticalPanels;
             std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> horizontalPanels;
             std::vector<std::unique_ptr<IViewBuilder>> views;
+            std::unique_ptr<GView::Object> fileObject;
         
-            Builder();
+            Builder(std::unique_ptr<GView::Object> obj);
             bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) override;
             IBufferViewBuilder& AddBufferView(const std::string_view& name) override;
         };
@@ -104,14 +113,13 @@ namespace GView
             void Run();
         };
         class FileWindow : public Window
-        {
-            std::unique_ptr<GView::Object> fileObject;
+        {            
             Reference<Splitter> vertical, horizontal;
             Reference<Tab> view, verticalPanels, horizontalPanels;
             View::Builder builder;
         public:
-            FileWindow(): Window("","d:c",WindowFlags::Sizeable) { }
-            bool Create(const GView::Type::Plugin& type, std::unique_ptr<GView::Object> fileObj);
+            FileWindow(std::unique_ptr<GView::Object> obj);
+            bool Create(const GView::Type::Plugin& type);
         };
     }
 

@@ -4,12 +4,16 @@ using namespace GView::App;
 
 constexpr int HORIZONTA_PANEL_ID = 100000;
 
-bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView::Object> fileObj)
+FileWindow::FileWindow(std::unique_ptr<GView::Object> obj): 
+    Window("", "d:c", WindowFlags::Sizeable),
+    builder(std::move(obj))
 {
-    // take ownership
-    this->fileObject = std::move(fileObj);
+     
+}
+bool FileWindow::Create(const GView::Type::Plugin& plugin)
+{
     // builder action
-    CHECK(plugin.Create(builder, *this->fileObject.get()), false, "Building the view failed !");
+    CHECK(plugin.Create(builder, *builder.fileObject), false, "Building the view failed !");
     // all good - lets create objects
     // 1. create window
     horizontal = this->CreateChildControl<Splitter>("d:c", false);
@@ -31,6 +35,11 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView
     {
         cb.AddSingleChoiceItem((AppCUI::Utils::CharacterView)ctrl->GetText(), id++, false);
         this->horizontalPanels->AddControl(std::move(ctrl));        
+    }
+    // 5. add builders
+    for (auto& viewBuilder : builder.views)
+    {
+        this->view->AddControl(viewBuilder->Build());
     }
     return true;
 }

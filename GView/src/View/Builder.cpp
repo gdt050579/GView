@@ -2,11 +2,12 @@
 
 using namespace GView::View;
 
-Builder::Builder()
+Builder::Builder(std::unique_ptr<GView::Object> obj)
 {
     verticalPanels.reserve(32);
     horizontalPanels.reserve(16);
     views.reserve(8);
+    fileObject = std::move(obj);
 }
 bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical)
 {

@@ -1,5 +1,8 @@
 #include <AppCUI/include/AppCUI.hpp>
 
+using namespace AppCUI::Controls;
+using namespace AppCUI::Utils;
+
 #ifdef CORE_EXPORTABLE
 #    ifdef BUILD_FOR_WINDOWS
 #        define CORE_EXPORT __declspec(dllexport)
@@ -67,7 +70,7 @@ namespace GView
     {
         struct CORE_EXPORT IViewBuilder
         {
-            virtual AppCUI::Controls::Control* Build() = 0;
+            virtual Pointer<Control> Build() = 0;
         };
         struct CORE_EXPORT IBufferViewBuilder: public IViewBuilder
         {

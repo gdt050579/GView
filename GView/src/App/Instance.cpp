@@ -115,8 +115,8 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
             break;
         }
     }
-    auto win = std::make_unique<FileWindow>();
-    CHECK(win->Create(plg, std::move(obj)), false, "Fail to create window !");
+    auto win = std::make_unique<FileWindow>(std::move(obj));
+    CHECK(win->Create(plg), false, "Fail to create window !");
     auto res = AppCUI::Application::AddWindow(std::move(win));
     CHECK(res != InvalidItemHandle, false, "Fail to add newly created window to desktop");
     return true;

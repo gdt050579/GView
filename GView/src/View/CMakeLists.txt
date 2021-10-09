@@ -1,1 +1,1 @@
-target_sources(GView PRIVATE Builder.cpp BufferViewBuilder.cpp)
+target_sources(GView PRIVATE Builder.cpp BufferView.cpp BufferViewBuilder.cpp)
