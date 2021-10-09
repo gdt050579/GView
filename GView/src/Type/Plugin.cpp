@@ -7,15 +7,13 @@ constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
 
 class DefaultInformationPanel : public TabPage
-{
-	ListView lv;
+{	
 public:
-	DefaultInformationPanel(const GView::Object& object)
+	DefaultInformationPanel(const GView::Object& object): TabPage("&Information")
 	{
-		this->Create(nullptr, "&Information");
-		lv.Create(this, "d:c");
-		lv.AddColumn("Field", TextAlignament::Left, 10);
-		lv.AddColumn("Value", TextAlignament::Left, 100);
+		auto lv = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
+		lv->AddColumn("Field", TextAlignament::Left, 10);
+		lv->AddColumn("Value", TextAlignament::Left, 100);
 	}
 };
 //===============================================================================================

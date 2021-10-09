@@ -5,6 +5,7 @@
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
+using namespace AppCUI::Utils;
 
 namespace GView
 {
@@ -105,10 +106,11 @@ namespace GView
         class FileWindow : public Window
         {
             std::unique_ptr<GView::Object> fileObject;
-            Splitter vertical, horizontal;
-            Tab view, verticalPanels, horizontalPanels;
+            Reference<Splitter> vertical, horizontal;
+            Reference<Tab> view, verticalPanels, horizontalPanels;
             View::Builder builder;
         public:
+            FileWindow(): Window("","d:c",WindowFlags::Sizeable) { }
             bool Create(const GView::Type::Plugin& type, std::unique_ptr<GView::Object> fileObj);
         };
     }

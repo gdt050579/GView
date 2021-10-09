@@ -12,17 +12,16 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView
     CHECK(plugin.Create(builder, *this->fileObject.get()), false, "Building the view failed !");
     // all good - lets create objects
     // 1. create window
-    Window::Create("<name>", "d:c", WindowFlags::Sizeable);
-    this->horizontal.Create(this, "d:c", false);
-    this->vertical.Create(&this->horizontal, "d:c", true);
+    horizontal = this->CreateChildControl<Splitter>("d:c", false);
+    vertical = horizontal->CreateChildControl<Splitter>("d:c", true);
     // 2. views
-    this->view.Create(&vertical, "d:c");
-    this->verticalPanels.Create(&vertical, "d:c", TabFlags::ListView | TabFlags::TransparentBackground);
-    this->horizontalPanels.Create(&horizontal, "d:c", TabFlags::HideTabs | TabFlags::TransparentBackground);
+    view = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs, 16);
+    verticalPanels = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
+    horizontalPanels = horizontal->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
     // 3. add vertical panels
     for (auto &ctrl : builder.verticalPanels)
     {
-        this->verticalPanels.AddControl(ctrl.get());
+        this->verticalPanels->AddControl(std::move(ctrl));
     }
     // 4. add horizontal panels
     auto cb = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
@@ -30,8 +29,8 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin, std::unique_ptr<GView
     int id = HORIZONTA_PANEL_ID;
     for (auto& ctrl : builder.horizontalPanels)
     {
-        this->horizontalPanels.AddControl(ctrl.get());
         cb.AddSingleChoiceItem((AppCUI::Utils::CharacterView)ctrl->GetText(), id++, false);
+        this->horizontalPanels->AddControl(std::move(ctrl));        
     }
     return true;
 }
