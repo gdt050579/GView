@@ -50,14 +50,6 @@ namespace GView
     }
     namespace View
     {
-        class BufferView : public UserControl
-        {
-            GView::Object& fileObj;
-        public:
-            BufferView(GView::Object& obj);
-
-            virtual void Paint(Renderer& renderer) override;
-        };
         class BufferViewBuilder : public IBufferViewBuilder
         {
         public:
@@ -67,6 +59,15 @@ namespace GView
             void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) override;
             Pointer<AppCUI::Controls::Control> Build(GView::Object& obj) override;
         };
+        class BufferView : public UserControl
+        {
+            GView::Object& fileObj;
+        public:
+            BufferView(GView::Object& obj, BufferViewBuilder* settings);
+
+            virtual void Paint(Renderer& renderer) override;
+        };
+
         class Builder : public IBuilder
         {            
         public:

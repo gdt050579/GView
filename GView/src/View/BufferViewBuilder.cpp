@@ -12,5 +12,5 @@ void BufferViewBuilder::AddZone(unsigned long long start, unsigned long long siz
 }
 Pointer<Control> BufferViewBuilder::Build(GView::Object& obj)
 {
-    return Pointer<Control>(new BufferView(obj));
+    return Pointer<Control>(new BufferView(obj, this));
 }

@@ -2,7 +2,7 @@
 
 using namespace GView::View;
 
-BufferView::BufferView(GView::Object& obj) : UserControl("d:c"), fileObj(obj)
+BufferView::BufferView(GView::Object& obj, BufferViewBuilder* setting) : UserControl("d:c"), fileObj(obj)
 {
 
 }
