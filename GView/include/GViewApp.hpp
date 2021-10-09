@@ -62,6 +62,8 @@ namespace GView
         class BufferView : public UserControl
         {
             GView::Object& fileObj;
+            CharacterBuffer chars;
+            void WrieLineToChars(unsigned long long offset);
         public:
             BufferView(GView::Object& obj, BufferViewBuilder* settings);
 
