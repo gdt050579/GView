@@ -58,13 +58,14 @@ namespace GView
 
             virtual void Paint(Renderer& renderer) override;
         };
-        class BufferViewBuilder : public IViewBuilder
+        class BufferViewBuilder : public IBufferViewBuilder
         {
         public:
             BufferViewBuilder(const std::string_view& name);
 
             // interface
-            Pointer<AppCUI::Controls::Control> Build() override;
+            void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) override;
+            Pointer<AppCUI::Controls::Control> Build(GView::Object& obj) override;
         };
         class Builder : public IBuilder
         {            
@@ -76,7 +77,7 @@ namespace GView
         
             Builder(std::unique_ptr<GView::Object> obj);
             bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) override;
-            IBufferViewBuilder& AddBufferView(const std::string_view& name) override;
+            Reference<IBufferViewBuilder> AddBufferView(const std::string_view& name) override;
         };
     }
     namespace App

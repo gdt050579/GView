@@ -70,7 +70,7 @@ namespace GView
     {
         struct CORE_EXPORT IViewBuilder
         {
-            virtual Pointer<Control> Build() = 0;
+            virtual Pointer<Control> Build(GView::Object& obj) = 0;
         };
         struct CORE_EXPORT IBufferViewBuilder: public IViewBuilder
         {
@@ -79,7 +79,7 @@ namespace GView
         struct CORE_EXPORT IBuilder
         {
             virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) = 0;
-            virtual IBufferViewBuilder& AddBufferView(const std::string_view &name) = 0;
+            virtual Reference<IBufferViewBuilder> AddBufferView(const std::string_view &name) = 0;
         };
     };
     EXPORT void Nothing();

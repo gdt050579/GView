@@ -39,7 +39,7 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin)
     // 5. add builders
     for (auto& viewBuilder : builder.views)
     {
-        this->view->AddControl(viewBuilder->Build());
+        this->view->AddControl(viewBuilder->Build(*builder.fileObject));
     }
     return true;
 }

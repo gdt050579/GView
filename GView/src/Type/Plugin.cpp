@@ -23,11 +23,15 @@ bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& ex
 }
 bool PluginDefault_Create(GView::View::IBuilder& builder, const GView::Object& object)
 {
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
 	// at least one view and one information panel
+	// 1. info panel
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
+	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
+	
+	// 2. views		
+	auto v = builder.AddBufferView("Buffer view");
 	return true;
 }
 
