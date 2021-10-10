@@ -36,7 +36,7 @@ namespace GView
             bool Loaded, Invalid;
 
             bool (*fnValidate)(const Buffer &buf, const std::string_view &extension);
-            bool (*fnCreate)(GView::View::IBuilder& builder, const GView::Object& object);
+            bool (*fnCreate)(GView::View::FactoryInterface& builder, const GView::Object& object);
             
             bool LoadPlugin();
         public:
@@ -44,7 +44,7 @@ namespace GView
             bool Init(AppCUI::Utils::IniSection section);
             void Init();
             bool Validate(Buffer buf, std::string_view extension);
-            bool Create(GView::View::IBuilder& builder, const GView::Object& object) const;
+            bool Create(GView::View::FactoryInterface& builder, const GView::Object& object) const;
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };
     }
@@ -74,7 +74,7 @@ namespace GView
         }
 
 
-        class Builder : public IBuilder
+        class Factory : public FactoryInterface
         {            
         public:
             std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> verticalPanels;
@@ -82,7 +82,7 @@ namespace GView
             std::vector<std::unique_ptr<GView::View::BuildInterface>> views;
             std::unique_ptr<GView::Object> fileObject;
         
-            Builder(std::unique_ptr<GView::Object> obj);
+            Factory(std::unique_ptr<GView::Object> obj);
             bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) override;
             Reference<Buffer::FactoryInterface> CreateBufferView(const std::string_view& name) override;
         };
@@ -124,7 +124,7 @@ namespace GView
         {            
             Reference<Splitter> vertical, horizontal;
             Reference<Tab> view, verticalPanels, horizontalPanels;
-            View::Builder builder;
+            View::Factory builder;
         public:
             FileWindow(std::unique_ptr<GView::Object> obj);
             bool Create(const GView::Type::Plugin& type);

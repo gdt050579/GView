@@ -2,14 +2,14 @@
 
 using namespace GView::View;
 
-Builder::Builder(std::unique_ptr<GView::Object> obj)
+GView::View::Factory::Factory(std::unique_ptr<GView::Object> obj)
 {
     verticalPanels.reserve(32);
     horizontalPanels.reserve(16);
     views.reserve(8);
     fileObject = std::move(obj);
 }
-bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical)
+bool GView::View::Factory::AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical)
 {
     CHECK(ctrl, false, "Expecting a valid control !");
     if (vertical)
@@ -18,7 +18,7 @@ bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool ver
         horizontalPanels.push_back(std::move(ctrl));
     return true;
 }
-Reference<Buffer::FactoryInterface> Builder::CreateBufferView(const std::string_view& name)
+Reference<Buffer::FactoryInterface> GView::View::Factory::CreateBufferView(const std::string_view& name)
 {
     auto view = std::make_unique<Buffer::Factory>(name);
     auto ref = Reference<Buffer::FactoryInterface>(view.get());

@@ -81,7 +81,7 @@ namespace GView
         }
 
 
-        struct CORE_EXPORT IBuilder
+        struct CORE_EXPORT FactoryInterface
         {
             virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) = 0;
             virtual Reference<Buffer::FactoryInterface> CreateBufferView(const std::string_view &name) = 0;

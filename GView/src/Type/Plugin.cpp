@@ -21,7 +21,7 @@ bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& ex
 {
 	return true; // always match everything
 }
-bool PluginDefault_Create(GView::View::IBuilder& builder, const GView::Object& object)
+bool PluginDefault_Create(GView::View::FactoryInterface& builder, const GView::Object& object)
 {
 	// at least one view and one information panel
 	// 1. info panel
@@ -194,7 +194,7 @@ bool Plugin::Validate(Buffer buf, std::string_view extension)
 	// all good -> code is loaded
 	return fnValidate(buf, extension);
 }
-bool Plugin::Create(GView::View::IBuilder& builder, const GView::Object& object) const
+bool Plugin::Create(GView::View::FactoryInterface& builder, const GView::Object& object) const
 {
 	CHECK(!this->Invalid, false, "Invalid plugin (not loaded properly or no valid exports)");
 	CHECK(this->Loaded, false, "Plugin was no loaded. Have you call `Validate` first ?");
