@@ -68,18 +68,23 @@ namespace GView
     };
     namespace View
     {
-        struct CORE_EXPORT IViewBuilder
+        struct CORE_EXPORT BuildInterface
         {
             virtual Pointer<Control> Build(GView::Object& obj) = 0;
         };
-        struct CORE_EXPORT IBufferViewBuilder: public IViewBuilder
+        namespace Buffer
         {
-            virtual void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) = 0;
-        };
+            struct CORE_EXPORT FactoryInterface: public GView::View::BuildInterface
+            {
+                virtual void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) = 0;
+            };
+        }
+
+
         struct CORE_EXPORT IBuilder
         {
             virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) = 0;
-            virtual Reference<IBufferViewBuilder> AddBufferView(const std::string_view &name) = 0;
+            virtual Reference<Buffer::FactoryInterface> CreateBufferView(const std::string_view &name) = 0;
         };
     };
     EXPORT void Nothing();

@@ -50,37 +50,41 @@ namespace GView
     }
     namespace View
     {
-        class BufferViewBuilder : public IBufferViewBuilder
+        namespace Buffer
         {
-        public:
-            BufferViewBuilder(const std::string_view& name);
+            class Factory : public FactoryInterface
+            {
+            public:
+                Factory(const std::string_view& name);
 
-            // interface
-            void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) override;
-            Pointer<AppCUI::Controls::Control> Build(GView::Object& obj) override;
-        };
-        class BufferView : public UserControl
-        {
-            GView::Object& fileObj;
-            CharacterBuffer chars;
-            void WrieLineToChars(unsigned long long offset);
-        public:
-            BufferView(GView::Object& obj, BufferViewBuilder* settings);
+                // interface
+                void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) override;
+                Pointer<AppCUI::Controls::Control> Build(GView::Object& obj) override;
+            };
+            class ViewerControl : public UserControl
+            {
+                GView::Object& fileObj;
+                CharacterBuffer chars;
+                void WrieLineToChars(unsigned long long offset);
+            public:
+                ViewerControl(GView::Object& obj, Factory* settings);
 
-            virtual void Paint(Renderer& renderer) override;
-        };
+                virtual void Paint(Renderer& renderer) override;
+            };
+        }
+
 
         class Builder : public IBuilder
         {            
         public:
             std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> verticalPanels;
             std::vector<std::unique_ptr<AppCUI::Controls::TabPage>> horizontalPanels;
-            std::vector<std::unique_ptr<IViewBuilder>> views;
+            std::vector<std::unique_ptr<GView::View::BuildInterface>> views;
             std::unique_ptr<GView::Object> fileObject;
         
             Builder(std::unique_ptr<GView::Object> obj);
             bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) override;
-            Reference<IBufferViewBuilder> AddBufferView(const std::string_view& name) override;
+            Reference<Buffer::FactoryInterface> CreateBufferView(const std::string_view& name) override;
         };
     }
     namespace App

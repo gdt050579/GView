@@ -18,10 +18,10 @@ bool Builder::AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool ver
         horizontalPanels.push_back(std::move(ctrl));
     return true;
 }
-Reference<IBufferViewBuilder> Builder::AddBufferView(const std::string_view& name)
+Reference<Buffer::FactoryInterface> Builder::CreateBufferView(const std::string_view& name)
 {
-    auto view = std::make_unique<BufferViewBuilder>(name);
-    auto ref = Reference<IBufferViewBuilder>(view.get());
+    auto view = std::make_unique<Buffer::Factory>(name);
+    auto ref = Reference<Buffer::FactoryInterface>(view.get());
     views.push_back(std::move(view));
     return ref;
 }

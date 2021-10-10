@@ -1,12 +1,12 @@
 #include "GViewApp.hpp"
 
-using namespace GView::View;
+using namespace GView::View::Buffer;
 
-BufferView::BufferView(GView::Object& obj, BufferViewBuilder* setting) : UserControl("d:c"), fileObj(obj)
+ViewerControl::ViewerControl(GView::Object& obj, Buffer::Factory* setting) : UserControl("d:c"), fileObj(obj)
 {
     this->chars.Fill(' ', 1024);
 }
-void BufferView::WrieLineToChars(unsigned long long offset)
+void ViewerControl::WrieLineToChars(unsigned long long offset)
 {
     auto buf = this->fileObj.cache.Get(offset, 128);
     auto c   = this->chars.GetBuffer();
@@ -20,12 +20,12 @@ void BufferView::WrieLineToChars(unsigned long long offset)
         c++;
     }
 }
-void BufferView::Paint(Renderer& renderer)
+void ViewerControl::Paint(Renderer& renderer)
 {
     renderer.Clear(' ', ColorPair{ Color::White,Color::Black });
     for (unsigned int tr = 0; tr < 20; tr++)
     {
         WrieLineToChars(tr*128);
-        renderer.WriteSingleLineText(0, tr, chars, ColorPair{ Color::White,Color::Black });
+        renderer.WriteSingleLineCharacterBuffer(0, tr, chars);
     }
 }

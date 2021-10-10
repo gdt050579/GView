@@ -1,6 +1,5 @@
 #include "GViewApp.hpp"
 
-
 int main(int argc,const char **argv)
 {
     AppCUI::Log::ToStdOut();
@@ -9,7 +8,7 @@ int main(int argc,const char **argv)
 
     GView::App::Instance gviewApp;
     if (!gviewApp.Init())
-        return 1;
+        return 1;    
     gviewApp.AddFileWindow(argv[1]);
     gviewApp.Run();
     

@@ -31,7 +31,7 @@ bool PluginDefault_Create(GView::View::IBuilder& builder, const GView::Object& o
 	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
 	
 	// 2. views		
-	auto v = builder.AddBufferView("Buffer view");
+	auto v = builder.CreateBufferView("Buffer view");
 	return true;
 }
 
