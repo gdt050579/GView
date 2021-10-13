@@ -130,9 +130,35 @@ void ViewerControl::Paint(Renderer& renderer)
 {
     renderer.Clear(' ', ColorPair{ Color::White,Color::Black });
     DrawLineInfo dli;
+
+    // need to recompute all offsets
+    auto sz = this->LineOffsetSize;
+    auto step = 1;
+
+    if (this->LineNameSize > 0)
+    {
+        if (sz > 0)
+            sz += this->LineNameSize + 1; // one extra space
+        else
+            sz += this->LineNameSize;
+    }
+    if (sz > 0)
+        sz += 3; // 3 extra spaces between offset (address) and characters
+    if (nrCols == 0)
+    {
+        // full screen --> ascii only
+        auto width = (unsigned int)this->GetWidth();        
+        if (sz + 1 < width)
+            step = width - (1 + sz);
+    }
+    else {
+        step = nrCols;
+    }
+    // make sure that we have enough buffer
+
     for (unsigned int tr = 0; tr < 20; tr++)
     {
-        dli.offset = tr * 128;
+        dli.offset = step*tr;
         PrepareDrawLineInfo(dli);
         if (nrCols == 0)
             WriteLineTextToChars(dli);
