@@ -27,6 +27,7 @@ bool FileWindow::Create(const GView::Type::Plugin& plugin)
     {
         this->verticalPanels->AddControl(std::move(ctrl));
     }
+    //this->verticalPanels->GetChild(0)->SetFocus();
     // 4. add horizontal panels
     auto cb = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
     //cb.AddSingleChoiceItem("<*>", 100, true);

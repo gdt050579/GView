@@ -63,9 +63,30 @@ namespace GView
             };
             class ViewerControl : public UserControl
             {
+                struct DrawLineInfo
+                {
+                    unsigned long long offset;
+                    unsigned int offsetAndNameSize;
+                    unsigned int numbersSize;
+                    unsigned int textSize;
+                    const unsigned char* start;
+                    const unsigned char* end;
+                    Character* chNameAndSize;
+                    Character* chNumbers;
+                    Character* chText;
+                    bool recomputeOffsets;
+                    DrawLineInfo(): recomputeOffsets(true) { }
+                };
                 GView::Object& fileObj;
                 CharacterBuffer chars;
-                void WrieLineToChars(unsigned long long offset);
+                CharacterFormatMode charFormatMode;
+                unsigned int nrCols;
+                unsigned int LineOffsetSize;
+                unsigned int LineNameSize;
+
+                void PrepareDrawLineInfo(DrawLineInfo& dli);
+                void WriteLineNumbersToChars(DrawLineInfo& dli);
+                void WriteLineTextToChars(DrawLineInfo& dli);
             public:
                 ViewerControl(GView::Object& obj, Factory* settings);
 
