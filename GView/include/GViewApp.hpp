@@ -9,6 +9,33 @@ using namespace AppCUI::Utils;
 
 namespace GView
 {
+    namespace Utils
+    {
+        constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
+        struct Zone
+        {
+            unsigned long long start, end;
+            ColorPair color;
+            char16_t text[24];
+            unsigned int textSize;
+
+            Zone();
+            Zone(unsigned long long s, unsigned long long e, ColorPair c, std::u16string_view txt);
+            Zone(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt);
+        };
+        class ZonesList
+        {
+            std::vector<Zone> list;
+            Zone* lastZone;
+            unsigned long long cacheStart, cacheEnd;
+        public:
+            ZonesList();
+            bool Add(unsigned long long start, unsigned long long end, ColorPair c, std::string_view txt);
+            bool Add(unsigned long long start, unsigned long long end, ColorPair c, std::u16string_view txt);
+            void Reserve(unsigned int count);
+            const Zone* OffsetToZone(unsigned long long offset);
+        };
+    }
     namespace Type
     {
         constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
@@ -59,6 +86,7 @@ namespace GView
 
                 // interface
                 void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) override;
+                void AddBookmark(unsigned char index, unsigned long long fileOffset);
                 Pointer<AppCUI::Controls::Control> Build(GView::Object& obj) override;
             };
             class ViewerControl : public UserControl
@@ -83,14 +111,17 @@ namespace GView
                 unsigned int nrCols;
                 unsigned int LineOffsetSize;
                 unsigned int LineNameSize;
+                unsigned int CharactersPerLine;
 
                 void PrepareDrawLineInfo(DrawLineInfo& dli);
                 void WriteLineNumbersToChars(DrawLineInfo& dli);
                 void WriteLineTextToChars(DrawLineInfo& dli);
+                void UpdateViewSizes();
             public:
                 ViewerControl(GView::Object& obj, Factory* settings);
 
                 virtual void Paint(Renderer& renderer) override;
+                virtual void OnAfterResize(int newWidth, int newHeight) override;
             };
         }
 

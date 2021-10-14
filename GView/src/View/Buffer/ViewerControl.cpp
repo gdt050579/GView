@@ -19,6 +19,36 @@ ViewerControl::ViewerControl(GView::Object& obj, Buffer::Factory* setting) : Use
     this->charFormatMode = CharacterFormatMode::Hex;
     this->LineOffsetSize = 8;
     this->LineNameSize = 8;
+    this->CharactersPerLine = 1;
+}
+void ViewerControl::UpdateViewSizes()
+{
+    // need to recompute all offsets
+    auto sz = this->LineOffsetSize;
+
+    if (this->LineNameSize > 0)
+    {
+        if (sz > 0)
+            sz += this->LineNameSize + 1; // one extra space
+        else
+            sz += this->LineNameSize;
+    }
+    if (sz > 0)
+        sz += 3; // 3 extra spaces between offset (address) and characters
+    if (nrCols == 0)
+    {
+        // full screen --> ascii only
+        auto width = (unsigned int)this->GetWidth();
+        if (sz + 1 < width)
+            this->CharactersPerLine = width - (1 + sz);
+        else
+            this->CharactersPerLine = 1;
+    }
+    else {
+        this->CharactersPerLine = nrCols;
+    }
+    // make sure that we have enough buffer
+
 }
 void ViewerControl::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
@@ -131,34 +161,10 @@ void ViewerControl::Paint(Renderer& renderer)
     renderer.Clear(' ', ColorPair{ Color::White,Color::Black });
     DrawLineInfo dli;
 
-    // need to recompute all offsets
-    auto sz = this->LineOffsetSize;
-    auto step = 1;
-
-    if (this->LineNameSize > 0)
-    {
-        if (sz > 0)
-            sz += this->LineNameSize + 1; // one extra space
-        else
-            sz += this->LineNameSize;
-    }
-    if (sz > 0)
-        sz += 3; // 3 extra spaces between offset (address) and characters
-    if (nrCols == 0)
-    {
-        // full screen --> ascii only
-        auto width = (unsigned int)this->GetWidth();        
-        if (sz + 1 < width)
-            step = width - (1 + sz);
-    }
-    else {
-        step = nrCols;
-    }
-    // make sure that we have enough buffer
 
     for (unsigned int tr = 0; tr < 20; tr++)
     {
-        dli.offset = step*tr;
+        dli.offset = ((unsigned long long)this->CharactersPerLine)*tr;
         PrepareDrawLineInfo(dli);
         if (nrCols == 0)
             WriteLineTextToChars(dli);
@@ -166,4 +172,8 @@ void ViewerControl::Paint(Renderer& renderer)
             WriteLineNumbersToChars(dli);
         renderer.WriteSingleLineCharacterBuffer(0, tr, chars);
     }
+}
+void ViewerControl::OnAfterResize(int width, int height)
+{
+    this->UpdateViewSizes();
 }

@@ -84,6 +84,7 @@ namespace GView
             struct CORE_EXPORT FactoryInterface: public GView::View::BuildInterface
             {
                 virtual void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) = 0;
+                virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset) = 0;
             };
         }
 
