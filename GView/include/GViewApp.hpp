@@ -12,6 +12,32 @@ namespace GView
     namespace Utils
     {
         constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
+        constexpr int INVALID_SELECTION_INDEX = -1;
+
+        class EXPORT Selection
+        {
+            static const unsigned int MAX_SELECTION_ZONES = 4;
+            struct {
+                unsigned long long start, end, originalPoint;
+            } zones[MAX_SELECTION_ZONES];
+            bool singleSelectionZone;
+        public:
+            Selection();
+            void					Clear();
+            bool					Clear(int index);
+            inline unsigned int	    GetCount() const { return Selection::MAX_SELECTION_ZONES; }
+            bool					GetSelection(int index, unsigned long long& Start, unsigned long long& End);
+            void					EnableMultiSelection(bool enable);
+            inline void				InvertMultiSelectionMode() { EnableMultiSelection(!singleSelectionZone);  }
+            inline bool				IsMultiSelectionEnabled() { return !singleSelectionZone; }
+            int						OffsetToSelection(unsigned long long offset, unsigned long long& Start, unsigned long long& End);
+            int						OffsetToSelection(unsigned long long offset);
+            bool					UpdateSelection(int index, unsigned long long offset);
+            int						BeginSelection(unsigned long long offset);
+            bool					IsHighlight(unsigned long long offset);
+            bool					SetSelection(int index, unsigned long long start, unsigned long long end);
+        };
+
         struct Zone
         {
             unsigned long long start, end;
@@ -79,14 +105,28 @@ namespace GView
     {
         namespace Buffer
         {
+            struct OffsetTranslationMethod
+            {
+                char name[14];
+                unsigned char nameLength;
+                MethodID  methodID;                
+            };
             class Factory : public FactoryInterface
             {
+            public:
+                GView::Utils::ZonesList zList;
+                unsigned long long bookmarks[10];
+                OffsetTranslationMethod translationMethods[16];
+                unsigned int translationMethodsCount;
+                QueryInterface* queryInterface;
             public:
                 Factory(const std::string_view& name);
 
                 // interface
                 void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) override;
                 void AddBookmark(unsigned char index, unsigned long long fileOffset);
+                void AddOffsetTranslationMethod(std::string_view name, MethodID ID);
+                void SetQueryInterface(QueryInterface* queryInterface);
                 Pointer<AppCUI::Controls::Control> Build(GView::Object& obj) override;
             };
             class ViewerControl : public UserControl

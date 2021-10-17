@@ -2,21 +2,6 @@
 
 using namespace GView::Utils;
 
-int FileZoneCompareFunction(const void *e1, const void *e2, void* Context)
-{
-	const Zone *f1 = (const Zone*)e1;
-	const Zone *f2 = (const Zone*)e2;
-	if (f1->Start < f2->Start)
-		return -1;
-	if (f1->Start > f2->Start)
-		return 1;
-	if (f1->End < f2->End)
-		return -1;
-	if (f1->End > f2->End)
-		return 1;
-	return 0;
-}
-
 ZonesList::ZonesList()
 {
 	lastZone = nullptr;

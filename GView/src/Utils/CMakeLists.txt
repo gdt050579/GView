@@ -1,2 +1,2 @@
-target_sources(GView PRIVATE Zone.cpp ZonesList.cpp)
+target_sources(GView PRIVATE Selection.cpp Zone.cpp ZonesList.cpp)
 

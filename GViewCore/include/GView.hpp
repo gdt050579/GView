@@ -74,6 +74,7 @@ namespace GView
         };
         namespace Buffer
         {
+            typedef unsigned char MethodID;
             enum class CharacterFormatMode : unsigned char
             {
                 Hex,
@@ -81,10 +82,17 @@ namespace GView
                 SignedDecimal,
                 UnsignedDecimal,
             };
+            struct CORE_EXPORT QueryInterface
+            {
+                virtual bool TranslateOffset(MethodID methodID, unsigned long long offset, unsigned long long& result) = 0;
+            };
             struct CORE_EXPORT FactoryInterface: public GView::View::BuildInterface
             {
                 virtual void AddZone(unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) = 0;
                 virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset) = 0;
+                virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID) = 0;
+                virtual void SetQueryInterface(QueryInterface* queryInterface) = 0;
+
             };
         }
 
