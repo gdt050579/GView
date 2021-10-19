@@ -16,6 +16,32 @@ ViewerControl::ViewerControl(GView::Object& obj, Buffer::Factory* setting) : Use
     this->LineNameSize = 8;
     this->CharactersPerLine = 1;
     this->CodePage = CodePage_437;
+    this->fileObj.currentPos = 0;
+    this->OffsetStartView = 0;
+}
+void ViewerControl::MoveTo(unsigned long long offset)
+{
+    if (this->fileObj.cache.GetSize() == 0)
+        return;
+    if (offset > (fileObj.cache.GetSize() - 1))
+        offset = fileObj.cache.GetSize() - 1;
+
+    auto h = (unsigned int)this->GetHeight();
+    if (h > 0)
+        h--;
+    if (h == 0)
+        h = 1; // at leaset one character
+    auto sz = this->CharactersPerLine * h;
+    if ((this->OffsetStartView >= offset) && (offset < this->OffsetStartView + sz))
+        return; // nothing to do ... already in visual space
+    if (offset < this->OffsetStartView)
+        this->OffsetStartView = offset;
+    else {
+        if (offset >= (sz + 1))
+            this->OffsetStartView = offset - (sz + 1);
+        else
+            this->OffsetStartView = 0;
+    }
 }
 void ViewerControl::UpdateViewSizes()
 {
@@ -157,10 +183,14 @@ void ViewerControl::Paint(Renderer& renderer)
     renderer.Clear(' ', ColorPair{ Color::White,Color::Black });
     DrawLineInfo dli;
 
-    const auto h = (unsigned int)this->GetHeight();
+    auto h = (unsigned int)this->GetHeight();
+    if (h > 0)
+        h--;
     for (unsigned int tr = 0; tr < h; tr++)
     {
-        dli.offset = ((unsigned long long)this->CharactersPerLine)*tr;
+        dli.offset = ((unsigned long long)this->CharactersPerLine) * tr + this->OffsetStartView;
+        if (dli.offset >= this->fileObj.cache.GetSize())
+            break;
         PrepareDrawLineInfo(dli);
         if (nrCols == 0)
             WriteLineTextToChars(dli);
@@ -172,4 +202,9 @@ void ViewerControl::Paint(Renderer& renderer)
 void ViewerControl::OnAfterResize(int width, int height)
 {
     this->UpdateViewSizes();
+}
+
+bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t characterCode)
+{
+
 }

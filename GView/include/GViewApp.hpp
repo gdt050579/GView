@@ -104,16 +104,19 @@ namespace GView
                 unsigned int LineNameSize;
                 unsigned int CharactersPerLine;
                 const char16_t* CodePage;
+                unsigned long long OffsetStartView;
 
                 void PrepareDrawLineInfo(DrawLineInfo& dli);
                 void WriteLineNumbersToChars(DrawLineInfo& dli);
                 void WriteLineTextToChars(DrawLineInfo& dli);
                 void UpdateViewSizes();
+                void MoveTo(unsigned long long offset);
             public:
                 ViewerControl(GView::Object& obj, Factory* settings);
 
                 virtual void Paint(Renderer& renderer) override;
                 virtual void OnAfterResize(int newWidth, int newHeight) override;
+                virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t characterCode) override;
             };
         }
 
