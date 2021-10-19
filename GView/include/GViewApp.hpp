@@ -11,56 +11,7 @@ namespace GView
 {
     namespace Utils
     {
-        constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
-        constexpr int INVALID_SELECTION_INDEX = -1;
-
-        class EXPORT Selection
-        {
-            static const unsigned int MAX_SELECTION_ZONES = 4;
-            struct {
-                unsigned long long start, end, originalPoint;
-            } zones[MAX_SELECTION_ZONES];
-            bool singleSelectionZone;
-        public:
-            Selection();
-            void					Clear();
-            bool					Clear(int index);
-            inline unsigned int	    GetCount() const { return Selection::MAX_SELECTION_ZONES; }
-            bool					GetSelection(int index, unsigned long long& Start, unsigned long long& End);
-            void					EnableMultiSelection(bool enable);
-            inline void				InvertMultiSelectionMode() { EnableMultiSelection(!singleSelectionZone);  }
-            inline bool				IsMultiSelectionEnabled() { return !singleSelectionZone; }
-            int						OffsetToSelection(unsigned long long offset, unsigned long long& Start, unsigned long long& End);
-            int						OffsetToSelection(unsigned long long offset);
-            bool					UpdateSelection(int index, unsigned long long offset);
-            int						BeginSelection(unsigned long long offset);
-            bool					IsHighlight(unsigned long long offset);
-            bool					SetSelection(int index, unsigned long long start, unsigned long long end);
-        };
-
-        struct Zone
-        {
-            unsigned long long start, end;
-            ColorPair color;
-            char16_t text[24];
-            unsigned int textSize;
-
-            Zone();
-            Zone(unsigned long long s, unsigned long long e, ColorPair c, std::u16string_view txt);
-            Zone(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt);
-        };
-        class ZonesList
-        {
-            std::vector<Zone> list;
-            Zone* lastZone;
-            unsigned long long cacheStart, cacheEnd;
-        public:
-            ZonesList();
-            bool Add(unsigned long long start, unsigned long long end, ColorPair c, std::string_view txt);
-            bool Add(unsigned long long start, unsigned long long end, ColorPair c, std::u16string_view txt);
-            void Reserve(unsigned int count);
-            const Zone* OffsetToZone(unsigned long long offset);
-        };
+        
     }
     namespace Type
     {
@@ -73,7 +24,7 @@ namespace GView
         public:
             SimplePattern();
             bool Init(std::string_view text, unsigned int ofs);
-            bool Match(Buffer buf) const;
+            bool Match(GView::Utils::Buffer buf) const;
             inline bool Empty() const { return Count == 0; }
         };
         constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31;  // must be less than 255 !!!
@@ -88,7 +39,7 @@ namespace GView
             unsigned short Priority;
             bool Loaded, Invalid;
 
-            bool (*fnValidate)(const Buffer &buf, const std::string_view &extension);
+            bool (*fnValidate)(const GView::Utils::Buffer &buf, const std::string_view &extension);
             bool (*fnCreate)(GView::View::FactoryInterface& builder, const GView::Object& object);
             
             bool LoadPlugin();
@@ -96,7 +47,7 @@ namespace GView
             Plugin();
             bool Init(AppCUI::Utils::IniSection section);
             void Init();
-            bool Validate(Buffer buf, std::string_view extension);
+            bool Validate(GView::Utils::Buffer buf, std::string_view extension);
             bool Create(GView::View::FactoryInterface& builder, const GView::Object& object) const;
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };

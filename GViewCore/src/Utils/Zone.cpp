@@ -1,9 +1,10 @@
-#include <GViewApp.hpp>
+#include <GView.hpp>
 
 using namespace GView::Utils;
+using namespace AppCUI::Graphics;
 
 Zone::Zone(): start(INVALID_OFFSET), end(INVALID_OFFSET), color(NoColorPair), textSize(0) { }
-Zone::Zone(unsigned long long s, unsigned long long e, ColorPair c, std::u16string_view txt)
+void Zone::Set(unsigned long long s, unsigned long long e, ColorPair c, std::u16string_view txt)
 {
     this->start = s;
     this->end = e;
@@ -15,7 +16,7 @@ Zone::Zone(unsigned long long s, unsigned long long e, ColorPair c, std::u16stri
     for (; ptr < ptr_end; ptr++, ptr_t)
         *ptr_t = *ptr;                
 }
-Zone::Zone(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt)
+void Zone::Set(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt)
 {
     this->start = s;
     this->end = e;

@@ -1,6 +1,7 @@
 #include <GViewApp.hpp>
 
 using namespace GView::Type;
+using namespace GView::Utils;
 
 constexpr unsigned char CHAR_TYPE_INVALID = 0xFF;
 constexpr unsigned char CHAR_TYPE_SEP = 0xFE;

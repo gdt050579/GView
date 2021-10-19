@@ -1,6 +1,7 @@
 #include "GViewApp.hpp"
 
 using namespace GView::Type;
+using namespace GView::Utils;
 
 
 constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
@@ -17,7 +18,7 @@ public:
 	}
 };
 //===============================================================================================
-bool PluginDefault_Validate(const GView::Buffer& buf, const std::string_view& extension)
+bool PluginDefault_Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
 {
 	return true; // always match everything
 }
