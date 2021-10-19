@@ -103,6 +103,7 @@ namespace GView
                 unsigned int LineOffsetSize;
                 unsigned int LineNameSize;
                 unsigned int CharactersPerLine;
+                const char16_t* CodePage;
 
                 void PrepareDrawLineInfo(DrawLineInfo& dli);
                 void WriteLineNumbersToChars(DrawLineInfo& dli);
