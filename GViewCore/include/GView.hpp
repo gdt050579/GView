@@ -74,7 +74,6 @@ namespace GView
             int						OffsetToSelection(unsigned long long offset);
             bool					UpdateSelection(int index, unsigned long long offset);
             int						BeginSelection(unsigned long long offset);
-            bool					IsHighlight(unsigned long long offset);
             bool					SetSelection(int index, unsigned long long start, unsigned long long end);
         };
 
