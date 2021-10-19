@@ -108,8 +108,9 @@ namespace GView
     struct CORE_EXPORT Object
     {
         Utils::FileCache cache;
-        // cursorul si pozitia lui
-        // selectiile
+        Utils::Selection selection;
+        Utils::ZonesList zones;
+        unsigned long long currentPos;
     public:
 
     };
