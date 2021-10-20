@@ -47,17 +47,23 @@ void ViewerControl::MoveTo(unsigned long long offset, bool select)
 
     auto h  = this->VisibleRows;
     auto sz = this->CharactersPerLine * h;
-    if ((this->OffsetStartView >= offset) && (offset < this->OffsetStartView + sz))
+    if ((offset >= this->OffsetStartView) && (offset < this->OffsetStartView + sz))
+    {
+        this->fileObj.currentPos = offset;
         return; // nothing to do ... already in visual space
+    }
+        
     if (offset < this->OffsetStartView)
         this->OffsetStartView = offset;
     else
     {
-        if (offset >= (sz + 1))
-            this->OffsetStartView = offset - (sz + 1);
+        auto dif = this->fileObj.currentPos - this->OffsetStartView;
+        if (offset >= dif)
+            this->OffsetStartView = offset - dif;
         else
             this->OffsetStartView = 0;
     }
+    this->fileObj.currentPos = offset;
 }
 void ViewerControl::MoveScrollTo(unsigned long long offset)
 {
@@ -72,7 +78,7 @@ void ViewerControl::MoveScrollTo(unsigned long long offset)
     else
     {
         auto dif = old - OffsetStartView;
-        if (dif > this->fileObj.currentPos)
+        if (dif <= this->fileObj.currentPos)
             MoveTo(this->fileObj.currentPos - dif, false);
         else
             MoveTo(0, false);
@@ -89,6 +95,105 @@ void ViewerControl::MoveToSelection(unsigned int selIndex)
         else
             MoveTo(end, false);
     }
+}
+void ViewerControl::SkipCurentCaracter(bool selected)
+{
+    unsigned long long tr, fileSize;
+
+    auto buf = this->fileObj.cache.Get(this->fileObj.currentPos, 1);
+    
+    if (buf.Empty())
+        return;
+    auto toSkip = *buf.data;
+
+    fileSize = this->fileObj.cache.GetSize();
+    for (tr = this->fileObj.currentPos; tr < fileSize; )
+    {
+        auto buf = this->fileObj.cache.Get(tr, 256);
+        if (buf.Empty())
+            break;
+        for (unsigned int gr = 0; gr < buf.length; gr++, tr++)
+            if (buf.data[gr] != toSkip)
+                break;
+    }
+    MoveTo(tr, selected);
+}
+void ViewerControl::MoveTillNextBlock(bool select, int dir)
+{
+    //GView::Objects::FileZones* zone;
+    //switch (File->ColorMode)
+    //{
+    //case GView::Constants::COLORMODE_OBJECTS:
+    //    zone = &File->Zones.Objects;
+    //    break;
+    //case GView::Constants::COLORMODE_TYPE:
+    //    zone = &InitData->TypeZones;
+    //    break;
+    //default:
+    //    return;
+    //};
+    //unsigned int count = zone->GetCount();
+    //const GView::Objects::FileZone* z;
+    //if (dir == 1)
+    //{
+    //    for (unsigned int tr = 0; tr < count; tr++)
+    //    {
+    //        z = zone->Get(tr);
+    //        if (z->Start > this->fileObj.currentPos)
+    //        {
+    //            MoveTo(z->Start, select);
+    //            return;
+    //        }
+    //    }
+    //}
+    //else
+    //{
+    //    for (int tr = ((int) count) - 1; tr >= 0; tr--)
+    //    {
+    //        z = zone->Get(tr);
+    //        if (z->End < this->fileObj.currentPos)
+    //        {
+    //            MoveTo(z->Start, select);
+    //            return;
+    //        }
+    //    }
+    //}
+}
+void ViewerControl::MoveTillEndBlock(bool selected)
+{
+    unsigned long long  tr, gr, fileSize;
+    unsigned char val, val2;
+    bool found;
+
+    fileSize = this->fileObj.cache.GetSize();
+
+    for (tr = this->fileObj.currentPos; tr < fileSize;)
+    {
+        auto buf = this->fileObj.cache.Get(tr, 256);
+        if (buf.Empty())
+            break;
+        if (buf.data[0] == 0)
+        {
+            found = true;
+            for (gr = 0; (gr < 32) && (found) && (gr < buf.length); gr++)
+            {
+                if (buf.data[gr] != 0)
+                    found = false;
+            }
+            if (found)
+            {
+                if (tr > 0)
+                    tr--;
+                if (tr < this->fileObj.currentPos)
+                    return;
+                break;
+            }
+            tr += gr;
+        }
+        else
+            tr++;
+    }
+    MoveTo(tr, selected);
 }
 
 void ViewerControl::UpdateViewSizes()
@@ -174,11 +279,13 @@ void ViewerControl::WriteLineTextToChars(DrawLineInfo& dli)
     while (dli.start < dli.end)
     {
         cp = ColorPair{ Color::White, Color::Black };
-
+        if (dli.offset == this->fileObj.currentPos)
+            cp = ColorPair{ Color::Black, Color::White };
         dli.chText->Code  = CodePage[*dli.start];
         dli.chText->Color = cp;
         dli.chText++;
         dli.start++;
+        dli.offset++;
     }
 }
 void ViewerControl::WriteLineNumbersToChars(DrawLineInfo& dli)
@@ -190,6 +297,8 @@ void ViewerControl::WriteLineNumbersToChars(DrawLineInfo& dli)
     while (dli.start < dli.end)
     {
         cp = ColorPair{ Color::White, Color::Black };
+        if (dli.offset == this->fileObj.currentPos)
+            cp = ColorPair{ Color::Black, Color::White };
         switch (charFormatMode)
         {
         case CharacterFormatMode::Hex:
@@ -263,6 +372,7 @@ void ViewerControl::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.chText->Color = cp;
         dli.chText++;
         dli.start++;
+        dli.offset++;
     }
 }
 void ViewerControl::Paint(Renderer& renderer)
@@ -295,29 +405,29 @@ bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
         keyCode = static_cast<Key>((unsigned int) keyCode - (unsigned int) Key::Shift);
 
     // tratare cazuri editare
-    if (this->EditMode)
-    {
-        if ((KeyCode == Key::Tab) || (KeyCode == (Key::Tab | Key::Ctrl)))
-        {
-            if (IsNormalRow())
-            {
-                editNumbers    = !editNumbers;
-                editNumbersOfs = 0;
-            }
-            return true;
-        }
-        if (KeyCode == Key::Backspace)
-        {
-            if (editNumbersOfs > 0)
-                editNumbersOfs--;
-            return true;
-        }
-        if (charCode >= 32)
-        {
-            AddChar(charCode);
-            return true;
-        }
-    }
+    //if (this->EditMode)
+    //{
+    //    if ((KeyCode == Key::Tab) || (KeyCode == (Key::Tab | Key::Ctrl)))
+    //    {
+    //        if (IsNormalRow())
+    //        {
+    //            editNumbers    = !editNumbers;
+    //            editNumbersOfs = 0;
+    //        }
+    //        return true;
+    //    }
+    //    if (KeyCode == Key::Backspace)
+    //    {
+    //        if (editNumbersOfs > 0)
+    //            editNumbersOfs--;
+    //        return true;
+    //    }
+    //    if (charCode >= 32)
+    //    {
+    //        AddChar(charCode);
+    //        return true;
+    //    }
+    //}
 
     switch (keyCode)
     {
@@ -338,11 +448,11 @@ bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
         MoveTo(this->fileObj.currentPos + 1, select);
         return true;
     case Key::PageDown:
-        MoveTo(this->fileObj.currentPos + GetTotalViewSize(), select);
+        MoveTo(this->fileObj.currentPos + this->CharactersPerLine*this->VisibleRows, select);
         return true;
     case Key::PageUp:
-        if (this->fileObj.currentPos > GetTotalViewSize())
-            MoveTo(this->fileObj.currentPos - GetTotalViewSize(), select);
+        if (this->fileObj.currentPos > this->CharactersPerLine * this->VisibleRows)
+            MoveTo(this->fileObj.currentPos - (this->CharactersPerLine*this->VisibleRows), select);
         else
             MoveTo(0, select);
         return true;
@@ -377,13 +487,13 @@ bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
         MoveTo(0, select);
         return true;
     case Key::Ctrl | Key::End:
-        MoveTo(this->File->Cache.GetFileSize(), select);
+        MoveTo(this->fileObj.cache.GetSize(), select);
         return true;
     case Key::Ctrl | Key::PageUp:
-        MoveToEndOrStartZone(select, true);
+        //MoveToEndOrStartZone(select, true);
         return true;
     case Key::Ctrl | Key::PageDown:
-        MoveToEndOrStartZone(select, false);
+        //MoveToEndOrStartZone(select, false);
         return true;
 
     case Key::Ctrl | Key::Alt | Key::PageUp:
@@ -434,9 +544,9 @@ bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 
     if ((charCode >= '0') && (charCode <= '9'))
     {
-        auto addr = this->Bookmarks.Get(charCode - '0');
-        if (addr != GView::Utils::INVALID_OFFSET)
-            MoveTo(addr, select);
+        //auto addr = this->Bookmarks.Get(charCode - '0');
+        //if (addr != GView::Utils::INVALID_OFFSET)
+        //    MoveTo(addr, select);
         return true;
     }
 

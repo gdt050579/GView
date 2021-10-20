@@ -114,6 +114,9 @@ namespace GView
                 void MoveTo(unsigned long long offset, bool select);
                 void MoveScrollTo(unsigned long long offset);
                 void MoveToSelection(unsigned int selIndex);
+                void SkipCurentCaracter(bool selected);
+                void MoveTillEndBlock(bool selected);
+                void MoveTillNextBlock(bool select, int dir);
             public:
                 ViewerControl(GView::Object& obj, Factory* settings);
 
