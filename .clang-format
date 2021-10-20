@@ -26,7 +26,7 @@ BreakBeforeBraces                             : Allman
 BreakBeforeTernaryOperators                   : true
 BreakConstructorInitializersBeforeComma       : false
 BreakStringLiterals                           : true
-ColumnLimit                                   : 120
+ColumnLimit                                   : 140
 CommentPragmas                                : '^ IWYU pragma:'
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ConstructorInitializerIndentWidth             : 4
