@@ -103,6 +103,7 @@ namespace GView
                 unsigned int LineOffsetSize;
                 unsigned int LineNameSize;
                 unsigned int CharactersPerLine;
+                unsigned int VisibleRows;
                 const char16_t* CodePage;
                 unsigned long long OffsetStartView;
 
@@ -110,7 +111,9 @@ namespace GView
                 void WriteLineNumbersToChars(DrawLineInfo& dli);
                 void WriteLineTextToChars(DrawLineInfo& dli);
                 void UpdateViewSizes();
-                void MoveTo(unsigned long long offset);
+                void MoveTo(unsigned long long offset, bool select);
+                void MoveScrollTo(unsigned long long offset);
+                void MoveToSelection(unsigned int selIndex);
             public:
                 ViewerControl(GView::Object& obj, Factory* settings);
 
