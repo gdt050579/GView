@@ -96,16 +96,23 @@ namespace GView
                     bool recomputeOffsets;
                     DrawLineInfo(): recomputeOffsets(true) { }
                 };
+                struct 
+                {
+                    CharacterFormatMode charFormatMode;
+                    unsigned int nrCols;
+                    unsigned int lineOffsetSize;
+                    unsigned int lineNameSize;
+                    unsigned int charactersPerLine;
+                    unsigned int visibleRows;                
+                } Layout;
+                struct 
+                {
+                    unsigned long long startView, currentPos;
+                } Cursor;
+
                 GView::Object& fileObj;
                 CharacterBuffer chars;
-                CharacterFormatMode charFormatMode;
-                unsigned int nrCols;
-                unsigned int LineOffsetSize;
-                unsigned int LineNameSize;
-                unsigned int CharactersPerLine;
-                unsigned int VisibleRows;
                 const char16_t* CodePage;
-                unsigned long long OffsetStartView;
 
                 void PrepareDrawLineInfo(DrawLineInfo& dli);
                 void WriteLineNumbersToChars(DrawLineInfo& dli);

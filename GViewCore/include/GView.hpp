@@ -109,7 +109,6 @@ namespace GView
         Utils::FileCache cache;
         Utils::Selection selection;
         Utils::ZonesList zones;
-        unsigned long long currentPos;
     public:
 
     };
