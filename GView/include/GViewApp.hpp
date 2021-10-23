@@ -110,6 +110,10 @@ namespace View
             unsigned int lineNameSize;
             unsigned int charactersPerLine;
             unsigned int visibleRows;
+            unsigned int xName;
+            unsigned int xOffset;
+            unsigned int xNumbers;
+            unsigned int xText;
         } Layout;
         struct
         {
@@ -127,6 +131,7 @@ namespace View
         FixSizeString<29> name;
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
+        void WriteHeaders(Renderer & renderer);
         void WriteLineOffset(DrawLineInfo& dli);
         void WriteLineNumbersToChars(DrawLineInfo& dli);
         void WriteLineTextToChars(DrawLineInfo& dli);

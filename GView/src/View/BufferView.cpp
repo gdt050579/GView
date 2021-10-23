@@ -5,6 +5,13 @@ using namespace AppCUI::Input;
 
 const char hexCharsList[]                    = "0123456789ABCDEF";
 const unsigned int characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signed 8*/, 3 /*unsigned 8*/ };
+const std::string_view hex_header = "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F ";
+const std::string_view oct_header =
+      "000 001 002 003 004 005 006 007 010 011 012 013 014 015 016 017 020 021 022 023 024 025 026 027 030 031 032 033 034 035 036 037 ";
+const std::string_view signed_dec_header =
+      "  +0   +1   +2   +3   +4   +5   +6   +7   +8   +9  +10  +11  +12  +13  +14  +15  +16  +17  +18  +19  +20  +21  +22  +23  +24  +25  +26  +27  +28  +29  +30  +31  ";
+const std::string_view unsigned_dec_header =
+      " +0  +1  +2  +3  +4  +5  +6  +7  +8  +9 +10 +11 +12 +13 +14 +15 +16 +17 +18 +19 +20 +21 +22 +23 +24 +25 +26 +27 +28 +29 +30 +31 ";
 
 const char16_t CodePage_437[] = {
     0x0020, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022, 0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
@@ -31,11 +38,15 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     this->Layout.nrCols            = 0;
-    this->Layout.charFormatMode    = CharacterFormatMode::Hex;
+    this->Layout.charFormatMode    = CharacterFormatMode::UnsignedDecimal;
     this->Layout.lineOffsetSize    = 8;
     this->Layout.lineNameSize      = 8;
     this->Layout.charactersPerLine = 1;
     this->Layout.visibleRows       = 1;
+    this->Layout.xName             = 0;
+    this->Layout.xNumbers          = 0;
+    this->Layout.xOffset           = 0;
+    this->Layout.xText             = 0;
     this->CodePage                 = CodePage_437;
     this->Cursor.currentPos        = 0;
     this->Cursor.startView         = 0;
@@ -199,20 +210,28 @@ void BufferView::MoveTillEndBlock(bool selected)
 
 void BufferView::UpdateViewSizes()
 {
-    // need to recompute all offsets
-    auto sz = this->Layout.lineOffsetSize;
+    // need to recompute all offsets lineOffsetSize
+    auto sz            = this->Layout.lineNameSize;
+    this->Layout.xName = 0;
 
-    if (this->Layout.lineNameSize > 0)
+    if (this->Layout.lineOffsetSize > 0)
     {
+        this->Layout.xOffset = sz;
         if (sz > 0)
-            sz += this->Layout.lineNameSize + 1; // one extra space
+        {
+            sz += this->Layout.lineOffsetSize + 1; // one extra space
+            this->Layout.xOffset++;
+        }
         else
-            sz += this->Layout.lineNameSize;
+            sz += this->Layout.lineOffsetSize;
     }
+
     if (sz > 0)
         sz += 3; // 3 extra spaces between offset (address) and characters
+    this->Layout.xNumbers = sz;
     if (this->Layout.nrCols == 0)
     {
+        this->Layout.xText = sz;
         // full screen --> ascii only
         auto width = (unsigned int) this->GetWidth();
         if (sz + 1 < width)
@@ -222,6 +241,7 @@ void BufferView::UpdateViewSizes()
     }
     else
     {
+        this->Layout.xText = sz + this->Layout.nrCols * (characterFormatModeSize[(unsigned int) this->Layout.charFormatMode] + 1) + 3;
         this->Layout.charactersPerLine = this->Layout.nrCols;
     }
     // compute visible rows
@@ -273,42 +293,55 @@ void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
     dli.chText        = dli.chNameAndSize + (dli.offsetAndNameSize + dli.numbersSize);
     dli.chNumbers     = dli.chNameAndSize + dli.offsetAndNameSize;
 }
+void BufferView::WriteHeaders(Renderer& renderer)
+{
+    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', ColorPair{ Color::White, Color::Magenta });
+    WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
+    params.Align = TextAlignament::Left;
+    params.Y     = 0;
+    params.Color = ColorPair{ Color::White, Color::Magenta };
+    if (this->Layout.lineNameSize > 0)
+    {
+        params.X     = this->Layout.xName;
+        params.Width = this->Layout.lineNameSize;
+        renderer.WriteText("Name", params);
+    }
+    if (this->Layout.lineOffsetSize > 0)
+    {
+        params.X     = this->Layout.xOffset;
+        params.Width = this->Layout.lineOffsetSize;
+        renderer.WriteText("Address", params);
+    }
+    if (this->Layout.nrCols != 0)
+    {
+        params.X     = this->Layout.xNumbers;
+        params.Width = this->Layout.xText - (this->Layout.xNumbers + 3);
+        switch (this->Layout.charFormatMode)
+        {
+        case CharacterFormatMode::Hex:
+            renderer.WriteText(hex_header, params);
+            break;
+        case CharacterFormatMode::Octal:
+            renderer.WriteText(oct_header, params);
+            break;
+        case CharacterFormatMode::SignedDecimal:
+            renderer.WriteText(signed_dec_header, params);
+            break;
+        case CharacterFormatMode::UnsignedDecimal:
+            renderer.WriteText(unsigned_dec_header, params);
+            break;
+        }
+    }
+    params.X     = this->Layout.xText;
+    params.Width = this->Layout.charactersPerLine;
+    renderer.WriteText("Text", params);
+}
 void BufferView::WriteLineOffset(DrawLineInfo& dli)
 {
     unsigned long long ofs = dli.offset;
     auto c                 = ColorPair{ Color::White, Color::DarkGreen };
     auto n                 = dli.chNameAndSize;
 
-    if (this->Layout.lineOffsetSize > 0)
-    {
-        auto s = dli.chNameAndSize + this->Layout.lineOffsetSize;
-        n      = s;
-        if (this->Layout.lineNameSize > 0)
-        {
-            s->Code  = ':';
-            s->Color = c;
-            n++;
-        }
-        s--;
-        // hex
-        while (s >= dli.chNameAndSize)
-        {
-            s->Code  = hexCharsList[ofs & 0xF];
-            s->Color = c;
-            ofs >>= 4;
-            s--;
-        }
-        if ((ofs > 0) && (this->Layout.lineOffsetSize >= 3))
-        {
-            // value is to large --> add some points
-            s        = dli.chNameAndSize;
-            s->Code  = '.';
-            s->Color = c;
-            s++;
-            s->Code  = '.';
-            s->Color = c;
-        }
-    }
     if (this->Layout.lineNameSize > 0)
     {
         auto e      = n + this->Layout.lineNameSize;
@@ -320,13 +353,41 @@ void BufferView::WriteLineOffset(DrawLineInfo& dli)
             if (nm < nm_end)
                 n->Code = *nm;
             else
-                n->Code = '-';
+                n->Code = ' ';
             n->Color = c;
             n++;
             nm++;
         }
-        n = e;
+        n->Code  = ' ';
+        n->Color = c;
+        n++;
     }
+
+    if (this->Layout.lineOffsetSize > 0)
+    {
+        auto prev_n = n;
+        auto s      = n + this->Layout.lineOffsetSize - 1;
+        n           = s + 1;
+        // hex
+        while (s >= prev_n)
+        {
+            s->Code  = hexCharsList[ofs & 0xF];
+            s->Color = c;
+            ofs >>= 4;
+            s--;
+        }
+        if ((ofs > 0) && (this->Layout.lineOffsetSize >= 3))
+        {
+            // value is to large --> add some points
+            s        = prev_n;
+            s->Code  = '.';
+            s->Color = c;
+            s++;
+            s->Code  = '.';
+            s->Color = c;
+        }
+    }
+
     // clear space
     while (n < dli.chNumbers)
     {
@@ -442,7 +503,7 @@ void BufferView::Paint(Renderer& renderer)
 {
     renderer.Clear(' ', ColorPair{ Color::White, Color::Black });
     DrawLineInfo dli;
-
+    WriteHeaders(renderer);
     for (unsigned int tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.offset = ((unsigned long long) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
@@ -454,7 +515,7 @@ void BufferView::Paint(Renderer& renderer)
             WriteLineTextToChars(dli);
         else
             WriteLineNumbersToChars(dli);
-        renderer.WriteSingleLineCharacterBuffer(0, tr, chars);
+        renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars);
     }
 }
 void BufferView::OnAfterResize(int width, int height)
