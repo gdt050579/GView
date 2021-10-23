@@ -178,7 +178,7 @@ bool Plugin::Validate(Buffer buf, std::string_view extension)
     // all good -> code is loaded
     return fnValidate(buf, extension);
 }
-bool Plugin::PopulateWindow(Reference<GView::View::Window> win) const
+bool Plugin::PopulateWindow(Reference<GView::View::WindowInterface> win) const
 {
     CHECK(!this->Invalid, false, "Invalid plugin (not loaded properly or no valid exports)");
     CHECK(this->Loaded, false, "Plugin was no loaded. Have you call `Validate` first ?");

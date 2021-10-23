@@ -157,7 +157,8 @@ namespace Type
 }; // namespace Type
 namespace View
 {
-    struct CORE_EXPORT ViewControl : protected AppCUI::Controls::UserControl
+    typedef unsigned char MethodID;
+    struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl
     {
         virtual bool GoTo(unsigned long long offset)                            = 0;
         virtual bool Select(unsigned long long offset, unsigned long long size) = 0;
@@ -168,11 +169,12 @@ namespace View
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                             = 0;
         virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID)                             = 0;
     };
-    struct CORE_EXPORT Window : protected AppCUI::Controls::Window
+    struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                        = 0;
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                  = 0;
         virtual Reference<BufferView> CreateBufferView(const std::string_view& name) = 0;
+
     };
     struct CORE_EXPORT BuildInterface
     {

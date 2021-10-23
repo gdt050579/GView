@@ -20,7 +20,7 @@ namespace GView
             bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension);
             Utils::Instance CreateInstance();
             void DeleteInstance(Utils::Instance instance);
-            bool PopulateWindow(Reference<GView::View::Window> win);
+            bool PopulateWindow(Reference<GView::View::WindowInterface> win);
         }
         constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
         class SimplePattern
@@ -49,7 +49,7 @@ namespace GView
             bool (*fnValidate)(const GView::Utils::Buffer &buf, const std::string_view &extension);
             Utils::Instance (*fnCreateInstance)();
             void (*fnDeleteInstance)(Utils::Instance instance);
-            bool (*fnPopulateWindow)(Reference<GView::View::Window> win);
+            bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
             
             bool LoadPlugin();
         public:
@@ -57,7 +57,7 @@ namespace GView
             bool Init(AppCUI::Utils::IniSection section);
             void Init();
             bool Validate(GView::Utils::Buffer buf, std::string_view extension);
-            bool PopulateWindow(Reference<GView::View::Window> win) const;
+            bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
             Utils::Instance CreateInstance() const;
             void DeleteInstance(Utils::Instance instance) const;
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
@@ -185,19 +185,25 @@ namespace GView
 
             bool BuildMainMenus();
             bool LoadSettings();
+            bool Add(AppCUI::OS::IFile* file, const AppCUI::Utils::ConstString& name, std::string_view ext);
         public:
             Instance();
             bool Init();
             bool AddFileWindow(const std::filesystem::path& path);
             void Run();
         };
-        class FileWindow : public View::Window
+        class FileWindow : public Window, public GView::View::WindowInterface
         {            
             Reference<Splitter> vertical, horizontal;
             Reference<Tab> view, verticalPanels, horizontalPanels;
+            GView::Object obj;
         public:
-            FileWindow(std::unique_ptr<GView::Object> obj);
+            FileWindow(const AppCUI::Utils::ConstString& name);
             bool Create(const GView::Type::Plugin& type);
+
+            Reference<Object> GetObject() override;
+            bool AddPanel(Pointer<TabPage> page, bool vertical) override;
+            Reference<View::BufferView> CreateBufferView(const std::string_view& name) override;
         };
     }
 

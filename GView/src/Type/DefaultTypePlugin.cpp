@@ -28,7 +28,7 @@ void DeleteInstance(Instance instance)
 {
     // do nothing - instance is nullptr
 }
-bool PopulateWindow(Reference<GView::View::Window> win)
+bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
     // at least one view and one information panel
     // 1. info panel
