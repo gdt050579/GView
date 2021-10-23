@@ -115,10 +115,20 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
         }
     }
 
-    // all good --> add window
-    auto res = AppCUI::Application::AddWindow(std::move(win));
-    CHECK(res != InvalidItemHandle, false, "Fail to add newly created window to desktop");
-    return true;
+    // create an instance of that type
+    obj->instance = plg.CreateInstance();
+
+    // instantiate window
+    while (true)
+    {
+        CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");
+        auto res = AppCUI::Application::AddWindow(std::move(win));
+        CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
+        return true;
+    }
+    // error case
+    plg.DeleteInstance(obj->instance);
+    return false;
 }
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {

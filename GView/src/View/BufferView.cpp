@@ -27,7 +27,7 @@ const char16_t CodePage_437[] = {
 
 BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _obj)
 {
-    this->obj  = obj;
+    this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     this->Layout.nrCols            = 0;
