@@ -1,4 +1,4 @@
-#include <GView.hpp>
+#include <GViewApp.hpp>
 
 using namespace GView::Utils;
 using namespace AppCUI::Graphics;
@@ -48,16 +48,6 @@ bool ZonesList::Reserve(unsigned int newAllocatedSize)
 	return true;
 }
 
-bool ZonesList::Add(unsigned long long s, unsigned long long e, ColorPair c, std::u16string_view txt)
-{
-	if (count >= allocated)
-	{
-		CHECK(Reserve(count+1), false, "");
-	}
-	list[count].Set(s, e, c, txt);
-	count++;
-	return true;
-}
 bool ZonesList::Add(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt)
 {
 	if (count >= allocated)

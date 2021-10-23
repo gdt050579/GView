@@ -79,66 +79,6 @@ namespace Utils
         }
     };
 
-    class CORE_EXPORT Selection
-    {
-        static const unsigned int MAX_SELECTION_ZONES = 4;
-        struct
-        {
-            unsigned long long start, end, originalPoint;
-        } zones[MAX_SELECTION_ZONES];
-        bool singleSelectionZone;
-
-      public:
-        Selection();
-        void Clear();
-        bool Clear(int index);
-        inline unsigned int GetCount() const
-        {
-            return Selection::MAX_SELECTION_ZONES;
-        }
-        bool GetSelection(int index, unsigned long long& Start, unsigned long long& End);
-        void EnableMultiSelection(bool enable);
-        inline void InvertMultiSelectionMode()
-        {
-            EnableMultiSelection(!singleSelectionZone);
-        }
-        inline bool IsMultiSelectionEnabled()
-        {
-            return !singleSelectionZone;
-        }
-        int OffsetToSelection(unsigned long long offset, unsigned long long& Start, unsigned long long& End);
-        int OffsetToSelection(unsigned long long offset);
-        bool UpdateSelection(int index, unsigned long long offset);
-        int BeginSelection(unsigned long long offset);
-        bool SetSelection(int index, unsigned long long start, unsigned long long end);
-    };
-
-    struct CORE_EXPORT Zone
-    {
-        unsigned long long start, end;
-        AppCUI::Graphics::ColorPair color;
-        char16_t text[24];
-        unsigned int textSize;
-
-        Zone();
-        void Set(unsigned long long s, unsigned long long e, AppCUI::Graphics::ColorPair c, std::u16string_view txt);
-        void Set(unsigned long long s, unsigned long long e, AppCUI::Graphics::ColorPair c, std::string_view txt);
-    };
-    class CORE_EXPORT ZonesList
-    {
-        Zone* list;
-        Zone* lastZone;
-        unsigned int count, allocated;
-        unsigned long long cacheStart, cacheEnd;
-
-      public:
-        ZonesList();
-        ~ZonesList();
-        bool Add(unsigned long long start, unsigned long long end, AppCUI::Graphics::ColorPair c, std::string_view txt);
-        bool Add(unsigned long long start, unsigned long long end, AppCUI::Graphics::ColorPair c, std::u16string_view txt);
-        bool Reserve(unsigned int count);
-        const Zone* OffsetToZone(unsigned long long offset);
-    };
 } // namespace Utils
 struct CORE_EXPORT Object
 {

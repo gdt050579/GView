@@ -1,4 +1,5 @@
 add_subdirectory(Type)
 add_subdirectory(App)
 add_subdirectory(View)
+add_subdirectory(Utils)
 target_sources(GView PRIVATE GView.cpp)
