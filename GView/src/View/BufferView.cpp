@@ -8,8 +8,8 @@ const unsigned int characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signe
 const std::string_view hex_header = "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F ";
 const std::string_view oct_header =
       "000 001 002 003 004 005 006 007 010 011 012 013 014 015 016 017 020 021 022 023 024 025 026 027 030 031 032 033 034 035 036 037 ";
-const std::string_view signed_dec_header =
-      "  +0   +1   +2   +3   +4   +5   +6   +7   +8   +9  +10  +11  +12  +13  +14  +15  +16  +17  +18  +19  +20  +21  +22  +23  +24  +25  +26  +27  +28  +29  +30  +31  ";
+const std::string_view signed_dec_header = "  +0   +1   +2   +3   +4   +5   +6   +7   +8   +9  +10  +11  +12  +13  +14  +15  +16  +17  +18 "
+                                           " +19  +20  +21  +22  +23  +24  +25  +26  +27  +28  +29  +30  +31  ";
 const std::string_view unsigned_dec_header =
       " +0  +1  +2  +3  +4  +5  +6  +7  +8  +9 +10 +11 +12 +13 +14 +15 +16 +17 +18 +19 +20 +21 +22 +23 +24 +25 +26 +27 +28 +29 +30 +31 ";
 
@@ -37,8 +37,8 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 0;
-    this->Layout.charFormatMode    = CharacterFormatMode::UnsignedDecimal;
+    this->Layout.nrCols            = 8;
+    this->Layout.charFormatMode    = CharacterFormatMode::SignedDecimal;
     this->Layout.lineOffsetSize    = 8;
     this->Layout.lineNameSize      = 8;
     this->Layout.charactersPerLine = 1;
@@ -336,7 +336,7 @@ void BufferView::WriteHeaders(Renderer& renderer)
     params.Width = this->Layout.charactersPerLine;
     renderer.WriteText("Text", params);
 }
-void BufferView::WriteLineOffset(DrawLineInfo& dli)
+void BufferView::WriteLineAddress(DrawLineInfo& dli)
 {
     unsigned long long ofs = dli.offset;
     auto c                 = ColorPair{ Color::White, Color::DarkGreen };
@@ -486,7 +486,62 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
             }
             break;
         case CharacterFormatMode::SignedDecimal:
-            // Not implemented
+            int tmp   = *(const char*) dli.start;
+            char sign = '+';
+            if (tmp < 0)
+            {
+                sign = '-';
+                tmp  = -tmp;
+            }
+            if (tmp == 0)
+                sign = ' ';
+            if (tmp < 10)
+            {
+                c->Code  = ' ';
+                c->Color = cp;
+                c++;
+                c->Code  = ' ';
+                c->Color = cp;
+                c++;
+                c->Code  = sign;
+                c->Color = cp;
+                c++;
+                c->Code  = '0' + tmp;
+                c->Color = cp;
+                c++;
+            }
+            else if (tmp < 100)
+            {
+                c->Code  = ' ';
+                c->Color = cp;
+                c++;
+                c->Code  = sign;
+                c->Color = cp;
+                c++;
+                c->Code  = '0' + (tmp / 10);
+                c->Color = cp;
+                c++;
+                c->Code  = '0' + (tmp % 10);
+                c->Color = cp;
+                c++;
+            }
+            else
+            {
+                c->Code  = sign;
+                c->Color = cp;
+                c++;
+                c->Code  = '0' + (tmp / 100);
+                c->Color = cp;
+                c++;
+                tmp      = tmp % 100;
+                c->Code  = '0' + (tmp / 10);
+                c->Color = cp;
+                c++;
+                tmp      = tmp % 10;
+                c->Code  = '0' + tmp;
+                c->Color = cp;
+                c++;
+            }
             break;
         }
         c->Code  = ' ';
@@ -510,7 +565,7 @@ void BufferView::Paint(Renderer& renderer)
         if (dli.offset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
-        WriteLineOffset(dli);
+        WriteLineAddress(dli);
         if (this->Layout.nrCols == 0)
             WriteLineTextToChars(dli);
         else

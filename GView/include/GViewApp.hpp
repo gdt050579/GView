@@ -132,7 +132,7 @@ namespace View
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer & renderer);
-        void WriteLineOffset(DrawLineInfo& dli);
+        void WriteLineAddress(DrawLineInfo& dli);
         void WriteLineNumbersToChars(DrawLineInfo& dli);
         void WriteLineTextToChars(DrawLineInfo& dli);
         void UpdateViewSizes();
