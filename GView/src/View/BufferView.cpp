@@ -39,13 +39,13 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     this->Layout.nrCols            = 8;
     this->Layout.charFormatMode    = CharacterFormatMode::SignedDecimal;
-    this->Layout.lineOffsetSize    = 8;
+    this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
     this->Layout.charactersPerLine = 1;
     this->Layout.visibleRows       = 1;
     this->Layout.xName             = 0;
     this->Layout.xNumbers          = 0;
-    this->Layout.xOffset           = 0;
+    this->Layout.xAddress          = 0;
     this->Layout.xText             = 0;
     this->CodePage                 = CodePage_437;
     this->Cursor.currentPos        = 0;
@@ -210,20 +210,20 @@ void BufferView::MoveTillEndBlock(bool selected)
 
 void BufferView::UpdateViewSizes()
 {
-    // need to recompute all offsets lineOffsetSize
+    // need to recompute all offsets lineAddressSize
     auto sz            = this->Layout.lineNameSize;
     this->Layout.xName = 0;
 
-    if (this->Layout.lineOffsetSize > 0)
+    if (this->Layout.lineAddressSize > 0)
     {
-        this->Layout.xOffset = sz;
+        this->Layout.xAddress = sz;
         if (sz > 0)
         {
-            sz += this->Layout.lineOffsetSize + 1; // one extra space
-            this->Layout.xOffset++;
+            sz += this->Layout.lineAddressSize + 1; // one extra space
+            this->Layout.xAddress++;
         }
         else
-            sz += this->Layout.lineOffsetSize;
+            sz += this->Layout.lineAddressSize;
     }
 
     if (sz > 0)
@@ -256,7 +256,7 @@ void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
     if (dli.recomputeOffsets)
     {
         // need to recompute all offsets
-        dli.offsetAndNameSize = this->Layout.lineOffsetSize;
+        dli.offsetAndNameSize = this->Layout.lineAddressSize;
         if (this->Layout.lineNameSize > 0)
         {
             if (dli.offsetAndNameSize > 0)
@@ -306,10 +306,10 @@ void BufferView::WriteHeaders(Renderer& renderer)
         params.Width = this->Layout.lineNameSize;
         renderer.WriteText("Name", params);
     }
-    if (this->Layout.lineOffsetSize > 0)
+    if (this->Layout.lineAddressSize > 0)
     {
-        params.X     = this->Layout.xOffset;
-        params.Width = this->Layout.lineOffsetSize;
+        params.X     = this->Layout.xAddress;
+        params.Width = this->Layout.lineAddressSize;
         renderer.WriteText("Address", params);
     }
     if (this->Layout.nrCols != 0)
@@ -363,10 +363,10 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
         n++;
     }
 
-    if (this->Layout.lineOffsetSize > 0)
+    if (this->Layout.lineAddressSize > 0)
     {
         auto prev_n = n;
-        auto s      = n + this->Layout.lineOffsetSize - 1;
+        auto s      = n + this->Layout.lineAddressSize - 1;
         n           = s + 1;
         // hex
         while (s >= prev_n)
@@ -376,7 +376,7 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
             ofs >>= 4;
             s--;
         }
-        if ((ofs > 0) && (this->Layout.lineOffsetSize >= 3))
+        if ((ofs > 0) && (this->Layout.lineAddressSize >= 3))
         {
             // value is to large --> add some points
             s        = prev_n;
@@ -733,13 +733,13 @@ bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
     switch (charCode)
     {
     case '[':
-        if (this->Layout.lineOffsetSize > 0)
-            Layout.lineOffsetSize--;
+        if (this->Layout.lineAddressSize > 0)
+            Layout.lineAddressSize--;
         this->UpdateViewSizes();
         return true;
     case ']':
-        if (this->Layout.lineOffsetSize < 32)
-            this->Layout.lineOffsetSize++;
+        if (this->Layout.lineAddressSize < 32)
+            this->Layout.lineAddressSize++;
         this->UpdateViewSizes();
         return true;
     case '{':

@@ -106,12 +106,12 @@ namespace View
         {
             CharacterFormatMode charFormatMode;
             unsigned int nrCols;
-            unsigned int lineOffsetSize;
+            unsigned int lineAddressSize;
             unsigned int lineNameSize;
             unsigned int charactersPerLine;
             unsigned int visibleRows;
             unsigned int xName;
-            unsigned int xOffset;
+            unsigned int xAddress;
             unsigned int xNumbers;
             unsigned int xText;
         } Layout;
