@@ -5,35 +5,6 @@ using namespace GView::Utils;
 
 constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
-class DefaultInformationPanel : public TabPage
-{
-  public:
-    DefaultInformationPanel(const GView::Object& object) : TabPage("&Information")
-    {
-        auto lv = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-        lv->AddColumn("Field", TextAlignament::Left, 10);
-        lv->AddColumn("Value", TextAlignament::Left, 100);
-    }
-};
-//===============================================================================================
-bool PluginDefault_Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
-{
-    return true; // always match everything
-}
-bool PluginDefault_Create(Reference<GView::View::Window> win)
-{
-    // at least one view and one information panel
-    // 1. info panel
-    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
-    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
-    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
-    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
-
-    // 2. views
-    auto v = win->CreateBufferView("Buffer view");
-    v->return true;
-}
-
 unsigned long long ExtensionToHash(std::string_view ext)
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
@@ -73,10 +44,10 @@ Plugin::Plugin()
 void Plugin::Init()
 {
     // default initialization
-    this->fnValidate       = PluginDefault_Validate;
-    this->fnCreateInstance = PluginDefault_CreateInstance;
-    this->fnDeleteInstance = PluginDefault_DeleteInstance;
-    this->fnPopulateWindow = PluginDefault_PopulateWindow;
+    this->fnValidate       = DefaultTypePlugin::Validate;
+    this->fnCreateInstance = DefaultTypePlugin::CreateInstance;
+    this->fnDeleteInstance = DefaultTypePlugin::DeleteInstance;
+    this->fnPopulateWindow = DefaultTypePlugin::PopulateWindow;
     this->Loaded           = true;
     this->Invalid          = false;
     this->NameLength       = 0;

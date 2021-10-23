@@ -15,6 +15,13 @@ namespace GView
     }
     namespace Type
     {
+        namespace DefaultTypePlugin
+        {
+            bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension);
+            Utils::Instance CreateInstance();
+            void DeleteInstance(Utils::Instance instance);
+            bool PopulateWindow(Reference<GView::View::Window> win);
+        }
         constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
         class SimplePattern
         {

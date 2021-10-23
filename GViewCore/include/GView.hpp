@@ -170,8 +170,9 @@ namespace View
     };
     struct CORE_EXPORT Window : protected AppCUI::Controls::Window
     {
-        virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical) = 0;
-        virtual Reference<BufferView> CreateBufferView(const std::string_view& name)          = 0;
+        virtual Reference<Object> GetObject()                                        = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                  = 0;
+        virtual Reference<BufferView> CreateBufferView(const std::string_view& name) = 0;
     };
     struct CORE_EXPORT BuildInterface
     {
