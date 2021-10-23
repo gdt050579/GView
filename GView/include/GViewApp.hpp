@@ -127,6 +127,7 @@ namespace View
         FixSizeString<29> name;
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
+        void WriteLineOffset(DrawLineInfo& dli);
         void WriteLineNumbersToChars(DrawLineInfo& dli);
         void WriteLineTextToChars(DrawLineInfo& dli);
         void UpdateViewSizes();

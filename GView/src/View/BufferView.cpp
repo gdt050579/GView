@@ -273,6 +273,68 @@ void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
     dli.chText        = dli.chNameAndSize + (dli.offsetAndNameSize + dli.numbersSize);
     dli.chNumbers     = dli.chNameAndSize + dli.offsetAndNameSize;
 }
+void BufferView::WriteLineOffset(DrawLineInfo& dli)
+{
+    unsigned long long ofs = dli.offset;
+    auto c                 = ColorPair{ Color::White, Color::DarkGreen };
+    auto n                 = dli.chNameAndSize;
+
+    if (this->Layout.lineOffsetSize > 0)
+    {
+        auto s = dli.chNameAndSize + this->Layout.lineOffsetSize;
+        n      = s;
+        if (this->Layout.lineNameSize > 0)
+        {
+            s->Code  = ':';
+            s->Color = c;
+            n++;
+        }
+        s--;
+        // hex
+        while (s >= dli.chNameAndSize)
+        {
+            s->Code  = hexCharsList[ofs & 0xF];
+            s->Color = c;
+            ofs >>= 4;
+            s--;
+        }
+        if ((ofs > 0) && (this->Layout.lineOffsetSize >= 3))
+        {
+            // value is to large --> add some points
+            s        = dli.chNameAndSize;
+            s->Code  = '.';
+            s->Color = c;
+            s++;
+            s->Code  = '.';
+            s->Color = c;
+        }
+    }
+    if (this->Layout.lineNameSize > 0)
+    {
+        auto e      = n + this->Layout.lineNameSize;
+        auto txt    = std::string_view{ "Header", 6 };
+        auto nm     = txt.data();
+        auto nm_end = nm + txt.size();
+        while (n < e)
+        {
+            if (nm < nm_end)
+                n->Code = *nm;
+            else
+                n->Code = '-';
+            n->Color = c;
+            n++;
+            nm++;
+        }
+        n = e;
+    }
+    // clear space
+    while (n < dli.chNumbers)
+    {
+        n->Code  = ' ';
+        n->Color = c;
+        n++;
+    }
+}
 void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 {
     auto cp = NoColorPair;
@@ -387,6 +449,7 @@ void BufferView::Paint(Renderer& renderer)
         if (dli.offset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
+        WriteLineOffset(dli);
         if (this->Layout.nrCols == 0)
             WriteLineTextToChars(dli);
         else
