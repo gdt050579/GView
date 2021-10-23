@@ -148,22 +148,21 @@ struct CORE_EXPORT Object
     {
     }
 };
-namespace Type
-{
-    class CORE_EXPORT Interface
-    {
-      public:
-    };
-}; // namespace Type
+
 namespace View
 {
     typedef unsigned char MethodID;
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl
-    {
+    {          
         virtual bool GoTo(unsigned long long offset)                            = 0;
         virtual bool Select(unsigned long long offset, unsigned long long size) = 0;
+        virtual std::string_view GetName()                                      = 0;
+
+        ViewControl() : UserControl("d:c")
+        {
+        }
     };
-    struct CORE_EXPORT BufferView : protected ViewControl
+    struct CORE_EXPORT BufferViewInterface
     {
         virtual void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name) = 0;
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                             = 0;
@@ -171,43 +170,9 @@ namespace View
     };
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                        = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                  = 0;
-        virtual Reference<BufferView> CreateBufferView(const std::string_view& name) = 0;
-
-    };
-    struct CORE_EXPORT BuildInterface
-    {
-        virtual Pointer<Control> Build(GView::Object& obj) = 0;
-    };
-    namespace Buffer
-    {
-        typedef unsigned char MethodID;
-        enum class CharacterFormatMode : unsigned char
-        {
-            Hex,
-            Octal,
-            SignedDecimal,
-            UnsignedDecimal,
-        };
-        struct CORE_EXPORT QueryInterface
-        {
-            virtual bool TranslateOffset(MethodID methodID, unsigned long long offset, unsigned long long& result) = 0;
-        };
-        struct CORE_EXPORT FactoryInterface : public GView::View::BuildInterface
-        {
-            virtual void AddZone(
-                  unsigned long long start, unsigned long long size, AppCUI::Graphics::ColorPair col, std::string_view name) = 0;
-            virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                                = 0;
-            virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID)                                = 0;
-            virtual void SetQueryInterface(QueryInterface* queryInterface)                                                   = 0;
-        };
-    } // namespace Buffer
-
-    struct CORE_EXPORT FactoryInterface
-    {
-        virtual bool AddPanel(std::unique_ptr<AppCUI::Controls::TabPage> ctrl, bool vertical)      = 0;
-        virtual Reference<Buffer::FactoryInterface> CreateBufferView(const std::string_view& name) = 0;
+        virtual Reference<Object> GetObject()                                              = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                        = 0;
+        virtual Reference<BufferViewInterface> AddBufferView(const std::string_view& name) = 0;
     };
 }; // namespace View
 EXPORT void Nothing();

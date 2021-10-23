@@ -1,6 +1,7 @@
 #include "GViewApp.hpp"
 
 using namespace GView::App;
+using namespace GView::View;
 
 constexpr int HORIZONTA_PANEL_ID = 100000;
 
@@ -15,43 +16,19 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     verticalPanels   = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
     horizontalPanels = horizontal->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
 }
-bool FileWindow::Create(const GView::Type::Plugin& plugin)
-{
-    //// builder action
-    //CHECK(plugin.Create(builder, *builder.fileObject), false, "Building the view failed !");
-    //// all good - lets create objects
-    //
-    //// 3. add vertical panels
-    //for (auto &ctrl : builder.verticalPanels)
-    //{
-    //    this->verticalPanels->AddControl(std::move(ctrl));
-    //}
-    ////this->verticalPanels->GetChild(0)->SetFocus();
-    //// 4. add horizontal panels
-    //auto cb = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
-    ////cb.AddSingleChoiceItem("<*>", 100, true);
-    //int id = HORIZONTA_PANEL_ID;
-    //for (auto& ctrl : builder.horizontalPanels)
-    //{
-    //    cb.AddSingleChoiceItem((AppCUI::Utils::CharacterView)ctrl->GetText(), id++, false);
-    //    this->horizontalPanels->AddControl(std::move(ctrl));        
-    //}
-    //// 5. add builders
-    //for (auto& viewBuilder : builder.views)
-    //{
-    //    this->view->AddControl(viewBuilder->Build(*builder.fileObject));
-    //}
-    return true;
-}
 Reference<GView::Object> FileWindow::GetObject()
 {
     return Reference<GView::Object>(&this->obj);
 }
-bool FileWindow::AddPanel(Pointer<TabPage> page, bool vertical)
+bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
-    return false;
+    if (verticalPosition)
+        return !this->verticalPanels->AddControl(std::move(page)).Emptry();
+    else
+        return !this->horizontalPanels->AddControl(std::move(page)).Emptry();
+
 }
-Reference<GView::View::BufferView> FileWindow::CreateBufferView(const std::string_view& name)
+Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view& name)
 {
-    return nullptr;
+    return this->view->CreateChildControl<BufferView>(name, &this->obj).To<BufferViewInterface>();
 }

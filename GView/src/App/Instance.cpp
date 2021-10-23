@@ -97,13 +97,11 @@ bool Instance::Init()
 
     return true;
 }
-bool Instance::Add(AppCUI::OS::IFile* file, const AppCUI::Utils::ConstString& name, std::string_view ext)
+bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
 {
     auto win = std::make_unique<FileWindow>(name);
     auto obj = win->GetObject();
-    CHECK(obj->cache.Init(std::make_unique<AppCUI::OS::IFile>(file), this->defaultCacheSize),
-          false,
-          "Fail to instantiate window");
+    CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 
     auto buf  = obj->cache.Get(0, 4096); // first 4k
     auto& plg = this->defaultPlugin;
@@ -124,9 +122,9 @@ bool Instance::Add(AppCUI::OS::IFile* file, const AppCUI::Utils::ConstString& na
 }
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
-    auto f = new AppCUI::OS::File();
+    auto f = std::make_unique<AppCUI::OS::File>();
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
-    return Add(f, path.u16string(), path.extension().string());
+    return Add(std::move(f), path.u16string(), path.extension().string());
 }
 void Instance::Run()
 {

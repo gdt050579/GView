@@ -1,6 +1,6 @@
 #include "GViewApp.hpp"
 
-using namespace GView::View::Buffer;
+using namespace GView::View;
 using namespace AppCUI::Input;
 
 const char hexCharsList[]                    = "0123456789ABCDEF";
@@ -25,8 +25,10 @@ const char16_t CodePage_437[] = {
     0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0020
 };
 
-ViewerControl::ViewerControl(GView::Object& obj, Buffer::Factory* setting) : UserControl("d:c"), fileObj(obj)
+BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _obj)
 {
+    this->obj  = obj;
+    this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     this->Layout.nrCols            = 0;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
@@ -38,12 +40,12 @@ ViewerControl::ViewerControl(GView::Object& obj, Buffer::Factory* setting) : Use
     this->Cursor.currentPos        = 0;
     this->Cursor.startView         = 0;
 }
-void ViewerControl::MoveTo(unsigned long long offset, bool select)
+void BufferView::MoveTo(unsigned long long offset, bool select)
 {
-    if (this->fileObj.cache.GetSize() == 0)
+    if (this->obj->cache.GetSize() == 0)
         return;
-    if (offset > (fileObj.cache.GetSize() - 1))
-        offset = fileObj.cache.GetSize() - 1;
+    if (offset > (obj->cache.GetSize() - 1))
+        offset = obj->cache.GetSize() - 1;
 
     auto h  = this->Layout.visibleRows;
     auto sz = this->Layout.charactersPerLine * h;
@@ -65,13 +67,13 @@ void ViewerControl::MoveTo(unsigned long long offset, bool select)
     }
     this->Cursor.currentPos = offset;
 }
-void ViewerControl::MoveScrollTo(unsigned long long offset)
+void BufferView::MoveScrollTo(unsigned long long offset)
 {
-    if (this->fileObj.cache.GetSize() == 0)
+    if (this->obj->cache.GetSize() == 0)
         return;
-    if (offset > (fileObj.cache.GetSize() - 1))
-        offset = fileObj.cache.GetSize() - 1;
-    auto old              = this->Cursor.startView;
+    if (offset > (obj->cache.GetSize() - 1))
+        offset = obj->cache.GetSize() - 1;
+    auto old               = this->Cursor.startView;
     this->Cursor.startView = offset;
     if (this->Cursor.startView > old)
         MoveTo(this->Cursor.currentPos + (this->Cursor.startView - old), false);
@@ -84,11 +86,11 @@ void ViewerControl::MoveScrollTo(unsigned long long offset)
             MoveTo(0, false);
     }
 }
-void ViewerControl::MoveToSelection(unsigned int selIndex)
+void BufferView::MoveToSelection(unsigned int selIndex)
 {
     unsigned long long start, end;
 
-    if (this->fileObj.selection.GetSelection(selIndex, start, end))
+    if (this->selection.GetSelection(selIndex, start, end))
     {
         if (this->Cursor.currentPos != start)
             MoveTo(start, false);
@@ -96,20 +98,20 @@ void ViewerControl::MoveToSelection(unsigned int selIndex)
             MoveTo(end, false);
     }
 }
-void ViewerControl::SkipCurentCaracter(bool selected)
+void BufferView::SkipCurentCaracter(bool selected)
 {
     unsigned long long tr, fileSize;
 
-    auto buf = this->fileObj.cache.Get(this->Cursor.currentPos, 1);
+    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1);
 
     if (buf.Empty())
         return;
     auto toSkip = *buf.data;
 
-    fileSize = this->fileObj.cache.GetSize();
+    fileSize = this->obj->cache.GetSize();
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->fileObj.cache.Get(tr, 256);
+        auto buf = this->obj->cache.Get(tr, 256);
         if (buf.Empty())
             break;
         for (unsigned int gr = 0; gr < buf.length; gr++, tr++)
@@ -118,7 +120,7 @@ void ViewerControl::SkipCurentCaracter(bool selected)
     }
     MoveTo(tr, selected);
 }
-void ViewerControl::MoveTillNextBlock(bool select, int dir)
+void BufferView::MoveTillNextBlock(bool select, int dir)
 {
     // GView::Objects::FileZones* zone;
     // switch (File->ColorMode)
@@ -159,16 +161,16 @@ void ViewerControl::MoveTillNextBlock(bool select, int dir)
     //    }
     //}
 }
-void ViewerControl::MoveTillEndBlock(bool selected)
+void BufferView::MoveTillEndBlock(bool selected)
 {
     unsigned long long tr, gr, fileSize;
     bool found;
 
-    fileSize = this->fileObj.cache.GetSize();
+    fileSize = this->obj->cache.GetSize();
 
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->fileObj.cache.Get(tr, 256);
+        auto buf = this->obj->cache.Get(tr, 256);
         if (buf.Empty())
             break;
         if (buf.data[0] == 0)
@@ -195,7 +197,7 @@ void ViewerControl::MoveTillEndBlock(bool selected)
     MoveTo(tr, selected);
 }
 
-void ViewerControl::UpdateViewSizes()
+void BufferView::UpdateViewSizes()
 {
     // need to recompute all offsets
     auto sz = this->Layout.lineOffsetSize;
@@ -229,7 +231,7 @@ void ViewerControl::UpdateViewSizes()
     if (this->Layout.visibleRows == 0)
         this->Layout.visibleRows = 1;
 }
-void ViewerControl::PrepareDrawLineInfo(DrawLineInfo& dli)
+void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
@@ -264,14 +266,14 @@ void ViewerControl::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
-    auto buf          = this->fileObj.cache.Get(dli.offset, dli.textSize);
+    auto buf          = this->obj->cache.Get(dli.offset, dli.textSize);
     dli.start         = buf.data;
     dli.end           = buf.data + buf.length;
     dli.chNameAndSize = this->chars.GetBuffer();
     dli.chText        = dli.chNameAndSize + (dli.offsetAndNameSize + dli.numbersSize);
     dli.chNumbers     = dli.chNameAndSize + dli.offsetAndNameSize;
 }
-void ViewerControl::WriteLineTextToChars(DrawLineInfo& dli)
+void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 {
     auto cp = NoColorPair;
 
@@ -287,7 +289,7 @@ void ViewerControl::WriteLineTextToChars(DrawLineInfo& dli)
         dli.offset++;
     }
 }
-void ViewerControl::WriteLineNumbersToChars(DrawLineInfo& dli)
+void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
     auto c  = dli.chNumbers;
     auto cp = NoColorPair;
@@ -374,7 +376,7 @@ void ViewerControl::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.offset++;
     }
 }
-void ViewerControl::Paint(Renderer& renderer)
+void BufferView::Paint(Renderer& renderer)
 {
     renderer.Clear(' ', ColorPair{ Color::White, Color::Black });
     DrawLineInfo dli;
@@ -382,7 +384,7 @@ void ViewerControl::Paint(Renderer& renderer)
     for (unsigned int tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.offset = ((unsigned long long) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
-        if (dli.offset >= this->fileObj.cache.GetSize())
+        if (dli.offset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
         if (this->Layout.nrCols == 0)
@@ -392,12 +394,12 @@ void ViewerControl::Paint(Renderer& renderer)
         renderer.WriteSingleLineCharacterBuffer(0, tr, chars);
     }
 }
-void ViewerControl::OnAfterResize(int width, int height)
+void BufferView::OnAfterResize(int width, int height)
 {
     this->UpdateViewSizes();
 }
 
-bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
+bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 {
     bool select = ((keyCode & Key::Shift) != Key::None);
     if (select)
@@ -486,7 +488,7 @@ bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
         MoveTo(0, select);
         return true;
     case Key::Ctrl | Key::End:
-        MoveTo(this->fileObj.cache.GetSize(), select);
+        MoveTo(this->obj->cache.GetSize(), select);
         return true;
     case Key::Ctrl | Key::PageUp:
         // MoveToEndOrStartZone(select, true);
@@ -574,4 +576,37 @@ bool ViewerControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
     }
 
     return false;
+}
+bool BufferView::GoTo(unsigned long long offset)
+{
+    return false;
+}
+bool BufferView::Select(unsigned long long offset, unsigned long long size)
+{
+    return false;
+}
+std::string_view BufferView::GetName()
+{
+    return this->name;
+}
+void BufferView::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
+{
+    this->zList.Add(start, size, col, name);
+}
+void BufferView::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
+{
+    if (bookmarkID < 10)
+        this->bookmarks[bookmarkID] = fileOffset;
+}
+void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _methodID)
+{
+    for (unsigned int tr = 0; tr < translationMethodsCount; tr++)
+        if (this->translationMethods[tr].methodID == _methodID)
+            return;
+    if (translationMethodsCount >= sizeof(translationMethods) / sizeof(OffsetTranslationMethod))
+        return;
+    auto m      = &translationMethods[translationMethodsCount];
+    m->methodID = _methodID;
+    m->name     = _name;
+    translationMethodsCount++;
 }

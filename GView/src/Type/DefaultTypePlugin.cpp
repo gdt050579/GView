@@ -1,6 +1,5 @@
 #include "GViewApp.hpp"
 
-using namespace GView::Type::DefaultTypePlugin;
 using namespace GView::Utils;
 using namespace GView;
 
@@ -15,7 +14,8 @@ class DefaultInformationPanel : public TabPage
     }
 };
 
-
+namespace GView::Type::DefaultTypePlugin
+{
 bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
 {
     return true; // always match everything
@@ -37,8 +37,8 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), false);
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), false);
 
-
     // 2. views
-    auto v = win->CreateBufferView("Buffer view");
+    auto v = win->AddBufferView("Buffer view");
     return true;
 }
+} // namespace GView::Type::DefaultTypePlugin
