@@ -3,201 +3,225 @@
 using namespace GView::Type;
 using namespace GView::Utils;
 
-
 constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
-
 class DefaultInformationPanel : public TabPage
-{	
-public:
-	DefaultInformationPanel(const GView::Object& object): TabPage("&Information")
-	{
-		auto lv = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-		lv->AddColumn("Field", TextAlignament::Left, 10);
-		lv->AddColumn("Value", TextAlignament::Left, 100);
-	}
+{
+  public:
+    DefaultInformationPanel(const GView::Object& object) : TabPage("&Information")
+    {
+        auto lv = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
+        lv->AddColumn("Field", TextAlignament::Left, 10);
+        lv->AddColumn("Value", TextAlignament::Left, 100);
+    }
 };
 //===============================================================================================
 bool PluginDefault_Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
 {
-	return true; // always match everything
+    return true; // always match everything
 }
-bool PluginDefault_Create(GView::View::FactoryInterface& builder, const GView::Object& object)
+bool PluginDefault_Create(Reference<GView::View::Window> win)
 {
-	// at least one view and one information panel
-	// 1. info panel
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
-	builder.AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
-	
-	// 2. views		
-	auto v = builder.CreateBufferView("Buffer view");
-	return true;
+    // at least one view and one information panel
+    // 1. info panel
+    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
+    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), true);
+    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
+    win->AddPanel(std::make_unique<DefaultInformationPanel>(object), false);
+
+    // 2. views
+    auto v = win->CreateBufferView("Buffer view");
+    v->return true;
 }
 
 unsigned long long ExtensionToHash(std::string_view ext)
 {
-	// use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-	if (ext.empty())
-		return 0;
-	auto* s = (const unsigned char *)ext.data();
-	auto* e = s + ext.size();
-	if ((*s) == '.')
-		s++;
-	unsigned long long hash = EXTENSION_EMPTY_HASH;
-	while (s < e)
-	{
-		unsigned char c = *s;
-		if ((c >= 'A') && (c <= 'Z'))
-			c |= 0x20;
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    if (ext.empty())
+        return 0;
+    auto* s = (const unsigned char*) ext.data();
+    auto* e = s + ext.size();
+    if ((*s) == '.')
+        s++;
+    unsigned long long hash = EXTENSION_EMPTY_HASH;
+    while (s < e)
+    {
+        unsigned char c = *s;
+        if ((c >= 'A') && (c <= 'Z'))
+            c |= 0x20;
 
-
-		hash = hash ^ c;
-		hash = hash * 0x00000100000001B3ULL;
-		s++;
-	}
-	return hash;
+        hash = hash ^ c;
+        hash = hash * 0x00000100000001B3ULL;
+        s++;
+    }
+    return hash;
 }
 
 Plugin::Plugin()
 {
-	this->Extension = EXTENSION_EMPTY_HASH;
-	this->NameLength = 0;
-	this->Name[0] = 0;
-	this->Loaded = false;
-	this->Invalid = false;
-	// functions
-	this->fnValidate = nullptr;
-	this->fnCreate = nullptr;
+    this->Extension  = EXTENSION_EMPTY_HASH;
+    this->NameLength = 0;
+    this->Name[0]    = 0;
+    this->Loaded     = false;
+    this->Invalid    = false;
+    // functions
+    this->fnValidate       = nullptr;
+    this->fnCreateInstance = nullptr;
+    this->fnDeleteInstance = nullptr;
+    this->fnPopulateWindow = nullptr;
 }
 void Plugin::Init()
 {
-	// default initialization
-	this->fnValidate = PluginDefault_Validate;
-	this->fnCreate = PluginDefault_Create;
-	this->Loaded = true;
-	this->Invalid = false;
-	this->NameLength = 0;
-	this->Name[0] = 0;
+    // default initialization
+    this->fnValidate       = PluginDefault_Validate;
+    this->fnCreateInstance = PluginDefault_CreateInstance;
+    this->fnDeleteInstance = PluginDefault_DeleteInstance;
+    this->fnPopulateWindow = PluginDefault_PopulateWindow;
+    this->Loaded           = true;
+    this->Invalid          = false;
+    this->NameLength       = 0;
+    this->Name[0]          = 0;
 }
 bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
-	// set the name
-	auto name = section.GetName();
-	CHECK(name.length() > 5, false, "Expected a name after 'type.' !");
-	CHECK((name.length() - 5) < (PLUGIN_NAME_MAX_SIZE - 1), false, "Name is too large (max allowed is: %d)", PLUGIN_NAME_MAX_SIZE - 1);
-	memcpy(this->Name, name.data() + 5, name.length() - 5);
-	this->NameLength = (unsigned char)(name.length() - 5);
-	this->Name[this->NameLength] = 0;
+    // set the name
+    auto name = section.GetName();
+    CHECK(name.length() > 5, false, "Expected a name after 'type.' !");
+    CHECK((name.length() - 5) < (PLUGIN_NAME_MAX_SIZE - 1), false, "Name is too large (max allowed is: %d)", PLUGIN_NAME_MAX_SIZE - 1);
+    memcpy(this->Name, name.data() + 5, name.length() - 5);
+    this->NameLength             = (unsigned char) (name.length() - 5);
+    this->Name[this->NameLength] = 0;
 
-	// priority
-	auto Priority = section.GetValue("Priority").ToUInt32(0xFFFF);
-	this->Priority = std::max<>(Priority, 0xFFFFU);
+    // priority
+    auto Priority  = section.GetValue("Priority").ToUInt32(0xFFFF);
+    this->Priority = std::max<>(Priority, 0xFFFFU);
 
-	// patterns
-	auto MatchOffset = section.GetValue("MatchOffset").ToUInt32(0);
-	auto PatternValue = section.GetValue("Pattern");
-	if (PatternValue.HasValue())
-	{
-		if (PatternValue.IsArray())
-		{
-			auto count = PatternValue.GetArrayCount();
-			for (unsigned int index = 0; index < count; index++)
-			{
-				SimplePattern sp;
-				CHECK(sp.Init(PatternValue[index].ToStringView(), MatchOffset), false, "Invalid patern !");
-				this->Patterns.push_back(sp);
-			}
-		}
-		else {
-			CHECK(this->Pattern.Init(PatternValue.ToStringView(), MatchOffset), false, "Invalid pattern !");
-		}
-	}
+    // patterns
+    auto MatchOffset  = section.GetValue("MatchOffset").ToUInt32(0);
+    auto PatternValue = section.GetValue("Pattern");
+    if (PatternValue.HasValue())
+    {
+        if (PatternValue.IsArray())
+        {
+            auto count = PatternValue.GetArrayCount();
+            for (unsigned int index = 0; index < count; index++)
+            {
+                SimplePattern sp;
+                CHECK(sp.Init(PatternValue[index].ToStringView(), MatchOffset), false, "Invalid patern !");
+                this->Patterns.push_back(sp);
+            }
+        }
+        else
+        {
+            CHECK(this->Pattern.Init(PatternValue.ToStringView(), MatchOffset), false, "Invalid pattern !");
+        }
+    }
 
-	// extensions
-	auto ExtensionValue = section.GetValue("Extension");
-	if (ExtensionValue.HasValue())
-	{
-		if (ExtensionValue.IsArray())
-		{
-			auto count = ExtensionValue.GetArrayCount();
-			for (unsigned int index = 0; index < count; index++)
-			{
-				this->Extensions.insert(ExtensionToHash(ExtensionValue[index].ToStringView()));
-			}
-			this->Extension = EXTENSION_EMPTY_HASH;
-		}
-		else {
-			this->Extension = ExtensionToHash(ExtensionValue.ToStringView());
-		}
-	}
-	else {
-		this->Extension = EXTENSION_EMPTY_HASH;
-	}
+    // extensions
+    auto ExtensionValue = section.GetValue("Extension");
+    if (ExtensionValue.HasValue())
+    {
+        if (ExtensionValue.IsArray())
+        {
+            auto count = ExtensionValue.GetArrayCount();
+            for (unsigned int index = 0; index < count; index++)
+            {
+                this->Extensions.insert(ExtensionToHash(ExtensionValue[index].ToStringView()));
+            }
+            this->Extension = EXTENSION_EMPTY_HASH;
+        }
+        else
+        {
+            this->Extension = ExtensionToHash(ExtensionValue.ToStringView());
+        }
+    }
+    else
+    {
+        this->Extension = EXTENSION_EMPTY_HASH;
+    }
 
-	this->Loaded = false;
-	this->Invalid = false;
+    this->Loaded  = false;
+    this->Invalid = false;
 
-	return true;
+    return true;
 }
 bool Plugin::LoadPlugin()
 {
-	AppCUI::OS::Library lib;
-	auto path = AppCUI::OS::GetCurrentApplicationPath();
-	path.remove_filename();
-	path /= "Types";
-	path /= "lib";
-	path += std::string_view((const char *)this->Name, this->NameLength);
-	path += ".tpl";
-	CHECK(lib.Load(path), false, "Unable to load: %s", path.generic_string().c_str());
-	this->fnValidate = lib.GetFunction<decltype(this->fnValidate)>("Validate");
-	this->fnCreate = lib.GetFunction<decltype(this->fnCreate)>("Create");
-	CHECK(fnValidate, false, "Missing 'Validate' export !");
-	CHECK(fnCreate, false, "Missing 'Create' export !");
-	return true;
+    AppCUI::OS::Library lib;
+    auto path = AppCUI::OS::GetCurrentApplicationPath();
+    path.remove_filename();
+    path /= "Types";
+    path /= "lib";
+    path += std::string_view((const char*) this->Name, this->NameLength);
+    path += ".tpl";
+    CHECK(lib.Load(path), false, "Unable to load: %s", path.generic_string().c_str());
+
+    this->fnValidate       = lib.GetFunction<decltype(this->fnValidate)>("Validate");
+    this->fnCreateInstance = lib.GetFunction<decltype(this->fnCreateInstance)>("CreateInstance");
+    this->fnDeleteInstance = lib.GetFunction<decltype(this->fnDeleteInstance)>("DeleteInstance");
+    this->fnPopulateWindow = lib.GetFunction<decltype(this->fnPopulateWindow)>("PopulateWindow");
+
+    CHECK(fnValidate, false, "Missing 'Validate' export !");
+    CHECK(fnCreateInstance, false, "Missing 'CreateInstance' export !");
+    CHECK(fnDeleteInstance, false, "Missing 'DeleteInstance' export !");
+    CHECK(fnPopulateWindow, false, "Missing 'PopulateWindow' export !");
+
+    return true;
 }
 bool Plugin::Validate(Buffer buf, std::string_view extension)
 {
-	if (this->Invalid)
-		return false; // a load in memory attempt was tryed and failed
-	bool matched = false;
-	// check if matches any of the existing patterns
-	if (this->Patterns.empty())
-	{
-		matched = this->Pattern.Match(buf);
-	}
-	else {
-		for (auto& p : this->Patterns)
-		{
-			if ((matched = p.Match(buf)) == true)
-				break;
-		}
-	}
-	if ((!matched) && ((this->Extension != EXTENSION_EMPTY_HASH) || (!this->Extensions.empty())))
-	{
-		auto hash = ExtensionToHash(extension);
-		if (this->Extensions.empty())
-			matched = hash == this->Extension;
-		else
-			matched = this->Extensions.contains(hash);
-	}
-	// if initial prefilter was not matched --> exit
-	if (!matched)
-		return false; 
-	if (!this->Loaded)
-	{
-		this->Invalid = !LoadPlugin();
-		this->Loaded = !this->Invalid;
-		if (this->Invalid)
-			return false; // something went wrong when loading he plugin
-	}
-	// all good -> code is loaded
-	return fnValidate(buf, extension);
+    if (this->Invalid)
+        return false; // a load in memory attempt was tryed and failed
+    bool matched = false;
+    // check if matches any of the existing patterns
+    if (this->Patterns.empty())
+    {
+        matched = this->Pattern.Match(buf);
+    }
+    else
+    {
+        for (auto& p : this->Patterns)
+        {
+            if ((matched = p.Match(buf)) == true)
+                break;
+        }
+    }
+    if ((!matched) && ((this->Extension != EXTENSION_EMPTY_HASH) || (!this->Extensions.empty())))
+    {
+        auto hash = ExtensionToHash(extension);
+        if (this->Extensions.empty())
+            matched = hash == this->Extension;
+        else
+            matched = this->Extensions.contains(hash);
+    }
+    // if initial prefilter was not matched --> exit
+    if (!matched)
+        return false;
+    if (!this->Loaded)
+    {
+        this->Invalid = !LoadPlugin();
+        this->Loaded  = !this->Invalid;
+        if (this->Invalid)
+            return false; // something went wrong when loading he plugin
+    }
+    // all good -> code is loaded
+    return fnValidate(buf, extension);
 }
-bool Plugin::Create(GView::View::FactoryInterface& builder, const GView::Object& object) const
+bool Plugin::PopulateWindow(Reference<GView::View::Window> win) const
 {
-	CHECK(!this->Invalid, false, "Invalid plugin (not loaded properly or no valid exports)");
-	CHECK(this->Loaded, false, "Plugin was no loaded. Have you call `Validate` first ?");
-	return this->fnCreate(builder, object);
+    CHECK(!this->Invalid, false, "Invalid plugin (not loaded properly or no valid exports)");
+    CHECK(this->Loaded, false, "Plugin was no loaded. Have you call `Validate` first ?");
+    return this->fnPopulateWindow(win);
+}
+Instance Plugin::CreateInstance() const
+{
+    CHECK(!this->Invalid, nullptr, "Invalid plugin (not loaded properly or no valid exports)");
+    CHECK(this->Loaded, nullptr, "Plugin was no loaded. Have you call `Validate` first ?");
+    return this->fnCreateInstance();
+}
+void Plugin::DeleteInstance(Instance instance) const
+{
+    if ((this->Invalid) || (!this->Loaded) || (instance == nullptr))
+        return;
+    this->DeleteInstance(instance);
 }

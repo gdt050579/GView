@@ -40,7 +40,9 @@ namespace GView
             bool Loaded, Invalid;
 
             bool (*fnValidate)(const GView::Utils::Buffer &buf, const std::string_view &extension);
-            bool (*fnCreate)(GView::View::FactoryInterface& builder, const GView::Object& object);
+            Utils::Instance (*fnCreateInstance)();
+            void (*fnDeleteInstance)(Utils::Instance instance);
+            bool (*fnPopulateWindow)(Reference<GView::View::Window> win);
             
             bool LoadPlugin();
         public:
@@ -48,7 +50,9 @@ namespace GView
             bool Init(AppCUI::Utils::IniSection section);
             void Init();
             bool Validate(GView::Utils::Buffer buf, std::string_view extension);
-            bool Create(GView::View::FactoryInterface& builder, const GView::Object& object) const;
+            bool PopulateWindow(Reference<GView::View::Window> win) const;
+            Utils::Instance CreateInstance() const;
+            void DeleteInstance(Utils::Instance instance) const;
             inline bool operator< (const Plugin& plugin) const { return Priority > plugin.Priority; }
         };
     }
@@ -180,11 +184,10 @@ namespace GView
             bool AddFileWindow(const std::filesystem::path& path);
             void Run();
         };
-        class FileWindow : public Window
+        class FileWindow : public View::Window
         {            
             Reference<Splitter> vertical, horizontal;
             Reference<Tab> view, verticalPanels, horizontalPanels;
-            View::Factory builder;
         public:
             FileWindow(std::unique_ptr<GView::Object> obj);
             bool Create(const GView::Type::Plugin& type);
