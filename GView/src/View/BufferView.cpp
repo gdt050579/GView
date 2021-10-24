@@ -31,6 +31,22 @@ const char16_t CodePage_437[] = {
     0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
     0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0020
 };
+bool DefaultAsciiMask[256] = {
+    false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, true,  true,  true,  true,  true,  true,
+    false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  false, false, true,  false, false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, true,  false, false,
+    true,  false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false
+};
 
 BufferView::Config BufferView::config;
 
@@ -52,6 +68,11 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->CodePage                 = CodePage_437;
     this->Cursor.currentPos        = 0;
     this->Cursor.startView         = 0;
+    this->StringInfo.start         = GView::Utils::INVALID_OFFSET;
+    this->StringInfo.end           = GView::Utils::INVALID_OFFSET;
+    this->StringInfo.type          = StringType::None;
+    this->StringInfo.minCount      = 4;
+    memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
     if (config.Loaded == false)
         LoadConfig();
@@ -228,9 +249,78 @@ void BufferView::MoveTillEndBlock(bool selected)
     MoveTo(tr, selected);
 }
 
-ColorPair BufferView::OffsetToColor(unsigned long long offset)
+void BufferView::UpdateStringInfo(unsigned long long offset)
+{
+    auto buf = this->obj->cache.Get(offset, 1024);
+    if (buf.Empty())
+    {
+        StringInfo.start = GView::Utils::INVALID_OFFSET;
+        StringInfo.end   = GView::Utils::INVALID_OFFSET;
+        StringInfo.type  = StringType::None;
+        return;
+    }
+    // check for ascii
+    auto* s = buf.data;
+    auto* e = s + buf.length;
+
+    if (StringInfo.AsciiMask[*s])
+    {
+        // possible ascii
+        while ((s < e) && (StringInfo.AsciiMask[*s]))
+            s++;
+        if (s - buf.data >= StringInfo.minCount)
+        {
+            // ascii string found
+            StringInfo.start = offset;
+            StringInfo.end   = offset + (s - buf.data);
+            StringInfo.type  = StringType::Ascii;
+            return;
+        }
+    }
+    else
+    {
+        // not a string
+    }
+    // generic return
+    StringInfo.start = offset;
+    StringInfo.end   = offset + 1;
+    StringInfo.type  = StringType::None;
+}
+
+ColorPair BufferView::OffsetToColorZone(unsigned long long offset)
 {
     return config.Colors.Normal;
+}
+ColorPair BufferView::OffsetToColor(unsigned long long offset)
+{
+    // check strings
+    if ((offset >= StringInfo.start) && (offset < StringInfo.end))
+    {
+        switch (StringInfo.type)
+        {
+        case StringType::Ascii:
+            return config.Colors.Ascii;
+        case StringType::Unicode:
+            return config.Colors.Unicode;
+        }
+    }
+    else
+    {
+        UpdateStringInfo(offset);
+        if ((offset >= StringInfo.start) && (offset < StringInfo.end))
+        {
+            switch (StringInfo.type)
+            {
+            case StringType::Ascii:
+                return config.Colors.Ascii;
+            case StringType::Unicode:
+                return config.Colors.Unicode;
+            }
+        }
+    }
+
+    // not a string --> check the zone
+    return OffsetToColorZone(offset);
 }
 
 void BufferView::UpdateViewSizes()
@@ -368,7 +458,7 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
     auto n                 = dli.chNameAndSize;
 
     if (HasFocus())
-        c = OffsetToColor(dli.offset);
+        c = OffsetToColorZone(dli.offset);
 
     if (this->Layout.lineNameSize > 0)
     {

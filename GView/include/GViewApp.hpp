@@ -68,7 +68,7 @@ namespace Utils
         bool Reserve(unsigned int count);
         const Zone* OffsetToZone(unsigned long long offset);
     };
-}
+} // namespace Utils
 namespace Type
 {
     namespace DefaultTypePlugin
@@ -138,6 +138,12 @@ namespace View
             SignedDecimal,
             UnsignedDecimal,
         };
+        enum class StringType : unsigned char
+        {
+            None,
+            Ascii,
+            Unicode
+        };
         struct OffsetTranslationMethod
         {
             FixSizeString<17> name;
@@ -176,6 +182,13 @@ namespace View
         {
             unsigned long long startView, currentPos;
         } Cursor;
+        struct
+        {
+            unsigned long long start, end;
+            unsigned int minCount;
+            bool AsciiMask[256];
+            StringType type;
+        } StringInfo;
         struct Config
         {
             struct
@@ -206,7 +219,7 @@ namespace View
         static Config config;
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
-        void WriteHeaders(Renderer & renderer);
+        void WriteHeaders(Renderer& renderer);
         void WriteLineAddress(DrawLineInfo& dli);
         void WriteLineNumbersToChars(DrawLineInfo& dli);
         void WriteLineTextToChars(DrawLineInfo& dli);
@@ -218,6 +231,9 @@ namespace View
         void MoveTillEndBlock(bool selected);
         void MoveTillNextBlock(bool select, int dir);
 
+        void UpdateStringInfo(unsigned long long offset);
+
+        ColorPair OffsetToColorZone(unsigned long long offset);
         ColorPair OffsetToColor(unsigned long long offset);
 
         static bool LoadConfig();
