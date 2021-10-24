@@ -55,7 +55,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 0;
+    this->Layout.nrCols            = 8;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
@@ -373,12 +373,12 @@ ColorPair BufferView::OffsetToColor(unsigned long long offset)
     else
     {
         UpdateStringInfo(offset);
-        if (StringInfo.type == StringType::None)
-        {
-            LocalString<128> tmp;
-            tmp.Format("No string: Start: %d, Size: %d ", (int) StringInfo.start, (int) (StringInfo.end - StringInfo.start));
-            LOG_INFO(tmp.GetText());
-        }
+        //if (StringInfo.type == StringType::None)
+        //{
+        //    LocalString<128> tmp;
+        //    tmp.Format("No string: Start: %d, Size: %d ", (int) StringInfo.start, (int) (StringInfo.end - StringInfo.start));
+        //    LOG_INFO(tmp.GetText());
+        //}
         if ((offset >= StringInfo.start) && (offset < StringInfo.end))
         {
             switch (StringInfo.type)
@@ -639,7 +639,11 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
         {
             cp = OffsetToColor(dli.offset);
             if (dli.offset == this->Cursor.currentPos)
+            {
                 cp = config.Colors.Cursor;
+                if (c > this->chars.GetBuffer())
+                    (c - 1)->Color = cp;
+            }
         }
         switch (this->Layout.charFormatMode)
         {
