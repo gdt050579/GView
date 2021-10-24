@@ -184,7 +184,7 @@ namespace View
         } Cursor;
         struct
         {
-            unsigned long long start, end;
+            unsigned long long start, end, middle;
             unsigned int minCount;
             bool AsciiMask[256];
             StringType type;

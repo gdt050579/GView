@@ -56,7 +56,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     this->Layout.nrCols            = 0;
-    this->Layout.charFormatMode    = CharacterFormatMode::SignedDecimal;
+    this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
     this->Layout.charactersPerLine = 1;
@@ -70,6 +70,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->Cursor.startView         = 0;
     this->StringInfo.start         = GView::Utils::INVALID_OFFSET;
     this->StringInfo.end           = GView::Utils::INVALID_OFFSET;
+    this->StringInfo.middle        = GView::Utils::INVALID_OFFSET;
     this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
@@ -254,9 +255,10 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
     auto buf = this->obj->cache.Get(offset, 1024);
     if (buf.Empty())
     {
-        StringInfo.start = GView::Utils::INVALID_OFFSET;
-        StringInfo.end   = GView::Utils::INVALID_OFFSET;
-        StringInfo.type  = StringType::None;
+        StringInfo.start  = GView::Utils::INVALID_OFFSET;
+        StringInfo.end    = GView::Utils::INVALID_OFFSET;
+        StringInfo.middle = GView::Utils::INVALID_OFFSET;
+        StringInfo.type   = StringType::None;
         return;
     }
 
@@ -291,17 +293,19 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
             if (s - (char16_t*) buf.data >= StringInfo.minCount)
             {
                 // ascii string found
-                StringInfo.start = offset;
-                StringInfo.end   = offset + ((const unsigned char*) s - buf.data);
-                StringInfo.type  = StringType::Unicode;
+                StringInfo.start  = offset;
+                StringInfo.end    = offset + ((const unsigned char*) s - buf.data);
+                StringInfo.middle = offset + (s - (char16_t*) buf.data);
+                StringInfo.type   = StringType::Unicode;
                 return;
             }
         }
     }
 
     // compute the size of non-string data
-    StringInfo.start = offset;
-    StringInfo.type  = StringType::None;
+    StringInfo.start  = offset;
+    StringInfo.middle = GView::Utils::INVALID_OFFSET;
+    StringInfo.type   = StringType::None;
 
     {
         auto* s = buf.data;
@@ -332,7 +336,7 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
             auto* u_e = u_s + StringInfo.minCount;
             if ((((const unsigned char*) u_e) + 1) <= e)
             {
-                while ((u_s < u_e) && (*u_s<256) && (StringInfo.AsciiMask[*u_s]))
+                while ((u_s < u_e) && (*u_s < 256) && (StringInfo.AsciiMask[*u_s]))
                     u_s++;
                 if (u_s == u_e)
                 {
@@ -584,31 +588,50 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
 }
 void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 {
-    auto cp    = config.Colors.Inactive;
-    bool activ = this->HasFocus();
+    auto cp      = config.Colors.Inactive;
+    bool activ   = this->HasFocus();
 
-    while (dli.start < dli.end)
+    if (activ)
     {
-        if (activ)
+        while (dli.start < dli.end)
         {
             cp = OffsetToColor(dli.offset);
             if (dli.offset == this->Cursor.currentPos)
                 cp = config.Colors.Cursor;
+            if (StringInfo.type == StringType::Unicode)
+            {
+                if (dli.offset > StringInfo.middle)
+                    dli.chText->Code = ' ';
+                else
+                    dli.chText->Code = CodePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];               
+            }
+            else
+            {
+                dli.chText->Code = CodePage[*dli.start];
+            }
+            dli.chText->Color = cp;
+            dli.chText++;
+            dli.start++;
+            dli.offset++;
         }
-
-        dli.chText->Code  = CodePage[*dli.start];
-        dli.chText->Color = cp;
-        dli.chText++;
-        dli.start++;
-        dli.offset++;
+    }
+    else
+    {
+        while (dli.start < dli.end)
+        {
+            dli.chText->Code  = CodePage[*dli.start];
+            dli.chText->Color = config.Colors.Inactive;
+            dli.chText++;
+            dli.start++;
+        }
     }
 }
 void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
-    auto c     = dli.chNumbers;
-    auto cp    = config.Colors.Inactive;
-    bool activ = this->HasFocus();
-    auto ut    = (unsigned char) 0;
+    auto c       = dli.chNumbers;
+    auto cp      = config.Colors.Inactive;
+    bool activ   = this->HasFocus();
+    auto ut      = (unsigned char) 0;
 
     while (dli.start < dli.end)
     {
@@ -742,7 +765,26 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Code  = ' ';
         c->Color = cp;
         c++;
-        dli.chText->Code  = CodePage[*dli.start];
+
+        if (activ)
+        {
+            if (StringInfo.type == StringType::Unicode)
+            {
+                if (dli.offset > StringInfo.middle)
+                    dli.chText->Code = ' ';
+                else
+                    dli.chText->Code = CodePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
+            }
+            else
+            {
+                dli.chText->Code = CodePage[*dli.start];
+            }
+        }
+        else
+        {
+            dli.chText->Code = CodePage[*dli.start];
+        }
+
         dli.chText->Color = cp;
         dli.chText++;
         dli.start++;

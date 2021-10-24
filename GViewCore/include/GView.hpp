@@ -60,6 +60,12 @@ namespace Utils
 
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
         Buffer Get(unsigned long long offset, unsigned int requestedSize);
+        inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
+        {
+            if ((offset >= start) && (offset < end))
+                return cache[offset - start];
+            return defaultValue;
+        }
         inline Buffer Get(unsigned int requestedSize)
         {
             return Get(currentPos, requestedSize);
