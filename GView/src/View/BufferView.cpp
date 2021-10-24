@@ -32,12 +32,14 @@ const char16_t CodePage_437[] = {
     0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0020
 };
 
+BufferView::Config BufferView::config;
+
 BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _obj)
 {
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 8;
+    this->Layout.nrCols            = 0;
     this->Layout.charFormatMode    = CharacterFormatMode::SignedDecimal;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
@@ -50,6 +52,24 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->CodePage                 = CodePage_437;
     this->Cursor.currentPos        = 0;
     this->Cursor.startView         = 0;
+
+    if (config.Loaded == false)
+        LoadConfig();
+}
+bool BufferView::LoadConfig()
+{
+    config.Colors.Ascii       = ColorPair{ Color::Red, Color::DarkBlue };
+    config.Colors.Unicode     = ColorPair{ Color::Yellow, Color::DarkBlue };
+    config.Colors.Selection   = ColorPair{ Color::Black, Color::White };
+    config.Colors.Cursor      = ColorPair{ Color::Black, Color::Yellow };
+    config.Colors.Line        = ColorPair{ Color::Gray, Color::DarkBlue };
+    config.Colors.Header      = ColorPair{ Color::White, Color::Magenta };
+    config.Colors.Normal      = ColorPair{ Color::Silver, Color::DarkBlue };
+    config.Colors.Inactive    = ColorPair{ Color::Gray, Color::DarkBlue };
+    config.Colors.OutsideZone = ColorPair{ Color::Gray, Color::DarkBlue };
+
+    config.Loaded = true;
+    return true;
 }
 void BufferView::MoveTo(unsigned long long offset, bool select)
 {
@@ -208,6 +228,11 @@ void BufferView::MoveTillEndBlock(bool selected)
     MoveTo(tr, selected);
 }
 
+ColorPair BufferView::OffsetToColor(unsigned long long offset)
+{
+    return config.Colors.Normal;
+}
+
 void BufferView::UpdateViewSizes()
 {
     // need to recompute all offsets lineAddressSize
@@ -295,11 +320,11 @@ void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
 }
 void BufferView::WriteHeaders(Renderer& renderer)
 {
-    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', ColorPair{ Color::White, Color::Magenta });
+    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', config.Colors.Header);
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = ColorPair{ Color::White, Color::Magenta };
+    params.Color = config.Colors.Header;
     if (this->Layout.lineNameSize > 0)
     {
         params.X     = this->Layout.xName;
@@ -339,8 +364,11 @@ void BufferView::WriteHeaders(Renderer& renderer)
 void BufferView::WriteLineAddress(DrawLineInfo& dli)
 {
     unsigned long long ofs = dli.offset;
-    auto c                 = ColorPair{ Color::White, Color::DarkGreen };
+    auto c                 = config.Colors.Inactive;
     auto n                 = dli.chNameAndSize;
+
+    if (HasFocus())
+        c = OffsetToColor(dli.offset);
 
     if (this->Layout.lineNameSize > 0)
     {
@@ -398,13 +426,18 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
 }
 void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 {
-    auto cp = NoColorPair;
+    auto cp    = config.Colors.Inactive;
+    bool activ = this->HasFocus();
 
     while (dli.start < dli.end)
     {
-        cp = ColorPair{ Color::White, Color::Black };
-        if (dli.offset == this->Cursor.currentPos)
-            cp = ColorPair{ Color::Black, Color::White };
+        if (activ)
+        {
+            cp = OffsetToColor(dli.offset);
+            if (dli.offset == this->Cursor.currentPos)
+                cp = config.Colors.Cursor;
+        }
+
         dli.chText->Code  = CodePage[*dli.start];
         dli.chText->Color = cp;
         dli.chText++;
@@ -414,15 +447,19 @@ void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 }
 void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
-    auto c  = dli.chNumbers;
-    auto cp = NoColorPair;
-    auto ut = (unsigned char) 0;
+    auto c     = dli.chNumbers;
+    auto cp    = config.Colors.Inactive;
+    bool activ = this->HasFocus();
+    auto ut    = (unsigned char) 0;
 
     while (dli.start < dli.end)
     {
-        cp = ColorPair{ Color::White, Color::Black };
-        if (dli.offset == this->Cursor.currentPos)
-            cp = ColorPair{ Color::Black, Color::White };
+        if (activ)
+        {
+            cp = OffsetToColor(dli.offset);
+            if (dli.offset == this->Cursor.currentPos)
+                cp = config.Colors.Cursor;
+        }
         switch (this->Layout.charFormatMode)
         {
         case CharacterFormatMode::Hex:
@@ -556,7 +593,11 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
 }
 void BufferView::Paint(Renderer& renderer)
 {
-    renderer.Clear(' ', ColorPair{ Color::White, Color::Black });
+    if (HasFocus())
+        renderer.Clear(' ', config.Colors.Normal);
+    else
+        renderer.Clear(' ', config.Colors.Inactive);
+
     DrawLineInfo dli;
     WriteHeaders(renderer);
     for (unsigned int tr = 0; tr < this->Layout.visibleRows; tr++)

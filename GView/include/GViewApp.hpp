@@ -176,6 +176,22 @@ namespace View
         {
             unsigned long long startView, currentPos;
         } Cursor;
+        struct Config
+        {
+            struct
+            {
+                ColorPair Inactive;
+                ColorPair OutsideZone;
+                ColorPair Normal;
+                ColorPair Header;
+                ColorPair Line;
+                ColorPair Cursor;
+                ColorPair Selection;
+                ColorPair Ascii;
+                ColorPair Unicode;
+            } Colors;
+            bool Loaded;
+        };
 
         Reference<GView::Object> obj;
         Utils::Selection selection;
@@ -186,6 +202,8 @@ namespace View
         OffsetTranslationMethod translationMethods[16];
         unsigned int translationMethodsCount;
         FixSizeString<29> name;
+
+        static Config config;
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer & renderer);
@@ -199,6 +217,10 @@ namespace View
         void SkipCurentCaracter(bool selected);
         void MoveTillEndBlock(bool selected);
         void MoveTillNextBlock(bool select, int dir);
+
+        ColorPair OffsetToColor(unsigned long long offset);
+
+        static bool LoadConfig();
 
       public:
         BufferView(const std::string_view& name, Reference<GView::Object> obj);
