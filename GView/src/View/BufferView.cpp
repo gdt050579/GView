@@ -346,7 +346,10 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
                 }
             }
             // no possible string found --> advance to next non_ascii character
-            s = s_s;
+            if (s_s > s)
+                s = s_s;
+            else
+                s++; // move to next
         }
     }
     // all buffer was process and nothing was found
