@@ -39,7 +39,7 @@ namespace Utils
             return !singleSelectionZone;
         }
         int OffsetToSelection(unsigned long long offset, unsigned long long& Start, unsigned long long& End);
-        int OffsetToSelection(unsigned long long offset);
+        bool Contains(unsigned long long offset) const;
         bool UpdateSelection(int index, unsigned long long offset);
         int BeginSelection(unsigned long long offset);
         bool SetSelection(int index, unsigned long long start, unsigned long long end);
@@ -252,6 +252,7 @@ namespace View
         virtual void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name) override;
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset) override;
         virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID) override;
+        virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer) override;
     };
 
 } // namespace View

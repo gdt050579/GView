@@ -5,12 +5,14 @@ using namespace GView::View;
 
 constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
+constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 
 FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d:c", WindowFlags::Sizeable)
 {
     // create splitters
     horizontal = this->CreateChildControl<Splitter>("d:c", false);
     vertical   = horizontal->CreateChildControl<Splitter>("d:c", true);
+    horizontal->SetSecondPanelSize(1);
 
     // create tabs
     view             = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs, 16);
@@ -20,7 +22,11 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     // configuration menu
     char16_t menuSymbol = 0x2261;
     this->GetControlBar(WindowControlsBarLayout::TopBarFromLeft)
-          .AddCommandItem(std::u16string_view(&menuSymbol, 1), CMD_SHOW_VIEW_CONFIG_PANEL ,"Click to open view configuration panel !");
+          .AddCommandItem(std::u16string_view(&menuSymbol, 1), CMD_SHOW_VIEW_CONFIG_PANEL, "Click to open view configuration panel !");
+
+    // cursor information
+    this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
+          .AddSingleChoiceItem("<->", CMD_SHOW_HORIZONTAL_PANEL,true, "Show cursor and selection information");
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -45,7 +51,7 @@ bool FileWindow::OnEvent(Control* ctrl, Event eventType, int ID)
     {
         if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
         {
-            // a call to default view 
+            // a call to default view
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet !");
             return true;
         }

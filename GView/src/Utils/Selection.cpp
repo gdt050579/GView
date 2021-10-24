@@ -90,10 +90,20 @@ int  Selection::OffsetToSelection(unsigned long long position, unsigned long lon
 	// nu am gasit
 	return -1;
 }
-int  Selection::OffsetToSelection(unsigned long long position)
+bool Selection::Contains(unsigned long long position) const
 {
-	unsigned long long start, end;
-	return OffsetToSelection(position, start, end);
+    // for single selection
+    if (singleSelectionZone)
+        return (position >= zones->start) && (position <= zones->end);
+    
+    // multiple selections
+    for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+    {
+        if ((position >= zones[tr].start) && (position <= zones[tr].end))
+            return true;
+    }
+    // nu am gasit
+    return false;
 }
 bool Selection::UpdateSelection(int index, unsigned long long position)
 {

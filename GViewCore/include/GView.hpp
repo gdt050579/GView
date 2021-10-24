@@ -99,10 +99,11 @@ namespace View
 {
     typedef unsigned char MethodID;
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl
-    {          
-        virtual bool GoTo(unsigned long long offset)                            = 0;
-        virtual bool Select(unsigned long long offset, unsigned long long size) = 0;
-        virtual std::string_view GetName()                                      = 0;
+    {
+        virtual bool GoTo(unsigned long long offset)                              = 0;
+        virtual bool Select(unsigned long long offset, unsigned long long size)   = 0;
+        virtual std::string_view GetName()                                        = 0;
+        virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer) = 0;
 
         ViewControl() : UserControl("d:c")
         {

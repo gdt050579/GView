@@ -55,7 +55,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 8;
+    this->Layout.nrCols            = 16;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
@@ -74,6 +74,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
+    
 
     if (config.Loaded == false)
         LoadConfig();
@@ -100,11 +101,16 @@ void BufferView::MoveTo(unsigned long long offset, bool select)
     if (offset > (obj->cache.GetSize() - 1))
         offset = obj->cache.GetSize() - 1;
 
-    auto h  = this->Layout.visibleRows;
-    auto sz = this->Layout.charactersPerLine * h;
+    auto h    = this->Layout.visibleRows;
+    auto sz   = this->Layout.charactersPerLine * h;
+    auto sidx = -1;
+    if (select)
+        sidx = this->selection.BeginSelection(this->Cursor.currentPos);
     if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
     {
         this->Cursor.currentPos = offset;
+        if ((select) && (sidx >= 0))
+            this->selection.UpdateSelection(sidx, offset);
         return; // nothing to do ... already in visual space
     }
 
@@ -119,6 +125,9 @@ void BufferView::MoveTo(unsigned long long offset, bool select)
             this->Cursor.startView = 0;
     }
     this->Cursor.currentPos = offset;
+    if ((select) && (sidx >= 0))
+        this->selection.UpdateSelection(sidx, offset);
+
 }
 void BufferView::MoveScrollTo(unsigned long long offset)
 {
@@ -376,7 +385,7 @@ ColorPair BufferView::OffsetToColor(unsigned long long offset)
     else
     {
         UpdateStringInfo(offset);
-        //if (StringInfo.type == StringType::None)
+        // if (StringInfo.type == StringType::None)
         //{
         //    LocalString<128> tmp;
         //    tmp.Format("No string: Start: %d, Size: %d ", (int) StringInfo.start, (int) (StringInfo.end - StringInfo.start));
@@ -591,14 +600,16 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
 }
 void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 {
-    auto cp      = config.Colors.Inactive;
-    bool activ   = this->HasFocus();
+    auto cp    = config.Colors.Inactive;
+    bool activ = this->HasFocus();
 
     if (activ)
     {
         while (dli.start < dli.end)
         {
             cp = OffsetToColor(dli.offset);
+            if (selection.Contains(dli.offset))
+                cp = config.Colors.Selection;
             if (dli.offset == this->Cursor.currentPos)
                 cp = config.Colors.Cursor;
             if (StringInfo.type == StringType::Unicode)
@@ -606,7 +617,7 @@ void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
-                    dli.chText->Code = CodePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];               
+                    dli.chText->Code = CodePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
             }
             else
             {
@@ -631,22 +642,31 @@ void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 }
 void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
-    auto c       = dli.chNumbers;
-    auto cp      = config.Colors.Inactive;
-    bool activ   = this->HasFocus();
-    auto ut      = (unsigned char) 0;
+    auto c     = dli.chNumbers;
+    auto cp    = config.Colors.Inactive;
+    bool activ = this->HasFocus();
+    auto ut    = (unsigned char) 0;
 
     while (dli.start < dli.end)
     {
         if (activ)
         {
             cp = OffsetToColor(dli.offset);
+
+            if (selection.Contains(dli.offset))
+            {
+                cp = config.Colors.Selection;
+                if (c > this->chars.GetBuffer())
+                    (c - 1)->Color = cp;
+            }
+
             if (dli.offset == this->Cursor.currentPos)
             {
                 cp = config.Colors.Cursor;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
+
         }
         switch (this->Layout.charFormatMode)
         {
@@ -1036,4 +1056,8 @@ void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _me
     m->methodID = _methodID;
     m->name     = _name;
     translationMethodsCount++;
+}
+void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer)
+{
+    // do nothing
 }
