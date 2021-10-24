@@ -259,32 +259,94 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
         StringInfo.type  = StringType::None;
         return;
     }
-    // check for ascii
-    auto* s = buf.data;
-    auto* e = s + buf.length;
 
-    if (StringInfo.AsciiMask[*s])
+    // check for ascii
     {
-        // possible ascii
-        while ((s < e) && (StringInfo.AsciiMask[*s]))
-            s++;
-        if (s - buf.data >= StringInfo.minCount)
+        auto* s = buf.data;
+        auto* e = s + buf.length;
+
+        if (StringInfo.AsciiMask[*s])
         {
-            // ascii string found
-            StringInfo.start = offset;
-            StringInfo.end   = offset + (s - buf.data);
-            StringInfo.type  = StringType::Ascii;
-            return;
+            while ((s < e) && (StringInfo.AsciiMask[*s]))
+                s++;
+            if (s - buf.data >= StringInfo.minCount)
+            {
+                // ascii string found
+                StringInfo.start = offset;
+                StringInfo.end   = offset + (s - buf.data);
+                StringInfo.type  = StringType::Ascii;
+                return;
+            }
         }
     }
-    else
+
+    // check for unicode
     {
-        // not a string
+        auto* s = (char16_t*) buf.data;
+        auto* e = s + buf.length / 2;
+        if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
+        {
+            while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
+                s++;
+            if (s - (char16_t*) buf.data >= StringInfo.minCount)
+            {
+                // ascii string found
+                StringInfo.start = offset;
+                StringInfo.end   = offset + ((const unsigned char*) s - buf.data);
+                StringInfo.type  = StringType::Unicode;
+                return;
+            }
+        }
     }
-    // generic return
+
+    // compute the size of non-string data
     StringInfo.start = offset;
-    StringInfo.end   = offset + 1;
     StringInfo.type  = StringType::None;
+
+    {
+        auto* s = buf.data;
+        auto* e = s + buf.length;
+
+        while (s < e)
+        {
+            while ((s < e) && (!StringInfo.AsciiMask[*s]))
+                s++;
+            if (s == e)
+                break;
+            // reached a possible string --> check for minim size
+            auto* s_s = s;
+            auto* s_e = s + StringInfo.minCount;
+            if (s_e <= e)
+            {
+                while ((s_s < s_e) && (StringInfo.AsciiMask[*s_s]))
+                    s_s++;
+                if (s_s == s_e)
+                {
+                    // found a possible string at 's' position --> stop before 's'
+                    StringInfo.end = offset + (s - buf.data);
+                    return;
+                }
+            }
+            // check if not an unicode string
+            auto* u_s = (char16_t*) s;
+            auto* u_e = u_s + StringInfo.minCount;
+            if ((((const unsigned char*) u_e) + 1) <= e)
+            {
+                while ((u_s < u_e) && (*u_s<256) && (StringInfo.AsciiMask[*u_s]))
+                    u_s++;
+                if (u_s == u_e)
+                {
+                    // found a possible unicode at 's' position --> stop before 's'
+                    StringInfo.end = offset + (s - buf.data);
+                    return;
+                }
+            }
+            // no possible string found --> advance to next non_ascii character
+            s = s_s;
+        }
+    }
+    // all buffer was process and nothing was found
+    StringInfo.end = offset + buf.length;
 }
 
 ColorPair BufferView::OffsetToColorZone(unsigned long long offset)
@@ -307,6 +369,12 @@ ColorPair BufferView::OffsetToColor(unsigned long long offset)
     else
     {
         UpdateStringInfo(offset);
+        if (StringInfo.type == StringType::None)
+        {
+            LocalString<128> tmp;
+            tmp.Format("No string: Start: %d, Size: %d ", (int) StringInfo.start, (int) (StringInfo.end - StringInfo.start));
+            LOG_INFO(tmp.GetText());
+        }
         if ((offset >= StringInfo.start) && (offset < StringInfo.end))
         {
             switch (StringInfo.type)

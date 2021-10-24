@@ -2,7 +2,7 @@
 
 int main(int argc,const char **argv)
 {
-    AppCUI::Log::ToStdOut();
+    AppCUI::Log::ToOutputDebugString();
 
     CHECK(argc == 2, 1, "Expecting a file name as a parameter for the main executable");
 
