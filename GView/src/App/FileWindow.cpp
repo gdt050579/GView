@@ -7,6 +7,19 @@ constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 
+class CursorInformation: public UserControl
+{
+    Reference<FileWindow> win;
+  public:
+    CursorInformation(Reference<FileWindow> _win) : UserControl("d:c"), win(_win)
+    {
+    }
+    void Paint(Renderer& renderer) override
+    {
+        renderer.Clear('X', ColorPair{ Color::Red, Color::Black });
+    }
+};
+
 FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d:c", WindowFlags::Sizeable)
 {
     // create splitters
@@ -17,7 +30,11 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     // create tabs
     view             = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs, 16);
     verticalPanels   = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
-    horizontalPanels = horizontal->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
+    horizontalPanels = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
+
+    // CursorInformation
+    horizontalPanels->CreateChildControl<CursorInformation>(this);
+    horizontalPanels->SetCurrentTabPage(0);
 
     // configuration menu
     char16_t menuSymbol = 0x2261;
