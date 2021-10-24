@@ -120,6 +120,7 @@ namespace View
         virtual Reference<Object> GetObject()                                              = 0;
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                        = 0;
         virtual Reference<BufferViewInterface> AddBufferView(const std::string_view& name) = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                    = 0;
     };
 }; // namespace View
 EXPORT void Nothing();

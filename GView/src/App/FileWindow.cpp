@@ -60,6 +60,10 @@ Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view&
 {
     return this->view->CreateChildControl<BufferView>(name, &this->obj).To<BufferViewInterface>();
 }
+Reference<ViewControl> FileWindow::GetCurrentView()
+{
+    return (ViewControl*) view->GetCurrentTab();
+}
 bool FileWindow::OnEvent(Control* ctrl, Event eventType, int ID)
 {
     if (Window::OnEvent(ctrl, eventType, ID))

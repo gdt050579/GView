@@ -303,6 +303,7 @@ namespace App
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         Reference<View::BufferViewInterface> AddBufferView(const std::string_view& name) override;
+        Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnEvent(Control*, Event eventType, int) override;
     };
