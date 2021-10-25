@@ -1059,5 +1059,7 @@ void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _me
 }
 void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer)
 {
-    // do nothing
+    LocalString<128> tmp;
+    tmp.Format("Cursor: %llu", this->Cursor.currentPos);
+    renderer.WriteSingleLineText(0, 0, tmp.GetText(), config.Colors.Normal);
 }

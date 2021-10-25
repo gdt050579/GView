@@ -17,6 +17,9 @@ class CursorInformation: public UserControl
     void Paint(Renderer& renderer) override
     {
         renderer.Clear('X', ColorPair{ Color::Red, Color::Black });
+        auto v = win->GetCurrentView();
+        if (v)
+            v->PaintCursorInformation(renderer);
     }
 };
 
@@ -62,7 +65,7 @@ Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view&
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
-    return (ViewControl*) view->GetCurrentTab();
+    return view->GetCurrentTab().DownCast<ViewControl>();
 }
 bool FileWindow::OnEvent(Control* ctrl, Event eventType, int ID)
 {
