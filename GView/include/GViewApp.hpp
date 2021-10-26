@@ -305,7 +305,7 @@ namespace App
         Reference<View::BufferViewInterface> AddBufferView(const std::string_view& name) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
-        bool OnEvent(Control*, Event eventType, int) override;
+        bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 } // namespace App
 

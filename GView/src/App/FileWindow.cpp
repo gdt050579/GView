@@ -55,9 +55,9 @@ Reference<GView::Object> FileWindow::GetObject()
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
     if (verticalPosition)
-        return !this->verticalPanels->AddControl(std::move(page)).Emptry();
+        return !this->verticalPanels->AddControl(std::move(page)).Empty();
     else
-        return !this->horizontalPanels->AddControl(std::move(page)).Emptry();
+        return !this->horizontalPanels->AddControl(std::move(page)).Empty();
 }
 Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view& name)
 {
@@ -67,7 +67,7 @@ Reference<ViewControl> FileWindow::GetCurrentView()
 {
     return view->GetCurrentTab().DownCast<ViewControl>();
 }
-bool FileWindow::OnEvent(Control* ctrl, Event eventType, int ID)
+bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 {
     if (Window::OnEvent(ctrl, eventType, ID))
         return true;
@@ -80,4 +80,5 @@ bool FileWindow::OnEvent(Control* ctrl, Event eventType, int ID)
             return true;
         }
     }
+    return false;
 }
