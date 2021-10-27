@@ -223,6 +223,8 @@ namespace View
         static Config config;
 
         void PrintSelectionInfo(unsigned int selectionID, int x, int y, Renderer& r);
+        void PrintCursorPosInfo(int x, int y, Renderer& r);
+        void PrintCursorPercentageInfo(int x, int y, Renderer& r);
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer& renderer);

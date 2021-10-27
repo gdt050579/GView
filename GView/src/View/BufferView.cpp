@@ -1069,6 +1069,22 @@ void BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, Rend
     }
     r.WriteSpecialCharacter(x + 16, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 }
+void BufferView::PrintCursorPosInfo(int x, int y, Renderer& r)
+{
+    r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
+    LocalString<32> tmp;
+    tmp.Format("%X", this->Cursor.currentPos);
+    r.WriteSingleLineText(x+4, y, tmp.GetText(), this->CursorColors.Normal);
+    r.WriteSpecialCharacter(x + 16, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+}
+void BufferView::PrintCursorPercentageInfo(int x, int y, Renderer& r)
+{
+    LocalString<32> tmp;
+    tmp.Format("%3u%%", (this->Cursor.currentPos+1)*100ULL/this->obj->cache.GetSize());
+    r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
+    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+}
+
 void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
 {
     // set up the cursor colors
@@ -1091,18 +1107,23 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         PrintSelectionInfo(1, 17, 0, r);
         PrintSelectionInfo(2, 34, 0, r);
         PrintSelectionInfo(3, 51, 0, r);
+        PrintCursorPosInfo(68, 0, r);
+        PrintCursorPercentageInfo(85, 0, r);
         break;
     case 2:
         PrintSelectionInfo(0, 0, 0, r);
         PrintSelectionInfo(1, 17, 0, r);
         PrintSelectionInfo(2, 0, 1, r);
         PrintSelectionInfo(3, 17, 1, r);
+        PrintCursorPosInfo(34, 0, r);
+        PrintCursorPercentageInfo(46, 1, r);
         break;
     case 3:
         PrintSelectionInfo(0, 0, 0, r);
         PrintSelectionInfo(1, 0, 1, r);
         PrintSelectionInfo(2, 0, 2, r);
         PrintSelectionInfo(3, 17, 0, r);
+        PrintCursorPosInfo(17, 1, r);
         break;
     default:
         // 4 or bigger
@@ -1110,6 +1131,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         PrintSelectionInfo(1, 0, 1, r);
         PrintSelectionInfo(2, 0, 2, r);
         PrintSelectionInfo(3, 0, 3, r);
+        PrintCursorPosInfo(17, 0, r);
         break;
     }
 }
