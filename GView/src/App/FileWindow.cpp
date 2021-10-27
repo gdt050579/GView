@@ -16,10 +16,9 @@ class CursorInformation: public UserControl
     }
     void Paint(Renderer& renderer) override
     {
-        renderer.Clear('X', ColorPair{ Color::Red, Color::Black });
         auto v = win->GetCurrentView();
         if (v)
-            v->PaintCursorInformation(renderer);
+            v->PaintCursorInformation(renderer, this->GetWidth(), this->GetHeight());
     }
 };
 

@@ -74,7 +74,6 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
-    
 
     if (config.Loaded == false)
         LoadConfig();
@@ -127,7 +126,6 @@ void BufferView::MoveTo(unsigned long long offset, bool select)
     this->Cursor.currentPos = offset;
     if ((select) && (sidx >= 0))
         this->selection.UpdateSelection(sidx, offset);
-
 }
 void BufferView::MoveScrollTo(unsigned long long offset)
 {
@@ -666,7 +664,6 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
-
         }
         switch (this->Layout.charFormatMode)
         {
@@ -1057,9 +1054,62 @@ void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _me
     m->name     = _name;
     translationMethodsCount++;
 }
-void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer)
+void BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, Renderer& r)
 {
-    LocalString<128> tmp;
-    tmp.Format("Cursor: %llu", this->Cursor.currentPos);
-    renderer.WriteSingleLineText(0, 0, tmp.GetText(), config.Colors.Normal);
+    unsigned long long start, end;
+    if (this->selection.GetSelection(selectionID, start, end))
+    {
+        LocalString<32> tmp;
+        tmp.Format("%X,%X", start, (end - start) + 1);
+        r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
+    }
+    else
+    {
+        r.WriteSingleLineText(x, y, "  NO Selection  ", this->CursorColors.Line);
+    }
+    r.WriteSpecialCharacter(x + 16, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+}
+void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
+{
+    // set up the cursor colors
+    this->CursorColors.Normal      = config.Colors.Normal;
+    this->CursorColors.Line        = config.Colors.Line;
+    this->CursorColors.Highlighted = config.Colors.Unicode;
+    if (!this->HasFocus())
+    {
+        this->CursorColors.Normal      = config.Colors.Inactive;
+        this->CursorColors.Line        = config.Colors.Inactive;
+        this->CursorColors.Highlighted = config.Colors.Inactive;   
+    }
+    r.Clear(' ', this->CursorColors.Normal);
+    switch (height)
+    {
+    case 0:
+        break;
+    case 1:
+        PrintSelectionInfo(0, 0, 0, r);
+        PrintSelectionInfo(1, 17, 0, r);
+        PrintSelectionInfo(2, 34, 0, r);
+        PrintSelectionInfo(3, 51, 0, r);
+        break;
+    case 2:
+        PrintSelectionInfo(0, 0, 0, r);
+        PrintSelectionInfo(1, 17, 0, r);
+        PrintSelectionInfo(2, 0, 1, r);
+        PrintSelectionInfo(3, 17, 1, r);
+        break;
+    case 3:
+        PrintSelectionInfo(0, 0, 0, r);
+        PrintSelectionInfo(1, 0, 1, r);
+        PrintSelectionInfo(2, 0, 2, r);
+        PrintSelectionInfo(3, 17, 0, r);
+        break;
+    default:
+        // 4 or bigger
+        PrintSelectionInfo(0, 0, 0, r);
+        PrintSelectionInfo(1, 0, 1, r);
+        PrintSelectionInfo(2, 0, 2, r);
+        PrintSelectionInfo(3, 0, 3, r);
+        break;
+    }
 }

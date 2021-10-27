@@ -189,6 +189,10 @@ namespace View
             bool AsciiMask[256];
             StringType type;
         } StringInfo;
+        struct
+        {
+            ColorPair Normal, Line, Highlighted;
+        } CursorColors;
         struct Config
         {
             struct
@@ -217,6 +221,8 @@ namespace View
         FixSizeString<29> name;
 
         static Config config;
+
+        void PrintSelectionInfo(unsigned int selectionID, int x, int y, Renderer& r);
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer& renderer);
@@ -252,7 +258,7 @@ namespace View
         virtual void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name) override;
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset) override;
         virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID) override;
-        virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer) override;
+        virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
     };
 
 } // namespace View
