@@ -1,0 +1,1 @@
+target_sources(PE PRIVATE main.cpp)
