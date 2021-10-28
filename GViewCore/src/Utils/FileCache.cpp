@@ -118,3 +118,12 @@ Buffer FileCache::Get(unsigned long long  offset, unsigned int requestedSize)
 	this->currentPos = this->end;
 	return Buffer(&this->cache[offset - this->start], (unsigned int)(this->end - offset));
 }
+bool FileCache::Copy(void* buffer, unsigned long long offset, unsigned int requestedSize)
+{
+    CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
+    auto b = Get(offset, requestedSize);
+    CHECK(!b.Empty(), false, "Unable to read %u bytes from %llu offset ", requestedSize, offset);
+    CHECK(b.length == requestedSize, false, "Unable to read %u bytes from %llu offset (only %u were read)", requestedSize, offset, b.length);
+    memcpy(buffer, b.data, b.length);
+    return true;
+}

@@ -60,6 +60,7 @@ namespace Utils
 
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
         Buffer Get(unsigned long long offset, unsigned int requestedSize);
+        bool Copy(void* buffer, unsigned long long offset, unsigned int requestedSize);
         inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
         {
             if ((offset >= start) && (offset < end))
@@ -82,6 +83,12 @@ namespace Utils
         inline void SetCurrentPos(unsigned long long value)
         {
             currentPos = value;
+        }
+
+        template <typename T>
+        inline bool Copy(unsigned long offset, T& object)
+        {
+            return Copy(&object, offset, sizeof(T));
         }
     };
 
