@@ -18,6 +18,12 @@ function (create_type type_name)
 	        add_compile_options(-W)
 	    endif()
 	endif()
+	include_directories(include)
+	add_subdirectory(src)
+
+	file(GLOB_RECURSE PROJECT_HEADERS include/*.hpp)
+	target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_HEADERS})
+
 	add_dependencies(${PROJECT_NAME} GViewCore)
 	add_dependencies(${PROJECT_NAME} AppCUI)
 	target_link_libraries(${PROJECT_NAME} PRIVATE GViewCore)
