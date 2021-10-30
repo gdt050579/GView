@@ -20,9 +20,9 @@ extern "C"
         auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.data+dos->e_lfanew);
         return nth32->Signature == __IMAGE_NT_SIGNATURE;
     }
-    Instance PLUGIN_EXPORT CreateInstance(Reference<GView::Object> obj)
+    Instance PLUGIN_EXPORT CreateInstance(Reference<GView::Utils::FileCache> file)
     {
-        return nullptr; // no instance needed
+        return new PE::PEFile(file);
     }
     void PLUGIN_EXPORT DeleteInstance(Instance instance)
     {
@@ -31,6 +31,12 @@ extern "C"
     }
     bool PLUGIN_EXPORT PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
+        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->instance);        
+        pe->Update();
+
+        auto b = win->AddBufferView("Buffer View");
+        
+        
         return true;
     }
 }
