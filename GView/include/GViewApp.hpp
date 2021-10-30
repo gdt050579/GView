@@ -74,7 +74,7 @@ namespace Type
     namespace DefaultTypePlugin
     {
         bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension);
-        Utils::Instance CreateInstance();
+        Utils::Instance CreateInstance(Reference<GView::Utils::FileCache> fileCache);
         void DeleteInstance(Utils::Instance instance);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     }                                               // namespace DefaultTypePlugin
@@ -107,7 +107,7 @@ namespace Type
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const GView::Utils::Buffer& buf, const std::string_view& extension);
-        Utils::Instance (*fnCreateInstance)();
+        Utils::Instance (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
         void (*fnDeleteInstance)(Utils::Instance instance);
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
@@ -119,7 +119,7 @@ namespace Type
         void Init();
         bool Validate(GView::Utils::Buffer buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
-        Utils::Instance CreateInstance() const;
+        Utils::Instance CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
         void DeleteInstance(Utils::Instance instance) const;
         inline bool operator<(const Plugin& plugin) const
         {

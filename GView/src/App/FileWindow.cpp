@@ -36,7 +36,7 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
 
     // CursorInformation
     horizontalPanels->CreateChildControl<CursorInformation>(this);
-    horizontalPanels->SetCurrentTabPage(0);
+    horizontalPanels->SetCurrentTabPageByIndex(0);
 
     // configuration menu
     char16_t menuSymbol = 0x2261;

@@ -20,7 +20,7 @@ bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension
 {
     return true; // always match everything
 }
-Instance CreateInstance()
+Instance CreateInstance(Reference<GView::Utils::FileCache> fileCache)
 {
     return nullptr; // no instance needed
 }

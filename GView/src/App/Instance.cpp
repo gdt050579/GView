@@ -116,7 +116,7 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     }
 
     // create an instance of that type
-    obj->instance = plg.CreateInstance();
+    obj->instance = plg.CreateInstance(Reference<GView::Utils::FileCache>(&obj->cache));
 
     // instantiate window
     while (true)
