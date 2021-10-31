@@ -160,7 +160,6 @@
 #define __RT_MESSAGETABLE     11
 #define __DIFFERENCE          11
 
-
 #define __RT_GROUP_CURSOR ((uint32_t*) (__RT_CURSOR) + __DIFFERENCE)
 #define __RT_GROUP_ICON   ((uint32_t*) (__RT_ICON) + __DIFFERENCE)
 
@@ -184,7 +183,6 @@
 #define __IMAGE_ORDINAL_FLAG64 0x8000000000000000
 
 #define __ANYSIZE_ARRAY 1
-
 
 #define MAX_VERION_PAIRS    64
 #define MAX_VERSION_UNICODE 128
@@ -647,7 +645,6 @@ namespace Type
                 PANEL_DELPHIINFO,
                 PANEL_DELPHIUNITS,
             };
-            
 
           public:
             Reference<GView::Utils::FileCache> file;
@@ -717,12 +714,31 @@ namespace Type
 
             void CopySectionName(uint32_t index, char* name);
 
-
             static char* ResourceIDToName(uint32_t resID);
-
-
         };
-    }
+        namespace Panels
+        {
+            class Information : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<AppCUI::Controls::ListView> general;
+                Reference<AppCUI::Controls::ListView> issues;
+                Reference<AppCUI::Controls::ListView> version;
+
+                void UpdateGeneralInformation();
+                void UpdateVersionInformation();
+                void UpdateIssues();
+                void RecomputePanelsPositions();
+              public:
+                Information(Reference<GView::Type::PE::PEFile> pe);
+
+                void Update();
+                virtual void OnAfterResize(int newWidth, int newHeight) override
+                {
+                    RecomputePanelsPositions();
+                }
+            };
+        }; // namespace Panels
+    }      // namespace PE
 } // namespace Type
 } // namespace GView
-

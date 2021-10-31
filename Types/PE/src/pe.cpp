@@ -17,7 +17,7 @@ extern "C"
             return false;
         if (dos->e_lfanew + sizeof(PE::ImageNTHeaders32) > buf.length)
             return false;
-        auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.data+dos->e_lfanew);
+        auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.data + dos->e_lfanew);
         return nth32->Signature == __IMAGE_NT_SIGNATURE;
     }
     Instance PLUGIN_EXPORT CreateInstance(Reference<GView::Utils::FileCache> file)
@@ -31,12 +31,14 @@ extern "C"
     }
     bool PLUGIN_EXPORT PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->instance);        
+        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->instance);
         pe->Update();
 
         auto b = win->AddBufferView("Buffer View");
-        
-        
+        auto p_info = new PE::Panels::Information(pe);
+        p_info->Update();
+        win->AddPanel(Pointer<TabPage>(p_info), true);
+
         return true;
     }
 }

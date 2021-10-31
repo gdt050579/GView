@@ -1,1 +1,1 @@
-target_sources(PE PRIVATE pe.cpp PEFile.cpp VersionInformation.cpp)
+target_sources(PE PRIVATE pe.cpp PEFile.cpp VersionInformation.cpp PanelInformation.cpp)
