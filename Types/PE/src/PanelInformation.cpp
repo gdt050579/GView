@@ -210,7 +210,7 @@ char* LanguageIDToName(unsigned int langID)
     }
     return nullptr;
 }
-Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&tion")
+Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
 {
     pe      = _pe;
     general = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
@@ -223,17 +223,20 @@ Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPa
 
     issues = this->CreateChildControl<ListView>("x:0,y:21,w:100%,h:10", ListViewFlags::HideColumns);
     issues->AddColumn("Info", TextAlignament::Left, 200);
+
+    this->Update();
 }
 void Panels::Information::UpdateGeneralInformation()
 {
     ItemHandle item;
     LocalString<256> tempStr;
+    NumericFormatter n;
 
     general->DeleteAllItems();
     general->AddItem("File");
     //general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
     // size
-    general->AddItem("Size", tempStr.Format("%llu bytes", pe->file->GetSize()));
+    general->AddItem("Size", tempStr.Format("%s bytes",n.ToString(pe->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
     // computed
     general->AddItem("Computed", tempStr.Format("%llu (0x%llX) bytes", pe->computedSize, pe->computedSize));
     // cert
@@ -385,7 +388,7 @@ void Panels::Information::RecomputePanelsPositions()
     int w    = this->GetWidth();
     int h    = this->GetHeight();
     
-    if ((!version) || (!general) || (!issues))
+    if ((!version.IsValid()) || (!general.IsValid()) || (!issues.IsValid()))
         return;
     if (this->version->IsVisible())
         last = 1;
@@ -453,11 +456,4 @@ void Panels::Information::Update()
     UpdateIssues();
     RecomputePanelsPositions();
 }
-//===========================================================================
 
-
-
-// void OnInformationPanelResizeHandler(GLib::Controls::Control* control, int Width, int Height, void* Context)
-//{
-
-//}

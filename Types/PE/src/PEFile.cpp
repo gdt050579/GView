@@ -964,15 +964,14 @@ bool PEFile::BuildDebugData()
     return true;
 }
 
-void PEFile::CopySectionName(uint32_t index, char* name)
+void PEFile::CopySectionName(uint32_t index, String& name)
 {
     int tr;
-    name[0] = 0;
+    name.Clear();
     if (index >= nrSections)
         return;
     for (tr = 0; (sect[index].Name[tr] != 0) && (tr < 8); tr++)
-        name[tr] = sect[index].Name[tr];
-    name[tr] = 0;
+        name.AddChar(sect[index].Name[tr]);
 }
 
 bool PEFile::Update()

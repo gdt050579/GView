@@ -35,9 +35,9 @@ extern "C"
         pe->Update();
 
         auto b = win->AddBufferView("Buffer View");
-        auto p_info = new PE::Panels::Information(pe);
-        p_info->Update();
-        win->AddPanel(Pointer<TabPage>(p_info), true);
+
+        win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);
+        win->AddPanel(Pointer<TabPage>(new PE::Panels::Sections(pe)), false);
 
         return true;
     }

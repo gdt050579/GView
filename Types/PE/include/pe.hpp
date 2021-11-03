@@ -712,7 +712,7 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
 
-            void CopySectionName(uint32_t index, char* name);
+            void CopySectionName(uint32_t index, String& name);
 
             static char* ResourceIDToName(uint32_t resID);
         };
@@ -737,6 +737,19 @@ namespace Type
                 {
                     RecomputePanelsPositions();
                 }
+            };
+            class Sections : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<AppCUI::Controls::ListView> list;
+
+                std::string_view GetValue(NumericFormatter &n, unsigned int value);
+
+              public:
+                Sections(Reference<GView::Type::PE::PEFile> pe);
+
+                void Update();
+
             };
         }; // namespace Panels
     }      // namespace PE

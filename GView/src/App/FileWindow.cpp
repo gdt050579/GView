@@ -7,9 +7,10 @@ constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 
-class CursorInformation: public UserControl
+class CursorInformation : public UserControl
 {
     Reference<FileWindow> win;
+
   public:
     CursorInformation(Reference<FileWindow> _win) : UserControl("d:c"), win(_win)
     {
@@ -17,7 +18,7 @@ class CursorInformation: public UserControl
     void Paint(Renderer& renderer) override
     {
         auto v = win->GetCurrentView();
-        if (v)
+        if (v.IsValid())
             v->PaintCursorInformation(renderer, this->GetWidth(), this->GetHeight());
     }
 };
@@ -30,9 +31,12 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     horizontal->SetSecondPanelSize(1);
 
     // create tabs
-    view             = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs, 16);
-    verticalPanels   = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
-    horizontalPanels = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
+    view                      = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs, 16);
+    verticalPanels            = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
+    horizontalPanels          = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
+    view->Handlers()->OnFocus = this;
+    verticalPanels->Handlers()->OnFocus   = this;
+    horizontalPanels->Handlers()->OnFocus = this;
 
     // CursorInformation
     horizontalPanels->CreateChildControl<CursorInformation>(this);
@@ -45,7 +49,7 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
 
     // cursor information
     this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
-          .AddSingleChoiceItem("<->", CMD_SHOW_HORIZONTAL_PANEL,true, "Show cursor and selection information");
+          .AddSingleChoiceItem("<->", CMD_SHOW_HORIZONTAL_PANEL, true, "Show cursor and selection information");
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -54,9 +58,18 @@ Reference<GView::Object> FileWindow::GetObject()
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
     if (verticalPosition)
-        return !this->verticalPanels->AddControl(std::move(page)).Empty();
+        return this->verticalPanels->AddControl(std::move(page)).IsValid();
     else
-        return !this->horizontalPanels->AddControl(std::move(page)).Empty();
+    {
+        auto p = this->horizontalPanels->AddControl(std::move(page));
+        if (p.IsValid())
+        {
+            this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
+                  .AddSingleChoiceItem((CharacterView)p->GetText(), CMD_SHOW_HORIZONTAL_PANEL, true, "");
+            return true;
+        }
+        return false;
+    }
 }
 Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view& name)
 {
@@ -65,6 +78,25 @@ Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view&
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
     return view->GetCurrentTab().DownCast<ViewControl>();
+}
+bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
+{
+    if (Window::OnKeyEvent(keyCode, unicode))
+        return true;
+    // check vertical panel
+    if (verticalPanels->OnKeyEvent(keyCode, unicode))
+        return true;
+    // check horizontal panel
+    if (horizontalPanels->OnKeyEvent(keyCode, unicode))
+        return true;
+    // if Alt+F is pressed --> enable view
+    if (keyCode == (AppCUI::Input::Key::Alt | AppCUI::Input::Key::F))
+    {
+        if (!view->HasFocus())
+            view->SetFocus();
+        return true;
+    }
+    return false;
 }
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 {
@@ -80,4 +112,19 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         }
     }
     return false;
+}
+void FileWindow::OnFocus(Reference<Control> control)
+{
+    if (control == view)
+    {
+        // minimize vertical and horizontal panels
+        if (vertical.IsValid())
+            vertical->SetSecondPanelSize(0);
+        if (horizontal.IsValid())
+            horizontal->SetSecondPanelSize(0);
+    }
+    if (control == verticalPanels)
+    {
+        vertical->SetSecondPanelSize(40);
+    }
 }

@@ -299,7 +299,7 @@ namespace App
         bool AddFileWindow(const std::filesystem::path& path);
         void Run();
     };
-    class FileWindow : public Window, public GView::View::WindowInterface
+    class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
@@ -313,7 +313,10 @@ namespace App
         Reference<View::BufferViewInterface> AddBufferView(const std::string_view& name) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
+        bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
+
         bool OnEvent(Reference<Control>, Event eventType, int) override;
+        void OnFocus(Reference<Control> control) override;
     };
 } // namespace App
 
