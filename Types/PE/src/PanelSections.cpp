@@ -2,19 +2,20 @@
 
 using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
+using namespace AppCUI::Input;
 
-#define PE_SECTIONS_GOTO       0
-#define PE_SECTIONS_SELECT     1
-#define PE_SECTIONS_EDIT       2
-#define PE_SECTIONS_CHANGEBASE 3
-
+constexpr int PE_SECTIONS_GOTO       = 1;
+constexpr int PE_SECTIONS_SELECT     = 2;
+constexpr int PE_SECTIONS_EDIT       = 3;
+constexpr int PE_SECTIONS_CHANGEBASE = 4;
 
 Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe) : TabPage("&Sections")
 {
-    pe      = _pe;
+    pe   = _pe;
+    Base = 16;
 
     list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left,8);
+    list->AddColumn("Name", TextAlignament::Left, 8);
     list->AddColumn("FilePoz", TextAlignament::Right, 12);
     list->AddColumn("FileSize", TextAlignament::Right, 12);
     list->AddColumn("RVA", TextAlignament::Right, 12);
@@ -27,9 +28,8 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe) : TabPage("&S
 
     Update();
 }
-std::string_view Panels::Sections::GetValue(NumericFormatter &n, unsigned int value)
+std::string_view Panels::Sections::GetValue(NumericFormatter& n, unsigned int value)
 {
-    int Base = 10;
     if (Base == 10)
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
     else
@@ -45,7 +45,7 @@ void Panels::Sections::Update()
     {
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
-        list->SetItemText(item, 1, GetValue(n,pe->sect[tr].PointerToRawData));
+        list->SetItemText(item, 1, GetValue(n, pe->sect[tr].PointerToRawData));
         list->SetItemText(item, 2, GetValue(n, pe->sect[tr].SizeOfRawData));
         list->SetItemText(item, 3, GetValue(n, pe->sect[tr].VirtualAddress));
         list->SetItemText(item, 4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
@@ -53,7 +53,6 @@ void Panels::Sections::Update()
         list->SetItemText(item, 6, GetValue(n, pe->sect[tr].NumberOfRelocations));
         list->SetItemText(item, 7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
         list->SetItemText(item, 8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
-
 
         // caracteristics
         const auto tmp = pe->sect[tr].Characteristics;
@@ -98,6 +97,44 @@ void Panels::Sections::Update()
     }
 }
 
+bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    commandBar.SetCommand(Key::Enter, "GoTo", PE_SECTIONS_GOTO);
+    commandBar.SetCommand(Key::F3, "Edit", PE_SECTIONS_EDIT);
+    commandBar.SetCommand(Key::F9, "Select", PE_SECTIONS_SELECT);
+    if (this->Base==10)
+        commandBar.SetCommand(Key::F2, "Dec", PE_SECTIONS_CHANGEBASE);
+    else
+        commandBar.SetCommand(Key::F2, "Hex", PE_SECTIONS_CHANGEBASE);
+    return true;
+}
+
+bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
+{
+    if (TabPage::OnEvent(ctrl, evnt, controlID))
+        return true;
+    if (evnt == Event::ListViewItemClicked)
+    {
+        AppCUI::Dialogs::MessageBox::ShowNotification("Info", "GoTo(2)");
+        return true;
+    }
+    if (evnt == Event::Command)
+    {
+        switch (controlID)
+        {
+        case PE_SECTIONS_GOTO:
+            AppCUI::Dialogs::MessageBox::ShowNotification("Info", "GoTo");
+            return true;
+        case PE_SECTIONS_CHANGEBASE:
+            this->Base = 26 - this->Base;
+            Update();
+            return true;
+
+        }
+    }
+    return false;
+}
+
 /*
 static int Base = 16;
 
@@ -111,87 +148,7 @@ bool OnPanelSectionsKeyEvent(GLib::Controls::Control* control, int KeyCode, int 
 
 
 
-void OnUpdate(GLib::Controls::ListView* lv, PETypeObject& peTypeObject)
-{
-    char temp[256];
-    UInt32 tmp;
-    PEFile* pe                 = &peTypeObject.pe;
-    GView::FileInformation* fd = peTypeObject.File;
 
-    lv->DeleteAllItems();
-    for (UInt32 tr = 0; tr < pe->nrSections; tr++)
-    {
-        pe->CopySectionName(tr, temp);
-        lv->AddItem(temp);
-        // adaug pozitia
-        GLib::Utils::String::UIntToString(pe->sect[tr].PointerToRawData, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 1, tempStrBuff);
-        // adaug filesize
-        GLib::Utils::String::UIntToString(pe->sect[tr].SizeOfRawData, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 2, tempStrBuff);
-        // adaug pozitia
-        GLib::Utils::String::UIntToString(pe->sect[tr].VirtualAddress, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 3, tempStrBuff);
-        // adaug filesize
-        GLib::Utils::String::UIntToString(pe->sect[tr].Misc.VirtualSize, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 4, tempStrBuff);
-        // ptr reloc
-        GLib::Utils::String::UIntToString(pe->sect[tr].PointerToRelocations, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 5, tempStrBuff);
-        // adaug nrreloc
-        GLib::Utils::String::UIntToString(pe->sect[tr].NumberOfRelocations, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 6, tempStrBuff);
-        // ptr line numbers
-        GLib::Utils::String::UIntToString(pe->sect[tr].PointerToLinenumbers, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 7, tempStrBuff);
-        // adaug ne line numbers
-        GLib::Utils::String::UIntToString(pe->sect[tr].NumberOfLinenumbers, tempStrBuff, sizeof(tempStrBuff), Base);
-        lv->SetItemText(tr, 8, tempStrBuff);
-        // caracteristics
-        tmp = pe->sect[tr].Characteristics;
-        GLib::Utils::String::UIntToString(tmp, tempStrBuff, sizeof(tempStrBuff), 16);
-        strAddr.Set("0x");
-        strAddr.Add(tempStrBuff);
-        strAddr.Add("  [");
-        if ((tmp & __IMAGE_SCN_MEM_READ) != 0)
-            strAddr.Add("R");
-        else
-            strAddr.Add("-");
-        if ((tmp & __IMAGE_SCN_MEM_WRITE) != 0)
-            strAddr.Add("W");
-        else
-            strAddr.Add("-");
-        if ((tmp & __IMAGE_SCN_MEM_SHARED) != 0)
-            strAddr.Add("S");
-        else
-            strAddr.Add("-");
-        if ((tmp & __IMAGE_SCN_MEM_EXECUTE) != 0)
-            strAddr.Add("X");
-        else
-            strAddr.Add("-");
-        strAddr.Add("  ");
-        if ((tmp & __IMAGE_SCN_CNT_CODE) != 0)
-            strAddr.Add("C");
-        else
-            strAddr.Add("-");
-        if ((tmp & __IMAGE_SCN_CNT_INITIALIZED_DATA) != 0)
-            strAddr.Add("I");
-        else
-            strAddr.Add("-");
-        if ((tmp & __IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0)
-            strAddr.Add("U");
-        else
-            strAddr.Add("-");
-        strAddr.Add("]");
-        if (tmp - (tmp & (__IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE | __IMAGE_SCN_MEM_SHARED | __IMAGE_SCN_MEM_EXECUTE |
-                          __IMAGE_SCN_CNT_CODE | __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_CNT_UNINITIALIZED_DATA)) !=
-            0)
-        {
-            strAddr.Add(" [+]");
-        }
-        lv->SetItemText(tr, 9, strAddr.GetText());
-    }
-}
 
 bool OnPanelSectionsUpdateCommandBar(GLib::Controls::Control* control, void* Context)
 {

@@ -742,6 +742,7 @@ namespace Type
             {
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<AppCUI::Controls::ListView> list;
+                int Base;
 
                 std::string_view GetValue(NumericFormatter &n, unsigned int value);
 
@@ -749,6 +750,8 @@ namespace Type
                 Sections(Reference<GView::Type::PE::PEFile> pe);
 
                 void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
 
             };
         }; // namespace Panels
