@@ -115,7 +115,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
         return true;
     if (evnt == Event::ListViewItemClicked)
     {
-        AppCUI::Dialogs::MessageBox::ShowNotification("Info", "GoTo(2)");
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "(Goto) Not implemented yet !");
         return true;
     }
     if (evnt == Event::Command)
@@ -123,88 +123,19 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
         switch (controlID)
         {
         case PE_SECTIONS_GOTO:
-            AppCUI::Dialogs::MessageBox::ShowNotification("Info", "GoTo");
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "(Goto) Not implemented yet !");
             return true;
         case PE_SECTIONS_CHANGEBASE:
             this->Base = 26 - this->Base;
             Update();
             return true;
-
+        case PE_SECTIONS_EDIT:
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "(Edit) Not implemented yet !");
+            return true;
+        case PE_SECTIONS_SELECT:
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "(Select) Not implemented yet !");
+            return true;
         }
     }
     return false;
 }
-
-/*
-static int Base = 16;
-
-static char tempStrBuff[512];
-static char tempStrAddrBuff[512];
-GLib::Utils::String strAddr;
-
-void OnUpdate(GLib::Controls::ListView* lv, PETypeObject& peTypeObject);
-bool OnPanelSectionsUpdateCommandBar(GLib::Controls::Control* control, void* Context);
-bool OnPanelSectionsKeyEvent(GLib::Controls::Control* control, int KeyCode, int AsciiCode, void* Context);
-
-
-
-
-
-bool OnPanelSectionsUpdateCommandBar(GLib::Controls::Control* control, void* Context)
-{
-    GLib::UI::Application::SetCommand(GLib::OS::Keys::Enter, "GoTo", PE_SECTIONS_GOTO);
-    GLib::UI::Application::SetCommand(GLib::OS::Keys::F9, "Select", PE_SECTIONS_SELECT);
-    // TODO
-    // GLib::UI::Application::SetCommand(GLib::OS::Keys::F3, "Edit", PE_SECTIONS_EDIT);
-    if (Base == 16)
-    {
-        GLib::UI::Application::SetCommand(GLib::OS::Keys::F2, "Dec", PE_SECTIONS_CHANGEBASE);
-    }
-    else
-    {
-        GLib::UI::Application::SetCommand(GLib::OS::Keys::F2, "Hex", PE_SECTIONS_CHANGEBASE);
-    }
-    // TODO
-    // Add save section list command.
-    return true;
-}
-
-bool OnPanelSectionsKeyEvent(GLib::Controls::Control* control, int KeyCode, int AsciiCode, void* Context)
-{
-    PETypeObject* peTypeObject = (PETypeObject*) Context;
-    CHECK(peTypeObject != NULL, control->OnKeyEvent(KeyCode, AsciiCode), "");
-    PEFile* pe                   = &peTypeObject->pe;
-    GLib::Controls::ListView* lv = (GLib::Controls::ListView*) control;
-    CHECK(lv != NULL, control->OnKeyEvent(KeyCode, AsciiCode), "");
-    int idx = lv->GetCurrentItem();
-    if (KeyCode == GLib::OS::Keys::Enter)
-    {
-        peTypeObject->File->View.Interface->GoTo(pe->sect[idx].PointerToRawData);
-        return true;
-    }
-    else if (KeyCode == GLib::OS::Keys::F2)
-    {
-        if (Base == 16)
-        {
-            Base = 10;
-        }
-        else
-        {
-            Base = 16;
-        }
-        lv->OnUpdateCommandBar();
-        OnUpdate(lv, *peTypeObject);
-        lv->SetCurrentItem(idx);
-        return true;
-    }
-    else if (KeyCode == GLib::OS::Keys::F9)
-    {
-        peTypeObject->File->Selection.SetSelection(
-              0, pe->sect[idx].PointerToRawData, pe->sect[idx].PointerToRawData + pe->sect[idx].SizeOfRawData - 1);
-        return true;
-    }
-    // TODO : Handle the edit section and save section list commands.
-    return control->OnKeyEvent(KeyCode, AsciiCode);
-}
-
-*/
