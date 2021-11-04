@@ -741,13 +741,14 @@ namespace Type
             class Sections : public AppCUI::Controls::TabPage
             {
                 Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> list;
                 int Base;
 
                 std::string_view GetValue(NumericFormatter &n, unsigned int value);
-
+                void GoToSelectedSection();
               public:
-                Sections(Reference<GView::Type::PE::PEFile> pe);
+                Sections(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

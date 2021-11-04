@@ -9,9 +9,10 @@ constexpr int PE_SECTIONS_SELECT     = 2;
 constexpr int PE_SECTIONS_EDIT       = 3;
 constexpr int PE_SECTIONS_CHANGEBASE = 4;
 
-Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe) : TabPage("&Sections")
+Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Sections")
 {
     pe   = _pe;
+    win  = _win;
     Base = 16;
 
     list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
@@ -35,6 +36,12 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, unsigned int va
     else
         return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
 }
+void Panels::Sections::GoToSelectedSection()
+{
+    auto sect = reinterpret_cast<PE::ImageSectionHeader*>(list->GetItemData(list->GetCurrentItem())->Pointer);
+    if (sect)
+        win->GetCurrentView()->GoTo(sect->PointerToRawData);
+}
 void Panels::Sections::Update()
 {
     LocalString<128> temp;
@@ -45,6 +52,7 @@ void Panels::Sections::Update()
     {
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
+        list->SetItemData(item, ItemData{ (void*)(pe->sect + tr) });
         list->SetItemText(item, 1, GetValue(n, pe->sect[tr].PointerToRawData));
         list->SetItemText(item, 2, GetValue(n, pe->sect[tr].SizeOfRawData));
         list->SetItemText(item, 3, GetValue(n, pe->sect[tr].VirtualAddress));
@@ -102,7 +110,7 @@ bool Panels::Sections::OnUpdateCommandBar(AppCUI::Application::CommandBar& comma
     commandBar.SetCommand(Key::Enter, "GoTo", PE_SECTIONS_GOTO);
     commandBar.SetCommand(Key::F3, "Edit", PE_SECTIONS_EDIT);
     commandBar.SetCommand(Key::F9, "Select", PE_SECTIONS_SELECT);
-    if (this->Base==10)
+    if (this->Base == 10)
         commandBar.SetCommand(Key::F2, "Dec", PE_SECTIONS_CHANGEBASE);
     else
         commandBar.SetCommand(Key::F2, "Hex", PE_SECTIONS_CHANGEBASE);
@@ -115,7 +123,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
         return true;
     if (evnt == Event::ListViewItemClicked)
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", "(Goto) Not implemented yet !");
+        GoToSelectedSection();
         return true;
     }
     if (evnt == Event::Command)
@@ -123,7 +131,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
         switch (controlID)
         {
         case PE_SECTIONS_GOTO:
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "(Goto) Not implemented yet !");
+            GoToSelectedSection();
             return true;
         case PE_SECTIONS_CHANGEBASE:
             this->Base = 26 - this->Base;
