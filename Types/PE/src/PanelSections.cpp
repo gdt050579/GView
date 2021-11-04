@@ -38,8 +38,8 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, unsigned int va
 }
 void Panels::Sections::GoToSelectedSection()
 {
-    auto sect = reinterpret_cast<PE::ImageSectionHeader*>(list->GetItemData(list->GetCurrentItem())->Pointer);
-    if (sect)
+    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
 void Panels::Sections::Update()
@@ -52,7 +52,7 @@ void Panels::Sections::Update()
     {
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
-        list->SetItemData(item, ItemData{ (void*)(pe->sect + tr) });
+        list->SetItemData<PE::ImageSectionHeader>(item, pe->sect + tr);
         list->SetItemText(item, 1, GetValue(n, pe->sect[tr].PointerToRawData));
         list->SetItemText(item, 2, GetValue(n, pe->sect[tr].SizeOfRawData));
         list->SetItemText(item, 3, GetValue(n, pe->sect[tr].VirtualAddress));
