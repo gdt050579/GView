@@ -365,7 +365,11 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
 
 ColorPair BufferView::OffsetToColorZone(unsigned long long offset)
 {
-    return config.Colors.Normal;
+    auto *z = this->zList.OffsetToZone(offset);
+    if (z == nullptr)
+        return config.Colors.OutsideZone;
+    else
+        return z->color;
 }
 ColorPair BufferView::OffsetToColor(unsigned long long offset)
 {
@@ -835,7 +839,7 @@ void BufferView::Paint(Renderer& renderer)
             WriteLineTextToChars(dli);
         else
             WriteLineNumbersToChars(dli);
-        renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars);
+        renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 }
 void BufferView::OnAfterResize(int width, int height)
