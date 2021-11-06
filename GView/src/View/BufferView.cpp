@@ -54,8 +54,8 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
 {
     this->obj  = _obj;
     this->name = _name;
-    this->chars.Fill('-', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 16;
+    this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+    this->Layout.nrCols            = 0;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
@@ -663,6 +663,7 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
     auto cp    = config.Colors.Inactive;
     bool activ = this->HasFocus();
     auto ut    = (unsigned char) 0;
+    auto sps   = dli.chText;
 
     while (dli.start < dli.end)
     {
@@ -832,6 +833,18 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.chText++;
         dli.start++;
         dli.offset++;
+    }
+    if ((sps) && (sps > this->chars.GetBuffer()))
+    {
+        unsigned int count = 0;
+        sps--;
+        while ((count < 3) && (sps >= this->chars.GetBuffer()))
+        {
+            count++;
+            sps->Code = ' ';
+            sps->Color = config.Colors.Inactive;
+            sps--;
+        }
     }
 }
 void BufferView::Paint(Renderer& renderer)
@@ -1054,7 +1067,8 @@ std::string_view BufferView::GetName()
 }
 void BufferView::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
 {
-    this->zList.Add(start, size, col, name);
+    if (size>0)
+        this->zList.Add(start, start + size - 1, col, name);
 }
 void BufferView::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
 {
