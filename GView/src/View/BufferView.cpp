@@ -365,7 +365,7 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
 
 ColorPair BufferView::OffsetToColorZone(unsigned long long offset)
 {
-    auto *z = this->zList.OffsetToZone(offset);
+    auto* z = this->zList.OffsetToZone(offset);
     if (z == nullptr)
         return config.Colors.OutsideZone;
     else
@@ -539,19 +539,34 @@ void BufferView::WriteHeaders(Renderer& renderer)
 }
 void BufferView::WriteLineAddress(DrawLineInfo& dli)
 {
-    unsigned long long ofs = dli.offset;
-    auto c                 = config.Colors.Inactive;
-    auto n                 = dli.chNameAndSize;
+    unsigned long long ofs      = dli.offset;
+    auto c                      = config.Colors.Inactive;
+    auto n                      = dli.chNameAndSize;
+    const GView::Utils::Zone* z = nullptr;
 
     if (HasFocus())
+    {
         c = OffsetToColorZone(dli.offset);
+    }
+    z = this->zList.OffsetToZone(dli.offset);
 
     if (this->Layout.lineNameSize > 0)
     {
-        auto e      = n + this->Layout.lineNameSize;
-        auto txt    = std::string_view{ "Header", 6 };
-        auto nm     = txt.data();
-        auto nm_end = nm + txt.size();
+        auto e             = n + this->Layout.lineNameSize;
+        const char* nm     = nullptr;
+        const char* nm_end = nullptr;
+
+        if (z)
+        {
+            nm     = z->name.GetText();
+            nm_end = nm + z->name.Len();
+        }
+        else
+        {
+            nm     = "--------------------------------------------------------------------------------------------------------------";
+            nm_end = nm + 100;
+        }
+
         while (n < e)
         {
             if (nm < nm_end)
@@ -1078,13 +1093,13 @@ void BufferView::PrintCursorPosInfo(int x, int y, Renderer& r)
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
     LocalString<32> tmp;
     tmp.Format("%X", this->Cursor.currentPos);
-    r.WriteSingleLineText(x+4, y, tmp.GetText(), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 4, y, tmp.GetText(), this->CursorColors.Normal);
     r.WriteSpecialCharacter(x + 16, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 }
 void BufferView::PrintCursorPercentageInfo(int x, int y, Renderer& r)
 {
     LocalString<32> tmp;
-    tmp.Format("%3u%%", (this->Cursor.currentPos+1)*100ULL/this->obj->cache.GetSize());
+    tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->cache.GetSize());
     r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 }
@@ -1099,7 +1114,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
     {
         this->CursorColors.Normal      = config.Colors.Inactive;
         this->CursorColors.Line        = config.Colors.Inactive;
-        this->CursorColors.Highlighted = config.Colors.Inactive;   
+        this->CursorColors.Highlighted = config.Colors.Inactive;
     }
     r.Clear(' ', this->CursorColors.Normal);
     switch (height)
