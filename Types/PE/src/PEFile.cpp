@@ -27,11 +27,9 @@ struct CV_INFO_PDB70
         Panels[PanelsCount++] = name;                                                                                                      \
     }
 
-static char* pedirNames[15] = {
-    (char*) "Export",      (char*) "Import",       (char*) "Resource",     (char*) "Exceptions",        (char*) "Security",
-    (char*) "Base Reloc",  (char*) "Debug",        (char*) "Architecture", (char*) "Global Ptr",        (char*) "TLS",
-    (char*) "Load Config", (char*) "Bound Import", (char*) "IAT",          (char*) "Delay Import Desc", (char*) "COM+ Runtime"
-};
+static std::string_view peDirsNames[15] = { "Export",      "Import",       "Resource",     "Exceptions",        "Security",
+                                           "Base Reloc",  "Debug",        "Architecture", "Global Ptr",        "TLS",
+                                           "Load Config", "Bound Import", "IAT",          "Delay Import Desc", "COM+ Runtime" };
 
 uint32_t SectionALIGN(uint32_t value, uint32_t alignValue)
 {
@@ -85,7 +83,7 @@ bool PEFile::ReadBufferFromRVA(uint32_t RVA, void* Buffer, uint32_t BufferSize)
 
 std::string_view PEFile::ReadString(uint32_t RVA, unsigned int maxSize)
 {
-    auto buf = file->Get(RVAtoFilePointer(RVA),maxSize);
+    auto buf = file->Get(RVAtoFilePointer(RVA), maxSize);
     if (buf.Empty())
         return std::string_view{};
     auto p = buf.data;
@@ -776,7 +774,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
                     return false;
                 }
             }
-            auto& item = impFunc.emplace_back();
+            auto& item    = impFunc.emplace_back();
             item.dllIndex = index;
             item.RVA      = IATaddr;
             item.Name     = import_name;
@@ -881,8 +879,8 @@ bool PEFile::BuildDebugData()
     CV_INFO_PDB70* pdb70;
 
     debugData.clear();
-    pdb20      = (CV_INFO_PDB20*) &buf[0];
-    pdb70      = (CV_INFO_PDB70*) &buf[0];
+    pdb20 = (CV_INFO_PDB20*) &buf[0];
+    pdb70 = (CV_INFO_PDB70*) &buf[0];
     pdbName.Clear();
     memset(buf, 0, MAX_PDB_NAME + 64);
 
@@ -1048,7 +1046,7 @@ bool PEFile::Update()
           if ((tr<9) && (sect[tr].VirtualAddress != 0)) file->SetBookmark(tr + 1, sect[tr].VirtualAddress);
         }*/
 
-        //if ((sect[tr].PointerToRawData != 0) && (sect[tr].SizeOfRawData > 0))
+        // if ((sect[tr].PointerToRawData != 0) && (sect[tr].SizeOfRawData > 0))
         //{
         //    CopySectionName(tr, sectName);
         //    // file->AddZone(SELECTION_ZONES, sect[tr].PointerToRawData, sect[tr].PointerToRawData + sect[tr].SizeOfRawData - 1, sectName,
@@ -1234,7 +1232,7 @@ bool PEFile::Update()
         {
             if (dr->Size > file->GetSize())
             {
-                tempStr.SetFormat("Directory '%s' (#%d) has an invalid Size (0x%08X)", pedirNames[tr], tr, dr->Size);
+                tempStr.SetFormat("Directory '%s' (#%d) has an invalid Size (0x%08X)", peDirsNames[tr].data(), tr, dr->Size);
                 AddError(ErrorType::Warning, tempStr);
             }
             if (tr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
@@ -1253,7 +1251,7 @@ bool PEFile::Update()
                     {
                         tempStr.SetFormat(
                               "Directory '%s' (#%d) extends outside the file (to: 0x%08X)",
-                              pedirNames[tr],
+                              peDirsNames[tr].data(),
                               tr,
                               (uint32_t) (dr->Size + filePoz));
                         AddError(ErrorType::Warning, tempStr);
@@ -1261,20 +1259,22 @@ bool PEFile::Update()
                 }
                 else
                 {
-                    tempStr.SetFormat("Directory '%s' (#%d) has an invalid RVA address (0x%08X)", pedirNames[tr], tr, dr->VirtualAddress);
+                    tempStr.SetFormat(
+                          "Directory '%s' (#%d) has an invalid RVA address (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
                     AddError(ErrorType::Warning, tempStr);
                 }
             }
         }
         if ((dr->VirtualAddress == 0) && (dr->Size > 0))
         {
-            tempStr.SetFormat("Directory '%s' (#%d) has no address but size bigger than 0 (%d bytes)", pedirNames[tr], tr, dr->Size);
+            tempStr.SetFormat(
+                  "Directory '%s' (#%d) has no address but size bigger than 0 (%d bytes)", peDirsNames[tr].data(), tr, dr->Size);
             AddError(ErrorType::Warning, tempStr);
         }
         if ((dr->VirtualAddress > 0) && (dr->Size == 0))
         {
             tempStr.SetFormat(
-                  "Directory '%s' (#%d) has size equal to 0 and a valid addrees (0x%08X)", pedirNames[tr], tr, dr->VirtualAddress);
+                  "Directory '%s' (#%d) has size equal to 0 and a valid addrees (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
             AddError(ErrorType::Warning, tempStr);
         }
     }
@@ -1296,13 +1296,13 @@ bool PEFile::Update()
                 {
                     if ((dr->VirtualAddress <= d2->VirtualAddress) && (dr->VirtualAddress + dr->Size > d2->VirtualAddress))
                     {
-                        tempStr.SetFormat("Directory '%s' and '%s' overlapp !", pedirNames[tr], pedirNames[gr]);
+                        tempStr.SetFormat("Directory '%s' and '%s' overlapp !", peDirsNames[tr].data(), peDirsNames[gr].data());
                         AddError(ErrorType::Warning, tempStr);
                         continue;
                     }
                     if ((d2->VirtualAddress <= dr->VirtualAddress) && (d2->VirtualAddress + d2->Size > dr->VirtualAddress))
                     {
-                        tempStr.SetFormat("Directory '%s' and '%s' overlapp !", pedirNames[tr], pedirNames[gr]);
+                        tempStr.SetFormat("Directory '%s' and '%s' overlapp !", peDirsNames[tr].data(), peDirsNames[gr].data());
                         AddError(ErrorType::Warning, tempStr);
                         continue;
                     }
