@@ -1161,7 +1161,46 @@ bool PEFile::HasPanel(Panels::IDs id)
 {
     return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;
 }
+void PEFile::UpdateBufferViewZones(Reference<GView::View::BufferViewInterface> bufferView)
+{
+    LocalString<128> tempStr;
 
+    bufferView->AddZone(0, sizeof(dos), peCols.colMZ, "DOS Header");
+    bufferView->AddZone(dos.e_lfanew, sizeof(nth32), peCols.colPE, "NT Header");
+    if (nrSections > 0)
+        bufferView->AddZone(sectStart, nrSections * sizeof(ImageSectionHeader), peCols.colSectDef, "SectDef");
+
+    // sections
+    for (uint32_t tr = 0; tr < nrSections; tr++)
+    {
+        if ((sect[tr].PointerToRawData != 0) && (sect[tr].SizeOfRawData > 0))
+        {
+            CopySectionName(tr, tempStr);
+            bufferView->AddZone(sect[tr].PointerToRawData, sect[tr].SizeOfRawData, peCols.colSect, tempStr);
+        }
+    }
+
+    // directories
+    ImageDataDirectory* dr = this->dirs;
+    for (auto tr = 0; tr < 15; tr++, dr++)
+    {
+        if ((dr->VirtualAddress > 0) && (dr->Size > 0))
+        {
+            if (tr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+            {
+                bufferView->AddZone(dr->VirtualAddress, dr->Size, peCols.colDir[tr], peDirsNames[tr]);
+            }
+            else
+            {
+                const auto filePoz = RVAtoFilePointer(dr->VirtualAddress);
+                if (filePoz != PE_INVALID_ADDRESS)
+                {
+                    bufferView->AddZone(filePoz, dr->Size, peCols.colDir[tr], peDirsNames[tr]);
+                }
+            }
+        }
+    }
+}
 bool PEFile::Update()
 {
     uint32_t tr, gr, tmp;
@@ -1195,21 +1234,17 @@ bool PEFile::Update()
     }
     rvaEntryPoint = nth32.OptionalHeader.AddressOfEntryPoint; // same
     fileAlign     = nth32.OptionalHeader.FileAlignment;       // same,  BaseOfData missing on PE32+
-    // coloratie zone
+    nrSections    = nth32.FileHeader.NumberOfSections;        // same
+    
+    poz       = dos.e_lfanew + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
+    sectStart = (uint32_t) poz;
+    peStart   = dos.e_lfanew;
+    computedSize = virtualComputedSize = 0;
 
-    /*file->sel[SELECTION_ZONES].DeleteAll();
-    file->AddZone(SELECTION_ZONES, 0, sizeof(dos) - 1, "DOS Header", peCols.colMZ);
-    file->AddZone(SELECTION_ZONES, dos.e_lfanew, dos.e_lfanew + sizeof(nth32) - 1, "NT Header", peCols.colPE);*/
-    // b.AddZone(0, sizeof(dos) - 1, peCols.colMZ, "DOS Header.");
-    // b.AddZone(dos.e_lfanew, dos.e_lfanew + sizeof(nth32) - 1, peCols.colPE, "NT Header");
-
-    nrSections = nth32.FileHeader.NumberOfSections; // same
     if ((nrSections > MAX_NR_SECTIONS) || (nrSections < 1))
     {
-        tempStr.SetFormat("Invalid number of sections (%d)", (nrSections));
-        AddError(ErrorType::Error, tempStr);
+        AddError(ErrorType::Error, tempStr.Format("Invalid number of sections (%d)", nrSections));
         nrSections = 0;
-        // return false;
     }
     if ((nth32.OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_APPCONTAINER)) // same
     {
@@ -1217,18 +1252,13 @@ bool PEFile::Update()
         isMetroApp = true;
     }
 
-    poz = dos.e_lfanew + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
-
-    sectStart    = (uint32_t) poz;
-    peStart      = dos.e_lfanew;
-    computedSize = virtualComputedSize = 0;
     if (hdr64)
         imageBase = nth64.OptionalHeader.ImageBase;
     else
         imageBase = nth32.OptionalHeader.ImageBase;
 
     /*file->ResetBookmarks();
-    file->AddZone(SELECTION_ZONES, poz, poz + nrSections*sizeof(ImageSectionHeader) - 1, "SectDef", peCols.colSectDef);*/
+     */
     // b.AddZone(poz, poz + nrSections * sizeof(ImageSectionHeader) - 1, peCols.colSectDef, "SectDef");
     for (tr = 0; tr < nrSections; tr++, poz += sizeof(ImageSectionHeader))
     {
@@ -1247,30 +1277,6 @@ bool PEFile::Update()
           if ((tr<9) && (sect[tr].PointerToRawData != 0)) file->SetBookmark(tr + 1, sect[tr].PointerToRawData);
         } else {
           if ((tr<9) && (sect[tr].VirtualAddress != 0)) file->SetBookmark(tr + 1, sect[tr].VirtualAddress);
-        }*/
-
-        // if ((sect[tr].PointerToRawData != 0) && (sect[tr].SizeOfRawData > 0))
-        //{
-        //    CopySectionName(tr, sectName);
-        //    // file->AddZone(SELECTION_ZONES, sect[tr].PointerToRawData, sect[tr].PointerToRawData + sect[tr].SizeOfRawData - 1, sectName,
-        //    // peCols.colSect);
-        //    b.AddZone(sect[tr].PointerToRawData, sect[tr].PointerToRawData + sect[tr].SizeOfRawData - 1, peCols.colSect, sectName);
-        //}
-        /*if (file->IsOnDisk())
-        {
-          if ((sect[tr].PointerToRawData != 0) && (sect[tr].SizeOfRawData>0))
-          {
-            CopySectionName(tr, sectName);
-            file->AddZone(SELECTION_ZONES, sect[tr].PointerToRawData, sect[tr].PointerToRawData + sect[tr].SizeOfRawData - 1, sectName,
-        peCols.colSect);
-          }
-        } else {
-          if ((sect[tr].VirtualAddress != 0) && (sect[tr].Misc.VirtualSize>0))
-          {
-            CopySectionName(tr, sectName);
-            file->AddZone(SELECTION_ZONES, sect[tr].VirtualAddress, sect[tr].VirtualAddress + sect[tr].Misc.VirtualSize - 1, sectName,
-        peCols.colSect);
-          }
         }*/
     }
     for (tr = 0; tr < nrSections; tr++)
@@ -1438,32 +1444,23 @@ bool PEFile::Update()
                 tempStr.SetFormat("Directory '%s' (#%d) has an invalid Size (0x%08X)", peDirsNames[tr].data(), tr, dr->Size);
                 AddError(ErrorType::Warning, tempStr);
             }
-            if (tr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+
+            filePoz = RVAtoFilePointer(dr->VirtualAddress);
+            if (filePoz == PE_INVALID_ADDRESS)
             {
-                // file->AddZone(SELECTION_ZONES, dr->VirtualAddress, dr->VirtualAddress + dr->Size - 1, pedirNames[tr], peCols.colDir[tr]);
-                // b.AddZone(dr->VirtualAddress, dr->VirtualAddress + dr->Size - 1, peCols.colDir[tr], pedirNames[tr]);
+                tempStr.SetFormat(
+                      "Directory '%s' (#%d) has an invalid RVA address (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
+                AddError(ErrorType::Warning, tempStr);
             }
             else
             {
-                filePoz = RVAtoFilePointer(dr->VirtualAddress);
-                if (filePoz != PE_INVALID_ADDRESS)
-                {
-                    // file->AddZone(SELECTION_ZONES, filePoz, filePoz + dr->Size - 1, pedirNames[tr], peCols.colDir[tr]);
-                    // b.AddZone(filePoz, filePoz + dr->Size - 1, peCols.colDir[tr], pedirNames[tr]);
-                    if (filePoz + dr->Size > file->GetSize())
-                    {
-                        tempStr.SetFormat(
-                              "Directory '%s' (#%d) extends outside the file (to: 0x%08X)",
-                              peDirsNames[tr].data(),
-                              tr,
-                              (uint32_t) (dr->Size + filePoz));
-                        AddError(ErrorType::Warning, tempStr);
-                    }
-                }
-                else
+                if (filePoz + dr->Size > file->GetSize())
                 {
                     tempStr.SetFormat(
-                          "Directory '%s' (#%d) has an invalid RVA address (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
+                          "Directory '%s' (#%d) extends outside the file (to: 0x%08X)",
+                          peDirsNames[tr].data(),
+                          tr,
+                          (uint32_t) (dr->Size + filePoz));
                     AddError(ErrorType::Warning, tempStr);
                 }
             }
@@ -1482,7 +1479,7 @@ bool PEFile::Update()
         }
     }
 
-    // cazuri de overlap
+    // overlap cases
     for (tr = 0; tr < 15; tr++)
     {
         if (tr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
@@ -1537,7 +1534,6 @@ bool PEFile::Update()
         }
     }
 
-    // if (tlsTable.GetSize()>0)
     if (hasTLS)
         ADD_PANEL(Panels::IDs::TLS);
 

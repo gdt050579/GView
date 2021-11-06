@@ -35,6 +35,7 @@ extern "C"
         pe->Update();
 
         auto b = win->AddBufferView("Buffer View");
+        pe->UpdateBufferViewZones(b);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);

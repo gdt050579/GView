@@ -706,6 +706,8 @@ namespace Type
 
             bool HasPanel(Panels::IDs id);
 
+            void UpdateBufferViewZones(Reference<GView::View::BufferViewInterface> bufferView);
+
             void CopySectionName(uint32_t index, String& name);
 
             static std::string_view ResourceIDToName(uint32_t resID);
