@@ -747,6 +747,7 @@ namespace Type
 
                 std::string_view GetValue(NumericFormatter &n, unsigned int value);
                 void GoToSelectedSection();
+                void SelectCurrentSection();
               public:
                 Sections(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 

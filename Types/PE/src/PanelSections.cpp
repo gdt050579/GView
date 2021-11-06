@@ -42,6 +42,12 @@ void Panels::Sections::GoToSelectedSection()
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
+void Panels::Sections::SelectCurrentSection()
+{
+    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    if (sect.IsValid())
+        win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
+}
 void Panels::Sections::Update()
 {
     LocalString<128> temp;
@@ -141,7 +147,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
             AppCUI::Dialogs::MessageBox::ShowError("Error", "(Edit) Not implemented yet !");
             return true;
         case PE_SECTIONS_SELECT:
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "(Select) Not implemented yet !");
+            SelectCurrentSection();
             return true;
         }
     }

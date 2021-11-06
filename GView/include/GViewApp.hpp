@@ -304,7 +304,11 @@ namespace App
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
         GView::Object obj;
+        unsigned int defaultCursorViewSize;
+        unsigned int defaultVerticalPanelsSize;
+        unsigned int defaultHorizontalPanelsSize;
 
+        void UpdateDefaultPanelsSizes();
       public:
         FileWindow(const AppCUI::Utils::ConstString& name);
 
