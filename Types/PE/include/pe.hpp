@@ -160,8 +160,8 @@
 #define __RT_MESSAGETABLE     11
 #define __DIFFERENCE          11
 
-#define __RT_GROUP_CURSOR ((uint32_t*) (__RT_CURSOR) + __DIFFERENCE)
-#define __RT_GROUP_ICON   ((uint32_t*) (__RT_ICON) + __DIFFERENCE)
+#define __RT_GROUP_CURSOR ((__RT_CURSOR) + __DIFFERENCE)
+#define __RT_GROUP_ICON   ((__RT_ICON) + __DIFFERENCE)
 
 #define __RT_VERSION    16
 #define __RT_DLGINCLUDE 17
@@ -695,8 +695,8 @@ namespace Type
 
             bool Update();
 
-            char* GetMachine();
-            char* GetSubsystem();
+            std::string_view GetMachine();
+            std::string_view GetSubsystem();
             uint64_t RVAtoFilePointer(uint64_t RVA);
             int RVAToSectionIndex(uint64_t RVA);
             uint64_t FilePointerToRVA(uint64_t fileAddress);
@@ -714,7 +714,7 @@ namespace Type
 
             void CopySectionName(uint32_t index, String& name);
 
-            static char* ResourceIDToName(uint32_t resID);
+            static std::string_view ResourceIDToName(uint32_t resID);
         };
         namespace Panels
         {

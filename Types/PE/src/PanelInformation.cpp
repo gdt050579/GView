@@ -263,11 +263,11 @@ void Panels::Information::UpdateGeneralInformation()
 
     // type
     if (pe->isMetroApp)
-        general->AddItem("Type", tempStr.Format("Metro APP (%s)", pe->GetSubsystem()));
+        general->AddItem("Type", tempStr.Format("Metro APP (%s)", pe->GetSubsystem().data()));
     else if ((pe->nth32.FileHeader.Characteristics & __IMAGE_FILE_DLL) != 0)
-        general->AddItem("Type", tempStr.Format("DLL (%s)", pe->GetSubsystem()));
+        general->AddItem("Type", tempStr.Format("DLL (%s)", pe->GetSubsystem().data()));
     else
-        general->AddItem("Type", tempStr.Format("EXE (%s)", pe->GetSubsystem()));
+        general->AddItem("Type", tempStr.Format("EXE (%s)", pe->GetSubsystem().data()));
 
     // machine
     general->AddItem("Machine", pe->GetMachine());

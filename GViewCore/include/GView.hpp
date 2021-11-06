@@ -86,7 +86,7 @@ namespace Utils
         }
 
         template <typename T>
-        inline bool Copy(unsigned long offset, T& object)
+        inline bool Copy(unsigned long long offset, T& object)
         {
             return Copy(&object, offset, sizeof(T));
         }

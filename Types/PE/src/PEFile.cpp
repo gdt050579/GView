@@ -85,9 +85,9 @@ bool PEFile::ReadBufferFromRVA(uint32_t RVA, void* Buffer, uint32_t BufferSize)
 
 std::string_view PEFile::ReadString(uint32_t RVA, unsigned int maxSize)
 {
-    auto buf = file->Get(RVAtoFilePointer(RVA));
+    auto buf = file->Get(RVAtoFilePointer(RVA),maxSize);
     if (buf.Empty())
-        return nullptr;
+        return std::string_view{};
     auto p = buf.data;
     auto e = p + buf.length;
     while ((p < e) && (*p))
@@ -151,104 +151,104 @@ int PEFile::RVAToSectionIndex(uint64_t RVA)
     return -1;
 }
 
-char* PEFile::GetMachine()
+std::string_view PEFile::GetMachine()
 {
     switch (nth32.FileHeader.Machine)
     {
     case __IMAGE_FILE_MACHINE_ALPHA:
-        return (char*) "ALPHA";
+        return "ALPHA";
     case __IMAGE_FILE_MACHINE_ALPHA64:
-        return (char*) "ALPHA 64";
+        return "ALPHA 64";
     case __IMAGE_FILE_MACHINE_AM33:
-        return (char*) "AM 33";
+        return "AM 33";
     case __IMAGE_FILE_MACHINE_AMD64:
-        return (char*) "AMD 64";
+        return "AMD 64";
     case __IMAGE_FILE_MACHINE_ARM:
-        return (char*) "ARM";
+        return "ARM";
     case __IMAGE_FILE_MACHINE_CEE:
-        return (char*) "CEE";
+        return "CEE";
     case __IMAGE_FILE_MACHINE_CEF:
-        return (char*) "CEF";
+        return "CEF";
     case __IMAGE_FILE_MACHINE_EBC:
-        return (char*) "EBC";
+        return "EBC";
     case __IMAGE_FILE_MACHINE_I386:
-        return (char*) "Intel 386";
+        return "Intel 386";
     case __IMAGE_FILE_MACHINE_IA64:
-        return (char*) "Intel IA64";
+        return "Intel IA64";
     case __IMAGE_FILE_MACHINE_M32R:
-        return (char*) "M 32R";
+        return "M 32R";
     case __IMAGE_FILE_MACHINE_MIPSFPU16:
-        return (char*) "MIP SFPU 16";
+        return "MIP SFPU 16";
     case __IMAGE_FILE_MACHINE_MIPS16:
-        return (char*) "MIP 16";
+        return "MIP 16";
     case __IMAGE_FILE_MACHINE_MIPSFPU:
-        return (char*) "MIP SFPU";
+        return "MIP SFPU";
     case __IMAGE_FILE_MACHINE_POWERPC:
-        return (char*) "POWER PC";
+        return "POWER PC";
     case __IMAGE_FILE_MACHINE_POWERPCFP:
-        return (char*) "POWER PC (FP)";
+        return "POWER PC (FP)";
     case __IMAGE_FILE_MACHINE_R10000:
-        return (char*) "R 10000";
+        return "R 10000";
     case __IMAGE_FILE_MACHINE_R3000:
-        return (char*) "R 3000";
+        return "R 3000";
     case __IMAGE_FILE_MACHINE_R4000:
-        return (char*) "MIPS@ little indian";
+        return "MIPS@ little indian";
     case __IMAGE_FILE_MACHINE_SH3:
-        return (char*) "Hitachi SH3";
+        return "Hitachi SH3";
     case __IMAGE_FILE_MACHINE_SH3DSP:
-        return (char*) "Hitachi SH3 (DSP)";
+        return "Hitachi SH3 (DSP)";
     case __IMAGE_FILE_MACHINE_SH3E:
-        return (char*) "Hitachi SH2 (E)";
+        return "Hitachi SH2 (E)";
     case __IMAGE_FILE_MACHINE_SH4:
-        return (char*) "Hitachi SH4";
+        return "Hitachi SH4";
     case __IMAGE_FILE_MACHINE_SH5:
-        return (char*) "Hitachi SH5";
+        return "Hitachi SH5";
     case __IMAGE_FILE_MACHINE_THUMB:
-        return (char*) "Thumb";
+        return "Thumb";
     case __IMAGE_FILE_MACHINE_TRICORE:
-        return (char*) "Tricore";
+        return "Tricore";
     case __IMAGE_FILE_MACHINE_UNKNOWN:
-        return (char*) "Unknown";
+        return "Unknown";
     case __IMAGE_FILE_MACHINE_WCEMIPSV2:
-        return (char*) "WCEMIPSV2";
+        return "WCEMIPSV2";
     case __IMAGE_FILE_MACHINE_ARMNT:
-        return (char*) "ARM Thumb-2";
+        return "ARM Thumb-2";
     }
-    return (char*) "";
+    return "";
 }
 
-char* PEFile::GetSubsystem()
+std::string_view PEFile::GetSubsystem()
 {
     switch (nth32.OptionalHeader.Subsystem)
     {
     case __IMAGE_SUBSYSTEM_UNKNOWN:
-        return (char*) "Unknown";
+        return "Unknown";
     case __IMAGE_SUBSYSTEM_NATIVE:
-        return (char*) "Native";
+        return "Native";
     case __IMAGE_SUBSYSTEM_WINDOWS_GUI:
-        return (char*) "Windows GUI (Graphics)";
+        return "Windows GUI (Graphics)";
     case __IMAGE_SUBSYSTEM_WINDOWS_CUI:
-        return (char*) "Windows CUI (Console)";
+        return "Windows CUI (Console)";
     case __IMAGE_SUBSYSTEM_WINDOWS_CE_GUI:
-        return (char*) "Windows CE GUI (Graphics)";
+        return "Windows CE GUI (Graphics)";
     case __IMAGE_SUBSYSTEM_POSIX_CUI:
-        return (char*) "Posix CUI (Console)";
+        return "Posix CUI (Console)";
     case __IMAGE_SUBSYSTEM_EFI_APPLICATION:
-        return (char*) "EFI Applications";
+        return "EFI Applications";
     case __IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER:
-        return (char*) "Boot Service Driver";
+        return "Boot Service Driver";
     case __IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER:
-        return (char*) "EFI routine driver";
+        return "EFI routine driver";
     case __IMAGE_SUBSYSTEM_EFI_ROM:
-        return (char*) "EFI Rom";
+        return "EFI Rom";
     case __IMAGE_SUBSYSTEM_NATIVE_WINDOWS:
-        return (char*) "Native Windows";
+        return "Native Windows";
     case __IMAGE_SUBSYSTEM_OS2_CUI:
-        return (char*) "OS2 CUI (Console)";
+        return "OS2 CUI (Console)";
     case __IMAGE_SUBSYSTEM_XBOX:
-        return (char*) "XBOX";
+        return "XBOX";
     }
-    return (char*) "";
+    return "";
 }
 
 uint64_t PEFile::FilePointerToRVA(uint64_t fileAddress)
@@ -343,21 +343,18 @@ bool PEFile::BuildExport()
     if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
     {
         tempStr.SetFormat("Invalid RVA for Export directory (0x%X)", (uint32_t) RVA);
-        // sprintf(temp, "Invalid RVA for Export directory (0x%X)", (uint32_t)RVA);
         AddError(ErrorType::Error, tempStr);
         return false;
     }
     if (file->Copy<ImageExportDirectory>(faddr, exportDir) == false)
     {
         tempStr.SetFormat("Unable to read full Export Directory structure from RVA (0x%X)", (uint32_t) RVA);
-        // sprintf(temp, "Unable to read full Export Directory structure from RVA (0x%X)", (uint32_t)RVA);
         AddError(ErrorType::Error, tempStr);
         return false;
     }
     if (exportDir.Name == 0)
     {
         tempStr.SetFormat("Invalid RVA for export name (0x%08X)", (uint32_t) exportDir.Name);
-        // sprintf(temp, "Invalid RVA for export name (0x%08X)", (uint32_t)exportDir.Name);
         AddError(ErrorType::Warning, tempStr);
     }
     else
@@ -366,7 +363,6 @@ bool PEFile::BuildExport()
         if (dll_name.empty())
         {
             tempStr.SetFormat("Unable to read export name from RVA (0x%X)", (uint32_t) exportDir.Name);
-            // sprintf(temp, "Unable to read export name from RVA (0x%X)", (uint32_t)exportDir.Name);
             AddError(ErrorType::Error, tempStr);
             return false;
         }
@@ -386,7 +382,6 @@ bool PEFile::BuildExport()
     if (exportDir.NumberOfFunctions > 0xFFFF)
     {
         tempStr.SetFormat("Too many exported functions (0x%08X). Maximum allowes is 0xFFFF.", exportDir.NumberOfFunctions);
-        // sprintf(temp, "Too many exported functions (0x%08X). Maximum allowes is 0xFFFF.", exportDir.NumberOfFunctions);
         AddError(ErrorType::Error, tempStr);
         return false;
     }
@@ -394,21 +389,18 @@ bool PEFile::BuildExport()
     if ((naddr = RVAtoFilePointer(exportDir.AddressOfNames)) == PE_INVALID_ADDRESS)
     {
         tempStr.SetFormat("Invalid AddressOfNames (0x%x) from export directory", (uint32_t) exportDir.AddressOfNames);
-        // sprintf(temp, "Invalid AddressOfNames (0x%x) from export directory", (uint32_t)exportDir.AddressOfNames);
         AddError(ErrorType::Error, tempStr);
         return false;
     }
     if ((oaddr = RVAtoFilePointer(exportDir.AddressOfNameOrdinals)) == PE_INVALID_ADDRESS)
     {
         tempStr.SetFormat("Invalid AddressOfNameOrdinals (0x%x) from export directory", (uint32_t) exportDir.AddressOfNameOrdinals);
-        // sprintf(temp, "Invalid AddressOfNameOrdinals (0x%x) from export directory", (uint32_t)exportDir.AddressOfNameOrdinals);
         AddError(ErrorType::Error, tempStr);
         return false;
     }
     if ((faddr = RVAtoFilePointer(exportDir.AddressOfFunctions)) == PE_INVALID_ADDRESS)
     {
         tempStr.SetFormat("Invalid AddressOfFunctions (0x%x) from export directory", (uint32_t) exportDir.AddressOfFunctions);
-        // sprintf(temp, "Invalid AddressOfFunctions (0x%x) from export directory", (uint32_t)exportDir.AddressOfFunctions);
         AddError(ErrorType::Error, tempStr);
         return false;
     }
@@ -538,60 +530,56 @@ void PEFile::BuildVersionInfo()
     }
 }
 
-char* PEFile::ResourceIDToName(uint32_t resID)
+std::string_view PEFile::ResourceIDToName(uint32_t resID)
 {
     switch (resID)
     {
     case __RT_CURSOR:
-        return (char*) "Cursor";
+        return "Cursor";
     case __RT_BITMAP:
-        return (char*) "Bitmap";
+        return "Bitmap";
     case __RT_ICON:
-        return (char*) "Icon";
+        return "Icon";
     case __RT_MENU:
-        return (char*) "Menu";
+        return "Menu";
     case __RT_DIALOG:
-        return (char*) "Dialog";
+        return "Dialog";
     case __RT_STRING:
-        return (char*) "String";
+        return "String";
     case __RT_FONTDIR:
-        return (char*) "FontDir";
+        return "FontDir";
     case __RT_FONT:
-        return (char*) "Font";
+        return "Font";
     case __RT_ACCELERATOR:
-        return (char*) "Accelerator";
+        return "Accelerator";
     case __RT_RCDATA:
-        return (char*) "RCData";
+        return "RCData";
     case __RT_MESSAGETABLE:
-        return (char*) "MessageTable";
+        return "MessageTable";
     case __RT_VERSION:
-        return (char*) "Version";
+        return "Version";
     case __RT_DLGINCLUDE:
-        return (char*) "DLG Include";
+        return "DLG Include";
     case __RT_PLUGPLAY:
-        return (char*) "Plug & Play";
+        return "Plug & Play";
     case __RT_VXD:
-        return (char*) "VXD";
+        return "VXD";
     case __RT_ANICURSOR:
-        return (char*) "Animated Cursor";
+        return "Animated Cursor";
     case __RT_ANIICON:
-        return (char*) "Animated Icon";
+        return "Animated Icon";
     case __RT_HTML:
-        return (char*) "Html";
+        return "Html";
     case __RT_MANIFEST:
-        return (char*) "Manifest";
+        return "Manifest";
+    case __RT_GROUP_CURSOR:
+        return "Group Cursor";
+    case __RT_GROUP_ICON:
+        return "Group Icon";
     default:
-        if (resID == (uint32_t) __RT_GROUP_CURSOR)
-        {
-            return (char*) "Group Cursor";
-        }
-        if (resID == (uint32_t) __RT_GROUP_ICON)
-        {
-            return (char*) "Group Icon";
-        }
         break;
     };
-    return nullptr;
+    return std::string_view{};
 }
 
 bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName)
@@ -978,8 +966,6 @@ bool PEFile::Update()
 {
     uint32_t tr, gr, tmp;
     uint64_t filePoz, poz, bfSize;
-    char sectName[9];
-    // uint8_t buf[16];
     LocalString<128> tempStr;
 
     errList.clear();
