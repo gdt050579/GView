@@ -715,6 +715,7 @@ namespace Type
             void CopySectionName(uint32_t index, String& name);
 
             static std::string_view ResourceIDToName(uint32_t resID);
+            static std::string_view LanguageIDToName(uint32_t langID);
         };
         namespace Panels
         {
