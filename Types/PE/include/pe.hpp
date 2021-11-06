@@ -194,6 +194,21 @@ namespace Type
 {
     namespace PE
     {
+        namespace Panels
+        {
+            enum class IDs : unsigned char
+            {
+                Information = 0,
+                Directories,
+                Exports,
+                Sections,
+                Headers,
+                Resources,
+                Icons,
+                Imports,
+                TLS,
+            };
+        };
         class VersionInformation
         {
 #pragma pack(push, 1)
@@ -624,27 +639,6 @@ namespace Type
                 SHOW_MZPE   = 16,
                 SHOW_INT3   = 32
             };
-            enum
-            {
-                PANEL_INFORMATIONS,
-                PANEL_DIRECTORIES,
-                PANEL_EXPORTS,
-                PANEL_SECTIONS,
-                PANEL_OPCODES,
-                PANEL_HEADERS,
-                PANEL_RESOURCES,
-                PANEL_ICONS,
-                PANEL_IMPORTS,
-                PANEL_TLS,
-                PANEL_VBINFO,
-                PANEL_VBLIB,
-                PANEL_VBOBJECTS,
-                PANEL_MSILINFO,
-                PANEL_MSILCLASSES,
-                PANEL_MSILRESOURCES,
-                PANEL_DELPHIINFO,
-                PANEL_DELPHIUNITS,
-            };
 
           public:
             Reference<GView::Utils::FileCache> file;
@@ -677,13 +671,11 @@ namespace Type
             VersionInformation Ver;
             uint32_t asmShow;
             uint32_t sectStart, peStart;
+            uint64_t panelsMask;
 
             bool hdr64;
             bool isMetroApp;
             bool hasTLS;
-
-            unsigned int Panels[64];
-            unsigned int PanelsCount;
 
             bool ReadBufferFromRVA(uint32_t RVA, void* Buffer, uint32_t BufferSize);
             std::string_view ReadString(uint32_t RVA, unsigned int maxSize);
@@ -712,6 +704,8 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
 
+            bool HasPanel(Panels::IDs id);
+
             void CopySectionName(uint32_t index, String& name);
 
             static std::string_view ResourceIDToName(uint32_t resID);
@@ -730,6 +724,7 @@ namespace Type
                 void UpdateVersionInformation();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
+
               public:
                 Information(Reference<GView::Type::PE::PEFile> pe);
 
@@ -746,16 +741,16 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> list;
                 int Base;
 
-                std::string_view GetValue(NumericFormatter &n, unsigned int value);
+                std::string_view GetValue(NumericFormatter& n, unsigned int value);
                 void GoToSelectedSection();
                 void SelectCurrentSection();
+
               public:
                 Sections(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
-
             };
         }; // namespace Panels
     }      // namespace PE

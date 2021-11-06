@@ -36,8 +36,10 @@ extern "C"
 
         auto b = win->AddBufferView("Buffer View");
 
-        win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);
-        win->AddPanel(Pointer<TabPage>(new PE::Panels::Sections(pe,win)), false);
+        if (pe->HasPanel(PE::Panels::IDs::Information))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Sections))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Sections(pe,win)), false);
 
         return true;
     }

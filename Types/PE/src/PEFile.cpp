@@ -22,14 +22,11 @@ struct CV_INFO_PDB70
 #define CV_SIGNATURE_NB10 '01BN'
 #define CV_SIGNATURE_RSDS 'SDSR'
 
-#define ADD_PANEL(name)                                                                                                                    \
-    {                                                                                                                                      \
-        Panels[PanelsCount++] = name;                                                                                                      \
-    }
+#define ADD_PANEL(id) this->panelsMask |= (1ULL << (unsigned char) id);
 
 static std::string_view peDirsNames[15] = { "Export",      "Import",       "Resource",     "Exceptions",        "Security",
-                                           "Base Reloc",  "Debug",        "Architecture", "Global Ptr",        "TLS",
-                                           "Load Config", "Bound Import", "IAT",          "Delay Import Desc", "COM+ Runtime" };
+                                            "Base Reloc",  "Debug",        "Architecture", "Global Ptr",        "TLS",
+                                            "Load Config", "Bound Import", "IAT",          "Delay Import Desc", "COM+ Runtime" };
 
 static std::map<uint32_t, std::string_view> languageCode = {
     { 0, "None" },
@@ -259,9 +256,8 @@ PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
         peCols.colDir[tr] = ColorPair{ Color::Green, Color::Transparent };
     peCols.colDir[__IMAGE_DIRECTORY_ENTRY_SECURITY] = ColorPair{ Color::DarkGreen, Color::Transparent };
 
-    asmShow = 0xFF;
-
-    PanelsCount = 0;
+    asmShow    = 0xFF;
+    panelsMask = 0;
 }
 
 bool PEFile::ReadBufferFromRVA(uint32_t RVA, void* Buffer, uint32_t BufferSize)
@@ -1161,6 +1157,11 @@ void PEFile::CopySectionName(uint32_t index, String& name)
         name.AddChar(sect[index].Name[tr]);
 }
 
+bool PEFile::HasPanel(Panels::IDs id)
+{
+    return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;
+}
+
 bool PEFile::Update()
 {
     uint32_t tr, gr, tmp;
@@ -1168,7 +1169,8 @@ bool PEFile::Update()
     LocalString<128> tempStr;
 
     errList.clear();
-    isMetroApp = false;
+    isMetroApp       = false;
+    this->panelsMask = 0;
     if (!file->Copy<ImageDOSHeader>(0, dos))
         return false;
     if (!file->Copy<ImageNTHeaders32>(dos.e_lfanew, nth32))
@@ -1512,33 +1514,32 @@ bool PEFile::Update()
         }
     }
 
-    //// refac si panel-urile
-    ADD_PANEL(PANEL_INFORMATIONS);
-    ADD_PANEL(PANEL_DIRECTORIES);
-    ADD_PANEL(PANEL_SECTIONS);
-    ADD_PANEL(PANEL_HEADERS);
-    ADD_PANEL(PANEL_OPCODES);
+    // Default panels
+    ADD_PANEL(Panels::IDs::Information);
+    ADD_PANEL(Panels::IDs::Directories);
+    ADD_PANEL(Panels::IDs::Sections);
+    ADD_PANEL(Panels::IDs::Headers);
 
     if (impDLL.size() > 0)
-        ADD_PANEL(PANEL_IMPORTS);
+        ADD_PANEL(Panels::IDs::Imports);
     if (exp.size() > 0)
-        ADD_PANEL(PANEL_EXPORTS);
+        ADD_PANEL(Panels::IDs::Exports);
 
     if (res.size() > 0)
-        ADD_PANEL(PANEL_RESOURCES);
+        ADD_PANEL(Panels::IDs::Resources);
 
     for (auto& r : res)
     {
         if (r.Type == (uint32_t) __RT_ICON)
         {
-            ADD_PANEL(PANEL_ICONS);
+            ADD_PANEL(Panels::IDs::Icons);
             break;
         }
     }
 
     // if (tlsTable.GetSize()>0)
     if (hasTLS)
-        ADD_PANEL(PANEL_TLS);
+        ADD_PANEL(Panels::IDs::TLS);
 
     return true;
 }
