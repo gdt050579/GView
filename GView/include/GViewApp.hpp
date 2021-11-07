@@ -303,6 +303,7 @@ namespace App
     {
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
+        ItemHandle cursorInfoHandle;
         GView::Object obj;
         unsigned int defaultCursorViewSize;
         unsigned int defaultVerticalPanelsSize;

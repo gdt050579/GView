@@ -25,6 +25,7 @@ class CursorInformation : public UserControl
 
 FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d:c", WindowFlags::Sizeable)
 {
+    cursorInfoHandle = ItemHandle{};
     // create splitters
     horizontal = this->CreateChildControl<Splitter>("d:c", false);
     vertical   = horizontal->CreateChildControl<Splitter>("d:c", true);
@@ -48,8 +49,8 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
           .AddCommandItem(std::u16string_view(&menuSymbol, 1), CMD_SHOW_VIEW_CONFIG_PANEL, "Click to open view configuration panel !");
 
     // cursor information
-    this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
-          .AddSingleChoiceItem("<->", CMD_SHOW_HORIZONTAL_PANEL, true, "Show cursor and selection information");
+    cursorInfoHandle = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
+                             .AddSingleChoiceItem("<->", CMD_SHOW_HORIZONTAL_PANEL, true, "Show cursor and selection information");
 
     // sizes
     this->defaultCursorViewSize       = 2;
@@ -109,18 +110,21 @@ void FileWindow::UpdateDefaultPanelsSizes()
     // horizontal|vertical view are only updated when those panels are resized and have the focus
     if ((!horizontalPanels.IsValid()) || (!verticalPanels.IsValid()))
         return;
-    if (verticalPanels->HasFocus())
-    {
-        defaultHorizontalPanelsSize = vertical->GetSecondPanelSize();
-    }
-    if (horizontalPanels->HasFocus())
-    {
-        defaultVerticalPanelsSize = horizontal->GetSecondPanelSize();
-    }
     // if the resized is done when the view is active, only the cursor size is stored
     if (view->HasFocus())
     {
         defaultCursorViewSize = horizontal->GetSecondPanelSize();
+    }
+    else
+    {
+        if (verticalPanels->HasFocus())
+        {
+            defaultHorizontalPanelsSize = vertical->GetSecondPanelSize();
+        }
+        if (horizontalPanels->HasFocus())
+        {
+            defaultVerticalPanelsSize = horizontal->GetSecondPanelSize();
+        }
     }
 }
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
@@ -152,7 +156,8 @@ void FileWindow::OnFocus(Reference<Control> control)
             vertical->SetSecondPanelSize(0);
         if (horizontal.IsValid())
             horizontal->SetSecondPanelSize(defaultCursorViewSize);
-        //horizontalPanels->SetCurrentTabPageByIndex(0); // force cursor information show when 
+        horizontalPanels->SetCurrentTabPageByIndex(0); // force cursor information show when
+        this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft).SetItemCheck(cursorInfoHandle, true);
     }
     if (control == verticalPanels)
     {

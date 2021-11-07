@@ -55,7 +55,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 0;
+    this->Layout.nrCols            = 16;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
