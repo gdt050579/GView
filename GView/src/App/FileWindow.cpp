@@ -158,6 +158,7 @@ void FileWindow::OnFocus(Reference<Control> control)
             horizontal->SetSecondPanelSize(defaultCursorViewSize);
         horizontalPanels->SetCurrentTabPageByIndex(0); // force cursor information show when
         this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft).SetItemCheck(cursorInfoHandle, true);
+        // test
     }
     if (control == verticalPanels)
     {
