@@ -309,7 +309,7 @@ namespace App
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
 
-        void UpdateDefaultPanelsSizes();
+        void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
       public:
         FileWindow(const AppCUI::Utils::ConstString& name);
 

@@ -104,7 +104,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     }
     return false;
 }
-void FileWindow::UpdateDefaultPanelsSizes()
+void FileWindow::UpdateDefaultPanelsSizes(Reference<Splitter> splitter)
 {
     // logic is as follows
     // horizontal|vertical view are only updated when those panels are resized and have the focus
@@ -113,7 +113,10 @@ void FileWindow::UpdateDefaultPanelsSizes()
     // if the resized is done when the view is active, only the cursor size is stored
     if (view->HasFocus())
     {
-        defaultCursorViewSize = horizontal->GetSecondPanelSize();
+        if (splitter == horizontal)
+        {
+            defaultCursorViewSize = horizontal->GetSecondPanelSize();
+        }        
     }
     else
     {
@@ -142,7 +145,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     }
     if (eventType == Event::SplitterPositionChanged)
     {
-        UpdateDefaultPanelsSizes();
+        UpdateDefaultPanelsSizes(ctrl.DownCast<Splitter>());
         return true;
     }
     return false;
