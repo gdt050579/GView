@@ -1055,7 +1055,8 @@ bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 }
 bool BufferView::GoTo(unsigned long long offset)
 {
-    return false;
+    this->MoveTo(offset, false);
+    return true;
 }
 bool BufferView::Select(unsigned long long offset, unsigned long long size)
 {
