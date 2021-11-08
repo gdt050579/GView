@@ -117,6 +117,12 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
 
     // create an instance of that type
     obj->type = plg.CreateInstance(Reference<GView::Utils::FileCache>(&obj->cache));
+    
+    // validate type
+    CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
+
+    // set window TAG (based on type)
+    win->SetTag(obj->type->GetTypeName(), "");
 
     // instantiate window
     while (true)
