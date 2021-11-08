@@ -777,6 +777,13 @@ std::string_view PEFile::LanguageIDToName(uint32_t langID)
     return std::string_view{};
 }
 
+std::string_view PEFile::DirectoryIDToName(uint32_t dirID)
+{
+    if (dirID < 15)
+        return peDirsNames[dirID];
+    return std::string_view{};
+}
+
 bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName)
 {
     ImageResourceDataEntry resDE;

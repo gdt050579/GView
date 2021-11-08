@@ -712,6 +712,7 @@ namespace Type
 
             static std::string_view ResourceIDToName(uint32_t resID);
             static std::string_view LanguageIDToName(uint32_t langID);
+            static std::string_view DirectoryIDToName(uint32_t dirID);
         };
         namespace Panels
         {
@@ -749,6 +750,20 @@ namespace Type
 
               public:
                 Sections(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+            class Directories: public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+                void GoToSelectedDirectory();
+                void SelectCurrentDirectory();
+              public:
+                Directories(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
