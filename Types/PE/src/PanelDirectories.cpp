@@ -34,7 +34,11 @@ void Panels::Directories::GoToSelectedDirectory()
     if (idx == INVALID_DIRECTORY)
         return;
     auto* dir = &pe->dirs[idx];
-    auto result = pe->ConvertAddress(dir->VirtualAddress, ADDR_RVA, ADDR_FA);
+    uint64_t result;
+    if (idx == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+        result = dir->VirtualAddress > 0 ? dir->VirtualAddress : PE_INVALID_ADDRESS;
+    else
+        result = pe->ConvertAddress(dir->VirtualAddress, ADDR_RVA, ADDR_FA);
     if (result != PE_INVALID_ADDRESS)
         win->GetCurrentView()->GoTo(result);
 }
@@ -45,7 +49,11 @@ void Panels::Directories::SelectCurrentDirectory()
         return;
     auto* dir = &pe->dirs[idx];
     auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
-    auto result = pe->ConvertAddress(dir->VirtualAddress, ADDR_RVA, ADDR_FA);
+    uint64_t result;
+    if (idx == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+        result = dir->VirtualAddress > 0 ? dir->VirtualAddress: PE_INVALID_ADDRESS;
+    else
+        result = pe->ConvertAddress(dir->VirtualAddress, ADDR_RVA, ADDR_FA);
     if (result != PE_INVALID_ADDRESS)
         win->GetCurrentView()->Select(result, dir->Size);
 }
