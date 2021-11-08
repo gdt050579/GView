@@ -22,9 +22,13 @@ using namespace AppCUI::Graphics;
 
 namespace GView
 {
+struct EXPORT TypeInterface
+{
+    virtual std::string_view GetTypeName() = 0;
+    virtual ~TypeInterface(){};
+};
 namespace Utils
 {
-    typedef void* Instance;
     constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
     constexpr int INVALID_SELECTION_INDEX       = -1;
 
@@ -91,13 +95,12 @@ namespace Utils
             return Copy(&object, offset, sizeof(T));
         }
     };
-
 } // namespace Utils
 struct CORE_EXPORT Object
 {
     Utils::FileCache cache;
-    Utils::Instance instance;
-    Object() : instance(nullptr)
+    TypeInterface* type;
+    Object() : type(nullptr)
     {
     }
 };
@@ -130,5 +133,4 @@ namespace View
         virtual Reference<ViewControl> GetCurrentView()                                    = 0;
     };
 }; // namespace View
-EXPORT void Nothing();
 }; // namespace GView

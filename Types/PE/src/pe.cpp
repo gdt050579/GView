@@ -5,10 +5,11 @@ using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace GView::Utils;
 using namespace GView::Type;
+using namespace GView;
 
 extern "C"
 {
-    bool PLUGIN_EXPORT Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
     {
         if (buf.length < sizeof(PE::ImageDOSHeader))
             return false;
@@ -20,18 +21,13 @@ extern "C"
         auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.data + dos->e_lfanew);
         return nth32->Signature == __IMAGE_NT_SIGNATURE;
     }
-    Instance PLUGIN_EXPORT CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
     {
         return new PE::PEFile(file);
     }
-    void PLUGIN_EXPORT DeleteInstance(Instance instance)
+    PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        if (instance)
-            delete (PE::PEFile*) instance;
-    }
-    bool PLUGIN_EXPORT PopulateWindow(Reference<GView::View::WindowInterface> win)
-    {
-        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->instance);
+        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
         pe->Update();
 
         auto b = win->AddBufferView("Buffer View");

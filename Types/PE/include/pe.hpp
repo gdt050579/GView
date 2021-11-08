@@ -579,7 +579,7 @@ namespace Type
             uint8_t rgbRed;
             uint8_t rgbReserved;
         };
-        class PEFile
+        class PEFile : public TypeInterface
         {
           public:
             struct LANGANDCODEPAGE
@@ -684,6 +684,9 @@ namespace Type
 
           public:
             PEFile(Reference<GView::Utils::FileCache> file);
+            virtual ~PEFile()
+            {
+            }
 
             bool Update();
 
@@ -709,6 +712,12 @@ namespace Type
             void UpdateBufferViewZones(Reference<GView::View::BufferViewInterface> bufferView);
 
             void CopySectionName(uint32_t index, String& name);
+
+            std::string_view GetTypeName() override
+            {
+                return "PE";
+            }
+
 
             static std::string_view ResourceIDToName(uint32_t resID);
             static std::string_view LanguageIDToName(uint32_t langID);
@@ -755,13 +764,14 @@ namespace Type
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
-            class Directories: public TabPage
+            class Directories : public TabPage
             {
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> list;
                 void GoToSelectedDirectory();
                 void SelectCurrentDirectory();
+
               public:
                 Directories(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 

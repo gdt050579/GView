@@ -74,8 +74,7 @@ namespace Type
     namespace DefaultTypePlugin
     {
         bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension);
-        Utils::Instance CreateInstance(Reference<GView::Utils::FileCache> fileCache);
-        void DeleteInstance(Utils::Instance instance);
+        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     }                                               // namespace DefaultTypePlugin
     constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
@@ -107,8 +106,7 @@ namespace Type
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const GView::Utils::Buffer& buf, const std::string_view& extension);
-        Utils::Instance (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
-        void (*fnDeleteInstance)(Utils::Instance instance);
+        TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
         bool LoadPlugin();
@@ -119,8 +117,7 @@ namespace Type
         void Init();
         bool Validate(GView::Utils::Buffer buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
-        Utils::Instance CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
-        void DeleteInstance(Utils::Instance instance) const;
+        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
         inline bool operator<(const Plugin& plugin) const
         {
             return Priority > plugin.Priority;

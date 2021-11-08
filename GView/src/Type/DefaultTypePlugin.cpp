@@ -3,6 +3,18 @@
 using namespace GView::Utils;
 using namespace GView;
 
+class DefaultType: public TypeInterface
+{
+  public:
+    std::string_view GetTypeName() override
+    {
+        return "GENERIC";
+    }
+    ~DefaultType()
+    {
+    }
+};
+
 class DefaultInformationPanel : public TabPage
 {
   public:
@@ -20,14 +32,11 @@ bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension
 {
     return true; // always match everything
 }
-Instance CreateInstance(Reference<GView::Utils::FileCache> fileCache)
+TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache)
 {
-    return nullptr; // no instance needed
+    return new DefaultType();
 }
-void DeleteInstance(Instance instance)
-{
-    // do nothing - instance is nullptr
-}
+
 bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
     // at least one view and one information panel

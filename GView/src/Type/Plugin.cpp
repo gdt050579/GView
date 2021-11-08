@@ -2,6 +2,7 @@
 
 using namespace GView::Type;
 using namespace GView::Utils;
+using namespace GView;
 
 constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
@@ -38,7 +39,6 @@ Plugin::Plugin()
     // functions
     this->fnValidate       = nullptr;
     this->fnCreateInstance = nullptr;
-    this->fnDeleteInstance = nullptr;
     this->fnPopulateWindow = nullptr;
 }
 void Plugin::Init()
@@ -46,7 +46,6 @@ void Plugin::Init()
     // default initialization
     this->fnValidate       = DefaultTypePlugin::Validate;
     this->fnCreateInstance = DefaultTypePlugin::CreateInstance;
-    this->fnDeleteInstance = DefaultTypePlugin::DeleteInstance;
     this->fnPopulateWindow = DefaultTypePlugin::PopulateWindow;
     this->Loaded           = true;
     this->Invalid          = false;
@@ -129,12 +128,10 @@ bool Plugin::LoadPlugin()
 
     this->fnValidate       = lib.GetFunction<decltype(this->fnValidate)>("Validate");
     this->fnCreateInstance = lib.GetFunction<decltype(this->fnCreateInstance)>("CreateInstance");
-    this->fnDeleteInstance = lib.GetFunction<decltype(this->fnDeleteInstance)>("DeleteInstance");
     this->fnPopulateWindow = lib.GetFunction<decltype(this->fnPopulateWindow)>("PopulateWindow");
 
     CHECK(fnValidate, false, "Missing 'Validate' export !");
     CHECK(fnCreateInstance, false, "Missing 'CreateInstance' export !");
-    CHECK(fnDeleteInstance, false, "Missing 'DeleteInstance' export !");
     CHECK(fnPopulateWindow, false, "Missing 'PopulateWindow' export !");
 
     return true;
@@ -184,15 +181,9 @@ bool Plugin::PopulateWindow(Reference<GView::View::WindowInterface> win) const
     CHECK(this->Loaded, false, "Plugin was no loaded. Have you call `Validate` first ?");
     return this->fnPopulateWindow(win);
 }
-Instance Plugin::CreateInstance(Reference<GView::Utils::FileCache> fileCache) const
+TypeInterface* Plugin::CreateInstance(Reference<GView::Utils::FileCache> fileCache) const
 {
     CHECK(!this->Invalid, nullptr, "Invalid plugin (not loaded properly or no valid exports)");
     CHECK(this->Loaded, nullptr, "Plugin was no loaded. Have you call `Validate` first ?");
     return this->fnCreateInstance(fileCache);
-}
-void Plugin::DeleteInstance(Instance instance) const
-{
-    if ((this->Invalid) || (!this->Loaded) || (instance == nullptr))
-        return;
-    this->DeleteInstance(instance);
 }
