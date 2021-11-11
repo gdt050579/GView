@@ -59,7 +59,7 @@ bool Instance::LoadSettings()
     auto ini = AppCUI::Application::GetAppSettings();
     CHECK(ini, false, "");
     // check plugins
-    for (auto section : ini->GetSections())
+    for (const auto& section : ini->GetSections())
     {
         if (String::StartsWith(section.GetName(), std::string_view("type."), true))
         {
