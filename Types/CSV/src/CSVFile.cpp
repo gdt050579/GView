@@ -10,3 +10,21 @@ std::string_view CSVFile::CSVFile::GetTypeName()
 {
     return "CSV";
 }
+
+bool GView::Type::CSV::CSVFile::Update()
+{
+    if (this->file->GetExtension() == ".tsv")
+    {
+        this->separator = '\t';
+    }
+    else if (this->file->GetExtension() == ".csv")
+    {
+        this->separator = ',';
+    }
+    else
+    {
+        return false;
+    }
+
+    return true;
+}

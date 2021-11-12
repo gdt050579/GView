@@ -57,12 +57,13 @@ namespace Utils
         unsigned long long fileSize, start, end, currentPos;
         unsigned char* cache;
         unsigned int cacheSize;
+        std::string extension;
 
       public:
         FileCache();
         ~FileCache();
 
-        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
+        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize, std::string_view extension);
         Buffer Get(unsigned long long offset, unsigned int requestedSize);
         bool Copy(void* buffer, unsigned long long offset, unsigned int requestedSize);
         inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
@@ -93,6 +94,11 @@ namespace Utils
         inline bool Copy(unsigned long long offset, T& object)
         {
             return Copy(&object, offset, sizeof(T));
+        }
+
+        std::string_view GetExtension() const
+        {
+            return extension;
         }
     };
 } // namespace Utils

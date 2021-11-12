@@ -11,7 +11,29 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
     {
-        return true;
+        CHECK(extension == ".tsv" || extension == ".csv", false, "Wrong extension: [%.*s]!", extension.length(), extension.data());
+        if (extension == ".tsv")
+        {
+            for (auto i = 0U; i < buf.length; i++)
+            {
+                if (buf[i] == '\t')
+                {
+                    return true;
+                }
+            }
+        }
+        else if (extension == ".csv")
+        {
+            for (auto i = 0U; i < buf.length; i++)
+            {
+                if (buf[i] == ',')
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
@@ -21,7 +43,9 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto pe = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
+        auto csv = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
+        csv->Update();
+
         return true;
     }
 }

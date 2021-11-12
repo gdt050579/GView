@@ -18,6 +18,12 @@ namespace Type
 
         class CSVFile : public TypeInterface
         {
+        private:
+            bool hasHeader{ false };
+            unsigned int columnsNo{ 0 };
+            unsigned int rowsNo{ 0 };
+            char separator{ 0 };
+
           public:
             Reference<GView::Utils::FileCache> file;
 
@@ -26,6 +32,7 @@ namespace Type
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;
+            bool Update();
         };
 
         namespace Panels
