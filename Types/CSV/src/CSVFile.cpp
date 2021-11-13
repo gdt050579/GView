@@ -2,8 +2,9 @@
 
 using namespace GView::Type::CSV;
 
-CSVFile::CSVFile(Reference<GView::Utils::FileCache> fileCache) : file(fileCache)
+CSVFile::CSVFile(Reference<GView::Utils::FileCache> fileCache) : file(fileCache), panelsMask(0)
 {
+    this->panelsMask |= (1ULL << (unsigned char)Panels::IDs::Information);
 }
 
 std::string_view CSVFile::CSVFile::GetTypeName()
@@ -27,4 +28,9 @@ bool GView::Type::CSV::CSVFile::Update()
     }
 
     return true;
+}
+
+bool GView::Type::CSV::CSVFile::HasPanel(Panels::IDs id)
+{
+    return (this->panelsMask & (1ULL << ((unsigned char)id))) != 0;
 }

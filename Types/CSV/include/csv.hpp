@@ -12,17 +12,19 @@ namespace Type
         {
             enum class IDs : unsigned char
             {
-                None = 0
+                Information = 0,
             };
         };
 
         class CSVFile : public TypeInterface
         {
-        private:
+          private:
             bool hasHeader{ false };
             unsigned int columnsNo{ 0 };
             unsigned int rowsNo{ 0 };
             char separator{ 0 };
+
+            uint64_t panelsMask{ 0 };
 
           public:
             Reference<GView::Utils::FileCache> file;
@@ -33,10 +35,27 @@ namespace Type
 
             std::string_view GetTypeName() override;
             bool Update();
+            bool HasPanel(Panels::IDs id);
         };
 
         namespace Panels
         {
+            class Information : public AppCUI::Controls::TabPage
+            {
+              private:
+                Reference<GView::Type::CSV::CSVFile> csv;
+                Reference<AppCUI::Controls::ListView> general;
+
+              public:
+                Information(Reference<GView::Type::CSV::CSVFile> csv);
+
+                void Update();
+                virtual void OnAfterResize(int newWidth, int newHeight) override;
+
+              private:
+                void UpdateGeneralInformation();
+                void RecomputePanelsPositions();
+            };
         }; // namespace Panels
     }      // namespace CSV
 } // namespace Type

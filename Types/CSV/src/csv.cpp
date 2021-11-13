@@ -46,6 +46,12 @@ extern "C"
         auto csv = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
         csv->Update();
 
+        // auto b = win->AddBufferView("Buffer View");
+       // csv->UpdateBufferViewZones(b);
+
+        if (csv->HasPanel(CSV::Panels::IDs::Information))
+            win->AddPanel(Pointer<TabPage>(new CSV::Panels::Information(csv)), true);
+
         return true;
     }
 }
