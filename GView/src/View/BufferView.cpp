@@ -73,6 +73,8 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     this->StringInfo.middle        = GView::Utils::INVALID_OFFSET;
     this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
+    this->Cursor.base              = 16;
+
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
     if (config.Loaded == false)
@@ -841,7 +843,7 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
         while ((count < 3) && (sps >= this->chars.GetBuffer()))
         {
             count++;
-            sps->Code = ' ';
+            sps->Code  = ' ';
             sps->Color = config.Colors.Inactive;
             sps--;
         }
@@ -1068,7 +1070,7 @@ std::string_view BufferView::GetName()
 }
 void BufferView::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
 {
-    if (size>0)
+    if (size > 0)
         this->zList.Add(start, start + size - 1, col, name);
 }
 void BufferView::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
@@ -1088,39 +1090,113 @@ void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _me
     m->name     = _name;
     translationMethodsCount++;
 }
-void BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, Renderer& r)
+
+//======================================================================[Cursor information]==================
+int BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)
 {
     unsigned long long start, end;
     if (this->selection.GetSelection(selectionID, start, end))
     {
         LocalString<32> tmp;
         tmp.Format("%X,%X", start, (end - start) + 1);
+        r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
+    }
+    else
+    {
+        r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+    }
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    return x + width + 1;
+}
+int BufferView::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r)
+{
+    NumericFormatter n;
+    r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos, this->Cursor.base), this->CursorColors.Normal);
+    x += width;
+    if (addSeparator)
+        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    // percentage
+
+    if (this->obj->cache.GetSize() > 0)
+    {
+        LocalString<32> tmp;
+        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->cache.GetSize());
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
     {
-        r.WriteSingleLineText(x, y, "  NO Selection  ", this->CursorColors.Line);
+        r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
     }
-    r.WriteSpecialCharacter(x + 16, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
-}
-void BufferView::PrintCursorPosInfo(int x, int y, Renderer& r)
-{
-    r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    LocalString<32> tmp;
-    tmp.Format("%X", this->Cursor.currentPos);
-    r.WriteSingleLineText(x + 4, y, tmp.GetText(), this->CursorColors.Normal);
-    r.WriteSpecialCharacter(x + 16, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
-}
-void BufferView::PrintCursorPercentageInfo(int x, int y, Renderer& r)
-{
-    LocalString<32> tmp;
-    tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->cache.GetSize());
-    r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    return x + 5;
+}
+int BufferView::PrintCursorZone(int x, int y, unsigned int width, Renderer& r)
+{
+    auto zone = this->zList.OffsetToZone(this->Cursor.currentPos);
+    if (zone)
+    {
+        r.WriteSingleLineText(x, y, width, zone->name, this->CursorColors.Highlighted);
+    }
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    return x + width + 1;
+}
+int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r)
+{
+    if (buffer.length == 0)
+        return x;
+    const unsigned char v_u8 = buffer[0];
+    NumericFormatter n;
+    NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 2 };
+    switch (height)
+    {
+    case 0:
+        break;
+    case 1:
+        r.WriteSingleLineText(x, 0, "Ch:  I8:     Hex:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 3, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal, TextAlignament::Right);
+        r.WriteSingleLineText(x + 17, 0, n.ToString(v_u8, fmt), this->CursorColors.Normal);
+        r.WriteSpecialCharacter(x + 19, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        return x + 20;
+    case 2:
+        r.WriteSingleLineText(x, 0, "Ch:     I8:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 3, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(v_u8, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 11, 1, n.ToDec(v_u8), this->CursorColors.Normal);
+        r.WriteSpecialCharacter(x + 15, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        r.WriteSpecialCharacter(x + 15, 1, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        return x + 16;
+    default:
+        // 3 , 4 or more lines
+        r.WriteSingleLineText(x, 0, "Ch:     I8:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 2, "Bin:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 3, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(v_u8, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 11, 1, n.ToDec(v_u8), this->CursorColors.Normal);
+        fmt.Base        = 2;
+        fmt.DigitsCount = 8;
+        r.WriteSingleLineText(x + 4, 2, n.ToString(v_u8, fmt), this->CursorColors.Normal);        
+        if (height>3)
+        {
+            r.WriteSingleLineText(x, 3, "Oct:", this->CursorColors.Highlighted);
+            fmt.Base        = 8;
+            fmt.DigitsCount = 3;
+            r.WriteSingleLineText(x + 4, 3, n.ToString(v_u8, fmt), this->CursorColors.Normal);
+        }
+        r.DrawVerticalLine(x + 15, 0, 3, this->CursorColors.Line);
+        return x + 16;
+    }
+    return x;
 }
 
 void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
 {
+    int x = 0;
     // set up the cursor colors
     this->CursorColors.Normal      = config.Colors.Normal;
     this->CursorColors.Line        = config.Colors.Line;
@@ -1132,40 +1208,52 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         this->CursorColors.Highlighted = config.Colors.Inactive;
     }
     r.Clear(' ', this->CursorColors.Normal);
+    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8);
     switch (height)
     {
     case 0:
         break;
     case 1:
-        PrintSelectionInfo(0, 0, 0, r);
-        PrintSelectionInfo(1, 17, 0, r);
-        PrintSelectionInfo(2, 34, 0, r);
-        PrintSelectionInfo(3, 51, 0, r);
-        PrintCursorPosInfo(68, 0, r);
-        PrintCursorPercentageInfo(85, 0, r);
+        x = PrintSelectionInfo(0, 0, 0, 16, r);
+        if (this->selection.IsMultiSelectionEnabled())
+        {
+            x = PrintSelectionInfo(1, x, 0, 16, r);
+            x = PrintSelectionInfo(2, x, 0, 16, r);
+            x = PrintSelectionInfo(3, x, 0, 16, r);
+        }
+        x = PrintCursorPosInfo(x, 0, 16, true, r);
+        x = PrintCursorZone(x, 0, 16, r);
+        x = Print8bitValue(x, height, buf, r);
         break;
     case 2:
-        PrintSelectionInfo(0, 0, 0, r);
-        PrintSelectionInfo(1, 17, 0, r);
-        PrintSelectionInfo(2, 0, 1, r);
-        PrintSelectionInfo(3, 17, 1, r);
-        PrintCursorPosInfo(34, 0, r);
-        PrintCursorPercentageInfo(46, 1, r);
+        PrintSelectionInfo(0, 0, 0, 16, r);
+        x = PrintSelectionInfo(2, 0, 1, 16, r);
+        PrintSelectionInfo(1, x, 0, 16, r);
+        x = PrintSelectionInfo(3, x, 1, 16, r);
+        PrintCursorZone(x, 1, 21, r);
+        x = PrintCursorPosInfo(x, 0, 17, false, r);
+        x = Print8bitValue(x, height, buf, r);
         break;
     case 3:
-        PrintSelectionInfo(0, 0, 0, r);
-        PrintSelectionInfo(1, 0, 1, r);
-        PrintSelectionInfo(2, 0, 2, r);
-        PrintSelectionInfo(3, 17, 0, r);
-        PrintCursorPosInfo(17, 1, r);
+        PrintSelectionInfo(0, 0, 0, 18, r);
+        PrintSelectionInfo(1, 0, 1, 18, r);
+        x = PrintSelectionInfo(2, 0, 2, 18, r);
+        PrintSelectionInfo(3, x, 0, 18, r);
+        PrintCursorPosInfo(x, 1, 14, false, r);
+        x = PrintCursorZone(x, 2, 18, r);
+        x = Print8bitValue(x, height, buf, r);
         break;
     default:
-        // 4 or bigger
-        PrintSelectionInfo(0, 0, 0, r);
-        PrintSelectionInfo(1, 0, 1, r);
-        PrintSelectionInfo(2, 0, 2, r);
-        PrintSelectionInfo(3, 0, 3, r);
-        PrintCursorPosInfo(17, 0, r);
+        // 4 or more
+        PrintSelectionInfo(0, 0, 0, 18, r);
+        PrintSelectionInfo(1, 0, 1, 18, r);
+        PrintSelectionInfo(2, 0, 2, 18, r);
+        x = PrintSelectionInfo(3, 0, 3, 18, r);
+        PrintCursorPosInfo(x, 0, 14, false, r);
+        PrintCursorZone(x, 1, 18, r);
+        r.DrawVerticalLine(x + 18, 0, 3, this->CursorColors.Line);
+        x += 19;
+        x = Print8bitValue(x, height, buf, r);
         break;
     }
 }
