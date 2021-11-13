@@ -178,6 +178,7 @@ namespace View
         struct
         {
             unsigned long long startView, currentPos;
+            unsigned int base;
         } Cursor;
         struct
         {
@@ -219,9 +220,12 @@ namespace View
 
         static Config config;
 
-        void PrintSelectionInfo(unsigned int selectionID, int x, int y, Renderer& r);
-        void PrintCursorPosInfo(int x, int y, Renderer& r);
-        void PrintCursorPercentageInfo(int x, int y, Renderer& r);
+        int PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r);
+        int PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r);
+        int PrintCursorZone(int x, int y, unsigned int width, Renderer& r);
+        int Print8bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
+        int Print16bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
+        int Print32bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer& renderer);
