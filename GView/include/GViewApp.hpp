@@ -224,6 +224,7 @@ namespace View
         int PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r);
         int PrintCursorZone(int x, int y, unsigned int width, Renderer& r);
         int Print8bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
+        int Print16bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
 
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);

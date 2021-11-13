@@ -1153,16 +1153,16 @@ int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, R
     case 0:
         break;
     case 1:
-        r.WriteSingleLineText(x, 0, "Ch:  I8:     Hex:", this->CursorColors.Highlighted);
-        r.WriteCharacter(x + 3, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteSingleLineText(x, 0, "Asc:  I8:     Hex:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal, TextAlignament::Right);
         r.WriteSingleLineText(x + 17, 0, n.ToString(v_u8, fmt), this->CursorColors.Normal);
         r.WriteSpecialCharacter(x + 19, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
         return x + 20;
     case 2:
-        r.WriteSingleLineText(x, 0, "Ch:     I8:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 0, "Asc:    I8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
-        r.WriteCharacter(x + 3, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u8, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 1, n.ToDec(v_u8), this->CursorColors.Normal);
@@ -1171,17 +1171,17 @@ int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, R
         return x + 16;
     default:
         // 3 , 4 or more lines
-        r.WriteSingleLineText(x, 0, "Ch:     I8:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 0, "Asc:    I8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 2, "Bin:", this->CursorColors.Highlighted);
-        r.WriteCharacter(x + 3, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u8, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 1, n.ToDec(v_u8), this->CursorColors.Normal);
         fmt.Base        = 2;
         fmt.DigitsCount = 8;
-        r.WriteSingleLineText(x + 4, 2, n.ToString(v_u8, fmt), this->CursorColors.Normal);        
-        if (height>3)
+        r.WriteSingleLineText(x + 4, 2, n.ToString(v_u8, fmt), this->CursorColors.Normal);
+        if (height > 3)
         {
             r.WriteSingleLineText(x, 3, "Oct:", this->CursorColors.Highlighted);
             fmt.Base        = 8;
@@ -1190,6 +1190,59 @@ int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, R
         }
         r.DrawVerticalLine(x + 15, 0, 3, this->CursorColors.Line);
         return x + 16;
+    }
+    return x;
+}
+
+int BufferView::Print16bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r)
+{
+    if (buffer.length < 2)
+        return x;
+    const unsigned short v_u16 = *(unsigned short*) buffer.data;
+    NumericFormatter n;
+    NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 4 };
+    switch (height)
+    {
+    case 0:
+        break;
+    case 1:
+        r.WriteSingleLineText(x, 0, "Unc:  I16:       Hex:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 4, 0, v_u16, this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 15, 0, n.ToDec(*(const short*) (&v_u16)), this->CursorColors.Normal, TextAlignament::Right);
+        r.WriteSingleLineText(x + 21, 0, n.ToString(v_u16, fmt), this->CursorColors.Normal);
+        r.WriteSpecialCharacter(x + 25, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        return x + 26;
+    case 2:
+        r.WriteSingleLineText(x, 0, "Unc:      I16:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "Hex:      U16:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 4, 0, v_u16, this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 14, 0, n.ToDec(*(const short*) (&v_u16)), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(v_u16, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 14, 1, n.ToDec(v_u16), this->CursorColors.Normal);
+        r.WriteSpecialCharacter(x + 20, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        r.WriteSpecialCharacter(x + 20, 1, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        return x + 21;
+    default:
+        // 3 , 4 or more lines
+        r.WriteSingleLineText(x, 0, "Unc:      I16:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "Hex:      U16:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 2, "Bin:", this->CursorColors.Highlighted);
+        r.WriteCharacter(x + 4, 0, v_u16, this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 14, 0, n.ToDec(*(const short*) (&v_u16)), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(v_u16, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 14, 1, n.ToDec(v_u16), this->CursorColors.Normal);
+        fmt.Base        = 2;
+        fmt.DigitsCount = 16;
+        r.WriteSingleLineText(x + 4, 2, n.ToString(v_u16, fmt), this->CursorColors.Normal);
+        if (height > 3)
+        {
+            r.WriteSingleLineText(x, 3, "Oct:", this->CursorColors.Highlighted);
+            fmt.Base        = 8;
+            fmt.DigitsCount = 6;
+            r.WriteSingleLineText(x + 4, 3, n.ToString(v_u16, fmt), this->CursorColors.Normal);
+        }
+        r.DrawVerticalLine(x + 20, 0, 3, this->CursorColors.Line);
+        return x + 21;
     }
     return x;
 }
@@ -1224,6 +1277,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         x = PrintCursorPosInfo(x, 0, 16, true, r);
         x = PrintCursorZone(x, 0, 16, r);
         x = Print8bitValue(x, height, buf, r);
+        x = Print16bitValue(x, height, buf, r);
         break;
     case 2:
         PrintSelectionInfo(0, 0, 0, 16, r);
@@ -1233,6 +1287,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         PrintCursorZone(x, 1, 21, r);
         x = PrintCursorPosInfo(x, 0, 17, false, r);
         x = Print8bitValue(x, height, buf, r);
+        x = Print16bitValue(x, height, buf, r);
         break;
     case 3:
         PrintSelectionInfo(0, 0, 0, 18, r);
@@ -1242,6 +1297,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         PrintCursorPosInfo(x, 1, 14, false, r);
         x = PrintCursorZone(x, 2, 18, r);
         x = Print8bitValue(x, height, buf, r);
+        x = Print16bitValue(x, height, buf, r);
         break;
     default:
         // 4 or more
@@ -1254,6 +1310,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         r.DrawVerticalLine(x + 18, 0, 3, this->CursorColors.Line);
         x += 19;
         x = Print8bitValue(x, height, buf, r);
+        x = Print16bitValue(x, height, buf, r);
         break;
     }
 }
