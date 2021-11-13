@@ -44,7 +44,12 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
     this->start     = 0;
     this->end       = 0;
 
-    this->extension = extension;
+    const auto length = std::min<>(1023ULL, extension.size());
+    for (auto i = 0U; i < length; i++)
+    {
+        this->extension[i] = extension.data()[i];
+    }
+    this->extension[length] = 0;
 
     return true;
 }

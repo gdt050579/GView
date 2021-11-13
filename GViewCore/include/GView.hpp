@@ -57,7 +57,7 @@ namespace Utils
         unsigned long long fileSize, start, end, currentPos;
         unsigned char* cache;
         unsigned int cacheSize;
-        std::string extension;
+        char extension[1024];
 
       public:
         FileCache();
