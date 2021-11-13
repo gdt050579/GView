@@ -1156,9 +1156,9 @@ int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, R
         r.WriteSingleLineText(x, 0, "Asc:  I8:     Hex:", this->CursorColors.Highlighted);
         r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal, TextAlignament::Right);
-        r.WriteSingleLineText(x + 17, 0, n.ToString(v_u8, fmt), this->CursorColors.Normal);
-        r.WriteSpecialCharacter(x + 19, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
-        return x + 20;
+        r.WriteSingleLineText(x + 18, 0, n.ToString(v_u8, fmt), this->CursorColors.Normal);
+        r.WriteSpecialCharacter(x + 20, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        return x + 21;
     case 2:
         r.WriteSingleLineText(x, 0, "Asc:    I8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
@@ -1246,7 +1246,48 @@ int BufferView::Print16bitValue(int x, int height, GView::Utils::Buffer buffer, 
     }
     return x;
 }
-
+int BufferView::Print32bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r)
+{
+    if (buffer.length < 4)
+        return x;
+    const unsigned int v_u32 = *(unsigned int*) buffer.data;
+    NumericFormatter n;
+    NumericFormat fmt = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
+    NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
+    switch (height)
+    {
+    case 0:
+        break;
+    case 1:
+        r.WriteSingleLineText(x, 0, "DW:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x + 3, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
+        r.WriteSpecialCharacter(x + 12, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        return x + 14;
+    default:
+        // 2,3, 4 or more lines
+        r.WriteSingleLineText(x, 0, "Hex:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "I32:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x + 4, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
+        if (height>=3)
+        {
+            r.WriteSingleLineText(x, 2, "U32:", this->CursorColors.Highlighted);
+            r.WriteSingleLineText(x + 4, 2, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
+        }
+        if (height >= 4)
+        {
+            r.WriteSingleLineText(x, 3, "Flt:", this->CursorColors.Highlighted);
+            LocalString<32> tmp;
+            tmp.SetFormat("%f", *(const float*) (&v_u32));
+            if (tmp.Len() > 16)
+                tmp.Truncate(16);
+            r.WriteSingleLineText(x + 4, 3, tmp, this->CursorColors.Normal);
+        }
+        r.DrawVerticalLine(x + 20, 0, 3, this->CursorColors.Line);
+        return x + 23;
+    }
+    return x;
+}
 void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
 {
     int x = 0;
@@ -1278,6 +1319,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         x = PrintCursorZone(x, 0, 16, r);
         x = Print8bitValue(x, height, buf, r);
         x = Print16bitValue(x, height, buf, r);
+        x = Print32bitValue(x, height, buf, r);
         break;
     case 2:
         PrintSelectionInfo(0, 0, 0, 16, r);
@@ -1288,6 +1330,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         x = PrintCursorPosInfo(x, 0, 17, false, r);
         x = Print8bitValue(x, height, buf, r);
         x = Print16bitValue(x, height, buf, r);
+        x = Print32bitValue(x, height, buf, r);
         break;
     case 3:
         PrintSelectionInfo(0, 0, 0, 18, r);
@@ -1298,6 +1341,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         x = PrintCursorZone(x, 2, 18, r);
         x = Print8bitValue(x, height, buf, r);
         x = Print16bitValue(x, height, buf, r);
+        x = Print32bitValue(x, height, buf, r);
         break;
     default:
         // 4 or more
@@ -1311,6 +1355,7 @@ void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned 
         x += 19;
         x = Print8bitValue(x, height, buf, r);
         x = Print16bitValue(x, height, buf, r);
+        x = Print32bitValue(x, height, buf, r);
         break;
     }
 }
