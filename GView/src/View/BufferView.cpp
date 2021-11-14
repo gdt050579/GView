@@ -48,6 +48,8 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false
 };
 
+constexpr int BUFFERVIEW_CMD_CHANGECOL = 10000;
+
 BufferView::Config BufferView::config;
 
 BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _obj)
@@ -80,6 +82,10 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     if (config.Loaded == false)
         LoadConfig();
 }
+void BufferView::UpdateConfig(IniSection sect)
+{
+    sect.UpdateValue("ChangeColumnsCount", Key::F6, true);
+}
 bool BufferView::LoadConfig()
 {
     config.Colors.Ascii       = ColorPair{ Color::Red, Color::DarkBlue };
@@ -91,6 +97,17 @@ bool BufferView::LoadConfig()
     config.Colors.Normal      = ColorPair{ Color::Silver, Color::DarkBlue };
     config.Colors.Inactive    = ColorPair{ Color::Gray, Color::DarkBlue };
     config.Colors.OutsideZone = ColorPair{ Color::Gray, Color::DarkBlue };
+
+    auto ini= AppCUI::Application::GetAppSettings();
+    if (ini)
+    {
+        auto sect = ini->GetSection("BufferView");
+        config.Keys.ChangeColumnsNumber = ini->GetValue("ChangeColumnsCount").ToKey(Key::F6);
+    }
+    else
+    {
+        config.Keys.ChangeColumnsNumber = Key::F6;
+    }
 
     config.Loaded = true;
     return true;
@@ -876,7 +893,28 @@ void BufferView::OnAfterResize(int width, int height)
 {
     this->UpdateViewSizes();
 }
-
+bool BufferView::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    switch (this->Layout.nrCols)
+    {
+    case 0:
+        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:FullScr", BUFFERVIEW_CMD_CHANGECOL);
+        break;
+    case 8:
+        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:8", BUFFERVIEW_CMD_CHANGECOL);
+        break;
+    case 16:
+        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:16", BUFFERVIEW_CMD_CHANGECOL);
+        break;
+    case 32:
+        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Cols:32", BUFFERVIEW_CMD_CHANGECOL);
+        break;
+    default:
+        commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Change Cols", BUFFERVIEW_CMD_CHANGECOL);
+        break;
+    }
+    return false;
+}
 bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 {
     bool select = ((keyCode & Key::Shift) != Key::None);

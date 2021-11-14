@@ -172,3 +172,7 @@ void FileWindow::OnFocus(Reference<Control> control)
         horizontal->SetSecondPanelSize(defaultVerticalPanelsSize);
     }
 }
+bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    return true;
+}

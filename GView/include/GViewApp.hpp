@@ -205,6 +205,10 @@ namespace View
                 ColorPair Ascii;
                 ColorPair Unicode;
             } Colors;
+            struct
+            {
+                AppCUI::Input::Key ChangeColumnsNumber;
+            } Keys;
             bool Loaded;
         };
 
@@ -253,6 +257,7 @@ namespace View
         virtual void Paint(Renderer& renderer) override;
         virtual void OnAfterResize(int newWidth, int newHeight) override;
         virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t characterCode) override;
+        virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
 
         virtual bool GoTo(unsigned long long offset) override;
         virtual bool Select(unsigned long long offset, unsigned long long size) override;
@@ -262,6 +267,8 @@ namespace View
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset) override;
         virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID) override;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
+
+        static void UpdateConfig(IniSection sect);
     };
 
 } // namespace View
@@ -299,6 +306,7 @@ namespace App
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
         void Run();
+        void ResetConfiguration();
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
@@ -320,9 +328,11 @@ namespace App
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
-
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
+        
+        
     };
 } // namespace App
 

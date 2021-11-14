@@ -128,6 +128,7 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     while (true)
     {
         CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");
+        
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
         return true;
@@ -146,4 +147,11 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
 void Instance::Run()
 {
     AppCUI::Application::Run();
+}
+void Instance::ResetConfiguration()
+{
+    IniObject ini;
+
+    // for viewers
+    GView::View::BufferView::UpdateConfig(ini["BufferView"]);
 }
