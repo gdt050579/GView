@@ -48,7 +48,8 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false
 };
 
-constexpr int BUFFERVIEW_CMD_CHANGECOL = 0xBF00;
+constexpr int BUFFERVIEW_CMD_CHANGECOL  = 0xBF00;
+constexpr int BUFFERVIEW_CMD_CHANGEBASE = 0xBF01;
 
 BufferView::Config BufferView::config;
 
@@ -85,6 +86,7 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
 void BufferView::UpdateConfig(IniSection sect)
 {
     sect.UpdateValue("ChangeColumnsCount", Key::F6, true);
+    sect.UpdateValue("ChangeBase", Key::F2, true);
 }
 bool BufferView::LoadConfig()
 {
@@ -98,15 +100,17 @@ bool BufferView::LoadConfig()
     config.Colors.Inactive    = ColorPair{ Color::Gray, Color::DarkBlue };
     config.Colors.OutsideZone = ColorPair{ Color::Gray, Color::DarkBlue };
 
-    auto ini= AppCUI::Application::GetAppSettings();
+    auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
     {
-        auto sect = ini->GetSection("BufferView");
+        auto sect                       = ini->GetSection("BufferView");
         config.Keys.ChangeColumnsNumber = ini->GetValue("ChangeColumnsCount").ToKey(Key::F6);
+        config.Keys.ChangeBase          = ini->GetValue("ChangeBAse").ToKey(Key::F2);
     }
     else
     {
         config.Keys.ChangeColumnsNumber = Key::F6;
+        config.Keys.ChangeBase          = Key::F2;
     }
 
     config.Loaded = true;
@@ -895,6 +899,7 @@ void BufferView::OnAfterResize(int width, int height)
 }
 bool BufferView::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    // columns
     switch (this->Layout.nrCols)
     {
     case 0:
@@ -912,6 +917,30 @@ bool BufferView::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     default:
         commandBar.SetCommand(config.Keys.ChangeColumnsNumber, "Change Cols", BUFFERVIEW_CMD_CHANGECOL);
         break;
+    }
+
+    // base & codepage
+    if (this->Layout.nrCols == 0)
+    {
+        commandBar.SetCommand(config.Keys.ChangeBase, "CodePage", BUFFERVIEW_CMD_CHANGEBASE);
+    }
+    else
+    {
+        switch (this->Layout.charFormatMode)
+        {
+        case CharacterFormatMode::Hex:
+            commandBar.SetCommand(config.Keys.ChangeBase, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
+            break;
+        case CharacterFormatMode::Octal:
+            commandBar.SetCommand(config.Keys.ChangeBase, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
+            break;
+        case CharacterFormatMode::SignedDecimal:
+            commandBar.SetCommand(config.Keys.ChangeBase, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
+            break;
+        case CharacterFormatMode::UnsignedDecimal:
+            commandBar.SetCommand(config.Keys.ChangeBase, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
+            break;
+        }
     }
     return false;
 }
@@ -1108,7 +1137,18 @@ bool BufferView::OnEvent(Reference<Control>, Event eventType, int ID)
             this->Layout.nrCols = 0;
         UpdateViewSizes();
         return true;
-
+    case BUFFERVIEW_CMD_CHANGEBASE:
+        if (this->Layout.nrCols == 0)
+        {
+            // not implemented yet
+        }
+        else
+        {
+            this->Layout.charFormatMode = static_cast<CharacterFormatMode>(
+                  (((unsigned char) this->Layout.charFormatMode) + 1) % ((unsigned char) CharacterFormatMode::Count));
+            UpdateViewSizes();
+        }
+        return true;
     }
     return false;
 }
@@ -1309,7 +1349,7 @@ int BufferView::Print32bitValue(int x, int height, GView::Utils::Buffer buffer, 
         return x;
     const unsigned int v_u32 = *(unsigned int*) buffer.data;
     NumericFormatter n;
-    NumericFormat fmt = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
+    NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
     switch (height)
     {
@@ -1326,7 +1366,7 @@ int BufferView::Print32bitValue(int x, int height, GView::Utils::Buffer buffer, 
         r.WriteSingleLineText(x, 1, "I32:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x + 4, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
-        if (height>=3)
+        if (height >= 3)
         {
             r.WriteSingleLineText(x, 2, "U32:", this->CursorColors.Highlighted);
             r.WriteSingleLineText(x + 4, 2, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);

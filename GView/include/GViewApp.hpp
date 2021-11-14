@@ -134,6 +134,8 @@ namespace View
             Octal,
             SignedDecimal,
             UnsignedDecimal,
+
+            Count // Must be the last
         };
         enum class StringType : unsigned char
         {
@@ -208,6 +210,7 @@ namespace View
             struct
             {
                 AppCUI::Input::Key ChangeColumnsNumber;
+                AppCUI::Input::Key ChangeBase;
             } Keys;
             bool Loaded;
         };
