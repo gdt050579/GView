@@ -258,6 +258,7 @@ namespace View
         virtual void OnAfterResize(int newWidth, int newHeight) override;
         virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t characterCode) override;
         virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
         virtual bool GoTo(unsigned long long offset) override;
         virtual bool Select(unsigned long long offset, unsigned long long size) override;

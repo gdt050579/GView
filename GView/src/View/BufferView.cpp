@@ -48,7 +48,7 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false
 };
 
-constexpr int BUFFERVIEW_CMD_CHANGECOL = 10000;
+constexpr int BUFFERVIEW_CMD_CHANGECOL = 0xBF00;
 
 BufferView::Config BufferView::config;
 
@@ -1091,6 +1091,25 @@ bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
         return true;
     }
 
+    return false;
+}
+bool BufferView::OnEvent(Reference<Control>, Event eventType, int ID)
+{
+    if (eventType != Event::Command)
+        return false;
+    switch (ID)
+    {
+    case BUFFERVIEW_CMD_CHANGECOL:
+        if (this->Layout.nrCols == 0)
+            this->Layout.nrCols = 8;
+        else
+            this->Layout.nrCols <<= 1;
+        if (this->Layout.nrCols >= 64)
+            this->Layout.nrCols = 0;
+        UpdateViewSizes();
+        return true;
+
+    }
     return false;
 }
 bool BufferView::GoTo(unsigned long long offset)

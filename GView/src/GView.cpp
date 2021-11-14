@@ -31,14 +31,16 @@ int main(int argc,const char **argv)
         ShowHelp();
         return 0;
     }
+    GView::App::Instance gviewApp;
+
     if (AppCUI::Utils::String::Equals(argv[1], "reset"))
     {
         gviewApp.ResetConfiguration();
-        retuurn 0;
+        return 0;
     }
 
 
-    GView::App::Instance gviewApp;
+    
     if (!gviewApp.Init())
         return 1;    
     gviewApp.AddFileWindow(argv[1]);
