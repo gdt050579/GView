@@ -11,7 +11,7 @@ Panels::Exports::Exports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
+    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
     list->AddColumn("Name", TextAlignament::Left, 60);
     list->AddColumn("Ord", TextAlignament::Left, 5);
     list->AddColumn("RVA", TextAlignament::Left, 12);

@@ -41,6 +41,8 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Directories(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Imports))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Imports(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Exports))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Exports(pe, win)), true);
         return true;
     }
 }
