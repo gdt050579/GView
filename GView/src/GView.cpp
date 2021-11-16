@@ -14,13 +14,19 @@ Where <command> is on of:
                           and reload all existing plugins. Be carefull when
                           using this options as all your presets will be 
                           lost.
-                          Ex: 'GView reset'                         
+                          Ex: 'GView reset'        
+
+   updateConfig           Updates current condiguration file (gview.ini) by
+                          adding new plugins (if any). For old plugins new
+                          configuration options will be added as well. 
+                          Ex: 'GView updateConfig'                  
 )HELP";
 
 void ShowHelp()
 {
     std::cout << "GView [A file/Process] viewer" << std::endl;
     std::cout << "Build on: " << __DATE__ << " " << __TIME__ << std::endl;
+    std::cout << "Version : " << "x.x.x" << std::endl;
     std::cout << help << std::endl;
 }
 
