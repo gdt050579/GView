@@ -791,8 +791,20 @@ namespace Type
                 Imports(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
-                //bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
                 void OnAfterResize(int newWidth, int newHeight) override;
+            };
+            class Exports : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+
+              public:
+                Exports(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
         }; // namespace Panels
     }      // namespace PE

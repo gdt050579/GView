@@ -4,11 +4,6 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_DIRS_GOTO            = 1;
-constexpr unsigned int PE_DIRS_EDIT            = 2;
-constexpr unsigned int PE_DIRS_SELECT          = 3;
-constexpr unsigned long long INVALID_DIRECTORY = 0xFFFFFFFF;
-
 Panels::Imports::Imports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Imports")
 {
     pe  = _pe;
