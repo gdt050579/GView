@@ -28,7 +28,7 @@ class DefaultInformationPanel : public TabPage
 
 namespace GView::Type::DefaultTypePlugin
 {
-bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
+bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
     return true; // always match everything
 }

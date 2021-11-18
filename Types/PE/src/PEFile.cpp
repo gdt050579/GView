@@ -275,11 +275,11 @@ std::string_view PEFile::ReadString(uint32_t RVA, unsigned int maxSize)
     auto buf = file->Get(RVAtoFilePointer(RVA), maxSize);
     if (buf.Empty())
         return std::string_view{};
-    auto p = buf.data;
-    auto e = p + buf.length;
+    auto p = buf.begin();
+    auto e = buf.end();
     while ((p < e) && (*p))
         p++;
-    return std::string_view{ reinterpret_cast<const char*>(buf.data), static_cast<size_t>(p - buf.data) };
+    return std::string_view{ reinterpret_cast<const char*>(buf.GetData()), static_cast<size_t>(p - buf.GetData()) };
 }
 
 bool PEFile::ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize)
@@ -709,7 +709,7 @@ void PEFile::BuildVersionInfo()
             AddError(ErrorType::Warning, "Unable to read version infornation resource");
             break;
         }
-        if (Ver.ComputeVersionInformation(buf.data, buf.length) == false)
+        if (Ver.ComputeVersionInformation(buf.GetData(), buf.GetLength()) == false)
         {
             AddError(ErrorType::Warning, "Invalid version information resource.");
             break;
@@ -1118,10 +1118,10 @@ bool PEFile::BuildDebugData()
                 bufSize = imgd.SizeOfData;
 
             auto buf = file->Get(imgd.PointerToRawData, bufSize);
-            if (buf.length >= 5) // at least the first 32 bytes
+            if (buf.GetLength() >= 5) // at least the first 32 bytes
             {
                 const char* nm = nullptr;
-                switch (*(uint32_t*) buf.data)
+                switch (*(uint32_t*) buf.GetData())
                 {
                 case CV_SIGNATURE_NB10:
                     nm = (const char*) pdb20->PdbFileName;
@@ -1130,13 +1130,13 @@ bool PEFile::BuildDebugData()
                     nm = (const char*) pdb70->PdbFileName;
                     break;
                 default:
-                    tempStr.SetFormat("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", (*(uint32_t*) buf.data));
+                    tempStr.SetFormat("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", (*(uint32_t*) buf.GetData()));
                     AddError(ErrorType::Warning, tempStr);
                     break;
                 }
                 if (nm)
                 {
-                    const char* e = (const char*) (buf.data + buf.length);
+                    const char* e = (const char*) buf.end();
                     auto* p       = nm;
                     while ((p < e) && (*p))
                         p++;
@@ -1393,8 +1393,9 @@ bool PEFile::Update()
             }
             else
             {
-                for (tr = 0, tmp = 0; tr < buf.length; tr++)
-                    tmp += buf[tr];
+                tmp = 0;
+                for (auto ch: buf)
+                    tmp += ch;
                 if (tmp == 0)
                 {
                     tempStr.SetFormat("Invalid code at Entry Point RVA=(0x%x)", rvaEntryPoint);

@@ -136,7 +136,7 @@ bool Plugin::LoadPlugin()
 
     return true;
 }
-bool Plugin::Validate(Buffer buf, std::string_view extension)
+bool Plugin::Validate(BufferView buf, std::string_view extension)
 {
     if (this->Invalid)
         return false; // a load in memory attempt was tryed and failed

@@ -79,7 +79,7 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 }
 Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view& name)
 {
-    return this->view->CreateChildControl<BufferView>(name, &this->obj).To<BufferViewInterface>();
+    return this->view->CreateChildControl<GView::View::BufferView>(name, &this->obj).To<BufferViewInterface>();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {

@@ -51,9 +51,9 @@ bool DefaultAsciiMask[256] = {
 constexpr int BUFFERVIEW_CMD_CHANGECOL  = 0xBF00;
 constexpr int BUFFERVIEW_CMD_CHANGEBASE = 0xBF01;
 
-BufferView::Config BufferView::config;
+GView::View::BufferView::Config GView::View::BufferView::config;
 
-BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _obj)
+GView::View::BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _obj)
 {
     this->obj  = _obj;
     this->name = _name;
@@ -83,12 +83,12 @@ BufferView::BufferView(const std::string_view& _name, Reference<GView::Object> _
     if (config.Loaded == false)
         LoadConfig();
 }
-void BufferView::UpdateConfig(IniSection sect)
+void GView::View::BufferView::UpdateConfig(IniSection sect)
 {
     sect.UpdateValue("ChangeColumnsCount", Key::F6, true);
     sect.UpdateValue("ChangeBase", Key::F2, true);
 }
-bool BufferView::LoadConfig()
+bool GView::View::BufferView::LoadConfig()
 {
     config.Colors.Ascii       = ColorPair{ Color::Red, Color::DarkBlue };
     config.Colors.Unicode     = ColorPair{ Color::Yellow, Color::DarkBlue };
@@ -116,7 +116,7 @@ bool BufferView::LoadConfig()
     config.Loaded = true;
     return true;
 }
-void BufferView::MoveTo(unsigned long long offset, bool select)
+void GView::View::BufferView::MoveTo(unsigned long long offset, bool select)
 {
     if (this->obj->cache.GetSize() == 0)
         return;
@@ -150,7 +150,7 @@ void BufferView::MoveTo(unsigned long long offset, bool select)
     if ((select) && (sidx >= 0))
         this->selection.UpdateSelection(sidx, offset);
 }
-void BufferView::MoveScrollTo(unsigned long long offset)
+void GView::View::BufferView::MoveScrollTo(unsigned long long offset)
 {
     if (this->obj->cache.GetSize() == 0)
         return;
@@ -169,7 +169,7 @@ void BufferView::MoveScrollTo(unsigned long long offset)
             MoveTo(0, false);
     }
 }
-void BufferView::MoveToSelection(unsigned int selIndex)
+void GView::View::BufferView::MoveToSelection(unsigned int selIndex)
 {
     unsigned long long start, end;
 
@@ -181,29 +181,29 @@ void BufferView::MoveToSelection(unsigned int selIndex)
             MoveTo(end, false);
     }
 }
-void BufferView::SkipCurentCaracter(bool selected)
+void GView::View::BufferView::SkipCurentCaracter(bool selected)
 {
     unsigned long long tr, fileSize;
 
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1);
 
-    if (buf.Empty())
+    if (!buf.IsValid())
         return;
-    auto toSkip = *buf.data;
+    auto toSkip = *buf.GetData();
 
     fileSize = this->obj->cache.GetSize();
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
         auto buf = this->obj->cache.Get(tr, 256);
-        if (buf.Empty())
+        if (!buf.IsValid())
             break;
-        for (unsigned int gr = 0; gr < buf.length; gr++, tr++)
-            if (buf.data[gr] != toSkip)
+        for (unsigned int gr = 0; gr < buf.GetLength(); gr++, tr++)
+            if (buf[gr] != toSkip)
                 break;
     }
     MoveTo(tr, selected);
 }
-void BufferView::MoveTillNextBlock(bool select, int dir)
+void GView::View::BufferView::MoveTillNextBlock(bool select, int dir)
 {
     // GView::Objects::FileZones* zone;
     // switch (File->ColorMode)
@@ -244,7 +244,7 @@ void BufferView::MoveTillNextBlock(bool select, int dir)
     //    }
     //}
 }
-void BufferView::MoveTillEndBlock(bool selected)
+void GView::View::BufferView::MoveTillEndBlock(bool selected)
 {
     unsigned long long tr, gr, fileSize;
     bool found;
@@ -254,14 +254,14 @@ void BufferView::MoveTillEndBlock(bool selected)
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
         auto buf = this->obj->cache.Get(tr, 256);
-        if (buf.Empty())
+        if (!buf.IsValid())
             break;
-        if (buf.data[0] == 0)
+        if (buf[0] == 0)
         {
             found = true;
-            for (gr = 0; (gr < 32) && (found) && (gr < buf.length); gr++)
+            for (gr = 0; (gr < 32) && (found) && (gr < buf.GetLength()); gr++)
             {
-                if (buf.data[gr] != 0)
+                if (buf[gr] != 0)
                     found = false;
             }
             if (found)
@@ -280,10 +280,10 @@ void BufferView::MoveTillEndBlock(bool selected)
     MoveTo(tr, selected);
 }
 
-void BufferView::UpdateStringInfo(unsigned long long offset)
+void GView::View::BufferView::UpdateStringInfo(unsigned long long offset)
 {
     auto buf = this->obj->cache.Get(offset, 1024);
-    if (buf.Empty())
+    if (!buf.IsValid())
     {
         StringInfo.start  = GView::Utils::INVALID_OFFSET;
         StringInfo.end    = GView::Utils::INVALID_OFFSET;
@@ -294,18 +294,18 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
 
     // check for ascii
     {
-        auto* s = buf.data;
-        auto* e = s + buf.length;
+        auto* s = buf.GetData();
+        auto* e = s + buf.GetLength();
 
         if (StringInfo.AsciiMask[*s])
         {
             while ((s < e) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - buf.data >= StringInfo.minCount)
+            if (s - buf.GetData() >= StringInfo.minCount)
             {
                 // ascii string found
                 StringInfo.start = offset;
-                StringInfo.end   = offset + (s - buf.data);
+                StringInfo.end   = offset + (s - buf.GetData());
                 StringInfo.type  = StringType::Ascii;
                 return;
             }
@@ -314,18 +314,18 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
 
     // check for unicode
     {
-        auto* s = (char16_t*) buf.data;
-        auto* e = s + buf.length / 2;
+        auto* s = (char16_t*) buf.GetData();
+        auto* e = s + buf.GetLength() / 2;
         if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
         {
             while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - (char16_t*) buf.data >= StringInfo.minCount)
+            if (s - (char16_t*) buf.GetData() >= StringInfo.minCount)
             {
                 // ascii string found
                 StringInfo.start  = offset;
-                StringInfo.end    = offset + ((const unsigned char*) s - buf.data);
-                StringInfo.middle = offset + (s - (char16_t*) buf.data);
+                StringInfo.end    = offset + ((const unsigned char*) s - buf.GetData());
+                StringInfo.middle = offset + (s - (char16_t*) buf.GetData());
                 StringInfo.type   = StringType::Unicode;
                 return;
             }
@@ -338,8 +338,8 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
     StringInfo.type   = StringType::None;
 
     {
-        auto* s = buf.data;
-        auto* e = s + buf.length;
+        auto* s = buf.GetData();
+        auto* e = s + buf.GetLength();
 
         while (s < e)
         {
@@ -357,7 +357,7 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
                 if (s_s == s_e)
                 {
                     // found a possible string at 's' position --> stop before 's'
-                    StringInfo.end = offset + (s - buf.data);
+                    StringInfo.end = offset + (s - buf.GetData());
                     return;
                 }
             }
@@ -371,7 +371,7 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
                 if (u_s == u_e)
                 {
                     // found a possible unicode at 's' position --> stop before 's'
-                    StringInfo.end = offset + (s - buf.data);
+                    StringInfo.end = offset + (s - buf.GetData());
                     return;
                 }
             }
@@ -383,10 +383,10 @@ void BufferView::UpdateStringInfo(unsigned long long offset)
         }
     }
     // all buffer was process and nothing was found
-    StringInfo.end = offset + buf.length;
+    StringInfo.end = offset + buf.GetLength();
 }
 
-ColorPair BufferView::OffsetToColorZone(unsigned long long offset)
+ColorPair GView::View::BufferView::OffsetToColorZone(unsigned long long offset)
 {
     auto* z = this->zList.OffsetToZone(offset);
     if (z == nullptr)
@@ -394,7 +394,7 @@ ColorPair BufferView::OffsetToColorZone(unsigned long long offset)
     else
         return z->color;
 }
-ColorPair BufferView::OffsetToColor(unsigned long long offset)
+ColorPair GView::View::BufferView::OffsetToColor(unsigned long long offset)
 {
     // check strings
     if ((offset >= StringInfo.start) && (offset < StringInfo.end))
@@ -432,7 +432,7 @@ ColorPair BufferView::OffsetToColor(unsigned long long offset)
     return OffsetToColorZone(offset);
 }
 
-void BufferView::UpdateViewSizes()
+void GView::View::BufferView::UpdateViewSizes()
 {
     // need to recompute all offsets lineAddressSize
     auto sz            = this->Layout.lineNameSize;
@@ -475,7 +475,7 @@ void BufferView::UpdateViewSizes()
     if (this->Layout.visibleRows == 0)
         this->Layout.visibleRows = 1;
 }
-void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
+void GView::View::BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
@@ -511,13 +511,13 @@ void BufferView::PrepareDrawLineInfo(DrawLineInfo& dli)
         dli.recomputeOffsets = false;
     }
     auto buf          = this->obj->cache.Get(dli.offset, dli.textSize);
-    dli.start         = buf.data;
-    dli.end           = buf.data + buf.length;
+    dli.start         = buf.GetData();
+    dli.end           = buf.GetData() + buf.GetLength();
     dli.chNameAndSize = this->chars.GetBuffer();
     dli.chText        = dli.chNameAndSize + (dli.offsetAndNameSize + dli.numbersSize);
     dli.chNumbers     = dli.chNameAndSize + dli.offsetAndNameSize;
 }
-void BufferView::WriteHeaders(Renderer& renderer)
+void GView::View::BufferView::WriteHeaders(Renderer& renderer)
 {
     renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', config.Colors.Header);
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
@@ -560,7 +560,7 @@ void BufferView::WriteHeaders(Renderer& renderer)
     params.Width = this->Layout.charactersPerLine;
     renderer.WriteText("Text", params);
 }
-void BufferView::WriteLineAddress(DrawLineInfo& dli)
+void GView::View::BufferView::WriteLineAddress(DrawLineInfo& dli)
 {
     unsigned long long ofs      = dli.offset;
     auto c                      = config.Colors.Inactive;
@@ -638,7 +638,7 @@ void BufferView::WriteLineAddress(DrawLineInfo& dli)
         n++;
     }
 }
-void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
+void GView::View::BufferView::WriteLineTextToChars(DrawLineInfo& dli)
 {
     auto cp    = config.Colors.Inactive;
     bool activ = this->HasFocus();
@@ -680,7 +680,7 @@ void BufferView::WriteLineTextToChars(DrawLineInfo& dli)
         }
     }
 }
-void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
+void GView::View::BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
     auto c     = dli.chNumbers;
     auto cp    = config.Colors.Inactive;
@@ -870,7 +870,7 @@ void BufferView::WriteLineNumbersToChars(DrawLineInfo& dli)
         }
     }
 }
-void BufferView::Paint(Renderer& renderer)
+void GView::View::BufferView::Paint(Renderer& renderer)
 {
     if (HasFocus())
         renderer.Clear(' ', config.Colors.Normal);
@@ -893,11 +893,11 @@ void BufferView::Paint(Renderer& renderer)
         renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 }
-void BufferView::OnAfterResize(int width, int height)
+void GView::View::BufferView::OnAfterResize(int width, int height)
 {
     this->UpdateViewSizes();
 }
-bool BufferView::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+bool GView::View::BufferView::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     // columns
     switch (this->Layout.nrCols)
@@ -944,7 +944,7 @@ bool BufferView::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     }
     return false;
 }
-bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
+bool GView::View::BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 {
     bool select = ((keyCode & Key::Shift) != Key::None);
     if (select)
@@ -1122,7 +1122,7 @@ bool BufferView::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 
     return false;
 }
-bool BufferView::OnEvent(Reference<Control>, Event eventType, int ID)
+bool GView::View::BufferView::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType != Event::Command)
         return false;
@@ -1152,30 +1152,30 @@ bool BufferView::OnEvent(Reference<Control>, Event eventType, int ID)
     }
     return false;
 }
-bool BufferView::GoTo(unsigned long long offset)
+bool GView::View::BufferView::GoTo(unsigned long long offset)
 {
     this->MoveTo(offset, false);
     return true;
 }
-bool BufferView::Select(unsigned long long offset, unsigned long long size)
+bool GView::View::BufferView::Select(unsigned long long offset, unsigned long long size)
 {
     return false;
 }
-std::string_view BufferView::GetName()
+std::string_view GView::View::BufferView::GetName()
 {
     return this->name;
 }
-void BufferView::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
+void GView::View::BufferView::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
 {
     if (size > 0)
         this->zList.Add(start, start + size - 1, col, name);
 }
-void BufferView::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
+void GView::View::BufferView::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
 {
     if (bookmarkID < 10)
         this->bookmarks[bookmarkID] = fileOffset;
 }
-void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _methodID)
+void GView::View::BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _methodID)
 {
     for (unsigned int tr = 0; tr < translationMethodsCount; tr++)
         if (this->translationMethods[tr].methodID == _methodID)
@@ -1189,7 +1189,7 @@ void BufferView::AddOffsetTranslationMethod(std::string_view _name, MethodID _me
 }
 
 //======================================================================[Cursor information]==================
-int BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)
+int GView::View::BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)
 {
     unsigned long long start, end;
     if (this->selection.GetSelection(selectionID, start, end))
@@ -1205,7 +1205,7 @@ int BufferView::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsig
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
 }
-int BufferView::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r)
+int GView::View::BufferView::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
@@ -1228,7 +1228,7 @@ int BufferView::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSep
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + 5;
 }
-int BufferView::PrintCursorZone(int x, int y, unsigned int width, Renderer& r)
+int GView::View::BufferView::PrintCursorZone(int x, int y, unsigned int width, Renderer& r)
 {
     auto zone = this->zList.OffsetToZone(this->Cursor.currentPos);
     if (zone)
@@ -1238,9 +1238,9 @@ int BufferView::PrintCursorZone(int x, int y, unsigned int width, Renderer& r)
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
 }
-int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r)
+int GView::View::BufferView::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r)
 {
-    if (buffer.length == 0)
+    if (buffer.GetLength() == 0)
         return x;
     const unsigned char v_u8 = buffer[0];
     NumericFormatter n;
@@ -1291,11 +1291,11 @@ int BufferView::Print8bitValue(int x, int height, GView::Utils::Buffer buffer, R
     return x;
 }
 
-int BufferView::Print16bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r)
+int GView::View::BufferView::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r)
 {
-    if (buffer.length < 2)
+    if (buffer.GetLength() < 2)
         return x;
-    const unsigned short v_u16 = *(unsigned short*) buffer.data;
+    const unsigned short v_u16 = *(unsigned short*) buffer.GetData();
     NumericFormatter n;
     NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 4 };
     switch (height)
@@ -1343,11 +1343,11 @@ int BufferView::Print16bitValue(int x, int height, GView::Utils::Buffer buffer, 
     }
     return x;
 }
-int BufferView::Print32bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r)
+int GView::View::BufferView::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r)
 {
-    if (buffer.length < 4)
+    if (buffer.GetLength() < 4)
         return x;
-    const unsigned int v_u32 = *(unsigned int*) buffer.data;
+    const unsigned int v_u32 = *(unsigned int*) buffer.GetData();
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
@@ -1385,7 +1385,7 @@ int BufferView::Print32bitValue(int x, int height, GView::Utils::Buffer buffer, 
     }
     return x;
 }
-void BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
+void GView::View::BufferView::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
 {
     int x = 0;
     // set up the cursor colors

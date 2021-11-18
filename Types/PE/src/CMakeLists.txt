@@ -6,4 +6,5 @@ target_sources(PE PRIVATE
 	PanelSections.cpp 
 	PanelDirectories.cpp 
 	PanelImports.cpp
-	PanelExports.cpp)
+	PanelExports.cpp
+	PanelResources.cpp)

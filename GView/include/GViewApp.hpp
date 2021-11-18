@@ -73,7 +73,7 @@ namespace Type
 {
     namespace DefaultTypePlugin
     {
-        bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension);
+        bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
         TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     }                                               // namespace DefaultTypePlugin
@@ -87,7 +87,7 @@ namespace Type
       public:
         SimplePattern();
         bool Init(std::string_view text, unsigned int ofs);
-        bool Match(GView::Utils::Buffer buf) const;
+        bool Match(AppCUI::Utils::BufferView buf) const;
         inline bool Empty() const
         {
             return Count == 0;
@@ -105,7 +105,7 @@ namespace Type
         unsigned short Priority;
         bool Loaded, Invalid;
 
-        bool (*fnValidate)(const GView::Utils::Buffer& buf, const std::string_view& extension);
+        bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
         TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
@@ -115,7 +115,7 @@ namespace Type
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
         void Init();
-        bool Validate(GView::Utils::Buffer buf, std::string_view extension);
+        bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
         inline bool operator<(const Plugin& plugin) const
@@ -230,9 +230,9 @@ namespace View
         int PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r);
         int PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r);
         int PrintCursorZone(int x, int y, unsigned int width, Renderer& r);
-        int Print8bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
-        int Print16bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
-        int Print32bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
+        int Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
+        int Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
+        int Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer& renderer);

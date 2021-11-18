@@ -4,29 +4,283 @@ using namespace GView::Type;
 using namespace GView::Utils;
 
 constexpr unsigned char CHAR_TYPE_INVALID = 0xFF;
-constexpr unsigned char CHAR_TYPE_SEP = 0xFE;
-constexpr unsigned char CHAR_TYPE_ANY = 0xFD;
+constexpr unsigned char CHAR_TYPE_SEP     = 0xFE;
+constexpr unsigned char CHAR_TYPE_ANY     = 0xFD;
 
-
-unsigned char PatternCharTypes[256] = { CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_SEP,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_SEP,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,0,1,2,3,4,5,6,7,8,9,CHAR_TYPE_INVALID,CHAR_TYPE_SEP,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,0,1,2,3,4,5,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,0,1,2,3,4,5,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID,CHAR_TYPE_INVALID };
+unsigned char PatternCharTypes[256] = { CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_SEP,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_SEP,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        5,
+                                        6,
+                                        7,
+                                        8,
+                                        9,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_SEP,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        5,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        0,
+                                        1,
+                                        2,
+                                        3,
+                                        4,
+                                        5,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID,
+                                        CHAR_TYPE_INVALID };
 
 SimplePattern::SimplePattern()
 {
-    this->Count = 0;
+    this->Count  = 0;
     this->Offset = 0;
 }
 bool SimplePattern::Init(std::string_view text, unsigned int ofs)
 {
     this->Offset = ofs;
-    if (text.empty()) 
+    if (text.empty())
     {
         this->Count = 0;
         return true;
     }
 
-    auto s = (const unsigned char *)text.data();
+    auto s = (const unsigned char*) text.data();
     auto e = s + text.size();
-    
+
     if ((text.starts_with("hex:\"")) || (text.starts_with("hex:'")))
     {
         s += 5;
@@ -44,23 +298,24 @@ bool SimplePattern::Init(std::string_view text, unsigned int ofs)
             s += 2;
         }
     }
-    else {
+    else
+    {
         // simple ascii
         CHECK(text.size() <= MAX_PATTERN_VALUES, false, "Patern too large (max allowed is %d)", MAX_PATTERN_VALUES);
         memcpy(this->CharactersToMatch, s, text.size());
     }
     return true;
 }
-bool SimplePattern::Match(Buffer buf) const
+bool SimplePattern::Match(AppCUI::Utils::BufferView buf) const
 {
     if (this->Count == 0)
         return true; // no pattern means it matches everything
-    if (buf.Empty())
+    if (!buf.IsValid())
         return false; // null buffer
-    if (((unsigned int)this->Offset) + ((unsigned int)this->Count) > buf.length)
+    if (((unsigned int) this->Offset) + ((unsigned int) this->Count) > buf.GetLength())
         return false; // outside the testing buffer
-    auto s = buf.data + this->Offset;
-    auto e = s + this->Count;
+    auto s                 = buf.GetData() + this->Offset;
+    auto e                 = s + this->Count;
     const unsigned char* p = this->CharactersToMatch;
     for (; s < e; s++, p++)
     {
