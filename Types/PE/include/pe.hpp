@@ -814,6 +814,8 @@ namespace Type
 
 
                 void SaveCurrentResource();
+                void GoToSelectedResource();
+                void SelectCurrentResource();
               public:
                 Resources(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 

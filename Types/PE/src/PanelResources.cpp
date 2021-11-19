@@ -4,8 +4,9 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_RES_GOTO = 1;
-constexpr unsigned int PE_RES_SAVE = 2;
+constexpr unsigned int PE_RES_GOTO   = 1;
+constexpr unsigned int PE_RES_SAVE   = 2;
+constexpr unsigned int PE_RES_SELECT = 3;
 
 Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Resources")
 {
@@ -46,6 +47,7 @@ bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& comm
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PE_RES_GOTO);
     commandBar.SetCommand(Key::F2, "Save", PE_RES_SAVE);
+    commandBar.SetCommand(Key::F9, "Select", PE_RES_SELECT);
     return true;
 }
 void Panels::Resources::SaveCurrentResource()
@@ -57,11 +59,23 @@ void Panels::Resources::SaveCurrentResource()
     if (res.has_value())
     {
         auto buf = this->win->GetObject()->cache.CopyToBuffer(r->Start, r->Size);
-        if (AppCUI::OS::File::WriteContent(res.value(), buf)==false)
+        if (AppCUI::OS::File::WriteContent(res.value(), buf) == false)
         {
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");
         }
     }
+}
+void Panels::Resources::GoToSelectedResource()
+{
+    auto sect = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    if (sect.IsValid())
+        win->GetCurrentView()->GoTo(sect->Start);
+}
+void Panels::Resources::SelectCurrentResource()
+{
+    auto sect = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    if (sect.IsValid())
+        win->GetCurrentView()->Select(sect->Start, sect->Size);
 }
 bool Panels::Resources::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
@@ -69,18 +83,23 @@ bool Panels::Resources::OnEvent(Reference<Control> ctrl, Event evnt, int control
         return true;
     if (evnt == Event::Command)
     {
-        if (controlID == PE_RES_SAVE)
+        switch (controlID)
         {
+        case PE_RES_SAVE:
             SaveCurrentResource();
+            return true;
+        case PE_RES_GOTO:
+            GoToSelectedResource();
+            return true;
+        case PE_RES_SELECT:
+            SelectCurrentResource();
             return true;
         }
     }
-    // if ((evnt == Event::ListViewItemClicked) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
-    //{
-    //    auto addr = list->GetItemData(list->GetCurrentItem(), GView::Utils::INVALID_OFFSET);
-    //    if (addr != GView::Utils::INVALID_OFFSET)
-    //        win->GetCurrentView()->GoTo(addr);
-    //    return true;
-    //}
+    if (evnt == Event::ListViewItemClicked)
+    {
+        GoToSelectedResource();
+        return true;
+    }
     return false;
-}
+};
