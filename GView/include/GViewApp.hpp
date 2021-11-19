@@ -126,7 +126,7 @@ namespace Type
 } // namespace Type
 namespace View
 {
-    class BufferView : public View::ViewControl, public View::BufferViewInterface
+    class BufferViewer : public View::ViewControl, public View::BufferViewerInterface
     {
         enum class CharacterFormatMode : unsigned char
         {
@@ -255,7 +255,7 @@ namespace View
         static bool LoadConfig();
 
       public:
-        BufferView(const std::string_view& name, Reference<GView::Object> obj);
+        BufferViewer(const std::string_view& name, Reference<GView::Object> obj);
 
         virtual void Paint(Renderer& renderer) override;
         virtual void OnAfterResize(int newWidth, int newHeight) override;
@@ -328,7 +328,7 @@ namespace App
 
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
-        Reference<View::BufferViewInterface> AddBufferView(const std::string_view& name) override;
+        Reference<View::BufferViewerInterface> AddBufferViewer(const std::string_view& name) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;

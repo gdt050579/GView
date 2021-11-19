@@ -1168,7 +1168,7 @@ bool PEFile::HasPanel(Panels::IDs id)
 {
     return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;
 }
-void PEFile::UpdateBufferViewZones(Reference<GView::View::BufferViewInterface> bufferView)
+void PEFile::UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView)
 {
     LocalString<128> tempStr;
 

@@ -47,7 +47,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), false);
 
     // 2. views
-    auto v = win->AddBufferView("Buffer view");
+    auto v = win->AddBufferViewer("Buffer view");
     return true;
 }
 } // namespace GView::Type::DefaultTypePlugin

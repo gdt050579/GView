@@ -153,5 +153,5 @@ void Instance::ResetConfiguration()
     IniObject ini;
 
     // for viewers
-    GView::View::BufferView::UpdateConfig(ini["BufferView"]);
+    GView::View::BufferViewer::UpdateConfig(ini["BufferView"]);
 }

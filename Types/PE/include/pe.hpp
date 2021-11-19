@@ -709,7 +709,7 @@ namespace Type
 
             bool HasPanel(Panels::IDs id);
 
-            void UpdateBufferViewZones(Reference<GView::View::BufferViewInterface> bufferView);
+            void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
 
             void CopySectionName(uint32_t index, String& name);
 

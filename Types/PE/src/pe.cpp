@@ -30,7 +30,7 @@ extern "C"
         auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
         pe->Update();
 
-        auto b = win->AddBufferView("Buffer View");
+        auto b = win->AddBufferViewer("Buffer View");
         pe->UpdateBufferViewZones(b);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))

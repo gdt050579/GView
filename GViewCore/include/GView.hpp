@@ -32,7 +32,6 @@ namespace Utils
     constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
     constexpr int INVALID_SELECTION_INDEX       = -1;
 
-
     class CORE_EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
@@ -102,7 +101,7 @@ namespace View
         {
         }
     };
-    struct CORE_EXPORT BufferViewInterface
+    struct CORE_EXPORT BufferViewerInterface
     {
         virtual void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name) = 0;
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                             = 0;
@@ -110,10 +109,10 @@ namespace View
     };
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                              = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                        = 0;
-        virtual Reference<BufferViewInterface> AddBufferView(const std::string_view& name) = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                    = 0;
+        virtual Reference<Object> GetObject()                                                  = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                            = 0;
+        virtual Reference<BufferViewerInterface> AddBufferViewer(const std::string_view& name) = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                        = 0;
     };
 }; // namespace View
 }; // namespace GView
