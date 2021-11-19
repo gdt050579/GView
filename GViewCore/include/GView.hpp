@@ -44,7 +44,7 @@ namespace Utils
         FileCache();
         ~FileCache();
 
-        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
+        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize, std::string_view extension);
         BufferView Get(unsigned long long offset, unsigned int requestedSize);
         bool Copy(void* buffer, unsigned long long offset, unsigned int requestedSize);
         Buffer CopyToBuffer(unsigned long long offset, unsigned int requestedSize);

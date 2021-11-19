@@ -9,12 +9,12 @@ using namespace GView;
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::Buffer& buf, const std::string_view& extension)
     {
         CHECK(extension == ".tsv" || extension == ".csv", false, "Wrong extension: [%.*s]!", extension.length(), extension.data());
         if (extension == ".tsv")
         {
-            for (auto i = 0U; i < buf.length; i++)
+            for (auto i = 0U; i < buf.GetLength(); i++)
             {
                 if (buf[i] == '\t')
                 {
@@ -24,7 +24,7 @@ extern "C"
         }
         else if (extension == ".csv")
         {
-            for (auto i = 0U; i < buf.length; i++)
+            for (auto i = 0U; i < buf.GetLength(); i++)
             {
                 if (buf[i] == ',')
                 {
