@@ -132,3 +132,13 @@ bool FileCache::Copy(void* buffer, unsigned long long offset, unsigned int reque
     memcpy(buffer, b.GetData(), b.GetLength());
     return true;
 }
+Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requestedSize)
+{
+    Buffer b(requestedSize);
+    CHECK(Copy(b.GetData(), offset, requestedSize),
+          Buffer(),
+          "Fail to copy data to buffer (offset = %llu, size = %u)",
+          offset,
+          requestedSize);
+    return b;
+}

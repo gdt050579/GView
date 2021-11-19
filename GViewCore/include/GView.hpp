@@ -47,6 +47,7 @@ namespace Utils
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
         BufferView Get(unsigned long long offset, unsigned int requestedSize);
         bool Copy(void* buffer, unsigned long long offset, unsigned int requestedSize);
+        Buffer CopyToBuffer(unsigned long long offset, unsigned int requestedSize);
         inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
         {
             if ((offset >= start) && (offset < end))

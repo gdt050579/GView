@@ -812,6 +812,8 @@ namespace Type
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> list;
 
+
+                void SaveCurrentResource();
               public:
                 Resources(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 

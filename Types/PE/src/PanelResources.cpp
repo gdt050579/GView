@@ -5,6 +5,7 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
 constexpr unsigned int PE_RES_GOTO = 1;
+constexpr unsigned int PE_RES_SAVE = 2;
 
 Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Resources")
 {
@@ -38,17 +39,42 @@ void Panels::Resources::Update()
         list->SetItemText(handle, 4, n.ToDec(r.Size));
         list->SetItemText(handle, 5, n.ToDec(r.CodePage));
         list->SetItemText(handle, 6, temp.Format("%s (%d)", PEFile::LanguageIDToName(r.Language).data(), r.Language));
+        list->SetItemData<PEFile::ResourceInformation>(handle, &r);
     }
 }
 bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", PE_RES_GOTO);
+    commandBar.SetCommand(Key::F2, "Save", PE_RES_SAVE);
     return true;
+}
+void Panels::Resources::SaveCurrentResource()
+{
+    auto r = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    LocalString<128> tmp;
+    tmp.Format("resource_%08X_%X_%d.res", r->Start, r->Size, r->ID);
+    auto res = AppCUI::Dialogs::FileDialog::ShowSaveFileWindow(tmp, "", "");
+    if (res.has_value())
+    {
+        auto buf = this->win->GetObject()->cache.CopyToBuffer(r->Start, r->Size);
+        if (AppCUI::OS::File::WriteContent(res.value(), buf)==false)
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");
+        }
+    }
 }
 bool Panels::Resources::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
+    if (evnt == Event::Command)
+    {
+        if (controlID == PE_RES_SAVE)
+        {
+            SaveCurrentResource();
+            return true;
+        }
+    }
     // if ((evnt == Event::ListViewItemClicked) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
     //{
     //    auto addr = list->GetItemData(list->GetCurrentItem(), GView::Utils::INVALID_OFFSET);
