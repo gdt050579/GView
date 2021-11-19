@@ -9,16 +9,16 @@ using namespace GView;
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        if (buf.length < sizeof(PE::ImageDOSHeader))
+        if (buf.GetLength() < sizeof(PE::ImageDOSHeader))
             return false;
-        auto dos = reinterpret_cast<const PE::ImageDOSHeader*>(buf.data);
+        auto dos = reinterpret_cast<const PE::ImageDOSHeader*>(buf.GetData());
         if (dos->e_magic != __IMAGE_DOS_SIGNATURE)
             return false;
-        if (dos->e_lfanew + sizeof(PE::ImageNTHeaders32) > buf.length)
+        if (dos->e_lfanew + sizeof(PE::ImageNTHeaders32) > buf.GetLength())
             return false;
-        auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.data + dos->e_lfanew);
+        auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.GetData() + dos->e_lfanew);
         return nth32->Signature == __IMAGE_NT_SIGNATURE;
     }
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
@@ -30,7 +30,7 @@ extern "C"
         auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
         pe->Update();
 
-        auto b = win->AddBufferView("Buffer View");
+        auto b = win->AddBufferViewer("Buffer View");
         pe->UpdateBufferViewZones(b);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
@@ -39,6 +39,12 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Sections(pe, win)), false);
         if (pe->HasPanel(PE::Panels::IDs::Directories))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Directories(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Imports))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Imports(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Exports))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Exports(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Resources))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Resources(pe, win)), true);
         return true;
     }
 }

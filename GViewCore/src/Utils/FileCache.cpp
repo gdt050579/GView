@@ -43,20 +43,20 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
     this->cacheSize = _cacheSize;
     this->start     = 0;
     this->end       = 0;
-
-    const auto length = std::min<>(1023ULL, extension.size());
+	
+	const auto length = std::min<>(1023ULL, extension.size());
     for (auto i = 0U; i < length; i++)
     {
         this->extension[i] = extension.data()[i];
     }
     this->extension[length] = 0;
-
+    
     return true;
 }
-Buffer FileCache::Get(unsigned long long offset, unsigned int requestedSize)
+BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
 {
-    CHECK(this->fileObj, Buffer(), "File was not properly initialized !");
-    CHECK(requestedSize > 0, Buffer(), "'requestedSize' has to be bigger than 0 ");
+    CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
+    CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
 
     if (offset >= this->start)
     {
@@ -64,12 +64,12 @@ Buffer FileCache::Get(unsigned long long offset, unsigned int requestedSize)
         if ((offset + requestedSize) <= this->end)
         {
             this->currentPos = offset + requestedSize;
-            return Buffer(&this->cache[offset - this->start], requestedSize);
+            return BufferView(&this->cache[offset - this->start], requestedSize);
         }
         if (this->end == this->fileSize)
         {
             this->currentPos = this->fileSize;
-            return Buffer(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
+            return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
         }
     }
     // request outside file
@@ -102,12 +102,12 @@ Buffer FileCache::Get(unsigned long long offset, unsigned int requestedSize)
     }
     // read new data in cache
     if (this->fileObj->SetCurrentPos(_start) == false)
-        return Buffer();
+        return BufferView();
     if (this->fileObj->Read(this->cache, (unsigned int) (_end - _start)) == false)
     {
         this->start = 0;
         this->end   = 0;
-        return Buffer();
+        return BufferView();
     }
     // return new pointer
     this->start = _start;
@@ -115,27 +115,37 @@ Buffer FileCache::Get(unsigned long long offset, unsigned int requestedSize)
     if ((offset + requestedSize) <= this->end)
     {
         this->currentPos = offset + requestedSize;
-        return Buffer(&this->cache[offset - this->start], requestedSize);
+        return BufferView(&this->cache[offset - this->start], requestedSize);
     }
     if (this->end == this->fileSize)
     {
         this->currentPos = this->fileSize;
-        return Buffer(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
+        return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
     }
     this->currentPos = this->end;
-    return Buffer(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
+    return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
 }
 bool FileCache::Copy(void* buffer, unsigned long long offset, unsigned int requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
     auto b = Get(offset, requestedSize);
-    CHECK(!b.Empty(), false, "Unable to read %u bytes from %llu offset ", requestedSize, offset);
-    CHECK(b.length == requestedSize,
+    CHECK(b.IsValid(), false, "Unable to read %u bytes from %llu offset ", requestedSize, offset);
+    CHECK(b.GetLength() == requestedSize,
           false,
           "Unable to read %u bytes from %llu offset (only %u were read)",
           requestedSize,
           offset,
-          b.length);
-    memcpy(buffer, b.data, b.length);
+          (unsigned int)b.GetLength());
+    memcpy(buffer, b.GetData(), b.GetLength());
     return true;
+}
+Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requestedSize)
+{
+    Buffer b(requestedSize);
+    CHECK(Copy(b.GetData(), offset, requestedSize),
+          Buffer(),
+          "Fail to copy data to buffer (offset = %llu, size = %u)",
+          offset,
+          requestedSize);
+    return b;
 }

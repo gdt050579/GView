@@ -73,7 +73,7 @@ namespace Type
 {
     namespace DefaultTypePlugin
     {
-        bool Validate(const GView::Utils::Buffer& buf, const std::string_view& extension);
+        bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
         TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     }                                               // namespace DefaultTypePlugin
@@ -87,7 +87,7 @@ namespace Type
       public:
         SimplePattern();
         bool Init(std::string_view text, unsigned int ofs);
-        bool Match(GView::Utils::Buffer buf) const;
+        bool Match(AppCUI::Utils::BufferView buf) const;
         inline bool Empty() const
         {
             return Count == 0;
@@ -105,7 +105,7 @@ namespace Type
         unsigned short Priority;
         bool Loaded, Invalid;
 
-        bool (*fnValidate)(const GView::Utils::Buffer& buf, const std::string_view& extension);
+        bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
         TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
@@ -115,7 +115,7 @@ namespace Type
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
         void Init();
-        bool Validate(GView::Utils::Buffer buf, std::string_view extension);
+        bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
         inline bool operator<(const Plugin& plugin) const
@@ -126,7 +126,7 @@ namespace Type
 } // namespace Type
 namespace View
 {
-    class BufferView : public View::ViewControl, public View::BufferViewInterface
+    class BufferViewer : public View::ViewControl, public View::BufferViewerInterface
     {
         enum class CharacterFormatMode : unsigned char
         {
@@ -134,6 +134,8 @@ namespace View
             Octal,
             SignedDecimal,
             UnsignedDecimal,
+
+            Count // Must be the last
         };
         enum class StringType : unsigned char
         {
@@ -205,6 +207,11 @@ namespace View
                 ColorPair Ascii;
                 ColorPair Unicode;
             } Colors;
+            struct
+            {
+                AppCUI::Input::Key ChangeColumnsNumber;
+                AppCUI::Input::Key ChangeBase;
+            } Keys;
             bool Loaded;
         };
 
@@ -223,9 +230,9 @@ namespace View
         int PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r);
         int PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r);
         int PrintCursorZone(int x, int y, unsigned int width, Renderer& r);
-        int Print8bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
-        int Print16bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
-        int Print32bitValue(int x, int height, GView::Utils::Buffer buffer, Renderer& r);
+        int Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
+        int Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
+        int Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer& renderer);
@@ -248,11 +255,13 @@ namespace View
         static bool LoadConfig();
 
       public:
-        BufferView(const std::string_view& name, Reference<GView::Object> obj);
+        BufferViewer(const std::string_view& name, Reference<GView::Object> obj);
 
         virtual void Paint(Renderer& renderer) override;
         virtual void OnAfterResize(int newWidth, int newHeight) override;
         virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t characterCode) override;
+        virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
         virtual bool GoTo(unsigned long long offset) override;
         virtual bool Select(unsigned long long offset, unsigned long long size) override;
@@ -262,6 +271,8 @@ namespace View
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset) override;
         virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID) override;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
+
+        static void UpdateConfig(IniSection sect);
     };
 
 } // namespace View
@@ -299,6 +310,7 @@ namespace App
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
         void Run();
+        void ResetConfiguration();
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
@@ -316,13 +328,15 @@ namespace App
 
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
-        Reference<View::BufferViewInterface> AddBufferView(const std::string_view& name) override;
+        Reference<View::BufferViewerInterface> AddBufferViewer(const std::string_view& name) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
-
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
+        
+        
     };
 } // namespace App
 

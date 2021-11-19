@@ -32,25 +32,6 @@ namespace Utils
     constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
     constexpr int INVALID_SELECTION_INDEX       = -1;
 
-    struct Buffer
-    {
-        const unsigned char* data;
-        const unsigned int length;
-        Buffer() : data(nullptr), length(0)
-        {
-        }
-        Buffer(const unsigned char* d, unsigned int l) : data(d), length(l)
-        {
-        }
-        constexpr inline bool Empty() const
-        {
-            return length == 0;
-        }
-        constexpr inline unsigned char operator[](unsigned int index) const
-        {
-            return *(data + index);
-        }
-    };
     class CORE_EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
@@ -63,16 +44,17 @@ namespace Utils
         FileCache();
         ~FileCache();
 
-        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize, std::string_view extension);
-        Buffer Get(unsigned long long offset, unsigned int requestedSize);
+        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
+        BufferView Get(unsigned long long offset, unsigned int requestedSize);
         bool Copy(void* buffer, unsigned long long offset, unsigned int requestedSize);
+        Buffer CopyToBuffer(unsigned long long offset, unsigned int requestedSize);
         inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
         {
             if ((offset >= start) && (offset < end))
                 return cache[offset - start];
             return defaultValue;
         }
-        inline Buffer Get(unsigned int requestedSize)
+        inline BufferView Get(unsigned int requestedSize)
         {
             return Get(currentPos, requestedSize);
         }
@@ -125,7 +107,7 @@ namespace View
         {
         }
     };
-    struct CORE_EXPORT BufferViewInterface
+    struct CORE_EXPORT BufferViewerInterface
     {
         virtual void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name) = 0;
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                             = 0;
@@ -133,10 +115,10 @@ namespace View
     };
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                              = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                        = 0;
-        virtual Reference<BufferViewInterface> AddBufferView(const std::string_view& name) = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                    = 0;
+        virtual Reference<Object> GetObject()                                                  = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                            = 0;
+        virtual Reference<BufferViewerInterface> AddBufferViewer(const std::string_view& name) = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                        = 0;
     };
 }; // namespace View
 }; // namespace GView

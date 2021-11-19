@@ -77,9 +77,9 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
         return false;
     }
 }
-Reference<BufferViewInterface> FileWindow::AddBufferView(const std::string_view& name)
+Reference<BufferViewerInterface> FileWindow::AddBufferViewer(const std::string_view& name)
 {
-    return this->view->CreateChildControl<BufferView>(name, &this->obj).To<BufferViewInterface>();
+    return this->view->CreateChildControl<BufferViewer>(name, &this->obj).To<BufferViewerInterface>();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
@@ -171,4 +171,8 @@ void FileWindow::OnFocus(Reference<Control> control)
     {
         horizontal->SetSecondPanelSize(defaultVerticalPanelsSize);
     }
+}
+bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    return true;
 }

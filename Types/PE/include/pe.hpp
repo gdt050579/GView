@@ -709,7 +709,7 @@ namespace Type
 
             bool HasPanel(Panels::IDs id);
 
-            void UpdateBufferViewZones(Reference<GView::View::BufferViewInterface> bufferView);
+            void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
 
             void CopySectionName(uint32_t index, String& name);
 
@@ -774,6 +774,48 @@ namespace Type
 
               public:
                 Directories(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+            class Imports: public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+                Reference<AppCUI::Controls::ListView> info;
+                Reference<AppCUI::Controls::ListView> dlls;
+
+              public:
+                Imports(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                void OnAfterResize(int newWidth, int newHeight) override;
+            };
+            class Exports : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+
+              public:
+                Exports(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+            class Resources : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+
+
+                void SaveCurrentResource();
+              public:
+                Resources(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
