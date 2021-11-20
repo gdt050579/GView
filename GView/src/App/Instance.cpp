@@ -127,10 +127,11 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     // instantiate window
     while (true)
     {
-        CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");
-
+        CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");  
+        win->Start(); // starts the window and set focus
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
+        
         return true;
     }
     // error case

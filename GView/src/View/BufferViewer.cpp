@@ -58,7 +58,7 @@ GView::View::BufferViewer::BufferViewer(const std::string_view& _name, Reference
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 16;
+    this->Layout.nrCols            = 0;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
@@ -866,7 +866,7 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = config.Colors.Inactive;
         c++;
     }
-    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));
+    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));  
 }
 void GView::View::BufferViewer::Paint(Renderer& renderer)
 {
