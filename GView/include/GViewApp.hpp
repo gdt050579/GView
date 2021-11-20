@@ -275,6 +275,20 @@ namespace View
         static void UpdateConfig(IniSection sect);
     };
 
+    class GridViewer : public View::ViewControl, public View::GridViewerInterface
+    {
+    private:
+        Reference<GView::Object> obj;
+        FixSizeString<29> name;
+
+    public:
+        GridViewer(std::string_view name, Reference<GView::Object> obj);
+
+        bool GoTo(unsigned long long offset) override;
+        bool Select(unsigned long long offset, unsigned long long size) override;
+        std::string_view GetName() override;
+        void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
+    };
 } // namespace View
 namespace App
 {
@@ -305,6 +319,7 @@ namespace App
         bool LoadSettings();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
         bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath);
+
       public:
         Instance();
         bool Init();
@@ -323,20 +338,20 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
 
         void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
+
       public:
         FileWindow(const AppCUI::Utils::ConstString& name);
 
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         Reference<View::BufferViewerInterface> AddBufferViewer(const std::string_view& name) override;
+        Reference<View::GridViewerInterface> AddGridViewer(const std::string_view& name) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
-        
-        
     };
 } // namespace App
 

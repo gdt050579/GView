@@ -1,1 +1,1 @@
-target_sources(GView PRIVATE BufferViewer.cpp )
+target_sources(GView PRIVATE BufferViewer.cpp GridViewer.cpp)

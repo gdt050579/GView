@@ -12,15 +12,19 @@ std::string_view CSVFile::CSVFile::GetTypeName()
     return "CSV";
 }
 
-bool GView::Type::CSV::CSVFile::Update()
+bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 {
-    if (this->file->GetExtension() == ".tsv")
+    this->obj = obj;
+    std::string_view name{ this->obj->name };
+    std::string_view extension{ this->obj->name };
+
+    if (name == ".tsv")
     {
-        this->separator = '\t';
+        separator = '\t';
     }
-    else if (this->file->GetExtension() == ".csv")
+    else if (extension == ".csv")
     {
-        this->separator = ',';
+        separator = ',';
     }
     else
     {
@@ -61,5 +65,14 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(Reference<GView::View::Buf
             bufferView->AddZone(rowNo, i, color, std::to_string(rowNo));
             rowNo++;
         }
+        else if (character == '\n')
+        {
+            bufferView->AddZone(rowNo, i, color, std::to_string(rowNo));
+            rowNo++;
+        }
     }
+}
+
+void GView::Type::CSV::CSVFile::UpdateGridViewZones(Reference<GView::View::GridViewerInterface> bufferView)
+{
 }

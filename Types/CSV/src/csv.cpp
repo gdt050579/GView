@@ -44,11 +44,16 @@ extern "C"
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto csv = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
-        csv->Update();
+        csv->Update(win->GetObject());
 
-        auto b = win->AddBufferViewer("Buffer View");
-        csv->UpdateBufferViewZones(b);
+        // views
+        auto bufferView = win->AddBufferViewer("Buffer View");
+        csv->UpdateBufferViewZones(bufferView);
 
+        auto gridView = win->AddGridViewer("Grid View");
+        csv->UpdateGridViewZones(gridView);
+
+        // panels
         if (csv->HasPanel(CSV::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new CSV::Panels::Information(csv)), true);
 

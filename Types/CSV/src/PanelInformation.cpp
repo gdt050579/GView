@@ -29,9 +29,10 @@ void Information::UpdateGeneralInformation()
 {
     general->DeleteAllItems();
 
-    LocalString<256> tempStr;
-    NumericFormatter n;
-    general->AddItem("Size", tempStr.Format("%s bytes", n.ToString(csv->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
+    LocalString<256> ls;
+    NumericFormatter nf;
+    general->AddItem("Filename", csv->obj->name);
+    general->AddItem("Size", ls.Format("%s bytes", nf.ToString(csv->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
 }
 
 void Information::RecomputePanelsPositions()

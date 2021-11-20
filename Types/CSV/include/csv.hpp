@@ -27,16 +27,18 @@ namespace Type
             uint64_t panelsMask{ 0 };
 
           public:
+            Reference<GView::Object> obj;
             Reference<GView::Utils::FileCache> file;
 
           public:
-            CSVFile(Reference<GView::Utils::FileCache> file);
+            CSVFile(Reference<GView::Utils::FileCache> fileCache);
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;
-            bool Update();
+            bool Update(Reference<GView::Object> obj);
             bool HasPanel(Panels::IDs id);
             void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
+            void UpdateGridViewZones(Reference<GView::View::GridViewerInterface> bufferView);
         };
 
         namespace Panels

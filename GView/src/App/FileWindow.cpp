@@ -56,6 +56,19 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     this->defaultCursorViewSize       = 2;
     this->defaultVerticalPanelsSize   = 8;
     this->defaultHorizontalPanelsSize = 40;
+
+    UnicodeStringBuilder usb{ name };
+    const auto path = std::filesystem::path(usb.ToStringView());
+
+    const auto filename     = path.filename().string();
+    const auto filenameSize = std::min<>(1023ULL, filename.length());
+    memcpy(this->obj.name, filename.c_str(), filenameSize);
+    this->obj.name[filenameSize + 1] = 0;
+
+    const auto extension     = path.extension().string();
+    const auto extensionSize = std::min<>(1023ULL, extension.length());
+    memcpy(this->obj.extension, extension.c_str(), extensionSize);
+    this->obj.extension[extensionSize + 1] = 0;
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -80,6 +93,10 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 Reference<BufferViewerInterface> FileWindow::AddBufferViewer(const std::string_view& name)
 {
     return this->view->CreateChildControl<BufferViewer>(name, &this->obj).To<BufferViewerInterface>();
+}
+Reference<GridViewerInterface> FileWindow::AddGridViewer(const std::string_view& name)
+{
+    return this->view->CreateChildControl<GridViewer>(name, &this->obj).To<GridViewerInterface>();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
@@ -116,7 +133,7 @@ void FileWindow::UpdateDefaultPanelsSizes(Reference<Splitter> splitter)
         if (splitter == horizontal)
         {
             defaultCursorViewSize = horizontal->GetSecondPanelSize();
-        }        
+        }
     }
     else
     {

@@ -38,7 +38,6 @@ namespace Utils
         unsigned long long fileSize, start, end, currentPos;
         unsigned char* cache;
         unsigned int cacheSize;
-        char extension[1024];
 
         bool CopyObject(void* buffer, unsigned long long offset, unsigned long long requestedSize);
 
@@ -46,7 +45,7 @@ namespace Utils
         FileCache();
         ~FileCache();
 
-        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize, std::string_view extension);
+        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
         BufferView Get(unsigned long long offset, unsigned long long requestedSize);
 
         Buffer CopyToBuffer(unsigned long long offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
@@ -79,20 +78,14 @@ namespace Utils
         {
             return CopyObject(&object, offset, sizeof(T));
         }
-
-        std::string_view GetExtension() const
-        {
-            return extension;
-        }
     };
 } // namespace Utils
 struct CORE_EXPORT Object
 {
-    Utils::FileCache cache;
-    TypeInterface* type;
-    Object() : type(nullptr)
-    {
-    }
+    Utils::FileCache cache{};
+    TypeInterface* type = nullptr;
+    char name[1024]{ 0 };
+    char extension[1024]{ 0 };
 };
 
 namespace View
@@ -115,11 +108,15 @@ namespace View
         virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                             = 0;
         virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID)                             = 0;
     };
+    struct CORE_EXPORT GridViewerInterface
+    {
+    };
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                  = 0;
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                            = 0;
         virtual Reference<BufferViewerInterface> AddBufferViewer(const std::string_view& name) = 0;
+        virtual Reference<GridViewerInterface> AddGridViewer(const std::string_view& name)     = 0;
         virtual Reference<ViewControl> GetCurrentView()                                        = 0;
     };
 }; // namespace View

@@ -27,7 +27,8 @@ FileCache::~FileCache()
     this->cache = nullptr;
 }
 
-bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cacheSize, std::string_view extension)
+bool FileCache::Init(
+      std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cacheSize)
 {
     CHECK(this->cacheSize == 0, false, "Cache object already initialized !");
     this->fileObj = file.release(); // take ownership of the pointer
@@ -43,14 +44,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
     this->cacheSize = _cacheSize;
     this->start     = 0;
     this->end       = 0;
-	
-	const auto length = std::min<>(1023ULL, extension.size());
-    for (auto i = 0U; i < length; i++)
-    {
-        this->extension[i] = extension.data()[i];
-    }
-    this->extension[length] = 0;
-    
+
     return true;
 }
 BufferView FileCache::Get(unsigned long long offset, unsigned long long requestedSize)
@@ -185,7 +179,7 @@ Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requested
         }
         memcpy(p, bv.GetData(), toRead);
         p += toRead;
-        requestedSize -= toRead;        
+        requestedSize -= toRead;
     }
     return b;
 }
