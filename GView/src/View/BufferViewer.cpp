@@ -679,6 +679,7 @@ void GView::View::BufferViewer::WriteLineTextToChars(DrawLineInfo& dli)
             dli.start++;
         }
     }
+    this->chars.Resize((unsigned int)(dli.chText - this->chars.GetBuffer()));
 }
 void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
@@ -829,6 +830,7 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
             }
             break;
         }
+        // number columns separators
         c->Code  = ' ';
         c->Color = cp;
         c++;
@@ -857,18 +859,14 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.start++;
         dli.offset++;
     }
-    if ((sps) && (sps > this->chars.GetBuffer()))
+    // clear space until text column
+    while (c < sps)
     {
-        unsigned int count = 0;
-        sps--;
-        while ((count < 3) && (sps >= this->chars.GetBuffer()))
-        {
-            count++;
-            sps->Code  = ' ';
-            sps->Color = config.Colors.Inactive;
-            sps--;
-        }
+        c->Code  = ' ';
+        c->Color = config.Colors.Inactive;
+        c++;
     }
+    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));
 }
 void GView::View::BufferViewer::Paint(Renderer& renderer)
 {
