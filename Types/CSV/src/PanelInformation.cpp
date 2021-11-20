@@ -4,7 +4,7 @@ using namespace GView::Type::CSV;
 
 namespace GView::Type::CSV::Panels
 {
-Information::Information(Reference<GView::Type::CSV::CSVFile> csv) : TabPage("Information")
+Information::Information(Reference<GView::Type::CSV::CSVFile> csv) : TabPage("Informa&Tion")
 {
     this->csv = csv;
     general   = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
