@@ -1,6 +1,7 @@
 #include "pe.hpp"
 
 using namespace AppCUI;
+using namespace AppCUI::Utils;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace GView::Utils;
@@ -46,6 +47,11 @@ extern "C"
         if (pe->HasPanel(PE::Panels::IDs::Resources))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Resources(pe, win)), true);
         return true;
+    }
+    PLUGIN_EXPORT void UpdateSettings(IniSection sect)
+    {
+        sect.UpdateValue("Pattern", "MZ", false);
+        sect.UpdateValue("Priority", 1, false);
     }
 }
 
