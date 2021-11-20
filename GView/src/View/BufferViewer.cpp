@@ -510,6 +510,7 @@ void GView::View::BufferViewer::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
+
     auto buf          = this->obj->cache.Get(dli.offset, dli.textSize);
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
@@ -688,6 +689,8 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
     auto ut    = (unsigned char) 0;
     auto sps   = dli.chText;
 
+    const auto delta = static_cast<unsigned int>(dli.textSize - (this->obj->cache.GetSize() - dli.offset));
+
     while (dli.start < dli.end)
     {
         if (activ)
@@ -857,6 +860,17 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.start++;
         dli.offset++;
     }
+
+    if (dli.offset == this->obj->cache.GetSize())
+    {
+        chars.Resize(chars.Len() - delta);
+        for (auto i = dli.numbersSize - 1; i >= dli.numbersSize - (delta + 1) * 3 - 1; i--)
+        {
+            dli.chNumbers[i].Code = ' ';
+            dli.chNumbers[i].Color = config.Colors.Inactive;
+        }
+    }
+
     if ((sps) && (sps > this->chars.GetBuffer()))
     {
         unsigned int count = 0;

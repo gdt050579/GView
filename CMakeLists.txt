@@ -22,5 +22,7 @@ add_subdirectory(GView)
 add_subdirectory(Types/PE)
 add_subdirectory(Types/CSV)
 
-
-
+if(MSVC)
+  target_compile_options(GView PUBLIC "/ZI")
+  target_link_options(GView PUBLIC "/ZI" "/INCREMENTAL")
+endif()
