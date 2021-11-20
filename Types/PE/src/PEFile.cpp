@@ -260,16 +260,6 @@ PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
     panelsMask = 0;
 }
 
-bool PEFile::ReadBufferFromRVA(uint32_t RVA, void* Buffer, uint32_t BufferSize)
-{
-    uint64_t FA;
-    if ((Buffer == nullptr) || (BufferSize == 0))
-        return false;
-    if ((FA = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
-        return false;
-    return file->Copy(Buffer, FA, BufferSize);
-}
-
 std::string_view PEFile::ReadString(uint32_t RVA, unsigned int maxSize)
 {
     auto buf = file->Get(RVAtoFilePointer(RVA), maxSize);
@@ -1163,6 +1153,7 @@ void PEFile::CopySectionName(uint32_t index, String& name)
     for (tr = 0; (sect[index].Name[tr] != 0) && (tr < 8); tr++)
         name.AddChar(sect[index].Name[tr]);
 }
+
 
 bool PEFile::HasPanel(Panels::IDs id)
 {
