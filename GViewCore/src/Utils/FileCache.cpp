@@ -157,7 +157,8 @@ Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requested
             LOG_ERROR("Empty buffer received when reading %u bytes from %llu offset", toRead, offset);
             if (failIfRequestedSizeCanNotBeRead)
                 return Buffer();
-            // maybe trim the buffer
+            // trim the buffer size to the amount of data that was read
+            b.Resize(p - b.GetData());
             return b;
         }
         if (toRead != bv.GetLength())
@@ -170,8 +171,9 @@ Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requested
             {
                 memcpy(p, bv.GetData(), bv.GetLength());
             }
-            p += toRead;
-            // trim the buffer
+            p += bv.GetLength();
+            // trim the buffer size to the amount of data that was read
+            b.Resize(p - b.GetData());
             return b;
         }
         memcpy(p, bv.GetData(), toRead);
