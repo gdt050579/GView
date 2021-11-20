@@ -47,12 +47,18 @@ extern "C"
         csv->Update();
 
         // auto b = win->AddBufferView("Buffer View");
-       // csv->UpdateBufferViewZones(b);
+        // csv->UpdateBufferViewZones(b);
 
         if (csv->HasPanel(CSV::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new CSV::Panels::Information(csv)), true);
 
         return true;
+    }
+
+    PLUGIN_EXPORT void UpdateSettings(IniSection sect)
+    {
+        sect["Extension"] = { "csv", "tsv" };
+        sect["Priority"]  = 1;
     }
 }
 
