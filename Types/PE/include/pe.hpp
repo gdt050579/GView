@@ -677,7 +677,7 @@ namespace Type
             bool isMetroApp;
             bool hasTLS;
 
-            bool ReadBufferFromRVA(uint32_t RVA, void* Buffer, uint32_t BufferSize);
+            
             std::string_view ReadString(uint32_t RVA, unsigned int maxSize);
             bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
             void AddError(ErrorType type, std::string_view message);

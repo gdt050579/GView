@@ -118,7 +118,7 @@ BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
     this->currentPos = this->end;
     return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
 }
-bool FileCache::Copy(void* buffer, unsigned long long offset, unsigned int requestedSize)
+bool FileCache::CopyObject(void* buffer, unsigned long long offset, unsigned int requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
     auto b = Get(offset, requestedSize);
@@ -128,17 +128,55 @@ bool FileCache::Copy(void* buffer, unsigned long long offset, unsigned int reque
           "Unable to read %u bytes from %llu offset (only %u were read)",
           requestedSize,
           offset,
-          (unsigned int)b.GetLength());
+          (unsigned int) b.GetLength());
     memcpy(buffer, b.GetData(), b.GetLength());
     return true;
 }
-Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requestedSize)
+Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead)
 {
+    // sanity checks
+    CHECK(requestedSize > 0, Buffer(), "Invalid requested size (should be bigger than 0)");
+    CHECK(offset <= this->fileSize, Buffer(), "Invalid offset (%llu) , should be less than %llu ", offset, this->fileSize);
+    if (failIfRequestedSizeCanNotBeRead)
+    {
+        CHECK(offset + (unsigned long long) requestedSize <= this->fileSize,
+              Buffer(),
+              "Unable to read %u bytes from %llu",
+              requestedSize,
+              offset);
+    }
     Buffer b(requestedSize);
-    CHECK(Copy(b.GetData(), offset, requestedSize),
-          Buffer(),
-          "Fail to copy data to buffer (offset = %llu, size = %u)",
-          offset,
-          requestedSize);
+    unsigned int toRead = this->cacheSize >> 1;
+    auto p              = b.GetData();
+    while (requestedSize)
+    {
+        toRead  = std::min(toRead, requestedSize);
+        auto bv = this->Get(offset, toRead);
+        if (bv.Empty())
+        {
+            LOG_ERROR("Empty buffer received when reading %u bytes from %llu offset", toRead, offset);
+            if (failIfRequestedSizeCanNotBeRead)
+                return Buffer();
+            // maybe trim the buffer
+            return b;
+        }
+        if (toRead != bv.GetLength())
+        {
+            LOG_ERROR("Only %u bytes received when trying to read %u bytes from %llu offset", bv.GetLength(), toRead, offset);
+            if (failIfRequestedSizeCanNotBeRead)
+                return Buffer();
+            // copy the buffer that was read
+            if (bv.GetLength() > 0)
+            {
+                memcpy(p, bv.GetData(), bv.GetLength());
+            }
+            p += toRead;
+            // trim the buffer
+            return b;
+        }
+        memcpy(p, bv.GetData(), toRead);
+        p += toRead;
+        requestedSize -= toRead;        
+    }
     return b;
 }
