@@ -1,1 +1,1 @@
-target_sources(CSV PRIVATE csv.cpp CSVFile.cpp PanelInformation.cpp PanelSections.cpp PanelDirectories.cpp)
+target_sources(CSV PRIVATE csv.cpp CSVFile.cpp PanelInformation.cpp)

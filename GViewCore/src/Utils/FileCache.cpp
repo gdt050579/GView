@@ -53,7 +53,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
     
     return true;
 }
-BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
+BufferView FileCache::Get(unsigned long long offset, unsigned long long requestedSize)
 {
     CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
     CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
@@ -125,7 +125,7 @@ BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
     this->currentPos = this->end;
     return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
 }
-bool FileCache::CopyObject(void* buffer, unsigned long long offset, unsigned int requestedSize)
+bool FileCache::CopyObject(void* buffer, unsigned long long offset, unsigned long long requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
     auto b = Get(offset, requestedSize);

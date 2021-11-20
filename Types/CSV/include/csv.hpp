@@ -36,6 +36,7 @@ namespace Type
             std::string_view GetTypeName() override;
             bool Update();
             bool HasPanel(Panels::IDs id);
+            void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
         };
 
         namespace Panels

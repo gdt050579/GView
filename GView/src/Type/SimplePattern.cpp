@@ -303,7 +303,7 @@ bool SimplePattern::Init(std::string_view text, unsigned int ofs)
         // simple ascii
         CHECK(text.size() <= MAX_PATTERN_VALUES, false, "Patern too large (max allowed is %d)", MAX_PATTERN_VALUES);
         memcpy(this->CharactersToMatch, s, text.size());
-        this->Count = text.size();
+        this->Count = static_cast<unsigned char>(text.size());
     }
     return true;
 }

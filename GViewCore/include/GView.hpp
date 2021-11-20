@@ -40,14 +40,14 @@ namespace Utils
         unsigned int cacheSize;
         char extension[1024];
 
-        bool CopyObject(void* buffer, unsigned long long offset, unsigned int requestedSize);
+        bool CopyObject(void* buffer, unsigned long long offset, unsigned long long requestedSize);
 
       public:
         FileCache();
         ~FileCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize, std::string_view extension);
-        BufferView Get(unsigned long long offset, unsigned int requestedSize);
+        BufferView Get(unsigned long long offset, unsigned long long requestedSize);
 
         Buffer CopyToBuffer(unsigned long long offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
         inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
@@ -56,7 +56,7 @@ namespace Utils
                 return cache[offset - start];
             return defaultValue;
         }
-        inline BufferView Get(unsigned int requestedSize)
+        inline BufferView Get(unsigned long long requestedSize)
         {
             return Get(currentPos, requestedSize);
         }
