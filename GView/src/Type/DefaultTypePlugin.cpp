@@ -42,9 +42,6 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     // at least one view and one information panel
     // 1. info panel
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
-    win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
-    win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), false);
-    win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), false);
 
     // 2. views
     auto v = win->AddBufferViewer("Buffer view");
