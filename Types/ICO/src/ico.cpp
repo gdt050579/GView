@@ -53,8 +53,8 @@ extern "C"
         sect.UpdateValue(
               "Pattern",
               {
-                    "hex:'00 00 00 01",
-                    "hex:'00 00 00 02",
+                    "hex:'00 00 00 01'",
+                    "hex:'00 00 00 02'",
               },
               false);
         sect.UpdateValue("Priority", 1, false);
