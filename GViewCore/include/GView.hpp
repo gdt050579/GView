@@ -84,6 +84,8 @@ struct CORE_EXPORT Object
 {
     Utils::FileCache cache;
     TypeInterface* type;
+    std::u16string name;
+
     Object() : type(nullptr)
     {
     }

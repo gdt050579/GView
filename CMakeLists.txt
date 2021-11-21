@@ -20,6 +20,7 @@ add_subdirectory(GView)
 
 # Types supported by GView
 add_subdirectory(Types/PE)
+add_subdirectory(Types/ICO)
 
 
 

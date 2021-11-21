@@ -12,14 +12,14 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        if (buf.GetLength() < sizeof(PE::ImageDOSHeader))
+        auto dos = buf.GetObject<PE::ImageDOSHeader>();
+        if (!dos)
             return false;
-        auto dos = reinterpret_cast<const PE::ImageDOSHeader*>(buf.GetData());
         if (dos->e_magic != __IMAGE_DOS_SIGNATURE)
             return false;
-        if (dos->e_lfanew + sizeof(PE::ImageNTHeaders32) > buf.GetLength())
+        auto nth32 = buf.GetObject<PE::ImageNTHeaders32>(dos->e_lfanew);
+        if (!nth32)
             return false;
-        auto nth32 = reinterpret_cast<const PE::ImageNTHeaders32*>(buf.GetData() + dos->e_lfanew);
         return nth32->Signature == __IMAGE_NT_SIGNATURE;
     }
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
@@ -37,7 +37,7 @@ extern "C"
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);
         if (pe->HasPanel(PE::Panels::IDs::Sections))
-            win->AddPanel(Pointer<TabPage>(new PE::Panels::Sections(pe,win)), false);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Sections(pe, win)), false);
         if (pe->HasPanel(PE::Panels::IDs::Directories))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Directories(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Imports))
