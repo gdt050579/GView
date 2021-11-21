@@ -19,8 +19,8 @@ Panels::Directories::Directories(Reference<GView::Type::ICO::ICOFile> _ico, Refe
     list->AddColumn("Pallette", TextAlignament::Right, 10);
     if (ico->isIcoFormat)
     {
-        list->AddColumn("ColPlanes", TextAlignament::Right, 10);
-        list->AddColumn("Bits/Pixl", TextAlignament::Right, 10);
+        list->AddColumn("ColPln", TextAlignament::Right, 10);
+        list->AddColumn("Bit/Pxl", TextAlignament::Right, 10);
     }
     else
     {

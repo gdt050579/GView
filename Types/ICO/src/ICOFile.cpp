@@ -34,7 +34,7 @@ bool ICOFile::Update()
 {
     Header h;
     CHECK(this->file->Copy<Header>(0, h), false, "");
-    this->isIcoFormat = (h.magic == MAGIC_FORMAT_CUR);
+    this->isIcoFormat = (h.magic == MAGIC_FORMAT_ICO);
     this->dirs.clear();
     size_t offset = sizeof(Header);
     for (auto i = 0U; i < h.count; i++, offset += sizeof(DirectoryEntry))

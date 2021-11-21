@@ -9,8 +9,8 @@ namespace Type
     namespace ICO
     {
 #pragma pack(push, 2)
-        constexpr uint32_t MAGIC_FORMAT_ICO = 0x00001000;
-        constexpr uint32_t MAGIC_FORMAT_CUR = 0x00002000;
+        constexpr uint32_t MAGIC_FORMAT_ICO = 0x00010000;
+        constexpr uint32_t MAGIC_FORMAT_CUR = 0x00020000;
 
         struct Header
         {

@@ -28,9 +28,9 @@ void Panels::Information::UpdateGeneralInformation()
     general->AddItem("Size", tempStr.Format("%s bytes",n.ToString(ico->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
     // type
     if (ico->isIcoFormat)
-        general->AddItem("Size", "ICON");
+        general->AddItem("Type", "ICON");
     else
-        general->AddItem("Size", "CURSOR");
+        general->AddItem("Type", "CURSOR");
     // dirs
     general->AddItem("Images", n.ToDec(ico->dirs.size()));
 
