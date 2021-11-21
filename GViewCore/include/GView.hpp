@@ -26,6 +26,12 @@ struct EXPORT TypeInterface
 {
     virtual std::string_view GetTypeName() = 0;
     virtual ~TypeInterface(){};
+
+    template <typename T>
+    Reference<T> To()
+    {
+        return static_cast<T*>(this);
+    }
 };
 namespace Utils
 {

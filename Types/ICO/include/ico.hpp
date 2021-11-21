@@ -92,7 +92,6 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> issues;
 
                 void UpdateGeneralInformation();
-                void UpdateVersionInformation();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
 
@@ -104,6 +103,20 @@ namespace Type
                 {
                     RecomputePanelsPositions();
                 }
+            };
+            class Directories : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::ICO::ICOFile> ico;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+
+                void GoToSelectedDirectory();
+                void SelectCurrentDirectory();
+              public:
+                Directories(Reference<GView::Type::ICO::ICOFile> ico, Reference<GView::View::WindowInterface> win);
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
+                void Update();
             };
 
         }; // namespace Panels
