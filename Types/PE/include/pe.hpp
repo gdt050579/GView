@@ -609,16 +609,7 @@ namespace Type
                 uint64_t Size;
                 FixSizeString<61> Name;
             };
-            enum class ErrorType : unsigned char
-            {
-                Error,
-                Warning
-            };
-            struct ErrorInformation
-            {
-                ErrorType type;
-                FixSizeString<252> text;
-            };
+
             struct ImportDllInformation
             {
                 uint64_t RVA;
@@ -659,9 +650,9 @@ namespace Type
             ImageSectionHeader sect[MAX_NR_SECTIONS];
             ImageExportDirectory exportDir;
             ImageDataDirectory* dirs;
+            GView::Utils::ErrorList errList;
             std::vector<ExportedFunction> exp;
             std::vector<ResourceInformation> res;
-            std::vector<ErrorInformation> errList;
             std::vector<ImportDllInformation> impDLL;
             std::vector<ImageDebugDirectory> debugData;
             std::vector<ImportFunctionInformation> impFunc;
@@ -680,7 +671,6 @@ namespace Type
             
             std::string_view ReadString(uint32_t RVA, unsigned int maxSize);
             bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
-            void AddError(ErrorType type, std::string_view message);
 
           public:
             PEFile(Reference<GView::Utils::FileCache> file);

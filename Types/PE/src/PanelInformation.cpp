@@ -135,45 +135,9 @@ void Panels::Information::UpdateVersionInformation()
 }
 void Panels::Information::UpdateIssues()
 {
-    AppCUI::Controls::ItemHandle itemHandle;
-    bool hasErrors   = false;
-    bool hasWarnings = false;
-
-    issues->DeleteAllItems();
-
-    for (const auto& err : pe->errList)
-    {
-        if (err.type != PEFile::ErrorType::Error)
-            continue;
-
-        if (!hasErrors)
-        {
-            itemHandle = issues->AddItem("Errors");
-            issues->SetItemType(itemHandle, ListViewItemType::Highlighted);
-            hasErrors = true;
-        }
-        itemHandle = issues->AddItem(err.text);
-        issues->SetItemType(itemHandle, ListViewItemType::ErrorInformation);
-        issues->SetItemXOffset(itemHandle, 2);
-    }
-
-    for (const auto& err : pe->errList)
-    {
-        if (err.type != PEFile::ErrorType::Warning)
-            continue;
-
-        if (!hasWarnings)
-        {
-            itemHandle = issues->AddItem("Warnings");
-            issues->SetItemType(itemHandle, ListViewItemType::Highlighted);
-            hasWarnings = true;
-        }
-        itemHandle = issues->AddItem(err.text);
-        issues->SetItemType(itemHandle, ListViewItemType::WarningInformation);
-        issues->SetItemXOffset(itemHandle, 2);
-    }
+    pe->errList.PopulateListView(this->issues);
     // hide if no issues
-    issues->SetVisible(pe->errList.size() > 0);
+    issues->SetVisible(!pe->errList.Empty());
 }
 void Panels::Information::RecomputePanelsPositions()
 {
