@@ -342,6 +342,8 @@ namespace App
       public:
         FileWindow(const AppCUI::Utils::ConstString& name);
 
+        void Start();
+
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         Reference<View::BufferViewerInterface> AddBufferViewer(const std::string_view& name) override;

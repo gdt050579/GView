@@ -58,7 +58,7 @@ GView::View::BufferViewer::BufferViewer(const std::string_view& _name, Reference
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->Layout.nrCols            = 16;
+    this->Layout.nrCols            = 0;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
     this->Layout.lineNameSize      = 8;
@@ -510,7 +510,6 @@ void GView::View::BufferViewer::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
-
     auto buf          = this->obj->cache.Get(dli.offset, dli.textSize);
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
@@ -680,6 +679,7 @@ void GView::View::BufferViewer::WriteLineTextToChars(DrawLineInfo& dli)
             dli.start++;
         }
     }
+    this->chars.Resize((unsigned int)(dli.chText - this->chars.GetBuffer()));
 }
 void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
@@ -688,8 +688,6 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
     bool activ = this->HasFocus();
     auto ut    = (unsigned char) 0;
     auto sps   = dli.chText;
-
-    const auto delta = static_cast<unsigned int>(dli.textSize - (this->obj->cache.GetSize() - dli.offset));
 
     while (dli.start < dli.end)
     {
@@ -832,6 +830,7 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
             }
             break;
         }
+        // number columns separators
         c->Code  = ' ';
         c->Color = cp;
         c++;
@@ -860,29 +859,14 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
         dli.start++;
         dli.offset++;
     }
-
-    if (dli.offset == this->obj->cache.GetSize())
+    // clear space until text column
+    while (c < sps)
     {
-        chars.Resize(chars.Len() - delta);
-        for (auto i = dli.numbersSize - 1; i >= dli.numbersSize - (delta + 1) * 3 - 1; i--)
-        {
-            dli.chNumbers[i].Code = ' ';
-            dli.chNumbers[i].Color = config.Colors.Inactive;
-        }
+        c->Code  = ' ';
+        c->Color = config.Colors.Inactive;
+        c++;
     }
-
-    if ((sps) && (sps > this->chars.GetBuffer()))
-    {
-        unsigned int count = 0;
-        sps--;
-        while ((count < 3) && (sps >= this->chars.GetBuffer()))
-        {
-            count++;
-            sps->Code  = ' ';
-            sps->Color = config.Colors.Inactive;
-            sps--;
-        }
-    }
+    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));  
 }
 void GView::View::BufferViewer::Paint(Renderer& renderer)
 {

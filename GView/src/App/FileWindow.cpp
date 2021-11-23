@@ -193,3 +193,8 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     return true;
 }
+void FileWindow::Start()
+{
+    this->view->SetCurrentTabPageByIndex(0);
+    this->view->SetFocus();
+}

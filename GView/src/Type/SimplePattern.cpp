@@ -72,12 +72,12 @@ unsigned char PatternCharTypes[256] = { CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
-                                        0,
-                                        1,
-                                        2,
-                                        3,
-                                        4,
-                                        5,
+                                        10,
+                                        11,
+                                        12,
+                                        13,
+                                        14,
+                                        15,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
@@ -104,12 +104,12 @@ unsigned char PatternCharTypes[256] = { CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
-                                        0,
-                                        1,
-                                        2,
-                                        3,
-                                        4,
-                                        5,
+                                        10,
+                                        11,
+                                        12,
+                                        13,
+                                        14,
+                                        15,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
@@ -292,7 +292,7 @@ bool SimplePattern::Init(std::string_view text, unsigned int ofs)
             CHECK(s + 2 <= e, false, "Invalid end of pattern for %s", text.data());
             auto v1 = PatternCharTypes[*s];
             auto v2 = PatternCharTypes[s[1]];
-            CHECK((v1 < 15) && (v2 < 15), false, "Invalid hex characers in pattern: %s", text.data());
+            CHECK((v1 <= 15) && (v2 <= 15), false, "Invalid hex characers in pattern: %s", text.data());
             this->CharactersToMatch[this->Count++] = (v1 << 4) | v2;
             CHECK(this->Count < MAX_PATTERN_VALUES, false, "Patern too large (max allowed is %d)", MAX_PATTERN_VALUES - 1);
             s += 2;
