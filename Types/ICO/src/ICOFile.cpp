@@ -42,7 +42,7 @@ bool ICOFile::Update()
         auto bf = this->file->Get(offset, sizeof(DirectoryEntry));
         if (bf.Empty())
             break;
-        dirs.push_back(*bf.GetObject<DirectoryEntry>());
+        dirs.push_back(bf.GetObject<DirectoryEntry>());
     }
 
     return true;

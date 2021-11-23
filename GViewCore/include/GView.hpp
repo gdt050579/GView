@@ -38,6 +38,27 @@ namespace Utils
     constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
     constexpr int INVALID_SELECTION_INDEX       = -1;
 
+    class CORE_EXPORT ErrorList
+    {
+        void* data;
+
+      public:
+        ErrorList();
+        ~ErrorList();
+
+        void Clear();
+        bool AddError(const char* format, ...);
+        bool AddWarning(const char* format, ...);
+        bool Empty() const;
+
+        unsigned int GetErrorsCount() const;
+        unsigned int GetWarningsCount() const;
+
+        std::string_view GetError(unsigned int index) const;
+        std::string_view GetWarning(unsigned int index) const;
+
+        void PopulateListView(AppCUI::Utils::Reference<AppCUI::Controls::ListView> listView) const;
+    };
     class CORE_EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
