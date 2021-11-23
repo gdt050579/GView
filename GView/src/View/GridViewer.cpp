@@ -24,4 +24,14 @@ std::string_view GridViewer::GetName()
 void GridViewer::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
 {
 }
+
+void GridViewer::InitGrid()
+{
+    grid = AppCUI::Controls::Factory::Grid::Create(
+          this, "d:c,w:100%,h:100%", 25, 25, AppCUI::Controls::GridFlags::TransparentBackground | AppCUI::Controls::GridFlags::HideHeader);
+}
+
+void GridViewer::UpdateGrid()
+{
+}
 }; // namespace GView::View

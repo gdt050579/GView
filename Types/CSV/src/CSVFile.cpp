@@ -73,6 +73,14 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(Reference<GView::View::Buf
     }
 }
 
-void GView::Type::CSV::CSVFile::UpdateGridViewZones(Reference<GView::View::GridViewerInterface> bufferView)
+void GView::Type::CSV::CSVFile::InitGrid(Reference<GView::View::GridViewerInterface> grid)
 {
+    grid->InitGrid();
+}
+
+void GView::Type::CSV::CSVFile::UpdateGrid(Reference<GView::View::GridViewerInterface> grid)
+{
+    // TODO: parse file, initialize grid and fill cells
+
+    grid->UpdateGrid();
 }

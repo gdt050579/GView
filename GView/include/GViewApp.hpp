@@ -281,6 +281,7 @@ namespace View
         Reference<GView::Object> obj;
         FixSizeString<29> name;
 
+        Reference<AppCUI::Controls::Grid> grid;
     public:
         GridViewer(std::string_view name, Reference<GView::Object> obj);
 
@@ -288,6 +289,9 @@ namespace View
         bool Select(unsigned long long offset, unsigned long long size) override;
         std::string_view GetName() override;
         void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
+   
+        void InitGrid() override;
+        void UpdateGrid() override;
     };
 } // namespace View
 namespace App

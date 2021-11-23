@@ -116,6 +116,8 @@ namespace View
     };
     struct CORE_EXPORT GridViewerInterface
     {
+        virtual void InitGrid()   = 0;
+        virtual void UpdateGrid() = 0;
     };
     struct CORE_EXPORT WindowInterface
     {

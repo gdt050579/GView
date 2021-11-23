@@ -47,11 +47,12 @@ extern "C"
         csv->Update(win->GetObject());
 
         // views
-        auto bufferView = win->AddBufferViewer("Buffer View");
-        csv->UpdateBufferViewZones(bufferView);
-
         auto gridView = win->AddGridViewer("Grid View");
-        csv->UpdateGridViewZones(gridView);
+        csv->InitGrid(gridView);
+        csv->UpdateGrid(gridView);
+
+        // auto bufferView = win->AddBufferViewer("Buffer View");
+        // csv->UpdateBufferViewZones(bufferView);
 
         // panels
         if (csv->HasPanel(CSV::Panels::IDs::Information))
