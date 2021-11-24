@@ -813,6 +813,20 @@ namespace Type
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
+            class Icons : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ComboBox> iconsList;
+                Reference<AppCUI::Controls::ImageViewer> imageView;
+
+                void UpdateCurrentIcon();
+              public:
+                Icons(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
         }; // namespace Panels
     }      // namespace PE
 } // namespace Type

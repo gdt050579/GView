@@ -46,6 +46,8 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Exports(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Resources))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Resources(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Icons))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Icons(pe, win)), true);
         return true;
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
