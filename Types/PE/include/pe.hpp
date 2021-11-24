@@ -633,6 +633,7 @@ namespace Type
 
           public:
             Reference<GView::Utils::FileCache> file;
+            Reference<GView::View::WindowInterface> win_interface;
             // PE informations
             ImageDOSHeader dos;
             union

@@ -321,10 +321,11 @@ namespace App
         unsigned int defaultCursorViewSize;
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
+        Instance* instanceContext;
 
         void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
       public:
-        FileWindow(const AppCUI::Utils::ConstString& name);
+        FileWindow(const AppCUI::Utils::ConstString& name, Instance* instanceContext = nullptr);
 
         void Start();
 
@@ -337,7 +338,9 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
-        
+        bool AddFileWindow(const std::filesystem::path& path);
+
+        bool AddNewGenericFileWindow(const std::filesystem::path& path) override;
         
     };
 } // namespace App

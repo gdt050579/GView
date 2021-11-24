@@ -40,7 +40,24 @@ void Panels::Sections::GoToSelectedSection()
 {
     auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
     if (sect.IsValid())
+    {
+        if (strcmp((const char*) sect->Name, ".text") == 0)
+        {
+            AppCUI::OS::File new_file;
+            new_file.Create("E:\\asm.text");
+
+            AppCUI::Utils::Buffer buffer = pe->file->CopyToBuffer(sect->PointerToRawData, sect->SizeOfRawData);
+
+            unsigned int written = 0;
+            new_file.WriteBuffer("##RZABINARY", 11, written);
+            written = 0;
+            new_file.WriteBuffer(buffer.GetData(), buffer.GetLength(), written);
+            new_file.Close();
+
+            pe->win_interface->AddNewGenericFileWindow("E:\\asm.text");
+        }
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
+    }
 }
 void Panels::Sections::SelectCurrentSection()
 {

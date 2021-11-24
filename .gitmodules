@@ -1,3 +1,6 @@
 [submodule "AppCUI"]
 	path = AppCUI
 	url = https://github.com/gdt050579/AppCUI.git
+[submodule "Types/DECOMPILER/libs/distorm"]
+	path = Types/DECOMPILER/libs/distorm
+	url = https://github.com/rzaharia/distorm

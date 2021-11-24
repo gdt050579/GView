@@ -23,7 +23,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d:c", WindowFlags::Sizeable)
+FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Instance* instanceContext)
+    : Window(name, "d:c", WindowFlags::Sizeable), instanceContext(instanceContext)
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -116,7 +117,7 @@ void FileWindow::UpdateDefaultPanelsSizes(Reference<Splitter> splitter)
         if (splitter == horizontal)
         {
             defaultCursorViewSize = horizontal->GetSecondPanelSize();
-        }        
+        }
     }
     else
     {
@@ -171,6 +172,16 @@ void FileWindow::OnFocus(Reference<Control> control)
     {
         horizontal->SetSecondPanelSize(defaultVerticalPanelsSize);
     }
+}
+bool GView::App::FileWindow::AddFileWindow(const std::filesystem::path& path)
+{
+    if (!instanceContext)
+        return false;
+    return instanceContext->AddFileWindow(path);
+}
+bool GView::App::FileWindow::AddNewGenericFileWindow(const std::filesystem::path& path)
+{
+    return AddFileWindow(path);
 }
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

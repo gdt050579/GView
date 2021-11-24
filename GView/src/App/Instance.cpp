@@ -99,12 +99,12 @@ bool Instance::Init()
 }
 bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
 {
-    auto win = std::make_unique<FileWindow>(name);
+    auto win = std::make_unique<FileWindow>(name, this);
     auto obj = win->GetObject();
     CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 
     auto buf  = obj->cache.Get(0, 4096); // first 4k
-    auto& plg = this->defaultPlugin;
+    auto plg = this->defaultPlugin;
     // iterate from existing types
     for (auto& pType : this->typePlugins)
     {
@@ -127,11 +127,11 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     // instantiate window
     while (true)
     {
-        CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");  
+        CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");
         win->Start(); // starts the window and set focus
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
-        
+
         return true;
     }
     // error case
@@ -159,7 +159,7 @@ bool Instance::UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const 
     CHECK(fnUpdateSettings, false, "'UpdateSettings' export was not located in: %s", pluginPath.string().c_str());
     auto nm = pluginPath.filename().string();
     // format is lib<....>.tpl
-    auto sect = ini["Type."+ nm.substr(3, nm.length() - 7)];
+    auto sect = ini["Type." + nm.substr(3, nm.length() - 7)];
     fnUpdateSettings(sect);
     return true;
 }

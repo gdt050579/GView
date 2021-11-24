@@ -242,7 +242,8 @@ PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
     impDLL.reserve(64);
     impFunc.reserve(128);
 
-    file = fileCache;
+    file          = fileCache;
+    win_interface = nullptr;
 
     peCols.colMZ      = ColorPair{ Color::Olive, Color::Transparent };
     peCols.colPE      = ColorPair{ Color::Magenta, Color::Transparent };

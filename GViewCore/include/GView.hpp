@@ -144,6 +144,11 @@ namespace View
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                            = 0;
         virtual Reference<BufferViewerInterface> AddBufferViewer(const std::string_view& name) = 0;
         virtual Reference<ViewControl> GetCurrentView()                                        = 0;
+
+        virtual bool AddNewGenericFileWindow(const std::filesystem::path& path)
+        {
+            return true;
+        }
     };
 }; // namespace View
 }; // namespace GView

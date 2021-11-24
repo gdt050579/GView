@@ -29,6 +29,7 @@ extern "C"
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
+        pe->win_interface = win;
         pe->Update();
 
         auto b = win->AddBufferViewer("Buffer View");
