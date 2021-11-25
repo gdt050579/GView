@@ -75,7 +75,7 @@ void Panels::Icons::UpdateCurrentIcon()
         if (buf.IsValid())
         {
             AppCUI::Graphics::Image img;
-            if (img.CreateFromDIB(buf.GetData(), buf.GetLength()))
+            if (img.CreateFromDIB(buf.GetData(), buf.GetLength(), true))
             {
                 this->imageView->SetImage(img, ImageRenderingMethod::PixelTo16ColorsSmallBlock,ImageScaleMethod::NoScale);
                 this->imageView->SetVisible(true);
