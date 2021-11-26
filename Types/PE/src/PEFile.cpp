@@ -1099,6 +1099,79 @@ void PEFile::CopySectionName(uint32_t index, String& name)
         name.AddChar(sect[index].Name[tr]);
 }
 
+bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& info)
+{
+    DIBInfoHeader dibHeader;
+    auto buf = this->file->Get(r.Start, sizeof(dibHeader));
+    CHECK(buf.IsValid(), false, "Unable to read %u bytes from %u offset", (unsigned int) (sizeof(dibHeader), r.Start));
+    auto iconHeader = buf.GetObject<DIBInfoHeader>();
+    // check if possible DIB
+    if (iconHeader->sizeOfHeader == 40)
+    {
+        info.SetFormat("DIB: %u x %u ", iconHeader->width, iconHeader->width);
+        switch (iconHeader->bitsPerPixel)
+        {
+        case 1:
+            info.Add("(monochrome)");
+            break;
+        case 4:
+            info.Add("(16 colors)");
+            break;
+        case 8:
+            info.Add("(256 colors)");
+            break;
+        case 24:
+            info.Add("(RGB - 24bit)");
+            break;
+        case 32:
+            info.Add("(RGBA - 32bit)");
+            break;
+        default:
+            info.AddFormat("(%u bits/pixel)", iconHeader->bitsPerPixel);
+            break;
+        }
+        return true;
+    }
+    // check is possible PNG
+    auto pngHeader = buf.GetObject<PNGHeader>();
+    if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849))
+    {
+        auto w = ((pngHeader->width & 0xFF) << 24) | ((pngHeader->width & 0xFF00) << 8) | ((pngHeader->width & 0xFF0000) >> 8) |
+                 ((pngHeader->width & 0xFF000000) >> 24);
+        auto h = ((pngHeader->height & 0xFF) << 24) | ((pngHeader->height & 0xFF00) << 8) | ((pngHeader->height & 0xFF0000) >> 8) |
+                 ((pngHeader->height & 0xFF000000) >> 24);
+        info.SetFormat("PNG: %u x %u ", w, h);
+        return true;
+    }
+    return false;
+}
+bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
+{
+    CHECK(res.Type == __RT_ICON, false, "Expecting a valid ICON resource !");
+    auto buf = this->file->CopyToBuffer(res.Start, res.Size);
+    CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu",res.Size,res.Start);
+    if (buf.IsValid())
+    {
+        auto iconHeader = buf.GetObject<DIBInfoHeader>();
+        if (iconHeader.IsValid())
+        {
+            if (iconHeader->sizeOfHeader == 40)
+            {
+                CHECK(img.CreateFromDIB(buf.GetData(), buf.GetLength(), true), false, "Fail to create icon from buffer !");
+                return true;
+            }
+        }
+        auto pngHeader = buf.GetObject<PNGHeader>();
+        if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849))
+        {
+            CHECK(img.Create(buf), false, "Fail to create an image from a PNG buffer !");
+            return true;
+        }
+    }
+    RETURNERROR(false, "Fail to load image from offset %llu",res.Start);
+}
+
+
 bool PEFile::HasPanel(Panels::IDs id)
 {
     return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;

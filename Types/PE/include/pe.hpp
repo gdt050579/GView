@@ -557,28 +557,30 @@ namespace Type
 
 #pragma pack(pop) // Back to default packing.
 
-        struct BitmapInfoHeader
+        struct DIBInfoHeader
         {
-            uint32_t biSize;
-            uint32_t biWidth;
-            uint32_t biHeight;
-            uint16_t biPlanes;
-            uint16_t biBitCount;
-            uint32_t biCompression;
-            uint32_t biSizeImage;
-            uint32_t biXPelsPerMeter;
-            uint32_t biYPelsPerMeter;
-            uint32_t biClrUsed;
-            uint32_t biClrImportant;
+            uint32_t sizeOfHeader;
+            uint32_t width;
+            uint32_t height;
+            uint16_t colorPlanes;
+            uint16_t bitsPerPixel;
+            uint32_t comppresionMethod;
+            uint32_t imageSize;
+            uint32_t horizontalResolution;
+            uint32_t verticalResolution;
+            uint32_t numberOfColors;
+            uint32_t numberOfImportantColors;
         };
-
-        struct RGBQuad
+        struct PNGHeader
         {
-            uint8_t rgbBlue;
-            uint8_t rgbGreen;
-            uint8_t rgbRed;
-            uint8_t rgbReserved;
+            uint32_t magic;
+            uint32_t reserved;
+            uint32_t ihdrLength;
+            uint32_t ihdrMagic;
+            uint32_t width;
+            uint32_t height;
         };
+        
         class PEFile : public TypeInterface
         {
           public:
@@ -702,6 +704,9 @@ namespace Type
             void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
 
             void CopySectionName(uint32_t index, String& name);
+
+            bool GetResourceImageInformation(const ResourceInformation& r, String& info);
+            bool LoadIcon(const ResourceInformation& r, Image &img);
 
             std::string_view GetTypeName() override
             {
