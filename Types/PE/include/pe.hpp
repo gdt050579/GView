@@ -601,6 +601,12 @@ namespace Type
                 ColorPair colSect;
                 ColorPair colDir[15];
             };
+            enum class ImageType: uint8_t
+            {
+                DIB = 0,
+                PNG,
+                Unknwown = 0xFF
+            };
             struct ResourceInformation
             {
                 uint32_t Type;
@@ -608,8 +614,14 @@ namespace Type
                 uint32_t CodePage;
                 uint32_t Language;
                 uint64_t Start;
-                uint64_t Size;
+                uint64_t Size;                
                 FixSizeString<61> Name;
+                struct
+                {
+                    uint32_t width, height;
+                    uint8_t bitsPerPixel;
+                    ImageType type;
+                } Image;
             };
 
             struct ImportDllInformation
@@ -691,6 +703,7 @@ namespace Type
             uint64_t ConvertAddress(uint64_t address, unsigned int fromAddressType, unsigned int toAddressType);
             bool BuildExport();
             void BuildVersionInfo();
+            bool ProcessResourceImageInformation(ResourceInformation & res);
             bool ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName);
             bool ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* parentName);
             bool BuildResources();

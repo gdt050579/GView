@@ -757,6 +757,100 @@ std::string_view PEFile::DirectoryIDToName(uint32_t dirID)
     return std::string_view{};
 }
 
+bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
+{
+    DIBInfoHeader dibHeader;
+    r.Image.type = ImageType::Unknwown;
+    auto buf     = this->file->Get(r.Start, sizeof(dibHeader));
+    if (buf.Empty())
+    {
+        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (unsigned int) (sizeof(dibHeader), r.Start));
+        return false;
+    }
+    auto iconHeader = buf.GetObject<DIBInfoHeader>();
+    // check if possible DIB
+    if (iconHeader->sizeOfHeader == 40)
+    {
+        r.Image.type = ImageType::DIB;
+        switch (iconHeader->bitsPerPixel)
+        {
+        case 1:
+        case 4:
+        case 8:
+        case 16:
+        case 24:
+        case 32:
+            r.Image.bitsPerPixel = (uint8_t) iconHeader->bitsPerPixel;
+            break;
+        default:
+            errList.AddWarning(
+                  "Invalid value for `bitsPerPixel` field in DIB header (%d) for image at %llu offset. Expected values are 1,4,8,16,24 or "
+                  "32",
+                  (int) iconHeader->bitsPerPixel,
+                  r.Start);
+            break;
+        }
+        r.Image.width  = iconHeader->width;
+        r.Image.height = iconHeader->height;
+        if (r.Type == __RT_ICON)
+        {
+            r.Image.height = r.Image.width;
+            if (iconHeader->height != iconHeader->width * 2)
+                errList.AddWarning(
+                      "Invalid heigh (%u) for an ICON (it should be twice the width [%u]), for image at %llu offset",
+                      iconHeader->width,
+                      iconHeader->height,
+                      r.Start);
+        }
+    }
+    // check is possible PNG
+    auto pngHeader = buf.GetObject<PNGHeader>();
+    if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849))
+    {
+        r.Image.type  = ImageType::PNG;
+        r.Image.width = ((pngHeader->width & 0xFF) << 24) | ((pngHeader->width & 0xFF00) << 8) | ((pngHeader->width & 0xFF0000) >> 8) |
+                        ((pngHeader->width & 0xFF000000) >> 24);
+        r.Image.height = ((pngHeader->height & 0xFF) << 24) | ((pngHeader->height & 0xFF00) << 8) | ((pngHeader->height & 0xFF0000) >> 8) |
+                         ((pngHeader->height & 0xFF000000) >> 24);
+        r.Image.bitsPerPixel = 0;
+    }
+    // general checks
+    if (r.Image.type == ImageType::Unknwown)
+    {
+        errList.AddWarning("Unkown image resourse type (for resourse at offset %llu)", r.Start);
+        return false;
+    }
+    if (r.Image.width == 0)
+        errList.AddWarning("Invalid width (0) for image at offset %llu", r.Start);
+    if (r.Image.height == 0)
+        errList.AddWarning("Invalid height (0) for image at offset %llu", r.Start);
+    if (r.Type == __RT_ICON)
+    {
+        if (r.Image.width != r.Image.height)
+            errList.AddWarning(
+                  "Invalid ICON (width should be equal to height) - icon size is %ux%u (for resource at offset %llu)",
+                  r.Image.width,
+                  r.Image.height,
+                  r.Start);
+        switch (r.Image.width)
+        {
+        case 8:
+        case 16:
+        case 24:
+        case 32:
+        case 48:
+        case 64:
+            break;
+        default:
+            errList.AddWarning(
+                  "Unusual ICON width (%u). Usual icons are 8x8, 16x16, 24x24, 32x32, 48x48 or 64x64 (for resource at offset %llu)",
+                  r.Image.width,
+                  r.Start);
+        }
+    }
+    return true;
+}
+
 bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName)
 {
     ImageResourceDataEntry resDE;
@@ -778,13 +872,19 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
 
     auto& resInf = res.emplace_back();
 
-    resInf.Type     = level[0];
-    resInf.ID       = level[1];
-    resInf.Language = level[2];
-    resInf.Start    = fileAddress;
-    resInf.Size     = resDE.Size;
-    resInf.CodePage = resDE.CodePage;
+    resInf.Type       = level[0];
+    resInf.ID         = level[1];
+    resInf.Language   = level[2];
+    resInf.Start      = fileAddress;
+    resInf.Size       = resDE.Size;
+    resInf.CodePage   = resDE.CodePage;
+    resInf.Image.type = ImageType::Unknwown;
     resInf.Name.Set(resName);
+
+    if (resInf.Type == __RT_ICON)
+    {
+        ProcessResourceImageInformation(resInf);
+    }
 
     return true;
 }
@@ -1101,55 +1201,51 @@ void PEFile::CopySectionName(uint32_t index, String& name)
 
 bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& info)
 {
-    DIBInfoHeader dibHeader;
-    auto buf = this->file->Get(r.Start, sizeof(dibHeader));
-    CHECK(buf.IsValid(), false, "Unable to read %u bytes from %u offset", (unsigned int) (sizeof(dibHeader), r.Start));
-    auto iconHeader = buf.GetObject<DIBInfoHeader>();
-    // check if possible DIB
-    if (iconHeader->sizeOfHeader == 40)
+    CHECK(r.Image.type != ImageType::Unknwown, false, "Imvalid image type !");
+    switch (r.Image.type)
     {
-        info.SetFormat("DIB: %u x %u ", iconHeader->width, iconHeader->width);
-        switch (iconHeader->bitsPerPixel)
-        {
-        case 1:
-            info.Add("(monochrome)");
-            break;
-        case 4:
-            info.Add("(16 colors)");
-            break;
-        case 8:
-            info.Add("(256 colors)");
-            break;
-        case 24:
-            info.Add("(RGB - 24bit)");
-            break;
-        case 32:
-            info.Add("(RGBA - 32bit)");
-            break;
-        default:
-            info.AddFormat("(%u bits/pixel)", iconHeader->bitsPerPixel);
-            break;
-        }
-        return true;
+    case ImageType::DIB:
+        info.Set("DIB:", 4);
+        break;
+    case ImageType::PNG:
+        info.Set("PNG:", 4);
+        break;
+    default:
+        info.Set("Unk:", 4);
+        break;
     }
-    // check is possible PNG
-    auto pngHeader = buf.GetObject<PNGHeader>();
-    if ((pngHeader->magic == 0x474E5089) && (pngHeader->ihdrMagic == 0x52444849))
+    info.AddFormat("%u x %u ", r.Image.width, r.Image.height);
+
+    switch (r.Image.bitsPerPixel)
     {
-        auto w = ((pngHeader->width & 0xFF) << 24) | ((pngHeader->width & 0xFF00) << 8) | ((pngHeader->width & 0xFF0000) >> 8) |
-                 ((pngHeader->width & 0xFF000000) >> 24);
-        auto h = ((pngHeader->height & 0xFF) << 24) | ((pngHeader->height & 0xFF00) << 8) | ((pngHeader->height & 0xFF0000) >> 8) |
-                 ((pngHeader->height & 0xFF000000) >> 24);
-        info.SetFormat("PNG: %u x %u ", w, h);
-        return true;
+    case 0:
+        break; // don't add this informatioon
+    case 1:
+        info.Add("(monochrome)");
+        break;
+    case 4:
+        info.Add("(16 colors)");
+        break;
+    case 8:
+        info.Add("(256 colors)");
+        break;
+    case 24:
+        info.Add("(RGB - 24bit)");
+        break;
+    case 32:
+        info.Add("(RGBA - 32bit)");
+        break;
+    default:
+        info.AddFormat("(%u bits/pixel)", r.Image.bitsPerPixel);
+        break;
     }
-    return false;
+    return true;
 }
 bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
 {
     CHECK(res.Type == __RT_ICON, false, "Expecting a valid ICON resource !");
     auto buf = this->file->CopyToBuffer(res.Start, res.Size);
-    CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu",res.Size,res.Start);
+    CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu", res.Size, res.Start);
     if (buf.IsValid())
     {
         auto iconHeader = buf.GetObject<DIBInfoHeader>();
@@ -1168,9 +1264,8 @@ bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
             return true;
         }
     }
-    RETURNERROR(false, "Fail to load image from offset %llu",res.Start);
+    RETURNERROR(false, "Fail to load image from offset %llu", res.Start);
 }
-
 
 bool PEFile::HasPanel(Panels::IDs id)
 {
