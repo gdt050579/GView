@@ -27,8 +27,6 @@
 #define IMAGE_DLLCHARACTERISTICS_APPCONTAINER                0x1000
 #define IMAGE_DLLCHARACTERISTICS_NO_LEGACY_BIOS_DEPENDENCIES 0x2000
 
-#define __IMAGE_DOS_SIGNATURE              0x5A4D
-#define __IMAGE_NT_SIGNATURE               0x00004550
 #define __IMAGE_NT_OPTIONAL_HDR32_MAGIC    0x10b
 #define __IMAGE_NT_OPTIONAL_HDR64_MAGIC    0x20b
 #define __IMAGE_ROM_OPTIONAL_HDR_MAGIC     0x107
@@ -99,6 +97,11 @@ namespace Type
 {
     namespace PE
     {
+        namespace Constants
+        {
+            constexpr uint16_t IMAGE_DOS_SIGNATURE = 0x5A4D;
+            constexpr uint32_t IMAGE_NT_SIGNATURE  = 0x00004550;
+        }; // namespace Constants
         namespace Panels
         {
             enum class IDs : unsigned char

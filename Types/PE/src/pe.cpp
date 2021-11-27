@@ -15,12 +15,12 @@ extern "C"
         auto dos = buf.GetObject<PE::ImageDOSHeader>();
         if (!dos)
             return false;
-        if (dos->e_magic != __IMAGE_DOS_SIGNATURE)
+        if (dos->e_magic != PE::Constants::IMAGE_DOS_SIGNATURE)
             return false;
         auto nth32 = buf.GetObject<PE::ImageNTHeaders32>(dos->e_lfanew);
         if (!nth32)
             return false;
-        return nth32->Signature == __IMAGE_NT_SIGNATURE;
+        return nth32->Signature == PE::Constants::IMAGE_NT_SIGNATURE;
     }
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
     {
