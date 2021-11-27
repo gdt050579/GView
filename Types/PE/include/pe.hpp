@@ -578,7 +578,7 @@ namespace Type
         class PEFile : public TypeInterface
         {
           public:
-            struct LANGANDCODEPAGE
+            struct LANGANDCODEPAGE__
             {
                 uint16_t wLanguage;
                 uint16_t wCodePage;
