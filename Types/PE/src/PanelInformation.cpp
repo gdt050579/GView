@@ -80,7 +80,7 @@ void Panels::Information::UpdateGeneralInformation()
     // verific si language-ul
     for (const auto & r: pe->res)
     {
-        if (r.Type == __RT_VERSION)
+        if (r.Type == ResourceType::Version)
         {
             general->AddItem("Language", PEFile::LanguageIDToName(r.Language));
             break;

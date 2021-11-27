@@ -27,7 +27,7 @@ void Panels::Icons::Update()
     this->iconsList->DeleteAllItems();
     for (auto& r : pe->res)
     {
-        if (r.Type != __RT_ICON)
+        if (r.Type != ResourceType::Icon)
             continue;
         if (pe->GetResourceImageInformation(r,temp))
             this->iconsList->AddItem<PEFile::ResourceInformation>(temp, &r);        

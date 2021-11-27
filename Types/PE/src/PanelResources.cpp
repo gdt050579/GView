@@ -39,7 +39,7 @@ void Panels::Resources::Update()
         auto handle = list->AddItem(temp.Format("%s (%d)", nm, r.Type), r.Name, n.ToDec(r.ID));
         switch (r.Type)
         {
-        case __RT_ICON:
+        case ResourceType::Icon:
             if (pe->GetResourceImageInformation(r, temp))
                 list->SetItemText(handle, 3, temp);
             else

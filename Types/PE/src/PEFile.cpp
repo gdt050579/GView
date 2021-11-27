@@ -665,7 +665,7 @@ void PEFile::BuildVersionInfo()
 
     for (auto& ri : this->res)
     {
-        if (ri.Type != (uint32_t) __RT_VERSION)
+        if (ri.Type != ResourceType::Version)
             continue;
         if (ri.Start >= file->GetSize())
             break;
@@ -690,54 +690,52 @@ void PEFile::BuildVersionInfo()
     }
 }
 
-std::string_view PEFile::ResourceIDToName(uint32_t resID)
+std::string_view PEFile::ResourceIDToName(ResourceType resType)
 {
-    switch (resID)
+    switch (resType)
     {
-    case __RT_CURSOR:
+    case ResourceType::Cursor:
         return "Cursor";
-    case __RT_BITMAP:
-        return "Bitmap";
-    case __RT_ICON:
+    case ResourceType::Bitmap:
+        return "Button";
+    case ResourceType::Icon:
         return "Icon";
-    case __RT_MENU:
+    case ResourceType::Menu:
         return "Menu";
-    case __RT_DIALOG:
+    case ResourceType::Dialog:
         return "Dialog";
-    case __RT_STRING:
+    case ResourceType::String:
         return "String";
-    case __RT_FONTDIR:
+    case ResourceType::FontDir:
         return "FontDir";
-    case __RT_FONT:
+    case ResourceType::Font:
         return "Font";
-    case __RT_ACCELERATOR:
+    case ResourceType::Accelerator:
         return "Accelerator";
-    case __RT_RCDATA:
+    case ResourceType::RCData:
         return "RCData";
-    case __RT_MESSAGETABLE:
+    case ResourceType::MessageTable:
         return "MessageTable";
-    case __RT_VERSION:
+    case ResourceType::CursorGroup:
+        return "Cursor group";
+    case ResourceType::IconGroup:
+        return "Icon group";
+    case ResourceType::Version:
         return "Version";
-    case __RT_DLGINCLUDE:
+    case ResourceType::DLGInclude:
         return "DLG Include";
-    case __RT_PLUGPLAY:
+    case ResourceType::PlugPlay:
         return "Plug & Play";
-    case __RT_VXD:
+    case ResourceType::VXD:
         return "VXD";
-    case __RT_ANICURSOR:
-        return "Animated Cursor";
-    case __RT_ANIICON:
+    case ResourceType::ANICursor:
+        return "Animated cursor";
+    case ResourceType::ANIIcon:
         return "Animated Icon";
-    case __RT_HTML:
-        return "Html";
-    case __RT_MANIFEST:
+    case ResourceType::HTML:
+        return "HTML";
+    case ResourceType::Manifest:
         return "Manifest";
-    case __RT_GROUP_CURSOR:
-        return "Group Cursor";
-    case __RT_GROUP_ICON:
-        return "Group Icon";
-    default:
-        break;
     };
     return std::string_view{};
 }
@@ -792,7 +790,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         }
         r.Image.width  = iconHeader->width;
         r.Image.height = iconHeader->height;
-        if (r.Type == __RT_ICON)
+        if (r.Type == ResourceType::Icon)
         {
             r.Image.height = r.Image.width;
             if (iconHeader->height != iconHeader->width * 2)
@@ -824,7 +822,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         errList.AddWarning("Invalid width (0) for image at offset %llu", r.Start);
     if (r.Image.height == 0)
         errList.AddWarning("Invalid height (0) for image at offset %llu", r.Start);
-    if (r.Type == __RT_ICON)
+    if (r.Type == ResourceType::Icon)
     {
         if (r.Image.width != r.Image.height)
             errList.AddWarning(
@@ -874,7 +872,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
 
     auto& resInf = res.emplace_back();
 
-    resInf.Type       = level[0];
+    resInf.Type       = static_cast<ResourceType>(level[0]);
     resInf.ID         = level[1];
     resInf.Language   = level[2];
     resInf.Start      = fileAddress;
@@ -883,7 +881,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
     resInf.Image.type = ImageType::Unknwown;
     resInf.Name.Set(resName);
 
-    if (resInf.Type == __RT_ICON)
+    if (resInf.Type == ResourceType::Icon)
     {
         ProcessResourceImageInformation(resInf);
     }
@@ -1246,7 +1244,7 @@ bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& i
 
 bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
 {
-    CHECK(res.Type == __RT_ICON, false, "Expecting a valid ICON resource !");
+    CHECK(res.Type == ResourceType::Icon, false, "Expecting a valid ICON resource !");
     auto buf = this->file->CopyToBuffer(res.Start, res.Size);
     CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu", res.Size, res.Start);
     if (buf.IsValid())
@@ -1621,7 +1619,7 @@ bool PEFile::Update()
 
     for (auto& r : res)
     {
-        if (r.Type == (uint32_t) __RT_ICON)
+        if (r.Type == ResourceType::Icon)
         {
             ADD_PANEL(Panels::IDs::Icons);
             break;

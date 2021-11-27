@@ -146,32 +146,6 @@
 #define __IMAGE_DLLCHARACTERISTICS_GUARD_CF              0x4000 // Image supports Control Flow Guard.
 #define __IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
 
-#define __MAKEINITRESOURCE(i) ((uint32_t*) (i))
-#define __RT_CURSOR           1
-#define __RT_BITMAP           2
-#define __RT_ICON             3
-#define __RT_MENU             4
-#define __RT_DIALOG           5
-#define __RT_STRING           6
-#define __RT_FONTDIR          7
-#define __RT_FONT             8
-#define __RT_ACCELERATOR      9
-#define __RT_RCDATA           10
-#define __RT_MESSAGETABLE     11
-#define __DIFFERENCE          11
-
-#define __RT_GROUP_CURSOR ((__RT_CURSOR) + __DIFFERENCE)
-#define __RT_GROUP_ICON   ((__RT_ICON) + __DIFFERENCE)
-
-#define __RT_VERSION    16
-#define __RT_DLGINCLUDE 17
-#define __RT_PLUGPLAY   19
-#define __RT_VXD        20
-#define __RT_ANICURSOR  21
-#define __RT_ANIICON    22
-#define __RT_HTML       23
-#define __RT_MANIFEST   24
-
 #define __BI_RGB       0L
 #define __BI_RLE8      1L
 #define __BI_RLE4      2L
@@ -581,6 +555,31 @@ namespace Type
             uint32_t height;
         };
         
+        enum class ResourceType: uint32_t
+        {
+            Cursor = 1,
+            Bitmap = 2,
+            Icon = 3,
+            Menu = 4,
+            Dialog = 5,
+            String = 6,
+            FontDir = 7,
+            Font = 8,
+            Accelerator = 9,
+            RCData = 10,
+            MessageTable = 11,
+            CursorGroup = 12, // 11+Cursor
+            IconGroup = 14, // 11+Icon
+            Version = 16,
+            DLGInclude = 17,
+            PlugPlay = 19,
+            VXD = 20,
+            ANICursor = 21,
+            ANIIcon = 22,
+            HTML = 23,
+            Manifest = 24
+        };
+
         class PEFile : public TypeInterface
         {
           public:
@@ -609,7 +608,7 @@ namespace Type
             };
             struct ResourceInformation
             {
-                uint32_t Type;
+                ResourceType Type;
                 uint32_t ID;
                 uint32_t CodePage;
                 uint32_t Language;
@@ -727,7 +726,7 @@ namespace Type
             }
 
 
-            static std::string_view ResourceIDToName(uint32_t resID);
+            static std::string_view ResourceIDToName(ResourceType resType);
             static std::string_view LanguageIDToName(uint32_t langID);
             static std::string_view DirectoryIDToName(uint32_t dirID);
         };
