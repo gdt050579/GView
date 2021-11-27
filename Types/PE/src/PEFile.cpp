@@ -388,33 +388,33 @@ std::string_view PEFile::GetMachine()
 
 std::string_view PEFile::GetSubsystem()
 {
-    switch (nth32.OptionalHeader.Subsystem)
+    switch (static_cast<SubsystemType>(nth32.OptionalHeader.Subsystem))
     {
-    case __IMAGE_SUBSYSTEM_UNKNOWN:
+    case SubsystemType::Unknown:
         return "Unknown";
-    case __IMAGE_SUBSYSTEM_NATIVE:
+    case SubsystemType::Native:
         return "Native";
-    case __IMAGE_SUBSYSTEM_WINDOWS_GUI:
+    case SubsystemType::WindowGUI:
         return "Windows GUI (Graphics)";
-    case __IMAGE_SUBSYSTEM_WINDOWS_CUI:
+    case SubsystemType::WindowsCUI:
         return "Windows CUI (Console)";
-    case __IMAGE_SUBSYSTEM_WINDOWS_CE_GUI:
+    case SubsystemType::WindowsCEGUI:
         return "Windows CE GUI (Graphics)";
-    case __IMAGE_SUBSYSTEM_POSIX_CUI:
+    case SubsystemType::PosixCUI:
         return "Posix CUI (Console)";
-    case __IMAGE_SUBSYSTEM_EFI_APPLICATION:
+    case SubsystemType::EFIApplication:
         return "EFI Applications";
-    case __IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER:
+    case SubsystemType::EFIBootServiceDriver:
         return "Boot Service Driver";
-    case __IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER:
+    case SubsystemType::EFIRuntimeDriver:
         return "EFI routine driver";
-    case __IMAGE_SUBSYSTEM_EFI_ROM:
+    case SubsystemType::EFIROM:
         return "EFI Rom";
-    case __IMAGE_SUBSYSTEM_NATIVE_WINDOWS:
+    case SubsystemType::WindowsNative:
         return "Native Windows";
-    case __IMAGE_SUBSYSTEM_OS2_CUI:
+    case SubsystemType::OS2CUI:
         return "OS2 CUI (Console)";
-    case __IMAGE_SUBSYSTEM_XBOX:
+    case SubsystemType::XBOX:
         return "XBOX";
     }
     return "";

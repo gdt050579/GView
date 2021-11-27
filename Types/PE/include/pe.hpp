@@ -81,21 +81,6 @@
 #define __IMAGE_FILE_MACHINE_M32R            0x9041 // M32R little-endian
 #define __IMAGE_FILE_MACHINE_CEE             0xC0EE
 
-#define __IMAGE_SUBSYSTEM_UNKNOWN                  0  // Unknown subsystem.
-#define __IMAGE_SUBSYSTEM_NATIVE                   1  // Image doesn't require a subsystem.
-#define __IMAGE_SUBSYSTEM_WINDOWS_GUI              2  // Image runs in the Windows GUI subsystem.
-#define __IMAGE_SUBSYSTEM_WINDOWS_CUI              3  // Image runs in the Windows character subsystem.
-#define __IMAGE_SUBSYSTEM_OS2_CUI                  5  // image runs in the OS/2 character subsystem.
-#define __IMAGE_SUBSYSTEM_POSIX_CUI                7  // image runs in the Posix character subsystem.
-#define __IMAGE_SUBSYSTEM_NATIVE_WINDOWS           8  // image is a native Win9x driver.
-#define __IMAGE_SUBSYSTEM_WINDOWS_CE_GUI           9  // Image runs in the Windows CE subsystem.
-#define __IMAGE_SUBSYSTEM_EFI_APPLICATION          10 //
-#define __IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER  11 //
-#define __IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER       12 //
-#define __IMAGE_SUBSYSTEM_EFI_ROM                  13
-#define __IMAGE_SUBSYSTEM_XBOX                     14
-#define __IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16
-
 #define __IMAGE_DEBUG_TYPE_UNKNOWN       0
 #define __IMAGE_DEBUG_TYPE_COFF          1
 #define __IMAGE_DEBUG_TYPE_CODEVIEW      2
@@ -128,7 +113,6 @@
 #define __IMAGE_DLLCHARACTERISTICS_WDM_DRIVER            0x2000 // Driver uses WDM model
 #define __IMAGE_DLLCHARACTERISTICS_GUARD_CF              0x4000 // Image supports Control Flow Guard.
 #define __IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
-
 
 #define __IMAGE_ORDINAL_FLAG32 0x80000000
 #define __IMAGE_ORDINAL_FLAG64 0x8000000000000000
@@ -531,58 +515,70 @@ namespace Type
             uint32_t width;
             uint32_t height;
         };
-        
-        enum class DirectoryType: uint8_t
+
+        enum class SubsystemType : uint16_t
         {
-            Export = 0,
-            Import = 1,
-            Resource = 2,
-            Excption = 3,
-            Security = 4,
-            BaseRelloc = 5,
-            Debug = 6,
-            Architecture = 7,
-            GlobalPTR = 8,
-            TLS = 9,
-            Config = 10,
-            BoundImport = 11,
-            IAT = 12,
-            DelayImport = 13,
+            Unknown                = 0,  // Unknown subsystem.
+            Native                 = 1,  // Image doesn't require a subsystem.
+            WindowGUI              = 2,  // Image runs in the Windows GUI subsystem.
+            WindowsCUI             = 3,  // Image runs in the Windows character subsystem.
+            OS2CUI                 = 5,  // image runs in the OS/2 character subsystem.
+            PosixCUI               = 7,  // image runs in the Posix character subsystem.
+            WindowsNative          = 8,  // image is a native Win9x driver.
+            WindowsCEGUI           = 9,  // Image runs in the Windows CE subsystem.
+            EFIApplication         = 10, //
+            EFIBootServiceDriver   = 11, //
+            EFIRuntimeDriver       = 12, //
+            EFIROM                 = 13,
+            XBOX                   = 14,
+            WindowsBootApplication = 16,
+        };
+        enum class DirectoryType : uint8_t
+        {
+            Export        = 0,
+            Import        = 1,
+            Resource      = 2,
+            Excption      = 3,
+            Security      = 4,
+            BaseRelloc    = 5,
+            Debug         = 6,
+            Architecture  = 7,
+            GlobalPTR     = 8,
+            TLS           = 9,
+            Config        = 10,
+            BoundImport   = 11,
+            IAT           = 12,
+            DelayImport   = 13,
             COMDescriptor = 14
         };
-        enum class ResourceType: uint32_t
+        enum class ResourceType : uint32_t
         {
-            Cursor = 1,
-            Bitmap = 2,
-            Icon = 3,
-            Menu = 4,
-            Dialog = 5,
-            String = 6,
-            FontDir = 7,
-            Font = 8,
-            Accelerator = 9,
-            RCData = 10,
+            Cursor       = 1,
+            Bitmap       = 2,
+            Icon         = 3,
+            Menu         = 4,
+            Dialog       = 5,
+            String       = 6,
+            FontDir      = 7,
+            Font         = 8,
+            Accelerator  = 9,
+            RCData       = 10,
             MessageTable = 11,
-            CursorGroup = 12, // 11+Cursor
-            IconGroup = 14, // 11+Icon
-            Version = 16,
-            DLGInclude = 17,
-            PlugPlay = 19,
-            VXD = 20,
-            ANICursor = 21,
-            ANIIcon = 22,
-            HTML = 23,
-            Manifest = 24
+            CursorGroup  = 12, // 11+Cursor
+            IconGroup    = 14, // 11+Icon
+            Version      = 16,
+            DLGInclude   = 17,
+            PlugPlay     = 19,
+            VXD          = 20,
+            ANICursor    = 21,
+            ANIIcon      = 22,
+            HTML         = 23,
+            Manifest     = 24
         };
 
         class PEFile : public TypeInterface
         {
           public:
-            struct LANGANDCODEPAGE__
-            {
-                uint16_t wLanguage;
-                uint16_t wCodePage;
-            };
             struct ExportedFunction
             {
                 uint32_t RVA;
@@ -595,7 +591,7 @@ namespace Type
                 ColorPair colSect;
                 ColorPair colDir[15];
             };
-            enum class ImageType: uint8_t
+            enum class ImageType : uint8_t
             {
                 DIB = 0,
                 PNG,
@@ -608,7 +604,7 @@ namespace Type
                 uint32_t CodePage;
                 uint32_t Language;
                 uint64_t Start;
-                uint64_t Size;                
+                uint64_t Size;
                 FixSizeString<61> Name;
                 struct
                 {
@@ -676,7 +672,6 @@ namespace Type
             bool isMetroApp;
             bool hasTLS;
 
-            
             std::string_view ReadString(uint32_t RVA, unsigned int maxSize);
             bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
 
@@ -687,7 +682,7 @@ namespace Type
             }
 
             bool Update();
-            
+
             constexpr inline ImageDataDirectory& GetDirectory(DirectoryType dirType)
             {
                 return dirs[(uint8_t) dirType];
@@ -702,7 +697,7 @@ namespace Type
             uint64_t ConvertAddress(uint64_t address, unsigned int fromAddressType, unsigned int toAddressType);
             bool BuildExport();
             void BuildVersionInfo();
-            bool ProcessResourceImageInformation(ResourceInformation & res);
+            bool ProcessResourceImageInformation(ResourceInformation& res);
             bool ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName);
             bool ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* parentName);
             bool BuildResources();
@@ -718,13 +713,12 @@ namespace Type
             void CopySectionName(uint32_t index, String& name);
 
             bool GetResourceImageInformation(const ResourceInformation& r, String& info);
-            bool LoadIcon(const ResourceInformation& r, Image &img);
+            bool LoadIcon(const ResourceInformation& r, Image& img);
 
             std::string_view GetTypeName() override
             {
                 return "PE";
             }
-
 
             static std::string_view ResourceIDToName(ResourceType resType);
             static std::string_view LanguageIDToName(uint32_t langID);
@@ -786,7 +780,7 @@ namespace Type
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
-            class Imports: public TabPage
+            class Imports : public TabPage
             {
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<GView::View::WindowInterface> win;
@@ -819,10 +813,10 @@ namespace Type
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> list;
 
-
                 void SaveCurrentResource();
                 void GoToSelectedResource();
                 void SelectCurrentResource();
+
               public:
                 Resources(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
@@ -838,6 +832,7 @@ namespace Type
                 Reference<AppCUI::Controls::ImageViewer> imageView;
 
                 void UpdateCurrentIcon();
+
               public:
                 Icons(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
