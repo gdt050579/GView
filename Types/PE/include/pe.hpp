@@ -737,10 +737,8 @@ namespace Type
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
-                Reference<AppCUI::Controls::ListView> version;
 
                 void UpdateGeneralInformation();
-                void UpdateVersionInformation();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
 

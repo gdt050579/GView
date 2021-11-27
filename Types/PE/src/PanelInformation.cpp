@@ -11,10 +11,6 @@ Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPa
     general->AddColumn("Field", TextAlignament::Left, 12);
     general->AddColumn("Value", TextAlignament::Left, 100);
 
-    version = this->CreateChildControl<ListView>("x:0,y:11,w:100%,h:10", ListViewFlags::None);
-    version->AddColumn("Field", TextAlignament::Left, 12);
-    version->AddColumn("Value", TextAlignament::Left, 100);
-
     issues = this->CreateChildControl<ListView>("x:0,y:21,w:100%,h:10", ListViewFlags::HideColumns);
     issues->AddColumn("Info", TextAlignament::Left, 200);
 
@@ -27,6 +23,8 @@ void Panels::Information::UpdateGeneralInformation()
     NumericFormatter n;
 
     general->DeleteAllItems();
+    item = general->AddItem("PE Info");
+    general->SetItemType(item, ListViewItemType::Category);
     general->AddItem("File");
     //general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
     // size
@@ -69,7 +67,8 @@ void Panels::Information::UpdateGeneralInformation()
     // export Name
     if (pe->dllName)
     {
-        general->AddItem("ExportName", pe->dllName);
+        item = general->AddItem("ExportName", pe->dllName);
+        general->SetItemType(item, ListViewItemType::Emphasized_1);
     }
     // pdb folder
     if (pe->pdbName)
@@ -119,19 +118,17 @@ void Panels::Information::UpdateGeneralInformation()
     //        general->SetItemText(poz++, 1, tempStr.GetText());
     //    }
     //}
-
-}
-void Panels::Information::UpdateVersionInformation()
-{
-    version->DeleteAllItems();
-    // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
-    for (int tr = 0; tr < pe->Ver.GetNrItems(); tr++)
+    if (pe->Ver.GetNrItems() > 0)
     {
-        auto itemID = version->AddItem(pe->Ver.GetKey(tr)->ToStringView());
-        version->SetItemText(itemID, 1, pe->Ver.GetValue(tr)->ToStringView());
+        auto item = general->AddItem("Version");
+        general->SetItemType(item, ListViewItemType::Category);
+        // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
+        for (int tr = 0; tr < pe->Ver.GetNrItems(); tr++)
+        {
+            auto itemID = general->AddItem(pe->Ver.GetKey(tr)->ToStringView());
+            general->SetItemText(itemID, 1, pe->Ver.GetValue(tr)->ToStringView());
+        }
     }
-    // hide if version info is not present
-    version->SetVisible(version->GetItemsCount() > 0);
 }
 void Panels::Information::UpdateIssues()
 {
@@ -146,12 +143,10 @@ void Panels::Information::RecomputePanelsPositions()
     int w    = this->GetWidth();
     int h    = this->GetHeight();
     
-    if ((!version.IsValid()) || (!general.IsValid()) || (!issues.IsValid()))
+    if ((!general.IsValid()) || (!issues.IsValid()))
         return;
-    if (this->version->IsVisible())
-        last = 1;
     if (this->issues->IsVisible())
-        last = 2;
+        last = 1;
     // if (InfoPanelCtx.pnlIcon->IsVisible()) last = 3;
     
     // resize
@@ -172,23 +167,11 @@ void Panels::Information::RecomputePanelsPositions()
             py += (this->general->GetItemsCount() + 3);
         }
     }
-    if (this->version->IsVisible())
-    {
-        this->version->MoveTo(0, py);
-        if (last == 1)
-        {
-            this->version->Resize(w, h - py);
-        }
-        else
-        {
-            this->version->Resize(w, this->version->GetItemsCount() + 3);
-            py += (this->version->GetItemsCount() + 3);
-        }
-    }
+
     if (this->issues->IsVisible())
     {
         this->issues->MoveTo(0, py);
-        if (last == 2)
+        if (last == 1)
         {
             this->issues->Resize(w, h - py);
         }
@@ -210,7 +193,6 @@ void Panels::Information::RecomputePanelsPositions()
 void Panels::Information::Update()
 {
     UpdateGeneralInformation();
-    UpdateVersionInformation();
     UpdateIssues();
     RecomputePanelsPositions();
 }
