@@ -322,65 +322,65 @@ int PEFile::RVAToSectionIndex(uint64_t RVA)
 
 std::string_view PEFile::GetMachine()
 {
-    switch (nth32.FileHeader.Machine)
+    switch (static_cast<MachineType>(nth32.FileHeader.Machine))
     {
-    case __IMAGE_FILE_MACHINE_ALPHA:
+    case MachineType::ALPHA:
         return "ALPHA";
-    case __IMAGE_FILE_MACHINE_ALPHA64:
+    case MachineType::ALPHA64:
         return "ALPHA 64";
-    case __IMAGE_FILE_MACHINE_AM33:
+    case MachineType::AM33:
         return "AM 33";
-    case __IMAGE_FILE_MACHINE_AMD64:
+    case MachineType::AMD64:
         return "AMD 64";
-    case __IMAGE_FILE_MACHINE_ARM:
+    case MachineType::ARM:
         return "ARM";
-    case __IMAGE_FILE_MACHINE_CEE:
+    case MachineType::CEE:
         return "CEE";
-    case __IMAGE_FILE_MACHINE_CEF:
+    case MachineType::CEF:
         return "CEF";
-    case __IMAGE_FILE_MACHINE_EBC:
+    case MachineType::EBC:
         return "EBC";
-    case __IMAGE_FILE_MACHINE_I386:
+    case MachineType::I386:
         return "Intel 386";
-    case __IMAGE_FILE_MACHINE_IA64:
+    case MachineType::IA64:
         return "Intel IA64";
-    case __IMAGE_FILE_MACHINE_M32R:
+    case MachineType::M32R:
         return "M 32R";
-    case __IMAGE_FILE_MACHINE_MIPSFPU16:
+    case MachineType::MIPSFPU16:
         return "MIP SFPU 16";
-    case __IMAGE_FILE_MACHINE_MIPS16:
+    case MachineType::MIPS16:
         return "MIP 16";
-    case __IMAGE_FILE_MACHINE_MIPSFPU:
+    case MachineType::MIPSFPU:
         return "MIP SFPU";
-    case __IMAGE_FILE_MACHINE_POWERPC:
+    case MachineType::POWERPC:
         return "POWER PC";
-    case __IMAGE_FILE_MACHINE_POWERPCFP:
+    case MachineType::POWERPCFP:
         return "POWER PC (FP)";
-    case __IMAGE_FILE_MACHINE_R10000:
+    case MachineType::R10000:
         return "R 10000";
-    case __IMAGE_FILE_MACHINE_R3000:
+    case MachineType::R3000:
         return "R 3000";
-    case __IMAGE_FILE_MACHINE_R4000:
+    case MachineType::R4000:
         return "MIPS@ little indian";
-    case __IMAGE_FILE_MACHINE_SH3:
+    case MachineType::SH3:
         return "Hitachi SH3";
-    case __IMAGE_FILE_MACHINE_SH3DSP:
+    case MachineType::SH3DSP:
         return "Hitachi SH3 (DSP)";
-    case __IMAGE_FILE_MACHINE_SH3E:
+    case MachineType::SH3E:
         return "Hitachi SH2 (E)";
-    case __IMAGE_FILE_MACHINE_SH4:
+    case MachineType::SH4:
         return "Hitachi SH4";
-    case __IMAGE_FILE_MACHINE_SH5:
+    case MachineType::SH5:
         return "Hitachi SH5";
-    case __IMAGE_FILE_MACHINE_THUMB:
+    case MachineType::THUMB:
         return "Thumb";
-    case __IMAGE_FILE_MACHINE_TRICORE:
+    case MachineType::TRICORE:
         return "Tricore";
-    case __IMAGE_FILE_MACHINE_UNKNOWN:
+    case MachineType::Unknown:
         return "Unknown";
-    case __IMAGE_FILE_MACHINE_WCEMIPSV2:
+    case MachineType::WCEMIPSV2:
         return "WCEMIPSV2";
-    case __IMAGE_FILE_MACHINE_ARMNT:
+    case MachineType::ARMNT:
         return "ARM Thumb-2";
     }
     return "";

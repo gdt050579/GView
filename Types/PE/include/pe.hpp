@@ -50,36 +50,6 @@
 #define __IMAGE_FILE_DLL                     0x2000 // File is a DLL.
 #define __IMAGE_FILE_UP_SYSTEM_ONLY          0x4000 // File should only be run on a UP machine
 #define __IMAGE_FILE_BYTES_REVERSED_HI       0x8000 // Bytes of machine word are reversed.
-#define __IMAGE_FILE_MACHINE_UNKNOWN         0
-#define __IMAGE_FILE_MACHINE_I386            0x014c // Intel 386.
-#define __IMAGE_FILE_MACHINE_R3000           0x0162 // MIPS little-endian, 0x160 big-endian
-#define __IMAGE_FILE_MACHINE_R4000           0x0166 // MIPS little-endian
-#define __IMAGE_FILE_MACHINE_R10000          0x0168 // MIPS little-endian
-#define __IMAGE_FILE_MACHINE_WCEMIPSV2       0x0169 // MIPS little-endian WCE v2
-#define __IMAGE_FILE_MACHINE_ALPHA           0x0184 // Alpha_AXP
-#define __IMAGE_FILE_MACHINE_SH3             0x01a2 // SH3 little-endian
-#define __IMAGE_FILE_MACHINE_SH3DSP          0x01a3
-#define __IMAGE_FILE_MACHINE_SH3E            0x01a4 // SH3E little-endian
-#define __IMAGE_FILE_MACHINE_SH4             0x01a6 // SH4 little-endian
-#define __IMAGE_FILE_MACHINE_SH5             0x01a8 // SH5
-#define __IMAGE_FILE_MACHINE_ARM             0x01c0 // ARM Little-Endian
-#define __IMAGE_FILE_MACHINE_THUMB           0x01c2 // ARM Thumb/Thumb-2 Little-Endian
-#define __IMAGE_FILE_MACHINE_ARMNT           0x01c4 // ARM Thumb-2 Little-Endian
-#define __IMAGE_FILE_MACHINE_AM33            0x01d3
-#define __IMAGE_FILE_MACHINE_POWERPC         0x01F0 // IBM PowerPC Little-Endian
-#define __IMAGE_FILE_MACHINE_POWERPCFP       0x01f1
-#define __IMAGE_FILE_MACHINE_IA64            0x0200 // Intel 64
-#define __IMAGE_FILE_MACHINE_MIPS16          0x0266 // MIPS
-#define __IMAGE_FILE_MACHINE_ALPHA64         0x0284 // ALPHA64
-#define __IMAGE_FILE_MACHINE_MIPSFPU         0x0366 // MIPS
-#define __IMAGE_FILE_MACHINE_MIPSFPU16       0x0466 // MIPS
-#define __IMAGE_FILE_MACHINE_AXP64           __IMAGE_FILE_MACHINE_ALPHA64
-#define __IMAGE_FILE_MACHINE_TRICORE         0x0520 // Infineon
-#define __IMAGE_FILE_MACHINE_CEF             0x0CEF
-#define __IMAGE_FILE_MACHINE_EBC             0x0EBC // EFI Byte Code
-#define __IMAGE_FILE_MACHINE_AMD64           0x8664 // AMD64 (K8)
-#define __IMAGE_FILE_MACHINE_M32R            0x9041 // M32R little-endian
-#define __IMAGE_FILE_MACHINE_CEE             0xC0EE
 
 #define __IMAGE_DEBUG_TYPE_UNKNOWN       0
 #define __IMAGE_DEBUG_TYPE_COFF          1
@@ -514,6 +484,39 @@ namespace Type
             uint32_t ihdrMagic;
             uint32_t width;
             uint32_t height;
+        };
+
+        enum class MachineType : uint16_t
+        {
+            Unknown   = 0,
+            I386      = 0x014c, // Intel 386.
+            R3000     = 0x0162, // MIPS little-endian, 0x160 big-endian
+            R4000     = 0x0166, // MIPS little-endian
+            R10000    = 0x0168, // MIPS little-endian
+            WCEMIPSV2 = 0x0169, // MIPS little-endian WCE v2
+            ALPHA     = 0x0184, // Alpha_AXP
+            SH3       = 0x01a2, // SH3 little-endian
+            SH3DSP    = 0x01a3,
+            SH3E      = 0x01a4, // SH3E little-endian
+            SH4       = 0x01a6, // SH4 little-endian
+            SH5       = 0x01a8, // SH5
+            ARM       = 0x01c0, // ARM Little-Endian
+            THUMB     = 0x01c2, // ARM Thumb/Thumb-2 Little-Endian
+            ARMNT     = 0x01c4, // ARM Thumb-2 Little-Endian
+            AM33      = 0x01d3,
+            POWERPC   = 0x01F0, // IBM PowerPC Little-Endian
+            POWERPCFP = 0x01f1,
+            IA64      = 0x0200, // Intel 64
+            MIPS16    = 0x0266, // MIPS
+            ALPHA64   = 0x0284, // ALPHA64
+            MIPSFPU   = 0x0366, // MIPS
+            MIPSFPU16 = 0x0466, // MIPS
+            TRICORE   = 0x0520, // Infineon
+            CEF       = 0x0CEF,
+            EBC       = 0x0EBC, // EFI Byte Code
+            AMD64     = 0x8664, // AMD64 (K8)
+            M32R      = 0x9041, // M32R little-endian
+            CEE       = 0xC0EE,
         };
 
         enum class SubsystemType : uint16_t
