@@ -96,23 +96,6 @@
 #define __IMAGE_SUBSYSTEM_XBOX                     14
 #define __IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16
 
-#define __IMAGE_DIRECTORY_ENTRY_EXPORT    0 // Export Directory
-#define __IMAGE_DIRECTORY_ENTRY_IMPORT    1 // Import Directory
-#define __IMAGE_DIRECTORY_ENTRY_RESOURCE  2 // Resource Directory
-#define __IMAGE_DIRECTORY_ENTRY_EXCEPTION 3 // Exception Directory
-#define __IMAGE_DIRECTORY_ENTRY_SECURITY  4 // Security Directory
-#define __IMAGE_DIRECTORY_ENTRY_BASERELOC 5 // Base Relocation Table
-#define __IMAGE_DIRECTORY_ENTRY_DEBUG     6 // Debug Directory
-//      __IMAGE_DIRECTORY_ENTRY_COPYRIGHT       7   // (X86 usage)
-#define __IMAGE_DIRECTORY_ENTRY_ARCHITECTURE   7  // Architecture Specific Data
-#define __IMAGE_DIRECTORY_ENTRY_GLOBALPTR      8  // RVA of GP
-#define __IMAGE_DIRECTORY_ENTRY_TLS            9  // TLS Directory
-#define __IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG    10 // Load Configuration Directory
-#define __IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT   11 // Bound Import Directory in headers
-#define __IMAGE_DIRECTORY_ENTRY_IAT            12 // Import Address Table
-#define __IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT   13 // Delay Load Import Descriptors
-#define __IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR 14 // COM Runtime descriptor
-
 #define __IMAGE_DEBUG_TYPE_UNKNOWN       0
 #define __IMAGE_DEBUG_TYPE_COFF          1
 #define __IMAGE_DEBUG_TYPE_CODEVIEW      2
@@ -146,12 +129,6 @@
 #define __IMAGE_DLLCHARACTERISTICS_GUARD_CF              0x4000 // Image supports Control Flow Guard.
 #define __IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
 
-#define __BI_RGB       0L
-#define __BI_RLE8      1L
-#define __BI_RLE4      2L
-#define __BI_BITFIELDS 3L
-#define __BI_JPEG      4L
-#define __BI_PNG       5L
 
 #define __IMAGE_ORDINAL_FLAG32 0x80000000
 #define __IMAGE_ORDINAL_FLAG64 0x8000000000000000
@@ -555,6 +532,24 @@ namespace Type
             uint32_t height;
         };
         
+        enum class DirectoryType: uint8_t
+        {
+            Export = 0,
+            Import = 1,
+            Resource = 2,
+            Excption = 3,
+            Security = 4,
+            BaseRelloc = 5,
+            Debug = 6,
+            Architecture = 7,
+            GlobalPTR = 8,
+            TLS = 9,
+            Config = 10,
+            BoundImport = 11,
+            IAT = 12,
+            DelayImport = 13,
+            COMDescriptor = 14
+        };
         enum class ResourceType: uint32_t
         {
             Cursor = 1,
@@ -692,6 +687,11 @@ namespace Type
             }
 
             bool Update();
+            
+            constexpr inline ImageDataDirectory& GetDirectory(DirectoryType dirType)
+            {
+                return dirs[(uint8_t) dirType];
+            }
 
             std::string_view GetMachine();
             std::string_view GetSubsystem();

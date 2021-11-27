@@ -253,7 +253,7 @@ PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
     peCols.colDir[1] = ColorPair{ Color::Red, Color::Transparent };
     for (tr = 2; tr < 15; tr++)
         peCols.colDir[tr] = ColorPair{ Color::Green, Color::Transparent };
-    peCols.colDir[__IMAGE_DIRECTORY_ENTRY_SECURITY] = ColorPair{ Color::DarkGreen, Color::Transparent };
+    peCols.colDir[(uint8_t) DirectoryType::Security] = ColorPair{ Color::DarkGreen, Color::Transparent };
 
     asmShow    = 0xFF;
     panelsMask = 0;
@@ -646,9 +646,10 @@ bool PEFile::BuildTLS()
     uint32_t RVA;
     uint64_t faddr;
 
-    hasTLS = false;
-    RVA    = dirs[__IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress;
-    if ((RVA == 0) || (dirs[__IMAGE_DIRECTORY_ENTRY_TLS].Size == 0))
+    hasTLS   = false;
+    auto dir = GetDirectory(DirectoryType::TLS);
+    RVA      = dir.VirtualAddress;
+    if ((RVA == 0) || (dir.Size == 0))
         return false;
 
     if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
@@ -843,7 +844,8 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
             break;
         default:
             errList.AddWarning(
-                  "Unusual ICON width (%u). Usual icons are 8x8, 16x16, 24x24, 32x32, 48x48, 64x64, 128x128 or 256x256 (for resource at offset %llu)",
+                  "Unusual ICON width (%u). Usual icons are 8x8, 16x16, 24x24, 32x32, 48x48, 64x64, 128x128 or 256x256 (for resource at "
+                  "offset %llu)",
                   r.Image.width,
                   r.Start);
         }
@@ -1128,17 +1130,19 @@ bool PEFile::BuildDebugData()
     pdbName.Clear();
     memset(buf, 0, MAX_PDB_NAME + 64);
 
-    if (dirs[__IMAGE_DIRECTORY_ENTRY_DEBUG].VirtualAddress == 0)
+    auto& dirDebug = dirs[(uint8_t) DirectoryType::Debug];
+
+    if (dirDebug.VirtualAddress == 0)
         return false;
-    if ((faddr = RVAtoFilePointer(dirs[__IMAGE_DIRECTORY_ENTRY_DEBUG].VirtualAddress)) == PE_INVALID_ADDRESS)
+    if ((faddr = RVAtoFilePointer(dirDebug.VirtualAddress)) == PE_INVALID_ADDRESS)
     {
-        errList.AddError("Invalid RVA for Debug directory (0x%X)", (uint32_t) dirs[__IMAGE_DIRECTORY_ENTRY_DEBUG].VirtualAddress);
+        errList.AddError("Invalid RVA for Debug directory (0x%X)", (uint32_t) dirDebug.VirtualAddress);
         return false;
     }
-    size = dirs[__IMAGE_DIRECTORY_ENTRY_DEBUG].Size / sizeof(ImageDebugDirectory);
-    if (((dirs[__IMAGE_DIRECTORY_ENTRY_DEBUG].Size % sizeof(ImageDebugDirectory)) != 0) || (size == 0) || (size > 14))
+    size = dirDebug.Size / sizeof(ImageDebugDirectory);
+    if (((dirDebug.Size % sizeof(ImageDebugDirectory)) != 0) || (size == 0) || (size > 14))
     {
-        errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32_t) dirs[__IMAGE_DIRECTORY_ENTRY_DEBUG].Size);
+        errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32_t) dirDebug.Size);
     }
     for (tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory))
     {
@@ -1297,7 +1301,7 @@ void PEFile::UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface>
     {
         if ((dr->VirtualAddress > 0) && (dr->Size > 0))
         {
-            if (tr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+            if (tr == (uint8_t) DirectoryType::Security)
             {
                 bufferView->AddZone(dr->VirtualAddress, dr->Size, peCols.colDir[tr], peDirsNames[tr]);
             }
@@ -1425,15 +1429,16 @@ bool PEFile::Update()
     //}
 
     computedWithCertificate = computedSize;
-    if ((dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress > 0) && (dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].Size > 0))
+    auto dirSec             = GetDirectory(DirectoryType::Security);
+    if ((dirSec.VirtualAddress > 0) && (dirSec.Size > 0))
     {
-        if (dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress < computedWithCertificate)
+        if (dirSec.VirtualAddress < computedWithCertificate)
         {
             errList.AddWarning("Security certificate starts within the file");
         }
-        if ((dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress + dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].Size) > computedWithCertificate)
+        if ((dirSec.VirtualAddress + dirSec.Size) > computedWithCertificate)
         {
-            computedWithCertificate = dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress + dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].Size;
+            computedWithCertificate = dirSec.VirtualAddress + dirSec.Size;
         }
     }
 
@@ -1576,14 +1581,14 @@ bool PEFile::Update()
     // overlap cases
     for (tr = 0; tr < 15; tr++)
     {
-        if (tr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+        if (tr == (uint8_t)DirectoryType::Security)
             continue;
         dr = &dirs[tr];
         if ((dr->VirtualAddress > 0) && (dr->Size > 0))
         {
             for (gr = tr + 1; gr < 15; gr++)
             {
-                if (gr == __IMAGE_DIRECTORY_ENTRY_SECURITY)
+                if (gr == (uint8_t) DirectoryType::Security)
                     continue;
                 d2 = &dirs[gr];
                 if ((d2->VirtualAddress > 0) && (dr->Size > 0))
