@@ -840,10 +840,12 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         case 32:
         case 48:
         case 64:
+        case 128:
+        case 256:
             break;
         default:
             errList.AddWarning(
-                  "Unusual ICON width (%u). Usual icons are 8x8, 16x16, 24x24, 32x32, 48x48 or 64x64 (for resource at offset %llu)",
+                  "Unusual ICON width (%u). Usual icons are 8x8, 16x16, 24x24, 32x32, 48x48, 64x64, 128x128 or 256x256 (for resource at offset %llu)",
                   r.Image.width,
                   r.Start);
         }
@@ -1241,6 +1243,7 @@ bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& i
     }
     return true;
 }
+
 bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
 {
     CHECK(res.Type == __RT_ICON, false, "Expecting a valid ICON resource !");
