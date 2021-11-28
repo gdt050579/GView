@@ -8,4 +8,5 @@ target_sources(PE PRIVATE
 	PanelImports.cpp
 	PanelExports.cpp
 	PanelResources.cpp
-	PanelIcons.cpp)
+	PanelIcons.cpp
+	PanelHeaders.cpp)

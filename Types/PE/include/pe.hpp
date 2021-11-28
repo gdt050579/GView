@@ -843,6 +843,21 @@ namespace Type
                 void Update();
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
+            class Headers : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+
+                void AddHeader(std::string_view name);
+                void AddNumber(std::string_view name, uint32_t value);
+                void AddMagic(unsigned char* offset, unsigned int size);
+                void AddItem(std::string_view name, std::string_view value);
+              public:
+                Headers(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+            };
         }; // namespace Panels
     }      // namespace PE
 } // namespace Type
