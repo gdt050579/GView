@@ -679,7 +679,7 @@ void GView::View::BufferViewer::WriteLineTextToChars(DrawLineInfo& dli)
             dli.start++;
         }
     }
-    this->chars.Resize((unsigned int)(dli.chText - this->chars.GetBuffer()));
+    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));
 }
 void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
@@ -866,7 +866,7 @@ void GView::View::BufferViewer::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = config.Colors.Inactive;
         c++;
     }
-    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));  
+    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));
 }
 void GView::View::BufferViewer::Paint(Renderer& renderer)
 {
@@ -1379,6 +1379,44 @@ int GView::View::BufferViewer::Print32bitValue(int x, int height, AppCUI::Utils:
             r.WriteSingleLineText(x + 4, 3, tmp, this->CursorColors.Normal);
         }
         r.DrawVerticalLine(x + 20, 0, 3, this->CursorColors.Line);
+        return x + 21;
+    }
+    return x;
+}
+int GView::View::BufferViewer::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r)
+{
+    if (buffer.GetLength() < 4)
+        return x;
+    const unsigned int v_u32 =
+          (((uint32_t) buffer[0]) << 24) | (((uint32_t) buffer[1]) << 16) | (((uint32_t) buffer[2]) << 8) | (((uint32_t) buffer[3]));
+    NumericFormatter n;
+    NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
+    NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
+    switch (height)
+    {
+    case 0:
+    case 1:
+    case 2:
+        break;
+    case 3:
+        r.WriteSingleLineText(x, 0, "Hex (BE):", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "I32 (BE):", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 2, "U32 (BE):", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x + 9, 0, n.ToString(v_u32, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 9, 1, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 9, 2, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
+        r.DrawVerticalLine(x + 27, 0, 2, this->CursorColors.Line);
+        return x + 28;
+    default:
+        // 4 or more lines
+        r.WriteSingleLineText(x, 0, "    Big Endian    ", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 1, "Hex:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 2, "I32:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, 3, "U32:", this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x + 4, 1, n.ToString(v_u32, fmt), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 2, n.ToString(*(const int*) (&v_u32), fmtDec), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 4, 3, n.ToString(v_u32, fmtDec), this->CursorColors.Normal);
+        r.DrawVerticalLine(x + 20, 0, 3, this->CursorColors.Line);
         return x + 23;
     }
     return x;
@@ -1437,6 +1475,7 @@ void GView::View::BufferViewer::PaintCursorInformation(AppCUI::Graphics::Rendere
         x = Print8bitValue(x, height, buf, r);
         x = Print16bitValue(x, height, buf, r);
         x = Print32bitValue(x, height, buf, r);
+        x = Print32bitBEValue(x, height, buf, r);
         break;
     default:
         // 4 or more
@@ -1451,6 +1490,7 @@ void GView::View::BufferViewer::PaintCursorInformation(AppCUI::Graphics::Rendere
         x = Print8bitValue(x, height, buf, r);
         x = Print16bitValue(x, height, buf, r);
         x = Print32bitValue(x, height, buf, r);
+        x = Print32bitBEValue(x, height, buf, r);
         break;
     }
 }

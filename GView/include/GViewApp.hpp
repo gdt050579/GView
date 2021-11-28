@@ -233,6 +233,7 @@ namespace View
         int Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
         int Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
         int Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
+        int Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
 
         void PrepareDrawLineInfo(DrawLineInfo& dli);
         void WriteHeaders(Renderer& renderer);
