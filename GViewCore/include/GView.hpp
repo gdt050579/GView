@@ -132,18 +132,31 @@ namespace View
         {
         }
     };
-    struct CORE_EXPORT BufferViewerInterface
+    namespace BufferViewer
     {
-        virtual void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name) = 0;
-        virtual void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)                             = 0;
-        virtual void AddOffsetTranslationMethod(std::string_view name, MethodID methodID)                             = 0;
-    };
+        struct CORE_EXPORT OffsetTranslateInterface
+        {
+            virtual uint64_t TranslateToFileOffset(uint64_t value, MethodID methodID) = 0;
+        };
+
+        class CORE_EXPORT Settings
+        {
+            void* data;
+
+          public:
+            Settings();
+            void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name);
+            void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);
+            void AddOffsetTranslationMethod(std::string_view name, MethodID methodID);
+            void SetOffsetTranslationCallback(OffsetTranslateInterface* interface);
+        };
+    }; // namespace BufferViewer
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                                  = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                            = 0;
-        virtual Reference<BufferViewerInterface> AddBufferViewer(const std::string_view& name) = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                        = 0;
+        virtual Reference<Object> GetObject()                                                     = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                               = 0;
+        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                           = 0;
     };
 }; // namespace View
 }; // namespace GView

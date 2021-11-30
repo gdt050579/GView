@@ -1,0 +1,1 @@
+target_sources(GViewCore PRIVATE Config.cpp Instance.cpp )
