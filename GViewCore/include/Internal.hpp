@@ -1,5 +1,5 @@
 #include <AppCUI/include/AppCUI.hpp>
-#include <../GViewCore/include/GView.hpp>
+#include "GView.hpp"
 
 #include <set>
 
@@ -154,6 +154,7 @@ namespace View
             unsigned long long bookmarks[10];
             OffsetTranslationMethod translationMethods[16];
             unsigned int translationMethodsCount;
+            SettingsData();
         };
         struct Config
         {
@@ -180,8 +181,7 @@ namespace View
             void Initialize();
         };
         class Instance : public View::ViewControl
-        {
-            
+        {            
             struct DrawLineInfo
             {
                 unsigned long long offset;
@@ -228,7 +228,7 @@ namespace View
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
 
-
+            Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
             CharacterBuffer chars;

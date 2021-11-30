@@ -22,7 +22,7 @@ using namespace AppCUI::Graphics;
 
 namespace GView
 {
-struct EXPORT TypeInterface
+struct CORE_EXPORT TypeInterface
 {
     virtual std::string_view GetTypeName() = 0;
     virtual ~TypeInterface(){};
@@ -111,7 +111,7 @@ struct CORE_EXPORT Object
 {
     Utils::FileCache cache;
     TypeInterface* type;
-    std::u16string name;
+    AppCUI::Utils::UnicodeStringBuilder name;
 
     Object() : type(nullptr)
     {
@@ -159,4 +159,11 @@ namespace View
         virtual Reference<ViewControl> GetCurrentView()                                           = 0;
     };
 }; // namespace View
+namespace App
+{
+    bool CORE_EXPORT Init();
+    void CORE_EXPORT Run();
+    void CORE_EXPORT ResetConfiguration();
+    void CORE_EXPORT OpenFile(const char*);
+}; // namespace App
 }; // namespace GView

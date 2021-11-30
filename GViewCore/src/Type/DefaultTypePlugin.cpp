@@ -1,4 +1,4 @@
-#include "GViewApp.hpp"
+#include "Internal.hpp"
 
 using namespace GView::Utils;
 using namespace GView;

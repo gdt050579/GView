@@ -1,1 +1,1 @@
-target_sources(GViewCore PRIVATE Config.cpp Instance.cpp )
+target_sources(GViewCore PRIVATE Config.cpp Instance.cpp Settings.cpp)

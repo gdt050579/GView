@@ -1,4 +1,4 @@
-#include "GViewApp.hpp"
+#include "Internal.hpp"
 
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
@@ -53,7 +53,7 @@ constexpr int BUFFERVIEW_CMD_CHANGEBASE = 0xBF01;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj)
+Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj) : settings(nullptr)
 {
     this->obj  = _obj;
     this->name = _name;
@@ -356,7 +356,7 @@ void Instance::UpdateStringInfo(unsigned long long offset)
 
 ColorPair Instance::OffsetToColorZone(unsigned long long offset)
 {
-    auto* z = this->zList.OffsetToZone(offset);
+    auto* z = this->settings->zList.OffsetToZone(offset);
     if (z == nullptr)
         return config.Colors.OutsideZone;
     else
@@ -539,7 +539,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
     {
         c = OffsetToColorZone(dli.offset);
     }
-    z = this->zList.OffsetToZone(dli.offset);
+    z = this->settings->zList.OffsetToZone(dli.offset);
 
     if (this->Layout.lineNameSize > 0)
     {
@@ -1131,28 +1131,7 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-void Instance::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
-{
-    if (size > 0)
-        this->zList.Add(start, start + size - 1, col, name);
-}
-void Instance::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
-{
-    if (bookmarkID < 10)
-        this->bookmarks[bookmarkID] = fileOffset;
-}
-void Instance::AddOffsetTranslationMethod(std::string_view _name, MethodID _methodID)
-{
-    for (unsigned int tr = 0; tr < translationMethodsCount; tr++)
-        if (this->translationMethods[tr].methodID == _methodID)
-            return;
-    if (translationMethodsCount >= sizeof(translationMethods) / sizeof(OffsetTranslationMethod))
-        return;
-    auto m      = &translationMethods[translationMethodsCount];
-    m->methodID = _methodID;
-    m->name     = _name;
-    translationMethodsCount++;
-}
+
 
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)
@@ -1196,7 +1175,7 @@ int Instance::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSepar
 }
 int Instance::PrintCursorZone(int x, int y, unsigned int width, Renderer& r)
 {
-    auto zone = this->zList.OffsetToZone(this->Cursor.currentPos);
+    auto zone = this->settings->zList.OffsetToZone(this->Cursor.currentPos);
     if (zone)
     {
         r.WriteSingleLineText(x, y, width, zone->name, this->CursorColors.Highlighted);
