@@ -48,8 +48,9 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false
 };
 
-constexpr int BUFFERVIEW_CMD_CHANGECOL  = 0xBF00;
-constexpr int BUFFERVIEW_CMD_CHANGEBASE = 0xBF01;
+constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
+constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
+constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
 
 Config Instance::config;
 
@@ -77,13 +78,14 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
     this->Cursor.base              = 16;
+    this->currentAdrressMode       = 0;
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
     // settings
     if ((_settings) && (_settings->data))
     {
-        // move settings data pointer 
+        // move settings data pointer
         this->settings.reset((SettingsData*) _settings->data);
         _settings->data = nullptr;
     }
@@ -515,7 +517,10 @@ void Instance::WriteHeaders(Renderer& renderer)
     {
         params.X     = this->Layout.xAddress;
         params.Width = this->Layout.lineAddressSize;
-        renderer.WriteText("Address", params);
+        if (this->settings->translationMethodsCount == 0)
+            renderer.WriteText("Address", params);
+        else
+            renderer.WriteText(this->settings->translationMethods[this->currentAdrressMode].name.GetText(), params);
     }
     if (this->Layout.nrCols != 0)
     {
@@ -591,23 +596,41 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
         auto prev_n = n;
         auto s      = n + this->Layout.lineAddressSize - 1;
         n           = s + 1;
-        // hex
-        while (s >= prev_n)
+
+        if ((settings) && (settings->translationMethodsCount > 0))
         {
-            s->Code  = hexCharsList[ofs & 0xF];
-            s->Color = c;
-            ofs >>= 4;
-            s--;
+            ofs = settings->offsetTranslateCallback->TranslateToFileOffset(ofs, 0, this->currentAdrressMode);
         }
-        if ((ofs > 0) && (this->Layout.lineAddressSize >= 3))
+
+        if (ofs == GView::Utils::INVALID_OFFSET)
         {
-            // value is to large --> add some points
-            s        = prev_n;
-            s->Code  = '.';
-            s->Color = c;
-            s++;
-            s->Code  = '.';
-            s->Color = c;
+            while (s >= prev_n)
+            {
+                s->Code  = '-';
+                s->Color = config.Colors.Inactive;
+                s--;
+            }
+        }
+        else
+        {
+            // hex
+            while (s >= prev_n)
+            {
+                s->Code  = hexCharsList[ofs & 0xF];
+                s->Color = c;
+                ofs >>= 4;
+                s--;
+            }
+            if ((ofs > 0) && (this->Layout.lineAddressSize >= 3))
+            {
+                // value is to large --> add some points
+                s        = prev_n;
+                s->Code  = '.';
+                s->Color = c;
+                s++;
+                s->Code  = '.';
+                s->Color = c;
+            }
         }
     }
 
@@ -921,6 +944,15 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
             break;
         }
     }
+
+    // address mode
+    if ((this->settings) && (this->settings->translationMethodsCount > 0))
+    {
+        commandBar.SetCommand(
+              config.Keys.ChangeAddressMode,
+              this->settings->translationMethods[this->currentAdrressMode].name,
+              BUFFERVIEW_CMD_CHANGEADDRESSMODE);
+    }
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
@@ -1128,6 +1160,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             UpdateViewSizes();
         }
         return true;
+    case BUFFERVIEW_CMD_CHANGEADDRESSMODE:
+        if ((this->settings) && (this->settings->translationMethodsCount > 0))
+        {
+            this->currentAdrressMode = (this->currentAdrressMode + 1) % this->settings->translationMethodsCount;
+            return true;
+        }
+        return false;
     }
     return false;
 }

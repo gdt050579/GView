@@ -39,3 +39,7 @@ void Settings::AddOffsetTranslationMethod(std::string_view _name, MethodID _meth
     m->name     = _name;
     Members->translationMethodsCount++;
 }
+void Settings::SetOffsetTranslationCallback(Reference<OffsetTranslateInterface> cbk)
+{
+    ((SettingsData*) (this->data))->offsetTranslateCallback = cbk;
+}

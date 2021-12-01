@@ -18,7 +18,6 @@
 #define PE_INVALID_ADDRESS     0xFFFFFFFFFFFFFFFF
 #define MAX_IMPORTED_FUNCTIONS 4096
 
-
 #define IMAGE_DLLCHARACTERISTICS_APPCONTAINER                0x1000
 #define IMAGE_DLLCHARACTERISTICS_NO_LEGACY_BIOS_DEPENDENCIES 0x2000
 
@@ -484,11 +483,11 @@ namespace Type
             uint32_t height;
         };
 
-        enum class AddressType: unsigned char
+        enum class AddressType : unsigned char
         {
             FileOffset = 0,
-            RVA = 1,
-            VA = 2
+            RVA        = 1,
+            VA         = 2
         };
 
         enum class MachineType : uint16_t
@@ -584,7 +583,7 @@ namespace Type
             Manifest     = 24
         };
 
-        class PEFile : public TypeInterface
+        class PEFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
         {
           public:
             struct ExportedFunction
@@ -702,6 +701,9 @@ namespace Type
             int RVAToSectionIndex(uint64_t RVA);
             uint64_t FilePointerToRVA(uint64_t fileAddress);
             uint64_t FilePointerToVA(uint64_t fileAddress);
+
+            uint64_t TranslateToFileOffset(uint64_t value, GView::View::MethodID fromMethodID, GView::View::MethodID toMethdoID) override;
+
             uint64_t ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType);
             bool BuildExport();
             void BuildVersionInfo();
@@ -853,6 +855,7 @@ namespace Type
                 void AddNumber(std::string_view name, uint32_t value);
                 void AddMagic(unsigned char* offset, unsigned int size);
                 void AddItem(std::string_view name, std::string_view value);
+
               public:
                 Headers(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 

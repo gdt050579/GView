@@ -147,7 +147,7 @@ namespace View
             void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name);
             void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);
             void AddOffsetTranslationMethod(std::string_view name, MethodID methodID);
-            void SetOffsetTranslationCallback(OffsetTranslateInterface* interface);
+            void SetOffsetTranslationCallback(Reference<OffsetTranslateInterface> cbk);
         };
     }; // namespace BufferViewer
     struct CORE_EXPORT WindowInterface

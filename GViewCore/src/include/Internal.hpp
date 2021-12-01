@@ -154,6 +154,7 @@ namespace View
             unsigned long long bookmarks[10];
             OffsetTranslationMethod translationMethods[16];
             unsigned int translationMethodsCount;
+            Reference<OffsetTranslateInterface> offsetTranslateCallback;
             SettingsData();
         };
         struct Config
@@ -174,6 +175,7 @@ namespace View
             {
                 AppCUI::Input::Key ChangeColumnsNumber;
                 AppCUI::Input::Key ChangeBase;
+                AppCUI::Input::Key ChangeAddressMode;
             } Keys;
             bool Loaded;
 
@@ -233,6 +235,7 @@ namespace View
             Utils::Selection selection;
             CharacterBuffer chars;
             const char16_t* CodePage;
+            unsigned int currentAdrressMode;
 
             FixSizeString<29> name;
 

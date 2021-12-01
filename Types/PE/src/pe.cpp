@@ -46,7 +46,7 @@ extern "C"
                 settings.AddZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, pe->peCols.colSect, tempStr);
             }
         }
-        
+
         // directories
         auto* dr = pe->dirs;
         for (auto tr = 0; tr < 15; tr++, dr++)
@@ -69,9 +69,10 @@ extern "C"
         }
 
         // translation
-        settings.AddOffsetTranslationMethod("FileOffset", (MethodID)PE::AddressType::FileOffset);
+        settings.AddOffsetTranslationMethod("FileOffset", (MethodID) PE::AddressType::FileOffset);
         settings.AddOffsetTranslationMethod("RVA", (MethodID) PE::AddressType::RVA);
-        settings.AddOffsetTranslationMethod("VA", (MethodID) PE::AddressType::VA);
+        settings.AddOffsetTranslationMethod("VirtAddress", (MethodID) PE::AddressType::VA);
+        settings.SetOffsetTranslationCallback(pe.UpCast<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         win->CreateViewer("BufferView", settings);
     }
