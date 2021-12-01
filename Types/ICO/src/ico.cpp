@@ -7,6 +7,7 @@ using namespace AppCUI::Controls;
 using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
+using namespace GView::View;
 
 extern "C"
 {
@@ -26,13 +27,32 @@ extern "C"
     {
         return new ICO::ICOFile(file);
     }
+    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
+    {
+        BufferViewer::Settings settings;
+        LocalString<128> tempStr;
+
+        settings.AddZone(0, sizeof(ICO::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
+        settings.AddZone(
+              sizeof(ICO::Header), sizeof(ICO::DirectoryEntry) * ico->dirs.size(), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
+
+        auto idx = 1;
+        for (auto& e : ico->dirs)
+        {
+            settings.AddZone(e.cursor.offset, e.cursor.size, ColorPair{ Color::Silver, Color::DarkBlue }, tempStr.Format("Img #%d", idx));
+            if (idx<10)
+                settings.AddBookmark(idx, e.cursor.offset);
+            idx++;
+        }
+        win->CreateViewer("BufferView", settings);
+    }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto ico = win->GetObject()->type->To<ICO::ICOFile>();
         ico->Update();
 
-        auto b = win->AddBufferViewer("Buffer View");
-        ico->UpdateBufferViewZones(b);
+        // add veiewer
+        CreateBufferView(win, ico);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new ICO::Panels::Information(ico)), true);

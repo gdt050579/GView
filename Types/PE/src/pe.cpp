@@ -7,6 +7,7 @@ using namespace AppCUI::Controls;
 using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
+using namespace GView::View;
 
 extern "C"
 {
@@ -26,13 +27,53 @@ extern "C"
     {
         return new PE::PEFile(file);
     }
+    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
+    {
+        LocalString<128> tempStr;
+        BufferViewer::Settings settings;
+
+        settings.AddZone(0, sizeof(pe->dos), pe->peCols.colMZ, "DOS Header");
+        settings.AddZone(pe->dos.e_lfanew, sizeof(pe->nth32), pe->peCols.colPE, "NT Header");
+        if (pe->nrSections > 0)
+            settings.AddZone(pe->sectStart, pe->nrSections * sizeof(PE::ImageSectionHeader), pe->peCols.colSectDef, "SectDef");
+
+        // sections
+        for (uint32_t tr = 0; tr < pe->nrSections; tr++)
+        {
+            if ((pe->sect[tr].PointerToRawData != 0) && (pe->sect[tr].SizeOfRawData > 0))
+            {
+                pe->CopySectionName(tr, tempStr);
+                settings.AddZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, pe->peCols.colSect, tempStr);
+            }
+        }
+        
+        // directories
+        auto* dr = pe->dirs;
+        for (auto tr = 0; tr < 15; tr++, dr++)
+        {
+            if ((dr->VirtualAddress > 0) && (dr->Size > 0))
+            {
+                if (tr == (uint8_t) PE::DirectoryType::Security)
+                {
+                    settings.AddZone(dr->VirtualAddress, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
+                }
+                else
+                {
+                    const auto filePoz = pe->RVAtoFilePointer(dr->VirtualAddress);
+                    if (filePoz != PE_INVALID_ADDRESS)
+                    {
+                        settings.AddZone(filePoz, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
+                    }
+                }
+            }
+        }
+    }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
         pe->Update();
 
-        auto b = win->AddBufferViewer("Buffer View");
-        pe->UpdateBufferViewZones(b);
+        CreateBufferView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);

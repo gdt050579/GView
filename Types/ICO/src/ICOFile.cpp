@@ -16,17 +16,17 @@ void ICOFile::AddError(ErrorType type, std::string_view message)
     // item.text  = message;
 }
 
-void ICOFile::UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView)
+void ICOFile::UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings)
 {
     LocalString<128> tempStr;
 
-    bufferView->AddZone(0, sizeof(Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
-    bufferView->AddZone(sizeof(Header), sizeof(DirectoryEntry) * dirs.size(), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
+    settings.AddZone(0, sizeof(Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
+    settings.AddZone(sizeof(Header), sizeof(DirectoryEntry) * dirs.size(), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
 
     auto idx = 1;
     for (auto& e : dirs)
     {
-        bufferView->AddZone(e.cursor.offset, e.cursor.size, ColorPair{ Color::Silver, Color::DarkBlue }, tempStr.Format("Image #%d", idx));
+        settings.AddZone(e.cursor.offset, e.cursor.size, ColorPair{ Color::Silver, Color::DarkBlue }, tempStr.Format("Img #%d", idx));
         idx++;
     }
 }

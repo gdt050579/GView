@@ -1,1 +1,1 @@
-target_sources(GViewCore PRIVATE FileWindow.cpp Instance.cpp)
+target_sources(GViewCore PRIVATE GViewApp.cpp FileWindow.cpp Instance.cpp)

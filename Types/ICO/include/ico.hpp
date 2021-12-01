@@ -76,7 +76,7 @@ namespace Type
             }
 
             bool Update();
-            void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
+            void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
 
             std::string_view GetTypeName() override
             {

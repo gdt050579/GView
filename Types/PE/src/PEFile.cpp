@@ -1276,46 +1276,7 @@ bool PEFile::HasPanel(Panels::IDs id)
 {
     return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;
 }
-void PEFile::UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView)
-{
-    LocalString<128> tempStr;
 
-    bufferView->AddZone(0, sizeof(dos), peCols.colMZ, "DOS Header");
-    bufferView->AddZone(dos.e_lfanew, sizeof(nth32), peCols.colPE, "NT Header");
-    if (nrSections > 0)
-        bufferView->AddZone(sectStart, nrSections * sizeof(ImageSectionHeader), peCols.colSectDef, "SectDef");
-
-    // sections
-    for (uint32_t tr = 0; tr < nrSections; tr++)
-    {
-        if ((sect[tr].PointerToRawData != 0) && (sect[tr].SizeOfRawData > 0))
-        {
-            CopySectionName(tr, tempStr);
-            bufferView->AddZone(sect[tr].PointerToRawData, sect[tr].SizeOfRawData, peCols.colSect, tempStr);
-        }
-    }
-
-    // directories
-    ImageDataDirectory* dr = this->dirs;
-    for (auto tr = 0; tr < 15; tr++, dr++)
-    {
-        if ((dr->VirtualAddress > 0) && (dr->Size > 0))
-        {
-            if (tr == (uint8_t) DirectoryType::Security)
-            {
-                bufferView->AddZone(dr->VirtualAddress, dr->Size, peCols.colDir[tr], peDirsNames[tr]);
-            }
-            else
-            {
-                const auto filePoz = RVAtoFilePointer(dr->VirtualAddress);
-                if (filePoz != PE_INVALID_ADDRESS)
-                {
-                    bufferView->AddZone(filePoz, dr->Size, peCols.colDir[tr], peDirsNames[tr]);
-                }
-            }
-        }
-    }
-}
 bool PEFile::Update()
 {
     uint32_t tr, gr, tmp;
