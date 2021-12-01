@@ -37,7 +37,7 @@ int main(int argc,const char **argv)
         ShowHelp();
         return 0;
     }
-    GView::App::Init();
+
 
     if (AppCUI::Utils::String::Equals(argv[1], "reset"))
     {

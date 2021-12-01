@@ -67,6 +67,7 @@ extern "C"
                 }
             }
         }
+        win->CreateViewer("BufferView", settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
