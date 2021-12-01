@@ -18,11 +18,6 @@
 #define PE_INVALID_ADDRESS     0xFFFFFFFFFFFFFFFF
 #define MAX_IMPORTED_FUNCTIONS 4096
 
-#define ADDR_FA  0
-#define ADDR_RVA 1
-#define ADDR_VA  2
-
-#define MAX_ADDR_TYPES 3
 
 #define IMAGE_DLLCHARACTERISTICS_APPCONTAINER                0x1000
 #define IMAGE_DLLCHARACTERISTICS_NO_LEGACY_BIOS_DEPENDENCIES 0x2000
@@ -489,6 +484,13 @@ namespace Type
             uint32_t height;
         };
 
+        enum class AddressType: unsigned char
+        {
+            FileOffset = 0,
+            RVA = 1,
+            VA = 2
+        };
+
         enum class MachineType : uint16_t
         {
             Unknown   = 0,
@@ -700,7 +702,7 @@ namespace Type
             int RVAToSectionIndex(uint64_t RVA);
             uint64_t FilePointerToRVA(uint64_t fileAddress);
             uint64_t FilePointerToVA(uint64_t fileAddress);
-            uint64_t ConvertAddress(uint64_t address, unsigned int fromAddressType, unsigned int toAddressType);
+            uint64_t ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType);
             bool BuildExport();
             void BuildVersionInfo();
             bool ProcessResourceImageInformation(ResourceInformation& res);

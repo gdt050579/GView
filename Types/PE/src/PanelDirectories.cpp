@@ -38,7 +38,7 @@ void Panels::Directories::GoToSelectedDirectory()
     if (idx == (uint8_t) DirectoryType::Security)
         result = dir->VirtualAddress > 0 ? dir->VirtualAddress : PE_INVALID_ADDRESS;
     else
-        result = pe->ConvertAddress(dir->VirtualAddress, ADDR_RVA, ADDR_FA);
+        result = pe->ConvertAddress(dir->VirtualAddress, AddressType::RVA, AddressType::FileOffset);
     if (result != PE_INVALID_ADDRESS)
         win->GetCurrentView()->GoTo(result);
 }
@@ -53,7 +53,7 @@ void Panels::Directories::SelectCurrentDirectory()
     if (idx == (uint8_t) DirectoryType::Security)
         result = dir->VirtualAddress > 0 ? dir->VirtualAddress: PE_INVALID_ADDRESS;
     else
-        result = pe->ConvertAddress(dir->VirtualAddress, ADDR_RVA, ADDR_FA);
+        result = pe->ConvertAddress(dir->VirtualAddress, AddressType::RVA, AddressType::FileOffset);
     if (result != PE_INVALID_ADDRESS)
         win->GetCurrentView()->Select(result, dir->Size);
 }

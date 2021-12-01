@@ -27,7 +27,7 @@ void Panels::Exports::Update()
     for (auto& exp : pe->exp)
     {
         auto handle = list->AddItem(exp.Name, n.ToDec(exp.Ordinal), temp.Format("%u (0x%08X)", exp.RVA, exp.RVA));
-        list->SetItemData(handle, (unsigned long long) pe->ConvertAddress(exp.RVA, ADDR_RVA, ADDR_FA));
+        list->SetItemData(handle, (unsigned long long) pe->ConvertAddress(exp.RVA, AddressType::RVA, AddressType::FileOffset));
     }
 }
 bool Panels::Exports::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

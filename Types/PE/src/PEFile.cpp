@@ -449,44 +449,44 @@ uint64_t PEFile::FilePointerToVA(uint64_t fileAddress)
     return PE_INVALID_ADDRESS;
 }
 
-uint64_t PEFile::ConvertAddress(uint64_t address, unsigned int fromAddressType, unsigned int toAddressType)
+uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType)
 {
     switch (fromAddressType)
     {
-    case ADDR_FA:
+    case AddressType::FileOffset:
         switch (toAddressType)
         {
-        case ADDR_FA:
+        case AddressType::FileOffset:
             return address;
-        case ADDR_VA:
+        case AddressType::VA:
             return FilePointerToVA(address);
-        case ADDR_RVA:
+        case AddressType::RVA:
             return FilePointerToRVA(address);
         };
         break;
-    case ADDR_VA:
+    case AddressType::VA:
         switch (toAddressType)
         {
-        case ADDR_FA:
+        case AddressType::FileOffset:
             if (address > imageBase)
                 return RVAtoFilePointer(address - imageBase);
             break;
-        case ADDR_VA:
+        case AddressType::VA:
             return address;
-        case ADDR_RVA:
+        case AddressType::RVA:
             if (address > imageBase)
                 return address - imageBase;
             break;
         };
         break;
-    case ADDR_RVA:
+    case AddressType::RVA:
         switch (toAddressType)
         {
-        case ADDR_FA:
+        case AddressType::FileOffset:
             return RVAtoFilePointer(address);
-        case ADDR_VA:
+        case AddressType::VA:
             return address + imageBase;
-        case ADDR_RVA:
+        case AddressType::RVA:
             return address;
         };
         break;

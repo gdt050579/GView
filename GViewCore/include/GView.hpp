@@ -136,7 +136,7 @@ namespace View
     {
         struct CORE_EXPORT OffsetTranslateInterface
         {
-            virtual uint64_t TranslateToFileOffset(uint64_t value, MethodID methodID) = 0;
+            virtual uint64_t TranslateToFileOffset(uint64_t value, MethodID fromMethodID, MethodID toMethdoID) = 0;
         };
 
         struct CORE_EXPORT Settings
