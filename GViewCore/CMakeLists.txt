@@ -5,6 +5,7 @@ project(GViewCore VERSION 1.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 add_library(GViewCore SHARED)
+set_target_properties(GViewCore PROPERTIES PREFIX "lib")
 target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
 
