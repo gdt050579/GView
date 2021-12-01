@@ -139,11 +139,10 @@ namespace View
             virtual uint64_t TranslateToFileOffset(uint64_t value, MethodID methodID) = 0;
         };
 
-        class CORE_EXPORT Settings
+        struct CORE_EXPORT Settings
         {
             void* data;
 
-          public:
             Settings();
             void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name);
             void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);

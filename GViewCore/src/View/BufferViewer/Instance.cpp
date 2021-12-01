@@ -53,7 +53,7 @@ constexpr int BUFFERVIEW_CMD_CHANGEBASE = 0xBF01;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj) : settings(nullptr)
+Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
     this->obj  = _obj;
     this->name = _name;
@@ -79,6 +79,19 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj)
     this->Cursor.base              = 16;
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
+
+    // settings
+    if ((_settings) && (_settings->data))
+    {
+        // move settings data pointer 
+        this->settings.reset((SettingsData*) _settings->data);
+        _settings->data = nullptr;
+    }
+    else
+    {
+        // default setup
+        this->settings.reset(new SettingsData());
+    }
 
     if (config.Loaded == false)
         config.Initialize();
@@ -1131,7 +1144,6 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-
 
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)

@@ -79,7 +79,8 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, &this->obj).IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
@@ -116,7 +117,7 @@ void FileWindow::UpdateDefaultPanelsSizes(Reference<Splitter> splitter)
         if (splitter == horizontal)
         {
             defaultCursorViewSize = horizontal->GetSecondPanelSize();
-        }        
+        }
     }
     else
     {

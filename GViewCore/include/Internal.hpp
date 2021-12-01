@@ -265,7 +265,7 @@ namespace View
             ColorPair OffsetToColor(unsigned long long offset);
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj);
+            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
             virtual void Paint(Renderer& renderer) override;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
