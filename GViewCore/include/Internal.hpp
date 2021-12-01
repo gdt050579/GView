@@ -310,13 +310,10 @@ namespace App
         bool BuildMainMenus();
         bool LoadSettings();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
-        bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath);
       public:
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
-        void Run();
-        bool ResetConfiguration();
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {

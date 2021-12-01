@@ -163,7 +163,7 @@ namespace App
 {
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
-    void CORE_EXPORT ResetConfiguration();
+    bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const char*);
 }; // namespace App
 }; // namespace GView
