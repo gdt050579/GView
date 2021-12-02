@@ -146,7 +146,6 @@ namespace View
         struct OffsetTranslationMethod
         {
             FixSizeString<17> name;
-            MethodID methodID;
         };
         struct SettingsData
         {

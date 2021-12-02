@@ -136,7 +136,8 @@ namespace View
     {
         struct CORE_EXPORT OffsetTranslateInterface
         {
-            virtual uint64_t TranslateToFileOffset(uint64_t value, MethodID fromMethodID, MethodID toMethdoID) = 0;
+            virtual uint64_t TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex) = 0;
+            virtual uint64_t TranslateFromFileOffset(uint64_t value, unsigned int toTranslationIndex) = 0;
         };
 
         struct CORE_EXPORT Settings
@@ -146,8 +147,7 @@ namespace View
             Settings();
             void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name);
             void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);
-            void AddOffsetTranslationMethod(std::string_view name, MethodID methodID);
-            void SetOffsetTranslationCallback(Reference<OffsetTranslateInterface> cbk);
+            void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
         };
     }; // namespace BufferViewer
     struct CORE_EXPORT WindowInterface

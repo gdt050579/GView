@@ -449,9 +449,13 @@ uint64_t PEFile::FilePointerToVA(uint64_t fileAddress)
     return PE_INVALID_ADDRESS;
 }
 
-uint64_t PEFile::TranslateToFileOffset(uint64_t value, GView::View::MethodID fromMethodID, GView::View::MethodID toMethdoID)
+uint64_t PEFile::TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex)
 {
-    return ConvertAddress(value, static_cast<AddressType>(fromMethodID), static_cast<AddressType>(toMethdoID));
+    return ConvertAddress(value, static_cast<AddressType>(fromTranslationIndex), AddressType::FileOffset);
+}
+uint64_t PEFile::TranslateFromFileOffset(uint64_t value, unsigned int toTranslationIndex)
+{
+    return ConvertAddress(value, AddressType::FileOffset, static_cast<AddressType>(toTranslationIndex));
 }
 uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType)
 {

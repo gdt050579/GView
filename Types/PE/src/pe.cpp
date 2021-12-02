@@ -69,10 +69,7 @@ extern "C"
         }
 
         // translation
-        settings.AddOffsetTranslationMethod("FileOffset", (MethodID) PE::AddressType::FileOffset);
-        settings.AddOffsetTranslationMethod("RVA", (MethodID) PE::AddressType::RVA);
-        settings.AddOffsetTranslationMethod("VirtAddress", (MethodID) PE::AddressType::VA);
-        settings.SetOffsetTranslationCallback(pe.UpCast<GView::View::BufferViewer::OffsetTranslateInterface>());
+        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.UpCast<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         win->CreateViewer("BufferView", settings);
     }

@@ -702,7 +702,8 @@ namespace Type
             uint64_t FilePointerToRVA(uint64_t fileAddress);
             uint64_t FilePointerToVA(uint64_t fileAddress);
 
-            uint64_t TranslateToFileOffset(uint64_t value, GView::View::MethodID fromMethodID, GView::View::MethodID toMethdoID) override;
+            uint64_t TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex) override;
+            uint64_t TranslateFromFileOffset(uint64_t value, unsigned int toTranslationIndex) override;
 
             uint64_t ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType);
             bool BuildExport();

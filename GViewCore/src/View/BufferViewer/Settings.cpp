@@ -3,7 +3,6 @@
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
 
-
 SettingsData::SettingsData()
 {
     for (unsigned int tr = 0; tr < 10; tr++)
@@ -26,20 +25,20 @@ void Settings::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffs
     if (bookmarkID < 10)
         Members->bookmarks[bookmarkID] = fileOffset;
 }
-void Settings::AddOffsetTranslationMethod(std::string_view _name, MethodID _methodID)
+void Settings::SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk)
 {
-    auto* Members = (SettingsData*) (this->data);
-    for (unsigned int tr = 0; tr < Members->translationMethodsCount; tr++)
-        if (Members->translationMethods[tr].methodID == _methodID)
-            return;
-    if (Members->translationMethodsCount >= sizeof(Members->translationMethods) / sizeof(OffsetTranslationMethod))
+    // only valid if at list one translation method is provided and the callback si correct 
+    if ((!cbk.IsValid()) || (list.size() == 0))
         return;
-    auto m      = &Members->translationMethods[Members->translationMethodsCount];
-    m->methodID = _methodID;
-    m->name     = _name;
-    Members->translationMethodsCount++;
-}
-void Settings::SetOffsetTranslationCallback(Reference<OffsetTranslateInterface> cbk)
-{
-    ((SettingsData*) (this->data))->offsetTranslateCallback = cbk;
+    auto* Members                       = (SettingsData*) (this->data);
+    Members->translationMethods[0].name = "FileOffset";
+    Members->translationMethodsCount    = 1;
+    Members->offsetTranslateCallback    = cbk;
+    for (auto &i: list)
+    {
+        Members->translationMethods[Members->translationMethodsCount++].name = i;
+        if (Members->translationMethodsCount >= sizeof(Members->translationMethods) / sizeof(OffsetTranslationMethod))
+            break;
+    }
+    
 }

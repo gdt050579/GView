@@ -597,9 +597,9 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
         auto s      = n + this->Layout.lineAddressSize - 1;
         n           = s + 1;
 
-        if ((settings) && (settings->translationMethodsCount > 0))
+        if ((settings) && (settings->translationMethodsCount > 0) && (this->currentAdrressMode>0))
         {
-            ofs = settings->offsetTranslateCallback->TranslateToFileOffset(ofs, 0, this->currentAdrressMode);
+            ofs = settings->offsetTranslateCallback->TranslateFromFileOffset(ofs, this->currentAdrressMode);
         }
 
         if (ofs == GView::Utils::INVALID_OFFSET)
