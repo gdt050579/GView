@@ -106,6 +106,12 @@ void Instance::MoveTo(unsigned long long offset, bool select)
     if (offset > (obj->cache.GetSize() - 1))
         offset = obj->cache.GetSize() - 1;
 
+    if (offset == this->Cursor.currentPos)
+    {
+        this->Cursor.startView = offset;
+        return;
+    }
+
     auto h    = this->Layout.visibleRows;
     auto sz   = this->Layout.charactersPerLine * h;
     auto sidx = -1;
