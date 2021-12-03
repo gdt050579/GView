@@ -70,8 +70,9 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
         auto p = this->horizontalPanels->AddControl(std::move(page));
         if (p.IsValid())
         {
-            this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
-                  .AddSingleChoiceItem((CharacterView) p->GetText(), CMD_SHOW_HORIZONTAL_PANEL, true, "");
+            auto bar  = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
+            auto item = bar.AddSingleChoiceItem((CharacterView) p->GetText(), CMD_SHOW_HORIZONTAL_PANEL, true, "");
+            bar.SetItemTextWithHotKey(item, (CharacterView) p->GetText(), p->GetHotKeyTextOffset());
             return true;
         }
         return false;

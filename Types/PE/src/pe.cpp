@@ -44,6 +44,8 @@ extern "C"
             {
                 pe->CopySectionName(tr, tempStr);
                 settings.AddZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, pe->peCols.colSect, tempStr);
+                if (tr < 9)
+                    settings.AddBookmark(tr + 1, pe->sect[tr].PointerToRawData);
             }
         }
 

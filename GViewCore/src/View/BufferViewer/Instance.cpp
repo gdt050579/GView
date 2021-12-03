@@ -1101,9 +1101,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 
     if ((charCode >= '0') && (charCode <= '9'))
     {
-        // auto addr = this->Bookmarks.Get(charCode - '0');
-        // if (addr != GView::Utils::INVALID_OFFSET)
-        //    MoveTo(addr, select);
+         auto addr = this->settings->bookmarks[charCode - '0'];
+         if (addr != GView::Utils::INVALID_OFFSET)
+            MoveTo(addr, select);
         return true;
     }
 
