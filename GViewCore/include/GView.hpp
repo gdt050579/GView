@@ -134,6 +134,10 @@ namespace View
     };
     namespace BufferViewer
     {
+        struct CORE_EXPORT PositionToColorInterface
+        {
+            virtual bool GetColorForBuffer(uint64_t offset, BufferView buf, ColorPair& resultedColor) = 0;
+        };
         struct CORE_EXPORT OffsetTranslateInterface
         {
             virtual uint64_t TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex) = 0;
@@ -148,6 +152,7 @@ namespace View
             void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name);
             void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
+            void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
         };
     }; // namespace BufferViewer
     struct CORE_EXPORT WindowInterface

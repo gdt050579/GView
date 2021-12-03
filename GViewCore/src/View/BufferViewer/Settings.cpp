@@ -40,5 +40,8 @@ void Settings::SetOffsetTranslationList(std::initializer_list<std::string_view> 
         if (Members->translationMethodsCount >= sizeof(Members->translationMethods) / sizeof(OffsetTranslationMethod))
             break;
     }
-    
+}
+void Settings::SetPositionToColorCallback(Reference<PositionToColorInterface> cbk)
+{
+    ((SettingsData*) (this->data))->positionToColorCallback = cbk;
 }

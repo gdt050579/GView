@@ -154,6 +154,7 @@ namespace View
             OffsetTranslationMethod translationMethods[16];
             unsigned int translationMethodsCount;
             Reference<OffsetTranslateInterface> offsetTranslateCallback;
+            Reference<PositionToColorInterface> positionToColorCallback;
             SettingsData();
         };
         struct Config
