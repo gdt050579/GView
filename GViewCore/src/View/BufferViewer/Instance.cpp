@@ -173,6 +173,7 @@ void Instance::MoveToSelection(unsigned int selIndex)
 void Instance::SkipCurentCaracter(bool selected)
 {
     unsigned long long tr, fileSize;
+    unsigned int gr;
 
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1);
 
@@ -186,9 +187,11 @@ void Instance::SkipCurentCaracter(bool selected)
         auto buf = this->obj->cache.Get(tr, 256);
         if (!buf.IsValid())
             break;
-        for (unsigned int gr = 0; gr < buf.GetLength(); gr++, tr++)
+        for (gr = 0; gr < buf.GetLength(); gr++, tr++)
             if (buf[gr] != toSkip)
                 break;
+        if (gr < buf.GetLength())
+            break;
     }
     MoveTo(tr, selected);
 }
@@ -235,36 +238,40 @@ void Instance::MoveTillNextBlock(bool select, int dir)
 }
 void Instance::MoveTillEndBlock(bool selected)
 {
-    unsigned long long tr, gr, fileSize;
-    bool found;
+    unsigned long long tr, fileSize;
+    unsigned int lastValue = 0xFFFFFFFF;
+    unsigned int count     = 0;
 
     fileSize = this->obj->cache.GetSize();
 
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->obj->cache.Get(tr, 256);
+        auto buf = this->obj->cache.Get(tr, 4096);
         if (!buf.IsValid())
             break;
-        if (buf[0] == 0)
+        auto* s = buf.begin();
+        auto* e = buf.end();
+        while (s<e)
         {
-            found = true;
-            for (gr = 0; (gr < 32) && (found) && (gr < buf.GetLength()); gr++)
+            if ((*s)==lastValue)
             {
-                if (buf[gr] != 0)
-                    found = false;
+                count++;
+                if (count == 16)
+                    break;
             }
-            if (found)
+            else
             {
-                if (tr > 0)
-                    tr--;
-                if (tr < this->Cursor.currentPos)
-                    return;
-                break;
+                count = 1;
+                lastValue = *s;
             }
-            tr += gr;
+            s++;
         }
-        else
-            tr++;
+        tr += (s - buf.begin());
+        if (count == 16)
+        {
+            tr -= 16;
+            break;
+        }
     }
     MoveTo(tr, selected);
 }
