@@ -73,6 +73,18 @@ extern "C"
         // translation
         settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.UpCast<GView::View::BufferViewer::OffsetTranslateInterface>());
 
+        // set specific color for opcodes
+        switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
+        {
+        case PE::MachineType::I386:
+        case PE::MachineType::IA64:
+        case PE::MachineType::AMD64:
+            pe->x86x64ColorBuffer.memStartOffset = pe->imageBase;
+            pe->x86x64ColorBuffer.memEndOffset   = pe->imageBase + pe->virtualComputedSize;
+            settings.SetPositionToColorCallback(&pe->x86x64ColorBuffer);
+            break;
+        };
+
         win->CreateViewer("BufferView", settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
