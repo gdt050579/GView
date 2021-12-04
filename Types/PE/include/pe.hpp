@@ -583,6 +583,12 @@ namespace Type
             Manifest     = 24
         };
 
+        struct X86_X64_ColorBuffer: public GView::View::BufferViewer::PositionToColorInterface
+        {
+            uint64_t memStartOffset, memEndOffset;
+            bool GetColorForBuffer(uint64_t offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+        };
+
         class PEFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
         {
           public:
@@ -674,6 +680,8 @@ namespace Type
             uint32_t asmShow;
             uint32_t sectStart, peStart;
             uint64_t panelsMask;
+
+            X86_X64_ColorBuffer x86x64ColorBuffer;
 
             bool hdr64;
             bool isMetroApp;
