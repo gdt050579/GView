@@ -258,6 +258,7 @@ namespace View
             void MoveTo(unsigned long long offset, bool select);
             void MoveScrollTo(unsigned long long offset);
             void MoveToSelection(unsigned int selIndex);
+            void MoveToZone(bool startOfZome, bool select);
             void SkipCurentCaracter(bool selected);
             void MoveTillEndBlock(bool selected);
             void MoveTillNextBlock(bool select, int dir);

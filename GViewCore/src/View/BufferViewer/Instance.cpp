@@ -277,7 +277,17 @@ void Instance::MoveTillEndBlock(bool selected)
     }
     MoveTo(tr, selected);
 }
-
+void Instance::MoveToZone(bool startOfZone, bool select)
+{
+    const auto *z = settings->zList.OffsetToZone(this->Cursor.currentPos);
+    if (z)
+    {
+        if (startOfZone)
+            MoveTo(z->start, select);
+        else
+            MoveTo(z->end, select);
+    }
+}
 void Instance::UpdateStringInfo(unsigned long long offset)
 {
     auto buf = this->obj->cache.Get(offset, 1024);
@@ -1071,10 +1081,10 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
         MoveTo(this->obj->cache.GetSize(), select);
         return true;
     case Key::Ctrl | Key::PageUp:
-        // MoveToEndOrStartZone(select, true);
+        MoveToZone(true, select);
         return true;
     case Key::Ctrl | Key::PageDown:
-        // MoveToEndOrStartZone(select, false);
+        MoveToZone(false, select);
         return true;
 
     case Key::Ctrl | Key::Alt | Key::PageUp:
