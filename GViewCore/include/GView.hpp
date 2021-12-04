@@ -171,6 +171,7 @@ namespace View
             void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
+            void SetEntryPointOffset(uint64_t offset);
         };
     }; // namespace BufferViewer
     struct CORE_EXPORT WindowInterface

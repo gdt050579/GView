@@ -8,6 +8,7 @@ SettingsData::SettingsData()
     for (unsigned int tr = 0; tr < 10; tr++)
         this->bookmarks[tr] = GView::Utils::INVALID_OFFSET;
     this->translationMethodsCount = 0;
+    this->entryPointOffset        = GView::Utils::INVALID_OFFSET;
 }
 Settings::Settings()
 {
@@ -44,4 +45,8 @@ void Settings::SetOffsetTranslationList(std::initializer_list<std::string_view> 
 void Settings::SetPositionToColorCallback(Reference<PositionToColorInterface> cbk)
 {
     ((SettingsData*) (this->data))->positionToColorCallback = cbk;
+}
+void Settings::SetEntryPointOffset(uint64_t offset)
+{
+    ((SettingsData*) (this->data))->entryPointOffset = offset;
 }

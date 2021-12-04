@@ -150,7 +150,8 @@ namespace View
         struct SettingsData
         {
             GView::Utils::ZonesList zList;
-            unsigned long long bookmarks[10];
+            uint64_t bookmarks[10];
+            uint64_t entryPointOffset;
             OffsetTranslationMethod translationMethods[16];
             unsigned int translationMethodsCount;
             Reference<OffsetTranslateInterface> offsetTranslateCallback;
@@ -176,6 +177,7 @@ namespace View
                 AppCUI::Input::Key ChangeColumnsNumber;
                 AppCUI::Input::Key ChangeBase;
                 AppCUI::Input::Key ChangeAddressMode;
+                AppCUI::Input::Key GoToEntryPoint;
             } Keys;
             bool Loaded;
 

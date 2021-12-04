@@ -51,6 +51,7 @@ bool DefaultAsciiMask[256] = {
 constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
 constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
 constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
+constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 
 Config Instance::config;
 
@@ -987,6 +988,10 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
               this->settings->translationMethods[this->currentAdrressMode].name,
               BUFFERVIEW_CMD_CHANGEADDRESSMODE);
     }
+
+    // Entry point
+    commandBar.SetCommand(config.Keys.GoToEntryPoint, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
+
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
@@ -1198,6 +1203,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         if ((this->settings) && (this->settings->translationMethodsCount > 0))
         {
             this->currentAdrressMode = (this->currentAdrressMode + 1) % this->settings->translationMethodsCount;
+            return true;
+        }
+        return false;
+    case BUFFERVIEW_CMD_GOTOEP:
+        if ((this->settings) && (this->settings->entryPointOffset != GView::Utils::INVALID_OFFSET))
+        {
+            MoveTo(this->settings->entryPointOffset, false);
             return true;
         }
         return false;

@@ -85,6 +85,9 @@ extern "C"
             break;
         };
 
+        // set entry point
+        settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
+
         win->CreateViewer("BufferView", settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

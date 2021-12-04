@@ -8,6 +8,7 @@ void Config::Update(IniSection sect)
     sect.UpdateValue("ChangeColumnsCount", Key::F6, true);
     sect.UpdateValue("ChangeBase", Key::F2, true);
     sect.UpdateValue("ChangeAddressMode", Key::F3, true);
+    sect.UpdateValue("GoToEntryPoint", Key::F7, true);
 }
 void Config::Initialize()
 {
@@ -28,12 +29,14 @@ void Config::Initialize()
         this->Keys.ChangeColumnsNumber = ini->GetValue("ChangeColumnsCount").ToKey(Key::F6);
         this->Keys.ChangeBase          = ini->GetValue("ChangeBase").ToKey(Key::F2);
         this->Keys.ChangeAddressMode   = ini->GetValue("ChangeAddressMode").ToKey(Key::F3);
+        this->Keys.GoToEntryPoint      = ini->GetValue("GoToEntryPoint").ToKey(Key::F7);
     }
     else
     {
         this->Keys.ChangeColumnsNumber = Key::F6;
         this->Keys.ChangeBase          = Key::F2;
         this->Keys.ChangeAddressMode   = Key::F3;
+        this->Keys.GoToEntryPoint      = Key::F7;
     }
 
     this->Loaded = true;
