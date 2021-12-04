@@ -82,6 +82,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
+    this->bufColor.Reset();
+
     // settings
     if ((_settings) && (_settings->data))
     {
@@ -251,9 +253,9 @@ void Instance::MoveTillEndBlock(bool selected)
             break;
         auto* s = buf.begin();
         auto* e = buf.end();
-        while (s<e)
+        while (s < e)
         {
-            if ((*s)==lastValue)
+            if ((*s) == lastValue)
             {
                 count++;
                 if (count == 16)
@@ -261,7 +263,7 @@ void Instance::MoveTillEndBlock(bool selected)
             }
             else
             {
-                count = 1;
+                count     = 1;
                 lastValue = *s;
             }
             s++;
@@ -392,6 +394,15 @@ ColorPair Instance::OffsetToColorZone(unsigned long long offset)
 }
 ColorPair Instance::OffsetToColor(unsigned long long offset)
 {
+    // color
+    if ((settings) && (settings->positionToColorCallback))
+    {
+        if ((offset >= bufColor.start) && (offset <= bufColor.end))
+            return bufColor.color;
+        if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->cache.Get(offset, 16), bufColor))
+            return bufColor.color;
+        // no color provided for the specific buffer --> check strings and zones
+    }
     // check strings
     if ((offset >= StringInfo.start) && (offset < StringInfo.end))
     {
@@ -610,7 +621,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
         auto s      = n + this->Layout.lineAddressSize - 1;
         n           = s + 1;
 
-        if ((settings) && (settings->translationMethodsCount > 0) && (this->currentAdrressMode>0))
+        if ((settings) && (settings->translationMethodsCount > 0) && (this->currentAdrressMode > 0))
         {
             ofs = settings->offsetTranslateCallback->TranslateFromFileOffset(ofs, this->currentAdrressMode);
         }
@@ -1114,8 +1125,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
 
     if ((charCode >= '0') && (charCode <= '9'))
     {
-         auto addr = this->settings->bookmarks[charCode - '0'];
-         if (addr != GView::Utils::INVALID_OFFSET)
+        auto addr = this->settings->bookmarks[charCode - '0'];
+        if (addr != GView::Utils::INVALID_OFFSET)
             MoveTo(addr, select);
         return true;
     }

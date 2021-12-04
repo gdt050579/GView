@@ -236,7 +236,7 @@ namespace View
             CharacterBuffer chars;
             const char16_t* CodePage;
             unsigned int currentAdrressMode;
-
+            BufferColor bufColor;
             FixSizeString<29> name;
 
             static Config config;

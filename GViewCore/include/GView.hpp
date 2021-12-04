@@ -134,9 +134,27 @@ namespace View
     };
     namespace BufferViewer
     {
+        struct BufferColor
+        {
+            uint64_t start;
+            uint64_t end;
+            ColorPair color;
+            constexpr inline void Reset()
+            {
+                start = end = GView::Utils::INVALID_OFFSET;
+            }
+            constexpr inline bool IsValue() const
+            {
+                return start != GView::Utils::INVALID_OFFSET;
+            }
+            constexpr inline bool Empty() const
+            {
+                return start == GView::Utils::INVALID_OFFSET;
+            }
+        };
         struct CORE_EXPORT PositionToColorInterface
         {
-            virtual bool GetColorForBuffer(uint64_t offset, BufferView buf, ColorPair& resultedColor) = 0;
+            virtual bool GetColorForBuffer(uint64_t offset, BufferView buf, BufferColor& result) = 0;
         };
         struct CORE_EXPORT OffsetTranslateInterface
         {
