@@ -86,7 +86,10 @@ extern "C"
         };
 
         // set entry point
-        settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
+        if (pe->hdr64)
+            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth64.OptionalHeader.AddressOfEntryPoint));
+        else
+            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
 
         win->CreateViewer("BufferView", settings);
     }
