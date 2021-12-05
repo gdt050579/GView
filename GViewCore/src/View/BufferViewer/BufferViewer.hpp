@@ -38,6 +38,17 @@ namespace View
             Reference<PositionToColorInterface> positionToColorCallback;
             SettingsData();
         };
+        enum class MouseLocation: unsigned char
+        {
+            OnView,
+            OnHeader,
+            Outside
+        };
+        struct MousePositionInfo
+        {
+            MouseLocation location;
+            uint64_t bufferOffset;
+        };
         struct Config
         {
             struct
@@ -150,6 +161,8 @@ namespace View
             ColorPair OffsetToColorZone(unsigned long long offset);
             ColorPair OffsetToColor(unsigned long long offset);
 
+            void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -164,6 +177,15 @@ namespace View
             virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
+
+            // mouse events
+            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseEnter() override;
+            virtual bool OnMouseOver(int x, int y) override;
+            virtual bool OnMouseLeave() override;
+            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
         };
     } // namespace BufferViewer
 } // namespace View

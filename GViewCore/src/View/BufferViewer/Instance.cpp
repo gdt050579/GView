@@ -280,7 +280,7 @@ void Instance::MoveTillEndBlock(bool selected)
 }
 void Instance::MoveToZone(bool startOfZone, bool select)
 {
-    const auto *z = settings->zList.OffsetToZone(this->Cursor.currentPos);
+    const auto* z = settings->zList.OffsetToZone(this->Cursor.currentPos);
     if (z)
     {
         if (startOfZone)
@@ -1537,4 +1537,83 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned in
         x = Print32bitBEValue(x, height, buf, r);
         break;
     }
+}
+
+//======================================================================[Mouse events]========================
+void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
+{
+    mpInfo.location = MouseLocation::Outside;
+    if (y < 0)
+    {
+        mpInfo.location = MouseLocation::Outside;
+        return;
+    }
+    if (y == 0)
+    {
+        mpInfo.location = MouseLocation::OnHeader;
+        return;
+    }
+    // y>=1 --> check if in buffer
+    auto yPoz = y - 1;
+    if (x < 0)
+    {
+        mpInfo.location = MouseLocation::Outside;
+        return;
+    }
+    auto xPoz = (unsigned int) x;
+    if ((xPoz >= Layout.xText) && (xPoz < Layout.xText + Layout.charactersPerLine))
+    {
+        mpInfo.location     = MouseLocation::OnView;
+        mpInfo.bufferOffset = yPoz * Layout.charactersPerLine + xPoz - Layout.xText;
+    }
+    else
+    {
+        if ((Layout.nrCols > 0) && (xPoz >= Layout.xNumbers))
+        {
+            auto sz_char = characterFormatModeSize[(unsigned int) this->Layout.charFormatMode] + 1;
+            if (xPoz < Layout.nrCols * sz_char + Layout.xNumbers)
+            {
+                mpInfo.location     = MouseLocation::OnView;
+                mpInfo.bufferOffset = yPoz * Layout.charactersPerLine + ((xPoz - Layout.xNumbers) / sz_char);
+            }
+        }
+    }
+    if (mpInfo.location == MouseLocation::OnView)
+    {
+        mpInfo.bufferOffset += Cursor.startView;
+        if (mpInfo.bufferOffset >= this->obj->cache.GetSize())
+            mpInfo.location = MouseLocation::Outside;
+    }
+}
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+{
+    MousePositionInfo mpInfo;
+    AnalyzeMousePosition(x, y, mpInfo);
+    if (mpInfo.location == MouseLocation::OnView)
+    {
+        MoveTo(mpInfo.bufferOffset, false);
+    }
+}
+void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
+{
+}
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::OnMouseEnter()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::OnMouseOver(int x, int y)
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::OnMouseLeave()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+{
+    NOT_IMPLEMENTED(false);
 }
