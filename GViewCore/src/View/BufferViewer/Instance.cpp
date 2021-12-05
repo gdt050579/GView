@@ -1599,7 +1599,13 @@ void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
 }
 bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
 {
-    NOT_IMPLEMENTED(false);
+    MousePositionInfo mpInfo;
+    AnalyzeMousePosition(x, y, mpInfo);
+    if (mpInfo.location == MouseLocation::OnView)
+    {
+        MoveTo(mpInfo.bufferOffset, true);
+        return true;
+    }
 }
 bool Instance::OnMouseEnter()
 {
