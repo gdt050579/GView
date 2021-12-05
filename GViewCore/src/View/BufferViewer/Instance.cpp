@@ -1603,17 +1603,29 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
 }
 bool Instance::OnMouseEnter()
 {
-    NOT_IMPLEMENTED(false);
+    return false;
 }
 bool Instance::OnMouseOver(int x, int y)
 {
-    NOT_IMPLEMENTED(false);
+    return false;
 }
 bool Instance::OnMouseLeave()
 {
-    NOT_IMPLEMENTED(false);
+    return false;
 }
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 {
-    NOT_IMPLEMENTED(false);
+    switch (direction)
+    {
+    case MouseWheel::Up:
+        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+    case MouseWheel::Down:
+        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+    case MouseWheel::Left:
+        return OnKeyEvent(Key::PageUp, false);
+    case MouseWheel::Right:
+        return OnKeyEvent(Key::PageDown, false);
+    }
+
+    return false;
 }
