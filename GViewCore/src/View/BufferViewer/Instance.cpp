@@ -1589,7 +1589,8 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
-    if (mpInfo.location == MouseLocation::OnView)
+    // make sure that consecutive click on the same location will not scroll the view to that location
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
     {
         MoveTo(mpInfo.bufferOffset, false);
     }
@@ -1601,11 +1602,13 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
-    if (mpInfo.location == MouseLocation::OnView)
+    // make sure that consecutive click on the same location will not scroll the view to that location
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
     {
         MoveTo(mpInfo.bufferOffset, true);
         return true;
     }
+    return false;
 }
 bool Instance::OnMouseEnter()
 {
