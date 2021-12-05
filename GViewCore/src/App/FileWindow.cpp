@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include "BufferViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;

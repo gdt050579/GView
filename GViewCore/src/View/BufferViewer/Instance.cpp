@@ -1,4 +1,4 @@
-#include "Internal.hpp"
+#include "BufferViewer.hpp"
 
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;

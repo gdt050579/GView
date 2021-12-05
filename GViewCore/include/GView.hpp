@@ -1,3 +1,5 @@
+#pragma once
+
 #include <AppCUI/include/AppCUI.hpp>
 
 using namespace AppCUI::Controls;

@@ -1,10 +1,12 @@
 #include "Internal.hpp"
+#include "BufferViewer.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
+
 
 GView::App::Instance* gviewAppInstance = nullptr;
 
