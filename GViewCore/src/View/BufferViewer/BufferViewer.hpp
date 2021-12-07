@@ -8,7 +8,8 @@ namespace View
 {
     namespace BufferViewer
     {
-        enum class CharacterFormatMode : unsigned char
+        using namespace AppCUI;
+        enum class CharacterFormatMode : uint8
         {
             Hex,
             Octal,
@@ -17,7 +18,7 @@ namespace View
 
             Count // Must be the last
         };
-        enum class StringType : unsigned char
+        enum class StringType : uint8
         {
             None,
             Ascii,
@@ -30,15 +31,15 @@ namespace View
         struct SettingsData
         {
             GView::Utils::ZonesList zList;
-            uint64_t bookmarks[10];
-            uint64_t entryPointOffset;
+            uint64 bookmarks[10];
+            uint64 entryPointOffset;
             OffsetTranslationMethod translationMethods[16];
             unsigned int translationMethodsCount;
             Reference<OffsetTranslateInterface> offsetTranslateCallback;
             Reference<PositionToColorInterface> positionToColorCallback;
             SettingsData();
         };
-        enum class MouseLocation: unsigned char
+        enum class MouseLocation: uint8
         {
             OnView,
             OnHeader,
@@ -47,7 +48,7 @@ namespace View
         struct MousePositionInfo
         {
             MouseLocation location;
-            uint64_t bufferOffset;
+            uint64 bufferOffset;
         };
         struct Config
         {
@@ -79,12 +80,12 @@ namespace View
         {
             struct DrawLineInfo
             {
-                unsigned long long offset;
+                uint64 offset;
                 unsigned int offsetAndNameSize;
                 unsigned int numbersSize;
                 unsigned int textSize;
-                const unsigned char* start;
-                const unsigned char* end;
+                const uint8* start;
+                const uint8* end;
                 Character* chNameAndSize;
                 Character* chNumbers;
                 Character* chText;
@@ -108,12 +109,12 @@ namespace View
             } Layout;
             struct
             {
-                unsigned long long startView, currentPos;
+                uint64 startView, currentPos;
                 unsigned int base;
             } Cursor;
             struct
             {
-                unsigned long long start, end, middle;
+                uint64 start, end, middle;
                 unsigned int minCount;
                 bool AsciiMask[256];
                 StringType type;
@@ -127,7 +128,7 @@ namespace View
             Reference<GView::Object> obj;
             Utils::Selection selection;
             CharacterBuffer chars;
-            const char16_t* CodePage;
+            const char16* CodePage;
             unsigned int currentAdrressMode;
             BufferColor bufColor;
             FixSizeString<29> name;
@@ -148,18 +149,18 @@ namespace View
             void WriteLineNumbersToChars(DrawLineInfo& dli);
             void WriteLineTextToChars(DrawLineInfo& dli);
             void UpdateViewSizes();
-            void MoveTo(unsigned long long offset, bool select);
-            void MoveScrollTo(unsigned long long offset);
+            void MoveTo(uint64 offset, bool select);
+            void MoveScrollTo(uint64 offset);
             void MoveToSelection(unsigned int selIndex);
             void MoveToZone(bool startOfZome, bool select);
             void SkipCurentCaracter(bool selected);
             void MoveTillEndBlock(bool selected);
             void MoveTillNextBlock(bool select, int dir);
 
-            void UpdateStringInfo(unsigned long long offset);
+            void UpdateStringInfo(uint64 offset);
 
-            ColorPair OffsetToColorZone(unsigned long long offset);
-            ColorPair OffsetToColor(unsigned long long offset);
+            ColorPair OffsetToColorZone(uint64 offset);
+            ColorPair OffsetToColor(uint64 offset);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
@@ -168,12 +169,12 @@ namespace View
 
             virtual void Paint(Renderer& renderer) override;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
-            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t characterCode) override;
+            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
-            virtual bool GoTo(unsigned long long offset) override;
-            virtual bool Select(unsigned long long offset, unsigned long long size) override;
+            virtual bool GoTo(uint64 offset) override;
+            virtual bool Select(uint64 offset, uint64 size) override;
             virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
