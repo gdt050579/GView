@@ -4,9 +4,9 @@ using namespace GView::Type;
 using namespace GView::Utils;
 using namespace GView;
 
-constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
+constexpr uint64 EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
-unsigned long long ExtensionToHash(std::string_view ext)
+uint64 ExtensionToHash(std::string_view ext)
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
     if (ext.empty())
@@ -15,7 +15,7 @@ unsigned long long ExtensionToHash(std::string_view ext)
     auto* e = s + ext.size();
     if ((*s) == '.')
         s++;
-    unsigned long long hash = EXTENSION_EMPTY_HASH;
+    uint64 hash = EXTENSION_EMPTY_HASH;
     while (s < e)
     {
         unsigned char c = *s;

@@ -102,7 +102,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 }
 
-void Instance::MoveTo(unsigned long long offset, bool select)
+void Instance::MoveTo(uint64 offset, bool select)
 {
     if (this->obj->cache.GetSize() == 0)
         return;
@@ -142,7 +142,7 @@ void Instance::MoveTo(unsigned long long offset, bool select)
     if ((select) && (sidx >= 0))
         this->selection.UpdateSelection(sidx, offset);
 }
-void Instance::MoveScrollTo(unsigned long long offset)
+void Instance::MoveScrollTo(uint64 offset)
 {
     if (this->obj->cache.GetSize() == 0)
         return;
@@ -163,7 +163,7 @@ void Instance::MoveScrollTo(unsigned long long offset)
 }
 void Instance::MoveToSelection(unsigned int selIndex)
 {
-    unsigned long long start, end;
+    uint64 start, end;
 
     if (this->selection.GetSelection(selIndex, start, end))
     {
@@ -175,7 +175,7 @@ void Instance::MoveToSelection(unsigned int selIndex)
 }
 void Instance::SkipCurentCaracter(bool selected)
 {
-    unsigned long long tr, fileSize;
+    uint64 tr, fileSize;
     unsigned int gr;
 
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1);
@@ -241,7 +241,7 @@ void Instance::MoveTillNextBlock(bool select, int dir)
 }
 void Instance::MoveTillEndBlock(bool selected)
 {
-    unsigned long long tr, fileSize;
+    uint64 tr, fileSize;
     unsigned int lastValue = 0xFFFFFFFF;
     unsigned int count     = 0;
 
@@ -289,7 +289,7 @@ void Instance::MoveToZone(bool startOfZone, bool select)
             MoveTo(z->end, select);
     }
 }
-void Instance::UpdateStringInfo(unsigned long long offset)
+void Instance::UpdateStringInfo(uint64 offset)
 {
     auto buf = this->obj->cache.Get(offset, 1024);
     if (!buf.IsValid())
@@ -395,7 +395,7 @@ void Instance::UpdateStringInfo(unsigned long long offset)
     StringInfo.end = offset + buf.GetLength();
 }
 
-ColorPair Instance::OffsetToColorZone(unsigned long long offset)
+ColorPair Instance::OffsetToColorZone(uint64 offset)
 {
     auto* z = this->settings->zList.OffsetToZone(offset);
     if (z == nullptr)
@@ -403,7 +403,7 @@ ColorPair Instance::OffsetToColorZone(unsigned long long offset)
     else
         return z->color;
 }
-ColorPair Instance::OffsetToColor(unsigned long long offset)
+ColorPair Instance::OffsetToColor(uint64 offset)
 {
     // color
     if ((settings) && (settings->positionToColorCallback))
@@ -583,7 +583,7 @@ void Instance::WriteHeaders(Renderer& renderer)
 }
 void Instance::WriteLineAddress(DrawLineInfo& dli)
 {
-    unsigned long long ofs      = dli.offset;
+    uint64 ofs      = dli.offset;
     auto c                      = config.Colors.Inactive;
     auto n                      = dli.chNameAndSize;
     const GView::Utils::Zone* z = nullptr;
@@ -918,7 +918,7 @@ void Instance::Paint(Renderer& renderer)
     WriteHeaders(renderer);
     for (unsigned int tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        dli.offset = ((unsigned long long) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
+        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
         if (dli.offset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
@@ -994,7 +994,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
     return false;
 }
-bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t charCode)
+bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     bool select = ((keyCode & Key::Shift) != Key::None);
     if (select)
@@ -1216,12 +1216,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     }
     return false;
 }
-bool Instance::GoTo(unsigned long long offset)
+bool Instance::GoTo(uint64 offset)
 {
     this->MoveTo(offset, false);
     return true;
 }
-bool Instance::Select(unsigned long long offset, unsigned long long size)
+bool Instance::Select(uint64 offset, uint64 size)
 {
     return false;
 }
@@ -1233,7 +1233,7 @@ std::string_view Instance::GetName()
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)
 {
-    unsigned long long start, end;
+    uint64 start, end;
     if (this->selection.GetSelection(selectionID, start, end))
     {
         LocalString<32> tmp;
@@ -1337,7 +1337,7 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
 {
     if (buffer.GetLength() < 2)
         return x;
-    const unsigned short v_u16 = *(unsigned short*) buffer.GetData();
+    const uint16 v_u16 = *(uint16*) buffer.GetData();
     NumericFormatter n;
     NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 4 };
     switch (height)
@@ -1347,7 +1347,7 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
     case 1:
         r.WriteSingleLineText(x, 0, "Unc:  I16:       Hex:", this->CursorColors.Highlighted);
         r.WriteCharacter(x + 4, 0, v_u16, this->CursorColors.Normal);
-        r.WriteSingleLineText(x + 15, 0, n.ToDec(*(const short*) (&v_u16)), this->CursorColors.Normal, TextAlignament::Right);
+        r.WriteSingleLineText(x + 15, 0, n.ToDec(*(const int16*) (&v_u16)), this->CursorColors.Normal, TextAlignament::Right);
         r.WriteSingleLineText(x + 21, 0, n.ToString(v_u16, fmt), this->CursorColors.Normal);
         r.WriteSpecialCharacter(x + 25, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
         return x + 26;
@@ -1355,7 +1355,7 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
         r.WriteSingleLineText(x, 0, "Unc:      I16:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "Hex:      U16:", this->CursorColors.Highlighted);
         r.WriteCharacter(x + 4, 0, v_u16, this->CursorColors.Normal);
-        r.WriteSingleLineText(x + 14, 0, n.ToDec(*(const short*) (&v_u16)), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 14, 0, n.ToDec(*(const int16*) (&v_u16)), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u16, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 14, 1, n.ToDec(v_u16), this->CursorColors.Normal);
         r.WriteSpecialCharacter(x + 20, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1367,7 +1367,7 @@ int Instance::Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffe
         r.WriteSingleLineText(x, 1, "Hex:      U16:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 2, "Bin:", this->CursorColors.Highlighted);
         r.WriteCharacter(x + 4, 0, v_u16, this->CursorColors.Normal);
-        r.WriteSingleLineText(x + 14, 0, n.ToDec(*(const short*) (&v_u16)), this->CursorColors.Normal);
+        r.WriteSingleLineText(x + 14, 0, n.ToDec(*(const int16*) (&v_u16)), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u16, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 14, 1, n.ToDec(v_u16), this->CursorColors.Normal);
         fmt.Base        = 2;

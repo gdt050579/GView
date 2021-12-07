@@ -14,13 +14,13 @@ Settings::Settings()
 {
     this->data = new SettingsData();
 }
-void Settings::AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name)
+void Settings::AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name)
 {
     auto* Members = (SettingsData*) (this->data);
     if (size > 0)
         Members->zList.Add(start, start + size - 1, col, name);
 }
-void Settings::AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset)
+void Settings::AddBookmark(unsigned char bookmarkID, uint64 fileOffset)
 {
     auto* Members = (SettingsData*) (this->data);
     if (bookmarkID < 10)

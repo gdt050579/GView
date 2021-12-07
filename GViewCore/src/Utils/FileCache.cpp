@@ -46,7 +46,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
 
     return true;
 }
-BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
+BufferView FileCache::Get(uint64 offset, unsigned int requestedSize)
 {
     CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
     CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
@@ -69,7 +69,7 @@ BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
     if (offset >= this->fileSize)
         return Buffer();
     // data is not available in cache ==> read it
-    unsigned long long _start, _end;
+    uint64 _start, _end;
     if (this->fileSize <= this->cacheSize)
     {
         // read everything
@@ -118,7 +118,7 @@ BufferView FileCache::Get(unsigned long long offset, unsigned int requestedSize)
     this->currentPos = this->end;
     return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
 }
-bool FileCache::CopyObject(void* buffer, unsigned long long offset, unsigned int requestedSize)
+bool FileCache::CopyObject(void* buffer, uint64 offset, unsigned int requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
     auto b = Get(offset, requestedSize);
@@ -132,14 +132,14 @@ bool FileCache::CopyObject(void* buffer, unsigned long long offset, unsigned int
     memcpy(buffer, b.GetData(), b.GetLength());
     return true;
 }
-Buffer FileCache::CopyToBuffer(unsigned long long offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead)
+Buffer FileCache::CopyToBuffer(uint64 offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead)
 {
     // sanity checks
     CHECK(requestedSize > 0, Buffer(), "Invalid requested size (should be bigger than 0)");
     CHECK(offset <= this->fileSize, Buffer(), "Invalid offset (%llu) , should be less than %llu ", offset, this->fileSize);
     if (failIfRequestedSizeCanNotBeRead)
     {
-        CHECK(offset + (unsigned long long) requestedSize <= this->fileSize,
+        CHECK(offset + (uint64) requestedSize <= this->fileSize,
               Buffer(),
               "Unable to read %u bytes from %llu",
               requestedSize,

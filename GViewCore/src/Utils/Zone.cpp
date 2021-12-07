@@ -7,7 +7,7 @@ Zone::Zone() : start(INVALID_OFFSET), end(INVALID_OFFSET), color(NoColorPair), n
 {
 }
 
-void Zone::Set(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt)
+void Zone::Set(uint64 s, uint64 e, ColorPair c, std::string_view txt)
 {
     this->start = s;
     this->end   = e;

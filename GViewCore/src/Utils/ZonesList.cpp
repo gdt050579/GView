@@ -48,7 +48,7 @@ bool ZonesList::Reserve(unsigned int newAllocatedSize)
 	return true;
 }
 
-bool ZonesList::Add(unsigned long long s, unsigned long long e, ColorPair c, std::string_view txt)
+bool ZonesList::Add(uint64 s, uint64 e, ColorPair c, std::string_view txt)
 {
 	if (count >= allocated)
 	{
@@ -58,7 +58,7 @@ bool ZonesList::Add(unsigned long long s, unsigned long long e, ColorPair c, std
 	count++;
 	return true;
 }
-const Zone* ZonesList::OffsetToZone(unsigned long long position)
+const Zone* ZonesList::OffsetToZone(uint64 position)
 {
 	
 	if ((position >= cacheStart) && (position <= cacheEnd) && (position != INVALID_OFFSET))
@@ -70,7 +70,7 @@ const Zone* ZonesList::OffsetToZone(unsigned long long position)
 	auto z = list;
 	auto e = z + count;
 	Zone *last = nullptr;
-	unsigned long long closestEnd, closestStart;
+	uint64 closestEnd, closestStart;
 	closestStart = 0;
 	closestEnd = INVALID_OFFSET;
 	if (z)

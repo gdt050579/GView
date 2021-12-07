@@ -5,6 +5,7 @@
 using namespace AppCUI::Controls;
 using namespace AppCUI::Utils;
 using namespace AppCUI::Graphics;
+using namespace AppCUI;
 
 #ifdef CORE_EXPORTABLE
 #    ifdef BUILD_FOR_WINDOWS
@@ -37,7 +38,7 @@ struct CORE_EXPORT TypeInterface
 };
 namespace Utils
 {
-    constexpr unsigned long long INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
+    constexpr uint64 INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
     constexpr int INVALID_SELECTION_INDEX       = -1;
 
     class CORE_EXPORT ErrorList
@@ -64,21 +65,21 @@ namespace Utils
     class CORE_EXPORT FileCache
     {
         AppCUI::OS::IFile* fileObj;
-        unsigned long long fileSize, start, end, currentPos;
+        uint64 fileSize, start, end, currentPos;
         unsigned char* cache;
         unsigned int cacheSize;
 
-        bool CopyObject(void* buffer, unsigned long long offset, unsigned int requestedSize);
+        bool CopyObject(void* buffer, uint64 offset, unsigned int requestedSize);
 
       public:
         FileCache();
         ~FileCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
-        BufferView Get(unsigned long long offset, unsigned int requestedSize);
+        BufferView Get(uint64 offset, unsigned int requestedSize);
 
-        Buffer CopyToBuffer(unsigned long long offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
-        inline unsigned char GetFromCache(unsigned long long offset, unsigned char defaultValue = 0) const
+        Buffer CopyToBuffer(uint64 offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
+        inline unsigned char GetFromCache(uint64 offset, unsigned char defaultValue = 0) const
         {
             if ((offset >= start) && (offset < end))
                 return cache[offset - start];
@@ -89,21 +90,21 @@ namespace Utils
             return Get(currentPos, requestedSize);
         }
 
-        inline unsigned long long GetSize() const
+        inline uint64 GetSize() const
         {
             return fileSize;
         }
-        inline unsigned long long GetCurrentPos() const
+        inline uint64 GetCurrentPos() const
         {
             return currentPos;
         }
-        inline void SetCurrentPos(unsigned long long value)
+        inline void SetCurrentPos(uint64 value)
         {
             currentPos = value;
         }
 
         template <typename T>
-        inline bool Copy(unsigned long long offset, T& object)
+        inline bool Copy(uint64 offset, T& object)
         {
             return CopyObject(&object, offset, sizeof(T));
         }
@@ -125,8 +126,8 @@ namespace View
     typedef unsigned char MethodID;
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl
     {
-        virtual bool GoTo(unsigned long long offset)                                                                       = 0;
-        virtual bool Select(unsigned long long offset, unsigned long long size)                                            = 0;
+        virtual bool GoTo(uint64 offset)                                                                       = 0;
+        virtual bool Select(uint64 offset, uint64 size)                                            = 0;
         virtual std::string_view GetName()                                                                                 = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) = 0;
 
@@ -169,8 +170,8 @@ namespace View
             void* data;
 
             Settings();
-            void AddZone(unsigned long long start, unsigned long long size, ColorPair col, std::string_view name);
-            void AddBookmark(unsigned char bookmarkID, unsigned long long fileOffset);
+            void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
+            void AddBookmark(unsigned char bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
             void SetEntryPointOffset(uint64_t offset);
