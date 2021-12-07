@@ -73,21 +73,21 @@ bool ErrorList::Empty() const
     auto el = reinterpret_cast<InternalErrorList*>(data);
     return el->errors.empty() && el->warnings.empty();
 }
-unsigned int ErrorList::GetErrorsCount() const
+uint32 ErrorList::GetErrorsCount() const
 {
     if (!data)
         return 0;
     auto el = reinterpret_cast<InternalErrorList*>(data);
-    return (unsigned int) el->errors.size();
+    return (uint32) el->errors.size();
 }
-unsigned int ErrorList::GetWarningsCount() const
+uint32 ErrorList::GetWarningsCount() const
 {
     if (!data)
         return 0;
     auto el = reinterpret_cast<InternalErrorList*>(data);
-    return (unsigned int) el->warnings.size();
+    return (uint32) el->warnings.size();
 }
-std::string_view ErrorList::GetError(unsigned int index) const
+std::string_view ErrorList::GetError(uint32 index) const
 {
     if (!data)
         return std::string_view();
@@ -96,7 +96,7 @@ std::string_view ErrorList::GetError(unsigned int index) const
         return std::string_view();
     return (std::string_view) (el->errors[index]);
 }
-std::string_view ErrorList::GetWarning(unsigned int index) const
+std::string_view ErrorList::GetWarning(uint32 index) const
 {
     if (!data)
         return std::string_view();

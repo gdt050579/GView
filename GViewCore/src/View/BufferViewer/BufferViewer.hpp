@@ -34,7 +34,7 @@ namespace View
             uint64 bookmarks[10];
             uint64 entryPointOffset;
             OffsetTranslationMethod translationMethods[16];
-            unsigned int translationMethodsCount;
+            uint32 translationMethodsCount;
             Reference<OffsetTranslateInterface> offsetTranslateCallback;
             Reference<PositionToColorInterface> positionToColorCallback;
             SettingsData();
@@ -81,9 +81,9 @@ namespace View
             struct DrawLineInfo
             {
                 uint64 offset;
-                unsigned int offsetAndNameSize;
-                unsigned int numbersSize;
-                unsigned int textSize;
+                uint32 offsetAndNameSize;
+                uint32 numbersSize;
+                uint32 textSize;
                 const uint8* start;
                 const uint8* end;
                 Character* chNameAndSize;
@@ -97,25 +97,25 @@ namespace View
             struct
             {
                 CharacterFormatMode charFormatMode;
-                unsigned int nrCols;
-                unsigned int lineAddressSize;
-                unsigned int lineNameSize;
-                unsigned int charactersPerLine;
-                unsigned int visibleRows;
-                unsigned int xName;
-                unsigned int xAddress;
-                unsigned int xNumbers;
-                unsigned int xText;
+                uint32 nrCols;
+                uint32 lineAddressSize;
+                uint32 lineNameSize;
+                uint32 charactersPerLine;
+                uint32 visibleRows;
+                uint32 xName;
+                uint32 xAddress;
+                uint32 xNumbers;
+                uint32 xText;
             } Layout;
             struct
             {
                 uint64 startView, currentPos;
-                unsigned int base;
+                uint32 base;
             } Cursor;
             struct
             {
                 uint64 start, end, middle;
-                unsigned int minCount;
+                uint32 minCount;
                 bool AsciiMask[256];
                 StringType type;
             } StringInfo;
@@ -129,15 +129,15 @@ namespace View
             Utils::Selection selection;
             CharacterBuffer chars;
             const char16* CodePage;
-            unsigned int currentAdrressMode;
+            uint32 currentAdrressMode;
             BufferColor bufColor;
             FixSizeString<29> name;
 
             static Config config;
 
-            int PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r);
-            int PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r);
-            int PrintCursorZone(int x, int y, unsigned int width, Renderer& r);
+            int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
+            int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
+            int PrintCursorZone(int x, int y, uint32 width, Renderer& r);
             int Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
             int Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
             int Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
@@ -151,7 +151,7 @@ namespace View
             void UpdateViewSizes();
             void MoveTo(uint64 offset, bool select);
             void MoveScrollTo(uint64 offset);
-            void MoveToSelection(unsigned int selIndex);
+            void MoveToSelection(uint32 selIndex);
             void MoveToZone(bool startOfZome, bool select);
             void SkipCurentCaracter(bool selected);
             void MoveTillEndBlock(bool selected);
@@ -177,7 +177,7 @@ namespace View
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual std::string_view GetName() override;
 
-            virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
+            virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;

@@ -4,7 +4,7 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_EXP_GOTO = 1;
+constexpr uint32 PE_EXP_GOTO = 1;
 
 Panels::Headers::Headers(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Headers")
 {
@@ -31,11 +31,11 @@ void Panels::Headers::AddItem(std::string_view name, std::string_view value)
 {
     auto handle = list->AddItem(name, value);
 }
-void Panels::Headers::AddMagic(unsigned char* offset, unsigned int size)
+void Panels::Headers::AddMagic(uint8* offset, uint32 size)
 {
     LocalString<128> temp;
     temp.Set("\"");
-    for (unsigned int tr = 0; tr < size; tr++)
+    for (uint32 tr = 0; tr < size; tr++)
     {
         if (offset[tr] > 32)
             temp.AddChar(offset[tr]);
@@ -43,7 +43,7 @@ void Panels::Headers::AddMagic(unsigned char* offset, unsigned int size)
             temp.AddChar('.');
     }
     temp.Add("\"  ");
-    for (unsigned int tr = 0; tr < size; tr++)
+    for (uint32 tr = 0; tr < size; tr++)
         temp.AddFormat("%02X ", offset[tr]);
     auto handle = list->AddItem("Magic", temp);
 }
@@ -54,7 +54,7 @@ void Panels::Headers::Update()
 
     list->DeleteAllItems();
     AddHeader("PE Header");
-    AddMagic((unsigned char*) &pe->nth32.Signature, 4);
+    AddMagic((uint8*) &pe->nth32.Signature, 4);
 
     AddHeader("File Header");
     AddNumber("Sections", pe->nth32.FileHeader.NumberOfSections);
@@ -66,7 +66,7 @@ void Panels::Headers::Update()
     
 
     AddHeader("DOS Header");
-    AddMagic((unsigned char*) &pe->dos.e_magic, 2);
+    AddMagic((uint8*) &pe->dos.e_magic, 2);
     AddNumber("Bytes on last page of file", pe->dos.e_cblp);
     AddNumber("Pages in file", pe->dos.e_cp);
     AddNumber("Relocations", pe->dos.e_crlc);

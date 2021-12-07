@@ -5,7 +5,7 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
-    for (unsigned int tr = 0; tr < 10; tr++)
+    for (uint32 tr = 0; tr < 10; tr++)
         this->bookmarks[tr] = GView::Utils::INVALID_OFFSET;
     this->translationMethodsCount = 0;
     this->entryPointOffset        = GView::Utils::INVALID_OFFSET;
@@ -20,7 +20,7 @@ void Settings::AddZone(uint64 start, uint64 size, ColorPair col, std::string_vie
     if (size > 0)
         Members->zList.Add(start, start + size - 1, col, name);
 }
-void Settings::AddBookmark(unsigned char bookmarkID, uint64 fileOffset)
+void Settings::AddBookmark(uint8 bookmarkID, uint64 fileOffset)
 {
     auto* Members = (SettingsData*) (this->data);
     if (bookmarkID < 10)

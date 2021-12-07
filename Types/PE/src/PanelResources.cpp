@@ -4,9 +4,9 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_RES_GOTO   = 1;
-constexpr unsigned int PE_RES_SAVE   = 2;
-constexpr unsigned int PE_RES_SELECT = 3;
+constexpr uint32 PE_RES_GOTO   = 1;
+constexpr uint32 PE_RES_SAVE   = 2;
+constexpr uint32 PE_RES_SELECT = 3;
 
 Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Resources")
 {

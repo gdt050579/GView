@@ -38,8 +38,8 @@ struct CORE_EXPORT TypeInterface
 };
 namespace Utils
 {
-    constexpr uint64 INVALID_OFFSET = 0xFFFFFFFFFFFFFFFFULL;
-    constexpr int INVALID_SELECTION_INDEX       = -1;
+    constexpr uint64 INVALID_OFFSET       = 0xFFFFFFFFFFFFFFFFULL;
+    constexpr int INVALID_SELECTION_INDEX = -1;
 
     class CORE_EXPORT ErrorList
     {
@@ -54,11 +54,11 @@ namespace Utils
         bool AddWarning(const char* format, ...);
         bool Empty() const;
 
-        unsigned int GetErrorsCount() const;
-        unsigned int GetWarningsCount() const;
+        uint32 GetErrorsCount() const;
+        uint32 GetWarningsCount() const;
 
-        std::string_view GetError(unsigned int index) const;
-        std::string_view GetWarning(unsigned int index) const;
+        std::string_view GetError(uint32 index) const;
+        std::string_view GetWarning(uint32 index) const;
 
         void PopulateListView(AppCUI::Utils::Reference<AppCUI::Controls::ListView> listView) const;
     };
@@ -66,26 +66,26 @@ namespace Utils
     {
         AppCUI::OS::IFile* fileObj;
         uint64 fileSize, start, end, currentPos;
-        unsigned char* cache;
-        unsigned int cacheSize;
+        uint8* cache;
+        uint32 cacheSize;
 
-        bool CopyObject(void* buffer, uint64 offset, unsigned int requestedSize);
+        bool CopyObject(void* buffer, uint64 offset, uint32 requestedSize);
 
       public:
         FileCache();
         ~FileCache();
 
-        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int cacheSize);
-        BufferView Get(uint64 offset, unsigned int requestedSize);
+        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, uint32 cacheSize);
+        BufferView Get(uint64 offset, uint32 requestedSize);
 
-        Buffer CopyToBuffer(uint64 offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
-        inline unsigned char GetFromCache(uint64 offset, unsigned char defaultValue = 0) const
+        Buffer CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
+        inline uint8 GetFromCache(uint64 offset, uint8 defaultValue = 0) const
         {
             if ((offset >= start) && (offset < end))
                 return cache[offset - start];
             return defaultValue;
         }
-        inline BufferView Get(unsigned int requestedSize)
+        inline BufferView Get(uint32 requestedSize)
         {
             return Get(currentPos, requestedSize);
         }
@@ -123,13 +123,13 @@ struct CORE_EXPORT Object
 
 namespace View
 {
-    typedef unsigned char MethodID;
+    typedef uint8 MethodID;
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl
     {
         virtual bool GoTo(uint64 offset)                                                                       = 0;
-        virtual bool Select(uint64 offset, uint64 size)                                            = 0;
-        virtual std::string_view GetName()                                                                                 = 0;
-        virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) = 0;
+        virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
+        virtual std::string_view GetName()                                                                     = 0;
+        virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         ViewControl() : UserControl("d:c")
         {
@@ -161,8 +161,8 @@ namespace View
         };
         struct CORE_EXPORT OffsetTranslateInterface
         {
-            virtual uint64_t TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex) = 0;
-            virtual uint64_t TranslateFromFileOffset(uint64_t value, unsigned int toTranslationIndex) = 0;
+            virtual uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) = 0;
+            virtual uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) = 0;
         };
 
         struct CORE_EXPORT Settings
@@ -171,7 +171,7 @@ namespace View
 
             Settings();
             void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
-            void AddBookmark(unsigned char bookmarkID, uint64 fileOffset);
+            void AddBookmark(uint8 bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
             void SetEntryPointOffset(uint64_t offset);

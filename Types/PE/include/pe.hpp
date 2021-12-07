@@ -98,7 +98,7 @@ namespace Type
         }; // namespace Constants
         namespace Panels
         {
-            enum class IDs : unsigned char
+            enum class IDs : uint8
             {
                 Information = 0,
                 Directories,
@@ -146,14 +146,14 @@ namespace Type
             VersionPair Pairs[MAX_VERION_PAIRS];
             int nrPairs;
 
-            int AddPair(const unsigned char* Buffer, int size, int poz);
-            bool TestIfValidKey(const unsigned char* Buffer, int size, int poz);
+            int AddPair(const uint8* Buffer, int size, int poz);
+            bool TestIfValidKey(const uint8* Buffer, int size, int poz);
 
           public:
             VersionInformation(void);
             ~VersionInformation(void);
 
-            bool ComputeVersionInformation(const unsigned char* Buffer, int size);
+            bool ComputeVersionInformation(const uint8* Buffer, int size);
             int GetNrItems()
             {
                 return nrPairs;
@@ -483,7 +483,7 @@ namespace Type
             uint32_t height;
         };
 
-        enum class AddressType : unsigned char
+        enum class AddressType : uint8
         {
             FileOffset = 0,
             RVA        = 1,
@@ -687,7 +687,7 @@ namespace Type
             bool isMetroApp;
             bool hasTLS;
 
-            std::string_view ReadString(uint32_t RVA, unsigned int maxSize);
+            std::string_view ReadString(uint32_t RVA, uint32 maxSize);
             bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
 
           public:
@@ -710,8 +710,8 @@ namespace Type
             uint64_t FilePointerToRVA(uint64_t fileAddress);
             uint64_t FilePointerToVA(uint64_t fileAddress);
 
-            uint64_t TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex) override;
-            uint64_t TranslateFromFileOffset(uint64_t value, unsigned int toTranslationIndex) override;
+            uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) override;
+            uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) override;
 
             uint64_t ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType);
             bool BuildExport();
@@ -769,7 +769,7 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> list;
                 int Base;
 
-                std::string_view GetValue(NumericFormatter& n, unsigned int value);
+                std::string_view GetValue(NumericFormatter& n, uint32 value);
                 void GoToSelectedSection();
                 void SelectCurrentSection();
 
@@ -862,7 +862,7 @@ namespace Type
 
                 void AddHeader(std::string_view name);
                 void AddNumber(std::string_view name, uint32_t value);
-                void AddMagic(unsigned char* offset, unsigned int size);
+                void AddMagic(uint8* offset, uint32 size);
                 void AddItem(std::string_view name, std::string_view value);
 
               public:

@@ -3,7 +3,7 @@
 using namespace GView::Utils;
 using namespace AppCUI::Graphics;
 
-constexpr unsigned int MAX_ZONES = 0x100000U;
+constexpr uint32 MAX_ZONES = 0x100000U;
 
 ZonesList::ZonesList()
 {
@@ -25,12 +25,12 @@ ZonesList::~ZonesList()
 	count = 0;
 	allocated = 0;
 }
-bool ZonesList::Reserve(unsigned int newAllocatedSize)
+bool ZonesList::Reserve(uint32 newAllocatedSize)
 {
 	if (newAllocatedSize <= allocated)
 		return true;
 
-	unsigned int newSize = allocated << 1;
+	uint32 newSize = allocated << 1;
 	if (newSize == 0)
 		newSize = 8;
 

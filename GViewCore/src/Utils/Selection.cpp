@@ -5,7 +5,7 @@ using namespace GView::Utils;
 
 Selection::Selection()
 {
-	for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) 
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) 
 	{
 		zones[tr].start = INVALID_OFFSET;
 		zones[tr].end = INVALID_OFFSET;
@@ -15,7 +15,7 @@ Selection::Selection()
 }
 void Selection::Clear()
 {
-	for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
 		zones[tr].start = INVALID_OFFSET;
 }
 bool Selection::Clear(int index)
@@ -42,7 +42,7 @@ void Selection::EnableMultiSelection(bool enable)
 	if ((singleSelectionZone) && (enable))
 	{
 		// clean up zones 1 to ne		
-		for (unsigned int tr = 1; tr < Selection::MAX_SELECTION_ZONES; tr++) {
+		for (uint32 tr = 1; tr < Selection::MAX_SELECTION_ZONES; tr++) {
 			zones[tr].start = INVALID_OFFSET;
 			zones[tr].end = INVALID_OFFSET;
 			zones[tr].originalPoint = INVALID_OFFSET;
@@ -53,7 +53,7 @@ void Selection::EnableMultiSelection(bool enable)
 	if ((!enable) && (!singleSelectionZone))
 	{
 		// curat toate selectiile
-		for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) {
+		for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) {
 			zones[tr].start = INVALID_OFFSET;
 			zones[tr].end = INVALID_OFFSET;
 			zones[tr].originalPoint = INVALID_OFFSET;
@@ -78,7 +78,7 @@ int  Selection::OffsetToSelection(uint64 position, uint64 &Start, uint64 &End)
 		return -1;
 	}
 	// multiple selections
-	for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
 	{
 		if ((position >= zones[tr].start) && (position <= zones[tr].end))
 		{
@@ -97,7 +97,7 @@ bool Selection::Contains(uint64 position) const
         return (position >= zones->start) && (position <= zones->end);
     
     // multiple selections
-    for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+    for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
     {
         if ((position >= zones[tr].start) && (position <= zones[tr].end))
             return true;

@@ -22,7 +22,7 @@ struct CV_INFO_PDB70
 #define CV_SIGNATURE_NB10 '01BN'
 #define CV_SIGNATURE_RSDS 'SDSR'
 
-#define ADD_PANEL(id) this->panelsMask |= (1ULL << (unsigned char) id);
+#define ADD_PANEL(id) this->panelsMask |= (1ULL << (uint8) id);
 
 static std::string_view peDirsNames[15] = { "Export",      "Import",       "Resource",     "Exceptions",        "Security",
                                             "Base Reloc",  "Debug",        "Architecture", "Global Ptr",        "TLS",
@@ -259,7 +259,7 @@ PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
     panelsMask = 0;
 }
 
-std::string_view PEFile::ReadString(uint32_t RVA, unsigned int maxSize)
+std::string_view PEFile::ReadString(uint32_t RVA, uint32 maxSize)
 {
     auto buf = file->Get(RVAtoFilePointer(RVA), maxSize);
     if (buf.Empty())
@@ -422,7 +422,7 @@ std::string_view PEFile::GetSubsystem()
 
 uint64_t PEFile::FilePointerToRVA(uint64_t fileAddress)
 {
-    unsigned int tr;
+    uint32 tr;
     uint64_t temp;
 
     for (tr = 0; tr < nrSections; tr++)
@@ -449,11 +449,11 @@ uint64_t PEFile::FilePointerToVA(uint64_t fileAddress)
     return PE_INVALID_ADDRESS;
 }
 
-uint64_t PEFile::TranslateToFileOffset(uint64_t value, unsigned int fromTranslationIndex)
+uint64_t PEFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
 {
     return ConvertAddress(value, static_cast<AddressType>(fromTranslationIndex), AddressType::FileOffset);
 }
-uint64_t PEFile::TranslateFromFileOffset(uint64_t value, unsigned int toTranslationIndex)
+uint64_t PEFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
 {
     return ConvertAddress(value, AddressType::FileOffset, static_cast<AddressType>(toTranslationIndex));
 }
@@ -771,7 +771,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
     auto buf     = this->file->Get(r.Start, sizeof(dibHeader));
     if (buf.Empty())
     {
-        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (unsigned int) (sizeof(dibHeader), r.Start));
+        errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) (sizeof(dibHeader), r.Start));
         return false;
     }
     auto iconHeader = buf.GetObject<DIBInfoHeader>();
@@ -996,7 +996,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
     ImageThunkData64 rvaFName64;
     std::string_view import_name;
     LocalString<64> tempStr;
-    unsigned int count_f = 0;
+    uint32 count_f = 0;
 
     if (impD->OriginalFirstThunk == 0)
         addr = RVAtoFilePointer(impD->FirstThunk);
@@ -1282,7 +1282,7 @@ bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
 
 bool PEFile::HasPanel(Panels::IDs id)
 {
-    return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;
+    return (this->panelsMask & (1ULL << ((uint8) id))) != 0;
 }
 
 bool PEFile::Update()

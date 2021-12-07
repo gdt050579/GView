@@ -2,7 +2,7 @@
 
 using namespace GView::Utils;
 
-constexpr unsigned int MAX_CACHE_SIZE = 0x1000000U; // 16 M
+constexpr uint32 MAX_CACHE_SIZE = 0x1000000U; // 16 M
 
 FileCache::FileCache()
 {
@@ -27,7 +27,7 @@ FileCache::~FileCache()
     this->cache = nullptr;
 }
 
-bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cacheSize)
+bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, uint32 _cacheSize)
 {
     CHECK(this->cacheSize == 0, false, "Cache object already initialized !");
     this->fileObj = file.release(); // take ownership of the pointer
@@ -38,7 +38,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
     _cacheSize     = std::min(_cacheSize, MAX_CACHE_SIZE);
     this->fileSize = fileObj->GetSize();
 
-    this->cache = new unsigned char[_cacheSize];
+    this->cache = new uint8[_cacheSize];
     CHECK(this->cache, false, "Fail to allocate: %u bytes", _cacheSize);
     this->cacheSize = _cacheSize;
     this->start     = 0;
@@ -46,7 +46,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, unsigned int _cach
 
     return true;
 }
-BufferView FileCache::Get(uint64 offset, unsigned int requestedSize)
+BufferView FileCache::Get(uint64 offset, uint32 requestedSize)
 {
     CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
     CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
@@ -62,7 +62,7 @@ BufferView FileCache::Get(uint64 offset, unsigned int requestedSize)
         if (this->end == this->fileSize)
         {
             this->currentPos = this->fileSize;
-            return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
+            return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
         }
     }
     // request outside file
@@ -81,7 +81,7 @@ BufferView FileCache::Get(uint64 offset, unsigned int requestedSize)
         // compute the new buffer to read
         auto sz = requestedSize;
         if ((offset + sz) > this->fileSize)
-            sz = (unsigned int) (this->fileSize - offset);
+            sz = (uint32) (this->fileSize - offset);
         if (sz > this->cacheSize)
             sz = this->cacheSize;
         auto diff = this->cacheSize - sz;
@@ -96,7 +96,7 @@ BufferView FileCache::Get(uint64 offset, unsigned int requestedSize)
     // read new data in cache
     if (this->fileObj->SetCurrentPos(_start) == false)
         return BufferView();
-    if (this->fileObj->Read(this->cache, (unsigned int) (_end - _start)) == false)
+    if (this->fileObj->Read(this->cache, (uint32) (_end - _start)) == false)
     {
         this->start = 0;
         this->end   = 0;
@@ -113,12 +113,12 @@ BufferView FileCache::Get(uint64 offset, unsigned int requestedSize)
     if (this->end == this->fileSize)
     {
         this->currentPos = this->fileSize;
-        return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
+        return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
     }
     this->currentPos = this->end;
-    return BufferView(&this->cache[offset - this->start], (unsigned int) (this->end - offset));
+    return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
 }
-bool FileCache::CopyObject(void* buffer, uint64 offset, unsigned int requestedSize)
+bool FileCache::CopyObject(void* buffer, uint64 offset, uint32 requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
     auto b = Get(offset, requestedSize);
@@ -128,11 +128,11 @@ bool FileCache::CopyObject(void* buffer, uint64 offset, unsigned int requestedSi
           "Unable to read %u bytes from %llu offset (only %u were read)",
           requestedSize,
           offset,
-          (unsigned int) b.GetLength());
+          (uint32) b.GetLength());
     memcpy(buffer, b.GetData(), b.GetLength());
     return true;
 }
-Buffer FileCache::CopyToBuffer(uint64 offset, unsigned int requestedSize, bool failIfRequestedSizeCanNotBeRead)
+Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead)
 {
     // sanity checks
     CHECK(requestedSize > 0, Buffer(), "Invalid requested size (should be bigger than 0)");
@@ -146,7 +146,7 @@ Buffer FileCache::CopyToBuffer(uint64 offset, unsigned int requestedSize, bool f
               offset);
     }
     Buffer b(requestedSize);
-    unsigned int toRead = this->cacheSize >> 1;
+    uint32 toRead = this->cacheSize >> 1;
     auto p              = b.GetData();
     while (requestedSize)
     {

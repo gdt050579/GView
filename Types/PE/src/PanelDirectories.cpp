@@ -4,10 +4,10 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_DIRS_GOTO            = 1;
-constexpr unsigned int PE_DIRS_EDIT            = 2;
-constexpr unsigned int PE_DIRS_SELECT          = 3;
-constexpr unsigned long long INVALID_DIRECTORY = 0xFFFFFFFF;
+constexpr uint32 PE_DIRS_GOTO            = 1;
+constexpr uint32 PE_DIRS_EDIT            = 2;
+constexpr uint32 PE_DIRS_SELECT          = 3;
+constexpr uint64 INVALID_DIRECTORY = 0xFFFFFFFF;
 
 Panels::Directories::Directories(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win)
     : TabPage("&Directories")
@@ -61,7 +61,7 @@ void Panels::Directories::Update()
 {
     LocalString<128> temp;
     LocalString<16> sectName;
-    unsigned int RVA, sz;
+    uint32 RVA, sz;
 
 
     for (auto tr = 0U; tr < 15U; tr++)
@@ -81,7 +81,7 @@ void Panels::Directories::Update()
         {
             auto sectID = 0xFFFFFFFF;
             list->SetItemType(item, ListViewItemType::Normal);
-            list->SetItemData(item, (unsigned long long)tr);
+            list->SetItemData(item, (uint64)tr);
             // search for a section that contains the directory
             for (auto gr = 0U; (gr < pe->nrSections) && (sectID == 0xFFFFFFFF); gr++)
             {

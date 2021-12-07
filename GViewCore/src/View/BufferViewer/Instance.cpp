@@ -4,7 +4,7 @@ using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
 
 const char hexCharsList[]                    = "0123456789ABCDEF";
-const unsigned int characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signed 8*/, 3 /*unsigned 8*/ };
+const uint32 characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signed 8*/, 3 /*unsigned 8*/ };
 const std::string_view hex_header = "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F ";
 const std::string_view oct_header =
       "000 001 002 003 004 005 006 007 010 011 012 013 014 015 016 017 020 021 022 023 024 025 026 027 030 031 032 033 034 035 036 037 ";
@@ -161,7 +161,7 @@ void Instance::MoveScrollTo(uint64 offset)
             MoveTo(0, false);
     }
 }
-void Instance::MoveToSelection(unsigned int selIndex)
+void Instance::MoveToSelection(uint32 selIndex)
 {
     uint64 start, end;
 
@@ -176,7 +176,7 @@ void Instance::MoveToSelection(unsigned int selIndex)
 void Instance::SkipCurentCaracter(bool selected)
 {
     uint64 tr, fileSize;
-    unsigned int gr;
+    uint32 gr;
 
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1);
 
@@ -212,11 +212,11 @@ void Instance::MoveTillNextBlock(bool select, int dir)
     // default:
     //    return;
     //};
-    // unsigned int count = zone->GetCount();
+    // uint32 count = zone->GetCount();
     // const GView::Objects::FileZone* z;
     // if (dir == 1)
     //{
-    //    for (unsigned int tr = 0; tr < count; tr++)
+    //    for (uint32 tr = 0; tr < count; tr++)
     //    {
     //        z = zone->Get(tr);
     //        if (z->Start > this->Cursor.currentPos)
@@ -242,8 +242,8 @@ void Instance::MoveTillNextBlock(bool select, int dir)
 void Instance::MoveTillEndBlock(bool selected)
 {
     uint64 tr, fileSize;
-    unsigned int lastValue = 0xFFFFFFFF;
-    unsigned int count     = 0;
+    uint32 lastValue = 0xFFFFFFFF;
+    uint32 count     = 0;
 
     fileSize = this->obj->cache.GetSize();
 
@@ -333,7 +333,7 @@ void Instance::UpdateStringInfo(uint64 offset)
             {
                 // ascii string found
                 StringInfo.start  = offset;
-                StringInfo.end    = offset + ((const unsigned char*) s - buf.GetData());
+                StringInfo.end    = offset + ((const uint8*) s - buf.GetData());
                 StringInfo.middle = offset + (s - (char16_t*) buf.GetData());
                 StringInfo.type   = StringType::Unicode;
                 return;
@@ -373,7 +373,7 @@ void Instance::UpdateStringInfo(uint64 offset)
             // check if not an unicode string
             auto* u_s = (char16_t*) s;
             auto* u_e = u_s + StringInfo.minCount;
-            if ((((const unsigned char*) u_e) + 1) <= e)
+            if ((((const uint8*) u_e) + 1) <= e)
             {
                 while ((u_s < u_e) && (*u_s < 256) && (StringInfo.AsciiMask[*u_s]))
                     u_s++;
@@ -475,7 +475,7 @@ void Instance::UpdateViewSizes()
     {
         this->Layout.xText = sz;
         // full screen --> ascii only
-        auto width = (unsigned int) this->GetWidth();
+        auto width = (uint32) this->GetWidth();
         if (sz + 1 < width)
             this->Layout.charactersPerLine = width - (1 + sz);
         else
@@ -483,7 +483,7 @@ void Instance::UpdateViewSizes()
     }
     else
     {
-        this->Layout.xText = sz + this->Layout.nrCols * (characterFormatModeSize[(unsigned int) this->Layout.charFormatMode] + 1) + 3;
+        this->Layout.xText = sz + this->Layout.nrCols * (characterFormatModeSize[(uint32) this->Layout.charFormatMode] + 1) + 3;
         this->Layout.charactersPerLine = this->Layout.nrCols;
     }
     // compute visible rows
@@ -511,7 +511,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         if (this->Layout.nrCols == 0)
         {
             // full screen --> ascii only
-            auto width      = (unsigned int) this->GetWidth();
+            auto width      = (uint32) this->GetWidth();
             dli.numbersSize = 0;
             if (dli.offsetAndNameSize + 1 < width)
                 dli.textSize = width - (1 + dli.offsetAndNameSize);
@@ -520,7 +520,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         }
         else
         {
-            auto sz         = characterFormatModeSize[(unsigned int) this->Layout.charFormatMode];
+            auto sz         = characterFormatModeSize[(uint32) this->Layout.charFormatMode];
             dli.numbersSize = this->Layout.nrCols * (sz + 1) + 3; // one extra space between chrars + 3 spaces at the end
             dli.textSize    = this->Layout.nrCols;
         }
@@ -718,14 +718,14 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
             dli.start++;
         }
     }
-    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));
+    this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
 }
 void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
     auto c     = dli.chNumbers;
     auto cp    = config.Colors.Inactive;
     bool activ = this->HasFocus();
-    auto ut    = (unsigned char) 0;
+    auto ut    = (uint8) 0;
     auto sps   = dli.chText;
 
     while (dli.start < dli.end)
@@ -905,7 +905,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = config.Colors.Inactive;
         c++;
     }
-    this->chars.Resize((unsigned int) (dli.chText - this->chars.GetBuffer()));
+    this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
 }
 void Instance::Paint(Renderer& renderer)
 {
@@ -916,7 +916,7 @@ void Instance::Paint(Renderer& renderer)
 
     DrawLineInfo dli;
     WriteHeaders(renderer);
-    for (unsigned int tr = 0; tr < this->Layout.visibleRows; tr++)
+    for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
         if (dli.offset >= this->obj->cache.GetSize())
@@ -998,7 +998,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     bool select = ((keyCode & Key::Shift) != Key::None);
     if (select)
-        keyCode = static_cast<Key>((unsigned int) keyCode - (unsigned int) Key::Shift);
+        keyCode = static_cast<Key>((uint32) keyCode - (uint32) Key::Shift);
 
     // tratare cazuri editare
     // if (this->EditMode)
@@ -1195,7 +1195,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         else
         {
             this->Layout.charFormatMode = static_cast<CharacterFormatMode>(
-                  (((unsigned char) this->Layout.charFormatMode) + 1) % ((unsigned char) CharacterFormatMode::Count));
+                  (((uint8) this->Layout.charFormatMode) + 1) % ((uint8) CharacterFormatMode::Count));
             UpdateViewSizes();
         }
         return true;
@@ -1231,7 +1231,7 @@ std::string_view Instance::GetName()
 }
 
 //======================================================================[Cursor information]==================
-int Instance::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigned int width, Renderer& r)
+int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
 {
     uint64 start, end;
     if (this->selection.GetSelection(selectionID, start, end))
@@ -1247,7 +1247,7 @@ int Instance::PrintSelectionInfo(unsigned int selectionID, int x, int y, unsigne
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
 }
-int Instance::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSeparator, Renderer& r)
+int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
@@ -1270,7 +1270,7 @@ int Instance::PrintCursorPosInfo(int x, int y, unsigned int width, bool addSepar
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + 5;
 }
-int Instance::PrintCursorZone(int x, int y, unsigned int width, Renderer& r)
+int Instance::PrintCursorZone(int x, int y, uint32 width, Renderer& r)
 {
     auto zone = this->settings->zList.OffsetToZone(this->Cursor.currentPos);
     if (zone)
@@ -1284,7 +1284,7 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
 {
     if (buffer.GetLength() == 0)
         return x;
-    const unsigned char v_u8 = buffer[0];
+    const uint8 v_u8 = buffer[0];
     NumericFormatter n;
     NumericFormat fmt = { NumericFormatFlags::None, 16, 0, 0, 2 };
     switch (height)
@@ -1389,7 +1389,7 @@ int Instance::Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffe
 {
     if (buffer.GetLength() < 4)
         return x;
-    const unsigned int v_u32 = *(unsigned int*) buffer.GetData();
+    const uint32 v_u32 = *(uint32*) buffer.GetData();
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
@@ -1431,7 +1431,7 @@ int Instance::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buf
 {
     if (buffer.GetLength() < 4)
         return x;
-    const unsigned int v_u32 =
+    const uint32 v_u32 =
           (((uint32_t) buffer[0]) << 24) | (((uint32_t) buffer[1]) << 16) | (((uint32_t) buffer[2]) << 8) | (((uint32_t) buffer[3]));
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
@@ -1465,7 +1465,7 @@ int Instance::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buf
     }
     return x;
 }
-void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, unsigned int width, unsigned int height)
+void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
     int x = 0;
     // set up the cursor colors
@@ -1560,7 +1560,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
         mpInfo.location = MouseLocation::Outside;
         return;
     }
-    auto xPoz = (unsigned int) x;
+    auto xPoz = (uint32) x;
     if ((xPoz >= Layout.xText) && (xPoz < Layout.xText + Layout.charactersPerLine))
     {
         mpInfo.location     = MouseLocation::OnView;
@@ -1570,7 +1570,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
     {
         if ((Layout.nrCols > 0) && (xPoz >= Layout.xNumbers))
         {
-            auto sz_char = characterFormatModeSize[(unsigned int) this->Layout.charFormatMode] + 1;
+            auto sz_char = characterFormatModeSize[(uint32) this->Layout.charFormatMode] + 1;
             if (xPoz < Layout.nrCols * sz_char + Layout.xNumbers)
             {
                 mpInfo.location     = MouseLocation::OnView;
