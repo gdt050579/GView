@@ -9,35 +9,35 @@ namespace Type
     namespace ICO
     {
 #pragma pack(push, 2)
-        constexpr uint32_t MAGIC_FORMAT_ICO = 0x00010000;
-        constexpr uint32_t MAGIC_FORMAT_CUR = 0x00020000;
+        constexpr uint32 MAGIC_FORMAT_ICO = 0x00010000;
+        constexpr uint32 MAGIC_FORMAT_CUR = 0x00020000;
 
         struct Header
         {
-            uint32_t magic;
-            uint16_t count;
+            uint32 magic;
+            uint16 count;
         };
         struct IconDirectoryEntry
         {
-            uint8_t width;
-            uint8_t height;
-            uint8_t colorPallette;
-            uint8_t reserved;
-            uint16_t colorPlanes;
-            uint16_t bitsPerPixels;
-            uint32_t size;
-            uint32_t offset;
+            uint8 width;
+            uint8 height;
+            uint8 colorPallette;
+            uint8 reserved;
+            uint16 colorPlanes;
+            uint16 bitsPerPixels;
+            uint32 size;
+            uint32 offset;
         };
         struct CursorDirectoryEntry
         {
-            uint8_t width;
-            uint8_t height;
-            uint8_t colorPallette;
-            uint8_t reserved;
-            uint16_t hotstopX;
-            uint16_t hotstopY;
-            uint32_t size;
-            uint32_t offset;
+            uint8 width;
+            uint8 height;
+            uint8 colorPallette;
+            uint8 reserved;
+            uint16 hotstopX;
+            uint16 hotstopY;
+            uint32 size;
+            uint32 offset;
         };
         union DirectoryEntry
         {
@@ -52,7 +52,7 @@ namespace Type
           public:
             bool isIcoFormat;
 
-            enum class ErrorType : unsigned char
+            enum class ErrorType : uint8
             {
                 Error,
                 Warning

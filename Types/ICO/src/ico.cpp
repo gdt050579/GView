@@ -36,7 +36,7 @@ extern "C"
         settings.AddZone(
               sizeof(ICO::Header), sizeof(ICO::DirectoryEntry) * ico->dirs.size(), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
 
-        auto idx = 1;
+        uint8 idx = 1;
         for (auto& e : ico->dirs)
         {
             settings.AddZone(e.cursor.offset, e.cursor.size, ColorPair{ Color::Silver, Color::DarkBlue }, tempStr.Format("Img #%d", idx));
