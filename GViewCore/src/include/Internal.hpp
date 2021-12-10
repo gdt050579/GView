@@ -36,9 +36,13 @@ namespace Utils
         {
             EnableMultiSelection(!singleSelectionZone);
         }
-        inline bool IsMultiSelectionEnabled()
+        inline bool IsMultiSelectionEnabled() const
         {
             return !singleSelectionZone;
+        }
+        inline bool IsSingleSelectionEnabled() const
+        {
+            return singleSelectionZone;
         }
         int OffsetToSelection(unsigned long long offset, unsigned long long& Start, unsigned long long& End);
         bool Contains(unsigned long long offset) const;

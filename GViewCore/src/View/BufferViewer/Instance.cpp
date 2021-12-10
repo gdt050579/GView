@@ -3,9 +3,9 @@
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
 
-const char hexCharsList[]                    = "0123456789ABCDEF";
+const char hexCharsList[]              = "0123456789ABCDEF";
 const uint32 characterFormatModeSize[] = { 2 /*Hex*/, 3 /*Oct*/, 4 /*signed 8*/, 3 /*unsigned 8*/ };
-const std::string_view hex_header = "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F ";
+const std::string_view hex_header      = "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F ";
 const std::string_view oct_header =
       "000 001 002 003 004 005 006 007 010 011 012 013 014 015 016 017 020 021 022 023 024 025 026 027 030 031 032 033 034 035 036 037 ";
 const std::string_view signed_dec_header = "  +0   +1   +2   +3   +4   +5   +6   +7   +8   +9  +10  +11  +12  +13  +14  +15  +16  +17  +18 "
@@ -80,6 +80,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->StringInfo.minCount      = 4;
     this->Cursor.base              = 16;
     this->currentAdrressMode       = 0;
+    this->CurrentSelection.size    = 0;
+    this->CurrentSelection.start   = GView::Utils::INVALID_OFFSET;
+    this->CurrentSelection.end     = GView::Utils::INVALID_OFFSET;
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
@@ -101,7 +104,33 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 }
+void Instance::UpdateCurrentSelection()
+{
+    this->CurrentSelection.size  = 0;
+    this->CurrentSelection.start = GView::Utils::INVALID_OFFSET;
+    this->CurrentSelection.end   = GView::Utils::INVALID_OFFSET;
 
+    if (this->selection.IsSingleSelectionEnabled())
+    {
+        uint64 start, end;
+        if ((this->selection.GetSelection(0, start, end)))
+        {
+            if ((end - start) < 254)
+            {
+                this->CurrentSelection.size = ((uint32) (end - start)) + 1;
+                auto b                      = obj->cache.Get(start, this->CurrentSelection.size);
+                if ((b.IsValid()) && (b.GetLength() == this->CurrentSelection.size))
+                {
+                    memcpy(this->CurrentSelection.buffer, b.begin(), b.GetLength());
+                }
+                else
+                {
+                    this->CurrentSelection.size = 0;
+                }
+            }
+        }
+    }
+}
 void Instance::MoveTo(uint64 offset, bool select)
 {
     if (this->obj->cache.GetSize() == 0)
@@ -124,8 +153,11 @@ void Instance::MoveTo(uint64 offset, bool select)
     {
         this->Cursor.currentPos = offset;
         if ((select) && (sidx >= 0))
+        {
             this->selection.UpdateSelection(sidx, offset);
-        return; // nothing to do ... already in visual space
+            UpdateCurrentSelection();
+            return; // nothing to do ... already in visual space
+        }
     }
 
     if (offset < this->Cursor.startView)
@@ -140,7 +172,10 @@ void Instance::MoveTo(uint64 offset, bool select)
     }
     this->Cursor.currentPos = offset;
     if ((select) && (sidx >= 0))
+    {
         this->selection.UpdateSelection(sidx, offset);
+        UpdateCurrentSelection();
+    }
 }
 void Instance::MoveScrollTo(uint64 offset)
 {
@@ -405,6 +440,25 @@ ColorPair Instance::OffsetToColorZone(uint64 offset)
 }
 ColorPair Instance::OffsetToColor(uint64 offset)
 {
+    // current selection
+    if (this->CurrentSelection.size)
+    {
+        if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
+            return config.Colors.SameSelection;
+        auto b = this->obj->cache.Get(offset, this->CurrentSelection.size);
+        if ((b.IsValid()) && (b.GetLength() == this->CurrentSelection.size))
+        {
+            if (b[0] == this->CurrentSelection.buffer[0])
+            {
+                if (memcmp(b.begin(), this->CurrentSelection.buffer, this->CurrentSelection.size) == 0)
+                {
+                    this->CurrentSelection.start = offset;
+                    this->CurrentSelection.end   = offset + this->CurrentSelection.size;
+                    return config.Colors.SameSelection;
+                }
+            }
+        }
+    }
     // color
     if ((settings) && (settings->positionToColorCallback))
     {
@@ -483,7 +537,7 @@ void Instance::UpdateViewSizes()
     }
     else
     {
-        this->Layout.xText = sz + this->Layout.nrCols * (characterFormatModeSize[(uint32) this->Layout.charFormatMode] + 1) + 3;
+        this->Layout.xText             = sz + this->Layout.nrCols * (characterFormatModeSize[(uint32) this->Layout.charFormatMode] + 1) + 3;
         this->Layout.charactersPerLine = this->Layout.nrCols;
     }
     // compute visible rows
@@ -583,7 +637,7 @@ void Instance::WriteHeaders(Renderer& renderer)
 }
 void Instance::WriteLineAddress(DrawLineInfo& dli)
 {
-    uint64 ofs      = dli.offset;
+    uint64 ofs                  = dli.offset;
     auto c                      = config.Colors.Inactive;
     auto n                      = dli.chNameAndSize;
     const GView::Utils::Zone* z = nullptr;
@@ -1194,8 +1248,8 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         }
         else
         {
-            this->Layout.charFormatMode = static_cast<CharacterFormatMode>(
-                  (((uint8) this->Layout.charFormatMode) + 1) % ((uint8) CharacterFormatMode::Count));
+            this->Layout.charFormatMode =
+                  static_cast<CharacterFormatMode>((((uint8) this->Layout.charFormatMode) + 1) % ((uint8) CharacterFormatMode::Count));
             UpdateViewSizes();
         }
         return true;

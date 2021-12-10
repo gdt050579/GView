@@ -63,6 +63,7 @@ namespace View
                 ColorPair Selection;
                 ColorPair Ascii;
                 ColorPair Unicode;
+                ColorPair SameSelection;
             } Colors;
             struct
             {
@@ -123,6 +124,12 @@ namespace View
             {
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
+            struct
+            {
+                uint8 buffer[256];
+                uint32 size;
+                uint64 start, end;
+            } CurrentSelection;
 
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
@@ -142,6 +149,8 @@ namespace View
             int Print16bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
             int Print32bitValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
             int Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buffer, Renderer& r);
+
+            void UpdateCurrentSelection();
 
             void PrepareDrawLineInfo(DrawLineInfo& dli);
             void WriteHeaders(Renderer& renderer);
