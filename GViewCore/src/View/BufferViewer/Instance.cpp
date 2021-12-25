@@ -1692,3 +1692,24 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 
     return false;
 }
+
+//======================================================================[PROPERTY]============================
+bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
+{
+    NOT_IMPLEMENTED(false);
+}
+void Instance::SetCustomPropetyValue(uint32 propertyID)
+{
+}
+bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
+{
+    NOT_IMPLEMENTED(false);
+}
+vector<Property> Instance::GetPropertiesList()
+{
+    return vector<Property>();
+}

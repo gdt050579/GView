@@ -196,7 +196,15 @@ namespace View
             virtual bool OnMouseOver(int x, int y) override;
             virtual bool OnMouseLeave() override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+
+            // property interface
+            bool GetPropertyValue(uint32 id, PropertyValue& value) override;
+            bool SetPropertyValue(uint32 id, const PropertyValue& value, String& error) override;
+            void SetCustomPropetyValue(uint32 propertyID) override;
+            bool IsPropertyValueReadOnly(uint32 propertyID) override;
+            vector<Property> GetPropertiesList() override;
         };
+
     } // namespace BufferViewer
 } // namespace View
 }; // namespace GView

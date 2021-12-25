@@ -124,7 +124,7 @@ struct CORE_EXPORT Object
 namespace View
 {
     typedef uint8 MethodID;
-    struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl
+    struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
         virtual bool GoTo(uint64 offset)                                                                       = 0;
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
