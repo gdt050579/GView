@@ -1708,6 +1708,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PROPID_COLUMNS:
         value = this->Layout.nrCols;
         return true;
+    case PROPID_DATAFORMAT:
+        value = (uint64)this->Layout.charFormatMode;
+        return true;
     }
     return false;
 }
@@ -1719,6 +1722,10 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->Layout.nrCols = std::get<uint64>(value);
         UpdateViewSizes();
         return true;
+    case PROPID_DATAFORMAT:
+        this->Layout.charFormatMode = static_cast<CharacterFormatMode>(std::get<uint64>(value));
+        UpdateViewSizes();
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1728,7 +1735,12 @@ void Instance::SetCustomPropetyValue(uint32 propertyID)
 }
 bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
-    NOT_IMPLEMENTED(false);
+    if (propertyID == PROPID_DATAFORMAT)
+    {
+        // if full screen display --> dataformat is not available
+        return (this->Layout.nrCols == 0);
+    }
+    return false;
 }
 const vector<Property> Instance::GetPropertiesList()
 {
