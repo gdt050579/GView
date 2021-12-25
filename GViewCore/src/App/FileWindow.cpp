@@ -141,8 +141,8 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     {
         if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
         {
-            // a call to default view
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet !");
+            FileWindowProperties dlg;
+            dlg.Show();
             return true;
         }
     }

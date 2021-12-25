@@ -163,6 +163,11 @@ namespace App
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
     };
+    class FileWindowProperties: public Window
+    {
+      public:
+        FileWindowProperties();
+    };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
         Reference<Splitter> vertical, horizontal;
