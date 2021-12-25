@@ -166,7 +166,7 @@ namespace App
     class FileWindowProperties: public Window
     {
       public:
-        FileWindowProperties();
+        FileWindowProperties(Reference<Tab> viewContainer);
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {

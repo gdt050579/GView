@@ -141,7 +141,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     {
         if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
         {
-            FileWindowProperties dlg;
+            FileWindowProperties dlg(view);
             dlg.Show();
             return true;
         }
