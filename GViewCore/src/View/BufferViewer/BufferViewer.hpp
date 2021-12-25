@@ -202,7 +202,7 @@ namespace View
             bool SetPropertyValue(uint32 id, const PropertyValue& value, String& error) override;
             void SetCustomPropetyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
-            vector<Property> GetPropertiesList() override;
+            const vector<Property> GetPropertiesList() override;
         };
 
     } // namespace BufferViewer

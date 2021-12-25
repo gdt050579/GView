@@ -1694,13 +1694,34 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 }
 
 //======================================================================[PROPERTY]============================
+constexpr uint32 PROPID_COLUMNS    = 0;
+constexpr uint32 PROPID_DATAFORMAT = 1;
+constexpr uint32 PROPID_ASCII      = 2;
+constexpr uint32 PROPID_UNICODE    = 3;
+constexpr uint32 PROPID_CHARSET    = 4;
+constexpr uint32 PROPID_MINSTRSIZE = 5;
+
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
-    NOT_IMPLEMENTED(false);
+    switch (id)
+    {
+    case PROPID_COLUMNS:
+        value = this->Layout.nrCols;
+        return true;
+    }
+    return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    NOT_IMPLEMENTED(false);
+    switch (id)
+    {
+    case PROPID_COLUMNS:
+        this->Layout.nrCols = std::get<uint64>(value);
+        UpdateViewSizes();
+        return true;
+    }
+    error.SetFormat("Unknown internat ID: %u", id);
+    return false;
 }
 void Instance::SetCustomPropetyValue(uint32 propertyID)
 {
@@ -1709,7 +1730,14 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     NOT_IMPLEMENTED(false);
 }
-vector<Property> Instance::GetPropertiesList()
+const vector<Property> Instance::GetPropertiesList()
 {
-    return vector<Property>();
+    return {
+        { PROPID_COLUMNS, "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { PROPID_DATAFORMAT, "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
+        { PROPID_ASCII, "Strings", "Ascii", PropertyType::Boolean },
+        { PROPID_UNICODE, "Strings", "Unicode", PropertyType::Boolean },
+        { PROPID_CHARSET, "Strings", "Character set", PropertyType::Ascii },
+        { PROPID_MINSTRSIZE, "Strings", "Minim consecutives chars", PropertyType::UInt32 },
+    };
 }

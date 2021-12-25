@@ -16,6 +16,7 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
         if (viewObject)
         {
             auto tp_view = Factory::TabPage::Create(t, viewObject->GetName());
+            Factory::PropertyList::Create(tp_view, "d:c", viewObject.UpCast<PropertiesInterface>(), PropertyListFlags::Border);
         }
     }
 
