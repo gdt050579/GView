@@ -77,6 +77,19 @@ namespace View
             static void Update(IniSection sect);
             void Initialize();
         };
+        struct CodePageInfo
+        {
+            const char16* mapping;
+            string_view name;
+        };
+        enum class CodePageID: uint32
+        {
+            DOS_437,
+            Latin_1,
+            PrintableAscii,
+
+            Count // must be the last
+        };
         class Instance : public View::ViewControl
         {
             struct DrawLineInfo
@@ -133,13 +146,18 @@ namespace View
                 uint64 start, end;
                 bool highlight;
             } CurrentSelection;
+            struct
+            {
+                CodePageID id;
+                const char16* mapping;
+                String stringList;
+            } CodePage;
             bool showTypeObjects;
 
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
-            CharacterBuffer chars;
-            const char16* CodePage;
+            CharacterBuffer chars;            
             uint32 currentAdrressMode;
             BufferColor bufColor;
             FixSizeString<29> name;
@@ -174,6 +192,8 @@ namespace View
             void ResetStringInfo();
             std::string_view GetAsciiMaskStringRepresentation();
             bool SetStringAsciiMask(string_view stringRepresentation);
+
+            void SetCodePage(CodePageID id);
 
             ColorPair OffsetToColorZone(uint64 offset);
             ColorPair OffsetToColor(uint64 offset);

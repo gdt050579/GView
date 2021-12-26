@@ -13,7 +13,7 @@ const std::string_view signed_dec_header = "  +0   +1   +2   +3   +4   +5   +6  
 const std::string_view unsigned_dec_header =
       " +0  +1  +2  +3  +4  +5  +6  +7  +8  +9 +10 +11 +12 +13 +14 +15 +16 +17 +18 +19 +20 +21 +22 +23 +24 +25 +26 +27 +28 +29 +30 +31 ";
 
-const char16_t CodePage_437[] = {
+const char16 CodePage_437[] = {
     0x0020, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022, 0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
     0x25BA, 0x25C4, 0x2195, 0x203C, 0x00B6, 0x00A7, 0x25AC, 0x21A8, 0x2191, 0x2193, 0x2192, 0x2190, 0x221F, 0x2194, 0x25B2, 0x25BC,
     0x0020, 0x0021, 0x0022, 0x0023, 0x0024, 0x0025, 0x0026, 0x0027, 0x0028, 0x0029, 0x002A, 0x002B, 0x002C, 0x002D, 0x002E, 0x002F,
@@ -30,6 +30,35 @@ const char16_t CodePage_437[] = {
     0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
     0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
     0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0020
+};
+const char16 CodePage_Latin1[] = {
+    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25,
+    26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,
+    52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,
+    78,  79,  80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,  96,  97,  98,  99,  100, 101, 102, 103,
+    104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
+    130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155,
+    156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181,
+    182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
+    208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233,
+    234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255,
+};
+const char16 CodePage_PrintableAscii[] = {
+    32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,
+    32,  32,  32,  32,  32,  32,  32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,
+    52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,
+    78,  79,  80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,  96,  97,  98,  99,  100, 101, 102, 103,
+    104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 32,  32,
+    32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,
+    32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,
+    32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,
+    32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,
+    32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,  32,
+};
+CodePageInfo CodePages[(uint32) CodePageID::Count] = {
+    { CodePage_437, "OEM-437" },
+    { CodePage_Latin1, "Latin-1" },
+    { CodePage_PrintableAscii, "Printable Ascii" },
 };
 bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false,
@@ -52,6 +81,7 @@ constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
 constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
 constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
 constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
+constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
 
 Config Instance::config;
 
@@ -71,7 +101,6 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->Layout.xNumbers            = 0;
     this->Layout.xAddress            = 0;
     this->Layout.xText               = 0;
-    this->CodePage                   = CodePage_437;
     this->Cursor.currentPos          = 0;
     this->Cursor.startView           = 0;
     this->StringInfo.minCount        = 4;
@@ -86,6 +115,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
+    this->SetCodePage(CodePageID::DOS_437);
     this->bufColor.Reset();
     this->ResetStringInfo();
 
@@ -105,6 +135,13 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 }
+
+void Instance::SetCodePage(CodePageID id)
+{
+    this->CodePage.id      = id;
+    this->CodePage.mapping = CodePages[(uint32) this->CodePage.id].mapping;
+}
+
 void Instance::UpdateCurrentSelection()
 {
     this->CurrentSelection.size  = 0;
@@ -775,11 +812,11 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
-                    dli.chText->Code = CodePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
+                    dli.chText->Code = CodePage.mapping[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
             }
             else
             {
-                dli.chText->Code = CodePage[*dli.start];
+                dli.chText->Code = CodePage.mapping[*dli.start];
             }
             dli.chText->Color = cp;
             dli.chText++;
@@ -791,7 +828,7 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
     {
         while (dli.start < dli.end)
         {
-            dli.chText->Code  = CodePage[*dli.start];
+            dli.chText->Code  = CodePage.mapping[*dli.start];
             dli.chText->Color = config.Colors.Inactive;
             dli.chText++;
             dli.start++;
@@ -960,16 +997,16 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
-                    dli.chText->Code = CodePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
+                    dli.chText->Code = CodePage.mapping[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
             }
             else
             {
-                dli.chText->Code = CodePage[*dli.start];
+                dli.chText->Code = CodePage.mapping[*dli.start];
             }
         }
         else
         {
-            dli.chText->Code = CodePage[*dli.start];
+            dli.chText->Code = CodePage.mapping[*dli.start];
         }
 
         dli.chText->Color = cp;
@@ -1038,7 +1075,9 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     // base & codepage
     if (this->Layout.nrCols == 0)
     {
-        commandBar.SetCommand(config.Keys.ChangeBase, "CodePage", BUFFERVIEW_CMD_CHANGEBASE);
+        LocalString<64> tmp;
+        commandBar.SetCommand(
+              config.Keys.ChangeBase, tmp.Format("CP:%s", CodePages[(uint32) CodePage.id].name.data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
     }
     else
     {
@@ -1278,6 +1317,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             UpdateViewSizes();
         }
         return true;
+    case BUFFERVIEW_CMD_CHANGECODEPAGE:
+        this->SetCodePage(static_cast<CodePageID>((((uint32) CodePage.id) + 1) % (uint32) CodePageID::Count));
+        return true;
     case BUFFERVIEW_CMD_CHANGEADDRESSMODE:
         if ((this->settings) && (this->settings->translationMethodsCount > 0))
         {
@@ -1372,7 +1414,7 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
         break;
     case 1:
         r.WriteSingleLineText(x, 0, "Asc:  I8:     Hex:", this->CursorColors.Highlighted);
-        r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteCharacter(x + 4, 0, this->CodePage.mapping[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal, TextAlignament::Right);
         r.WriteSingleLineText(x + 18, 0, n.ToString(v_u8, fmt), this->CursorColors.Normal);
         r.WriteSpecialCharacter(x + 20, 0, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1380,7 +1422,7 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
     case 2:
         r.WriteSingleLineText(x, 0, "Asc:    I8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
-        r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteCharacter(x + 4, 0, this->CodePage.mapping[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u8, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 1, n.ToDec(v_u8), this->CursorColors.Normal);
@@ -1392,7 +1434,7 @@ int Instance::Print8bitValue(int x, int height, AppCUI::Utils::BufferView buffer
         r.WriteSingleLineText(x, 0, "Asc:    I8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 1, "Hex:    U8:", this->CursorColors.Highlighted);
         r.WriteSingleLineText(x, 2, "Bin:", this->CursorColors.Highlighted);
-        r.WriteCharacter(x + 4, 0, this->CodePage[v_u8], this->CursorColors.Normal);
+        r.WriteCharacter(x + 4, 0, this->CodePage.mapping[v_u8], this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 0, n.ToDec(*(const char*) (&v_u8)), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 4, 1, n.ToString(v_u8, fmt), this->CursorColors.Normal);
         r.WriteSingleLineText(x + 11, 1, n.ToDec(v_u8), this->CursorColors.Normal);
@@ -1729,6 +1771,8 @@ enum class PropertyID : uint32
     ShowTypeObject,
     AddressBarWidth,
     ZoneNameWidth,
+    CodePage,
+    // selection
     HighlightSelection,
     // strings
     ShowAscii,
@@ -1772,6 +1816,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::HighlightSelection:
         value = this->CurrentSelection.highlight;
         return true;
+    case PropertyID::CodePage:
+        value = (uint64) this->CodePage.id;
+        return true;
     }
     return false;
 }
@@ -1781,7 +1828,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::Columns:
-        this->Layout.nrCols = std::get<uint64>(value);
+        this->Layout.nrCols = (uint32)std::get<uint64>(value);
         UpdateViewSizes();
         return true;
     case PropertyID::DataFormat:
@@ -1837,6 +1884,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::HighlightSelection:
         this->CurrentSelection.highlight = std::get<bool>(value);
         return true;
+    case PropertyID::CodePage:
+        this->SetCodePage(static_cast<CodePageID>(std::get<uint64>(value)));
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1855,6 +1905,15 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
+    CodePage.stringList.Clear();
+    for (uint32 idx = 0; idx < (uint32) CodePageID::Count; idx++)
+    {
+        if (idx > 0)
+            CodePage.stringList.AddChar(',');
+        CodePage.stringList.Add(CodePages[idx].name.data(), (uint32) CodePages[idx].name.size());
+        CodePage.stringList.AddChar('=');
+        CodePage.stringList.AddFormat("%u", idx);
+    }
     return {
         { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
         { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
@@ -1863,6 +1922,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::AddressBarWidth), "Display", "Address Bar Width", PropertyType::UInt32 },
         { BT(PropertyID::ZoneNameWidth), "Display", "Zone name Width", PropertyType::UInt32 },
         { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
+        { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage.stringList.ToStringView() },
 
         { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
 
