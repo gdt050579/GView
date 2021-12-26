@@ -1696,30 +1696,38 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 }
 
 //======================================================================[PROPERTY]============================
-constexpr uint32 PROPID_COLUMNS    = 0;
-constexpr uint32 PROPID_DATAFORMAT = 1;
-constexpr uint32 PROPID_ASCII      = 2;
-constexpr uint32 PROPID_UNICODE    = 3;
-constexpr uint32 PROPID_CHARSET    = 4;
-constexpr uint32 PROPID_MINSTRSIZE = 5;
+enum class PropertyID : uint32
+{
+    Columns = 0,
+    DataFormat,
+    ShowAddress,
+    ShowZoneName,
+    AddressBarWidth,
+    ZoneNameWidth,
+    ShowAscii,
+    ShowUnicode,
+    StringCharacterSet,
+    MinimCharsInString
+};
+#define BT(t) static_cast<uint32>(t)
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
-    switch (id)
+    switch (static_cast<PropertyID>(id))
     {
-    case PROPID_COLUMNS:
+    case PropertyID::Columns:
         value = this->Layout.nrCols;
         return true;
-    case PROPID_DATAFORMAT:
+    case PropertyID::DataFormat:
         value = (uint64) this->Layout.charFormatMode;
         return true;
-    case PROPID_ASCII:
+    case PropertyID::ShowAscii:
         value = this->StringInfo.showAscii;
         return true;
-    case PROPID_UNICODE:
+    case PropertyID::ShowUnicode:
         value = this->StringInfo.showUnicode;
         return true;
-    case PROPID_MINSTRSIZE:
+    case PropertyID::MinimCharsInString:
         value = this->StringInfo.minCount;
         return true;
     }
@@ -1727,23 +1735,23 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    switch (id)
+    switch (static_cast<PropertyID>(id))
     {
-    case PROPID_COLUMNS:
+    case PropertyID::Columns:
         this->Layout.nrCols = std::get<uint64>(value);
         UpdateViewSizes();
         return true;
-    case PROPID_DATAFORMAT:
+    case PropertyID::DataFormat:
         this->Layout.charFormatMode = static_cast<CharacterFormatMode>(std::get<uint64>(value));
         UpdateViewSizes();
         return true;
-    case PROPID_ASCII:
+    case PropertyID::ShowAscii:
         this->StringInfo.showAscii = std::get<bool>(value);
         return true;
-    case PROPID_UNICODE:
+    case PropertyID::ShowUnicode:
         this->StringInfo.showUnicode = std::get<bool>(value);
         return true;
-    case PROPID_MINSTRSIZE:
+    case PropertyID::MinimCharsInString:
         auto tmpValue = std::get<uint32>(value);
         if ((tmpValue < 4) || (tmpValue > 20))
         {
@@ -1761,7 +1769,7 @@ void Instance::SetCustomPropetyValue(uint32 propertyID)
 }
 bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
-    if (propertyID == PROPID_DATAFORMAT)
+    if (static_cast<PropertyID>(propertyID) == PropertyID::DataFormat)
     {
         // if full screen display --> dataformat is not available
         return (this->Layout.nrCols == 0);
@@ -1771,11 +1779,16 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { PROPID_COLUMNS, "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
-        { PROPID_DATAFORMAT, "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
-        { PROPID_ASCII, "Strings", "Ascii", PropertyType::Boolean },
-        { PROPID_UNICODE, "Strings", "Unicode", PropertyType::Boolean },
-        { PROPID_CHARSET, "Strings", "Character set", PropertyType::Ascii },
-        { PROPID_MINSTRSIZE, "Strings", "Minim consecutives chars", PropertyType::UInt32 },
+        { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
+        { BT(PropertyID::ShowAddress), "Display", "Show Address", PropertyType::Boolean },
+        { BT(PropertyID::ShowZoneName), "Display", "Show Zone Name", PropertyType::Boolean },
+        { BT(PropertyID::AddressBarWidth), "Display", "Address Bar Width", PropertyType::UInt32 },
+        { BT(PropertyID::ZoneNameWidth), "Display", "Zone name Width", PropertyType::UInt32 },
+        { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
+        { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
+        { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
+        { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
     };
 }
+#undef BT
