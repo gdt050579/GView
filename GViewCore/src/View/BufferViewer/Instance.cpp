@@ -60,6 +60,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+    this->showTypeObjects          = true;
     this->Layout.nrCols            = 0;
     this->Layout.charFormatMode    = CharacterFormatMode::Hex;
     this->Layout.lineAddressSize   = 8;
@@ -487,7 +488,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
         }
     }
     // color
-    if ((settings) && (settings->positionToColorCallback))
+    if ((showTypeObjects) && (settings) && (settings->positionToColorCallback))
     {
         if ((offset >= bufColor.start) && (offset <= bufColor.end))
             return bufColor.color;
@@ -1724,6 +1725,7 @@ enum class PropertyID : uint32
     DataFormat,
     ShowAddress,
     ShowZoneName,
+    ShowTypeObject,
     AddressBarWidth,
     ZoneNameWidth,
     ShowAscii,
@@ -1760,6 +1762,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::StringCharacterSet:
         value = this->GetAsciiMaskStringRepresentation();
+        return true;
+    case PropertyID::ShowTypeObject:
+        value = this->showTypeObjects;
         return true;
     }
     return false;
@@ -1820,6 +1825,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
             return true;
         error = "Invalid format (use \\x<hex> values, ascii characters or '-' sign for intervals (ex: A-Z)";
         return false;
+    case PropertyID::ShowTypeObject:
+        this->showTypeObjects = std::get<bool>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1845,6 +1853,8 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowZoneName), "Display", "Show Zone Name", PropertyType::Boolean },
         { BT(PropertyID::AddressBarWidth), "Display", "Address Bar Width", PropertyType::UInt32 },
         { BT(PropertyID::ZoneNameWidth), "Display", "Zone name Width", PropertyType::UInt32 },
+        { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific objects", PropertyType::Boolean },
+
         { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
         { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
         { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },

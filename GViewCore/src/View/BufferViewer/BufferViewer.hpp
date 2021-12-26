@@ -132,6 +132,7 @@ namespace View
                 uint32 size;
                 uint64 start, end;
             } CurrentSelection;
+            bool showTypeObjects;
 
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
