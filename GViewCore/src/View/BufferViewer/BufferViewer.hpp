@@ -119,6 +119,7 @@ namespace View
                 uint32 minCount;
                 bool AsciiMask[256];
                 StringType type;
+                String asciiMaskRepr;
                 bool showAscii, showUnicode;
             } StringInfo;
             struct
@@ -169,6 +170,8 @@ namespace View
 
             void UpdateStringInfo(uint64 offset);
             void ResetStringInfo();
+            std::string_view GetAsciiMaskStringRepresentation();
+            bool SetStringAsciiMask(string_view stringRepresentation);
 
             ColorPair OffsetToColorZone(uint64 offset);
             ColorPair OffsetToColor(uint64 offset);

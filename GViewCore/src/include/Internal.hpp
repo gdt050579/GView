@@ -51,6 +51,21 @@ namespace Utils
         bool SetSelection(int index, unsigned long long start, unsigned long long end);
     };
 
+    class CharacterSet
+    {
+        bool Ascii[256];
+      public:
+        CharacterSet();
+        CharacterSet(bool asciiMask[256]);
+        void ClearAll();
+        void SetAll();
+        bool Set(uint32 start, uint32 end, bool value);
+        void Set(uint8 position, bool value);
+        bool Set(std::string_view stringRepresentation, bool value);
+        bool GetStringRepresentation(String& str) const;
+        void CopySetTo(bool ascii[256]);
+    };
+
     struct Zone
     {
         unsigned long long start, end;

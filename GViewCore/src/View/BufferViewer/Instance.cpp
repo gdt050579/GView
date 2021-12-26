@@ -323,6 +323,8 @@ void Instance::MoveToZone(bool startOfZone, bool select)
             MoveTo(z->end, select);
     }
 }
+
+
 void Instance::ResetStringInfo()
 {
     StringInfo.start  = GView::Utils::INVALID_OFFSET;
@@ -434,6 +436,26 @@ void Instance::UpdateStringInfo(uint64 offset)
     // all buffer was process and nothing was found
     StringInfo.end = offset + buf.GetLength();
 }
+std::string_view Instance::GetAsciiMaskStringRepresentation()
+{
+    GView::Utils::CharacterSet cSet(this->StringInfo.AsciiMask);
+    this->StringInfo.asciiMaskRepr.Clear();
+    if (cSet.GetStringRepresentation(this->StringInfo.asciiMaskRepr))
+        return this->StringInfo.asciiMaskRepr.ToStringView();
+    return "";
+}
+bool Instance::SetStringAsciiMask(string_view stringRepresentation)
+{
+    GView::Utils::CharacterSet cSet;
+    cSet.ClearAll();
+    if (cSet.Set(stringRepresentation,true))
+    {
+        cSet.CopySetTo(this->StringInfo.AsciiMask);
+        return true;
+    }
+    return false;
+}
+
 
 ColorPair Instance::OffsetToColorZone(uint64 offset)
 {
@@ -1736,6 +1758,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ZoneNameWidth:
         value = this->Layout.lineNameSize;
         return true;
+    case PropertyID::StringCharacterSet:
+        value = this->GetAsciiMaskStringRepresentation();
+        return true;
     }
     return false;
 }
@@ -1790,6 +1815,11 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->Layout.lineNameSize = tmpValue;
         UpdateViewSizes();
         return true;
+    case PropertyID::StringCharacterSet:
+        if (this->SetStringAsciiMask(std::get<string_view>(value)))
+            return true;
+        error = "Invalid format (use \\x<hex> values, ascii characters or '-' sign for intervals (ex: A-Z)";
+        return false;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
