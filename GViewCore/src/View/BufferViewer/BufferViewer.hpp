@@ -119,6 +119,7 @@ namespace View
                 uint32 minCount;
                 bool AsciiMask[256];
                 StringType type;
+                bool showAscii, showUnicode;
             } StringInfo;
             struct
             {

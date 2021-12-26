@@ -78,6 +78,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->StringInfo.middle        = GView::Utils::INVALID_OFFSET;
     this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
+    this->StringInfo.showAscii     = true;
+    this->StringInfo.showUnicode   = true;
     this->Cursor.base              = 16;
     this->currentAdrressMode       = 0;
     this->CurrentSelection.size    = 0;
@@ -1709,7 +1711,16 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->Layout.nrCols;
         return true;
     case PROPID_DATAFORMAT:
-        value = (uint64)this->Layout.charFormatMode;
+        value = (uint64) this->Layout.charFormatMode;
+        return true;
+    case PROPID_ASCII:
+        value = this->StringInfo.showAscii;
+        return true;
+    case PROPID_UNICODE:
+        value = this->StringInfo.showUnicode;
+        return true;
+    case PROPID_MINSTRSIZE:
+        value = this->StringInfo.minCount;
         return true;
     }
     return false;
@@ -1725,6 +1736,21 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PROPID_DATAFORMAT:
         this->Layout.charFormatMode = static_cast<CharacterFormatMode>(std::get<uint64>(value));
         UpdateViewSizes();
+        return true;
+    case PROPID_ASCII:
+        this->StringInfo.showAscii = std::get<bool>(value);
+        return true;
+    case PROPID_UNICODE:
+        this->StringInfo.showUnicode = std::get<bool>(value);
+        return true;
+    case PROPID_MINSTRSIZE:
+        auto tmpValue = std::get<uint32>(value);
+        if ((tmpValue < 4) || (tmpValue > 20))
+        {
+            error = "The minim size of a string must be a value between 4 and 20 !";
+            return false;
+        }
+        this->StringInfo.minCount = tmpValue;
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
