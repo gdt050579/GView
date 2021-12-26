@@ -60,28 +60,29 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->obj  = _obj;
     this->name = _name;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-    this->showTypeObjects          = true;
-    this->Layout.nrCols            = 0;
-    this->Layout.charFormatMode    = CharacterFormatMode::Hex;
-    this->Layout.lineAddressSize   = 8;
-    this->Layout.lineNameSize      = 8;
-    this->Layout.charactersPerLine = 1;
-    this->Layout.visibleRows       = 1;
-    this->Layout.xName             = 0;
-    this->Layout.xNumbers          = 0;
-    this->Layout.xAddress          = 0;
-    this->Layout.xText             = 0;
-    this->CodePage                 = CodePage_437;
-    this->Cursor.currentPos        = 0;
-    this->Cursor.startView         = 0;
-    this->StringInfo.minCount      = 4;
-    this->StringInfo.showAscii     = true;
-    this->StringInfo.showUnicode   = true;
-    this->Cursor.base              = 16;
-    this->currentAdrressMode       = 0;
-    this->CurrentSelection.size    = 0;
-    this->CurrentSelection.start   = GView::Utils::INVALID_OFFSET;
-    this->CurrentSelection.end     = GView::Utils::INVALID_OFFSET;
+    this->showTypeObjects            = true;
+    this->Layout.nrCols              = 0;
+    this->Layout.charFormatMode      = CharacterFormatMode::Hex;
+    this->Layout.lineAddressSize     = 8;
+    this->Layout.lineNameSize        = 8;
+    this->Layout.charactersPerLine   = 1;
+    this->Layout.visibleRows         = 1;
+    this->Layout.xName               = 0;
+    this->Layout.xNumbers            = 0;
+    this->Layout.xAddress            = 0;
+    this->Layout.xText               = 0;
+    this->CodePage                   = CodePage_437;
+    this->Cursor.currentPos          = 0;
+    this->Cursor.startView           = 0;
+    this->StringInfo.minCount        = 4;
+    this->StringInfo.showAscii       = true;
+    this->StringInfo.showUnicode     = true;
+    this->Cursor.base                = 16;
+    this->currentAdrressMode         = 0;
+    this->CurrentSelection.size      = 0;
+    this->CurrentSelection.start     = GView::Utils::INVALID_OFFSET;
+    this->CurrentSelection.end       = GView::Utils::INVALID_OFFSET;
+    this->CurrentSelection.highlight = true;
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
@@ -325,7 +326,6 @@ void Instance::MoveToZone(bool startOfZone, bool select)
     }
 }
 
-
 void Instance::ResetStringInfo()
 {
     StringInfo.start  = GView::Utils::INVALID_OFFSET;
@@ -449,14 +449,13 @@ bool Instance::SetStringAsciiMask(string_view stringRepresentation)
 {
     GView::Utils::CharacterSet cSet;
     cSet.ClearAll();
-    if (cSet.Set(stringRepresentation,true))
+    if (cSet.Set(stringRepresentation, true))
     {
         cSet.CopySetTo(this->StringInfo.AsciiMask);
         return true;
     }
     return false;
 }
-
 
 ColorPair Instance::OffsetToColorZone(uint64 offset)
 {
@@ -469,10 +468,11 @@ ColorPair Instance::OffsetToColorZone(uint64 offset)
 ColorPair Instance::OffsetToColor(uint64 offset)
 {
     // current selection
-    if (this->CurrentSelection.size)
+    if ((this->CurrentSelection.size) && (this->CurrentSelection.highlight))
     {
         if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
             return config.Colors.SameSelection;
+
         auto b = this->obj->cache.Get(offset, this->CurrentSelection.size);
         if ((b.IsValid()) && (b.GetLength() == this->CurrentSelection.size))
         {
@@ -1721,6 +1721,7 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 //======================================================================[PROPERTY]============================
 enum class PropertyID : uint32
 {
+    // display
     Columns = 0,
     DataFormat,
     ShowAddress,
@@ -1728,6 +1729,8 @@ enum class PropertyID : uint32
     ShowTypeObject,
     AddressBarWidth,
     ZoneNameWidth,
+    HighlightSelection,
+    // strings
     ShowAscii,
     ShowUnicode,
     StringCharacterSet,
@@ -1766,6 +1769,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ShowTypeObject:
         value = this->showTypeObjects;
         return true;
+    case PropertyID::HighlightSelection:
+        value = this->CurrentSelection.highlight;
+        return true;
     }
     return false;
 }
@@ -1802,7 +1808,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::AddressBarWidth:
         tmpValue = std::get<uint32>(value);
-        if (tmpValue>20)
+        if (tmpValue > 20)
         {
             error = "Address bar size must not exceed 20 characters !";
             return false;
@@ -1827,6 +1833,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return false;
     case PropertyID::ShowTypeObject:
         this->showTypeObjects = std::get<bool>(value);
+        return true;
+    case PropertyID::HighlightSelection:
+        this->CurrentSelection.highlight = std::get<bool>(value);
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
@@ -1853,7 +1862,9 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowZoneName), "Display", "Show Zone Name", PropertyType::Boolean },
         { BT(PropertyID::AddressBarWidth), "Display", "Address Bar Width", PropertyType::UInt32 },
         { BT(PropertyID::ZoneNameWidth), "Display", "Zone name Width", PropertyType::UInt32 },
-        { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific objects", PropertyType::Boolean },
+        { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
+
+        { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
 
         { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
         { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },

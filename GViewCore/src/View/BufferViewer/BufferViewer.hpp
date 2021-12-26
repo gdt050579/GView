@@ -131,6 +131,7 @@ namespace View
                 uint8 buffer[256];
                 uint32 size;
                 uint64 start, end;
+                bool highlight;
             } CurrentSelection;
             bool showTypeObjects;
 
