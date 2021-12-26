@@ -168,6 +168,7 @@ namespace View
             void MoveTillNextBlock(bool select, int dir);
 
             void UpdateStringInfo(uint64 offset);
+            void ResetStringInfo();
 
             ColorPair OffsetToColorZone(uint64 offset);
             ColorPair OffsetToColor(uint64 offset);

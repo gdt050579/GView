@@ -73,10 +73,6 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->CodePage                 = CodePage_437;
     this->Cursor.currentPos        = 0;
     this->Cursor.startView         = 0;
-    this->StringInfo.start         = GView::Utils::INVALID_OFFSET;
-    this->StringInfo.end           = GView::Utils::INVALID_OFFSET;
-    this->StringInfo.middle        = GView::Utils::INVALID_OFFSET;
-    this->StringInfo.type          = StringType::None;
     this->StringInfo.minCount      = 4;
     this->StringInfo.showAscii     = true;
     this->StringInfo.showUnicode   = true;
@@ -89,6 +85,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
     this->bufColor.Reset();
+    this->ResetStringInfo();
 
     // settings
     if ((_settings) && (_settings->data))
@@ -326,19 +323,24 @@ void Instance::MoveToZone(bool startOfZone, bool select)
             MoveTo(z->end, select);
     }
 }
+void Instance::ResetStringInfo()
+{
+    StringInfo.start  = GView::Utils::INVALID_OFFSET;
+    StringInfo.end    = GView::Utils::INVALID_OFFSET;
+    StringInfo.middle = GView::Utils::INVALID_OFFSET;
+    StringInfo.type   = StringType::None;
+}
 void Instance::UpdateStringInfo(uint64 offset)
 {
     auto buf = this->obj->cache.Get(offset, 1024);
     if (!buf.IsValid())
     {
-        StringInfo.start  = GView::Utils::INVALID_OFFSET;
-        StringInfo.end    = GView::Utils::INVALID_OFFSET;
-        StringInfo.middle = GView::Utils::INVALID_OFFSET;
-        StringInfo.type   = StringType::None;
+        ResetStringInfo();
         return;
     }
 
     // check for ascii
+    if (this->StringInfo.showAscii)
     {
         auto* s = buf.GetData();
         auto* e = s + buf.GetLength();
@@ -359,6 +361,7 @@ void Instance::UpdateStringInfo(uint64 offset)
     }
 
     // check for unicode
+    if (this->StringInfo.showUnicode)
     {
         auto* s = (char16_t*) buf.GetData();
         auto* e = s + buf.GetLength() / 2;
@@ -483,21 +486,18 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     }
     else
     {
-        UpdateStringInfo(offset);
-        // if (StringInfo.type == StringType::None)
-        //{
-        //    LocalString<128> tmp;
-        //    tmp.Format("No string: Start: %d, Size: %d ", (int) StringInfo.start, (int) (StringInfo.end - StringInfo.start));
-        //    LOG_INFO(tmp.GetText());
-        //}
-        if ((offset >= StringInfo.start) && (offset < StringInfo.end))
+        if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
         {
-            switch (StringInfo.type)
+            UpdateStringInfo(offset);
+            if ((offset >= StringInfo.start) && (offset < StringInfo.end))
             {
-            case StringType::Ascii:
-                return config.Colors.Ascii;
-            case StringType::Unicode:
-                return config.Colors.Unicode;
+                switch (StringInfo.type)
+                {
+                case StringType::Ascii:
+                    return config.Colors.Ascii;
+                case StringType::Unicode:
+                    return config.Colors.Unicode;
+                }
             }
         }
     }
@@ -1730,11 +1730,18 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::MinimCharsInString:
         value = this->StringInfo.minCount;
         return true;
+    case PropertyID::AddressBarWidth:
+        value = this->Layout.lineAddressSize;
+        return true;
+    case PropertyID::ZoneNameWidth:
+        value = this->Layout.lineNameSize;
+        return true;
     }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
+    uint32 tmpValue;
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::Columns:
@@ -1747,18 +1754,41 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::ShowAscii:
         this->StringInfo.showAscii = std::get<bool>(value);
+        this->ResetStringInfo();
         return true;
     case PropertyID::ShowUnicode:
         this->StringInfo.showUnicode = std::get<bool>(value);
+        this->ResetStringInfo();
         return true;
     case PropertyID::MinimCharsInString:
-        auto tmpValue = std::get<uint32>(value);
-        if ((tmpValue < 4) || (tmpValue > 20))
+        tmpValue = std::get<uint32>(value);
+        if ((tmpValue < 3) || (tmpValue > 20))
         {
-            error = "The minim size of a string must be a value between 4 and 20 !";
+            error = "The minim size of a string must be a value between 3 and 20 !";
             return false;
         }
         this->StringInfo.minCount = tmpValue;
+        this->ResetStringInfo();
+        return true;
+    case PropertyID::AddressBarWidth:
+        tmpValue = std::get<uint32>(value);
+        if (tmpValue>20)
+        {
+            error = "Address bar size must not exceed 20 characters !";
+            return false;
+        }
+        this->Layout.lineAddressSize = tmpValue;
+        UpdateViewSizes();
+        return true;
+    case PropertyID::ZoneNameWidth:
+        tmpValue = std::get<uint32>(value);
+        if (tmpValue > 20)
+        {
+            error = "Zone name bar size must not exceed 20 characters !";
+            return false;
+        }
+        this->Layout.lineNameSize = tmpValue;
+        UpdateViewSizes();
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
