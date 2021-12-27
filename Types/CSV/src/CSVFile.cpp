@@ -15,8 +15,8 @@ std::string_view CSVFile::CSVFile::GetTypeName()
 bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 {
     this->obj = obj;
-    std::string_view name{ this->obj->name };
-    std::string_view extension{ this->obj->name };
+    std::string name{ this->obj->name };
+    std::string extension{ this->obj->name };
 
     if (name == ".tsv")
     {
@@ -39,7 +39,7 @@ bool GView::Type::CSV::CSVFile::HasPanel(Panels::IDs id)
     return (this->panelsMask & (1ULL << ((unsigned char) id))) != 0;
 }
 
-void GView::Type::CSV::CSVFile::UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView)
+void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings)
 {
     // get every row here
     const auto color         = ColorPair{ Color::Gray, Color::Transparent };
@@ -49,7 +49,7 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(Reference<GView::View::Buf
     {
         if (i == file->GetSize() - 1)
         {
-            bufferView->AddZone(rowNo, i, color, std::to_string(rowNo));
+            settings.AddZone(rowNo, i, color, std::to_string(rowNo));
             rowNo++;
             break;
         }
@@ -62,12 +62,12 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(Reference<GView::View::Buf
             {
                 i++;
             }
-            bufferView->AddZone(rowNo, i, color, std::to_string(rowNo));
+            settings.AddZone(rowNo, i, color, std::to_string(rowNo));
             rowNo++;
         }
         else if (character == '\n')
         {
-            bufferView->AddZone(rowNo, i, color, std::to_string(rowNo));
+            settings.AddZone(rowNo, i, color, std::to_string(rowNo));
             rowNo++;
         }
     }
