@@ -10,7 +10,7 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
     auto tp1 = Factory::TabPage::Create(t, "General");
 
     // process all view modes
-    for (uint32 idx = 0; idx < viewContainer->GetChildernCount(); idx++)
+    for (uint32 idx = 0; idx < viewContainer->GetChildrenCount(); idx++)
     {
         auto viewObject = viewContainer->GetChild(idx).DownCast<ViewControl>();
         if (viewObject)
