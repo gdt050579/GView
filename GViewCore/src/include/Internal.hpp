@@ -15,10 +15,11 @@ namespace Utils
 {
     class Selection
     {
-        static const unsigned int MAX_SELECTION_ZONES = 4;
+        static constexpr uint32 MAX_SELECTION_ZONES = 4;
         struct
         {
-            unsigned long long start, end, originalPoint;
+            uint64 start, end, originalPoint;
+            FixSizeString<32> stringRepresentation;
         } zones[MAX_SELECTION_ZONES];
         bool singleSelectionZone;
 
@@ -26,11 +27,11 @@ namespace Utils
         Selection();
         void Clear();
         bool Clear(int index);
-        inline unsigned int GetCount() const
+        inline constexpr uint32 GetCount() const
         {
             return Selection::MAX_SELECTION_ZONES;
         }
-        bool GetSelection(int index, unsigned long long& Start, unsigned long long& End);
+        bool GetSelection(uint32 index, uint64& Start, uint64& End);
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
@@ -44,11 +45,12 @@ namespace Utils
         {
             return singleSelectionZone;
         }
-        int OffsetToSelection(unsigned long long offset, unsigned long long& Start, unsigned long long& End);
-        bool Contains(unsigned long long offset) const;
-        bool UpdateSelection(int index, unsigned long long offset);
-        int BeginSelection(unsigned long long offset);
-        bool SetSelection(int index, unsigned long long start, unsigned long long end);
+        int OffsetToSelection(uint64 offset, uint64& Start, uint64& End);
+        bool Contains(uint64 offset) const;
+        bool UpdateSelection(int index, uint64 offset);
+        int BeginSelection(uint64 offset);
+        bool SetSelection(uint32 index, uint64 start, uint64 end);
+        string_view GetStringRepresentation(uint32 index);
     };
 
     class CharacterSet

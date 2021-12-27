@@ -25,7 +25,7 @@ bool Selection::Clear(int index)
 	return true;
 }
 
-bool Selection::GetSelection(int index, uint64 &Start, uint64 &End)
+bool Selection::GetSelection(uint32 index, uint64 &Start, uint64 &End)
 {
 	CHECK((index < Selection::MAX_SELECTION_ZONES) && (index >= 0), false, "Invalid selection index (%d) - should be between 0 and %d", index, Selection::MAX_SELECTION_ZONES - 1);
 	auto sel = zones + index;
@@ -139,7 +139,7 @@ int	 Selection::BeginSelection(uint64 position)
 	// for multiple selections
 	decltype(&zones[0]) s = nullptr;
 	int free = -1;
-	for (int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
 	{		
 		if (zones[tr].start == INVALID_OFFSET)
 		{
@@ -163,9 +163,9 @@ int	 Selection::BeginSelection(uint64 position)
 	}
 	return -1;
 }
-bool Selection::SetSelection(int index, uint64 start, uint64 end)
+bool Selection::SetSelection(uint32 index, uint64 start, uint64 end)
 {
-	CHECK((index >= 0) && (index < Selection::MAX_SELECTION_ZONES), false, "");
+	CHECK((index < Selection::MAX_SELECTION_ZONES), false, "");
 	if ((singleSelectionZone) && (index > 0))
 		return false;
 	CHECK(start != INVALID_OFFSET, false, "");
@@ -181,4 +181,20 @@ bool Selection::SetSelection(int index, uint64 start, uint64 end)
 		zones[index].end = start;
 	}
 	return true;
+}
+
+string_view Selection::GetStringRepresentation(uint32 index)
+{
+    if (index >= Selection::MAX_SELECTION_ZONES)
+        return "";
+    LocalString<128> tmp;
+    if (zones[index].start == INVALID_OFFSET)
+        return "NO SELECTION";
+    NumericFormatter n;
+    tmp.Set("Offset:0x");
+    tmp.Add(n.ToHex(zones[index].start));
+    tmp.Add("  Size:0x");
+    tmp.Add(n.ToHex((zones[index].end - zones[index].start) + 1));
+    zones[index].stringRepresentation = tmp.ToStringView();
+    return zones[index].stringRepresentation;
 }

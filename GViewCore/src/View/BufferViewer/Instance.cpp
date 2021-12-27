@@ -1775,6 +1775,10 @@ enum class PropertyID : uint32
     // selection
     HighlightSelection,
     SelectionType,
+    Selection_1,
+    Selection_2,
+    Selection_3,
+    Selection_4,
     // strings
     ShowAscii,
     ShowUnicode,
@@ -1825,6 +1829,15 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::CodePage:
         value = (uint64) this->CodePage.id;
+        return true;
+    case PropertyID::SelectionType:
+        value = this->selection.IsSingleSelectionEnabled() ? (uint64) 0 : (uint64) 1;
+        return true;
+    case PropertyID::Selection_1:
+    case PropertyID::Selection_2:
+    case PropertyID::Selection_3:
+    case PropertyID::Selection_4:
+        value = "NO SELECTION";
         return true;
     }
     return false;
@@ -1900,6 +1913,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::CodePage:
         this->SetCodePage(static_cast<CodePageID>(std::get<uint64>(value)));
         return true;
+    case PropertyID::SelectionType:
+        this->selection.EnableMultiSelection(std::get<uint64>(value) == 1);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1913,6 +1929,10 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
     {
     case PropertyID::DataFormat:
         return (this->Layout.nrCols == 0); // if full screen display --> dataformat is not available
+    case PropertyID::Selection_2:
+    case PropertyID::Selection_3:
+    case PropertyID::Selection_4:
+        return this->selection.IsSingleSelectionEnabled();
     }
 
     return false;
@@ -1943,7 +1963,11 @@ const vector<Property> Instance::GetPropertiesList()
 
         // Selection
         { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
-        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=4" },
+        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=1" },
+        { BT(PropertyID::Selection_1), "Selection", "Selection 1", PropertyType::Custom },
+        { BT(PropertyID::Selection_2), "Selection", "Selection 2", PropertyType::Custom },
+        { BT(PropertyID::Selection_3), "Selection", "Selection 3", PropertyType::Custom },
+        { BT(PropertyID::Selection_4), "Selection", "Selection 4", PropertyType::Custom },
 
         // String
         { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
