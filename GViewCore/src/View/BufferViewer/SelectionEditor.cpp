@@ -8,15 +8,23 @@ constexpr int32 BTN_ID_CLEAR  = 2;
 constexpr int32 BTN_ID_RELOAD = 3;
 constexpr int32 BTN_ID_CANCEL = 4;
 
-SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 index, Reference<SettingsData> _settings)
-    : Window("Selection Editor", "d:c,w:61,h:10", WindowFlags::None), selection(_selection), zoneIndex(index), settings(_settings)
+SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 index, Reference<SettingsData> _settings, uint64 sz)
+    : Window("Selection Editor", "d:c,w:61,h:10", WindowFlags::None), selection(_selection), zoneIndex(index), settings(_settings),
+      maxSize(sz)
 {
     LocalString<128> tmp;
-    for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++)
+    if (this->settings->translationMethodsCount == 0)
     {
-        if (tr > 0)
-            tmp.AddChar(',');
-        tmp.Add(settings->translationMethods[tr].name);
+        tmp.Set("FileOffset");
+    }
+    else
+    {
+        for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++)
+        {
+            if (tr > 0)
+                tmp.AddChar(',');
+            tmp.Add(settings->translationMethods[tr].name);
+        }
     }
     Factory::Label::Create(this, "&Offset", "x:1,y:1,w:6");
     Factory::Label::Create(this, "&Type", "x:30,y:1,w:5");
@@ -61,7 +69,7 @@ bool SelectionEditor::GetValues(uint64& start, uint64& size)
     auto ofs = Number::ToUInt64(tmp, flags);
     if (!ofs.has_value())
     {
-        Dialogs::MessageBox::ShowError("Error", "Offset `%s` is not a valid UInt64 number !");
+        Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%s` is not a valid UInt64 number !", tmp.GetText()));
         txOffset->SetFocus();
         return false;
     }
@@ -74,13 +82,62 @@ bool SelectionEditor::GetValues(uint64& start, uint64& size)
     auto sz = Number::ToUInt64(tmp, flags);
     if (!sz.has_value())
     {
-        Dialogs::MessageBox::ShowError("Error", "Size `%s` is not a valid UInt64 number !");
+        Dialogs::MessageBox::ShowError("Error", error.Format("Size `%s` is not a valid UInt64 number !", tmp.GetText()));
         txSize->SetFocus();
         return false;
     }
     // all good
     start = ofs.value();
-    size  = sz.value();
+    // convert to FileOffset
+    if (settings->offsetTranslateCallback.IsValid())
+    {
+        auto result = settings->offsetTranslateCallback->TranslateToFileOffset(start, cbOfsType->GetCurrentItemIndex());
+        if (result == GView::Utils::INVALID_OFFSET)
+        {
+            Dialogs::MessageBox::ShowError(
+                  "Error",
+                  error.Format(
+                        "Offset `%llu` is not a valid '%s' value !",
+                        start,
+                        settings->translationMethods[cbOfsType->GetCurrentItemIndex()].name.GetText()));
+            txOffset->SetFocus();
+            return false;
+        }
+        start = result;
+    }
+    size = sz.value();
+    if (start >= maxSize)
+    {
+        Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%llu` is bigger than the offset size: `%llu`", start, maxSize));
+        txOffset->SetFocus();
+        return false;
+    }
+    if (size >= maxSize)
+    {
+        Dialogs::MessageBox::ShowError("Error", error.Format("Size `%llu` is bigger than the offset size: `%llu`", size, maxSize));
+        txSize->SetFocus();
+        return false;
+    }
+    auto end = start + size;
+    if ((end < start) || (end < size))
+    {
+        Dialogs::MessageBox::ShowError(
+              "Error", error.Format("Integer overflow while summing up start:`%llu` to size: `%llu`", start, size));
+        txOffset->SetFocus();
+        return false;
+    }
+    if (start + size > maxSize)
+    {
+        Dialogs::MessageBox::ShowError("Error", error.Format("Selection is outside maximum size (%llu)", maxSize));
+        txOffset->SetFocus();
+        return false;
+    }
+    if (size == 0)
+    {
+        Dialogs::MessageBox::ShowError("Error", "Selection size can not be 0 !");
+        txSize->SetFocus();
+        return false;
+    }
     return true;
 }
 void SelectionEditor::RefreshSizeAndOffset()
@@ -115,9 +172,9 @@ void SelectionEditor::Validate()
     }
     // we have some values
     uint64 start, size;
-    if (GetValues(start,size))
+    if (GetValues(start, size))
     {
-        selection->SetSelection(zoneIndex, start, start+size-1);
+        selection->SetSelection(zoneIndex, start, start + size - 1);
         Exit(0);
         return;
     }
@@ -143,7 +200,7 @@ bool SelectionEditor::OnEvent(Reference<Control> control, Event eventType, int I
             return true;
         }
     }
- 
+
     switch (eventType)
     {
     case Event::WindowAccept:

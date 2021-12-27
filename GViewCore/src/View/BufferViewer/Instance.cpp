@@ -1932,7 +1932,8 @@ void Instance::SetCustomPropetyValue(uint32 propertyID)
     if ((propID == PropertyID::Selection_1) || (propID == PropertyID::Selection_2) || (propID == PropertyID::Selection_3) ||
         (propID == PropertyID::Selection_4))
     {
-        SelectionEditor dlg(&this->selection, propertyID - (uint32) (PropertyID::Selection_1), this->settings.get());
+        const auto idx = propertyID - (uint32) (PropertyID::Selection_1);
+        SelectionEditor dlg(&this->selection, idx, this->settings.get(), this->obj->cache.GetSize());
         dlg.Show();
     }
 }

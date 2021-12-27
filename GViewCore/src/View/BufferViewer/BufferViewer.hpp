@@ -39,7 +39,7 @@ namespace View
             Reference<PositionToColorInterface> positionToColorCallback;
             SettingsData();
         };
-        enum class MouseLocation: uint8
+        enum class MouseLocation : uint8
         {
             OnView,
             OnHeader,
@@ -82,7 +82,7 @@ namespace View
             const char16* mapping;
             string_view name;
         };
-        enum class CodePageID: uint32
+        enum class CodePageID : uint32
         {
             DOS_437,
             Latin_1,
@@ -157,7 +157,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
-            CharacterBuffer chars;            
+            CharacterBuffer chars;
             uint32 currentAdrressMode;
             BufferColor bufColor;
             FixSizeString<29> name;
@@ -231,7 +231,7 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
-        class SelectionEditor: public Window
+        class SelectionEditor : public Window
         {
             Reference<Utils::Selection> selection;
             Reference<SettingsData> settings;
@@ -240,15 +240,16 @@ namespace View
             Reference<ComboBox> cbOfsType;
             Reference<ComboBox> cbBase;
             uint32 zoneIndex;
+            uint64 maxSize;
 
             void RefreshSizeAndOffset();
             void Validate();
             bool GetValues(uint64& start, uint64& size);
+
           public:
-            SelectionEditor(Reference<Utils::Selection> selection, uint32 index, Reference<SettingsData> settings);
+            SelectionEditor(Reference<Utils::Selection> selection, uint32 index, Reference<SettingsData> settings, uint64 size);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-
         };
     } // namespace BufferViewer
 } // namespace View
