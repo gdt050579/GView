@@ -35,9 +35,9 @@ SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 
     cbOfsType->SetCurentItemIndex(0);
 
     Factory::Button::Create(this, "OK", "l:2,b:0,w:13", BTN_ID_OK);
-    Factory::Button::Create(this, "ClearSel", "l:16,b:0,w:13", BTN_ID_CLEAR);
-    Factory::Button::Create(this, "Reload", "l:30,b:0,w:13", BTN_ID_RELOAD);
-    Factory::Button::Create(this, "Cancel", "l:44,b:0,w:13", BTN_ID_CANCEL);
+    Factory::Button::Create(this, "C&learSel", "l:16,b:0,w:13", BTN_ID_CLEAR);
+    Factory::Button::Create(this, "&Reload", "l:30,b:0,w:13", BTN_ID_RELOAD);
+    Factory::Button::Create(this, "&Cancel", "l:44,b:0,w:13", BTN_ID_CANCEL);
 
     RefreshSizeAndOffset();
 }
