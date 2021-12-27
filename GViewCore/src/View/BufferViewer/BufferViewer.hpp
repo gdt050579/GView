@@ -233,15 +233,16 @@ namespace View
         };
         class SelectionEditor: public Window
         {
-            Reference<Instance> instance;
+            Reference<Utils::Selection> selection;
             Reference<TextField> txOffset;
             Reference<TextField> txSize;
             Reference<ComboBox> cbOfsType;
+            uint32 zoneIndex;
 
             void RefreshSizeAndOffset();
             void Validate();
           public:
-            SelectionEditor(Reference<Instance> instance, uint32 index);
+            SelectionEditor(Reference<Utils::Selection> selection, uint32 index);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
