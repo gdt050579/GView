@@ -14,9 +14,11 @@ SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 
     Factory::Label::Create(this, "&Offset", "x:1,y:1,w:10");
     Factory::Label::Create(this, "&Type", "x:35,y:1,w:10");
     Factory::Label::Create(this, "&Size", "x:1,y:3,w:10");
+    Factory::Label::Create(this, "&Base", "x:35,y:3,w:10");
     txOffset  = Factory::TextField::Create(this, "", "x:11,y:1,w:20");
     cbOfsType = Factory::ComboBox::Create(this, "x:40,y:1,w:17");
     txSize    = Factory::TextField::Create(this, "", "x:11,y:3,w:20");
+    cbBase    = Factory::ComboBox::Create(this, "x:40,y:3,w:17", "Auto,Dec,Hex");
     Factory::Button::Create(this, "OK", "l:2,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "ClearSel", "l:16,b:0,w:13", BTN_ID_CLEAR);
     Factory::Button::Create(this, "Reload", "l:30,b:0,w:13", BTN_ID_RELOAD);
@@ -29,7 +31,7 @@ void SelectionEditor::RefreshSizeAndOffset()
     LocalString<128> tmp;
     NumericFormatter n;
     uint64 start, end;
-    if (selection->GetSelection(zoneIndex,start,end))
+    if (selection->GetSelection(zoneIndex, start, end))
     {
         tmp.Set("0x");
         tmp.Add(n.ToHex(start));

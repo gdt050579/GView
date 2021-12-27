@@ -237,6 +237,7 @@ namespace View
             Reference<TextField> txOffset;
             Reference<TextField> txSize;
             Reference<ComboBox> cbOfsType;
+            Reference<ComboBox> cbBase;
             uint32 zoneIndex;
 
             void RefreshSizeAndOffset();
