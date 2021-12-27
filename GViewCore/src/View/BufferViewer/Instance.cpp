@@ -1774,6 +1774,7 @@ enum class PropertyID : uint32
     CodePage,
     // selection
     HighlightSelection,
+    SelectionType,
     // strings
     ShowAscii,
     ShowUnicode,
@@ -1801,8 +1802,14 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::MinimCharsInString:
         value = this->StringInfo.minCount;
         return true;
+    case PropertyID::ShowAddress:
+        value = this->Layout.lineAddressSize > 0;
+        return true;
     case PropertyID::AddressBarWidth:
         value = this->Layout.lineAddressSize;
+        return true;
+    case PropertyID::ShowZoneName:
+        value = this->Layout.lineNameSize > 0;
         return true;
     case PropertyID::ZoneNameWidth:
         value = this->Layout.lineNameSize;
@@ -1828,7 +1835,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::Columns:
-        this->Layout.nrCols = (uint32)std::get<uint64>(value);
+        this->Layout.nrCols = (uint32) std::get<uint64>(value);
         UpdateViewSizes();
         return true;
     case PropertyID::DataFormat:
@@ -1852,6 +1859,12 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         }
         this->StringInfo.minCount = tmpValue;
         this->ResetStringInfo();
+        return true;
+    case PropertyID::ShowAddress:
+        this->Layout.lineAddressSize = std::get<bool>(value) ? 8 : 0;
+        return true;
+    case PropertyID::ShowZoneName:
+        this->Layout.lineNameSize = std::get<bool>(value) ? 8 : 0;
         return true;
     case PropertyID::AddressBarWidth:
         tmpValue = std::get<uint32>(value);
@@ -1896,11 +1909,12 @@ void Instance::SetCustomPropetyValue(uint32 propertyID)
 }
 bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
-    if (static_cast<PropertyID>(propertyID) == PropertyID::DataFormat)
+    switch (static_cast<PropertyID>(propertyID))
     {
-        // if full screen display --> dataformat is not available
-        return (this->Layout.nrCols == 0);
+    case PropertyID::DataFormat:
+        return (this->Layout.nrCols == 0); // if full screen display --> dataformat is not available
     }
+
     return false;
 }
 const vector<Property> Instance::GetPropertiesList()
@@ -1915,17 +1929,23 @@ const vector<Property> Instance::GetPropertiesList()
         CodePage.stringList.AddFormat("%u", idx);
     }
     return {
+        // Display
         { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
         { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
-        { BT(PropertyID::ShowAddress), "Display", "Show Address", PropertyType::Boolean },
-        { BT(PropertyID::ShowZoneName), "Display", "Show Zone Name", PropertyType::Boolean },
-        { BT(PropertyID::AddressBarWidth), "Display", "Address Bar Width", PropertyType::UInt32 },
-        { BT(PropertyID::ZoneNameWidth), "Display", "Zone name Width", PropertyType::UInt32 },
         { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
         { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage.stringList.ToStringView() },
 
-        { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
+        // Address
+        { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
+        { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
+        { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
+        { BT(PropertyID::ZoneNameWidth), "Address", "Zone name Width", PropertyType::UInt32 },
 
+        // Selection
+        { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
+        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=4" },
+
+        // String
         { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
         { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
         { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
