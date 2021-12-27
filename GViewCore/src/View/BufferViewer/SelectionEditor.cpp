@@ -26,7 +26,23 @@ SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 
 }
 void SelectionEditor::RefreshSizeAndOffset()
 {
-    
+    LocalString<128> tmp;
+    NumericFormatter n;
+    uint64 start, end;
+    if (selection->GetSelection(zoneIndex,start,end))
+    {
+        tmp.Set("0x");
+        tmp.Add(n.ToHex(start));
+        txOffset->SetText(tmp);
+        tmp.Set("0x");
+        tmp.Add(n.ToHex(end - start));
+        txSize->SetText(tmp);
+    }
+    else
+    {
+        txOffset->SetText("");
+        txSize->SetText("");
+    }
     txOffset->SetFocus();
 }
 void SelectionEditor::Validate()
