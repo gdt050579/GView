@@ -231,7 +231,27 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        class SelectionEditor : public Window
+        {
+            Reference<Utils::Selection> selection;
+            Reference<SettingsData> settings;
+            Reference<TextField> txOffset;
+            Reference<TextField> txSize;
+            Reference<ComboBox> cbOfsType;
+            Reference<ComboBox> cbBase;
+            uint32 zoneIndex;
+            uint64 maxSize;
 
+            void RefreshSizeAndOffset();
+            void Validate();
+            bool GetValues(uint64& start, uint64& size);
+
+          public:
+            SelectionEditor(Reference<Utils::Selection> selection, uint32 index, Reference<SettingsData> settings, uint64 size);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+        };
     } // namespace BufferViewer
 } // namespace View
+
 }; // namespace GView
