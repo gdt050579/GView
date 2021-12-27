@@ -47,16 +47,23 @@ extern "C"
         csv->Update(win->GetObject());
 
         // views
-        auto gridView = win->AddGridViewer("Grid View");
-        csv->InitGrid(gridView);
-        csv->UpdateGrid(gridView);
+        //auto gridView = win->AddGridViewer("Grid View");
+        //csv->InitGrid(gridView);
+        //csv->UpdateGrid(gridView);
 
-        // auto bufferView = win->AddBufferViewer("Buffer View");
-        // csv->UpdateBufferViewZones(bufferView);
+        GView::View::GridViewer::Settings gridSettings;
+        // csv->UpdateGrid(settings);
+        win->CreateViewer("Grid View", gridSettings);
+
+        GView::View::BufferViewer::Settings bufferSettings;
+        csv->UpdateBufferViewZones(bufferSettings);
+        win->CreateViewer("BufferView", bufferSettings);
 
         // panels
         if (csv->HasPanel(CSV::Panels::IDs::Information))
+        {
             win->AddPanel(Pointer<TabPage>(new CSV::Panels::Information(csv)), true);
+        }
 
         return true;
     }

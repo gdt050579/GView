@@ -177,16 +177,25 @@ namespace View
             void SetEntryPointOffset(uint64_t offset);
         };
     }; // namespace BufferViewer
-    struct CORE_EXPORT GridViewerInterface
+
+    namespace GridViewer
     {
-        virtual void InitGrid()   = 0;
-        virtual void UpdateGrid() = 0;
-    };
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+            void InitGrid();
+            void UpdateGrid();
+        };
+    } // namespace GridViewer
+
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                     = 0;
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                               = 0;
         virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)   = 0;
         virtual Reference<ViewControl> GetCurrentView()                                           = 0;
     };
 }; // namespace View

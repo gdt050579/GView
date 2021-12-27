@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "GView.hpp"
 
 #include <set>
@@ -56,6 +55,7 @@ namespace Utils
     class CharacterSet
     {
         bool Ascii[256];
+
       public:
         CharacterSet();
         CharacterSet(bool asciiMask[256]);
@@ -175,12 +175,13 @@ namespace App
         bool BuildMainMenus();
         bool LoadSettings();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
+
       public:
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
     };
-    class FileWindowProperties: public Window
+    class FileWindowProperties : public Window
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
@@ -205,7 +206,7 @@ namespace App
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;

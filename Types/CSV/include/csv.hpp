@@ -38,8 +38,8 @@ namespace Type
             bool Update(Reference<GView::Object> obj);
             bool HasPanel(Panels::IDs id);
             void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
-            void InitGrid(Reference<GView::View::GridViewerInterface> grid);
-            void UpdateGrid(Reference<GView::View::GridViewerInterface> grid);
+            void InitGrid(GView::View::GridViewer::Settings& settings);
+            void UpdateGrid(GView::View::GridViewer::Settings& settings);
         };
 
         namespace Panels

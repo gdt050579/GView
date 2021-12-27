@@ -39,7 +39,7 @@ namespace View
             Reference<PositionToColorInterface> positionToColorCallback;
             SettingsData();
         };
-        enum class MouseLocation: uint8
+        enum class MouseLocation : uint8
         {
             OnView,
             OnHeader,
@@ -82,7 +82,7 @@ namespace View
             const char16* mapping;
             string_view name;
         };
-        enum class CodePageID: uint32
+        enum class CodePageID : uint32
         {
             DOS_437,
             Latin_1,
@@ -157,7 +157,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
-            CharacterBuffer chars;            
+            CharacterBuffer chars;
             uint32 currentAdrressMode;
             BufferColor bufColor;
             FixSizeString<29> name;

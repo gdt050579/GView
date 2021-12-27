@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "GridViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -59,17 +60,9 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     this->defaultHorizontalPanelsSize = 40;
 
     UnicodeStringBuilder usb{ name };
-    const auto path = std::filesystem::path(usb.ToStringView());
-
-    const auto filename     = path.filename().string();
-    const auto filenameSize = std::min<>(1023ULL, filename.length());
-    memcpy(this->obj.name, filename.c_str(), filenameSize);
-    this->obj.name[filenameSize + 1] = 0;
-
-    const auto extension     = path.extension().string();
-    const auto extensionSize = std::min<>(1023ULL, extension.length());
-    memcpy(this->obj.extension, extension.c_str(), extensionSize);
-    this->obj.extension[extensionSize + 1] = 0;
+    const auto path     = std::filesystem::path(usb.ToStringView());
+    const auto filename = path.filename().u16string();
+    this->obj.name.Set(filename);
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -97,9 +90,9 @@ bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferV
     return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
-Reference<GridViewerInterface> FileWindow::AddGridViewer(const std::string_view& name)
+bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GridViewer>(name, &this->obj).To<GridViewerInterface>();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings).IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
