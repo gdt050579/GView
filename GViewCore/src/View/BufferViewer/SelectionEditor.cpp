@@ -8,8 +8,8 @@ constexpr int32 BTN_ID_CLEAR  = 2;
 constexpr int32 BTN_ID_RELOAD = 3;
 constexpr int32 BTN_ID_CANCEL = 4;
 
-SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 index)
-    : Window("Selection Editor", "d:c,w:61,h:10", WindowFlags::None), selection(_selection), zoneIndex(index)
+SelectionEditor::SelectionEditor(Reference<Utils::Selection> _selection, uint32 index, Reference<SettingsData> _settings)
+    : Window("Selection Editor", "d:c,w:61,h:10", WindowFlags::None), selection(_selection), zoneIndex(index), settings(_settings)
 {
     Factory::Label::Create(this, "&Offset", "x:1,y:1,w:10");
     Factory::Label::Create(this, "&Type", "x:35,y:1,w:10");

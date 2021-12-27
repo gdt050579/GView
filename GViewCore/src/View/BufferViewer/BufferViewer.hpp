@@ -234,6 +234,7 @@ namespace View
         class SelectionEditor: public Window
         {
             Reference<Utils::Selection> selection;
+            Reference<SettingsData> settings;
             Reference<TextField> txOffset;
             Reference<TextField> txSize;
             Reference<ComboBox> cbOfsType;
@@ -243,7 +244,7 @@ namespace View
             void RefreshSizeAndOffset();
             void Validate();
           public:
-            SelectionEditor(Reference<Utils::Selection> selection, uint32 index);
+            SelectionEditor(Reference<Utils::Selection> selection, uint32 index, Reference<SettingsData> settings);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
