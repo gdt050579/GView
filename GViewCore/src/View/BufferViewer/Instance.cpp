@@ -1772,6 +1772,7 @@ enum class PropertyID : uint32
     AddressBarWidth,
     ZoneNameWidth,
     CodePage,
+    AddressType,
     // selection
     HighlightSelection,
     SelectionType,
@@ -1783,7 +1784,13 @@ enum class PropertyID : uint32
     ShowAscii,
     ShowUnicode,
     StringCharacterSet,
-    MinimCharsInString
+    MinimCharsInString,
+    // shortcuts
+    ChangeColumnsView,
+    ChangeBaseOrCP,
+    ChangeAddressMode,
+    GoToEntryPoint,
+
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1970,6 +1977,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage.stringList.ToStringView() },
 
         // Address
+        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::Boolean },
         { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
         { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
         { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
@@ -1988,6 +1996,12 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
         { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
         { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
+
+        // shortcuts
+        { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
+        { BT(PropertyID::ChangeBaseOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
+        { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
+        { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
     };
 }
 #undef BT
