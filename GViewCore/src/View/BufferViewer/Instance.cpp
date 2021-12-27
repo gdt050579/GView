@@ -1834,10 +1834,16 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->selection.IsSingleSelectionEnabled() ? (uint64) 0 : (uint64) 1;
         return true;
     case PropertyID::Selection_1:
+        value = this->selection.GetStringRepresentation(0);
+        return true;
     case PropertyID::Selection_2:
+        value = this->selection.GetStringRepresentation(1);
+        return true;
     case PropertyID::Selection_3:
+        value = this->selection.GetStringRepresentation(2);
+        return true;
     case PropertyID::Selection_4:
-        value = "NO SELECTION";
+        value = this->selection.GetStringRepresentation(3);
         return true;
     }
     return false;
