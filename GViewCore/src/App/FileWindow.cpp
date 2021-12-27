@@ -1,4 +1,5 @@
-#include "GViewApp.hpp"
+#include "Internal.hpp"
+#include "BufferViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -83,16 +84,18 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
         auto p = this->horizontalPanels->AddControl(std::move(page));
         if (p.IsValid())
         {
-            this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
-                  .AddSingleChoiceItem((CharacterView) p->GetText(), CMD_SHOW_HORIZONTAL_PANEL, true, "");
+            auto bar  = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
+            auto item = bar.AddSingleChoiceItem((CharacterView) p->GetText(), CMD_SHOW_HORIZONTAL_PANEL, true, "");
+            bar.SetItemTextWithHotKey(item, (CharacterView) p->GetText(), p->GetHotKeyTextOffset());
             return true;
         }
         return false;
     }
 }
-Reference<BufferViewerInterface> FileWindow::AddBufferViewer(const std::string_view& name)
+bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<BufferViewer>(name, &this->obj).To<BufferViewerInterface>();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
 }
 Reference<GridViewerInterface> FileWindow::AddGridViewer(const std::string_view& name)
 {
@@ -155,8 +158,8 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     {
         if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
         {
-            // a call to default view
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet !");
+            FileWindowProperties dlg(view);
+            dlg.Show();
             return true;
         }
     }

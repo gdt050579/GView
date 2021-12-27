@@ -18,17 +18,9 @@
 #define PE_INVALID_ADDRESS     0xFFFFFFFFFFFFFFFF
 #define MAX_IMPORTED_FUNCTIONS 4096
 
-#define ADDR_FA  0
-#define ADDR_RVA 1
-#define ADDR_VA  2
-
-#define MAX_ADDR_TYPES 3
-
 #define IMAGE_DLLCHARACTERISTICS_APPCONTAINER                0x1000
 #define IMAGE_DLLCHARACTERISTICS_NO_LEGACY_BIOS_DEPENDENCIES 0x2000
 
-#define __IMAGE_DOS_SIGNATURE              0x5A4D
-#define __IMAGE_NT_SIGNATURE               0x00004550
 #define __IMAGE_NT_OPTIONAL_HDR32_MAGIC    0x10b
 #define __IMAGE_NT_OPTIONAL_HDR64_MAGIC    0x20b
 #define __IMAGE_ROM_OPTIONAL_HDR_MAGIC     0x107
@@ -50,68 +42,6 @@
 #define __IMAGE_FILE_DLL                     0x2000 // File is a DLL.
 #define __IMAGE_FILE_UP_SYSTEM_ONLY          0x4000 // File should only be run on a UP machine
 #define __IMAGE_FILE_BYTES_REVERSED_HI       0x8000 // Bytes of machine word are reversed.
-#define __IMAGE_FILE_MACHINE_UNKNOWN         0
-#define __IMAGE_FILE_MACHINE_I386            0x014c // Intel 386.
-#define __IMAGE_FILE_MACHINE_R3000           0x0162 // MIPS little-endian, 0x160 big-endian
-#define __IMAGE_FILE_MACHINE_R4000           0x0166 // MIPS little-endian
-#define __IMAGE_FILE_MACHINE_R10000          0x0168 // MIPS little-endian
-#define __IMAGE_FILE_MACHINE_WCEMIPSV2       0x0169 // MIPS little-endian WCE v2
-#define __IMAGE_FILE_MACHINE_ALPHA           0x0184 // Alpha_AXP
-#define __IMAGE_FILE_MACHINE_SH3             0x01a2 // SH3 little-endian
-#define __IMAGE_FILE_MACHINE_SH3DSP          0x01a3
-#define __IMAGE_FILE_MACHINE_SH3E            0x01a4 // SH3E little-endian
-#define __IMAGE_FILE_MACHINE_SH4             0x01a6 // SH4 little-endian
-#define __IMAGE_FILE_MACHINE_SH5             0x01a8 // SH5
-#define __IMAGE_FILE_MACHINE_ARM             0x01c0 // ARM Little-Endian
-#define __IMAGE_FILE_MACHINE_THUMB           0x01c2 // ARM Thumb/Thumb-2 Little-Endian
-#define __IMAGE_FILE_MACHINE_ARMNT           0x01c4 // ARM Thumb-2 Little-Endian
-#define __IMAGE_FILE_MACHINE_AM33            0x01d3
-#define __IMAGE_FILE_MACHINE_POWERPC         0x01F0 // IBM PowerPC Little-Endian
-#define __IMAGE_FILE_MACHINE_POWERPCFP       0x01f1
-#define __IMAGE_FILE_MACHINE_IA64            0x0200 // Intel 64
-#define __IMAGE_FILE_MACHINE_MIPS16          0x0266 // MIPS
-#define __IMAGE_FILE_MACHINE_ALPHA64         0x0284 // ALPHA64
-#define __IMAGE_FILE_MACHINE_MIPSFPU         0x0366 // MIPS
-#define __IMAGE_FILE_MACHINE_MIPSFPU16       0x0466 // MIPS
-#define __IMAGE_FILE_MACHINE_AXP64           __IMAGE_FILE_MACHINE_ALPHA64
-#define __IMAGE_FILE_MACHINE_TRICORE         0x0520 // Infineon
-#define __IMAGE_FILE_MACHINE_CEF             0x0CEF
-#define __IMAGE_FILE_MACHINE_EBC             0x0EBC // EFI Byte Code
-#define __IMAGE_FILE_MACHINE_AMD64           0x8664 // AMD64 (K8)
-#define __IMAGE_FILE_MACHINE_M32R            0x9041 // M32R little-endian
-#define __IMAGE_FILE_MACHINE_CEE             0xC0EE
-
-#define __IMAGE_SUBSYSTEM_UNKNOWN                  0  // Unknown subsystem.
-#define __IMAGE_SUBSYSTEM_NATIVE                   1  // Image doesn't require a subsystem.
-#define __IMAGE_SUBSYSTEM_WINDOWS_GUI              2  // Image runs in the Windows GUI subsystem.
-#define __IMAGE_SUBSYSTEM_WINDOWS_CUI              3  // Image runs in the Windows character subsystem.
-#define __IMAGE_SUBSYSTEM_OS2_CUI                  5  // image runs in the OS/2 character subsystem.
-#define __IMAGE_SUBSYSTEM_POSIX_CUI                7  // image runs in the Posix character subsystem.
-#define __IMAGE_SUBSYSTEM_NATIVE_WINDOWS           8  // image is a native Win9x driver.
-#define __IMAGE_SUBSYSTEM_WINDOWS_CE_GUI           9  // Image runs in the Windows CE subsystem.
-#define __IMAGE_SUBSYSTEM_EFI_APPLICATION          10 //
-#define __IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER  11 //
-#define __IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER       12 //
-#define __IMAGE_SUBSYSTEM_EFI_ROM                  13
-#define __IMAGE_SUBSYSTEM_XBOX                     14
-#define __IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16
-
-#define __IMAGE_DIRECTORY_ENTRY_EXPORT    0 // Export Directory
-#define __IMAGE_DIRECTORY_ENTRY_IMPORT    1 // Import Directory
-#define __IMAGE_DIRECTORY_ENTRY_RESOURCE  2 // Resource Directory
-#define __IMAGE_DIRECTORY_ENTRY_EXCEPTION 3 // Exception Directory
-#define __IMAGE_DIRECTORY_ENTRY_SECURITY  4 // Security Directory
-#define __IMAGE_DIRECTORY_ENTRY_BASERELOC 5 // Base Relocation Table
-#define __IMAGE_DIRECTORY_ENTRY_DEBUG     6 // Debug Directory
-//      __IMAGE_DIRECTORY_ENTRY_COPYRIGHT       7   // (X86 usage)
-#define __IMAGE_DIRECTORY_ENTRY_ARCHITECTURE   7  // Architecture Specific Data
-#define __IMAGE_DIRECTORY_ENTRY_GLOBALPTR      8  // RVA of GP
-#define __IMAGE_DIRECTORY_ENTRY_TLS            9  // TLS Directory
-#define __IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG    10 // Load Configuration Directory
-#define __IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT   11 // Bound Import Directory in headers
-#define __IMAGE_DIRECTORY_ENTRY_IAT            12 // Import Address Table
-#define __IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT   13 // Delay Load Import Descriptors
-#define __IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR 14 // COM Runtime descriptor
 
 #define __IMAGE_DEBUG_TYPE_UNKNOWN       0
 #define __IMAGE_DEBUG_TYPE_COFF          1
@@ -146,39 +76,6 @@
 #define __IMAGE_DLLCHARACTERISTICS_GUARD_CF              0x4000 // Image supports Control Flow Guard.
 #define __IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE 0x8000
 
-#define __MAKEINITRESOURCE(i) ((uint32_t*) (i))
-#define __RT_CURSOR           1
-#define __RT_BITMAP           2
-#define __RT_ICON             3
-#define __RT_MENU             4
-#define __RT_DIALOG           5
-#define __RT_STRING           6
-#define __RT_FONTDIR          7
-#define __RT_FONT             8
-#define __RT_ACCELERATOR      9
-#define __RT_RCDATA           10
-#define __RT_MESSAGETABLE     11
-#define __DIFFERENCE          11
-
-#define __RT_GROUP_CURSOR ((__RT_CURSOR) + __DIFFERENCE)
-#define __RT_GROUP_ICON   ((__RT_ICON) + __DIFFERENCE)
-
-#define __RT_VERSION    16
-#define __RT_DLGINCLUDE 17
-#define __RT_PLUGPLAY   19
-#define __RT_VXD        20
-#define __RT_ANICURSOR  21
-#define __RT_ANIICON    22
-#define __RT_HTML       23
-#define __RT_MANIFEST   24
-
-#define __BI_RGB       0L
-#define __BI_RLE8      1L
-#define __BI_RLE4      2L
-#define __BI_BITFIELDS 3L
-#define __BI_JPEG      4L
-#define __BI_PNG       5L
-
 #define __IMAGE_ORDINAL_FLAG32 0x80000000
 #define __IMAGE_ORDINAL_FLAG64 0x8000000000000000
 
@@ -194,9 +91,14 @@ namespace Type
 {
     namespace PE
     {
+        namespace Constants
+        {
+            constexpr uint16_t IMAGE_DOS_SIGNATURE = 0x5A4D;
+            constexpr uint32_t IMAGE_NT_SIGNATURE  = 0x00004550;
+        }; // namespace Constants
         namespace Panels
         {
-            enum class IDs : unsigned char
+            enum class IDs : uint8
             {
                 Information = 0,
                 Directories,
@@ -244,14 +146,14 @@ namespace Type
             VersionPair Pairs[MAX_VERION_PAIRS];
             int nrPairs;
 
-            int AddPair(const unsigned char* Buffer, int size, int poz);
-            bool TestIfValidKey(const unsigned char* Buffer, int size, int poz);
+            int AddPair(const uint8* Buffer, int size, int poz);
+            bool TestIfValidKey(const uint8* Buffer, int size, int poz);
 
           public:
             VersionInformation(void);
             ~VersionInformation(void);
 
-            bool ComputeVersionInformation(const unsigned char* Buffer, int size);
+            bool ComputeVersionInformation(const uint8* Buffer, int size);
             int GetNrItems()
             {
                 return nrPairs;
@@ -557,36 +459,139 @@ namespace Type
 
 #pragma pack(pop) // Back to default packing.
 
-        struct BitmapInfoHeader
+        struct DIBInfoHeader
         {
-            uint32_t biSize;
-            uint32_t biWidth;
-            uint32_t biHeight;
-            uint16_t biPlanes;
-            uint16_t biBitCount;
-            uint32_t biCompression;
-            uint32_t biSizeImage;
-            uint32_t biXPelsPerMeter;
-            uint32_t biYPelsPerMeter;
-            uint32_t biClrUsed;
-            uint32_t biClrImportant;
+            uint32_t sizeOfHeader;
+            uint32_t width;
+            uint32_t height;
+            uint16_t colorPlanes;
+            uint16_t bitsPerPixel;
+            uint32_t comppresionMethod;
+            uint32_t imageSize;
+            uint32_t horizontalResolution;
+            uint32_t verticalResolution;
+            uint32_t numberOfColors;
+            uint32_t numberOfImportantColors;
+        };
+        struct PNGHeader
+        {
+            uint32_t magic;
+            uint32_t reserved;
+            uint32_t ihdrLength;
+            uint32_t ihdrMagic;
+            uint32_t width;
+            uint32_t height;
         };
 
-        struct RGBQuad
+        enum class AddressType : uint8
         {
-            uint8_t rgbBlue;
-            uint8_t rgbGreen;
-            uint8_t rgbRed;
-            uint8_t rgbReserved;
+            FileOffset = 0,
+            RVA        = 1,
+            VA         = 2
         };
-        class PEFile : public TypeInterface
+
+        enum class MachineType : uint16_t
+        {
+            Unknown   = 0,
+            I386      = 0x014c, // Intel 386.
+            R3000     = 0x0162, // MIPS little-endian, 0x160 big-endian
+            R4000     = 0x0166, // MIPS little-endian
+            R10000    = 0x0168, // MIPS little-endian
+            WCEMIPSV2 = 0x0169, // MIPS little-endian WCE v2
+            ALPHA     = 0x0184, // Alpha_AXP
+            SH3       = 0x01a2, // SH3 little-endian
+            SH3DSP    = 0x01a3,
+            SH3E      = 0x01a4, // SH3E little-endian
+            SH4       = 0x01a6, // SH4 little-endian
+            SH5       = 0x01a8, // SH5
+            ARM       = 0x01c0, // ARM Little-Endian
+            THUMB     = 0x01c2, // ARM Thumb/Thumb-2 Little-Endian
+            ARMNT     = 0x01c4, // ARM Thumb-2 Little-Endian
+            AM33      = 0x01d3,
+            POWERPC   = 0x01F0, // IBM PowerPC Little-Endian
+            POWERPCFP = 0x01f1,
+            IA64      = 0x0200, // Intel 64
+            MIPS16    = 0x0266, // MIPS
+            ALPHA64   = 0x0284, // ALPHA64
+            MIPSFPU   = 0x0366, // MIPS
+            MIPSFPU16 = 0x0466, // MIPS
+            TRICORE   = 0x0520, // Infineon
+            CEF       = 0x0CEF,
+            EBC       = 0x0EBC, // EFI Byte Code
+            AMD64     = 0x8664, // AMD64 (K8)
+            M32R      = 0x9041, // M32R little-endian
+            CEE       = 0xC0EE,
+        };
+
+        enum class SubsystemType : uint16_t
+        {
+            Unknown                = 0,  // Unknown subsystem.
+            Native                 = 1,  // Image doesn't require a subsystem.
+            WindowGUI              = 2,  // Image runs in the Windows GUI subsystem.
+            WindowsCUI             = 3,  // Image runs in the Windows character subsystem.
+            OS2CUI                 = 5,  // image runs in the OS/2 character subsystem.
+            PosixCUI               = 7,  // image runs in the Posix character subsystem.
+            WindowsNative          = 8,  // image is a native Win9x driver.
+            WindowsCEGUI           = 9,  // Image runs in the Windows CE subsystem.
+            EFIApplication         = 10, //
+            EFIBootServiceDriver   = 11, //
+            EFIRuntimeDriver       = 12, //
+            EFIROM                 = 13,
+            XBOX                   = 14,
+            WindowsBootApplication = 16,
+        };
+        enum class DirectoryType : uint8_t
+        {
+            Export        = 0,
+            Import        = 1,
+            Resource      = 2,
+            Excption      = 3,
+            Security      = 4,
+            BaseRelloc    = 5,
+            Debug         = 6,
+            Architecture  = 7,
+            GlobalPTR     = 8,
+            TLS           = 9,
+            Config        = 10,
+            BoundImport   = 11,
+            IAT           = 12,
+            DelayImport   = 13,
+            COMDescriptor = 14
+        };
+        enum class ResourceType : uint32_t
+        {
+            Cursor       = 1,
+            Bitmap       = 2,
+            Icon         = 3,
+            Menu         = 4,
+            Dialog       = 5,
+            String       = 6,
+            FontDir      = 7,
+            Font         = 8,
+            Accelerator  = 9,
+            RCData       = 10,
+            MessageTable = 11,
+            CursorGroup  = 12, // 11+Cursor
+            IconGroup    = 14, // 11+Icon
+            Version      = 16,
+            DLGInclude   = 17,
+            PlugPlay     = 19,
+            VXD          = 20,
+            ANICursor    = 21,
+            ANIIcon      = 22,
+            HTML         = 23,
+            Manifest     = 24
+        };
+
+        struct X86_X64_ColorBuffer: public GView::View::BufferViewer::PositionToColorInterface
+        {
+            uint64_t memStartOffset, memEndOffset;
+            bool GetColorForBuffer(uint64_t offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+        };
+
+        class PEFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
         {
           public:
-            struct LANGANDCODEPAGE
-            {
-                uint16_t wLanguage;
-                uint16_t wCodePage;
-            };
             struct ExportedFunction
             {
                 uint32_t RVA;
@@ -599,26 +604,29 @@ namespace Type
                 ColorPair colSect;
                 ColorPair colDir[15];
             };
+            enum class ImageType : uint8_t
+            {
+                DIB = 0,
+                PNG,
+                Unknwown = 0xFF
+            };
             struct ResourceInformation
             {
-                uint32_t Type;
+                ResourceType Type;
                 uint32_t ID;
                 uint32_t CodePage;
                 uint32_t Language;
                 uint64_t Start;
                 uint64_t Size;
                 FixSizeString<61> Name;
+                struct
+                {
+                    uint32_t width, height;
+                    uint8_t bitsPerPixel;
+                    ImageType type;
+                } Image;
             };
-            enum class ErrorType : unsigned char
-            {
-                Error,
-                Warning
-            };
-            struct ErrorInformation
-            {
-                ErrorType type;
-                FixSizeString<252> text;
-            };
+
             struct ImportDllInformation
             {
                 uint64_t RVA;
@@ -659,9 +667,9 @@ namespace Type
             ImageSectionHeader sect[MAX_NR_SECTIONS];
             ImageExportDirectory exportDir;
             ImageDataDirectory* dirs;
+            GView::Utils::ErrorList errList;
             std::vector<ExportedFunction> exp;
             std::vector<ResourceInformation> res;
-            std::vector<ErrorInformation> errList;
             std::vector<ImportDllInformation> impDLL;
             std::vector<ImageDebugDirectory> debugData;
             std::vector<ImportFunctionInformation> impFunc;
@@ -673,14 +681,14 @@ namespace Type
             uint32_t sectStart, peStart;
             uint64_t panelsMask;
 
+            X86_X64_ColorBuffer x86x64ColorBuffer;
+
             bool hdr64;
             bool isMetroApp;
             bool hasTLS;
 
-            
-            std::string_view ReadString(uint32_t RVA, unsigned int maxSize);
+            std::string_view ReadString(uint32_t RVA, uint32 maxSize);
             bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
-            void AddError(ErrorType type, std::string_view message);
 
           public:
             PEFile(Reference<GView::Utils::FileCache> file);
@@ -690,15 +698,25 @@ namespace Type
 
             bool Update();
 
+            constexpr inline ImageDataDirectory& GetDirectory(DirectoryType dirType)
+            {
+                return dirs[(uint8_t) dirType];
+            }
+
             std::string_view GetMachine();
             std::string_view GetSubsystem();
             uint64_t RVAtoFilePointer(uint64_t RVA);
             int RVAToSectionIndex(uint64_t RVA);
             uint64_t FilePointerToRVA(uint64_t fileAddress);
             uint64_t FilePointerToVA(uint64_t fileAddress);
-            uint64_t ConvertAddress(uint64_t address, unsigned int fromAddressType, unsigned int toAddressType);
+
+            uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) override;
+            uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) override;
+
+            uint64_t ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType);
             bool BuildExport();
             void BuildVersionInfo();
+            bool ProcessResourceImageInformation(ResourceInformation& res);
             bool ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName);
             bool ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* parentName);
             bool BuildResources();
@@ -709,17 +727,17 @@ namespace Type
 
             bool HasPanel(Panels::IDs id);
 
-            void UpdateBufferViewZones(Reference<GView::View::BufferViewerInterface> bufferView);
-
             void CopySectionName(uint32_t index, String& name);
+
+            bool GetResourceImageInformation(const ResourceInformation& r, String& info);
+            bool LoadIcon(const ResourceInformation& r, Image& img);
 
             std::string_view GetTypeName() override
             {
                 return "PE";
             }
 
-
-            static std::string_view ResourceIDToName(uint32_t resID);
+            static std::string_view ResourceIDToName(ResourceType resType);
             static std::string_view LanguageIDToName(uint32_t langID);
             static std::string_view DirectoryIDToName(uint32_t dirID);
         };
@@ -730,10 +748,8 @@ namespace Type
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
-                Reference<AppCUI::Controls::ListView> version;
 
                 void UpdateGeneralInformation();
-                void UpdateVersionInformation();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
 
@@ -753,7 +769,7 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> list;
                 int Base;
 
-                std::string_view GetValue(NumericFormatter& n, unsigned int value);
+                std::string_view GetValue(NumericFormatter& n, uint32 value);
                 void GoToSelectedSection();
                 void SelectCurrentSection();
 
@@ -779,7 +795,7 @@ namespace Type
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
-            class Imports: public TabPage
+            class Imports : public TabPage
             {
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<GView::View::WindowInterface> win;
@@ -812,16 +828,47 @@ namespace Type
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> list;
 
-
                 void SaveCurrentResource();
                 void GoToSelectedResource();
                 void SelectCurrentResource();
+
               public:
                 Resources(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+            class Icons : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ComboBox> iconsList;
+                Reference<AppCUI::Controls::ImageViewer> imageView;
+
+                void UpdateCurrentIcon();
+
+              public:
+                Icons(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+            class Headers : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+
+                void AddHeader(std::string_view name);
+                void AddNumber(std::string_view name, uint32_t value);
+                void AddMagic(uint8* offset, uint32 size);
+                void AddItem(std::string_view name, std::string_view value);
+
+              public:
+                Headers(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
             };
         }; // namespace Panels
     }      // namespace PE

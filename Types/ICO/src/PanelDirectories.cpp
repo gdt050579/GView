@@ -4,8 +4,8 @@ using namespace GView::Type::ICO;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int ICO_DIRS_GOTO            = 1;
-constexpr unsigned int ICO_DIRS_SELECT          = 2;
+constexpr uint32 ICO_DIRS_GOTO            = 1;
+constexpr uint32 ICO_DIRS_SELECT          = 2;
 
 Panels::Directories::Directories(Reference<GView::Type::ICO::ICOFile> _ico, Reference<GView::View::WindowInterface> _win)
     : TabPage("&Directories")

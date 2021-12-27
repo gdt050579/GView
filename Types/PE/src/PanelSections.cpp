@@ -29,7 +29,7 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
 
     Update();
 }
-std::string_view Panels::Sections::GetValue(NumericFormatter& n, unsigned int value)
+std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 {
     if (Base == 10)
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });

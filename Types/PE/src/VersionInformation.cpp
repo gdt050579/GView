@@ -22,7 +22,7 @@ VersionInformation::VersionInformation(void)
 VersionInformation::~VersionInformation(void)
 {
 }
-bool VersionInformation::TestIfValidKey(const unsigned char* Buffer, int size, int poz)
+bool VersionInformation::TestIfValidKey(const uint8* Buffer, int size, int poz)
 {
     auto* w = (const uint16_t*) &Buffer[poz];
     int szW = (size - poz) / 2 - 1;
@@ -54,7 +54,7 @@ bool VersionInformation::TestIfValidKey(const unsigned char* Buffer, int size, i
 
     return false;
 }
-int VersionInformation::AddPair(const unsigned char* Buffer, int size, int poz)
+int VersionInformation::AddPair(const uint8* Buffer, int size, int poz)
 {
     VersionString* vs;
     String *Key, *Value;
@@ -93,7 +93,7 @@ int VersionInformation::AddPair(const unsigned char* Buffer, int size, int poz)
     nrPairs++;
     return poz + vs->wLength;
 }
-bool VersionInformation::ComputeVersionInformation(const unsigned char* Buffer, int size)
+bool VersionInformation::ComputeVersionInformation(const uint8* Buffer, int size)
 {
     int tr, gasit, poz;
 

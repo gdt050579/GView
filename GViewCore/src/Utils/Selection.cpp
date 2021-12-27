@@ -1,11 +1,11 @@
-#include <GViewApp.hpp>
+#include "Internal.hpp"
 
 using namespace GView::Utils;
 
 
 Selection::Selection()
 {
-	for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) 
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) 
 	{
 		zones[tr].start = INVALID_OFFSET;
 		zones[tr].end = INVALID_OFFSET;
@@ -15,7 +15,7 @@ Selection::Selection()
 }
 void Selection::Clear()
 {
-	for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
 		zones[tr].start = INVALID_OFFSET;
 }
 bool Selection::Clear(int index)
@@ -25,7 +25,7 @@ bool Selection::Clear(int index)
 	return true;
 }
 
-bool Selection::GetSelection(int index, unsigned long long &Start, unsigned long long &End)
+bool Selection::GetSelection(int index, uint64 &Start, uint64 &End)
 {
 	CHECK((index < Selection::MAX_SELECTION_ZONES) && (index >= 0), false, "Invalid selection index (%d) - should be between 0 and %d", index, Selection::MAX_SELECTION_ZONES - 1);
 	auto sel = zones + index;
@@ -42,7 +42,7 @@ void Selection::EnableMultiSelection(bool enable)
 	if ((singleSelectionZone) && (enable))
 	{
 		// clean up zones 1 to ne		
-		for (unsigned int tr = 1; tr < Selection::MAX_SELECTION_ZONES; tr++) {
+		for (uint32 tr = 1; tr < Selection::MAX_SELECTION_ZONES; tr++) {
 			zones[tr].start = INVALID_OFFSET;
 			zones[tr].end = INVALID_OFFSET;
 			zones[tr].originalPoint = INVALID_OFFSET;
@@ -53,7 +53,7 @@ void Selection::EnableMultiSelection(bool enable)
 	if ((!enable) && (!singleSelectionZone))
 	{
 		// curat toate selectiile
-		for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) {
+		for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++) {
 			zones[tr].start = INVALID_OFFSET;
 			zones[tr].end = INVALID_OFFSET;
 			zones[tr].originalPoint = INVALID_OFFSET;
@@ -64,7 +64,7 @@ void Selection::EnableMultiSelection(bool enable)
 
 }
 
-int  Selection::OffsetToSelection(unsigned long long position, unsigned long long &Start, unsigned long long &End)
+int  Selection::OffsetToSelection(uint64 position, uint64 &Start, uint64 &End)
 {
 	// for single selection
 	if (singleSelectionZone)
@@ -78,7 +78,7 @@ int  Selection::OffsetToSelection(unsigned long long position, unsigned long lon
 		return -1;
 	}
 	// multiple selections
-	for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+	for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
 	{
 		if ((position >= zones[tr].start) && (position <= zones[tr].end))
 		{
@@ -90,14 +90,14 @@ int  Selection::OffsetToSelection(unsigned long long position, unsigned long lon
 	// nu am gasit
 	return -1;
 }
-bool Selection::Contains(unsigned long long position) const
+bool Selection::Contains(uint64 position) const
 {
     // for single selection
     if (singleSelectionZone)
         return (position >= zones->start) && (position <= zones->end);
     
     // multiple selections
-    for (unsigned int tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
+    for (uint32 tr = 0; tr < Selection::MAX_SELECTION_ZONES; tr++)
     {
         if ((position >= zones[tr].start) && (position <= zones[tr].end))
             return true;
@@ -105,7 +105,7 @@ bool Selection::Contains(unsigned long long position) const
     // nu am gasit
     return false;
 }
-bool Selection::UpdateSelection(int index, unsigned long long position)
+bool Selection::UpdateSelection(int index, uint64 position)
 {
 	CHECK((index < Selection::MAX_SELECTION_ZONES) && (index >= 0), false, "Invalid selection index (%d) - should be between 0 and %d", index, Selection::MAX_SELECTION_ZONES - 1);
 	auto sel = zones + index;
@@ -122,7 +122,7 @@ bool Selection::UpdateSelection(int index, unsigned long long position)
 	}
 	return true;
 }
-int	 Selection::BeginSelection(unsigned long long position)
+int	 Selection::BeginSelection(uint64 position)
 {
 	// for single selection
 	if (singleSelectionZone)
@@ -163,7 +163,7 @@ int	 Selection::BeginSelection(unsigned long long position)
 	}
 	return -1;
 }
-bool Selection::SetSelection(int index, unsigned long long start, unsigned long long end)
+bool Selection::SetSelection(int index, uint64 start, uint64 end)
 {
 	CHECK((index >= 0) && (index < Selection::MAX_SELECTION_ZONES), false, "");
 	if ((singleSelectionZone) && (index > 0))

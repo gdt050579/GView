@@ -4,9 +4,9 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_RES_GOTO   = 1;
-constexpr unsigned int PE_RES_SAVE   = 2;
-constexpr unsigned int PE_RES_SELECT = 3;
+constexpr uint32 PE_RES_GOTO   = 1;
+constexpr uint32 PE_RES_SAVE   = 2;
+constexpr uint32 PE_RES_SELECT = 3;
 
 Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Resources")
 {
@@ -14,9 +14,10 @@ Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<G
     win = _win;
 
     list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("&Type", TextAlignament::Left, 12);
+    list->AddColumn("&Type", TextAlignament::Left, 16);
     list->AddColumn("&Name", TextAlignament::Left, 16);
     list->AddColumn("&ID", TextAlignament::Left, 4);
+    list->AddColumn("&Extra infos", TextAlignament::Left, 20);
     list->AddColumn("File &Ofs", TextAlignament::Right, 10);
     list->AddColumn("&Size", TextAlignament::Right, 10);
     list->AddColumn("&CodePage", TextAlignament::Left, 10);
@@ -36,10 +37,22 @@ void Panels::Resources::Update()
         if (!nm)
             nm = "Unknown";
         auto handle = list->AddItem(temp.Format("%s (%d)", nm, r.Type), r.Name, n.ToDec(r.ID));
-        list->SetItemText(handle, 3, n.ToDec(r.Start));
-        list->SetItemText(handle, 4, n.ToDec(r.Size));
-        list->SetItemText(handle, 5, n.ToDec(r.CodePage));
-        list->SetItemText(handle, 6, temp.Format("%s (%d)", PEFile::LanguageIDToName(r.Language).data(), r.Language));
+        switch (r.Type)
+        {
+        case ResourceType::Icon:
+            if (pe->GetResourceImageInformation(r, temp))
+                list->SetItemText(handle, 3, temp);
+            else
+                list->SetItemText(handle, 3, "?");
+            break;
+        default:
+            // no specific extra informations to add
+            break;
+        }
+        list->SetItemText(handle, 4, n.ToDec(r.Start));
+        list->SetItemText(handle, 5, n.ToDec(r.Size));
+        list->SetItemText(handle, 6, n.ToDec(r.CodePage));
+        list->SetItemText(handle, 7, temp.Format("%s (%d)", PEFile::LanguageIDToName(r.Language).data(), r.Language));
         list->SetItemData<PEFile::ResourceInformation>(handle, &r);
     }
 }

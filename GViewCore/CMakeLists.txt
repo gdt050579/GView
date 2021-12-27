@@ -5,6 +5,7 @@ project(GViewCore VERSION 1.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 add_library(GViewCore SHARED)
+set_target_properties(GViewCore PROPERTIES PREFIX "lib")
 target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
 
@@ -56,6 +57,8 @@ target_include_directories(GViewCore PUBLIC ../AppCUI)
 target_link_libraries(GViewCore PUBLIC AppCUI)
 
 include_directories(include)
+include_directories(src/include)
+include_directories(src/View/BufferViewer)
 add_subdirectory(src)
 
 

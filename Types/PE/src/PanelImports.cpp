@@ -49,8 +49,8 @@ void Panels::Imports::Update()
 
     // general infor
     info->DeleteAllItems();
-    info->AddItem("Nr of DLLs", temp.Format("%u", (unsigned int) pe->impDLL.size()));
-    info->AddItem("Nr of Functions", temp.Format("%u", (unsigned int) pe->impFunc.size()));
+    info->AddItem("Nr of DLLs", temp.Format("%u", (uint32) pe->impDLL.size()));
+    info->AddItem("Nr of Functions", temp.Format("%u", (uint32) pe->impFunc.size()));
 }
 void Panels::Imports::OnAfterResize(int newWidth, int newHeight)
 {

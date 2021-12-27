@@ -1,4 +1,4 @@
-#include "GViewApp.hpp"
+#include "../GViewCore/include/GView.hpp"
 #include <iostream>
 
 std::string_view help = R"HELP(
@@ -37,20 +37,20 @@ int main(int argc,const char **argv)
         ShowHelp();
         return 0;
     }
-    GView::App::Instance gviewApp;
+
 
     if (AppCUI::Utils::String::Equals(argv[1], "reset"))
     {
-        gviewApp.ResetConfiguration();
+        GView::App::ResetConfiguration();
         return 0;
     }
 
 
     
-    if (!gviewApp.Init())
+    if (!GView::App::Init())
         return 1;    
-    gviewApp.AddFileWindow(argv[1]);
-    gviewApp.Run();
+    GView::App::OpenFile(argv[1]);
+    GView::App::Run();
     
     return 0;
 }

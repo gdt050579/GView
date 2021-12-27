@@ -1,13 +1,13 @@
-#include <GViewApp.hpp>
+#include "Internal.hpp"
 
 using namespace GView::Type;
 using namespace GView::Utils;
 
-constexpr unsigned char CHAR_TYPE_INVALID = 0xFF;
-constexpr unsigned char CHAR_TYPE_SEP     = 0xFE;
-constexpr unsigned char CHAR_TYPE_ANY     = 0xFD;
+constexpr uint8 CHAR_TYPE_INVALID = 0xFF;
+constexpr uint8 CHAR_TYPE_SEP     = 0xFE;
+constexpr uint8 CHAR_TYPE_ANY     = 0xFD;
 
-unsigned char PatternCharTypes[256] = { CHAR_TYPE_INVALID,
+uint8 PatternCharTypes[256] = { CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
                                         CHAR_TYPE_INVALID,
@@ -269,7 +269,7 @@ SimplePattern::SimplePattern()
     this->Count  = 0;
     this->Offset = 0;
 }
-bool SimplePattern::Init(std::string_view text, unsigned int ofs)
+bool SimplePattern::Init(std::string_view text, uint32 ofs)
 {
     this->Offset = ofs;
     if (text.empty())
@@ -278,7 +278,7 @@ bool SimplePattern::Init(std::string_view text, unsigned int ofs)
         return true;
     }
 
-    auto s = (const unsigned char*) text.data();
+    auto s = (const uint8*) text.data();
     auto e = s + text.size();
 
     if ((text.starts_with("hex:\"")) || (text.starts_with("hex:'")))
@@ -313,11 +313,11 @@ bool SimplePattern::Match(AppCUI::Utils::BufferView buf) const
         return true; // no pattern means it matches everything
     if (!buf.IsValid())
         return false; // null buffer
-    if (((unsigned int) this->Offset) + ((unsigned int) this->Count) > buf.GetLength())
+    if (((uint32) this->Offset) + ((uint32) this->Count) > buf.GetLength())
         return false; // outside the testing buffer
     auto s                 = buf.GetData() + this->Offset;
     auto e                 = s + this->Count;
-    const unsigned char* p = this->CharactersToMatch;
+    const uint8* p = this->CharactersToMatch;
     for (; s < e; s++, p++)
     {
         if ((*p) == '?')

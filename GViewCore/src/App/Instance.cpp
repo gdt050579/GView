@@ -1,4 +1,4 @@
-#include <GViewApp.hpp>
+#include "Internal.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -104,19 +104,19 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 
     auto buf  = obj->cache.Get(0, 4096); // first 4k
-    auto& plg = this->defaultPlugin;
+    auto* plg = &this->defaultPlugin;
     // iterate from existing types
     for (auto& pType : this->typePlugins)
     {
         if (pType.Validate(buf, ext))
         {
-            plg = pType;
+            plg = &pType;
             break;
         }
     }
 
     // create an instance of that type
-    obj->type = plg.CreateInstance(Reference<GView::Utils::FileCache>(&obj->cache));
+    obj->type = plg->CreateInstance(Reference<GView::Utils::FileCache>(&obj->cache));
 
     // validate type
     CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
@@ -127,11 +127,11 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     // instantiate window
     while (true)
     {
-        CHECKBK(plg.PopulateWindow(win.get()), "Fail to populate file window !");  
+        CHECKBK(plg->PopulateWindow(win.get()), "Fail to populate file window !");
         win->Start(); // starts the window and set focus
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
-        
+
         return true;
     }
     // error case
@@ -145,43 +145,4 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
     return Add(std::move(f), path.u16string(), path.extension().string());
 }
-void Instance::Run()
-{
-    AppCUI::Application::Run();
-}
-bool Instance::UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
-{
-    // First load the plugin
-    AppCUI::OS::Library lib;
-    CHECK(lib.Load(pluginPath), false, "Fail to load: %s", pluginPath.string().c_str());
-    void (*fnUpdateSettings)(AppCUI::Utils::IniSection sect);
-    fnUpdateSettings = lib.GetFunction<decltype(fnUpdateSettings)>("UpdateSettings");
-    CHECK(fnUpdateSettings, false, "'UpdateSettings' export was not located in: %s", pluginPath.string().c_str());
-    auto nm = pluginPath.filename().string();
-    // format is lib<....>.tpl
-    auto sect = ini["Type."+ nm.substr(3, nm.length() - 7)];
-    fnUpdateSettings(sect);
-    return true;
-}
-bool Instance::ResetConfiguration()
-{
-    IniObject ini;
 
-    // for AppCUI
-    AppCUI::Application::UpdateAppCUISettings(ini, true);
-    // for viewers
-    GView::View::BufferViewer::UpdateConfig(ini["BufferView"]);
-
-    // parse types and add specs
-    auto typesPath = AppCUI::OS::GetCurrentApplicationPath();
-    typesPath.remove_filename();
-    typesPath += "Types";
-    for (const auto& fileEntry : std::filesystem::directory_iterator(typesPath))
-    {
-        if ((fileEntry.path().extension() == ".tpl") && (fileEntry.path().filename().string().starts_with("lib")))
-            UpdateSettingsForTypePlugin(ini, fileEntry.path());
-    }
-
-    // all good (save config)
-    return ini.Save(AppCUI::Application::GetAppSettingsFile());
-}

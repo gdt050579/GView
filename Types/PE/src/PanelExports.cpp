@@ -4,7 +4,7 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr unsigned int PE_EXP_GOTO = 1;
+constexpr uint32 PE_EXP_GOTO = 1;
 
 Panels::Exports::Exports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("&Exports")
 {
@@ -27,7 +27,7 @@ void Panels::Exports::Update()
     for (auto& exp : pe->exp)
     {
         auto handle = list->AddItem(exp.Name, n.ToDec(exp.Ordinal), temp.Format("%u (0x%08X)", exp.RVA, exp.RVA));
-        list->SetItemData(handle, (unsigned long long) pe->ConvertAddress(exp.RVA, ADDR_RVA, ADDR_FA));
+        list->SetItemData(handle, (uint64) pe->ConvertAddress(exp.RVA, AddressType::RVA, AddressType::FileOffset));
     }
 }
 bool Panels::Exports::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

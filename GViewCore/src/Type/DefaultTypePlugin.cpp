@@ -1,4 +1,4 @@
-#include "GViewApp.hpp"
+#include "Internal.hpp"
 
 using namespace GView::Utils;
 using namespace GView;
@@ -44,7 +44,8 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
 
     // 2. views
-    auto v = win->AddBufferViewer("Buffer view");
+    View::BufferViewer::Settings settings;
+    auto v = win->CreateViewer("Buffer view",settings);
     return true;
 }
 } // namespace GView::Type::DefaultTypePlugin

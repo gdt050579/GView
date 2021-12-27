@@ -1,24 +1,24 @@
-#include "GViewApp.hpp"
+#include "Internal.hpp"
 
 using namespace GView::Type;
 using namespace GView::Utils;
 using namespace GView;
 
-constexpr unsigned long long EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
+constexpr uint64 EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 
-unsigned long long ExtensionToHash(std::string_view ext)
+uint64 ExtensionToHash(std::string_view ext)
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
     if (ext.empty())
         return 0;
-    auto* s = (const unsigned char*) ext.data();
+    auto* s = (const uint8*) ext.data();
     auto* e = s + ext.size();
     if ((*s) == '.')
         s++;
-    unsigned long long hash = EXTENSION_EMPTY_HASH;
+    uint64 hash = EXTENSION_EMPTY_HASH;
     while (s < e)
     {
-        unsigned char c = *s;
+        uint8 c = *s;
         if ((c >= 'A') && (c <= 'Z'))
             c |= 0x20;
 
@@ -59,7 +59,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
     CHECK(name.length() > 5, false, "Expected a name after 'type.' !");
     CHECK((name.length() - 5) < (PLUGIN_NAME_MAX_SIZE - 1), false, "Name is too large (max allowed is: %d)", PLUGIN_NAME_MAX_SIZE - 1);
     memcpy(this->Name, name.data() + 5, name.length() - 5);
-    this->NameLength             = (unsigned char) (name.length() - 5);
+    this->NameLength             = (uint8) (name.length() - 5);
     this->Name[this->NameLength] = 0;
 
     // priority
@@ -74,7 +74,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
         if (PatternValue.IsArray())
         {
             auto count = PatternValue.GetArrayCount();
-            for (unsigned int index = 0; index < count; index++)
+            for (uint32 index = 0; index < count; index++)
             {
                 SimplePattern sp;
                 CHECK(sp.Init(PatternValue[index].ToStringView(), MatchOffset), false, "Invalid patern !");
@@ -94,7 +94,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
         if (ExtensionValue.IsArray())
         {
             auto count = ExtensionValue.GetArrayCount();
-            for (unsigned int index = 0; index < count; index++)
+            for (uint32 index = 0; index < count; index++)
             {
                 this->Extensions.insert(ExtensionToHash(ExtensionValue[index].ToStringView()));
             }
