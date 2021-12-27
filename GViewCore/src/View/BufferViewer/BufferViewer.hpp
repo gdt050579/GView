@@ -231,7 +231,22 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        class SelectionEditor: public Window
+        {
+            Reference<Instance> instance;
+            Reference<TextField> txOffset;
+            Reference<TextField> txSize;
+            Reference<ComboBox> cbOfsType;
 
+            void RefreshSizeAndOffset();
+            void Validate();
+          public:
+            SelectionEditor(Reference<Instance> instance, uint32 index);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+        };
     } // namespace BufferViewer
 } // namespace View
+
 }; // namespace GView
