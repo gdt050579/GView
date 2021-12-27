@@ -243,6 +243,7 @@ namespace View
 
             void RefreshSizeAndOffset();
             void Validate();
+            bool GetValues(uint64& start, uint64& size);
           public:
             SelectionEditor(Reference<Utils::Selection> selection, uint32 index, Reference<SettingsData> settings);
 
