@@ -369,9 +369,9 @@ void Instance::MoveToZone(bool startOfZone, bool select)
 void Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->cache.GetSize());
-    if (dlg.Show() == (int)Dialogs::Result::Ok)
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
-        MoveTo(dlg.GetResultedPos(),false);
+        MoveTo(dlg.GetResultedPos(), false);
     }
 }
 
@@ -1399,7 +1399,15 @@ bool Instance::GoTo(uint64 offset)
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
-    return false;
+    if (offset >= this->obj->cache.GetSize())
+        return false;
+    auto end = offset + size;
+    if ((end < offset) || (end < size))
+        return false;
+    if (end >= this->obj->cache.GetSize())
+        return false;
+    this->selection.SetSelection(0, offset, end);
+    return true;
 }
 std::string_view Instance::GetName()
 {
