@@ -184,6 +184,7 @@ namespace App
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
+        bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
