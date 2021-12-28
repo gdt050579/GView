@@ -1077,23 +1077,25 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     {
         LocalString<64> tmp;
         commandBar.SetCommand(
-              config.Keys.ChangeBase, tmp.Format("CP:%s", CodePages[(uint32) CodePage.id].name.data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
+              config.Keys.ChangeValueFormatOrCP,
+              tmp.Format("CP:%s", CodePages[(uint32) CodePage.id].name.data()),
+              BUFFERVIEW_CMD_CHANGECODEPAGE);
     }
     else
     {
         switch (this->Layout.charFormatMode)
         {
         case CharacterFormatMode::Hex:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::Octal:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::SignedDecimal:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::UnsignedDecimal:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         }
     }
@@ -1787,9 +1789,12 @@ enum class PropertyID : uint32
     MinimCharsInString,
     // shortcuts
     ChangeColumnsView,
-    ChangeBaseOrCP,
+    ChangeValueFormatOrCP,
     ChangeAddressMode,
     GoToEntryPoint,
+    ChangeSelectionType,
+    ShowHideStrings,
+    GoToAddress
 
 };
 #define BT(t) static_cast<uint32>(t)
@@ -1851,6 +1856,27 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::Selection_4:
         value = this->selection.GetStringRepresentation(3);
+        return true;
+    case PropertyID::ChangeAddressMode:
+        value = config.Keys.ChangeAddressMode;
+        return true;
+    case PropertyID::ChangeValueFormatOrCP:
+        value = config.Keys.ChangeValueFormatOrCP;
+        return true;
+    case PropertyID::ChangeColumnsView:
+        value = config.Keys.ChangeColumnsNumber;
+        return true;
+    case PropertyID::GoToEntryPoint:
+        value = config.Keys.GoToEntryPoint;
+        return true;
+    case PropertyID::ChangeSelectionType:
+        value = config.Keys.ChangeSelectionType;
+        return true;
+    case PropertyID::ShowHideStrings:
+        value = config.Keys.ShowHideStrings;
+        return true;
+    case PropertyID::GoToAddress:
+        value = config.Keys.GoToAddress;
         return true;
     }
     return false;
@@ -1929,6 +1955,27 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::SelectionType:
         this->selection.EnableMultiSelection(std::get<uint64>(value) == 1);
         return true;
+    case PropertyID::ChangeAddressMode:
+        config.Keys.ChangeAddressMode = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ChangeValueFormatOrCP:
+        config.Keys.ChangeValueFormatOrCP = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ChangeColumnsView:
+        config.Keys.ChangeColumnsNumber = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::GoToEntryPoint:
+        config.Keys.GoToEntryPoint = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ChangeSelectionType:
+        config.Keys.ChangeSelectionType = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ShowHideStrings:
+        config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::GoToAddress:
+        config.Keys.GoToAddress = std::get<AppCUI::Input::Key>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1999,9 +2046,13 @@ const vector<Property> Instance::GetPropertiesList()
 
         // shortcuts
         { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
-        { BT(PropertyID::ChangeBaseOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
+        { BT(PropertyID::ChangeValueFormatOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
         { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
         { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
+        { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
+        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
+        { BT(PropertyID::GoToAddress), "Shortcuts", "Go To Address", PropertyType::Key },
+
     };
 }
 #undef BT

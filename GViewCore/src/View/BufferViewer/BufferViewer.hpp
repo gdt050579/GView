@@ -68,9 +68,12 @@ namespace View
             struct
             {
                 AppCUI::Input::Key ChangeColumnsNumber;
-                AppCUI::Input::Key ChangeBase;
+                AppCUI::Input::Key ChangeValueFormatOrCP;
                 AppCUI::Input::Key ChangeAddressMode;
                 AppCUI::Input::Key GoToEntryPoint;
+                AppCUI::Input::Key ChangeSelectionType;
+                AppCUI::Input::Key GoToAddress;
+                AppCUI::Input::Key ShowHideStrings;
             } Keys;
             bool Loaded;
 
