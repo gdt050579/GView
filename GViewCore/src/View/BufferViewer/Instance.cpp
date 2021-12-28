@@ -1815,6 +1815,7 @@ enum class PropertyID : uint32
 {
     // display
     Columns = 0,
+    CursorOffset,
     DataFormat,
     ShowAddress,
     ShowZoneName,
@@ -1853,6 +1854,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     {
     case PropertyID::Columns:
         value = this->Layout.nrCols;
+        return true;
+    case PropertyID::CursorOffset:
+        value = this->Cursor.base == 16;
         return true;
     case PropertyID::DataFormat:
         value = (uint64) this->Layout.charFormatMode;
@@ -1937,6 +1941,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::Columns:
         this->Layout.nrCols = (uint32) std::get<uint64>(value);
         UpdateViewSizes();
+        return true;
+    case PropertyID::CursorOffset:
+        this->Cursor.base = std::get<bool>(value) ? 16 : 10;
         return true;
     case PropertyID::DataFormat:
         this->Layout.charFormatMode = static_cast<CharacterFormatMode>(std::get<uint64>(value));
@@ -2067,6 +2074,7 @@ const vector<Property> Instance::GetPropertiesList()
     return {
         // Display
         { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
         { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
         { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
         { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage.stringList.ToStringView() },
