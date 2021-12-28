@@ -82,6 +82,9 @@ constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
 constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
 constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
+constexpr int BUFFERVIEW_CMD_GOTO              = 0xBF05;
+constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF06;
+constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF07;
 
 Config Instance::config;
 
@@ -1072,7 +1075,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         break;
     }
 
-    // base & codepage
+    // Value format & codepage
     if (this->Layout.nrCols == 0)
     {
         LocalString<64> tmp;
@@ -1111,6 +1114,31 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
     // Entry point
     commandBar.SetCommand(config.Keys.GoToEntryPoint, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
+
+    // Generic goto
+    commandBar.SetCommand(config.Keys.GoToAddress, "GoTo", BUFFERVIEW_CMD_GOTO);
+
+    // Selection
+    if (this->selection.IsSingleSelectionEnabled())
+        commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Single", BUFFERVIEW_CMD_CHANGESELECTION);
+    else
+        commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Multiple", BUFFERVIEW_CMD_CHANGESELECTION);
+
+    // Strings
+    if (this->StringInfo.showAscii)
+    {
+        if (this->StringInfo.showUnicode)
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:ON", BUFFERVIEW_CMD_HIDESTRINGS);
+        else
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Ascii", BUFFERVIEW_CMD_HIDESTRINGS);
+    }
+    else
+    {
+        if (this->StringInfo.showUnicode)
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Unicode", BUFFERVIEW_CMD_HIDESTRINGS);
+        else
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
+    }
 
     return false;
 }
@@ -1336,6 +1364,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         }
         return false;
+    case BUFFERVIEW_CMD_CHANGESELECTION:
+        this->selection.InvertMultiSelectionMode();
+        return true;
     }
     return false;
 }
@@ -1357,15 +1388,19 @@ std::string_view Instance::GetName()
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
 {
     uint64 start, end;
-    if (this->selection.GetSelection(selectionID, start, end))
+    bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
+    if (show)
     {
-        LocalString<32> tmp;
-        tmp.Format("%X,%X", start, (end - start) + 1);
-        r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
-    }
-    else
-    {
-        r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+        if (this->selection.GetSelection(selectionID, start, end))
+        {
+            LocalString<32> tmp;
+            tmp.Format("%X,%X", start, (end - start) + 1);
+            r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
+        }
+        else
+        {
+            r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+        }
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;

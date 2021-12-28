@@ -35,7 +35,7 @@ namespace Utils
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
-            EnableMultiSelection(!singleSelectionZone);
+            EnableMultiSelection(singleSelectionZone);
         }
         inline bool IsMultiSelectionEnabled() const
         {
