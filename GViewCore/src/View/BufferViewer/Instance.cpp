@@ -1367,6 +1367,19 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case BUFFERVIEW_CMD_CHANGESELECTION:
         this->selection.InvertMultiSelectionMode();
         return true;
+    case BUFFERVIEW_CMD_HIDESTRINGS:
+        if (this->StringInfo.showAscii && this->StringInfo.showUnicode)
+        {
+            this->StringInfo.showAscii = this->StringInfo.showUnicode = false;
+        }
+        else
+        {
+            this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
+        }
+        return true;
+    case BUFFERVIEW_CMD_GOTO:
+        //GDT: need to create a GoTo Window
+        return true;
     }
     return false;
 }
