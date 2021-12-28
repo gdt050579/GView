@@ -1947,6 +1947,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::GoToAddress:
         value = config.Keys.GoToAddress;
         return true;
+    case PropertyID::AddressType:
+        value = this->currentAdrressMode;
+        return true;
     }
     return false;
 }
@@ -2048,6 +2051,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::GoToAddress:
         config.Keys.GoToAddress = std::get<AppCUI::Input::Key>(value);
         return true;
+    case PropertyID::AddressType:
+        this->currentAdrressMode = (uint32) std::get<uint64>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -2088,6 +2094,22 @@ const vector<Property> Instance::GetPropertiesList()
         CodePage.stringList.AddChar('=');
         CodePage.stringList.AddFormat("%u", idx);
     }
+
+    addressModesList.Clear();
+    if (this->settings->translationMethodsCount == 0)
+    {
+        addressModesList.Set("FileOffset=0");
+    }
+    else
+    {
+        for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++)
+        {
+            if (tr > 0)
+                addressModesList.AddChar(',');
+            addressModesList.AddFormat("%s=%u", settings->translationMethods[tr].name.GetText(), tr);
+        }
+    }
+
     return {
         // Display
         { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
@@ -2097,7 +2119,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage.stringList.ToStringView() },
 
         // Address
-        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::Boolean },
+        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
         { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
         { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
         { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },

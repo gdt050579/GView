@@ -162,6 +162,7 @@ namespace View
             Utils::Selection selection;
             CharacterBuffer chars;
             uint32 currentAdrressMode;
+            String addressModesList;
             BufferColor bufColor;
             FixSizeString<29> name;
 
