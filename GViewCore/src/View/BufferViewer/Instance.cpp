@@ -366,6 +366,15 @@ void Instance::MoveToZone(bool startOfZone, bool select)
     }
 }
 
+void Instance::ShowGoToDialog()
+{
+    GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->cache.GetSize());
+    if (dlg.Show() == (int)Dialogs::Result::Ok)
+    {
+        MoveTo(dlg.GetResultedPos(),false);
+    }
+}
+
 void Instance::ResetStringInfo()
 {
     StringInfo.start  = GView::Utils::INVALID_OFFSET;
@@ -1378,7 +1387,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         }
         return true;
     case BUFFERVIEW_CMD_GOTO:
-        //GDT: need to create a GoTo Window
+        ShowGoToDialog();
         return true;
     }
     return false;
