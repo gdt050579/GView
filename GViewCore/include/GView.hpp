@@ -202,11 +202,12 @@ namespace View
     }; // namespace DissasmViewer
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                                     = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                               = 0;
-        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
-        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)  = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                           = 0;
+        virtual Reference<Object> GetObject()                                                      = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                = 0;
+        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings)  = 0;
+        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings) = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                            = 0;
     };
 }; // namespace View
 namespace App

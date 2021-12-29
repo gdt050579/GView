@@ -3,6 +3,12 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
+Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings) : name(name), obj(obj), settings(nullptr)
+{
+
+}
+
+
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 {
     return true;

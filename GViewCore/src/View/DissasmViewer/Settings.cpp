@@ -7,7 +7,6 @@ SettingsData::SettingsData()
 {
 }
 
-
 Settings::Settings()
 {
     

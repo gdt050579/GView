@@ -26,7 +26,13 @@ namespace View
 
         class Instance : public View::ViewControl
         {
+            FixSizeString<16> name;
+            Reference<GView::Object> obj;
+            Pointer<SettingsData> settings;
+
         public:
+            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+
             bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
             bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
             void SetCustomPropetyValue(uint32 propertyID) override;
