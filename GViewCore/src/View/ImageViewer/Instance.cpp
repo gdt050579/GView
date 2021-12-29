@@ -68,7 +68,7 @@ bool Instance::GoTo(uint64 offset)
             return true;
         }
     }
-    return false; 
+    return false;
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
@@ -83,6 +83,15 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
+    LocalString<128> tmp;
+    r.WriteSingleLineText(0, 0, "Size:", config.Colors.Highlighted);
+    r.WriteSingleLineText(6, 0, tmp.Format("%u x %u", img.GetWidth(), img.GetHeight()), config.Colors.Normal);
+    r.DrawVerticalLine(16, 0, height, config.Colors.Line, true);
+
+    r.WriteSingleLineText(18, 0, "Image:", config.Colors.Highlighted);
+    r.WriteSingleLineText(
+          25, 0, tmp.Format("%u/%u", this->currentImageIndex+1, (uint32) this->settings->imgList.size()), config.Colors.Normal);
+    r.DrawVerticalLine(32, 0, height, config.Colors.Line, true);
 }
 
 //======================================================================[PROPERTY]============================

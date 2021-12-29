@@ -28,6 +28,7 @@ namespace View
                 ColorPair Inactive;
                 ColorPair Normal;
                 ColorPair Line;
+                ColorPair Highlighted;
             } Colors;
             struct
             {

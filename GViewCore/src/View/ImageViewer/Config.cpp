@@ -11,9 +11,10 @@ void Config::Update(IniSection sect)
 }
 void Config::Initialize()
 {
-    this->Colors.Line     = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->Colors.Normal   = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->Colors.Inactive = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->Colors.Line        = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->Colors.Normal      = ColorPair{ Color::Silver, Color::DarkBlue };
+    this->Colors.Inactive    = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->Colors.Highlighted = ColorPair{ Color::Yellow, Color::DarkBlue };
 
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
