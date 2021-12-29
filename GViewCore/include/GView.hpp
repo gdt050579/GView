@@ -188,7 +188,8 @@ namespace View
             void* data;
 
             Settings();
-            void SetLoadImageCallback(Reference<LoadImageInterface>, uint32 imagesCount = 1);
+            void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
+            void AddImage(uint64 offset, uint64 size);
         };
     }; // namespace ImageViewer
     struct CORE_EXPORT WindowInterface

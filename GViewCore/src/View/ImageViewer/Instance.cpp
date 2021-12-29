@@ -3,7 +3,6 @@
 using namespace GView::View::ImageViewer;
 using namespace AppCUI::Input;
 
-
 Config Instance::config;
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
@@ -12,7 +11,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     this->obj               = _obj;
     this->name              = _name;
-    this->currentImageIndex = 3;
+    this->currentImageIndex = 0;
     // settings
     if ((_settings) && (_settings->data))
     {
@@ -57,7 +56,19 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 }
 bool Instance::GoTo(uint64 offset)
 {
-    return false; // cursor movement is not possible in this mode
+    for (uint32 idx = 0; idx < settings->imgList.size(); idx++)
+    {
+        if ((offset >= settings->imgList[idx].start) && (offset < settings->imgList[idx].end))
+        {
+            if (this->currentImageIndex != idx)
+            {
+                this->currentImageIndex = idx;
+                LoadImage();
+            }
+            return true;
+        }
+    }
+    return false; 
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
@@ -72,16 +83,12 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
-
 }
-
-
 
 //======================================================================[PROPERTY]============================
 enum class PropertyID : uint32
 {
     // display
-
 
 };
 #define BT(t) static_cast<uint32>(t)
@@ -91,7 +98,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     switch (static_cast<PropertyID>(id))
     {
     default:
-        break;   
+        break;
     }
     return false;
 }
@@ -120,7 +127,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-
     return {
         // Display
         //{ BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },

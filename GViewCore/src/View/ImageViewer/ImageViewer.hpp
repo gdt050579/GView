@@ -10,9 +10,13 @@ namespace View
     {
         using namespace AppCUI;
 
+        struct ImageInfo
+        {
+            uint64 start, end;
+        };
         struct SettingsData
         {
-            uint32 imagesCount;
+            vector<ImageInfo> imgList;            
             Reference<LoadImageInterface> loadImageCallback;
             SettingsData();
         };
