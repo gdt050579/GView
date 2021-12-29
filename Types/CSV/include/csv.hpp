@@ -25,7 +25,6 @@ namespace Type
             char separator{ 0 };
 
             uint64_t panelsMask{ 0 };
-            std::vector<std::vector<std::string>> data;
 
           public:
             Reference<GView::Object> obj;

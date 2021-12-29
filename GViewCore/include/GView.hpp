@@ -200,7 +200,9 @@ namespace View
             void* data;
 
             Settings();
-            void SetContent(void* content);
+
+            // TODO: step by step (set cell, column, etc)
+            void SetContent(std::vector<std::vector<std::string>>& content);
             void SetDimensions(unsigned int rows, unsigned int columns);
         };
     } // namespace GridViewer

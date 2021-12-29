@@ -10,7 +10,7 @@ namespace View
     {
         struct SettingsData
         {
-            void* content;
+            std::vector<std::vector<std::string>> content;
             unsigned int rows = 0;
             unsigned int cols = 0;
             SettingsData();
