@@ -8,9 +8,11 @@ Config Instance::config;
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
+    imgView = Factory::ImageViewer::Create(this, "d:c", ViewerFlags::None);
+
     this->obj               = _obj;
     this->name              = _name;
-    this->currentImageIndex = 0;
+    this->currentImageIndex = 3;
     // settings
     if ((_settings) && (_settings->data))
     {
@@ -26,8 +28,18 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
+
+    // load first image
+    LoadImage();
 }
 
+void Instance::LoadImage()
+{
+    if (this->settings->loadImageCallback->LoadImageToObject(this->img, this->currentImageIndex))
+    {
+        this->imgView->SetImage(this->img, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
+    }
+}
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     NOT_IMPLEMENTED(false);

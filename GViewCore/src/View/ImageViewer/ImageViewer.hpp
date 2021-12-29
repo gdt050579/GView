@@ -48,6 +48,7 @@ namespace View
 
             static Config config;
 
+            void LoadImage();
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 

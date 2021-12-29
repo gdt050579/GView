@@ -2,18 +2,13 @@
 
 using namespace GView::Type::ICO;
 
+constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
+
 ICOFile::ICOFile(Reference<GView::Utils::FileCache> fileCache)
 {
     file        = fileCache;
     isIcoFormat = false;
     dirs.reserve(64);
-}
-
-void ICOFile::AddError(ErrorType type, std::string_view message)
-{
-    // auto& item = errList.emplace_back();
-    // item.type  = type;
-    // item.text  = message;
 }
 
 void ICOFile::UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings)
@@ -45,5 +40,32 @@ bool ICOFile::Update()
         dirs.push_back(bf.GetObject<DirectoryEntry>());
     }
 
+    return true;
+}
+bool ICOFile::LoadImageToObject(Image& img, uint32 index)
+{
+    CHECK(index < dirs.size(), false, "Invalid image index: %u", index);
+    uint64 offset = dirs[index].ico.offset;
+    uint32 size   = dirs[index].ico.size;
+    auto bf       = file->Get(offset, size);
+    Buffer buf;
+    if (bf.IsValid() == false)
+    {
+        // unable to use the cache --> need to make a copy of the entire buffer
+        buf = this->file->CopyToBuffer(offset, size);
+        CHECK(buf.IsValid(), false, "Fail to copy %u bytes from offset: %llu", size, offset);
+        bf = (BufferView) buf;
+    }
+    // now `bf` points to the image buffer
+    if ((bf.GetLength() >= 4) && ((*(uint32*) bf.GetData()) == IMAGE_PNG_MAGIC))
+    {
+        // PNG file
+        CHECK(img.Create(bf), false, "");
+    }
+    else
+    {
+        // DIB
+        CHECK(img.CreateFromDIB(bf, this->isIcoFormat), false, "");
+    }
     return true;
 }
