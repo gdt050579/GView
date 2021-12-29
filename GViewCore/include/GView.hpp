@@ -191,6 +191,15 @@ namespace View
             void SetLoadImageCallback(Reference<LoadImageInterface>, uint32 imagesCount = 1);
         };
     }; // namespace ImageViewer
+    namespace DissasmViewer
+    {
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+        };
+    }; // namespace DissasmViewer
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                     = 0;
