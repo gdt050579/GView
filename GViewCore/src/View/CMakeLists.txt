@@ -1,1 +1,2 @@
 add_subdirectory(BufferViewer)
+add_subdirectory(ImageViewer)

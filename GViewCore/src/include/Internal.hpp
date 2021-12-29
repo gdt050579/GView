@@ -205,6 +205,7 @@ namespace App
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;

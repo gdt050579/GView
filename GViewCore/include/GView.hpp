@@ -177,11 +177,26 @@ namespace View
             void SetEntryPointOffset(uint64_t offset);
         };
     }; // namespace BufferViewer
+    namespace ImageViewer
+    {
+        struct CORE_EXPORT LoadImageInterface
+        {
+            virtual bool LoadImageToObject(Image& img, uint32 index) = 0;
+        };
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+            void SetLoadImageCallback(Reference<LoadImageInterface>, uint32 imagesCount = 1);
+        };
+    }; // namespace ImageViewer
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                     = 0;
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                               = 0;
         virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)  = 0;
         virtual Reference<ViewControl> GetCurrentView()                                           = 0;
     };
 }; // namespace View

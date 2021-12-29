@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "ImageViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -82,6 +83,11 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
+bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
