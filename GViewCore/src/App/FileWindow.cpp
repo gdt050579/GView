@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 
 using namespace GView::App;
@@ -90,9 +91,15 @@ bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferV
     return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
+bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
 bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings).IsValid();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {

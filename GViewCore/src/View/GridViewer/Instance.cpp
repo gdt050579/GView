@@ -23,6 +23,26 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
         this->settings.reset(new SettingsData());
     }
 
+    if ((this->settings) && (this->settings->content))
+    {
+        grid = AppCUI::Controls::Factory::Grid::Create(
+              this,
+              "d:c,w:100%,h:100%",
+              this->settings->cols,
+              this->settings->rows,
+              AppCUI::Controls::GridFlags::TransparentBackground | AppCUI::Controls::GridFlags::HideHeader);
+
+        const auto content = reinterpret_cast<std::vector<std::vector<std::string>>*>(this->settings->content);
+        for (auto i = 0U; i < content->size(); i++)
+        {
+            const auto& row = (*content)[i];
+            for (auto j = 0U; j < row.size(); j++)
+            {
+                grid->UpdateCell(j, i, AppCUI::Controls::Grid::CellType::String, row[j]);
+            }
+        }
+    }
+
     if (config.Loaded == false)
         config.Initialize();
 }
@@ -43,28 +63,6 @@ bool Instance::Select(unsigned long long offset, unsigned long long size)
 }
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
-{
-}
-
-void Instance::InitGrid()
-{
-    grid = AppCUI::Controls::Factory::Grid::Create(
-          this, "d:c,w:100%,h:100%", 25, 25, AppCUI::Controls::GridFlags::TransparentBackground | AppCUI::Controls::GridFlags::HideHeader);
-}
-
-void Instance::UpdateGrid()
-{
-}
-
-Settings::Settings()
-{
-}
-
-void Settings::InitGrid()
-{
-}
-
-void Settings::UpdateGrid()
 {
 }
 

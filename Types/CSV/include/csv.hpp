@@ -25,6 +25,7 @@ namespace Type
             char separator{ 0 };
 
             uint64_t panelsMask{ 0 };
+            std::vector<std::vector<std::string>> data;
 
           public:
             Reference<GView::Object> obj;
@@ -38,7 +39,6 @@ namespace Type
             bool Update(Reference<GView::Object> obj);
             bool HasPanel(Panels::IDs id);
             void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
-            void InitGrid(GView::View::GridViewer::Settings& settings);
             void UpdateGrid(GView::View::GridViewer::Settings& settings);
         };
 

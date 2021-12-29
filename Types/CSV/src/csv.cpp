@@ -46,13 +46,8 @@ extern "C"
         auto csv = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
         csv->Update(win->GetObject());
 
-        // views
-        //auto gridView = win->AddGridViewer("Grid View");
-        //csv->InitGrid(gridView);
-        //csv->UpdateGrid(gridView);
-
         GView::View::GridViewer::Settings gridSettings;
-        // csv->UpdateGrid(settings);
+        csv->UpdateGrid(gridSettings);
         win->CreateViewer("Grid View", gridSettings);
 
         GView::View::BufferViewer::Settings bufferSettings;

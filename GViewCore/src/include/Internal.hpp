@@ -34,7 +34,7 @@ namespace Utils
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
-            EnableMultiSelection(!singleSelectionZone);
+            EnableMultiSelection(singleSelectionZone);
         }
         inline bool IsMultiSelectionEnabled() const
         {
@@ -185,6 +185,7 @@ namespace App
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
+        bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
@@ -206,6 +207,7 @@ namespace App
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 

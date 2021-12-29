@@ -68,9 +68,12 @@ namespace View
             struct
             {
                 AppCUI::Input::Key ChangeColumnsNumber;
-                AppCUI::Input::Key ChangeBase;
+                AppCUI::Input::Key ChangeValueFormatOrCP;
                 AppCUI::Input::Key ChangeAddressMode;
                 AppCUI::Input::Key GoToEntryPoint;
+                AppCUI::Input::Key ChangeSelectionType;
+                AppCUI::Input::Key GoToAddress;
+                AppCUI::Input::Key ShowHideStrings;
             } Keys;
             bool Loaded;
 
@@ -159,6 +162,7 @@ namespace View
             Utils::Selection selection;
             CharacterBuffer chars;
             uint32 currentAdrressMode;
+            String addressModesList;
             BufferColor bufColor;
             FixSizeString<29> name;
 
@@ -199,6 +203,7 @@ namespace View
             ColorPair OffsetToColor(uint64 offset);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
+            void ShowGoToDialog();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -250,6 +255,25 @@ namespace View
             SelectionEditor(Reference<Utils::Selection> selection, uint32 index, Reference<SettingsData> settings, uint64 size);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+        };
+        class GoToDialog : public Window
+        {
+            Reference<SettingsData> settings;
+            Reference<TextField> txOffset;
+            Reference<ComboBox> cbOfsType;
+            uint64 maxSize;
+            uint64 resultedPos;
+
+            void Validate();
+
+          public:
+            GoToDialog(Reference<SettingsData> settings, uint64 currentPos, uint64 size);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint64 GetResultedPos() const
+            {
+                return resultedPos;
+            }
         };
     } // namespace BufferViewer
 } // namespace View

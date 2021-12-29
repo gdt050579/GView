@@ -26,18 +26,24 @@ void Config::Initialize()
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
     {
-        auto sect                      = ini->GetSection("BufferView");
-        this->Keys.ChangeColumnsNumber = ini->GetValue("ChangeColumnsCount").ToKey(Key::F6);
-        this->Keys.ChangeBase          = ini->GetValue("ChangeBase").ToKey(Key::F2);
-        this->Keys.ChangeAddressMode   = ini->GetValue("ChangeAddressMode").ToKey(Key::F3);
-        this->Keys.GoToEntryPoint      = ini->GetValue("GoToEntryPoint").ToKey(Key::F7);
+        auto sect                        = ini->GetSection("BufferView");
+        this->Keys.ChangeColumnsNumber   = ini->GetValue("ChangeColumnsCount").ToKey(Key::F6);
+        this->Keys.ChangeValueFormatOrCP = ini->GetValue("ChangeValueFormatOrCP").ToKey(Key::F2);
+        this->Keys.ChangeAddressMode     = ini->GetValue("ChangeAddressMode").ToKey(Key::F3);
+        this->Keys.GoToEntryPoint        = ini->GetValue("GoToEntryPoint").ToKey(Key::F7);
+        this->Keys.ChangeSelectionType   = ini->GetValue("ChangeSelectionType").ToKey(Key::F9);
+        this->Keys.ShowHideStrings       = ini->GetValue("ShowHideStrings").ToKey(Key::Alt | Key::F3);
+        this->Keys.GoToAddress           = ini->GetValue("GoToAddress").ToKey(Key::F5);
     }
     else
     {
-        this->Keys.ChangeColumnsNumber = Key::F6;
-        this->Keys.ChangeBase          = Key::F2;
-        this->Keys.ChangeAddressMode   = Key::F3;
-        this->Keys.GoToEntryPoint      = Key::F7;
+        this->Keys.ChangeColumnsNumber   = Key::F6;
+        this->Keys.ChangeValueFormatOrCP = Key::F2;
+        this->Keys.ChangeAddressMode     = Key::F3;
+        this->Keys.GoToEntryPoint        = Key::F7;
+        this->Keys.ChangeSelectionType   = Key::F9;
+        this->Keys.ShowHideStrings       = Key::Alt | Key::F3;
+        this->Keys.GoToAddress           = Key::F5;
     }
 
     this->Loaded = true;

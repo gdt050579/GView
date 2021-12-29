@@ -1,0 +1,1 @@
+target_sources(GViewCore PRIVATE ImageViewer.hpp Config.cpp Instance.cpp Settings.cpp)

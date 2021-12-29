@@ -16,13 +16,12 @@ bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 {
     this->obj = obj;
     std::string name{ this->obj->name };
-    std::string extension{ this->obj->name };
 
-    if (name == ".tsv")
+    if (name.ends_with(".tsv"))
     {
         separator = '\t';
     }
-    else if (extension == ".csv")
+    else if (name.ends_with(".csv"))
     {
         separator = ',';
     }
@@ -43,7 +42,7 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
 {
     // get every row here
     const auto color         = ColorPair{ Color::Gray, Color::Transparent };
-    const auto bf            = file->Get(0, file->GetSize());
+    const auto bf            = file->Get(0, static_cast<unsigned int>(file->GetSize()));
     unsigned long long rowNo = 0;
     for (auto i = 0ULL; i < file->GetSize(); i++)
     {
@@ -73,13 +72,63 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
     }
 }
 
-void GView::Type::CSV::CSVFile::InitGrid(GView::View::GridViewer::Settings& settings)
-{
-    settings.InitGrid();
-}
-
 void GView::Type::CSV::CSVFile::UpdateGrid(GView::View::GridViewer::Settings& settings)
 {
-    // TODO: parse file, initialize grid and fill cells
-    settings.UpdateGrid();
+    // TODO: it's bad reading the entire content -> implement a read line or something
+    file->SetCurrentPos(0);
+    const auto buffer = file->CopyToBuffer(0, static_cast<unsigned int>(file->GetSize()));
+
+    for (auto i = 0; i < buffer.GetLength() && buffer[i] != '\n'; i++)
+    {
+        if (buffer[i] == separator)
+        {
+            columnsNo++;
+        }
+    }
+    columnsNo++;
+
+    for (auto i = 0; i < buffer.GetLength(); i++)
+    {
+        if (buffer[i] == '\n')
+        {
+            rowsNo++;
+        }
+    }
+
+    data.clear();
+    data.reserve(rowsNo);
+
+    auto i = 0ULL;
+    while (i < buffer.GetLength())
+    {
+        data.push_back({});
+        data.back().reserve(columnsNo);
+
+        auto s = i;
+        auto e = i;
+
+        while (buffer[e] != '\r' && buffer[e] != '\n' && e < buffer.GetLength())
+        {
+            if (buffer[e] == separator || buffer[e] == '\r' || buffer[e] == '\n' || e == buffer.GetLength() - 1)
+            {
+                std::string_view v{ reinterpret_cast<char*>(buffer.GetData()) + s, e - s };
+                data.back().emplace_back(v);
+
+                s = e + 1;
+            }
+            e++;
+        }
+
+        std::string_view v{ reinterpret_cast<char*>(buffer.GetData()) + s, e - s };
+        data.back().emplace_back(v);
+
+        i = e;
+        while ((buffer[i] == '\r' || buffer[i] == '\n') && i < buffer.GetLength())
+        {
+            i++;
+        }
+    }
+
+    settings.SetDimensions(rowsNo, columnsNo);
+    settings.SetContent(&data);
 }

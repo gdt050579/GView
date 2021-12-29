@@ -3,6 +3,9 @@
 using namespace GView::App;
 using namespace GView::View;
 
+constexpr int32 BUTTON_ID_CLOSE = 1;
+constexpr int32 BUTTON_ID_GOTO  = 2;
+
 FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Window("Properties", "d:c,w:78,h:24", WindowFlags::None)
 {
     auto t = Factory::Tab::Create(this, "l:1,t:1,r:1,b:3", TabFlags::LeftTabs | TabFlags::TabsBar);
@@ -20,6 +23,26 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
         }
     }
 
-    Factory::Button::Create(this, "&Close", "x:40%,y:22,a:b,w:12", 1234);
-    Factory::Button::Create(this, "&Go To", "x:60%,y:22,a:b,w:12", 1234);
+    Factory::Button::Create(this, "&Close", "x:40%,y:22,a:b,w:12", BUTTON_ID_CLOSE);
+    Factory::Button::Create(this, "&Go To", "x:60%,y:22,a:b,w:12", BUTTON_ID_GOTO);
+}
+bool FileWindowProperties::OnEvent(Reference<Control> control, Event eventType, int ID)
+{
+    if (Window::OnEvent(control, eventType, ID))
+        return true;
+    if (eventType == Event::ButtonClicked)
+    {
+        if (ID == BUTTON_ID_CLOSE)
+        {
+            this->Exit(0);
+            return true;
+        }
+        if (ID == BUTTON_ID_GOTO)
+        {
+            //GDT: switch to that particular view
+            this->Exit(0);
+            return true;
+        }
+    }
+    return false;
 }

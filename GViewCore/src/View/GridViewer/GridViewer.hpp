@@ -10,6 +10,9 @@ namespace View
     {
         struct SettingsData
         {
+            void* content;
+            unsigned int rows = 0;
+            unsigned int cols = 0;
             SettingsData();
         };
 
@@ -39,9 +42,6 @@ namespace View
             bool Select(unsigned long long offset, unsigned long long size) override;
             std::string_view GetName() override;
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
-
-            void InitGrid();
-            void UpdateGrid();
 
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;

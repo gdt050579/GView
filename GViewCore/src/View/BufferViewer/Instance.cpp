@@ -82,6 +82,9 @@ constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
 constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
 constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
+constexpr int BUFFERVIEW_CMD_GOTO              = 0xBF05;
+constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF06;
+constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF07;
 
 Config Instance::config;
 
@@ -360,6 +363,15 @@ void Instance::MoveToZone(bool startOfZone, bool select)
             MoveTo(z->start, select);
         else
             MoveTo(z->end, select);
+    }
+}
+
+void Instance::ShowGoToDialog()
+{
+    GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->cache.GetSize());
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        MoveTo(dlg.GetResultedPos(), false);
     }
 }
 
@@ -1072,28 +1084,30 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         break;
     }
 
-    // base & codepage
+    // Value format & codepage
     if (this->Layout.nrCols == 0)
     {
         LocalString<64> tmp;
         commandBar.SetCommand(
-              config.Keys.ChangeBase, tmp.Format("CP:%s", CodePages[(uint32) CodePage.id].name.data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
+              config.Keys.ChangeValueFormatOrCP,
+              tmp.Format("CP:%s", CodePages[(uint32) CodePage.id].name.data()),
+              BUFFERVIEW_CMD_CHANGECODEPAGE);
     }
     else
     {
         switch (this->Layout.charFormatMode)
         {
         case CharacterFormatMode::Hex:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Hex", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::Octal:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Oct", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::SignedDecimal:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Sign", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         case CharacterFormatMode::UnsignedDecimal:
-            commandBar.SetCommand(config.Keys.ChangeBase, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
+            commandBar.SetCommand(config.Keys.ChangeValueFormatOrCP, "Dec", BUFFERVIEW_CMD_CHANGEBASE);
             break;
         }
     }
@@ -1109,6 +1123,31 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
     // Entry point
     commandBar.SetCommand(config.Keys.GoToEntryPoint, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
+
+    // Generic goto
+    commandBar.SetCommand(config.Keys.GoToAddress, "GoTo", BUFFERVIEW_CMD_GOTO);
+
+    // Selection
+    if (this->selection.IsSingleSelectionEnabled())
+        commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Single", BUFFERVIEW_CMD_CHANGESELECTION);
+    else
+        commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Multiple", BUFFERVIEW_CMD_CHANGESELECTION);
+
+    // Strings
+    if (this->StringInfo.showAscii)
+    {
+        if (this->StringInfo.showUnicode)
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:ON", BUFFERVIEW_CMD_HIDESTRINGS);
+        else
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Ascii", BUFFERVIEW_CMD_HIDESTRINGS);
+    }
+    else
+    {
+        if (this->StringInfo.showUnicode)
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:Unicode", BUFFERVIEW_CMD_HIDESTRINGS);
+        else
+            commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
+    }
 
     return false;
 }
@@ -1334,6 +1373,22 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         }
         return false;
+    case BUFFERVIEW_CMD_CHANGESELECTION:
+        this->selection.InvertMultiSelectionMode();
+        return true;
+    case BUFFERVIEW_CMD_HIDESTRINGS:
+        if (this->StringInfo.showAscii && this->StringInfo.showUnicode)
+        {
+            this->StringInfo.showAscii = this->StringInfo.showUnicode = false;
+        }
+        else
+        {
+            this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
+        }
+        return true;
+    case BUFFERVIEW_CMD_GOTO:
+        ShowGoToDialog();
+        return true;
     }
     return false;
 }
@@ -1344,7 +1399,15 @@ bool Instance::GoTo(uint64 offset)
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
-    return false;
+    if (offset >= this->obj->cache.GetSize())
+        return false;
+    auto end = offset + size;
+    if ((end < offset) || (end < size))
+        return false;
+    if (end >= this->obj->cache.GetSize())
+        return false;
+    this->selection.SetSelection(0, offset, end);
+    return true;
 }
 std::string_view Instance::GetName()
 {
@@ -1355,15 +1418,19 @@ std::string_view Instance::GetName()
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
 {
     uint64 start, end;
-    if (this->selection.GetSelection(selectionID, start, end))
+    bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
+    if (show)
     {
-        LocalString<32> tmp;
-        tmp.Format("%X,%X", start, (end - start) + 1);
-        r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
-    }
-    else
-    {
-        r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+        if (this->selection.GetSelection(selectionID, start, end))
+        {
+            LocalString<32> tmp;
+            tmp.Format("%X,%X", start, (end - start) + 1);
+            r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
+        }
+        else
+        {
+            r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+        }
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
@@ -1765,6 +1832,7 @@ enum class PropertyID : uint32
 {
     // display
     Columns = 0,
+    CursorOffset,
     DataFormat,
     ShowAddress,
     ShowZoneName,
@@ -1772,6 +1840,7 @@ enum class PropertyID : uint32
     AddressBarWidth,
     ZoneNameWidth,
     CodePage,
+    AddressType,
     // selection
     HighlightSelection,
     SelectionType,
@@ -1783,7 +1852,16 @@ enum class PropertyID : uint32
     ShowAscii,
     ShowUnicode,
     StringCharacterSet,
-    MinimCharsInString
+    MinimCharsInString,
+    // shortcuts
+    ChangeColumnsView,
+    ChangeValueFormatOrCP,
+    ChangeAddressMode,
+    GoToEntryPoint,
+    ChangeSelectionType,
+    ShowHideStrings,
+    GoToAddress
+
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1793,6 +1871,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     {
     case PropertyID::Columns:
         value = this->Layout.nrCols;
+        return true;
+    case PropertyID::CursorOffset:
+        value = this->Cursor.base == 16;
         return true;
     case PropertyID::DataFormat:
         value = (uint64) this->Layout.charFormatMode;
@@ -1845,6 +1926,30 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::Selection_4:
         value = this->selection.GetStringRepresentation(3);
         return true;
+    case PropertyID::ChangeAddressMode:
+        value = config.Keys.ChangeAddressMode;
+        return true;
+    case PropertyID::ChangeValueFormatOrCP:
+        value = config.Keys.ChangeValueFormatOrCP;
+        return true;
+    case PropertyID::ChangeColumnsView:
+        value = config.Keys.ChangeColumnsNumber;
+        return true;
+    case PropertyID::GoToEntryPoint:
+        value = config.Keys.GoToEntryPoint;
+        return true;
+    case PropertyID::ChangeSelectionType:
+        value = config.Keys.ChangeSelectionType;
+        return true;
+    case PropertyID::ShowHideStrings:
+        value = config.Keys.ShowHideStrings;
+        return true;
+    case PropertyID::GoToAddress:
+        value = config.Keys.GoToAddress;
+        return true;
+    case PropertyID::AddressType:
+        value = this->currentAdrressMode;
+        return true;
     }
     return false;
 }
@@ -1856,6 +1961,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::Columns:
         this->Layout.nrCols = (uint32) std::get<uint64>(value);
         UpdateViewSizes();
+        return true;
+    case PropertyID::CursorOffset:
+        this->Cursor.base = std::get<bool>(value) ? 16 : 10;
         return true;
     case PropertyID::DataFormat:
         this->Layout.charFormatMode = static_cast<CharacterFormatMode>(std::get<uint64>(value));
@@ -1922,6 +2030,30 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::SelectionType:
         this->selection.EnableMultiSelection(std::get<uint64>(value) == 1);
         return true;
+    case PropertyID::ChangeAddressMode:
+        config.Keys.ChangeAddressMode = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ChangeValueFormatOrCP:
+        config.Keys.ChangeValueFormatOrCP = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ChangeColumnsView:
+        config.Keys.ChangeColumnsNumber = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::GoToEntryPoint:
+        config.Keys.GoToEntryPoint = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ChangeSelectionType:
+        config.Keys.ChangeSelectionType = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::ShowHideStrings:
+        config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::GoToAddress:
+        config.Keys.GoToAddress = std::get<AppCUI::Input::Key>(value);
+        return true;
+    case PropertyID::AddressType:
+        this->currentAdrressMode = (uint32) std::get<uint64>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1962,14 +2094,32 @@ const vector<Property> Instance::GetPropertiesList()
         CodePage.stringList.AddChar('=');
         CodePage.stringList.AddFormat("%u", idx);
     }
+
+    addressModesList.Clear();
+    if (this->settings->translationMethodsCount == 0)
+    {
+        addressModesList.Set("FileOffset=0");
+    }
+    else
+    {
+        for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++)
+        {
+            if (tr > 0)
+                addressModesList.AddChar(',');
+            addressModesList.AddFormat("%s=%u", settings->translationMethods[tr].name.GetText(), tr);
+        }
+    }
+
     return {
         // Display
         { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
         { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
         { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
         { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage.stringList.ToStringView() },
 
         // Address
+        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
         { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
         { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
         { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
@@ -1988,6 +2138,16 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
         { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
         { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
+
+        // shortcuts
+        { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
+        { BT(PropertyID::ChangeValueFormatOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
+        { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
+        { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
+        { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
+        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
+        { BT(PropertyID::GoToAddress), "Shortcuts", "Go To Address", PropertyType::Key },
+
     };
 }
 #undef BT
