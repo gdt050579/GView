@@ -109,7 +109,7 @@ bool Instance::Init()
 }
 bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
 {
-    auto win = std::make_unique<FileWindow>(name);
+    auto win = std::make_unique<FileWindow>(name,this);
     auto obj = win->GetObject();
     CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 

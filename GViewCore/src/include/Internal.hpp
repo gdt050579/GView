@@ -207,6 +207,7 @@ namespace App
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
+        Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
         ItemHandle cursorInfoHandle;
@@ -218,7 +219,7 @@ namespace App
         void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
 
       public:
-        FileWindow(const AppCUI::Utils::ConstString& name);
+        FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> gviewApp);
 
         void Start();
 
