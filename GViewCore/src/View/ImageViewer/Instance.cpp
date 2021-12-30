@@ -7,7 +7,7 @@ Config Instance::config;
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
-    imgView = Factory::ImageViewer::Create(this, "d:c", ViewerFlags::None);
+    imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
 
     this->obj               = _obj;
     this->name              = _name;
@@ -92,6 +92,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     r.WriteSingleLineText(
           25, 0, tmp.Format("%u/%u", this->currentImageIndex+1, (uint32) this->settings->imgList.size()), config.Colors.Normal);
     r.DrawVerticalLine(32, 0, height, config.Colors.Line, true);
+    r.WriteSingleLineText(34, 0, "Zoom:", config.Colors.Highlighted);
 }
 
 //======================================================================[PROPERTY]============================

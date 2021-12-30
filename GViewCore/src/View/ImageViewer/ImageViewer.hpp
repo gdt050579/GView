@@ -46,7 +46,7 @@ namespace View
         {
             Image img;
             Pointer<SettingsData> settings;
-            Reference<AppCUI::Controls::ImageViewer> imgView;
+            Reference<AppCUI::Controls::ImageView> imgView;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             uint32 currentImageIndex;

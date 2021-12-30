@@ -844,7 +844,7 @@ namespace Type
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ComboBox> iconsList;
-                Reference<AppCUI::Controls::ImageViewer> imageView;
+                Reference<AppCUI::Controls::ImageView> imageView;
 
                 void UpdateCurrentIcon();
 
