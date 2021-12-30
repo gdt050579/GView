@@ -46,12 +46,25 @@ extern "C"
         }
         win->CreateViewer("BufferView", settings);
     }
+    void CreateImageView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
+    {
+        GView::View::ImageViewer::Settings settings;
+        settings.SetLoadImageCallback(ico.UpCast<View::ImageViewer::LoadImageInterface>());
+        
+        for (uint32 idx = 0; idx < ico->dirs.size();idx++)
+        {
+            settings.AddImage(ico->dirs[idx].ico.offset, ico->dirs[idx].ico.size);
+        }
+
+        win->CreateViewer("ImageView", settings);
+    }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto ico = win->GetObject()->type->To<ICO::ICOFile>();
         ico->Update();
 
         // add viewer
+        CreateImageView(win, ico);
         CreateBufferView(win, ico);
 
         // add panels

@@ -10,9 +10,13 @@ namespace View
     {
         using namespace AppCUI;
 
+        struct ImageInfo
+        {
+            uint64 start, end;
+        };
         struct SettingsData
         {
-            uint32 imagesCount;
+            vector<ImageInfo> imgList;            
             Reference<LoadImageInterface> loadImageCallback;
             SettingsData();
         };
@@ -24,12 +28,12 @@ namespace View
                 ColorPair Inactive;
                 ColorPair Normal;
                 ColorPair Line;
+                ColorPair Highlighted;
             } Colors;
             struct
             {
                 AppCUI::Input::Key ZoomIn;
                 AppCUI::Input::Key ZoomOut;
-                AppCUI::Input::Key ChangeImageRenderMethod;
             } Keys;
             bool Loaded;
 
@@ -41,17 +45,22 @@ namespace View
         {
             Image img;
             Pointer<SettingsData> settings;
-            Reference<AppCUI::Controls::ImageViewer> imgView;
+            Reference<AppCUI::Controls::ImageView> imgView;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             uint32 currentImageIndex;
+            ImageScaleMethod scale;
 
             static Config config;
 
+            void LoadImage();
+            void RedrawImage();
+            ImageScaleMethod NextPreviousScale(bool next);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             virtual bool GoTo(uint64 offset) override;

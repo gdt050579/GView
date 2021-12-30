@@ -9,6 +9,7 @@ using namespace GView::View;
 constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
+constexpr int CMD_NEXT_VIEW              = 30012345;
 
 class CursorInformation : public UserControl
 {
@@ -162,6 +163,11 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             dlg.Show();
             return true;
         }
+        if (ID == CMD_NEXT_VIEW)
+        {
+            this->view->GoToNextTabPage();
+            return true;
+        }
     }
     if (eventType == Event::SplitterPositionChanged)
     {
@@ -194,6 +200,7 @@ void FileWindow::OnFocus(Reference<Control> control)
 }
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    commandBar.SetCommand(AppCUI::Input::Key::F4, this->view->GetCurrentTab().DownCast<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     return true;
 }
 void FileWindow::Start()

@@ -47,28 +47,14 @@ namespace Type
 
 #pragma pack(pop) // Back to 4 byte packing.
 
-        class ICOFile : public TypeInterface
+        class ICOFile : public TypeInterface, public View::ImageViewer::LoadImageInterface
         {
           public:
             bool isIcoFormat;
-
-            enum class ErrorType : uint8
-            {
-                Error,
-                Warning
-            };
-            struct ErrorInformation
-            {
-                ErrorType type;
-                FixSizeString<252> text;
-            };
             
           public:
             Reference<GView::Utils::FileCache> file;
             std::vector<DirectoryEntry> dirs;
-
-            void AddError(ErrorType type, std::string_view message);
-
           public:
             ICOFile(Reference<GView::Utils::FileCache> file);
             virtual ~ICOFile()
@@ -77,11 +63,17 @@ namespace Type
 
             bool Update();
             void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
+            uint32 GetIconsCount() const
+            {
+                return (uint32) dirs.size();
+            }
 
             std::string_view GetTypeName() override
             {
                 return "ICO";
             }
+
+            bool LoadImageToObject(Image& img, uint32 index) override;
         };
         namespace Panels
         {
