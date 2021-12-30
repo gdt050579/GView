@@ -65,7 +65,7 @@ bool ICOFile::LoadImageToObject(Image& img, uint32 index)
     else
     {
         // DIB
-        CHECK(img.CreateFromDIB(bf, this->isIcoFormat), false, "");
+        CHECK(img.CreateFromDIB(bf, true), false, "");
     }
     return true;
 }
