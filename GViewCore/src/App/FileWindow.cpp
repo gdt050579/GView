@@ -27,7 +27,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d:c", WindowFlags::Sizeable)
+FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> _gviewApp)
+    : Window(name, "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp)
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
