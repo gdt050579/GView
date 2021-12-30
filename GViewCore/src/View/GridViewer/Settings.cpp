@@ -21,3 +21,9 @@ void Settings::SetDimensions(unsigned int rows, unsigned int columns)
     ((SettingsData*) (this->data))->rows = rows;
     ((SettingsData*) (this->data))->cols = columns;
 }
+
+void Settings::SetSeparator(char separator[2])
+{
+    ((SettingsData*) (this->data))->separator[0] = separator[0];
+    ((SettingsData*) (this->data))->separator[1] = separator[1];
+}

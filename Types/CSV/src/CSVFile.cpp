@@ -19,11 +19,11 @@ bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 
     if (name.ends_with(".tsv"))
     {
-        separator = '\t';
+        separator[0] = '\t';
     }
     else if (name.ends_with(".csv"))
     {
-        separator = ',';
+        separator[0] = ',';
     }
     else
     {
@@ -80,7 +80,7 @@ void GView::Type::CSV::CSVFile::UpdateGrid(GView::View::GridViewer::Settings& se
 
     for (auto i = 0; i < buffer.GetLength() && buffer[i] != '\n'; i++)
     {
-        if (buffer[i] == separator)
+        if (buffer[i] == separator[0])
         {
             columnsNo++;
         }
@@ -110,7 +110,7 @@ void GView::Type::CSV::CSVFile::UpdateGrid(GView::View::GridViewer::Settings& se
 
         while (buffer[e] != '\r' && buffer[e] != '\n' && e < buffer.GetLength())
         {
-            if (buffer[e] == separator || buffer[e] == '\r' || buffer[e] == '\n' || e == buffer.GetLength() - 1)
+            if (buffer[e] == separator[0] || buffer[e] == '\r' || buffer[e] == '\n' || e == buffer.GetLength() - 1)
             {
                 std::string_view v{ reinterpret_cast<char*>(buffer.GetData()) + s, e - s };
                 content.back().emplace_back(v);
@@ -132,4 +132,5 @@ void GView::Type::CSV::CSVFile::UpdateGrid(GView::View::GridViewer::Settings& se
 
     settings.SetDimensions(rowsNo, columnsNo);
     settings.SetContent(content);
+    settings.SetSeparator(separator);
 }

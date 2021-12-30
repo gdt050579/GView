@@ -3,6 +3,10 @@
 using namespace GView::View::GridViewer;
 using namespace AppCUI::Input;
 
+constexpr uint32 PROP_ID_TOGGLE_HEADER = 0;
+
+constexpr uint32 COMMAND_ID_TOGGLE_HEADER = 0x1000;
+
 Config Instance::config;
 
 Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings) : settings(nullptr)
@@ -26,21 +30,10 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (settings)
     {
         grid = AppCUI::Controls::Factory::Grid::Create(
-              this,
-              "d:c,w:100%,h:100%",
-              settings->cols,
-              settings->rows,
-              AppCUI::Controls::GridFlags::TransparentBackground | AppCUI::Controls::GridFlags::HideHeader);
+              this, "d:c,w:100%,h:100%", settings->cols, settings->rows, AppCUI::Controls::GridFlags::TransparentBackground);
 
-        const auto& content = settings->content;
-        for (auto i = 0U; i < content.size(); i++)
-        {
-            const auto& row = content[i];
-            for (auto j = 0U; j < row.size(); j++)
-            {
-                grid->UpdateCell(j, i, AppCUI::Controls::Grid::CellType::String, row[j]);
-            }
-        }
+        grid->SetSeparator(settings->separator);
+        PopulateGrid();
     }
 
     if (config.Loaded == false)
@@ -66,6 +59,62 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
 {
 }
 
+bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    commandBar.SetCommand(config.Keys.ToggleHeader, "ToggleHeader", COMMAND_ID_TOGGLE_HEADER);
+    return true;
+}
+
+bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
+{
+    if (eventType == Event::Command)
+    {
+        if (ID == COMMAND_ID_TOGGLE_HEADER)
+        {
+            settings->showHeader = !settings->showHeader;
+            bool isHeaderShown   = grid->IsHeaderShown();
+            if (settings->showHeader == isHeaderShown)
+            {
+                return false;
+            }
+            PopulateGrid();
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void Instance::PopulateGrid()
+{
+    grid->ShowHeader(settings->showHeader);
+
+    auto i              = 0U;
+    const auto& content = settings->content;
+    if (settings->showHeader)
+    {
+        const auto& header = content[0];
+        std::vector<AppCUI::Utils::ConstString> headerCS;
+        for (const auto& value : header)
+        {
+            headerCS.push_back(value);
+        }
+
+        grid->UpdateHeaderValues(headerCS);
+        i++;
+    }
+
+    for (; i < content.size(); i++)
+    {
+        const auto& row = content[i];
+        for (auto j = 0U; j < row.size(); j++)
+        {
+            grid->UpdateCell(j, i - settings->showHeader, AppCUI::Controls::Grid::CellType::String, row[j]);
+        }
+    }
+}
+
 enum class PropertyID : uint32
 {
     None
@@ -73,11 +122,27 @@ enum class PropertyID : uint32
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
+    switch (id)
+    {
+    case PROP_ID_TOGGLE_HEADER:
+        value = config.Keys.ToggleHeader;
+        return true;
+    default:
+        break;
+    }
     return false;
 }
 
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
+    switch (id)
+    {
+    case PROP_ID_TOGGLE_HEADER:
+        config.Keys.ToggleHeader = std::get<Key>(value);
+        return true;
+    default:
+        break;
+    }
     return false;
 }
 
@@ -92,5 +157,7 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {};
+    return {
+        { PROP_ID_TOGGLE_HEADER, "General", "Toggle header existence", PropertyType::Key },
+    };
 }

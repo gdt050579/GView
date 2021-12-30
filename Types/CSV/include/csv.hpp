@@ -22,7 +22,7 @@ namespace Type
             bool hasHeader{ false };
             unsigned int columnsNo{ 0 };
             unsigned int rowsNo{ 0 };
-            char separator{ 0 };
+            char separator[2]{""};
 
             uint64_t panelsMask{ 0 };
 
