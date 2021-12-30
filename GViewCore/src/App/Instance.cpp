@@ -64,7 +64,7 @@ bool Instance::LoadSettings()
     CHECK(ini, false, "");
 
     // check plugins
-    for (auto section : ini->GetSections())
+    for (const auto& section : ini->GetSections())
     {
         if (String::StartsWith(section.GetName(), std::string_view("type."), true))
         {
@@ -165,7 +165,7 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
 {
     NOT_IMPLEMENTED(false);
 }
-void Instance::SetCustomPropetyValue(uint32 propertyID)
+void Instance::SetCustomPropertyValue(uint32 propertyID)
 {
 }
 bool Instance::IsPropertyValueReadOnly(uint32 propertyID)

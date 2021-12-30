@@ -1,6 +1,7 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
 #include "ImageViewer.hpp"
+#include "GridViewer.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -50,6 +51,7 @@ bool GView::App::ResetConfiguration()
     // for viewers
     GView::View::BufferViewer::Config::Update(ini["BufferView"]);
     GView::View::ImageViewer::Config::Update(ini["ImageView"]);
+    GView::View::GridViewer::Config::Update(ini["GridView"]);
 
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();

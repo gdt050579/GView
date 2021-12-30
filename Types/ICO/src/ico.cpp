@@ -63,7 +63,7 @@ extern "C"
         auto ico = win->GetObject()->type->To<ICO::ICOFile>();
         ico->Update();
 
-        // add veiewer
+        // add viewer
         CreateImageView(win, ico);
         CreateBufferView(win, ico);
 

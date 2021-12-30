@@ -1,6 +1,7 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
 #include "ImageViewer.hpp"
+#include "GridViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -60,6 +61,11 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     this->defaultCursorViewSize       = 2;
     this->defaultVerticalPanelsSize   = 8;
     this->defaultHorizontalPanelsSize = 40;
+
+    UnicodeStringBuilder usb{ name };
+    const auto path     = std::filesystem::path(usb.ToStringView());
+    const auto filename = path.filename().u16string();
+    this->obj.name.Set(filename);
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -90,6 +96,11 @@ bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferV
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
+bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()

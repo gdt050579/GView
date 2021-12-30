@@ -195,7 +195,7 @@ namespace App
         // property interface
         virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
         virtual bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
-        virtual void SetCustomPropetyValue(uint32 propertyID) override;
+        virtual void SetCustomPropertyValue(uint32 propertyID) override;
         virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
         virtual const vector<Property> GetPropertiesList() override;
     };
@@ -227,6 +227,7 @@ namespace App
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
