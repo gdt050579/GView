@@ -65,7 +65,7 @@ namespace View
 
             bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
             bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
-            void SetCustomPropetyValue(uint32 propertyID) override;
+            void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
             bool GoTo(uint64 offset) override;

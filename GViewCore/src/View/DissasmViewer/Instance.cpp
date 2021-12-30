@@ -55,7 +55,7 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     return false;
 }
 
-void Instance::SetCustomPropetyValue(uint32 propertyID)
+void Instance::SetCustomPropertyValue(uint32 propertyID)
 {
 }
 
