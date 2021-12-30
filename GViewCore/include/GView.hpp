@@ -190,12 +190,56 @@ namespace View
             Settings();
             void SetLoadImageCallback(Reference<LoadImageInterface>, uint32 imagesCount = 1);
         };
-    }; // namespace ImageViewer
-    namespace DissasmViewer
+    };                      // namespace ImageViewer
+    namespace DissasmViewer // StructureViewer
     {
+        using TypeID = uint32;
+
+        enum class DissamblyLanguage : uint32
+        {
+            Default,
+            x86,
+            x64,
+            JavaByteCode,
+            IL,
+            Count
+        };
+
+        enum class VariableType : uint32
+        {
+            UInt8,
+            UInt16,
+            UInt32,
+            AsciiZ,
+            UnicodeZ,
+        };
+
         struct CORE_EXPORT Settings
         {
             void* data;
+
+            void SetDefaultDissasemblyLanguage(DissamblyLanguage lang);
+            void ReserverZonesCapacity(uint32 reserved_size);
+            void AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang = DissamblyLanguage::Default);
+
+            void AddMemmoryMapping(uint64 address, std::string_view name);
+
+            TypeID AddType(std::string_view name, std::string_view definition);
+
+            // structure view
+            void AddVariable(uint64 offset, std::string_view name, VariableType type);
+            void AddArray(uint64 offset, std::string_view name, VariableType type, uint32 count);
+            void AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height);
+
+            void AddVariable(uint64 offset, std::string_view name, TypeID type);
+            void AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count);
+            void AddBiDiminesionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height);
+
+            /*
+             * types: uin8-64,int8-64, float,double, char* (asciiZ), Unicode16Z,Unicode32Z
+             * auto point_id = AddType("Point","struct Point{ uint32 x;uint32 y };");
+             * AddVariable(0x1234, "MyPoint", point_id);
+             */
 
             Settings();
         };
