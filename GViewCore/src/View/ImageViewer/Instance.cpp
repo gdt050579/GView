@@ -196,7 +196,12 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 enum class PropertyID : uint32
 {
     // display
-
+    ImagesCount,
+    Scale,
+    CurrentImageIndex,
+    CurrentImageSize,
+    ZoomIn,
+    ZoomOut
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -204,8 +209,24 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
-    default:
-        break;
+    case PropertyID::ImagesCount:
+        value = (uint32) settings->imgList.size();
+        return true;
+    case PropertyID::Scale:
+        value = static_cast<uint32>(this->scale);
+        return true;
+    case PropertyID::CurrentImageIndex:
+        value = this->currentImageIndex;
+        return true;
+    case PropertyID::CurrentImageSize:
+        value = Size{ img.GetWidth(), img.GetHeight() };
+        return true;
+    case PropertyID::ZoomIn:
+        value = config.Keys.ZoomIn;
+        return true;
+    case PropertyID::ZoomOut:
+        value = config.Keys.ZoomOut;
+        return true;
     }
     return false;
 }
@@ -213,8 +234,25 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (static_cast<PropertyID>(id))
     {
-    default:
-        break;
+    case PropertyID::Scale:
+        this->scale = static_cast<ImageScaleMethod>(std::get<uint64>(value));
+        this->RedrawImage();
+        return true;
+    case PropertyID::CurrentImageIndex:
+        if ((std::get<uint32>(value))>=this->settings->imgList.size())
+        {
+            error.SetFormat("Invalid image index (should be between 0 and %d)", (int) (this->settings->imgList.size() - 1));
+            return false;
+        }
+        this->currentImageIndex = std::get<uint32>(value);
+        LoadImage();
+        return true;
+    case PropertyID::ZoomIn:
+        config.Keys.ZoomIn = std::get<Key>(value);
+        return true;
+    case PropertyID::ZoomOut:
+        config.Keys.ZoomOut = std::get<Key>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -226,8 +264,9 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     switch (static_cast<PropertyID>(propertyID))
     {
-    default:
-        break;
+    case PropertyID::ImagesCount:
+    case PropertyID::CurrentImageSize:
+        return true;
     }
 
     return false;
@@ -235,8 +274,12 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        // Display
-        //{ BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { BT(PropertyID::ImagesCount), "General", "Images count", PropertyType::UInt32 },
+        { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
+        { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
+        { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size },
+        { BT(PropertyID::ZoomIn), "Shortcuts", "Key for ZoomIn", PropertyType::Key },
+        { BT(PropertyID::ZoomOut), "Shortcuts", "Key for ZoomOut", PropertyType::Key },
 
     };
 }
