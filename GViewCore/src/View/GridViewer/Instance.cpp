@@ -36,7 +36,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
         PopulateGrid();
     }
 
-    if (config.Loaded == false)
+    if (config.loaded == false)
         config.Initialize();
 }
 
@@ -57,11 +57,50 @@ bool Instance::Select(unsigned long long offset, unsigned long long size)
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
 {
+    if (height == 1)
+    {
+        const uint32 x1 = 1;
+        const uint32 x2 = x1 + config.cursorInformationCellSpace + 1;
+        const uint32 x3 = x2 + config.cursorInformationCellSpace + 1;
+        const uint32 x4 = x3 + config.cursorInformationCellSpace + 1;
+        const uint32 x5 = x4 + config.cursorInformationCellSpace + 1;
+        const uint32 x6 = x5 + config.cursorInformationCellSpace + 1;
+        const uint32 y  = 0;
+
+        PaintCursorInformationWidth(renderer, x1, y);
+        PaintCursorInformationSeparator(renderer, x2 - 1, y);
+        PaintCursorInformationHeight(renderer, x2, y);
+        PaintCursorInformationSeparator(renderer, x3 - 1, y);
+        PaintCursorInformationCells(renderer, x3, y);
+        PaintCursorInformationSeparator(renderer, x4 - 1, y);
+        PaintCursorInformationCurrentLocation(renderer, x4, y);
+        PaintCursorInformationSeparator(renderer, x5 - 1, y);
+        PaintCursorInformationSelection(renderer, x5, y);
+    }
+    else if (height > 1)
+    {
+        const uint32 x1 = 1;
+        const uint32 x2 = 1;
+        const uint32 x3 = x1 + config.cursorInformationCellSpace + 1;
+        const uint32 x4 = x2 + config.cursorInformationCellSpace + 1;
+        const uint32 x5 = x3 + config.cursorInformationCellSpace + 1;
+        const uint32 x6 = x4 + config.cursorInformationCellSpace + 1;
+        const uint32 y1 = 0;
+        const uint32 y2 = 1;
+
+        PaintCursorInformationWidth(renderer, x1, y1);
+        PaintCursorInformationHeight(renderer, x2, y2);
+        PaintCursorInformationSeparator(renderer, x2 - 1, y1);
+        PaintCursorInformationCells(renderer, x3, y1);
+        PaintCursorInformationCurrentLocation(renderer, x4, y2);
+        PaintCursorInformationSeparator(renderer, x4 - 1, y1);
+        PaintCursorInformationSelection(renderer, x5, y1);
+    }
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.Keys.ToggleHeader, "ToggleHeader", COMMAND_ID_TOGGLE_HEADER);
+    commandBar.SetCommand(config.keys.toggleHeader, "ToggleHeader", COMMAND_ID_TOGGLE_HEADER);
     return true;
 }
 
@@ -115,6 +154,124 @@ void Instance::PopulateGrid()
     }
 }
 
+void GView::View::GridViewer::Instance::PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+{
+    WriteTextParams params{ WriteTextFlags::SingleLine };
+    params.Color = config.color.cursorInformation.name;
+    params.X     = x;
+    params.Y     = y;
+    params.Width = config.cursorInformationCellSpace;
+    params.Align = TextAlignament::Left;
+
+    LocalString<256> ls;
+
+    const auto width = grid->GetWidth();
+    renderer.WriteText("Width:", params);
+    params.Color = config.color.cursorInformation.value;
+    params.X += 6;
+    ls.Format("%d", width);
+    renderer.WriteText(ls, params);
+}
+
+void GView::View::GridViewer::Instance::PaintCursorInformationHeight(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+{
+    WriteTextParams params{ WriteTextFlags::SingleLine };
+    params.Color = config.color.cursorInformation.name;
+    params.X     = x;
+    params.Y     = y;
+    params.Width = config.cursorInformationCellSpace;
+    params.Align = TextAlignament::Left;
+
+    LocalString<256> ls;
+
+    const auto height = grid->GetHeight();
+    renderer.WriteText("Height:", params);
+    params.Color = config.color.cursorInformation.value;
+    params.X += 7;
+    ls.Format("%d", height);
+    renderer.WriteText(ls, params);
+}
+
+void GView::View::GridViewer::Instance::PaintCursorInformationCells(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+{
+    WriteTextParams params{ WriteTextFlags::SingleLine };
+    params.Color = config.color.cursorInformation.name;
+    params.X     = x;
+    params.Y     = y;
+    params.Width = config.cursorInformationCellSpace;
+    params.Align = TextAlignament::Left;
+
+    LocalString<256> ls;
+
+    const auto cells = grid->GetCellsCount();
+    renderer.WriteText("Cells:", params);
+    params.Color = config.color.cursorInformation.value;
+    params.X += 6;
+    ls.Format("%d", cells);
+    renderer.WriteText(ls, params);
+}
+
+void GView::View::GridViewer::Instance::PaintCursorInformationCurrentLocation(
+      AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+{
+    WriteTextParams params{ WriteTextFlags::SingleLine };
+    params.Color = config.color.cursorInformation.name;
+    params.X     = x;
+    params.Y     = y;
+    params.Width = config.cursorInformationCellSpace;
+    params.Align = TextAlignament::Left;
+
+    LocalString<256> ls;
+
+    const auto location = grid->GetHoveredLocation();
+    renderer.WriteText("Hovered:", params);
+    params.Color = config.color.cursorInformation.value;
+    params.X += 9;
+    if (location == Point{ -1, -1 })
+    {
+        ls.Format("- | -");
+    }
+    else
+    {
+        ls.Format("%d | %d", location.X, location.Y);
+    }
+    renderer.WriteText(ls, params);
+}
+
+void GView::View::GridViewer::Instance::PaintCursorInformationSelection(
+      AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+{
+    WriteTextParams params{ WriteTextFlags::SingleLine };
+    params.Color = config.color.cursorInformation.name;
+    params.X     = x;
+    params.Y     = y;
+    params.Width = config.cursorInformationCellSpace;
+    params.Align = TextAlignament::Left;
+
+    LocalString<256> ls;
+
+    const auto start = grid->GetSelectionLocationsStart();
+    const auto end   = grid->GetSelectionLocationsEnd();
+    renderer.WriteText("Selection:", params);
+    params.Color = config.color.cursorInformation.value;
+    params.X += 10;
+    if (start == Point{ -1, -1 } || end == Point{ -1, -1 })
+    {
+        ls.Format("- & - -> - & -");
+    }
+    else
+    {
+        ls.Format("%d & %d -> %d & %d", start.X, start.Y, end.X, end.Y);
+    }
+    renderer.WriteText(ls, params);
+}
+
+void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(
+      AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+{
+    renderer.DrawVerticalLine(x, y, y + 4, config.color.cursorInformation.value);
+}
+
 enum class PropertyID : uint32
 {
     None
@@ -125,7 +282,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     switch (id)
     {
     case PROP_ID_TOGGLE_HEADER:
-        value = config.Keys.ToggleHeader;
+        value = config.keys.toggleHeader;
         return true;
     default:
         break;
@@ -138,7 +295,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (id)
     {
     case PROP_ID_TOGGLE_HEADER:
-        config.Keys.ToggleHeader = std::get<Key>(value);
+        config.keys.toggleHeader = std::get<Key>(value);
         return true;
     default:
         break;

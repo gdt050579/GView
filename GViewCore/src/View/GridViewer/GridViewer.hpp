@@ -11,10 +11,10 @@ namespace View
         struct SettingsData
         {
             std::vector<std::vector<std::string>> content;
-            char separator[2]{","};
+            char separator[2]{ "," };
             unsigned int rows = 0;
             unsigned int cols = 0;
-            bool showHeader = false;
+            bool showHeader   = false;
             SettingsData();
         };
 
@@ -22,9 +22,18 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key ToggleHeader;
-            } Keys;
-            bool Loaded;
+                AppCUI::Input::Key toggleHeader;
+            } keys;
+            struct
+            {
+                struct
+                {
+                    ColorPair name{ Color::Yellow, Color::Transparent };
+                    ColorPair value{ Color::Gray, Color::Transparent };
+                } cursorInformation;
+            } color;
+            const unsigned int cursorInformationCellSpace = 20;
+            bool loaded;
 
             static void Update(IniSection sect);
             void Initialize();
@@ -59,8 +68,14 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
 
-        private:
+          private:
             void PopulateGrid();
+            void PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
+            void PaintCursorInformationHeight(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
+            void PaintCursorInformationCells(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
+            void PaintCursorInformationCurrentLocation(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
+            void PaintCursorInformationSelection(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
+            void PaintCursorInformationSeparator(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
         };
     } // namespace GridViewer
 } // namespace View

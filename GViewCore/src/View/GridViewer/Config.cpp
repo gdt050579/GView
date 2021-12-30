@@ -16,12 +16,12 @@ void Config::Initialize()
     if (ini)
     {
         auto sect = ini->GetSection("GridView");
-        this->Keys.ToggleHeader = ini->GetValue("ToggleHeader").ToKey(KEY_TOGGLE_HEADER);
+        this->keys.toggleHeader = ini->GetValue("ToggleHeader").ToKey(KEY_TOGGLE_HEADER);
     }
     else
     {
-        this->Keys.ToggleHeader = KEY_TOGGLE_HEADER;
+        this->keys.toggleHeader = KEY_TOGGLE_HEADER;
     }
 
-    Loaded = true;
+    loaded = true;
 }
