@@ -177,6 +177,7 @@ namespace View
             void SetEntryPointOffset(uint64_t offset);
         };
     }; // namespace BufferViewer
+
     namespace ImageViewer
     {
         struct CORE_EXPORT LoadImageInterface
@@ -188,8 +189,26 @@ namespace View
             void* data;
 
             Settings();
-            void SetLoadImageCallback(Reference<LoadImageInterface>, uint32 imagesCount = 1);
+            void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
+            void AddImage(uint64 offset, uint64 size);
         };
+    }; // namespace ImageViewer
+
+    namespace GridViewer
+    {
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+
+            // TODO: step by step (set cell, column, etc)
+            void SetContent(std::vector<std::vector<std::string>>& content);
+            void SetDimensions(unsigned int rows, unsigned int columns);
+            void SetSeparator(char separator[2]);
+        };
+    } // namespace GridViewer
+
     };                      // namespace ImageViewer
     namespace DissasmViewer // StructureViewer
     {
@@ -260,6 +279,12 @@ namespace View
     }; // namespace DissasmViewer
     struct CORE_EXPORT WindowInterface
     {
+        virtual Reference<Object> GetObject()                                                     = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                               = 0;
+        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)  = 0;
+        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)   = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                           = 0;
         virtual Reference<Object> GetObject()                                                      = 0;
         virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                = 0;
         virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings)  = 0;

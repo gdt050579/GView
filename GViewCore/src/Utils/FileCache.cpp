@@ -178,7 +178,7 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
         }
         memcpy(p, bv.GetData(), toRead);
         p += toRead;
-        requestedSize -= toRead;        
+        requestedSize -= toRead;
     }
     return b;
 }

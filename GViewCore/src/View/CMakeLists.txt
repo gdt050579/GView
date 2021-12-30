@@ -1,3 +1,5 @@
 add_subdirectory(BufferViewer)
 add_subdirectory(ImageViewer)
+add_subdirectory(GridViewer)
+add_subdirectory(ImageViewer)
 add_subdirectory(DissasmViewer)

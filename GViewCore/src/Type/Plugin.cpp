@@ -144,7 +144,10 @@ bool Plugin::Validate(BufferView buf, std::string_view extension)
     // check if matches any of the existing patterns
     if (this->Patterns.empty())
     {
-        matched = this->Pattern.Match(buf);
+        if (this->Pattern.Empty() == false)
+        {
+            matched = this->Pattern.Match(buf);
+        }
     }
     else
     {

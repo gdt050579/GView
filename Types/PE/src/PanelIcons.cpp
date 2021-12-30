@@ -12,7 +12,7 @@ Panels::Icons::Icons(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::Vi
 
     Factory::Label::Create(this, "Icons", "x:1,y:1,w:6");
     this->iconsList = Factory::ComboBox::Create(this, "l:7,t:1,r:1");
-    this->imageView = Factory::ImageViewer::Create(this, "l:1,t:3,r:1,b:1", ViewerFlags::None);
+    this->imageView = Factory::ImageView::Create(this, "l:1,t:3,r:1,b:1", ViewerFlags::None);
     Update();
     this->iconsList->SetCurentItemIndex(0);
     UpdateCurrentIcon();

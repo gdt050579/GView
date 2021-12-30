@@ -2058,7 +2058,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
 }
-void Instance::SetCustomPropetyValue(uint32 propertyID)
+void Instance::SetCustomPropertyValue(uint32 propertyID)
 {
     auto propID = static_cast<PropertyID>(propertyID);
     if ((propID == PropertyID::Selection_1) || (propID == PropertyID::Selection_2) || (propID == PropertyID::Selection_3) ||

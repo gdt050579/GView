@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "GView.hpp"
 
 #include <set>
@@ -56,6 +55,7 @@ namespace Utils
     class CharacterSet
     {
         bool Ascii[256];
+
       public:
         CharacterSet();
         CharacterSet(bool asciiMask[256]);
@@ -164,23 +164,42 @@ namespace App
         constexpr int ABOUT             = 110001;
 
     }; // namespace MenuCommands
-    class Instance
+    class Instance : public AppCUI::Utils::PropertiesInterface
     {
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
         std::vector<GView::Type::Plugin> typePlugins;
         GView::Type::Plugin defaultPlugin;
-        unsigned int defaultCacheSize;
+        uint32 defaultCacheSize;
+        AppCUI::Input::Key keyToChangeViews;
 
         bool BuildMainMenus();
         bool LoadSettings();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
+
       public:
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
+
+        // inline getters
+        constexpr inline uint32 GetDefaultCacheSize() const
+        {
+            return this->defaultCacheSize;
+        }
+        constexpr inline AppCUI::Input::Key GetKeyToChangeViewes() const
+        {
+            return this->keyToChangeViews;
+        }
+
+        // property interface
+        virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
+        virtual bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
+        virtual void SetCustomPropertyValue(uint32 propertyID) override;
+        virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
+        virtual const vector<Property> GetPropertiesList() override;
     };
-    class FileWindowProperties: public Window
+    class FileWindowProperties : public Window
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
@@ -188,6 +207,7 @@ namespace App
     };
     class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
     {
+        Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
         ItemHandle cursorInfoHandle;
@@ -197,8 +217,9 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
 
         void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
+
       public:
-        FileWindow(const AppCUI::Utils::ConstString& name);
+        FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> gviewApp);
 
         void Start();
 
@@ -206,6 +227,7 @@ namespace App
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
         bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
@@ -213,8 +235,6 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
-        
-        
     };
 } // namespace App
 

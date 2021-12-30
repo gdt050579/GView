@@ -1,6 +1,7 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
 #include "ImageViewer.hpp"
+#include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
 
 using namespace GView::App;
@@ -9,6 +10,7 @@ using namespace GView::View;
 constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
+constexpr int CMD_NEXT_VIEW              = 30012345;
 
 class CursorInformation : public UserControl
 {
@@ -26,7 +28,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d:c", WindowFlags::Sizeable)
+FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> _gviewApp)
+    : Window(name, "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp)
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -59,6 +62,11 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name) : Window(name, "d
     this->defaultCursorViewSize       = 2;
     this->defaultVerticalPanelsSize   = 8;
     this->defaultHorizontalPanelsSize = 40;
+
+    UnicodeStringBuilder usb{ name };
+    const auto path     = std::filesystem::path(usb.ToStringView());
+    const auto filename = path.filename().u16string();
+    this->obj.name.Set(filename);
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
@@ -89,6 +97,11 @@ bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferV
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
+bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
 
@@ -158,6 +171,11 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             dlg.Show();
             return true;
         }
+        if (ID == CMD_NEXT_VIEW)
+        {
+            this->view->GoToNextTabPage();
+            return true;
+        }
     }
     if (eventType == Event::SplitterPositionChanged)
     {
@@ -190,6 +208,7 @@ void FileWindow::OnFocus(Reference<Control> control)
 }
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    commandBar.SetCommand(AppCUI::Input::Key::F4, this->view->GetCurrentTab().DownCast<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     return true;
 }
 void FileWindow::Start()
