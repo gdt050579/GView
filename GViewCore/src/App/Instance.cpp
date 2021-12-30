@@ -155,3 +155,24 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
     return Add(std::move(f), path.u16string(), path.extension().string());
 }
+
+//===============================[PROPERTIES]==================================
+bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error)
+{
+    NOT_IMPLEMENTED(false);
+}
+void Instance::SetCustomPropetyValue(uint32 propertyID)
+{
+}
+bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
+{
+    NOT_IMPLEMENTED(false);
+}
+const vector<Property> Instance::GetPropertiesList()
+{
+    return {};
+}

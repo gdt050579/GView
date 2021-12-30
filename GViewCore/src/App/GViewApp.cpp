@@ -8,9 +8,7 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
-
 GView::App::Instance* gviewAppInstance = nullptr;
-
 
 bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
 {
@@ -62,6 +60,10 @@ bool GView::App::ResetConfiguration()
         if ((fileEntry.path().extension() == ".tpl") && (fileEntry.path().filename().string().starts_with("lib")))
             UpdateSettingsForTypePlugin(ini, fileEntry.path());
     }
+
+    // generic GView settings
+    ini["GView"]["CacheSize"]  = 0x100000;
+    ini["GView"]["ChangeView"] = Key::F4;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
