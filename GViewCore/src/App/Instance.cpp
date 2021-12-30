@@ -6,6 +6,9 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
+constexpr uint32 DEFAULT_CACHE_SIZE = 0x100000; // 1 MB
+constexpr uint32 MIN_CACHE_SIZE     = 0x10000;  // 64 K
+
 struct _MenuCommand_
 {
     std::string_view name;
@@ -52,12 +55,14 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
 
 Instance::Instance()
 {
-    this->defaultCacheSize = 0x100000; // 1 MB
+    this->defaultCacheSize = DEFAULT_CACHE_SIZE; // 1 MB
+    this->keyToChangeViews = Key::F4;
 }
 bool Instance::LoadSettings()
 {
     auto ini = AppCUI::Application::GetAppSettings();
     CHECK(ini, false, "");
+
     // check plugins
     for (auto section : ini->GetSections())
     {
@@ -70,6 +75,11 @@ bool Instance::LoadSettings()
     }
     // sort all plugins based on their priority
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
+
+    // read instance settings
+    auto sect              = ini->GetSection("GView");
+    this->defaultCacheSize = std::min<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
+    this->keyToChangeViews = sect.GetValue("ChangeView").ToKey(Key::F4);
 
     return true;
 }
@@ -145,4 +155,3 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
     return Add(std::move(f), path.u16string(), path.extension().string());
 }
-

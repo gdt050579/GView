@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "GView.hpp"
 
 #include <set>
@@ -56,6 +55,7 @@ namespace Utils
     class CharacterSet
     {
         bool Ascii[256];
+
       public:
         CharacterSet();
         CharacterSet(bool asciiMask[256]);
@@ -164,23 +164,42 @@ namespace App
         constexpr int ABOUT             = 110001;
 
     }; // namespace MenuCommands
-    class Instance
+    class Instance : public AppCUI::Utils::PropertiesInterface
     {
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
         std::vector<GView::Type::Plugin> typePlugins;
         GView::Type::Plugin defaultPlugin;
-        unsigned int defaultCacheSize;
+        uint32 defaultCacheSize;
+        Key keyToChangeViews;
 
         bool BuildMainMenus();
         bool LoadSettings();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
+
       public:
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
+
+        // inline getters
+        constexpr inline uint32 GetDefaultCacheSize() const
+        {
+            return this->defaultCacheSize;
+        }
+        constexpr inline Key GetKeyToChangeViewes() const
+        {
+            return this->keyToChangeViews;
+        }
+
+        // property interface
+        virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
+        virtual bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
+        virtual void SetCustomPropetyValue(uint32 propertyID) override;
+        virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
+        virtual const vector<Property> GetPropertiesList() override;
     };
-    class FileWindowProperties: public Window
+    class FileWindowProperties : public Window
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
@@ -197,6 +216,7 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
 
         void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
+
       public:
         FileWindow(const AppCUI::Utils::ConstString& name);
 
@@ -212,8 +232,6 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
-        
-        
     };
 } // namespace App
 
