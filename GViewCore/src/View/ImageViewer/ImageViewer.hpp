@@ -50,14 +50,18 @@ namespace View
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             uint32 currentImageIndex;
+            ImageScaleMethod scale;
 
             static Config config;
 
             void LoadImage();
+            void RedrawImage();
+            ImageScaleMethod NextPreviousScale(bool next);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             virtual bool GoTo(uint64 offset) override;
