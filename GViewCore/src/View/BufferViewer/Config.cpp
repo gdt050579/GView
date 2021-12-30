@@ -27,13 +27,13 @@ void Config::Initialize()
     if (ini)
     {
         auto sect                        = ini->GetSection("BufferView");
-        this->Keys.ChangeColumnsNumber   = ini->GetValue("ChangeColumnsCount").ToKey(Key::F6);
-        this->Keys.ChangeValueFormatOrCP = ini->GetValue("ChangeValueFormatOrCP").ToKey(Key::F2);
-        this->Keys.ChangeAddressMode     = ini->GetValue("ChangeAddressMode").ToKey(Key::F3);
-        this->Keys.GoToEntryPoint        = ini->GetValue("GoToEntryPoint").ToKey(Key::F7);
-        this->Keys.ChangeSelectionType   = ini->GetValue("ChangeSelectionType").ToKey(Key::F9);
-        this->Keys.ShowHideStrings       = ini->GetValue("ShowHideStrings").ToKey(Key::Alt | Key::F3);
-        this->Keys.GoToAddress           = ini->GetValue("GoToAddress").ToKey(Key::F5);
+        this->Keys.ChangeColumnsNumber   = sect.GetValue("ChangeColumnsCount").ToKey(Key::F6);
+        this->Keys.ChangeValueFormatOrCP = sect.GetValue("ChangeValueFormatOrCP").ToKey(Key::F2);
+        this->Keys.ChangeAddressMode     = sect.GetValue("ChangeAddressMode").ToKey(Key::F3);
+        this->Keys.GoToEntryPoint        = sect.GetValue("GoToEntryPoint").ToKey(Key::F7);
+        this->Keys.ChangeSelectionType   = sect.GetValue("ChangeSelectionType").ToKey(Key::F9);
+        this->Keys.ShowHideStrings       = sect.GetValue("ShowHideStrings").ToKey(Key::Alt | Key::F3);
+        this->Keys.GoToAddress           = sect.GetValue("GoToAddress").ToKey(Key::F5);
     }
     else
     {

@@ -16,7 +16,7 @@ void Config::Initialize()
     if (ini)
     {
         auto sect = ini->GetSection("GridView");
-        this->keys.toggleHeader = ini->GetValue("ToggleHeader").ToKey(KEY_TOGGLE_HEADER);
+        this->keys.toggleHeader = sect.GetValue("ToggleHeader").ToKey(KEY_TOGGLE_HEADER);
     }
     else
     {
