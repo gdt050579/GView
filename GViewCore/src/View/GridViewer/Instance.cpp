@@ -110,12 +110,7 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
     {
         if (ID == COMMAND_ID_TOGGLE_HEADER)
         {
-            settings->showHeader = !settings->showHeader;
-            bool isHeaderShown   = grid->IsHeaderVisible();
-            if (settings->showHeader == isHeaderShown)
-            {
-                return false;
-            }
+            settings->firstRowAsHeader = !settings->firstRowAsHeader;
             PopulateGrid();
 
             return true;
@@ -127,11 +122,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 
 void Instance::PopulateGrid()
 {
-    grid->ShowHeader(settings->showHeader);
-
     auto i              = 0U;
     const auto& content = settings->content;
-    if (settings->showHeader)
+    if (settings->firstRowAsHeader)
     {
         const auto& header = content[0];
         std::vector<AppCUI::Utils::ConstString> headerCS;
@@ -143,13 +136,17 @@ void Instance::PopulateGrid()
         grid->UpdateHeaderValues(headerCS);
         i++;
     }
+    else
+    {
+        grid->ResetHeaderValues();
+    }
 
     for (; i < content.size(); i++)
     {
         const auto& row = content[i];
         for (auto j = 0U; j < row.size(); j++)
         {
-            grid->UpdateCell(j, i - settings->showHeader, AppCUI::Controls::Grid::CellType::String, row[j]);
+            grid->UpdateCell(j, i - settings->firstRowAsHeader, AppCUI::Controls::Grid::CellType::String, row[j]);
         }
     }
 }

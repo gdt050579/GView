@@ -14,7 +14,7 @@ namespace View
             char separator[2]{ "," };
             unsigned int rows = 0;
             unsigned int cols = 0;
-            bool showHeader   = false;
+            bool firstRowAsHeader   = false;
             SettingsData();
         };
 
