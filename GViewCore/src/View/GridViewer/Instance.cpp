@@ -72,7 +72,7 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         if (ID == COMMAND_ID_TOGGLE_HEADER)
         {
             settings->showHeader = !settings->showHeader;
-            bool isHeaderShown   = grid->IsHeaderShown();
+            bool isHeaderShown   = grid->IsHeaderVisible();
             if (settings->showHeader == isHeaderShown)
             {
                 return false;
