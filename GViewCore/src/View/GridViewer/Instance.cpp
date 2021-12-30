@@ -146,7 +146,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     return false;
 }
 
-void Instance::SetCustomPropetyValue(uint32 propertyID)
+void Instance::SetCustomPropertyValue(uint32 propertyID)
 {
 }
 
