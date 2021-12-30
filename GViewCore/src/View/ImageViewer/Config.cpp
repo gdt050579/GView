@@ -7,7 +7,6 @@ void Config::Update(IniSection sect)
 {
     sect.UpdateValue("ZoomIn", Key::F2, true);
     sect.UpdateValue("ZoomOut", Key::F3, true);
-    sect.UpdateValue("ChangeImageRenderMethod", Key::F4, true);
 }
 void Config::Initialize()
 {
@@ -22,13 +21,11 @@ void Config::Initialize()
         auto sect                          = ini->GetSection("ImageView");
         this->Keys.ZoomIn                  = ini->GetValue("ZoomIn").ToKey(Key::F2);
         this->Keys.ZoomOut                 = ini->GetValue("ZoomOut").ToKey(Key::F3);
-        this->Keys.ChangeImageRenderMethod = ini->GetValue("ChangeImageRenderMethod").ToKey(Key::F4);
     }
     else
     {
         this->Keys.ZoomIn                  = Key::F2;
         this->Keys.ZoomOut                 = Key::F3;
-        this->Keys.ChangeImageRenderMethod = Key::F4;
     }
 
     this->Loaded = true;

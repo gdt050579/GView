@@ -5,6 +5,11 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
+constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
+constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
+constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
+constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
@@ -67,7 +72,14 @@ void Instance::LoadImage()
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    NOT_IMPLEMENTED(false);
+    commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
+    commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
+    if (this->settings->imgList.size()>1)
+    {
+        commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
+        commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
+    }
+    return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
@@ -111,8 +123,28 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
-    default:
-        break;
+    case CMD_ID_ZOOMIN:
+        this->scale = NextPreviousScale(true);
+        this->RedrawImage();
+        return true;
+    case CMD_ID_ZOOMOUT:
+        this->scale = NextPreviousScale(false);
+        this->RedrawImage();
+        return true;
+    case CMD_ID_PREV_IMAGE:
+        if (this->currentImageIndex > 0)
+        {
+            this->currentImageIndex--;
+            LoadImage();
+        }
+        return true;
+    case CMD_ID_NEXT_IMAGE:
+        if ((size_t) this->currentImageIndex + 1 < this->settings->imgList.size())
+        {
+            this->currentImageIndex++;
+            LoadImage();
+        }
+        return true;
     }
     return false;
 }
