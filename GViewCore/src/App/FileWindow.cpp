@@ -105,7 +105,7 @@ bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Se
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
-    return view->GetCurrentTab().DownCast<ViewControl>();
+    return view->GetCurrentTab().ToObjectRef<ViewControl>();
 }
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
@@ -172,7 +172,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     }
     if (eventType == Event::SplitterPositionChanged)
     {
-        UpdateDefaultPanelsSizes(ctrl.DownCast<Splitter>());
+        UpdateDefaultPanelsSizes(ctrl.ToObjectRef<Splitter>());
         return true;
     }
     return false;
@@ -201,7 +201,7 @@ void FileWindow::OnFocus(Reference<Control> control)
 }
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::F4, this->view->GetCurrentTab().DownCast<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(AppCUI::Input::Key::F4, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     return true;
 }
 void FileWindow::Start()

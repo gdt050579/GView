@@ -71,7 +71,7 @@ extern "C"
         }
 
         // translation
-        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.UpCast<GView::View::BufferViewer::OffsetTranslateInterface>());
+        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         // set specific color for opcodes
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
