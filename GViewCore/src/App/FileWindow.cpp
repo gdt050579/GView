@@ -2,6 +2,7 @@
 #include "BufferViewer.hpp"
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
+#include "DissasmViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -101,6 +102,12 @@ bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageVi
 bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
+
+bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
