@@ -207,8 +207,76 @@ namespace View
             void SetDimensions(unsigned int rows, unsigned int columns);
             void SetSeparator(char separator[2]);
         };
-    } // namespace GridViewer
+    }; // namespace GridViewer
 
+                            // namespace ImageViewer
+    namespace DissasmViewer // StructureViewer
+    {
+        using TypeID = uint32;
+
+        enum class DissamblyLanguage : uint32
+        {
+            Default,
+            x86,
+            x64,
+            JavaByteCode,
+            IL,
+            Count
+        };
+
+        enum class VariableType : uint32
+        {
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            AsciiZ,
+            Utf16Z,
+            Utf32Z
+        };
+
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            void SetDefaultDissasemblyLanguage(DissamblyLanguage lang);
+            void ReserverZonesCapacity(uint32 reserved_size);
+            void AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang = DissamblyLanguage::Default);
+
+            void AddMemmoryMapping(uint64 address, std::string_view name);
+
+            /**
+            * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
+            * 
+            * 
+            * @param[in] name Name of the new type
+            * @param[in] definition Multiple statements in the form DataType variableName followed by semicolon. Example: name="Point", definition="UInt32 x;UInt32 y;"
+            * @returns The id of the new data type generated.
+            */
+            TypeID AddType(std::string_view name, std::string_view definition);
+
+            // structure view
+            void AddVariable(uint64 offset, std::string_view name, VariableType type);
+            void AddArray(uint64 offset, std::string_view name, VariableType type, uint32 count);
+            void AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height);
+
+            void AddVariable(uint64 offset, std::string_view name, TypeID type);
+            void AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count);
+            void AddBiDiminesionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height);
+
+            /*
+             * types: uin8-64,int8-64, float,double, char* (asciiZ), Unicode16Z,Unicode32Z
+             * auto point_id = AddType("Point","struct Point{ uint32 x;uint32 y };");
+             * AddVariable(0x1234, "MyPoint", point_id);
+             */
+
+            Settings();
+        };
+    }; // namespace DissasmViewer
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                     = 0;
@@ -216,6 +284,7 @@ namespace View
         virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
         virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)  = 0;
         virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings)   = 0;
         virtual Reference<ViewControl> GetCurrentView()                                           = 0;
     };
 }; // namespace View

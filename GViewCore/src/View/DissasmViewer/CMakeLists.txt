@@ -1,0 +1,1 @@
+target_sources(GViewCore PRIVATE DissasmViewer.hpp Config.cpp GoToDialog.cpp Instance.cpp Settings.cpp SelectionEditor.cpp)

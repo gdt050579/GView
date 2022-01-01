@@ -15,11 +15,11 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
     // process all view modes
     for (uint32 idx = 0; idx < viewContainer->GetChildrenCount(); idx++)
     {
-        auto viewObject = viewContainer->GetChild(idx).DownCast<ViewControl>();
+        auto viewObject = viewContainer->GetChild(idx).ToObjectRef<ViewControl>();
         if (viewObject)
         {
             auto tp_view = Factory::TabPage::Create(t, viewObject->GetName());
-            Factory::PropertyList::Create(tp_view, "d:c", viewObject.UpCast<PropertiesInterface>(), PropertyListFlags::Border);
+            Factory::PropertyList::Create(tp_view, "d:c", viewObject.ToBase<PropertiesInterface>(), PropertyListFlags::Border);
         }
     }
 

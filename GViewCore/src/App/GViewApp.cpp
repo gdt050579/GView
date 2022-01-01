@@ -2,6 +2,7 @@
 #include "BufferViewer.hpp"
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
+#include "DissasmViewer.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -52,6 +53,7 @@ bool GView::App::ResetConfiguration()
     GView::View::BufferViewer::Config::Update(ini["BufferView"]);
     GView::View::ImageViewer::Config::Update(ini["ImageView"]);
     GView::View::GridViewer::Config::Update(ini["GridView"]);
+    GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
 
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();

@@ -228,6 +228,7 @@ namespace App
         bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;

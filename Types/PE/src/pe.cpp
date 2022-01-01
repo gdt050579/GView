@@ -71,7 +71,7 @@ extern "C"
         }
 
         // translation
-        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.UpCast<GView::View::BufferViewer::OffsetTranslateInterface>());
+        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         // set specific color for opcodes
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
@@ -93,12 +93,21 @@ extern "C"
 
         win->CreateViewer("BufferView", settings);
     }
+
+    void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
+    {
+        DissasmViewer::Settings settings;
+
+        win->CreateViewer("BufferView", settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
         pe->Update();
 
         CreateBufferView(win, pe);
+        CreateDissasmView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);

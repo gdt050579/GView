@@ -49,7 +49,7 @@ extern "C"
     void CreateImageView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
     {
         GView::View::ImageViewer::Settings settings;
-        settings.SetLoadImageCallback(ico.UpCast<View::ImageViewer::LoadImageInterface>());
+        settings.SetLoadImageCallback(ico.ToBase<View::ImageViewer::LoadImageInterface>());
         
         for (uint32 idx = 0; idx < ico->dirs.size();idx++)
         {
