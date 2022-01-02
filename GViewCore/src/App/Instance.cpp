@@ -131,14 +131,13 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     // validate type
     CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
 
-    // set window TAG (based on type)
-    win->SetTag(obj->type->GetTypeName(), "");
-
     // instantiate window
     while (true)
     {
         CHECKBK(plg->PopulateWindow(win.get()), "Fail to populate file window !");
         win->Start(); // starts the window and set focus
+        // set window TAG (based on type)
+        win->SetTag(obj->type->GetTypeName(), "");
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
