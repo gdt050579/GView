@@ -261,7 +261,7 @@ PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
 
 std::string_view PEFile::ReadString(uint32_t RVA, uint32 maxSize)
 {
-    auto buf = file->Get(RVAtoFilePointer(RVA), maxSize);
+    auto buf = file->Get(RVAtoFilePointer(RVA), maxSize, false);
     if (buf.Empty())
         return std::string_view{};
     auto p = buf.begin();
@@ -684,7 +684,7 @@ void PEFile::BuildVersionInfo()
         if (ri.Start + szRead >= file->GetSize())
             szRead = (uint32_t) (file->GetSize() - ri.Start);
 
-        auto buf = file->Get(ri.Start, szRead);
+        auto buf = file->Get(ri.Start, szRead, false);
 
         if (buf.Empty())
         {
@@ -768,7 +768,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
 {
     DIBInfoHeader dibHeader;
     r.Image.type = ImageType::Unknwown;
-    auto buf     = this->file->Get(r.Start, sizeof(dibHeader));
+    auto buf     = this->file->Get(r.Start, sizeof(dibHeader), true);
     if (buf.Empty())
     {
         errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) (sizeof(dibHeader), r.Start));
@@ -1166,7 +1166,7 @@ bool PEFile::BuildDebugData()
             else
                 bufSize = imgd.SizeOfData;
 
-            auto buf = file->Get(imgd.PointerToRawData, bufSize);
+            auto buf = file->Get(imgd.PointerToRawData, bufSize, false);
             if (buf.GetLength() >= 5) // at least the first 32 bytes
             {
                 const char* nm = nullptr;
@@ -1288,7 +1288,7 @@ bool PEFile::HasPanel(Panels::IDs id)
 bool PEFile::Update()
 {
     uint32_t tr, gr, tmp;
-    uint64_t filePoz, poz, bfSize;
+    uint64_t filePoz, poz;
     LocalString<128> tempStr;
 
     errList.Clear();
@@ -1457,10 +1457,7 @@ bool PEFile::Update()
         }
         else
         {
-            bfSize = 16;
-            if (filePoz + bfSize > file->GetSize())
-                bfSize = file->GetSize() - filePoz;
-            auto buf = file->Get(filePoz, 16);
+            auto buf = file->Get(filePoz, 16, false);
             if (buf.Empty())
             {
                 errList.AddError("Unable to read data from Entry Point RVA=(0x%x)", rvaEntryPoint);

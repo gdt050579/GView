@@ -113,7 +113,7 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     auto obj = win->GetObject();
     CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 
-    auto buf  = obj->cache.Get(0, 4096); // first 4k
+    auto buf  = obj->cache.Get(0, 4096, false); // first 4k
     auto* plg = &this->defaultPlugin;
     // iterate from existing types
     for (auto& pType : this->typePlugins)

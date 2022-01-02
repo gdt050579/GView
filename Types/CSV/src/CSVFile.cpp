@@ -51,7 +51,8 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
 {
     // get every row here
     const auto color         = ColorPair{ Color::Gray, Color::Transparent };
-    const auto bf            = file->Get(0, static_cast<unsigned int>(file->GetSize()));
+    //GDT: possible problem here (for large files only the cache will be returned)
+    const auto bf            = file->Get(0, static_cast<unsigned int>(file->GetSize()), false);
     unsigned long long rowNo = 0;
     for (auto i = 0ULL; i < file->GetSize(); i++)
     {

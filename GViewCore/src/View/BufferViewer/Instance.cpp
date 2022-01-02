@@ -159,8 +159,8 @@ void Instance::UpdateCurrentSelection()
             if ((end - start) < 254)
             {
                 this->CurrentSelection.size = ((uint32) (end - start)) + 1;
-                auto b                      = obj->cache.Get(start, this->CurrentSelection.size);
-                if ((b.IsValid()) && (b.GetLength() == this->CurrentSelection.size))
+                auto b                      = obj->cache.Get(start, this->CurrentSelection.size, true);
+                if (b.IsValid())
                 {
                     memcpy(this->CurrentSelection.buffer, b.begin(), b.GetLength());
                 }
@@ -254,7 +254,7 @@ void Instance::SkipCurentCaracter(bool selected)
     uint64 tr, fileSize;
     uint32 gr;
 
-    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1);
+    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1, true);
 
     if (!buf.IsValid())
         return;
@@ -263,7 +263,7 @@ void Instance::SkipCurentCaracter(bool selected)
     fileSize = this->obj->cache.GetSize();
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->obj->cache.Get(tr, 256);
+        auto buf = this->obj->cache.Get(tr, 256, false);
         if (!buf.IsValid())
             break;
         for (gr = 0; gr < buf.GetLength(); gr++, tr++)
@@ -325,7 +325,7 @@ void Instance::MoveTillEndBlock(bool selected)
 
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->obj->cache.Get(tr, 4096);
+        auto buf = this->obj->cache.Get(tr, 4096, false);
         if (!buf.IsValid())
             break;
         auto* s = buf.begin();
@@ -384,7 +384,7 @@ void Instance::ResetStringInfo()
 }
 void Instance::UpdateStringInfo(uint64 offset)
 {
-    auto buf = this->obj->cache.Get(offset, 1024);
+    auto buf = this->obj->cache.Get(offset, 1024, false);
     if (!buf.IsValid())
     {
         ResetStringInfo();
@@ -522,8 +522,8 @@ ColorPair Instance::OffsetToColor(uint64 offset)
         if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
             return config.Colors.SameSelection;
 
-        auto b = this->obj->cache.Get(offset, this->CurrentSelection.size);
-        if ((b.IsValid()) && (b.GetLength() == this->CurrentSelection.size))
+        auto b = this->obj->cache.Get(offset, this->CurrentSelection.size, true);
+        if (b.IsValid())
         {
             if (b[0] == this->CurrentSelection.buffer[0])
             {
@@ -541,7 +541,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     {
         if ((offset >= bufColor.start) && (offset <= bufColor.end))
             return bufColor.color;
-        if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->cache.Get(offset, 16), bufColor))
+        if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->cache.Get(offset, 16, false), bufColor))
             return bufColor.color;
         // no color provided for the specific buffer --> check strings and zones
     }
@@ -656,7 +656,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
-    auto buf          = this->obj->cache.Get(dli.offset, dli.textSize);
+    auto buf          = this->obj->cache.Get(dli.offset, dli.textSize, false);
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
     dli.chNameAndSize = this->chars.GetBuffer();
@@ -1667,7 +1667,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->CursorColors.Highlighted = config.Colors.Inactive;
     }
     r.Clear(' ', this->CursorColors.Normal);
-    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8);
+    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8, false);
     switch (height)
     {
     case 0:
