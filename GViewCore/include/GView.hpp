@@ -76,19 +76,27 @@ namespace Utils
         ~FileCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::IFile> file, uint32 cacheSize);
-        BufferView Get(uint64 offset, uint32 requestedSize);
+        BufferView Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead);
+        inline BufferView GetEntireFile()
+        {
+            return fileSize < 0xFFFFFFFF ? Get(0, (uint32) fileSize, true) : BufferView();
+        }
 
         Buffer CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead = true);
+        inline Buffer CopyEntireFile(bool failIfRequestedSizeCanNotBeRead = true)
+        {
+            return CopyToBuffer(0, (uint32) fileSize, failIfRequestedSizeCanNotBeRead);
+        }
         inline uint8 GetFromCache(uint64 offset, uint8 defaultValue = 0) const
         {
             if ((offset >= start) && (offset < end))
                 return cache[offset - start];
             return defaultValue;
         }
-        inline BufferView Get(uint32 requestedSize)
-        {
-            return Get(currentPos, requestedSize);
-        }
+        //inline BufferView Get(uint32 requestedSize)
+        //{
+        //    return Get(currentPos, requestedSize);
+        //}
 
         inline uint64 GetSize() const
         {

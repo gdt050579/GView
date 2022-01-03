@@ -70,7 +70,7 @@ namespace Type
 
             std::string_view GetTypeName() override
             {
-                return "ICO";
+                return isIcoFormat ? "ICO" : "CURSOR";
             }
 
             bool LoadImageToObject(Image& img, uint32 index) override;

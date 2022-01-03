@@ -46,7 +46,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, uint32 _cacheSize)
 
     return true;
 }
-BufferView FileCache::Get(uint64 offset, uint32 requestedSize)
+BufferView FileCache::Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead)
 {
     CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
     CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
@@ -59,6 +59,9 @@ BufferView FileCache::Get(uint64 offset, uint32 requestedSize)
             this->currentPos = offset + requestedSize;
             return BufferView(&this->cache[offset - this->start], requestedSize);
         }
+        // data is not cache (and we are at the end of the file with the case)
+        if (failIfRequestedSizeCanNotBeRead)
+            return BufferView();
         if (this->end == this->fileSize)
         {
             this->currentPos = this->fileSize;
@@ -67,7 +70,7 @@ BufferView FileCache::Get(uint64 offset, uint32 requestedSize)
     }
     // request outside file
     if (offset >= this->fileSize)
-        return Buffer();
+        return BufferView();
     // data is not available in cache ==> read it
     uint64 _start, _end;
     if (this->fileSize <= this->cacheSize)
@@ -110,6 +113,9 @@ BufferView FileCache::Get(uint64 offset, uint32 requestedSize)
         this->currentPos = offset + requestedSize;
         return BufferView(&this->cache[offset - this->start], requestedSize);
     }
+    // the entire data is not in our cache
+    if (failIfRequestedSizeCanNotBeRead)
+        return BufferView();
     if (this->end == this->fileSize)
     {
         this->currentPos = this->fileSize;
@@ -121,14 +127,8 @@ BufferView FileCache::Get(uint64 offset, uint32 requestedSize)
 bool FileCache::CopyObject(void* buffer, uint64 offset, uint32 requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
-    auto b = Get(offset, requestedSize);
+    auto b = Get(offset, requestedSize, true);
     CHECK(b.IsValid(), false, "Unable to read %u bytes from %llu offset ", requestedSize, offset);
-    CHECK(b.GetLength() == requestedSize,
-          false,
-          "Unable to read %u bytes from %llu offset (only %u were read)",
-          requestedSize,
-          offset,
-          (uint32) b.GetLength());
     memcpy(buffer, b.GetData(), b.GetLength());
     return true;
 }
@@ -151,7 +151,7 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
     while (requestedSize)
     {
         toRead  = std::min(toRead, requestedSize);
-        auto bv = this->Get(offset, toRead);
+        auto bv = this->Get(offset, toRead, false);
         if (bv.Empty())
         {
             LOG_ERROR("Empty buffer received when reading %u bytes from %llu offset", toRead, offset);
@@ -178,6 +178,7 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
         }
         memcpy(p, bv.GetData(), toRead);
         p += toRead;
+        offset += toRead;
         requestedSize -= toRead;
     }
     return b;

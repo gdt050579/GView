@@ -34,7 +34,7 @@ bool ICOFile::Update()
     size_t offset = sizeof(Header);
     for (auto i = 0U; i < h.count; i++, offset += sizeof(DirectoryEntry))
     {
-        auto bf = this->file->Get(offset, sizeof(DirectoryEntry));
+        auto bf = this->file->Get(offset, sizeof(DirectoryEntry), true);
         if (bf.Empty())
             break;
         dirs.push_back(bf.GetObject<DirectoryEntry>());
@@ -47,12 +47,12 @@ bool ICOFile::LoadImageToObject(Image& img, uint32 index)
     CHECK(index < dirs.size(), false, "Invalid image index: %u", index);
     uint64 offset = dirs[index].ico.offset;
     uint32 size   = dirs[index].ico.size;
-    auto bf       = file->Get(offset, size);
+    auto bf       = file->Get(offset, size, true);
     Buffer buf;
     if (bf.IsValid() == false)
     {
         // unable to use the cache --> need to make a copy of the entire buffer
-        buf = this->file->CopyToBuffer(offset, size);
+        buf = this->file->CopyToBuffer(offset, size, true);
         CHECK(buf.IsValid(), false, "Fail to copy %u bytes from offset: %llu", size, offset);
         bf = (BufferView) buf;
     }
