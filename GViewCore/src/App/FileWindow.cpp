@@ -126,7 +126,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == (AppCUI::Input::Key::Alt | AppCUI::Input::Key::F))
+    if (keyCode == gviewApp->GetKeyToSwitchToView())
     {
         if (!view->HasFocus())
             view->SetFocus();
@@ -215,7 +215,8 @@ void FileWindow::OnFocus(Reference<Control> control)
 }
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::F4, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(
+          this->gviewApp->GetKeyToChangeViewes(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     return true;
 }
 void FileWindow::Start()

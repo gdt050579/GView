@@ -171,7 +171,7 @@ namespace App
         std::vector<GView::Type::Plugin> typePlugins;
         GView::Type::Plugin defaultPlugin;
         uint32 defaultCacheSize;
-        AppCUI::Input::Key keyToChangeViews;
+        AppCUI::Input::Key keyToChangeViews, keyToSwitchToView;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -190,6 +190,10 @@ namespace App
         constexpr inline AppCUI::Input::Key GetKeyToChangeViewes() const
         {
             return this->keyToChangeViews;
+        }
+        constexpr inline AppCUI::Input::Key GetKeyToSwitchToView() const
+        {
+            return this->keyToSwitchToView;
         }
 
         // property interface
