@@ -215,6 +215,7 @@ namespace App
         unsigned int defaultCursorViewSize;
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
+        int32 lastHorizontalPanelID;
 
         void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
 
