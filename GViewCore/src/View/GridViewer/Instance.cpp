@@ -5,9 +5,11 @@ using namespace AppCUI::Input;
 
 constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
 constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
+constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 
 constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
 constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
+constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
 
 Config Instance::config;
 
@@ -108,6 +110,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(config.keys.replaceHeaderWith1stRow, "ReplaceHeader", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW);
     commandBar.SetCommand(config.keys.toggleHorizontalLines, "ToggleHorizontalLines", COMMAND_ID_TOGGLE_HORIZONTAL_LINES);
+    commandBar.SetCommand(config.keys.toggleVerticalLines, "ToggleVerticalLines", COMMAND_ID_TOGGLE_VERTICAL_LINES);
     return false;
 }
 
@@ -124,6 +127,11 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         else if (ID == COMMAND_ID_TOGGLE_HORIZONTAL_LINES)
         {
             grid->ToggleHorizontalLines();
+            return true;
+        }
+        else if (ID == COMMAND_ID_TOGGLE_VERTICAL_LINES)
+        {
+            grid->ToggleVerticalLines();
             return true;
         }
     }
@@ -295,6 +303,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PROP_ID_TOGGLE_HORIZONTAL_LINES:
         value = config.keys.toggleHorizontalLines;
         return true;
+    case PROP_ID_TOGGLE_VERTICAL_LINES:
+        value = config.keys.toggleVerticalLines;
+        return true;
     default:
         break;
     }
@@ -310,6 +321,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PROP_ID_TOGGLE_HORIZONTAL_LINES:
         config.keys.toggleHorizontalLines = std::get<Key>(value);
+        return true;
+    case PROP_ID_TOGGLE_VERTICAL_LINES:
+        config.keys.toggleVerticalLines = std::get<Key>(value);
         return true;
     default:
         break;
@@ -331,5 +345,6 @@ const vector<Property> Instance::GetPropertiesList()
     return {
         { PROP_ID_REPLACE_HEADER_WITH_1ST_ROW, "Content", "Replace header with first row", PropertyType::Key },
         { PROP_ID_TOGGLE_HORIZONTAL_LINES, "Look", "Hide/Show horizontal lines", PropertyType::Key },
+        { PROP_ID_TOGGLE_VERTICAL_LINES, "Look", "Hide/Show vertical lines", PropertyType::Key },
     };
 }

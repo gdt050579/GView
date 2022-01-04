@@ -24,6 +24,7 @@ namespace View
             {
                 AppCUI::Input::Key replaceHeaderWith1stRow;
                 AppCUI::Input::Key toggleHorizontalLines;
+                AppCUI::Input::Key toggleVerticalLines;
             } keys;
             struct
             {
