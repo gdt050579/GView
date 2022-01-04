@@ -77,9 +77,10 @@ bool Instance::LoadSettings()
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
 
     // read instance settings
-    auto sect              = ini->GetSection("GView");
-    this->defaultCacheSize = std::min<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-    this->keyToChangeViews = sect.GetValue("ChangeView").ToKey(Key::F4);
+    auto sect               = ini->GetSection("GView");
+    this->defaultCacheSize  = std::min<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
+    this->keyToChangeViews  = sect.GetValue("ChangeView").ToKey(Key::F4);
+    this->keyToSwitchToView = sect.GetValue("SwitchToView").ToKey(Key::F | Key::Alt);
 
     return true;
 }
@@ -109,7 +110,7 @@ bool Instance::Init()
 }
 bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
 {
-    auto win = std::make_unique<FileWindow>(name,this);
+    auto win = std::make_unique<FileWindow>(name, this);
     auto obj = win->GetObject();
     CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 

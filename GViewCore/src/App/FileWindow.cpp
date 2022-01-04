@@ -55,7 +55,8 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
           .AddCommandItem(std::u16string_view(&menuSymbol, 1), CMD_SHOW_VIEW_CONFIG_PANEL, "Click to open view configuration panel !");
 
     // cursor information
-    cursorInfoHandle = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
+    lastHorizontalPanelID = CMD_SHOW_HORIZONTAL_PANEL + 1;
+    cursorInfoHandle      = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft)
                              .AddSingleChoiceItem("<->", CMD_SHOW_HORIZONTAL_PANEL, true, "Show cursor and selection information");
 
     // sizes
@@ -82,7 +83,7 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
         if (p.IsValid())
         {
             auto bar  = this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft);
-            auto item = bar.AddSingleChoiceItem((CharacterView) p->GetText(), CMD_SHOW_HORIZONTAL_PANEL, true, "");
+            auto item = bar.AddSingleChoiceItem((CharacterView) p->GetText(), lastHorizontalPanelID++, true, "");
             bar.SetItemTextWithHotKey(item, (CharacterView) p->GetText(), p->GetHotKeyTextOffset());
             return true;
         }
@@ -125,7 +126,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == (AppCUI::Input::Key::Alt | AppCUI::Input::Key::F))
+    if (keyCode == gviewApp->GetKeyToSwitchToView())
     {
         if (!view->HasFocus())
             view->SetFocus();
@@ -176,6 +177,12 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             this->view->GoToNextTabPage();
             return true;
         }
+        if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
+        {
+            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL);
+            horizontalPanels->SetFocus();
+            return true;
+        }
     }
     if (eventType == Event::SplitterPositionChanged)
     {
@@ -208,7 +215,8 @@ void FileWindow::OnFocus(Reference<Control> control)
 }
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::F4, this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(
+          this->gviewApp->GetKeyToChangeViewes(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     return true;
 }
 void FileWindow::Start()
