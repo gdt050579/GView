@@ -202,6 +202,22 @@ namespace View
         };
     }; // namespace ImageViewer
 
+    namespace TextViewer
+    {
+        struct CORE_EXPORT LoadImageInterface
+        {
+            virtual bool LoadImageToObject(Image& img, uint32 index) = 0;
+        };
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+            void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
+            void AddImage(uint64 offset, uint64 size);
+        };
+    }; // namespace ImageViewer
+
     namespace GridViewer
     {
         struct CORE_EXPORT Settings
