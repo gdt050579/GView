@@ -38,7 +38,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
               "d:c,w:100%,h:100%",
               settings->cols,
               settings->rows,
-              AppCUI::Controls::GridFlags::TransparentBackground /* | AppCUI::Controls::GridFlags::HideHorizontalLines */);
+              AppCUI::Controls::GridFlags::TransparentBackground | AppCUI::Controls::GridFlags::Sort);
 
         grid->SetSeparator(settings->separator);
         PopulateGrid();
