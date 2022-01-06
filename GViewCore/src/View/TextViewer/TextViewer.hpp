@@ -43,15 +43,14 @@ namespace View
 
         class Instance : public View::ViewControl
         {
-            Image img;
+            Array32 lineIndex;
             Pointer<SettingsData> settings;
-            Reference<AppCUI::Controls::ImageView> imgView;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
-            uint32 currentImageIndex;
-            ImageScaleMethod scale;
 
             static Config config;
+
+
 
             void LoadImage();
             void RedrawImage();

@@ -93,10 +93,10 @@ namespace Utils
                 return cache[offset - start];
             return defaultValue;
         }
-        //inline BufferView Get(uint32 requestedSize)
-        //{
-        //    return Get(currentPos, requestedSize);
-        //}
+        inline uint32 GetCacheSize() const
+        {
+            return cacheSize;
+        }
 
         inline uint64 GetSize() const
         {
