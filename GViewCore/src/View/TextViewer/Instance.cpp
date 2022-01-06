@@ -12,12 +12,9 @@ constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
-    imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
+    this->obj  = _obj;
+    this->name = _name;
 
-    this->obj               = _obj;
-    this->name              = _name;
-    this->currentImageIndex = 0;
-    this->scale             = ImageScaleMethod::NoScale;
     // settings
     if ((_settings) && (_settings->data))
     {
@@ -37,44 +34,65 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     // load first image
     LoadImage();
 }
-ImageScaleMethod Instance::NextPreviousScale(bool next)
+void Instance::RecomputeLineIndexes()
 {
-    switch (scale)
+    // first --> simple estimation
+    auto buf        = this->obj->cache.Get(0, 4096, false);
+    auto sz         = this->obj->cache.GetSize();
+    auto csz        = this->obj->cache.GetCacheSize();
+    auto crlf_count = (uint64) 1;
+
+    for (auto ch : buf)
+        if ((ch == '\n') || (ch == '\r'))
+            crlf_count++;
+
+    auto estimated_count = ((crlf_count * sz) / buf.GetLength()) + 16;
+
+    this->lineIndex.Clear();
+    if (this->lineIndex.Reserve((uint32) estimated_count) == false)
+        return;
+
+    uint64 offset = 0;
+    uint64 start  = 0;
+    uint8 last    = 0;
+    while (offset < sz)
     {
-    case AppCUI::Graphics::ImageScaleMethod::NoScale:
-        return next ? ImageScaleMethod::NoScale : ImageScaleMethod::Scale50;
-    case AppCUI::Graphics::ImageScaleMethod::Scale50:
-        return next ? ImageScaleMethod::NoScale : ImageScaleMethod::Scale33;
-    case AppCUI::Graphics::ImageScaleMethod::Scale33:
-        return next ? ImageScaleMethod::Scale50 : ImageScaleMethod::Scale25;
-    case AppCUI::Graphics::ImageScaleMethod::Scale25:
-        return next ? ImageScaleMethod::Scale33 : ImageScaleMethod::Scale20;
-    case AppCUI::Graphics::ImageScaleMethod::Scale20:
-        return next ? ImageScaleMethod::Scale25 : ImageScaleMethod::Scale10;
-    case AppCUI::Graphics::ImageScaleMethod::Scale10:
-        return next ? ImageScaleMethod::Scale20 : ImageScaleMethod::Scale5;
-    case AppCUI::Graphics::ImageScaleMethod::Scale5:
-        return next ? ImageScaleMethod::Scale10 : ImageScaleMethod::Scale5;
-    default:
-        return ImageScaleMethod::NoScale;
+        buf = this->obj->cache.Get(offset, csz, false);
+        if (buf.Empty())
+            return;
+        // process the buffer
+        auto* p = buf.begin();
+        for (;p < buf.end();p++)
+        {
+            if (((*p) == '\n') || ((*p) == '\r'))
+            {
+                if (((last == '\n') || (last == '\r')) && (last != (*p)))
+                {
+                    // either \n\r or \r\n
+                    start++; // skip current character                    
+                    last = 0;
+                    continue;
+                }
+                this->lineIndex.Push((uint32)start);
+                start = offset + (p - buf.begin()) + 1; // next pos
+                last  = *p;
+            }
+            else
+            {
+                last = 0;
+            }
+        }
+        offset += buf.GetLength();
     }
+    if (start<sz)
+        this->lineIndex.Push((uint32) start);
 }
-void Instance::RedrawImage()
-{
-    this->imgView->SetImage(this->img, ImageRenderingMethod::PixelTo16ColorsSmallBlock, scale);
-}
-void Instance::LoadImage()
-{
-    if (this->settings->loadImageCallback->LoadImageToObject(this->img, this->currentImageIndex))
-    {
-        RedrawImage();
-    }
-}
+
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
     commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
-    if (this->settings->imgList.size()>1)
+    if (this->settings->imgList.size() > 1)
     {
         commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
         commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
@@ -239,7 +257,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->RedrawImage();
         return true;
     case PropertyID::CurrentImageIndex:
-        if ((std::get<uint32>(value))>=this->settings->imgList.size())
+        if ((std::get<uint32>(value)) >= this->settings->imgList.size())
         {
             error.SetFormat("Invalid image index (should be between 0 and %d)", (int) (this->settings->imgList.size() - 1));
             return false;

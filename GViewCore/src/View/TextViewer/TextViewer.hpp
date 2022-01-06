@@ -50,7 +50,7 @@ namespace View
 
             static Config config;
 
-
+            void RecomputeLineIndexes();
 
             void LoadImage();
             void RedrawImage();
