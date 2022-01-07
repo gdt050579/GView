@@ -52,15 +52,15 @@ namespace View
 
             void RecomputeLineIndexes();
 
-            void LoadImage();
-            void RedrawImage();
-            ImageScaleMethod NextPreviousScale(bool next);
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
+            virtual void Paint(Graphics::Renderer& renderer) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            virtual void OnStart() override;
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;

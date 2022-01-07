@@ -31,8 +31,6 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 
-    // load first image
-    LoadImage();
 }
 void Instance::RecomputeLineIndexes()
 {
@@ -88,6 +86,10 @@ void Instance::RecomputeLineIndexes()
         this->lineIndex.Push((uint32) start);
 }
 
+void Instance::Paint(Graphics::Renderer& renderer)
+{
+    renderer.WriteSingleLineText(0, 0, "txt", {Color::Red,Color::Transparent});
+}
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
@@ -104,36 +106,17 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     switch (keyCode)
     {
     case Key::PageUp:
-        if (this->currentImageIndex > 0)
-        {
-            this->currentImageIndex--;
-            LoadImage();
-        }
         return true;
     case Key::PageDown:
-        if ((size_t) this->currentImageIndex + 1 < this->settings->imgList.size())
-        {
-            this->currentImageIndex++;
-            LoadImage();
-        }
         return true;
     }
 
-    switch (characterCode)
-    {
-    case '+':
-    case '=':
-        this->scale = NextPreviousScale(true);
-        this->RedrawImage();
-        return true;
-    case '-':
-    case '_':
-        this->scale = NextPreviousScale(false);
-        this->RedrawImage();
-        return true;
-    }
 
     return false;
+}
+void Instance::OnStart()
+{
+    RecomputeLineIndexes();
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
@@ -141,45 +124,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
-    case CMD_ID_ZOOMIN:
-        this->scale = NextPreviousScale(true);
-        this->RedrawImage();
-        return true;
-    case CMD_ID_ZOOMOUT:
-        this->scale = NextPreviousScale(false);
-        this->RedrawImage();
-        return true;
-    case CMD_ID_PREV_IMAGE:
-        if (this->currentImageIndex > 0)
-        {
-            this->currentImageIndex--;
-            LoadImage();
-        }
-        return true;
-    case CMD_ID_NEXT_IMAGE:
-        if ((size_t) this->currentImageIndex + 1 < this->settings->imgList.size())
-        {
-            this->currentImageIndex++;
-            LoadImage();
-        }
-        return true;
+
     }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
 {
-    for (uint32 idx = 0; idx < settings->imgList.size(); idx++)
-    {
-        if ((offset >= settings->imgList[idx].start) && (offset < settings->imgList[idx].end))
-        {
-            if (this->currentImageIndex != idx)
-            {
-                this->currentImageIndex = idx;
-                LoadImage();
-            }
-            return true;
-        }
-    }
+    
     return false;
 }
 bool Instance::Select(uint64 offset, uint64 size)
@@ -195,31 +146,14 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
-    LocalString<128> tmp;
-    r.WriteSingleLineText(0, 0, "Size:", config.Colors.Highlighted);
-    r.WriteSingleLineText(6, 0, tmp.Format("%u x %u", img.GetWidth(), img.GetHeight()), config.Colors.Normal);
-    r.DrawVerticalLine(16, 0, height, config.Colors.Line, true);
 
-    r.WriteSingleLineText(18, 0, "Image:", config.Colors.Highlighted);
-    r.WriteSingleLineText(
-          25, 0, tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()), config.Colors.Normal);
-    r.DrawVerticalLine(32, 0, height, config.Colors.Line, true);
-
-    r.WriteSingleLineText(34, 0, "Zoom:", config.Colors.Highlighted);
-    r.WriteSingleLineText(39, 0, tmp.Format("%3u%%", 100U / (uint32) scale), config.Colors.Normal);
-    r.DrawVerticalLine(44, 0, height, config.Colors.Line, true);
 }
 
 //======================================================================[PROPERTY]============================
 enum class PropertyID : uint32
 {
     // display
-    ImagesCount,
-    Scale,
-    CurrentImageIndex,
-    CurrentImageSize,
-    ZoomIn,
-    ZoomOut
+    WordWrap,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -227,23 +161,8 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
-    case PropertyID::ImagesCount:
-        value = (uint32) settings->imgList.size();
-        return true;
-    case PropertyID::Scale:
-        value = static_cast<uint32>(this->scale);
-        return true;
-    case PropertyID::CurrentImageIndex:
-        value = this->currentImageIndex;
-        return true;
-    case PropertyID::CurrentImageSize:
-        value = Size{ img.GetWidth(), img.GetHeight() };
-        return true;
-    case PropertyID::ZoomIn:
-        value = config.Keys.ZoomIn;
-        return true;
-    case PropertyID::ZoomOut:
-        value = config.Keys.ZoomOut;
+    case PropertyID::WordWrap:
+        value = false;
         return true;
     }
     return false;
@@ -252,24 +171,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (static_cast<PropertyID>(id))
     {
-    case PropertyID::Scale:
-        this->scale = static_cast<ImageScaleMethod>(std::get<uint64>(value));
-        this->RedrawImage();
-        return true;
-    case PropertyID::CurrentImageIndex:
-        if ((std::get<uint32>(value)) >= this->settings->imgList.size())
-        {
-            error.SetFormat("Invalid image index (should be between 0 and %d)", (int) (this->settings->imgList.size() - 1));
-            return false;
-        }
-        this->currentImageIndex = std::get<uint32>(value);
-        LoadImage();
-        return true;
-    case PropertyID::ZoomIn:
-        config.Keys.ZoomIn = std::get<Key>(value);
-        return true;
-    case PropertyID::ZoomOut:
-        config.Keys.ZoomOut = std::get<Key>(value);
+    case PropertyID::WordWrap:
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
@@ -282,8 +184,7 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     switch (static_cast<PropertyID>(propertyID))
     {
-    case PropertyID::ImagesCount:
-    case PropertyID::CurrentImageSize:
+    case PropertyID::WordWrap:
         return true;
     }
 
@@ -292,13 +193,7 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { BT(PropertyID::ImagesCount), "General", "Images count", PropertyType::UInt32 },
-        { BT(PropertyID::Scale), "General", "Scale", PropertyType::List, "100%=1,50%=2,33%=3,25%=4,20%=5,10%=10,5%=20" },
-        { BT(PropertyID::CurrentImageIndex), "Current Image", "Index", PropertyType::UInt32 },
-        { BT(PropertyID::CurrentImageSize), "Current Image", "Size", PropertyType::Size },
-        { BT(PropertyID::ZoomIn), "Shortcuts", "Key for ZoomIn", PropertyType::Key },
-        { BT(PropertyID::ZoomOut), "Shortcuts", "Key for ZoomOut", PropertyType::Key },
-
+        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
     };
 }
 #undef BT
