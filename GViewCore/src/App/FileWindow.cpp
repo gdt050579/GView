@@ -39,7 +39,7 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     horizontal->SetSecondPanelSize(1);
 
     // create tabs
-    view                      = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs, 16);
+    view                      = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
     verticalPanels            = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
     horizontalPanels          = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
     view->Handlers()->OnFocus = this;
