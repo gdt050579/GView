@@ -168,6 +168,8 @@ void Instance::PopulateGrid()
             grid->UpdateCell(j, i - settings->firstRowAsHeader, AppCUI::Controls::Grid::CellType::String, row[j]);
         }
     }
+
+    grid->Sort();
 }
 
 void GView::View::GridViewer::Instance::PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
