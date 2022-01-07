@@ -59,11 +59,11 @@ BufferView FileCache::Get(uint64 offset, uint32 requestedSize, bool failIfReques
             this->currentPos = offset + requestedSize;
             return BufferView(&this->cache[offset - this->start], requestedSize);
         }
-        // data is not cache (and we are at the end of the file with the case)
-        if (failIfRequestedSizeCanNotBeRead)
-            return BufferView();
         if (this->end == this->fileSize)
         {
+            // data is not cache (and we are at the end of the file with the case)
+            if (failIfRequestedSizeCanNotBeRead)
+                return BufferView();
             this->currentPos = this->fileSize;
             return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
         }

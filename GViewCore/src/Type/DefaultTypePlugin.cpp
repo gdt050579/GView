@@ -3,7 +3,7 @@
 using namespace GView::Utils;
 using namespace GView;
 
-class DefaultType: public TypeInterface
+class DefaultType : public TypeInterface
 {
   public:
     std::string_view GetTypeName() override
@@ -44,8 +44,32 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
 
     // 2. views
+    auto b   = win->GetObject()->cache.Get(0, 4096, false);
+    auto z   = 0U;
+    auto asc = 0U;
+
+    for (auto ch : b)
+    {
+        if (ch == 0)
+            z++;
+        else if (((ch >= 32) && (ch <= 127)) || (ch == '\t') || (ch == '\n') || (ch == '\r'))
+            asc++;
+    }
+    auto add_textview = false;
+    if (b.GetLength() > 0)
+    {
+        asc *= 100;
+        z *= 100;
+        add_textview = ((size_t) asc / b.GetLength()) >= 75;
+    }
+    if (add_textview)
+    {
+        View::TextViewer::Settings settings;
+        win->CreateViewer("Text view", settings);
+    }
+    // add a buffer view as a default view
     View::BufferViewer::Settings settings;
-    auto v = win->CreateViewer("Buffer view",settings);
+    win->CreateViewer("Buffer view", settings);
     return true;
 }
 } // namespace GView::Type::DefaultTypePlugin

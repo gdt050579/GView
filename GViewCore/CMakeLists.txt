@@ -62,6 +62,7 @@ include_directories(src/View/BufferViewer)
 include_directories(src/View/ImageViewer)
 include_directories(src/View/GridViewer)
 include_directories(src/View/DissasmViewer)
+include_directories(src/View/TextViewer)
 add_subdirectory(src)
 
 
