@@ -3,6 +3,7 @@
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
+#include "TextViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -93,6 +94,11 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
+bool FileWindow::CreateViewer(const std::string_view& name, GView::View::TextViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
