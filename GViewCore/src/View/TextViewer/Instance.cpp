@@ -30,7 +30,6 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
-
 }
 void Instance::RecomputeLineIndexes()
 {
@@ -60,18 +59,18 @@ void Instance::RecomputeLineIndexes()
             return;
         // process the buffer
         auto* p = buf.begin();
-        for (;p < buf.end();p++)
+        for (; p < buf.end(); p++)
         {
             if (((*p) == '\n') || ((*p) == '\r'))
             {
                 if (((last == '\n') || (last == '\r')) && (last != (*p)))
                 {
                     // either \n\r or \r\n
-                    start++; // skip current character                    
+                    start++; // skip current character
                     last = 0;
                     continue;
                 }
-                this->lineIndex.Push((uint32)start);
+                this->lineIndex.Push((uint32) start);
                 start = offset + (p - buf.begin()) + 1; // next pos
                 last  = *p;
             }
@@ -82,13 +81,19 @@ void Instance::RecomputeLineIndexes()
         }
         offset += buf.GetLength();
     }
-    if (start<sz)
+    if (start < sz)
         this->lineIndex.Push((uint32) start);
 }
-
+void Instance::DrawLine(int32 x, int32 y, uint32 lineNo, Graphics::Renderer& renderer)
+{
+}
 void Instance::Paint(Graphics::Renderer& renderer)
 {
-    renderer.WriteSingleLineText(0, 0, "txt", {Color::Red,Color::Transparent});
+    auto h = this->GetHeight();
+    for (auto y = 0; y < h; y++)
+    {
+        DrawLine(0, y, (uint32) y, renderer);
+    }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
@@ -111,7 +116,6 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     }
 
-
     return false;
 }
 void Instance::OnStart()
@@ -124,13 +128,11 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
-
     }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
 {
-    
     return false;
 }
 bool Instance::Select(uint64 offset, uint64 size)
@@ -146,7 +148,6 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
-
 }
 
 //======================================================================[PROPERTY]============================

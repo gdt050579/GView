@@ -52,7 +52,7 @@ namespace View
 
             void RecomputeLineIndexes();
 
-
+            void DrawLine(int32 x, int32 y, uint32 lineNo, Graphics::Renderer& renderer);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
