@@ -8,9 +8,29 @@ Config Instance::config;
 constexpr uint32 PROP_ID_ADD_NEW_TYPE     = 1;
 constexpr uint32 PROP_ID_DISSASM_LANGUAGE = 2;
 
+const char16 CodePage_437[] = {
+    0x0020, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022, 0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
+    0x25BA, 0x25C4, 0x2195, 0x203C, 0x00B6, 0x00A7, 0x25AC, 0x21A8, 0x2191, 0x2193, 0x2192, 0x2190, 0x221F, 0x2194, 0x25B2, 0x25BC,
+    0x0020, 0x0021, 0x0022, 0x0023, 0x0024, 0x0025, 0x0026, 0x0027, 0x0028, 0x0029, 0x002A, 0x002B, 0x002C, 0x002D, 0x002E, 0x002F,
+    0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036, 0x0037, 0x0038, 0x0039, 0x003A, 0x003B, 0x003C, 0x003D, 0x003E, 0x003F,
+    0x0040, 0x0041, 0x0042, 0x0043, 0x0044, 0x0045, 0x0046, 0x0047, 0x0048, 0x0049, 0x004A, 0x004B, 0x004C, 0x004D, 0x004E, 0x004F,
+    0x0050, 0x0051, 0x0052, 0x0053, 0x0054, 0x0055, 0x0056, 0x0057, 0x0058, 0x0059, 0x005A, 0x005B, 0x005C, 0x005D, 0x005E, 0x005F,
+    0x0060, 0x0061, 0x0062, 0x0063, 0x0064, 0x0065, 0x0066, 0x0067, 0x0068, 0x0069, 0x006A, 0x006B, 0x006C, 0x006D, 0x006E, 0x006F,
+    0x0070, 0x0071, 0x0072, 0x0073, 0x0074, 0x0075, 0x0076, 0x0077, 0x0078, 0x0079, 0x007A, 0x007B, 0x007C, 0x007D, 0x007E, 0x2302,
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
+    0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9, 0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192,
+    0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA, 0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F, 0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+    0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
+    0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x0020
+};
+
 Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
     : name(name), obj(obj), settings(nullptr)
 {
+    this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     // settings
     if ((_settings) && (_settings->data))
     {
@@ -25,6 +45,11 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
 
     if (config.Loaded == false)
         config.Initialize();
+
+    this->Cursor.currentPos = 0;
+    this->Cursor.startView  = 0;
+
+    RecomputeDissasmLayout();
 }
 
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
@@ -90,12 +115,108 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height)
 {
-    renderer.WriteSingleLineText(0, 0, "Cursor data", DefaultColorPair);
+    this->CursorColors.Normal      = config.Colors.Normal;
+    this->CursorColors.Line        = config.Colors.Line;
+    this->CursorColors.Highlighted = config.Colors.Highlight;
+    if (!this->HasFocus())
+    {
+        this->CursorColors.Normal      = config.Colors.Inactive;
+        this->CursorColors.Highlighted = config.Colors.Inactive;
+    }
+    renderer.Clear(' ', this->CursorColors.Normal);
+    PrintCursorPosInfo(0, 0, 16, true, renderer);
+}
+
+int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator,Renderer& r)
+{
+    NumericFormatter n;
+    r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos, this->Cursor.base), this->CursorColors.Normal);
+    x += width;
+
+    if (addSeparator)
+        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+
+    if (this->obj->cache.GetSize() > 0)
+    {
+        LocalString<32> tmp;
+        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->cache.GetSize());
+        r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
+    }
+    else
+    {
+        r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
+    }
+    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    return x + 5;
+}
+
+void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
+{
+    if (dli.recomputeOffsets)
+    {
+        dli.lineOffset = 0;
+        auto width     = (uint32) this->GetWidth();
+        dli.textSize   = width - 1;
+
+        this->chars.Resize(dli.offset + dli.textSize);
+        dli.recomputeOffsets = false;
+    }
+
+    auto buf          = this->obj->cache.Get(dli.offset, dli.textSize, false);
+    dli.start         = buf.GetData();
+    dli.end           = buf.GetData() + buf.GetLength();
+    dli.chNameAndSize = this->chars.GetBuffer();
+    dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
+    dli.chNumbers     = dli.chNameAndSize + dli.lineOffset;
+}
+
+void Instance::WriteLineToChars(DrawLineInfo& dli)
+{
+    auto cp    = config.Colors.Inactive;
+    bool activ = this->HasFocus();
+
+    if (activ)
+    {
+        while (dli.start < dli.end)
+        {
+            dli.chText->Code  = CodePage_437[*dli.start];
+            dli.chText->Color = cp;
+            dli.chText++;
+            dli.start++;
+            dli.offset++;
+        }
+    }
+    else
+    {
+        while (dli.start < dli.end)
+        {
+            dli.chText->Code  = CodePage_437[*dli.start];
+            dli.chText->Color = config.Colors.Inactive;
+            dli.chText++;
+            dli.start++;
+        }
+    }
+    this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
 }
 
 void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 {
-    renderer.WriteSingleLineText(0, 0, "ASM ASM", DefaultColorPair);
+    if (HasFocus())
+        renderer.Clear(' ', config.Colors.Normal);
+    else
+        renderer.Clear(' ', config.Colors.Inactive);
+
+    DrawLineInfo dli;
+    for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
+    {
+        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr; // + this->Cursor.startView;
+        if (dli.offset >= this->obj->cache.GetSize())
+            break;
+        PrepareDrawLineInfo(dli);
+        WriteLineToChars(dli);
+        renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
+    }
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -109,7 +230,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::Command)
     {
-        if (ID==12345)
+        if (ID == 12345)
         {
             Dialogs::MessageBox::ShowNotification("Info", "OK!");
             return true;
@@ -117,4 +238,125 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     }
 
     return false;
+}
+
+void Instance::OnAfterResize(int newWidth, int newHeight)
+{
+    this->RecomputeDissasmLayout();
+}
+
+void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
+{
+    this->Layout.visibleRows       = this->GetHeight();
+    this->Layout.charactersPerLine = this->GetWidth() - 1;
+}
+
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+{
+    switch (direction)
+    {
+    case MouseWheel::Up:
+        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+    case MouseWheel::Down:
+        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+    case MouseWheel::Left:
+        return OnKeyEvent(Key::PageUp, false);
+    case MouseWheel::Right:
+        return OnKeyEvent(Key::PageDown, false);
+    }
+
+    return false;
+}
+
+bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
+{
+    bool select = ((keyCode & Key::Shift) != Key::None);
+    if (select)
+        keyCode = static_cast<Key>((uint32) keyCode - (uint32) Key::Shift);
+
+    switch (keyCode)
+    {
+    case Key::Down:
+        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLine, select);
+        return true;
+    case Key::Up:
+        if (this->Cursor.currentPos > this->Layout.charactersPerLine)
+            MoveTo(this->Cursor.currentPos - this->Layout.charactersPerLine, select);
+        else
+            MoveTo(0, select);
+        return true;
+    case Key::Left:
+        if (this->Cursor.currentPos > 0)
+            MoveTo(this->Cursor.currentPos - 1, select);
+        return true;
+    case Key::Right:
+        MoveTo(this->Cursor.currentPos + 1, select);
+        return true;
+    case Key::PageDown:
+        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLine * this->Layout.visibleRows, select);
+        return true;
+    case Key::PageUp:
+        if (this->Cursor.currentPos > this->Layout.charactersPerLine * this->Layout.visibleRows)
+            MoveTo(this->Cursor.currentPos - (this->Layout.charactersPerLine * this->Layout.visibleRows), select);
+        else
+            MoveTo(0, select);
+        return true;
+    case Key::Home:
+        MoveTo(this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLine, select);
+        return true;
+    case Key::End:
+        MoveTo(
+              this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLine +
+                    this->Layout.charactersPerLine - 1,
+              select);
+        return true;
+    };
+    return false;
+}
+
+void Instance::MoveTo(uint64 offset, bool select)
+{
+    if (this->obj->cache.GetSize() == 0)
+        return;
+    if (offset > (obj->cache.GetSize() - 1))
+        offset = obj->cache.GetSize() - 1;
+
+    if (offset == this->Cursor.currentPos)
+    {
+        this->Cursor.startView = offset;
+        return;
+    }
+
+    auto h    = this->Layout.visibleRows;
+    auto sz   = this->Layout.charactersPerLine * h;
+    auto sidx = -1;
+    // if (select)
+    //    sidx = this->selection.BeginSelection(this->Cursor.currentPos);
+    if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
+    {
+        this->Cursor.currentPos = offset;
+        // if ((select) && (sidx >= 0))
+        //{
+        //    this->selection.UpdateSelection(sidx, offset);
+        //    UpdateCurrentSelection();
+        //    return; // nothing to do ... already in visual space
+        //}
+    }
+
+    if (offset < this->Cursor.startView)
+        this->Cursor.startView = offset;
+    else
+    {
+        auto dif = this->Cursor.currentPos - this->Cursor.startView;
+        if (offset >= dif)
+            this->Cursor.startView = offset - dif;
+        else
+            this->Cursor.startView = 0;
+    }
+    this->Cursor.currentPos = offset;
+    // if ((select) && (sidx >= 0))
+    //{
+    //    this->selection.UpdateSelection(sidx, offset);
+    //    UpdateCurrentSelection();
+    //}
 }

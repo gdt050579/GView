@@ -98,6 +98,20 @@ extern "C"
     {
         DissasmViewer::Settings settings;
 
+        if (pe->HasPanel(PE::Panels::IDs::Sections))
+        {
+            LocalString<128> temp;
+
+            for (auto tr = 0U; tr < pe->nrSections; tr++)
+            {
+                pe->CopySectionName(tr, temp);
+                if (temp.CompareWith(".text")==0)
+                {
+                    settings.AddDissasemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData);
+                }
+            }
+        }
+
         win->CreateViewer("BufferView", settings);
     }
 

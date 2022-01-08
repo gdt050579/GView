@@ -217,7 +217,6 @@ namespace View
         };
     }; // namespace GridViewer
 
-                            // namespace ImageViewer
     namespace DissasmViewer // StructureViewer
     {
         using TypeID = uint32;
@@ -285,6 +284,7 @@ namespace View
             Settings();
         };
     }; // namespace DissasmViewer
+
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                     = 0;

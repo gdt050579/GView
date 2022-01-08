@@ -10,11 +10,6 @@ Settings::Settings()
     this->data = new SettingsData();
 }
 
-SettingsData::SettingsData()
-{
-    defaultLanguage = DissamblyLanguage::Default;
-}
-
 void Settings::SetDefaultDissasemblyLanguage(DissamblyLanguage lang)
 {
     INTERNAL_SETTINGS->defaultLanguage = lang;
@@ -32,7 +27,7 @@ void Settings::AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage l
 
 void Settings::AddMemmoryMapping(uint64 address, std::string_view name)
 {
-    INTERNAL_SETTINGS->memmoryMappings[address] = name;
+    INTERNAL_SETTINGS->memoryMappings[address] = name;
 }
 
 TypeID AddType(std::string_view name, std::string_view definition)
@@ -58,4 +53,9 @@ void Settings::AddArray(uint64 offset, std::string_view name, TypeID type, uint3
 }
 void Settings::AddBiDiminesionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height)
 {
+}
+
+SettingsData::SettingsData()
+{
+    defaultLanguage = DissamblyLanguage::Default;
 }
