@@ -30,6 +30,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
+
+    this->lineNumberWidth = 0;
+    this->tabSize         = 4;
 }
 void Instance::RecomputeLineIndexes()
 {
@@ -83,16 +86,111 @@ void Instance::RecomputeLineIndexes()
     }
     if (start < sz)
         this->lineIndex.Push((uint32) start);
+    auto linesCount = this->lineIndex.Len() + 1;
+    if (linesCount < 10)
+        this->lineNumberWidth = 2;
+    else if (linesCount < 100)
+        this->lineNumberWidth = 3;
+    else if (linesCount < 1000)
+        this->lineNumberWidth = 4;
+    else if (linesCount < 10000)
+        this->lineNumberWidth = 5;
+    else if (linesCount < 100000)
+        this->lineNumberWidth = 6;
+    else if (linesCount < 1000000)
+        this->lineNumberWidth = 7;
+    else
+        this->lineNumberWidth = 8;
 }
-void Instance::DrawLine(int32 x, int32 y, uint32 lineNo, Graphics::Renderer& renderer)
+bool Instance::GetLineInfo(uint32 lineNo, uint64& offset, uint32& size)
 {
+    uint32 ofs, next;
+    if (this->lineIndex.Get(lineNo, ofs) == false)
+        return false;
+    offset = ofs;
+    if (lineNo + 1 == this->lineIndex.Len())
+    {
+        size = (uint32) (this->obj->cache.GetSize() - offset);
+    }
+    else
+    {
+        if (this->lineIndex.Get(lineNo + 1, next) == false)
+            return false;
+        size = next - ofs;
+    }
+    return true;
+}
+void Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer)
+{
+    uint64 ofs;
+    uint32 sz;
+    BufferView buf;
+    NumericFormatter n;
+
+    if (GetLineInfo(lineNo, ofs, sz))
+        buf = this->obj->cache.Get(ofs, sz, false);
+    renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
+    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
+
+    // parse buf until the first visible character
+    uint32 xPoz = 0;
+    auto p      = buf.begin();
+    auto e      = buf.end();
+
+    // compute relative position
+    for (; (xPoz < xScroll) && (p < e); p++)
+    {
+        if ((*p) == '\t')
+        {
+            xPoz += this->tabSize - (xPoz % this->tabSize);
+        }
+        else
+        {
+            xPoz++;
+        }
+    }
+    xPoz -= xScroll;
+
+    // write chars over the chars buffer
+    auto c     = this->chars;
+    auto c_end = c + MAX_CHARACTERS_PER_LINE;
+    auto x     = 0U;
+    while ((x < width) && (c < c_end) && (p < e))
+    {
+        if (((*p) == '\n') || ((*p) == '\r'))
+            break;
+
+        if ((*p) == '\t')
+        {
+            auto dif = this->tabSize - (x % this->tabSize);
+            x += dif;
+            for (; (dif > 0) && (c < c_end); dif--,c++)
+            {
+                c->Code = ' ';                
+            }
+        }
+        else
+        {
+            c->Code = *p;
+            c++;
+            x++;
+        }
+        p++;
+    }
+
+    renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (c - chars)), DefaultColorPair);
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
-    auto h = this->GetHeight();
+    auto h   = this->GetHeight();
+    uint32 w = this->GetWidth();
+    if (w <= (this->lineNumberWidth + 2))
+        w = 0;
+    else
+        w = w - (this->lineNumberWidth + 2);
     for (auto y = 0; y < h; y++)
     {
-        DrawLine(0, y, (uint32) y, renderer);
+        DrawLine(0, y, (uint32) y, w, renderer);
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

@@ -10,6 +10,8 @@ namespace View
     {
         using namespace AppCUI;
 
+        constexpr uint32 MAX_CHARACTERS_PER_LINE = 1024;
+
         struct ImageInfo
         {
             uint64 start, end;
@@ -47,12 +49,16 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
+            Character chars[MAX_CHARACTERS_PER_LINE];
+            uint32 lineNumberWidth;
+            uint32 tabSize;
 
             static Config config;
 
             void RecomputeLineIndexes();
 
-            void DrawLine(int32 x, int32 y, uint32 lineNo, Graphics::Renderer& renderer);
+            bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
+            void DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
