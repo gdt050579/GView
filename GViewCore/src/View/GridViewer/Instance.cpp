@@ -34,11 +34,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (settings)
     {
         grid = AppCUI::Controls::Factory::Grid::Create(
-              this,
-              "d:c,w:100%,h:100%",
-              settings->cols,
-              settings->rows,
-              AppCUI::Controls::GridFlags::TransparentBackground | AppCUI::Controls::GridFlags::Sort);
+              this, "d:c,w:100%,h:100%", settings->cols, settings->rows, AppCUI::Controls::GridFlags::Sort);
 
         grid->SetSeparator(settings->separator);
         PopulateGrid();
@@ -165,7 +161,7 @@ void Instance::PopulateGrid()
         const auto& row = content[i];
         for (auto j = 0U; j < row.size(); j++)
         {
-            grid->UpdateCell(j, i - settings->firstRowAsHeader, AppCUI::Controls::Grid::CellType::String, row[j]);
+            grid->UpdateCell(j, i - settings->firstRowAsHeader, row[j]);
         }
     }
 
