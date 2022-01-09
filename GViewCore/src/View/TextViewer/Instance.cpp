@@ -190,7 +190,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
         w = w - (this->lineNumberWidth + 2);
     for (auto y = 0; y < h; y++)
     {
-        DrawLine(0, y, (uint32) y, w, renderer);
+        DrawLine(10, y, (uint32) y, w, renderer);
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
