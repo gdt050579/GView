@@ -30,6 +30,8 @@ namespace View
                 ColorPair Inactive;
                 ColorPair Cursor;
                 ColorPair Line;
+                ColorPair Selection;
+                ColorPair OutsideZone;
             } Colors;
             struct
             {
@@ -98,6 +100,7 @@ namespace View
             Pointer<SettingsData> settings;
             static Config config;
             CharacterBuffer chars;
+            Utils::Selection selection;
 
             void RecomputeDissasmLayout();
             void WriteLineToChars(DrawLineInfo& dli);

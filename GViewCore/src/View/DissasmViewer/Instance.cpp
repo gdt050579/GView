@@ -46,8 +46,16 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (config.Loaded == false)
         config.Initialize();
 
-    this->Cursor.currentPos = 0;
-    this->Cursor.startView  = 0;
+    this->Cursor.currentPos        = 0;
+    this->Cursor.startView         = 0;
+    this->Cursor.base              = 16;
+
+    this->CursorColors.Normal      = config.Colors.Normal;
+    this->CursorColors.Highlighted = config.Colors.Highlight;
+    this->CursorColors.Line        = config.Colors.Line;
+
+    this->Layout.visibleRows = 1;
+    this->Layout.charactersPerLine = 1;
 
     RecomputeDissasmLayout();
 }
@@ -124,10 +132,11 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
         this->CursorColors.Highlighted = config.Colors.Inactive;
     }
     renderer.Clear(' ', this->CursorColors.Normal);
-    PrintCursorPosInfo(0, 0, 16, true, renderer);
+    int x = 0;
+    x     = PrintCursorPosInfo(x, 0, 16, false, renderer);
 }
 
-int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator,Renderer& r)
+int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
@@ -148,6 +157,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator,R
         r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
     }
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+
     return x + 5;
 }
 
@@ -180,6 +190,12 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
     {
         while (dli.start < dli.end)
         {
+            cp = config.Colors.OutsideZone;
+            //cp = OffsetToColor(dli.offset);
+            if (selection.Contains(dli.offset))
+                cp = config.Colors.Selection;
+            if (dli.offset == this->Cursor.currentPos)
+                cp = config.Colors.Cursor;
             dli.chText->Code  = CodePage_437[*dli.start];
             dli.chText->Color = cp;
             dli.chText++;
@@ -210,7 +226,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     DrawLineInfo dli;
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr; // + this->Cursor.startView;
+        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
         if (dli.offset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
@@ -330,12 +346,12 @@ void Instance::MoveTo(uint64 offset, bool select)
     auto h    = this->Layout.visibleRows;
     auto sz   = this->Layout.charactersPerLine * h;
     auto sidx = -1;
-    // if (select)
-    //    sidx = this->selection.BeginSelection(this->Cursor.currentPos);
+    /*if (select)
+        sidx = this->selection.BeginSelection(this->Cursor.currentPos);*/
     if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
     {
         this->Cursor.currentPos = offset;
-        // if ((select) && (sidx >= 0))
+        //if ((select) && (sidx >= 0))
         //{
         //    this->selection.UpdateSelection(sidx, offset);
         //    UpdateCurrentSelection();
@@ -354,9 +370,9 @@ void Instance::MoveTo(uint64 offset, bool select)
             this->Cursor.startView = 0;
     }
     this->Cursor.currentPos = offset;
-    // if ((select) && (sidx >= 0))
-    //{
-    //    this->selection.UpdateSelection(sidx, offset);
-    //    UpdateCurrentSelection();
-    //}
+   /* if ((select) && (sidx >= 0))
+    {
+        this->selection.UpdateSelection(sidx, offset);
+        UpdateCurrentSelection();
+    }*/
 }
