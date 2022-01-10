@@ -59,7 +59,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
         else if (*start == ';')
         {
             buffer[size] = '\0';
-            newType.name = buffer;
+            newType.name = buffer;//TODO: not ok
 
             size = 0;
             userType.internalTypes.push_back(newType);
