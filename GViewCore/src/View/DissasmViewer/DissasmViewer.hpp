@@ -11,15 +11,6 @@ namespace View
     namespace DissasmViewer
     {
         using namespace AppCUI;
-        enum class CharacterFormatMode : uint8
-        {
-            Hex,
-            Octal,
-            SignedDecimal,
-            UnsignedDecimal,
-
-            Count // Must be the last
-        };
 
         struct Config
         {
@@ -50,12 +41,45 @@ namespace View
             DissamblyLanguage language;
         };
 
+        enum class InternalDissasmType : uint8
+        {
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            AsciiZ,
+            Utf16Z,
+            Utf32Z,
+            UnidimnsionalArray,
+            BiimensionalArray,
+            UserDefined
+        };
+
+        struct DissasmType
+        {
+            InternalDissasmType primaryType;
+            std::string_view name;
+
+            uint32 secondaryType;
+            uint32 width;
+            uint32 height;
+
+            std::vector<DissasmType> internalTypes;
+        };
+
         struct SettingsData
         {
             DissamblyLanguage defaultLanguage;
             vector<DissasemblyZone> zones;
-            std::unordered_map<uint64, string_view> memoryMappings;
+            uint32 availableID;
 
+            std::unordered_map<uint64, string_view> memoryMappings;
+            std::unordered_map<uint64, DissasmType> dissasmTypeMapped;
+            std::unordered_map<TypeID, DissasmType> userDeginedTypes;
             SettingsData();
         };
 
