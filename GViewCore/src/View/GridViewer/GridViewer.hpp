@@ -10,11 +10,11 @@ namespace View
     {
         struct SettingsData
         {
-            std::vector<std::vector<std::string>> content;
+            std::map<std::pair<uint64, uint64>, std::vector<std::pair<uint64, uint64>>> tokens;
             char separator[2]{ "," };
-            unsigned int rows = 0;
-            unsigned int cols = 0;
-            bool firstRowAsHeader   = false;
+            unsigned int rows     = 0;
+            unsigned int cols     = 0;
+            bool firstRowAsHeader = false;
             SettingsData();
         };
 
@@ -62,6 +62,8 @@ namespace View
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+            virtual void OnStart() override;
 
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;

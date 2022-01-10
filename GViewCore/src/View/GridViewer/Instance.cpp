@@ -135,10 +135,114 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
     return false;
 }
 
+void Instance::OnStart()
+{
+    std::vector<std::pair<uint64, uint64>> lineTokens;
+    std::map<std::pair<uint64, uint64>, std::vector<std::pair<uint64, uint64>>> tokens;
+
+    const auto oSize = obj->cache.GetSize();
+    const auto cSize = obj->cache.GetCacheSize();
+
+    auto oSizeProcessed = 0ULL;
+    auto lineStart      = 0ULL;
+    auto tokenStart     = 0ULL;
+
+    do
+    {
+        uint64 deltaSize = cSize;
+        if (oSize - oSizeProcessed < cSize)
+        {
+            deltaSize = oSize - oSizeProcessed;
+        }
+        lineStart = oSizeProcessed;
+
+        auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(deltaSize), false);
+        for (auto i = 0ULL; i < buf.GetLength(); i++)
+        {
+            const char c = buf[i];
+
+            if (c == settings->separator[0])
+            {
+                if (oSizeProcessed == 0 && i == 0)
+                {
+                    lineTokens.push_back({ -1, -1 }); // empty token
+                }
+                else
+                {
+                    const auto tokenEnd = i;
+                    lineTokens.push_back({ tokenStart, tokenEnd });
+                    tokenStart = tokenEnd + 1;
+                }
+            }
+
+            if (i < buf.GetLength() - 1)
+            {
+                const char cNext = buf[i + 1ULL];
+                if (c == '\n' && cNext == '\r' || c == '\r' && cNext == '\n')
+                {
+                    const auto lineEnd = i - 1ULL;
+                    tokens.insert({ { lineStart, lineEnd }, std::move(lineTokens) });
+
+                    lineTokens.clear();
+                    lineStart  = lineEnd + 2;
+                    tokenStart = i + 2;
+
+                    i++;
+                    continue;
+                }
+            }
+
+            if (c == '\n' || c == '\r')
+            {
+                if (i == buf.GetLength() - 1 && oSizeProcessed + deltaSize < oSize) // it may follow another \n or \r
+                {
+                    deltaSize--;
+                    break;
+                }
+                else
+                {
+                    const auto lineEnd = i;
+                    tokens.insert({ { lineStart, lineEnd }, std::move(lineTokens) });
+
+                    lineTokens.clear();
+                    lineStart  = lineEnd + 1;
+                    tokenStart = i + 1;
+                }
+            }
+        }
+
+        oSizeProcessed += deltaSize;
+
+    } while (oSizeProcessed < oSize);
+
+    for (const auto& [line, t] : tokens)
+    {
+        auto l = obj->cache.Get(line.first, static_cast<uint32>(line.second - line.first), false);
+        std::string_view sv{ l };
+        for (const auto& token : t)
+        {
+            auto lt = obj->cache.Get(token.first, static_cast<uint32>(token.second - token.first), false);
+            std::string_view svt{ lt };
+            auto lt2 = obj->cache.Get(token.first, static_cast<uint32>(token.second - token.first), false);
+        }
+    }
+
+    settings->rows = tokens.size();
+
+    if (tokens.size() > 0)
+    {
+        settings->cols = tokens.begin()->second.size();
+    }
+    else
+    {
+        settings->cols = 0;
+    }
+}
+
 void Instance::PopulateGrid()
 {
     auto i              = 0U;
-    const auto& content = settings->content;
+    const auto& content = settings->tokens;
     if (settings->firstRowAsHeader)
     {
         const auto& header = content[0];
