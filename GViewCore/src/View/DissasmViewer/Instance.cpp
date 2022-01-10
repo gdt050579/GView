@@ -46,16 +46,17 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (config.Loaded == false)
         config.Initialize();
 
-    this->Cursor.currentPos        = 0;
-    this->Cursor.startView         = 0;
-    this->Cursor.base              = 16;
+    this->Cursor.currentPos = 0;
+    this->Cursor.startView  = 0;
+    this->Cursor.base       = 10;
 
     this->CursorColors.Normal      = config.Colors.Normal;
     this->CursorColors.Highlighted = config.Colors.Highlight;
     this->CursorColors.Line        = config.Colors.Line;
 
-    this->Layout.visibleRows = 1;
-    this->Layout.charactersPerLine = 1;
+    this->Layout.visibleRows        = 1;
+    this->Layout.charactersPerLine  = 1;
+    this->Layout.startingTextLineOffset = 5;
 
     RecomputeDissasmLayout();
 }
@@ -165,9 +166,9 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
-        dli.lineOffset = 0;
+        dli.lineOffset = Layout.startingTextLineOffset;
         auto width     = (uint32) this->GetWidth();
-        dli.textSize   = width - 1;
+        dli.textSize   = width - (1+dli.lineOffset);
 
         this->chars.Resize(dli.offset + dli.textSize);
         dli.recomputeOffsets = false;
@@ -191,7 +192,7 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
         while (dli.start < dli.end)
         {
             cp = config.Colors.OutsideZone;
-            //cp = OffsetToColor(dli.offset);
+            // cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
                 cp = config.Colors.Selection;
             if (dli.offset == this->Cursor.currentPos)
@@ -263,8 +264,8 @@ void Instance::OnAfterResize(int newWidth, int newHeight)
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
 {
-    this->Layout.visibleRows       = this->GetHeight();
-    this->Layout.charactersPerLine = this->GetWidth() - 1;
+    this->Layout.visibleRows       = this->GetHeight() - 1;
+    this->Layout.charactersPerLine = this->GetWidth() - 1 - this->Layout.startingTextLineOffset;
 }
 
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
@@ -282,6 +283,70 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
     }
 
     return false;
+}
+
+void Instance::MoveScrollTo(uint64 offset)
+{
+    if (this->obj->cache.GetSize() == 0)
+        return;
+    if (offset > (obj->cache.GetSize() - 1))
+        offset = obj->cache.GetSize() - 1;
+    auto old               = this->Cursor.startView;
+    this->Cursor.startView = offset;
+    if (this->Cursor.startView > old)
+        MoveTo(this->Cursor.currentPos + (this->Cursor.startView - old), false);
+    else
+    {
+        auto dif = old - Cursor.startView;
+        if (dif <= this->Cursor.currentPos)
+            MoveTo(this->Cursor.currentPos - dif, false);
+        else
+            MoveTo(0, false);
+    }
+}
+
+void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
+{
+    mpInfo.location = MouseLocation::Outside;
+    if (y < 0)
+    {
+        mpInfo.location = MouseLocation::Outside;
+        return;
+    }
+    if (y == 0)
+    {
+        mpInfo.location = MouseLocation::OnHeader;
+        return;
+    }
+    // y>=1 --> check if in buffer
+    auto yPoz = y - 1;
+    if (x < 0)
+    {
+        mpInfo.location = MouseLocation::Outside;
+        return;
+    }
+    auto xPoz = (uint32) x;
+    if ((xPoz >= Layout.startingTextLineOffset) && (xPoz < Layout.startingTextLineOffset + Layout.charactersPerLine))
+    {
+        mpInfo.location     = MouseLocation::OnView;
+        mpInfo.bufferOffset = yPoz * Layout.charactersPerLine + xPoz - Layout.startingTextLineOffset;
+    }
+    if (mpInfo.location == MouseLocation::OnView)
+    {
+        mpInfo.bufferOffset += Cursor.startView;
+        if (mpInfo.bufferOffset >= this->obj->cache.GetSize())
+            mpInfo.location = MouseLocation::Outside;
+    }
+}
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+{
+    MousePositionInfo mpInfo;
+    AnalyzeMousePosition(x, y, mpInfo);
+    // make sure that consecutive click on the same location will not scroll the view to that location
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    {
+        MoveTo(mpInfo.bufferOffset, false);
+    }
 }
 
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
@@ -326,6 +391,22 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
                     this->Layout.charactersPerLine - 1,
               select);
         return true;
+    case Key::Ctrl | Key::Up:
+        if (this->Cursor.startView > this->Layout.charactersPerLine)
+            MoveScrollTo(this->Cursor.startView - this->Layout.charactersPerLine);
+        else
+            MoveScrollTo(0);
+        return true;
+    case Key::Ctrl | Key::Down:
+        MoveScrollTo(this->Cursor.startView + this->Layout.charactersPerLine);
+        return true;
+    case Key::Ctrl | Key::Left:
+        if (this->Cursor.startView >= 1)
+            MoveScrollTo(this->Cursor.startView - 1);
+        return true;
+    case Key::Ctrl | Key::Right:
+        MoveScrollTo(this->Cursor.startView + 1);
+        return true;
     };
     return false;
 }
@@ -351,7 +432,7 @@ void Instance::MoveTo(uint64 offset, bool select)
     if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
     {
         this->Cursor.currentPos = offset;
-        //if ((select) && (sidx >= 0))
+        // if ((select) && (sidx >= 0))
         //{
         //    this->selection.UpdateSelection(sidx, offset);
         //    UpdateCurrentSelection();
@@ -370,9 +451,9 @@ void Instance::MoveTo(uint64 offset, bool select)
             this->Cursor.startView = 0;
     }
     this->Cursor.currentPos = offset;
-   /* if ((select) && (sidx >= 0))
-    {
-        this->selection.UpdateSelection(sidx, offset);
-        UpdateCurrentSelection();
-    }*/
+    /* if ((select) && (sidx >= 0))
+     {
+         this->selection.UpdateSelection(sidx, offset);
+         UpdateCurrentSelection();
+     }*/
 }

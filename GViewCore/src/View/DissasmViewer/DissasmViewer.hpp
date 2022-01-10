@@ -65,7 +65,6 @@ namespace View
             {
                 uint64 offset;
                 uint32 lineOffset;
-                uint32 numbersSize;
                 uint32 textSize;
                 const uint8* start;
                 const uint8* end;
@@ -76,6 +75,18 @@ namespace View
                 DrawLineInfo() : recomputeOffsets(true)
                 {
                 }
+            };
+
+            enum class MouseLocation : uint8
+            {
+                OnView,
+                OnHeader,
+                Outside
+            };
+            struct MousePositionInfo
+            {
+                MouseLocation location;
+                uint64 bufferOffset;
             };
 
             struct
@@ -93,6 +104,7 @@ namespace View
             {
                 uint32 visibleRows;
                 uint32 charactersPerLine;
+                uint32 startingTextLineOffset;
             } Layout;
 
             FixSizeString<16> name;
@@ -106,7 +118,10 @@ namespace View
             void WriteLineToChars(DrawLineInfo& dli);
             void PrepareDrawLineInfo(DrawLineInfo& dli);
 
+            void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
+
             void MoveTo(uint64 offset, bool select);
+            void MoveScrollTo(uint64 offset);
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
 
@@ -124,12 +139,14 @@ namespace View
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
             void Paint(AppCUI::Graphics::Renderer& renderer) override;
 
-            virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+            bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
             void OnAfterResize(int newWidth, int newHeight) override;
 
             // Mouse events
             bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
 
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
         };
