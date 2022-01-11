@@ -54,9 +54,11 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->CursorColors.Highlighted = config.Colors.Highlight;
     this->CursorColors.Line        = config.Colors.Line;
 
-    this->Layout.visibleRows        = 1;
-    this->Layout.charactersPerLine  = 1;
-    this->Layout.startingTextLineOffset = 5;
+    this->Layout.visibleRows             = 1;
+    this->Layout.charactersPerLine       = 1;
+    this->Layout.startingTextLineOffset  = 5;
+    this->Layout.charactersToDelay       = 0;
+    this->Layout.structureLinesDisplayed = 0;
 
     RecomputeDissasmLayout();
 }
@@ -168,18 +170,50 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     {
         dli.lineOffset = Layout.startingTextLineOffset;
         auto width     = (uint32) this->GetWidth();
-        dli.textSize   = width - (1+dli.lineOffset);
+        dli.textSize   = width - (1 + dli.lineOffset);
 
         this->chars.Resize(dli.offset + dli.textSize);
         dli.recomputeOffsets = false;
     }
 
-    auto buf          = this->obj->cache.Get(dli.offset, dli.textSize, false);
-    dli.start         = buf.GetData();
-    dli.end           = buf.GetData() + buf.GetLength();
-    dli.chNameAndSize = this->chars.GetBuffer();
-    dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
-    dli.chNumbers     = dli.chNameAndSize + dli.lineOffset;
+    bool foundStructure = false;
+    if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping)
+    {
+        dli.shouldSearchMapping   = false;
+        const auto& offsetsVector = settings->offsetsToSearch;
+        for (const auto& foundOffset : offsetsVector)
+        {
+            if (foundOffset >= dli.offset && foundOffset < dli.offset + dli.textSize)
+            {
+                Layout.structureLinesDisplayed++;
+                foundStructure = true;
+
+                bool collapsed       = settings->collapsed[foundOffset];
+                const auto& userType = settings->dissasmTypeMapped[foundOffset];
+                auto buf             = this->obj->cache.Get(foundOffset, dli.textSize, false);
+
+                if (!userType.ToBuffer((char*) MyLine.buffer, MyLine.length, buf, collapsed, 0))
+                {
+                    // err;
+                }
+                dli.start         = MyLine.buffer;
+                dli.end           = MyLine.buffer + dli.textSize;
+                dli.chNameAndSize = this->chars.GetBuffer();
+                dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
+                break;
+            }
+        }
+    }
+    if (!foundStructure)
+    {
+        auto buf          = this->obj->cache.Get(dli.offset, dli.textSize, false);
+        dli.start         = buf.GetData();
+        dli.end           = buf.GetData() + buf.GetLength();
+        dli.chNameAndSize = this->chars.GetBuffer();
+        dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
+        if (!dli.shouldSearchMapping)
+            dli.shouldSearchMapping = true;
+    }
 }
 
 void Instance::WriteLineToChars(DrawLineInfo& dli)
@@ -191,7 +225,7 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
     {
         while (dli.start < dli.end)
         {
-            cp = config.Colors.OutsideZone;
+            cp = config.Colors.Normal; // OutsideZone;
             // cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
                 cp = config.Colors.Selection;
@@ -225,9 +259,12 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         renderer.Clear(' ', config.Colors.Inactive);
 
     DrawLineInfo dli;
+    Layout.structureLinesDisplayed = 0;
+    dli.shouldSearchMapping        = !settings->dissasmTypeMapped.empty();
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
+        dli.offset = ((uint64) this->Layout.charactersPerLine) * (tr - Layout.structureLinesDisplayed) + this->Cursor.startView -
+                     Layout.charactersToDelay;
         if (dli.offset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);

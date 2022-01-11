@@ -22,20 +22,27 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 
     DissasmType userType = { InternalDissasmType::UserDefined, name };
 
-    const char* start = definition.data();
-    const char* end   = definition.data() + definition.size();
+    char* newBuffer = new char[definition.size() + 1];
+    memcpy(newBuffer, definition.data(), definition.size());
+    newBuffer[definition.size()] = '\0';
+    INTERNAL_SETTINGS->buffersToDelete.push_back(newBuffer);
+
+    char* start = newBuffer;
+    char* end   = newBuffer + definition.size();
 
     const char *startDef = start, *endDef = nullptr;
 
     char buffer[128];
-    uint32 size         = 0;
-    uint32 arraySizes   = 0;
-    DissasmType newType = {};
+    char* startingNamePtr = start;
+    uint32 size           = 0;
+    uint32 arraySizes     = 0;
+    DissasmType newType   = {};
 
     while (start < end)
     {
         if (*start == ' ')
         {
+            *start       = '\0';
             buffer[size] = '\0';
             auto it      = types.find(buffer);
             if (it != types.end())
@@ -46,20 +53,45 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
             {
                 // err
             }
-            size = 0;
+            size            = 0;
+            startingNamePtr = start + 1;
         }
         else if (*start == '[')
         {
+            *start = '\0';
             size = 0;
             arraySizes++;
         }
         else if (*start == ']')
         {
+            buffer[size] = '\0';
+            *start       = '\0';
+            auto res     = Number::ToUInt32(buffer);
+            if (!res.has_value())
+            {
+                // err
+            }
+            else
+            {
+                if (arraySizes == 1)
+                {
+                    newType.secondaryType = (uint32) newType.primaryType;
+                    newType.primaryType   = InternalDissasmType::UnidimnsionalArray;
+                    newType.width         = res.value();
+                }
+                else // bidimensional
+                {
+                    newType.primaryType = InternalDissasmType::BiimensionalArray;
+                    newType.height      = res.value();
+                }
+            }
         }
         else if (*start == ';')
         {
+            arraySizes   = 0;
+            *start       = '\0';
             buffer[size] = '\0';
-            newType.name = buffer;//TODO: not ok
+            newType.name = startingNamePtr;
 
             size = 0;
             userType.internalTypes.push_back(newType);
@@ -74,7 +106,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
         start++;
     }
 
-    INTERNAL_SETTINGS->userDeginedTypes[availableValue - 1] = userType;
+    INTERNAL_SETTINGS->userDeginedTypes[availableValue] = userType;
     ++availableValue;
     return availableValue - 1;
 }

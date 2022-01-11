@@ -3,6 +3,7 @@
 #include "Internal.hpp"
 
 #include <unordered_map>
+#include <deque>
 
 namespace GView
 {
@@ -69,17 +70,22 @@ namespace View
             uint32 height;
 
             std::vector<DissasmType> internalTypes;
+
+            bool ToBuffer(char* bufferToWriteTo, uint32 maxBufferSize, BufferView& inputBuffer, bool isCollapsed, int subType) const;
         };
 
         struct SettingsData
         {
             DissamblyLanguage defaultLanguage;
-            vector<DissasemblyZone> zones;
+            std::vector<DissasemblyZone> zones;
+            std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-            std::unordered_map<uint64, string_view> memoryMappings;
-            std::unordered_map<uint64, DissasmType> dissasmTypeMapped;
-            std::unordered_map<TypeID, DissasmType> userDeginedTypes;
+            std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
+            std::vector<uint64> offsetsToSearch;
+            std::vector<bool> collapsed;
+            std::unordered_map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
+            std::unordered_map<TypeID, DissasmType> userDeginedTypes;  // user defined typess
             SettingsData();
         };
 
@@ -93,10 +99,11 @@ namespace View
                 const uint8* start;
                 const uint8* end;
                 Character* chNameAndSize;
-                Character* chNumbers;
                 Character* chText;
                 bool recomputeOffsets;
-                DrawLineInfo() : recomputeOffsets(true)
+                bool shouldSearchMapping;
+                DissasmType *dissasmType;
+                DrawLineInfo() : recomputeOffsets(true), shouldSearchMapping(true)
                 {
                 }
             };
@@ -129,9 +136,19 @@ namespace View
                 uint32 visibleRows;
                 uint32 charactersPerLine;
                 uint32 startingTextLineOffset;
+
+                uint32 structureLinesDisplayed;
+                uint32 charactersToDelay;
             } Layout;
 
+            struct
+            {
+                uint8 buffer[1024];
+                uint32 length = 1024;
+            } MyLine;
+
             FixSizeString<16> name;
+
             Reference<GView::Object> obj;
             Pointer<SettingsData> settings;
             static Config config;
