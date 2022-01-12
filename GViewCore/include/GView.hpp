@@ -226,9 +226,6 @@ namespace View
 
             Settings();
 
-            // TODO: step by step (set cell, column, etc)
-            void SetContent(std::vector<std::vector<std::string>>& content);
-            void SetDimensions(unsigned int rows, unsigned int columns);
             void SetSeparator(char separator[2]);
         };
     }; // namespace GridViewer

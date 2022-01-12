@@ -10,11 +10,12 @@ namespace View
     {
         struct SettingsData
         {
-            std::vector<std::vector<std::string>> content;
+            std::map<uint64, std::pair<uint64, uint64>> lines;
+            std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
             char separator[2]{ "," };
-            unsigned int rows = 0;
-            unsigned int cols = 0;
-            bool showHeader   = false;
+            uint64 rows           = 0;
+            uint64 cols           = 0;
+            bool firstRowAsHeader = false;
             SettingsData();
         };
 
@@ -22,7 +23,9 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key toggleHeader;
+                AppCUI::Input::Key replaceHeaderWith1stRow;
+                AppCUI::Input::Key toggleHorizontalLines;
+                AppCUI::Input::Key toggleVerticalLines;
             } keys;
             struct
             {
@@ -61,6 +64,8 @@ namespace View
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
+            virtual void OnStart() override;
+
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;
             bool SetPropertyValue(uint32 id, const PropertyValue& value, String& error) override;
@@ -70,6 +75,7 @@ namespace View
 
           private:
             void PopulateGrid();
+            void ProcessContent();
             void PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
             void PaintCursorInformationHeight(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
             void PaintCursorInformationCells(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);

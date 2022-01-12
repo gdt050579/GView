@@ -49,98 +49,59 @@ bool GView::Type::CSV::CSVFile::HasPanel(Panels::IDs id)
 
 void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings)
 {
-    // get every row here
-    const auto color         = ColorPair{ Color::Gray, Color::Transparent };
-    //GDT: possible problem here (for large files only the cache will be returned)
-    const auto bf            = file->Get(0, static_cast<unsigned int>(file->GetSize()), false);
-    unsigned long long rowNo = 0;
-    for (auto i = 0ULL; i < file->GetSize(); i++)
+    const auto color = ColorPair{ Color::Gray, Color::Transparent };
+
+    const auto oSize = obj->cache.GetSize();
+    const auto cSize = obj->cache.GetCacheSize();
+
+    auto oSizeProcessed = 0ULL;
+    auto currentLine    = 0ULL;
+
+    do
     {
-        if (i == file->GetSize() - 1)
+        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
+
+        const auto nPos = data.find_first_of('\n', 0);
+        const auto rPos = data.find_first_of('\r', 0);
+
+        const auto oldOSizeProcessed = oSizeProcessed;
+
+        if (nPos < rPos)
         {
-            settings.AddZone(rowNo, i, color, std::to_string(rowNo));
-            rowNo++;
-            break;
+            if (nPos + 1 < data.size() && data[nPos + 1] == '\r')
+            {
+                oSizeProcessed += nPos + 2;
+            }
+            else
+            {
+                oSizeProcessed += nPos + 1;
+            }
+        }
+        else if (nPos > rPos)
+        {
+            if (rPos + 1 < data.size() && data[rPos + 1] == '\n')
+            {
+                oSizeProcessed += rPos + 2;
+            }
+            else
+            {
+                oSizeProcessed += rPos + 1;
+            }
+        }
+        else
+        {
+            throw std::runtime_error("Not enough cache to read a line!");
         }
 
-        const auto character = bf[i];
-        if (character == '\r')
-        {
-            const auto nextCharacter = bf[i + 1];
-            if (nextCharacter == '\n')
-            {
-                i++;
-            }
-            settings.AddZone(rowNo, i, color, std::to_string(rowNo));
-            rowNo++;
-        }
-        else if (character == '\n')
-        {
-            settings.AddZone(rowNo, i, color, std::to_string(rowNo));
-            rowNo++;
-        }
-    }
+        settings.AddZone(oldOSizeProcessed, oSizeProcessed - oldOSizeProcessed, color, std::to_string(currentLine));
+
+        currentLine++;
+
+    } while (oSizeProcessed < oSize);
 }
 
 void GView::Type::CSV::CSVFile::UpdateGrid(GView::View::GridViewer::Settings& settings)
 {
-    // TODO: it's bad reading the entire content -> implement a read line or something
-    file->SetCurrentPos(0);
-    const auto buffer = file->CopyToBuffer(0, static_cast<unsigned int>(file->GetSize()));
-
-    for (auto i = 0; i < buffer.GetLength() && buffer[i] != '\n'; i++)
-    {
-        if (buffer[i] == separator[0])
-        {
-            columnsNo++;
-        }
-    }
-    columnsNo++;
-
-    for (auto i = 0; i < buffer.GetLength(); i++)
-    {
-        if (buffer[i] == '\n')
-        {
-            rowsNo++;
-        }
-    }
-
-    std::vector<std::vector<std::string>> content;
-    content.clear();
-    content.reserve(rowsNo);
-
-    auto i = 0ULL;
-    while (i < buffer.GetLength())
-    {
-        content.push_back({});
-        content.back().reserve(columnsNo);
-
-        auto s = i;
-        auto e = i;
-
-        while (buffer[e] != '\r' && buffer[e] != '\n' && e < buffer.GetLength())
-        {
-            if (buffer[e] == separator[0] || buffer[e] == '\r' || buffer[e] == '\n' || e == buffer.GetLength() - 1)
-            {
-                std::string_view v{ reinterpret_cast<char*>(buffer.GetData()) + s, e - s };
-                content.back().emplace_back(v);
-
-                s = e + 1;
-            }
-            e++;
-        }
-
-        std::string_view v{ reinterpret_cast<char*>(buffer.GetData()) + s, e - s };
-        content.back().emplace_back(v);
-
-        i = e;
-        while ((buffer[i] == '\r' || buffer[i] == '\n') && i < buffer.GetLength())
-        {
-            i++;
-        }
-    }
-
-    settings.SetDimensions(rowsNo, columnsNo);
-    settings.SetContent(content);
     settings.SetSeparator(separator);
 }
