@@ -93,10 +93,10 @@ namespace Utils
                 return cache[offset - start];
             return defaultValue;
         }
-        //inline BufferView Get(uint32 requestedSize)
-        //{
-        //    return Get(currentPos, requestedSize);
-        //}
+        inline uint32 GetCacheSize() const
+        {
+            return cacheSize;
+        }
 
         inline uint64 GetSize() const
         {
@@ -202,6 +202,22 @@ namespace View
         };
     }; // namespace ImageViewer
 
+    namespace TextViewer
+    {
+        struct CORE_EXPORT LoadImageInterface
+        {
+            virtual bool LoadImageToObject(Image& img, uint32 index) = 0;
+        };
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+            void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
+            void AddImage(uint64 offset, uint64 size);
+        };
+    }; // namespace TextViewer
+
     namespace GridViewer
     {
         struct CORE_EXPORT Settings
@@ -210,13 +226,11 @@ namespace View
 
             Settings();
 
-            // TODO: step by step (set cell, column, etc)
-            void SetContent(std::vector<std::vector<std::string>>& content);
-            void SetDimensions(unsigned int rows, unsigned int columns);
             void SetSeparator(char separator[2]);
         };
     }; // namespace GridViewer
 
+    // namespace ImageViewer
     namespace DissasmViewer // StructureViewer
     {
         using TypeID = uint32;
@@ -257,13 +271,14 @@ namespace View
             void AddMemmoryMapping(uint64 address, std::string_view name);
 
             /**
-            * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
-            * 
-            * 
-            * @param[in] name Name of the new type
-            * @param[in] definition Multiple statements in the form DataType variableName followed by semicolon. Example: name="Point", definition="UInt32 x;UInt32 y;"
-            * @returns The id of the new data type generated.
-            */
+             * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
+             *
+             *
+             * @param[in] name Name of the new type
+             * @param[in] definition Multiple statements in the form DataType variableName followed by semicolon. Example: name="Point",
+             * definition="UInt32 x;UInt32 y;"
+             * @returns The id of the new data type generated.
+             */
             TypeID AddType(std::string_view name, std::string_view definition);
 
             // structure view
@@ -287,13 +302,14 @@ namespace View
 
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                                     = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                               = 0;
-        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings) = 0;
-        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)  = 0;
-        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)   = 0;
-        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings)   = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                           = 0;
+        virtual Reference<Object> GetObject()                                                      = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                = 0;
+        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings)  = 0;
+        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)    = 0;
+        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(const std::string_view& name, TextViewer::Settings& settings)    = 0;
+        virtual Reference<ViewControl> GetCurrentView()                                            = 0;
     };
 }; // namespace View
 namespace App
