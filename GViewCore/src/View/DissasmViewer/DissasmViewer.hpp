@@ -62,6 +62,16 @@ namespace View
 
         struct DissasmType
         {
+            struct ToBufferParams
+            {
+                char* outBuffer;
+                uint32 outBufferSize;
+                BufferView& inputBuffer;
+                bool isCollapsed;
+                int subType;
+                int spaces;
+            };
+
             InternalDissasmType primaryType;
             std::string_view name;
 
@@ -71,7 +81,7 @@ namespace View
 
             std::vector<DissasmType> internalTypes;
 
-            bool ToBuffer(char* bufferToWriteTo, uint32 maxBufferSize, BufferView& inputBuffer, bool isCollapsed, int subType) const;
+            bool ToBuffer(ToBufferParams& p) const;
         };
 
         struct SettingsData
@@ -93,7 +103,8 @@ namespace View
         {
             struct DrawLineInfo
             {
-                uint64 offset;
+                uint64 textFileOffset;
+                uint64 viewOffset;
                 uint32 lineOffset;
                 uint32 textSize;
                 const uint8* start;
@@ -102,8 +113,9 @@ namespace View
                 Character* chText;
                 bool recomputeOffsets;
                 bool shouldSearchMapping;
-                DissasmType *dissasmType;
-                DrawLineInfo() : recomputeOffsets(true), shouldSearchMapping(true)
+                const DissasmType* dissasmType;
+                int subtype;
+                DrawLineInfo() : recomputeOffsets(true), shouldSearchMapping(true), subtype(-2)
                 {
                 }
             };

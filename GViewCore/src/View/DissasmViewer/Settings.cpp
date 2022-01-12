@@ -75,12 +75,20 @@ SettingsData::SettingsData()
     defaultLanguage = DissamblyLanguage::Default;
 }
 
-bool DissasmType::ToBuffer(char* outBuffer, uint32 outBufferSize, BufferView& inputBuffer, bool isCollapsed, int subType) const
+bool DissasmType::ToBuffer(ToBufferParams& p) const
 {
     uint32 typeSize    = 0;
     bool isSignedValue = false;
-    outBuffer[0]       = '\0';
+    p.outBuffer[0]     = '\0';
     int written        = 0;
+
+    if (p.spaces > 0)
+    {
+        for (int i = 0; i < p.spaces; i++)
+            p.outBuffer[i] = ' '; // TODO: check
+        p.outBuffer[p.spaces] = '\0';
+        written               = p.spaces;
+    }
 
     switch (primaryType)
     {
@@ -127,21 +135,23 @@ bool DissasmType::ToBuffer(char* outBuffer, uint32 outBufferSize, BufferView& in
     case GView::View::DissasmViewer::InternalDissasmType::BiimensionalArray:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
-        if (isCollapsed)
+        if (p.isCollapsed)
         {
-            written = snprintf(outBuffer, outBufferSize - 1, "Structure %s", name.data());
+            written = snprintf(p.outBuffer, p.outBufferSize - 1, "Structure %s", name.data());
         }
         else
         {
-            if (subType == -1)
-                written = snprintf(outBuffer, outBufferSize - 1, "Structure %s", name.data());
-            else if (subType < 0 || subType > this->internalTypes.size())
+            if (p.subType == -1)
+                written += snprintf(p.outBuffer, p.outBufferSize - 1, "Structure %s", name.data());
+            else if (p.subType < 0 || p.subType >= this->internalTypes.size())
             {
                 // err
+                return false;
             }
             else
             {
-                return this->internalTypes[subType].ToBuffer(outBuffer, outBufferSize, inputBuffer, isCollapsed, subType);
+                p.spaces += 4;
+                return this->internalTypes[p.subType].ToBuffer(p);
             }
         }
         break;
@@ -154,25 +164,25 @@ bool DissasmType::ToBuffer(char* outBuffer, uint32 outBufferSize, BufferView& in
         char buffer[9];
         memset(buffer, '\0', 9);
         for (uint32 i = 0; i < typeSize; i++)
-            buffer[i] = inputBuffer[i]; // TODO: add check
+            buffer[i] = p.inputBuffer[i]; // TODO: add check
 
         if (isSignedValue)
         {
             int64 value = *(int64*) buffer;
-            written     = snprintf(outBuffer, outBufferSize - 1, "%s: %lli", name.data(), value);
+            written += snprintf(p.outBuffer + written, p.outBufferSize - 1, "%s: %lli", name.data(), value);
         }
         else
         {
             uint64 value = *(uint64*) buffer;
-            written      = snprintf(outBuffer, outBufferSize - 1, "%s: %llu", name.data(), value);
+            written += snprintf(p.outBuffer + written, p.outBufferSize - 1, "%s: %llu", name.data(), value);
         }
     }
 
-    if (written == 0)
+    if (written == p.spaces)
         return false;
 
-    while (written < outBufferSize)
-        outBuffer[written++] = ' ';
+    while (written < p.outBufferSize)
+        p.outBuffer[written++] = ' ';
 
     return true;
 }

@@ -172,30 +172,33 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         auto width     = (uint32) this->GetWidth();
         dli.textSize   = width - (1 + dli.lineOffset);
 
-        this->chars.Resize(dli.offset + dli.textSize);
+        this->chars.Resize(dli.textFileOffset + dli.textSize);
         dli.recomputeOffsets = false;
     }
 
     bool foundStructure = false;
-    if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping)
+    if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping || dli.subtype >= -1)
     {
         dli.shouldSearchMapping   = false;
         const auto& offsetsVector = settings->offsetsToSearch;
         for (const auto& foundOffset : offsetsVector)
         {
-            if (foundOffset >= dli.offset && foundOffset < dli.offset + dli.textSize)
+            if (foundOffset >= dli.textFileOffset && foundOffset < dli.textFileOffset + dli.textSize)
             {
-                Layout.structureLinesDisplayed++;
-                foundStructure = true;
-
                 bool collapsed       = settings->collapsed[foundOffset];
                 const auto& userType = settings->dissasmTypeMapped[foundOffset];
                 auto buf             = this->obj->cache.Get(foundOffset, dli.textSize, false);
+                dli.dissasmType      = &userType;
+                dli.subtype++;
 
-                if (!userType.ToBuffer((char*) MyLine.buffer, MyLine.length, buf, collapsed, 0))
+                DissasmType::ToBufferParams params = { (char*) MyLine.buffer, MyLine.length, buf, collapsed, dli.subtype, 0 };
+                if (!userType.ToBuffer(params))
                 {
-                    // err;
+                    dli.subtype = -2;
+                    break;
                 }
+                foundStructure = true;
+                Layout.structureLinesDisplayed++;
                 dli.start         = MyLine.buffer;
                 dli.end           = MyLine.buffer + dli.textSize;
                 dli.chNameAndSize = this->chars.GetBuffer();
@@ -206,7 +209,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     }
     if (!foundStructure)
     {
-        auto buf          = this->obj->cache.Get(dli.offset, dli.textSize, false);
+        auto buf          = this->obj->cache.Get(dli.textFileOffset, dli.textSize, false);
         dli.start         = buf.GetData();
         dli.end           = buf.GetData() + buf.GetLength();
         dli.chNameAndSize = this->chars.GetBuffer();
@@ -227,15 +230,16 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
         {
             cp = config.Colors.Normal; // OutsideZone;
             // cp = OffsetToColor(dli.offset);
-            if (selection.Contains(dli.offset))
+            if (selection.Contains(dli.textFileOffset))
                 cp = config.Colors.Selection;
-            if (dli.offset == this->Cursor.currentPos)
+            if (dli.viewOffset == this->Cursor.currentPos)
                 cp = config.Colors.Cursor;
             dli.chText->Code  = CodePage_437[*dli.start];
             dli.chText->Color = cp;
             dli.chText++;
             dli.start++;
-            dli.offset++;
+            dli.textFileOffset++;
+            dli.viewOffset++;
         }
     }
     else
@@ -263,9 +267,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     dli.shouldSearchMapping        = !settings->dissasmTypeMapped.empty();
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        dli.offset = ((uint64) this->Layout.charactersPerLine) * (tr - Layout.structureLinesDisplayed) + this->Cursor.startView -
-                     Layout.charactersToDelay;
-        if (dli.offset >= this->obj->cache.GetSize())
+        dli.textFileOffset = ((uint64) this->Layout.charactersPerLine) * (tr - Layout.structureLinesDisplayed) + this->Cursor.startView -
+                             Layout.charactersToDelay;
+        dli.viewOffset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
+        if (dli.textFileOffset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
         WriteLineToChars(dli);
