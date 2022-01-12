@@ -4,6 +4,7 @@
 
 #include <unordered_map>
 #include <deque>
+#include <list>
 
 namespace GView
 {
@@ -24,6 +25,8 @@ namespace View
                 ColorPair Line;
                 ColorPair Selection;
                 ColorPair OutsideZone;
+                ColorPair StructureColor;
+                ColorPair DataTypeColor;
             } Colors;
             struct
             {
@@ -114,8 +117,8 @@ namespace View
                 bool recomputeOffsets;
                 bool shouldSearchMapping;
                 const DissasmType* dissasmType;
-                int subtype;
-                DrawLineInfo() : recomputeOffsets(true), shouldSearchMapping(true), subtype(-2)
+                bool insideStructure;
+                DrawLineInfo() : recomputeOffsets(true), shouldSearchMapping(true), insideStructure(false)
                 {
                 }
             };
@@ -157,6 +160,13 @@ namespace View
             {
                 uint8 buffer[1024];
                 uint32 length = 1024;
+                std::list<std::reference_wrapper<const DissasmType>> types;
+                std::list<int32> levels;
+                uint32 offset;
+                bool isCollapsed;
+
+                uint32 currentLineToDraw;
+                uint32 skipLines;
             } MyLine;
 
             FixSizeString<16> name;
@@ -170,6 +180,11 @@ namespace View
             void RecomputeDissasmLayout();
             void WriteLineToChars(DrawLineInfo& dli);
             void PrepareDrawLineInfo(DrawLineInfo& dli);
+            bool StructureViewToLines(DrawLineInfo& dli);
+
+            void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
+            void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
+            void FillRestWithSpaces(DrawLineInfo& dli);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 

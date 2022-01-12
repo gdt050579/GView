@@ -16,6 +16,8 @@ void Config::Initialize()
     this->Colors.Highlight = ColorPair{ Color::Yellow, Color::DarkBlue };
     this->Colors.Selection = ColorPair{ Color::Black, Color::White };
     this->Colors.OutsideZone = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->Colors.StructureColor = ColorPair{ Color::Magenta, Color::DarkBlue };
+    this->Colors.DataTypeColor  = ColorPair{ Color::Green, Color::DarkBlue };
 
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)

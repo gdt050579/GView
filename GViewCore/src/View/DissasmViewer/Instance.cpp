@@ -1,5 +1,8 @@
 #include "DissasmViewer.hpp"
 
+#include <stdarg.h>
+#include <stdio.h>
+
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -59,6 +62,9 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.startingTextLineOffset  = 5;
     this->Layout.charactersToDelay       = 0;
     this->Layout.structureLinesDisplayed = 0;
+
+    this->MyLine.skipLines         = 0;
+    this->MyLine.currentLineToDraw = 0;
 
     RecomputeDissasmLayout();
 }
@@ -176,8 +182,13 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         dli.recomputeOffsets = false;
     }
 
+    if (dli.insideStructure && StructureViewToLines(dli))
+    {
+        Layout.structureLinesDisplayed++;
+        return;
+    }
     bool foundStructure = false;
-    if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping || dli.subtype >= -1)
+    if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping)
     {
         dli.shouldSearchMapping   = false;
         const auto& offsetsVector = settings->offsetsToSearch;
@@ -187,22 +198,40 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             {
                 bool collapsed       = settings->collapsed[foundOffset];
                 const auto& userType = settings->dissasmTypeMapped[foundOffset];
-                auto buf             = this->obj->cache.Get(foundOffset, dli.textSize, false);
-                dli.dissasmType      = &userType;
-                dli.subtype++;
+                // auto buf             = this->obj->cache.Get(foundOffset, dli.textSize, false);
 
-                DissasmType::ToBufferParams params = { (char*) MyLine.buffer, MyLine.length, buf, collapsed, dli.subtype, 0 };
-                if (!userType.ToBuffer(params))
+                if (dli.dissasmType == &userType) // TODO: kind of a hack
+                    continue;
+
+                dli.dissasmType = &userType;
+
+                // DissasmType::ToBufferParams params = { (char*) MyLine.buffer, MyLine.length, buf, collapsed, dli.subtype, 0 };
+                // if (!userType.ToBuffer(params))
+                //{
+                // dli.subtype = -2;
+                // break;
+                //}
+
+                if (MyLine.levels.empty())
                 {
-                    dli.subtype = -2;
+                    MyLine.types.push_back(userType);
+                    MyLine.levels.push_back(-2);
+                }
+
+                MyLine.offset      = foundOffset;
+                MyLine.isCollapsed = collapsed;
+
+                if (!StructureViewToLines(dli))
+                {
                     break;
                 }
                 foundStructure = true;
                 Layout.structureLinesDisplayed++;
-                dli.start         = MyLine.buffer;
-                dli.end           = MyLine.buffer + dli.textSize;
-                dli.chNameAndSize = this->chars.GetBuffer();
-                dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
+
+                // dli.start         = MyLine.buffer;
+                // dli.end           = MyLine.buffer + dli.textSize;
+                // dli.chNameAndSize = this->chars.GetBuffer();
+                // dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
                 break;
             }
         }
@@ -218,6 +247,206 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             dli.shouldSearchMapping = true;
     }
 }
+bool Instance::StructureViewToLines(DrawLineInfo& dli)
+{
+    const DissasmType& currentType = MyLine.types.back();
+    int currentLevel               = MyLine.levels.back() + 1;
+
+    uint32 typeSize    = 0;
+    bool isSignedValue = false;
+    int spaces         = (MyLine.levels.size() - 1) * 4;
+    MyLine.buffer[0]   = '\0';
+
+    if (MyLine.isCollapsed)
+    {
+        dli.insideStructure = false;
+        MyLine.types.pop_back();
+        MyLine.levels.pop_back();
+    }
+
+    int written           = 100;
+    ColorPair normalColor = config.Colors.Normal;
+
+    dli.chNameAndSize = this->chars.GetBuffer();
+    dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
+
+    if (spaces > 0)
+    {
+        for (int i = 0; i < spaces; i++)
+        {
+            dli.chText->Code  = CodePage_437[' '];
+            dli.chText->Color = normalColor;
+            dli.chText++;
+        }
+    }
+
+    switch (currentType.primaryType)
+    {
+    case GView::View::DissasmViewer::InternalDissasmType::UInt8:
+        typeSize      = 1;
+        isSignedValue = false;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::UInt16:
+        typeSize      = 2;
+        isSignedValue = false;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::UInt32:
+        typeSize      = 4;
+        isSignedValue = false;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::UInt64:
+        typeSize      = 8;
+        isSignedValue = false;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::Int8:
+        typeSize      = 1;
+        isSignedValue = true;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::Int16:
+        typeSize      = 2;
+        isSignedValue = true;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::Int32:
+        typeSize      = 4;
+        isSignedValue = true;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::Int64:
+        typeSize      = 8;
+        isSignedValue = true;
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::AsciiZ:
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::Utf16Z:
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::Utf32Z:
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::UnidimnsionalArray:
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::BiimensionalArray:
+        break;
+    case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
+        if (MyLine.isCollapsed)
+        {
+            AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
+            AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+        }
+        else
+        {
+            dli.insideStructure = true;
+            if (currentLevel == -1)
+            {
+                AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
+                AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+            }
+            else if (currentLevel < 0 || currentLevel >= currentType.internalTypes.size())
+            {
+                return false;
+            }
+            else
+            {
+                MyLine.levels.push_back(-2);
+                MyLine.types.push_back(currentType.internalTypes[currentLevel]);
+                StructureViewToLines(dli);
+                int& levelRef = MyLine.levels.back();
+                levelRef      = levelRef + 1;
+                if (MyLine.levels.empty())
+                    dli.insideStructure = false;
+                return true;
+
+                // return currentType.internalTypes[p.subType].ToBuffer(p);
+            }
+            int& levelRef = MyLine.levels.back();
+            levelRef      = levelRef + 1;
+        }
+        break;
+    default:
+        return false;
+    }
+
+    if (typeSize > 0)
+    {
+        if (!MyLine.isCollapsed)
+        {
+            MyLine.types.pop_back();
+            MyLine.levels.pop_back();
+        }
+
+        auto buf = this->obj->cache.Get(MyLine.offset, typeSize, false);
+
+        char buffer[9];
+        memset(buffer, '\0', 9);
+        for (uint32 i = 0; i < typeSize; i++)
+            buffer[i] = buf[i];
+
+        if (isSignedValue)
+        {
+            int64 value = *(int64*) buffer;
+            AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
+        }
+        else
+        {
+            uint64 value = *(uint64*) buffer;
+            AddStringToChars(dli, normalColor, "%s: %llu", currentType.name.data(), value);
+        }
+    }
+
+    if (written == spaces)
+        return false;
+
+    MyLine.skipLines++;
+
+    // while (written < MyLine.length)
+    //    MyLine.buffer[written++] = ' ';
+    FillRestWithSpaces(dli);
+    if (MyLine.levels.empty())
+        dli.insideStructure = false;
+
+    return true;
+}
+
+void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd)
+{
+    size_t length = stringToAdd.size();
+    for (uint32 i = 0; i < length; i++)
+    {
+        dli.chText->Code  = CodePage_437[stringToAdd[i]];
+        dli.chText->Color = pair;
+        dli.chText++;
+    }
+}
+
+void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...)
+{
+    char buffer[256];
+    buffer[0] = '\0';
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, 255, fmt, args);
+    va_end(args);
+
+    size_t length = strlen(buffer);
+    for (uint32 i = 0; i < length; i++)
+    {
+        dli.chText->Code  = CodePage_437[buffer[i]];
+        dli.chText->Color = pair;
+        dli.chText++;
+    }
+}
+
+void Instance::FillRestWithSpaces(DrawLineInfo& dli)
+{
+    size_t toFillSize = dli.chText - this->chars.GetBuffer();
+    if (toFillSize < dli.textSize)
+    {
+        toFillSize = dli.textSize - toFillSize;
+        for (uint32 i = 0; i < toFillSize; i++)
+        {
+            dli.chText->Code  = CodePage_437[' '];
+            dli.chText->Color = this->config.Colors.Normal;
+            dli.chText++;
+        }
+    }
+}
 
 void Instance::WriteLineToChars(DrawLineInfo& dli)
 {
@@ -230,8 +459,8 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
         {
             cp = config.Colors.Normal; // OutsideZone;
             // cp = OffsetToColor(dli.offset);
-            if (selection.Contains(dli.textFileOffset))
-                cp = config.Colors.Selection;
+            // if (selection.Contains(dli.textFileOffset))
+            //    cp = config.Colors.Selection;
             if (dli.viewOffset == this->Cursor.currentPos)
                 cp = config.Colors.Cursor;
             dli.chText->Code  = CodePage_437[*dli.start];
@@ -267,13 +496,25 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     dli.shouldSearchMapping        = !settings->dissasmTypeMapped.empty();
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
+        this->MyLine.currentLineToDraw = tr;
         dli.textFileOffset = ((uint64) this->Layout.charactersPerLine) * (tr - Layout.structureLinesDisplayed) + this->Cursor.startView -
                              Layout.charactersToDelay;
-        dli.viewOffset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
+        dli.viewOffset    = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
+        uint64 nextOffset = ((uint64) this->Layout.charactersPerLine) * (tr + 1) + this->Cursor.startView;
         if (dli.textFileOffset >= this->obj->cache.GetSize())
             break;
         PrepareDrawLineInfo(dli);
-        WriteLineToChars(dli);
+        if (MyLine.skipLines > 0)
+            MyLine.skipLines--;
+        else
+            WriteLineToChars(dli);
+
+        // uint64 val2 = ((uint64) tr - 1) * Layout.charactersPerLine;
+        // if (dli.viewOffset <= Cursor.currentPos && Cursor.currentPos < nextOffset)
+        //{
+        //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.lineOffset;
+        //    chars.GetBuffer()[val].Color = config.Colors.Cursor;
+        //}
         renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 }
