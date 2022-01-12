@@ -10,10 +10,11 @@ namespace View
     {
         struct SettingsData
         {
-            std::map<std::pair<uint64, uint64>, std::vector<std::pair<uint64, uint64>>> tokens;
+            std::map<uint64, std::pair<uint64, uint64>> lines;
+            std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
             char separator[2]{ "," };
-            unsigned int rows     = 0;
-            unsigned int cols     = 0;
+            uint64 rows           = 0;
+            uint64 cols           = 0;
             bool firstRowAsHeader = false;
             SettingsData();
         };
@@ -74,6 +75,7 @@ namespace View
 
           private:
             void PopulateGrid();
+            void ProcessContent();
             void PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
             void PaintCursorInformationHeight(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);
             void PaintCursorInformationCells(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y);

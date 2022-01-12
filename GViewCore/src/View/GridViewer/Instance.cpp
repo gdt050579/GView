@@ -34,10 +34,13 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (settings)
     {
         grid = AppCUI::Controls::Factory::Grid::Create(
-              this, "d:c,w:100%,h:100%", settings->cols, settings->rows, AppCUI::Controls::GridFlags::Sort);
+              this,
+              "d:c,w:100%,h:100%",
+              static_cast<uint32>(settings->cols),
+              static_cast<uint32>(settings->rows),
+              AppCUI::Controls::GridFlags::Sort);
 
         grid->SetSeparator(settings->separator);
-        PopulateGrid();
     }
 
     if (config.loaded == false)
@@ -137,139 +140,145 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 
 void Instance::OnStart()
 {
-    std::vector<std::pair<uint64, uint64>> lineTokens;
-    std::map<std::pair<uint64, uint64>, std::vector<std::pair<uint64, uint64>>> tokens;
+    ProcessContent();
+    grid->SetGridDimensions({ static_cast<uint32>(settings->cols), static_cast<uint32>(settings->rows) });
+    PopulateGrid();
+}
+
+void Instance::PopulateGrid()
+{
+    const auto& content = settings->tokens;
+    auto it             = content.begin();
+
+    if (settings->firstRowAsHeader)
+    {
+        const auto& header = it->second;
+        std::vector<AppCUI::Utils::ConstString> headerCS;
+        for (const auto& [start, end] : header)
+        {
+            const auto token = obj->cache.Get(start, static_cast<uint32>(end - start), false);
+            headerCS.push_back(token);
+        }
+        std::advance(it, 1);
+        grid->UpdateHeaderValues(headerCS);
+    }
+    else
+    {
+        grid->SetDefaultHeaderValues();
+    }
+
+    const auto dimensions = grid->GetGridDimensions();
+    if (static_cast<uint32>(settings->rows - settings->firstRowAsHeader) != dimensions.Height)
+    {
+        grid->SetGridDimensions({ static_cast<uint32>(settings->cols), static_cast<uint32>(settings->rows - settings->firstRowAsHeader) });
+    }
+
+    while (it != content.end())
+    {
+        const auto i    = it->first;
+        const auto& row = it->second;
+        for (auto itRow = row.begin(); itRow != row.end(); itRow++)
+        {
+            const auto j     = row.size() - std::abs(std::distance(row.end(), itRow));
+            const auto token = obj->cache.Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
+            const ConstString value{ token };
+            grid->UpdateCell(static_cast<uint32>(j), static_cast<uint32>(i - settings->firstRowAsHeader), value);
+        }
+        std::advance(it, 1);
+    }
+
+    grid->Sort();
+}
+
+void GView::View::GridViewer::Instance::ProcessContent()
+{
+    std::map<uint64, std::pair<uint64, uint64>> lines;
+    std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
 
     const auto oSize = obj->cache.GetSize();
     const auto cSize = obj->cache.GetCacheSize();
 
     auto oSizeProcessed = 0ULL;
     auto lineStart      = 0ULL;
-    auto tokenStart     = 0ULL;
+    auto currentLine    = 0ULL;
 
     do
     {
-        uint64 deltaSize = cSize;
-        if (oSize - oSizeProcessed < cSize)
+        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
+
+        const auto nPos = data.find_first_of('\n', 0);
+        const auto rPos = data.find_first_of('\r', 0);
+
+        const auto oldOSizeProcessed = oSizeProcessed;
+
+        if (nPos < rPos)
         {
-            deltaSize = oSize - oSizeProcessed;
+            if (nPos + 1 < data.size() && data[nPos + 1] == '\r')
+            {
+                oSizeProcessed += nPos + 2;
+            }
+            else
+            {
+                oSizeProcessed += nPos + 1;
+            }
         }
-        lineStart = oSizeProcessed;
-
-        auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(deltaSize), false);
-        for (auto i = 0ULL; i < buf.GetLength(); i++)
+        else if (nPos > rPos)
         {
-            const char c = buf[i];
-
-            if (c == settings->separator[0])
+            if (rPos + 1 < data.size() && data[rPos + 1] == '\n')
             {
-                if (oSizeProcessed == 0 && i == 0)
-                {
-                    lineTokens.push_back({ -1, -1 }); // empty token
-                }
-                else
-                {
-                    const auto tokenEnd = i;
-                    lineTokens.push_back({ tokenStart, tokenEnd });
-                    tokenStart = tokenEnd + 1;
-                }
+                oSizeProcessed += rPos + 2;
             }
-
-            if (i < buf.GetLength() - 1)
+            else
             {
-                const char cNext = buf[i + 1ULL];
-                if (c == '\n' && cNext == '\r' || c == '\r' && cNext == '\n')
-                {
-                    const auto lineEnd = i - 1ULL;
-                    tokens.insert({ { lineStart, lineEnd }, std::move(lineTokens) });
-
-                    lineTokens.clear();
-                    lineStart  = lineEnd + 2;
-                    tokenStart = i + 2;
-
-                    i++;
-                    continue;
-                }
+                oSizeProcessed += rPos + 1;
             }
+        }
+        else
+        {
+            throw std::runtime_error("Not enough cache to read a line!");
+        }
 
-            if (c == '\n' || c == '\r')
+        lines.insert({ currentLine, { lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed } });
+        const std::string_view line{ reinterpret_cast<const char*>(buf.GetData() + lineStart), nPos };
+
+        std::vector<uint64> separators;
+        {
+            size_t pos = line.find(settings->separator[0]);
+            while (pos != std::string::npos)
             {
-                if (i == buf.GetLength() - 1 && oSizeProcessed + deltaSize < oSize) // it may follow another \n or \r
-                {
-                    deltaSize--;
-                    break;
-                }
-                else
-                {
-                    const auto lineEnd = i;
-                    tokens.insert({ { lineStart, lineEnd }, std::move(lineTokens) });
-
-                    lineTokens.clear();
-                    lineStart  = lineEnd + 1;
-                    tokenStart = i + 1;
-                }
+                separators.push_back(pos + oldOSizeProcessed);
+                pos = line.find(settings->separator[0], pos + 1);
             }
         }
 
-        oSizeProcessed += deltaSize;
+        std::vector<std::pair<uint64, uint64>> lTokens;
+        if (separators.size() == 0)
+        {
+            lTokens.push_back({ lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed });
+        }
+
+        {
+            auto tStart = oldOSizeProcessed;
+            auto tEnd   = oldOSizeProcessed;
+            for (const auto& i : separators)
+            {
+                tEnd = i;
+                lTokens.push_back({ tStart, tEnd });
+                tStart = tEnd + 1;
+            }
+        }
+
+        tokens.insert({ currentLine, std::move(lTokens) });
+
+        currentLine++;
 
     } while (oSizeProcessed < oSize);
 
-    for (const auto& [line, t] : tokens)
-    {
-        auto l = obj->cache.Get(line.first, static_cast<uint32>(line.second - line.first), false);
-        std::string_view sv{ l };
-        for (const auto& token : t)
-        {
-            auto lt = obj->cache.Get(token.first, static_cast<uint32>(token.second - token.first), false);
-            std::string_view svt{ lt };
-            auto lt2 = obj->cache.Get(token.first, static_cast<uint32>(token.second - token.first), false);
-        }
-    }
-
-    settings->rows = tokens.size();
-
-    if (tokens.size() > 0)
-    {
-        settings->cols = tokens.begin()->second.size();
-    }
-    else
-    {
-        settings->cols = 0;
-    }
-}
-
-void Instance::PopulateGrid()
-{
-    auto i              = 0U;
-    const auto& content = settings->tokens;
-    if (settings->firstRowAsHeader)
-    {
-        const auto& header = content[0];
-        std::vector<AppCUI::Utils::ConstString> headerCS;
-        for (const auto& value : header)
-        {
-            headerCS.push_back(value);
-        }
-
-        grid->UpdateHeaderValues(headerCS);
-        i++;
-    }
-    else
-    {
-        grid->ResetHeaderValues();
-    }
-
-    for (; i < content.size(); i++)
-    {
-        const auto& row = content[i];
-        for (auto j = 0U; j < row.size(); j++)
-        {
-            grid->UpdateCell(j, i - settings->firstRowAsHeader, row[j]);
-        }
-    }
-
-    grid->Sort();
+    settings->rows   = lines.size();
+    settings->cols   = tokens.size() > 0 ? tokens.begin()->second.size() : 0;
+    settings->lines  = std::move(lines);
+    settings->tokens = std::move(tokens);
 }
 
 void GView::View::GridViewer::Instance::PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
