@@ -1,4 +1,5 @@
 #include "DissasmViewer.hpp"
+#include <cassert>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -14,7 +15,7 @@ const std::map<std::string_view, InternalDissasmType> types = { { "UInt8", Inter
                                                                 { "Int32", InternalDissasmType::Int32 },
                                                                 { "Int64", InternalDissasmType::Int64 },
                                                                 { "OneArray", InternalDissasmType::UnidimnsionalArray },
-                                                                { "BiArray", InternalDissasmType::BiimensionalArray } };
+                                                                { "BiArray", InternalDissasmType::BidimensionalArray } };
 
 TypeID Settings::AddType(std::string_view name, std::string_view definition)
 {
@@ -59,7 +60,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
         else if (*start == '[')
         {
             *start = '\0';
-            size = 0;
+            size   = 0;
             arraySizes++;
         }
         else if (*start == ']')
@@ -81,7 +82,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
                 }
                 else // bidimensional
                 {
-                    newType.primaryType = InternalDissasmType::BiimensionalArray;
+                    newType.primaryType = InternalDissasmType::BidimensionalArray;
                     newType.height      = res.value();
                 }
             }
@@ -92,6 +93,29 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
             *start       = '\0';
             buffer[size] = '\0';
             newType.name = startingNamePtr;
+
+            if (newType.primaryType == InternalDissasmType::UnidimnsionalArray)
+            {
+                assert(newType.width < 100); // TODO: fix for more numberss
+                char* arrayCellNames = new char[5 * newType.width];
+                INTERNAL_SETTINGS->buffersToDelete.push_back(arrayCellNames);
+                char* cellOffset = arrayCellNames;
+                *cellOffset      = '\0';
+
+                for (uint32 i = 0; i < newType.width; i++)
+                {
+                    int res = snprintf(cellOffset, 5, "[%u]", i);
+                    if (res < 0)
+                    {
+                        // err;
+                        return -1;
+                    }
+
+                    newType.internalTypes.emplace_back((InternalDissasmType) newType.secondaryType, cellOffset);
+                    cellOffset += res + 1;
+                }
+                cellOffset = cellOffset;
+            }
 
             size = 0;
             userType.internalTypes.push_back(newType);

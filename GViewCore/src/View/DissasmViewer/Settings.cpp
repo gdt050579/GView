@@ -45,7 +45,7 @@ void Settings::AddArray(uint64 offset, std::string_view name, VariableType type,
 }
 void Settings::AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height)
 {
-    INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { InternalDissasmType::BiimensionalArray, name, (uint32) type, width, height };
+    INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { InternalDissasmType::BidimensionalArray, name, (uint32) type, width, height };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
     INTERNAL_SETTINGS->collapsed.push_back(false);
 }

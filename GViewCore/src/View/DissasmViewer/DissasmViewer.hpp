@@ -59,7 +59,7 @@ namespace View
             Utf16Z,
             Utf32Z,
             UnidimnsionalArray,
-            BiimensionalArray,
+            BidimensionalArray,
             UserDefined
         };
 
@@ -162,7 +162,7 @@ namespace View
                 uint32 length = 1024;
                 std::list<std::reference_wrapper<const DissasmType>> types;
                 std::list<int32> levels;
-                uint32 offset;
+                uint64 offset;
                 bool isCollapsed;
 
                 uint32 currentLineToDraw;

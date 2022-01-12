@@ -178,7 +178,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         auto width     = (uint32) this->GetWidth();
         dli.textSize   = width - (1 + dli.lineOffset);
 
-        this->chars.Resize(dli.textFileOffset + dli.textSize);
+        this->chars.Resize((uint32) dli.textFileOffset + dli.textSize);
         dli.recomputeOffsets = false;
     }
 
@@ -200,8 +200,8 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                 const auto& userType = settings->dissasmTypeMapped[foundOffset];
                 // auto buf             = this->obj->cache.Get(foundOffset, dli.textSize, false);
 
-                if (dli.dissasmType == &userType) // TODO: kind of a hack
-                    continue;
+                // if (dli.dissasmType == &userType) // TODO: kind of a hack
+                //    continue;
 
                 dli.dissasmType = &userType;
 
@@ -321,8 +321,52 @@ bool Instance::StructureViewToLines(DrawLineInfo& dli)
     case GView::View::DissasmViewer::InternalDissasmType::Utf32Z:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UnidimnsionalArray:
+        if (MyLine.isCollapsed)
+        {
+            AddStringToChars(dli, config.Colors.StructureColor, "Array[%u] ", currentType.width);
+            AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+        }
+        else
+        {
+            dli.insideStructure = true;
+            if (currentLevel == -1)
+            {
+                AddStringToChars(dli, config.Colors.StructureColor, "Array[%u] ", currentType.width);
+                AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+            }
+            else if (currentLevel < 0 || currentLevel >= currentType.internalTypes.size())
+            {
+                MyLine.types.pop_back();
+                MyLine.levels.pop_back();
+                if (MyLine.levels.empty())
+                    dli.insideStructure = false;
+                else
+                {
+                    int& levelRef = MyLine.levels.back();
+                    levelRef      = levelRef + 1;
+                }
+                return false;
+            }
+            else
+            {
+                size_t currentSize = MyLine.types.size();
+                MyLine.levels.push_back(-2);
+                MyLine.types.push_back(currentType.internalTypes[currentLevel]);
+                StructureViewToLines(dli);
+                if (currentSize == MyLine.types.size())
+                {
+                    int& levelRef = MyLine.levels.back();
+                    levelRef      = levelRef + 1;
+                }
+                if (MyLine.levels.empty())
+                    dli.insideStructure = false;
+                return true;
+            }
+            int& levelRef = MyLine.levels.back();
+            levelRef      = levelRef + 1;
+        }
         break;
-    case GView::View::DissasmViewer::InternalDissasmType::BiimensionalArray:
+    case GView::View::DissasmViewer::InternalDissasmType::BidimensionalArray:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         if (MyLine.isCollapsed)
@@ -340,15 +384,28 @@ bool Instance::StructureViewToLines(DrawLineInfo& dli)
             }
             else if (currentLevel < 0 || currentLevel >= currentType.internalTypes.size())
             {
+                MyLine.types.pop_back();
+                MyLine.levels.pop_back();
+                if (MyLine.levels.empty())
+                    dli.insideStructure = false;
+                else
+                {
+                    int& levelRef = MyLine.levels.back();
+                    levelRef      = levelRef + 1;
+                }
                 return false;
             }
             else
             {
+                size_t currentSize = MyLine.types.size();
                 MyLine.levels.push_back(-2);
                 MyLine.types.push_back(currentType.internalTypes[currentLevel]);
                 StructureViewToLines(dli);
-                int& levelRef = MyLine.levels.back();
-                levelRef      = levelRef + 1;
+                if (currentSize == MyLine.types.size())
+                {
+                    int& levelRef = MyLine.levels.back();
+                    levelRef      = levelRef + 1;
+                }
                 if (MyLine.levels.empty())
                     dli.insideStructure = false;
                 return true;
@@ -372,6 +429,7 @@ bool Instance::StructureViewToLines(DrawLineInfo& dli)
         }
 
         auto buf = this->obj->cache.Get(MyLine.offset, typeSize, false);
+        MyLine.offset += typeSize;
 
         char buffer[9];
         memset(buffer, '\0', 9);
@@ -515,6 +573,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.lineOffset;
         //    chars.GetBuffer()[val].Color = config.Colors.Cursor;
         //}
+        // auto asdasdasd = CharacterView{ chars.GetBuffer(), 10 };
+        // srenderer.WriteSingleLineText(0, tr + 1, asdasdasd, DefaultColorPair);
+
+        // chars.Resize(10);
         renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 }

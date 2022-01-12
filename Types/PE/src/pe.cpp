@@ -118,7 +118,8 @@ extern "C"
               R"(UInt16 e_magic;
 UInt16 e_cblp;
 UInt16 e_cp;
-UInt16 e_crlc;)");
+UInt16 e_crlc;
+UInt16 e_res[4];)");
 
 //                uint32 typeImageDOSHeader = settings.AddType(
 //              "ImageDOSHeader",
