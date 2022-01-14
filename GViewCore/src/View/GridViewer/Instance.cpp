@@ -3,9 +3,13 @@
 using namespace GView::View::GridViewer;
 using namespace AppCUI::Input;
 
-constexpr uint32 PROP_ID_TOGGLE_HEADER = 0;
+constexpr uint32 PROP_ID_REPLACE_HEADER_WITH_1ST_ROW = 0;
+constexpr uint32 PROP_ID_TOGGLE_HORIZONTAL_LINES     = 1;
+constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 
-constexpr uint32 COMMAND_ID_TOGGLE_HEADER = 0x1000;
+constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
+constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
+constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
 
 Config Instance::config;
 
@@ -30,10 +34,13 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (settings)
     {
         grid = AppCUI::Controls::Factory::Grid::Create(
-              this, "d:c,w:100%,h:100%", settings->cols, settings->rows, AppCUI::Controls::GridFlags::TransparentBackground);
+              this,
+              "d:c,w:100%,h:100%",
+              static_cast<uint32>(settings->cols),
+              static_cast<uint32>(settings->rows),
+              AppCUI::Controls::GridFlags::Sort);
 
         grid->SetSeparator(settings->separator);
-        PopulateGrid();
     }
 
     if (config.loaded == false)
@@ -100,24 +107,30 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.keys.toggleHeader, "ToggleHeader", COMMAND_ID_TOGGLE_HEADER);
-    return true;
+    commandBar.SetCommand(config.keys.replaceHeaderWith1stRow, "ReplaceHeader", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW);
+    commandBar.SetCommand(config.keys.toggleHorizontalLines, "ToggleHorizontalLines", COMMAND_ID_TOGGLE_HORIZONTAL_LINES);
+    commandBar.SetCommand(config.keys.toggleVerticalLines, "ToggleVerticalLines", COMMAND_ID_TOGGLE_VERTICAL_LINES);
+    return false;
 }
 
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
     if (eventType == Event::Command)
     {
-        if (ID == COMMAND_ID_TOGGLE_HEADER)
+        if (ID == COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW)
         {
-            settings->showHeader = !settings->showHeader;
-            bool isHeaderShown   = grid->IsHeaderVisible();
-            if (settings->showHeader == isHeaderShown)
-            {
-                return false;
-            }
+            settings->firstRowAsHeader = !settings->firstRowAsHeader;
             PopulateGrid();
-
+            return true;
+        }
+        else if (ID == COMMAND_ID_TOGGLE_HORIZONTAL_LINES)
+        {
+            grid->ToggleHorizontalLines();
+            return true;
+        }
+        else if (ID == COMMAND_ID_TOGGLE_VERTICAL_LINES)
+        {
+            grid->ToggleVerticalLines();
             return true;
         }
     }
@@ -125,33 +138,147 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
     return false;
 }
 
+void Instance::OnStart()
+{
+    ProcessContent();
+    grid->SetGridDimensions({ static_cast<uint32>(settings->cols), static_cast<uint32>(settings->rows) });
+    PopulateGrid();
+}
+
 void Instance::PopulateGrid()
 {
-    grid->ShowHeader(settings->showHeader);
+    const auto& content = settings->tokens;
+    auto it             = content.begin();
 
-    auto i              = 0U;
-    const auto& content = settings->content;
-    if (settings->showHeader)
+    if (settings->firstRowAsHeader)
     {
-        const auto& header = content[0];
+        const auto& header = it->second;
         std::vector<AppCUI::Utils::ConstString> headerCS;
-        for (const auto& value : header)
+        for (const auto& [start, end] : header)
         {
-            headerCS.push_back(value);
+            const auto token = obj->cache.Get(start, static_cast<uint32>(end - start), false);
+            headerCS.push_back(token);
         }
-
+        std::advance(it, 1);
         grid->UpdateHeaderValues(headerCS);
-        i++;
+    }
+    else
+    {
+        grid->SetDefaultHeaderValues();
     }
 
-    for (; i < content.size(); i++)
+    const auto dimensions = grid->GetGridDimensions();
+    if (static_cast<uint32>(settings->rows - settings->firstRowAsHeader) != dimensions.Height)
     {
-        const auto& row = content[i];
-        for (auto j = 0U; j < row.size(); j++)
-        {
-            grid->UpdateCell(j, i - settings->showHeader, AppCUI::Controls::Grid::CellType::String, row[j]);
-        }
+        grid->SetGridDimensions({ static_cast<uint32>(settings->cols), static_cast<uint32>(settings->rows - settings->firstRowAsHeader) });
     }
+
+    while (it != content.end())
+    {
+        const auto i    = it->first;
+        const auto& row = it->second;
+        for (auto itRow = row.begin(); itRow != row.end(); itRow++)
+        {
+            const auto j     = row.size() - std::abs(std::distance(row.end(), itRow));
+            const auto token = obj->cache.Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
+            const ConstString value{ token };
+            grid->UpdateCell(static_cast<uint32>(j), static_cast<uint32>(i - settings->firstRowAsHeader), value);
+        }
+        std::advance(it, 1);
+    }
+
+    grid->Sort();
+}
+
+void GView::View::GridViewer::Instance::ProcessContent()
+{
+    std::map<uint64, std::pair<uint64, uint64>> lines;
+    std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
+
+    const auto oSize = obj->cache.GetSize();
+    const auto cSize = obj->cache.GetCacheSize();
+
+    auto oSizeProcessed = 0ULL;
+    auto lineStart      = 0ULL;
+    auto currentLine    = 0ULL;
+
+    do
+    {
+        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
+
+        const auto nPos = data.find_first_of('\n', 0);
+        const auto rPos = data.find_first_of('\r', 0);
+
+        const auto oldOSizeProcessed = oSizeProcessed;
+
+        if (nPos < rPos)
+        {
+            if (nPos + 1 < data.size() && data[nPos + 1] == '\r')
+            {
+                oSizeProcessed += nPos + 2;
+            }
+            else
+            {
+                oSizeProcessed += nPos + 1;
+            }
+        }
+        else if (nPos > rPos)
+        {
+            if (rPos + 1 < data.size() && data[rPos + 1] == '\n')
+            {
+                oSizeProcessed += rPos + 2;
+            }
+            else
+            {
+                oSizeProcessed += rPos + 1;
+            }
+        }
+        else
+        {
+            throw std::runtime_error("Not enough cache to read a line!");
+        }
+
+        lines.insert({ currentLine, { lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed } });
+        const std::string_view line{ reinterpret_cast<const char*>(buf.GetData() + lineStart), nPos };
+
+        std::vector<uint64> separators;
+        {
+            size_t pos = line.find(settings->separator[0]);
+            while (pos != std::string::npos)
+            {
+                separators.push_back(pos + oldOSizeProcessed);
+                pos = line.find(settings->separator[0], pos + 1);
+            }
+        }
+
+        std::vector<std::pair<uint64, uint64>> lTokens;
+        if (separators.size() == 0)
+        {
+            lTokens.push_back({ lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed });
+        }
+
+        {
+            auto tStart = oldOSizeProcessed;
+            auto tEnd   = oldOSizeProcessed;
+            for (const auto& i : separators)
+            {
+                tEnd = i;
+                lTokens.push_back({ tStart, tEnd });
+                tStart = tEnd + 1;
+            }
+        }
+
+        tokens.insert({ currentLine, std::move(lTokens) });
+
+        currentLine++;
+
+    } while (oSizeProcessed < oSize);
+
+    settings->rows   = lines.size();
+    settings->cols   = tokens.size() > 0 ? tokens.begin()->second.size() : 0;
+    settings->lines  = std::move(lines);
+    settings->tokens = std::move(tokens);
 }
 
 void GView::View::GridViewer::Instance::PaintCursorInformationWidth(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
@@ -281,8 +408,14 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (id)
     {
-    case PROP_ID_TOGGLE_HEADER:
-        value = config.keys.toggleHeader;
+    case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
+        value = config.keys.replaceHeaderWith1stRow;
+        return true;
+    case PROP_ID_TOGGLE_HORIZONTAL_LINES:
+        value = config.keys.toggleHorizontalLines;
+        return true;
+    case PROP_ID_TOGGLE_VERTICAL_LINES:
+        value = config.keys.toggleVerticalLines;
         return true;
     default:
         break;
@@ -294,8 +427,14 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (id)
     {
-    case PROP_ID_TOGGLE_HEADER:
-        config.keys.toggleHeader = std::get<Key>(value);
+    case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
+        config.keys.replaceHeaderWith1stRow = std::get<Key>(value);
+        return true;
+    case PROP_ID_TOGGLE_HORIZONTAL_LINES:
+        config.keys.toggleHorizontalLines = std::get<Key>(value);
+        return true;
+    case PROP_ID_TOGGLE_VERTICAL_LINES:
+        config.keys.toggleVerticalLines = std::get<Key>(value);
         return true;
     default:
         break;
@@ -315,6 +454,8 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { PROP_ID_TOGGLE_HEADER, "General", "Toggle header existence", PropertyType::Key },
+        { PROP_ID_REPLACE_HEADER_WITH_1ST_ROW, "Content", "Replace header with first row", PropertyType::Key },
+        { PROP_ID_TOGGLE_HORIZONTAL_LINES, "Look", "Hide/Show horizontal lines", PropertyType::Key },
+        { PROP_ID_TOGGLE_VERTICAL_LINES, "Look", "Hide/Show vertical lines", PropertyType::Key },
     };
 }
