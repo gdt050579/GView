@@ -65,6 +65,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
 
     this->MyLine.skipLines         = 0;
     this->MyLine.currentLineToDraw = 0;
+    this->MyLine.initialOffset     = 0;
 
     RecomputeDissasmLayout();
 }
@@ -218,8 +219,9 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                     MyLine.levels.push_back(-2);
                 }
 
-                MyLine.offset      = foundOffset;
-                MyLine.isCollapsed = collapsed;
+                MyLine.offset        = foundOffset;
+                MyLine.initialOffset = foundOffset;
+                MyLine.isCollapsed   = collapsed;
 
                 if (!StructureViewToLines(dli))
                 {
@@ -373,9 +375,13 @@ bool Instance::StructureViewToLines(DrawLineInfo& dli)
         {
             AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
             AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+            RegisterStructureCollapseButton(dli, SpecialChars::TriangleRight);
+            
         }
         else
         {
+            if (!dli.insideStructure)
+                RegisterStructureCollapseButton(dli, SpecialChars::TriangleLeft);
             dli.insideStructure = true;
             if (currentLevel == -1)
             {
@@ -462,6 +468,13 @@ bool Instance::StructureViewToLines(DrawLineInfo& dli)
     return true;
 }
 
+void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c)
+{
+    ButtonsData bData = { 3, MyLine.currentLineToDraw + 1, c, config.Colors.DataTypeColor, MyLine.initialOffset };
+    MyLine.buttons.push_back(bData);
+    // renderer.WriteSpecialCharacter(poz, 1, SpecialChars::TriangleLeft, c1);
+}
+
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd)
 {
     size_t length = stringToAdd.size();
@@ -544,6 +557,8 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
 
 void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 {
+    if (!MyLine.buttons.empty())
+        MyLine.buttons.clear();
     if (HasFocus())
         renderer.Clear(' ', config.Colors.Normal);
     else
@@ -578,6 +593,12 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 
         // chars.Resize(10);
         renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
+    }
+
+    if (!MyLine.buttons.empty())
+    {
+        for (const auto& btn : MyLine.buttons)
+            renderer.WriteSpecialCharacter(btn.x, btn.y, btn.c, btn.color);
     }
 }
 
@@ -691,6 +712,15 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
     {
         MoveTo(mpInfo.bufferOffset, false);
+    }
+    else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty())
+    {
+        for (const auto& btn : MyLine.buttons)
+            if (btn.x == x && btn.y == y)
+            {
+                settings->collapsed[btn.offsetStructure] = !settings->collapsed[btn.offsetStructure];
+                break;
+            }
     }
 }
 

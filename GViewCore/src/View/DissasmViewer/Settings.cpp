@@ -35,19 +35,19 @@ void Settings::AddVariable(uint64 offset, std::string_view name, VariableType ty
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { (InternalDissasmType) type, name };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
-    INTERNAL_SETTINGS->collapsed.push_back(false);
+    INTERNAL_SETTINGS->collapsed[offset] = true;
 }
 void Settings::AddArray(uint64 offset, std::string_view name, VariableType type, uint32 count)
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { InternalDissasmType::UnidimnsionalArray, name, (uint32) type, count };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
-    INTERNAL_SETTINGS->collapsed.push_back(false);
+    INTERNAL_SETTINGS->collapsed[offset] = true;
 }
 void Settings::AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height)
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { InternalDissasmType::BidimensionalArray, name, (uint32) type, width, height };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
-    INTERNAL_SETTINGS->collapsed.push_back(false);
+    INTERNAL_SETTINGS->collapsed[offset] = true;
 }
 
 void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
@@ -61,7 +61,7 @@ void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
 
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = res->second;
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
-    INTERNAL_SETTINGS->collapsed.push_back(false);
+    INTERNAL_SETTINGS->collapsed[offset] = true;
 }
 void Settings::AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count)
 {

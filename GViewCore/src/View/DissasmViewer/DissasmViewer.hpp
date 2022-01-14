@@ -96,7 +96,7 @@ namespace View
 
             std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
             std::vector<uint64> offsetsToSearch;
-            std::vector<bool> collapsed;
+            std::unordered_map<uint64, bool> collapsed;
             std::unordered_map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
             std::unordered_map<TypeID, DissasmType> userDeginedTypes;  // user defined typess
             SettingsData();
@@ -156,6 +156,15 @@ namespace View
                 uint32 charactersToDelay;
             } Layout;
 
+            struct ButtonsData
+            {
+                int x;
+                int y;
+                SpecialChars c;
+                ColorPair color;
+                uint64 offsetStructure;
+            };
+
             struct
             {
                 uint8 buffer[1024];
@@ -163,10 +172,13 @@ namespace View
                 std::list<std::reference_wrapper<const DissasmType>> types;
                 std::list<int32> levels;
                 uint64 offset;
+                uint64 initialOffset;
                 bool isCollapsed;
 
                 uint32 currentLineToDraw;
                 uint32 skipLines;
+
+                std::vector<ButtonsData> buttons;
             } MyLine;
 
             FixSizeString<16> name;
@@ -181,6 +193,7 @@ namespace View
             void WriteLineToChars(DrawLineInfo& dli);
             void PrepareDrawLineInfo(DrawLineInfo& dli);
             bool StructureViewToLines(DrawLineInfo& dli);
+            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
