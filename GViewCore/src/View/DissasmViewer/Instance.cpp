@@ -171,7 +171,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
     return x + 5;
 }
 
-void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
+bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
@@ -180,13 +180,42 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         dli.textSize   = width - (1 + dli.lineOffset);
 
         this->chars.Resize((uint32) dli.textFileOffset + dli.textSize);
-        dli.recomputeOffsets = false;
+        dli.recomputeOffsets      = false;
+        dli.currentLineFromOffset = this->Cursor.startView / this->Layout.charactersPerLine;
     }
+
+    uint32 currentLineIndex = dli.currentLineFromOffset + dli.lineToDraw;
+    if (!settings->parseZones.empty())
+    {
+        auto& zones       = settings->parseZones;
+        uint32 zonesCount = settings->parseZones.size();
+        for (uint32 i = 0; i < zonesCount; i++)
+        {
+            if (!(currentLineIndex >= zones[i].startLineIndex && currentLineIndex <= zones[i].endingLineIndex))
+            {
+                if (i + 1 >= zonesCount)
+                    continue;
+                if (currentLineIndex > zones[i].endingLineIndex && currentLineIndex < zones[i].startLineIndex)
+                {
+                    //WIP
+                }
+            }
+        }
+    }
+    else
+    {
+        dli.textFileOffset =
+              ((uint64) this->Layout.charactersPerLine) * (dli.lineToDraw - Layout.structureLinesDisplayed) + this->Cursor.startView;
+        dli.viewOffset = ((uint64) this->Layout.charactersPerLine) * dli.lineToDraw + this->Cursor.startView;
+    }
+
+    if (dli.textFileOffset >= this->obj->cache.GetSize())
+        return false;
 
     if (dli.insideStructure && StructureViewToLines(dli))
     {
         Layout.structureLinesDisplayed++;
-        return;
+        return true;
     }
     bool foundStructure = false;
     if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping)
@@ -248,6 +277,8 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         if (!dli.shouldSearchMapping)
             dli.shouldSearchMapping = true;
     }
+
+    return true;
 }
 bool Instance::StructureViewToLines(DrawLineInfo& dli)
 {
@@ -376,7 +407,6 @@ bool Instance::StructureViewToLines(DrawLineInfo& dli)
             AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
             AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
             RegisterStructureCollapseButton(dli, SpecialChars::TriangleRight);
-            
         }
         else
         {
@@ -570,13 +600,9 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         this->MyLine.currentLineToDraw = tr;
-        dli.textFileOffset = ((uint64) this->Layout.charactersPerLine) * (tr - Layout.structureLinesDisplayed) + this->Cursor.startView -
-                             Layout.charactersToDelay;
-        dli.viewOffset    = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
-        uint64 nextOffset = ((uint64) this->Layout.charactersPerLine) * (tr + 1) + this->Cursor.startView;
-        if (dli.textFileOffset >= this->obj->cache.GetSize())
+        dli.lineToDraw                 = tr;
+        if (!PrepareDrawLineInfo(dli))
             break;
-        PrepareDrawLineInfo(dli);
         if (MyLine.skipLines > 0)
             MyLine.skipLines--;
         else
@@ -626,6 +652,30 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 void Instance::OnAfterResize(int newWidth, int newHeight)
 {
     this->RecomputeDissasmLayout();
+}
+
+void Instance::OnStart()
+{
+    this->RecomputeDissasmLayout();
+
+    // from dli, may need to be recomputed
+    uint32 lineOffset = Layout.startingTextLineOffset;
+    uint32 width      = (uint32) this->GetWidth();
+    uint32 textSize   = width - (1 + lineOffset);
+
+    uint32 lastEndMinusLastOffset = 0;
+
+    for (const auto& mapping : this->settings->dissasmTypeMapped)
+    {
+        ParseZone parseZone;
+        parseZone.startLineIndex  = mapping.first / (uint64) textSize;
+        parseZone.endingLineIndex = parseZone.startLineIndex + 1;
+        parseZone.isCollapsed     = true;
+        parseZone.extendedSize    = mapping.second.GetExpandedSize();
+        parseZone.textLinesOffset = parseZone.startLineIndex - lastEndMinusLastOffset;
+        lastEndMinusLastOffset    = parseZone.endingLineIndex - parseZone.textLinesOffset + 1;
+        settings->parseZones.push_back(parseZone);
+    }
 }
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()

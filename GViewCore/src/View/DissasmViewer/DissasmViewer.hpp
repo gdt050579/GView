@@ -45,6 +45,15 @@ namespace View
             DissamblyLanguage language;
         };
 
+        struct ParseZone
+        {
+            uint32 startLineIndex;
+            uint32 endingLineIndex;
+            uint32 extendedSize;
+            uint32 textLinesOffset;
+            bool isCollapsed;
+        };
+
         enum class InternalDissasmType : uint8
         {
             UInt8,
@@ -65,16 +74,6 @@ namespace View
 
         struct DissasmType
         {
-            struct ToBufferParams
-            {
-                char* outBuffer;
-                uint32 outBufferSize;
-                BufferView& inputBuffer;
-                bool isCollapsed;
-                int subType;
-                int spaces;
-            };
-
             InternalDissasmType primaryType;
             std::string_view name;
 
@@ -83,8 +82,7 @@ namespace View
             uint32 height;
 
             std::vector<DissasmType> internalTypes;
-
-            bool ToBuffer(ToBufferParams& p) const;
+            uint32 GetExpandedSize() const;
         };
 
         struct SettingsData
@@ -96,9 +94,10 @@ namespace View
 
             std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
             std::vector<uint64> offsetsToSearch;
+            std::vector<ParseZone> parseZones;
             std::unordered_map<uint64, bool> collapsed;
-            std::unordered_map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
-            std::unordered_map<TypeID, DissasmType> userDeginedTypes;  // user defined typess
+            std::map<uint64, DissasmType> dissasmTypeMapped;          // mapped types against the offset of the file
+            std::unordered_map<TypeID, DissasmType> userDeginedTypes; // user defined typess
             SettingsData();
         };
 
@@ -118,7 +117,11 @@ namespace View
                 bool shouldSearchMapping;
                 const DissasmType* dissasmType;
                 bool insideStructure;
-                DrawLineInfo() : recomputeOffsets(true), shouldSearchMapping(true), insideStructure(false)
+
+                uint32 currentLineFromOffset;
+                uint32 lineToDraw;
+                DrawLineInfo()
+                    : recomputeOffsets(true), shouldSearchMapping(true), insideStructure(false), currentLineFromOffset(0), lineToDraw(0)
                 {
                 }
             };
@@ -191,7 +194,7 @@ namespace View
 
             void RecomputeDissasmLayout();
             void WriteLineToChars(DrawLineInfo& dli);
-            void PrepareDrawLineInfo(DrawLineInfo& dli);
+            bool PrepareDrawLineInfo(DrawLineInfo& dli);
             bool StructureViewToLines(DrawLineInfo& dli);
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c);
 
@@ -224,6 +227,7 @@ namespace View
             bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             void OnAfterResize(int newWidth, int newHeight) override;
+            void OnStart() override;
 
             // Mouse events
             bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;

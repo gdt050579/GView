@@ -134,3 +134,11 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
     ++availableValue;
     return availableValue - 1;
 }
+
+uint32 DissasmType::GetExpandedSize() const
+{
+    uint32 result = 1;
+    for (const auto& child : this->internalTypes)
+        result = 1 + child.GetExpandedSize();
+    return result;
+}
