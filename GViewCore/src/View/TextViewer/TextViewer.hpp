@@ -52,6 +52,7 @@ namespace View
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
             uint32 tabSize;
+            AppCUI::Application::Config* Cfg;
 
             static Config config;
 
