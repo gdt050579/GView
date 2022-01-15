@@ -56,9 +56,7 @@ namespace View
             {
                 ColorPair Inactive;
                 ColorPair OutsideZone;
-                ColorPair Normal;
                 ColorPair Header;
-                ColorPair Line;
                 ColorPair Cursor;
                 ColorPair Selection;
                 ColorPair Ascii;
