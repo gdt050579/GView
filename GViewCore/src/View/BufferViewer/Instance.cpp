@@ -665,11 +665,13 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 }
 void Instance::WriteHeaders(Renderer& renderer)
 {
-    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', config.Colors.Header);
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = config.Colors.Header;
+    params.Color = this->HasFocus() ? this->GetConfig()->Header.Text.Focused : this->GetConfig()->Header.Text.Normal;                               
+
+    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', params.Color);
+
     if (this->Layout.lineNameSize > 0)
     {
         params.X     = this->Layout.xName;
@@ -1037,11 +1039,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 }
 void Instance::Paint(Renderer& renderer)
 {
-    if (HasFocus())
-        renderer.Clear(' ', config.Colors.Normal);
-    else
-        renderer.Clear(' ', config.Colors.Inactive);
-
+    renderer.Clear();
     DrawLineInfo dli;
     WriteHeaders(renderer);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
@@ -1429,7 +1427,7 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
         }
         else
         {
-            r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+            r.WriteSingleLineText(x, y, width, "NO Selection", this->GetConfig()->Text.Inactive, TextAlignament::Center);
         }
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1657,16 +1655,17 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 {
     int x = 0;
     // set up the cursor colors
-    this->CursorColors.Normal      = config.Colors.Normal;
-    this->CursorColors.Line        = config.Colors.Line;
-    this->CursorColors.Highlighted = config.Colors.Unicode;
+    auto cfg                       = this->GetConfig();
+    this->CursorColors.Normal      = cfg->Text.Normal;
+    this->CursorColors.Line        = cfg->Lines.Normal;
+    this->CursorColors.Highlighted = cfg->Text.Highlighted;
     if (!this->HasFocus())
     {
-        this->CursorColors.Normal      = config.Colors.Inactive;
-        this->CursorColors.Line        = config.Colors.Inactive;
-        this->CursorColors.Highlighted = config.Colors.Inactive;
+        this->CursorColors.Normal      = cfg->Text.Inactive;
+        this->CursorColors.Line        = cfg->Lines.Inactive;
+        this->CursorColors.Highlighted = cfg->Text.Inactive;
     }
-    r.Clear(' ', this->CursorColors.Normal);
+    r.Clear();
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8, false);
     switch (height)
     {
