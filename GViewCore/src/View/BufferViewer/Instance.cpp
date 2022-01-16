@@ -665,11 +665,13 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 }
 void Instance::WriteHeaders(Renderer& renderer)
 {
-    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', config.Colors.Header);
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = config.Colors.Header;
+    params.Color = this->HasFocus() ? this->GetConfig()->Header.Text.Focused : this->GetConfig()->Header.Text.Normal;                               
+
+    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', params.Color);
+
     if (this->Layout.lineNameSize > 0)
     {
         params.X     = this->Layout.xName;

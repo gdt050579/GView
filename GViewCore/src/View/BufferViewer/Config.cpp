@@ -16,7 +16,6 @@ void Config::Initialize()
     this->Colors.Unicode       = ColorPair{ Color::Yellow, Color::DarkBlue };
     this->Colors.Selection     = ColorPair{ Color::Black, Color::White };
     this->Colors.Cursor        = ColorPair{ Color::Black, Color::Yellow };
-    this->Colors.Header        = ColorPair{ Color::White, Color::Magenta };
     this->Colors.Inactive      = ColorPair{ Color::Gray, Color::DarkBlue };
     this->Colors.OutsideZone   = ColorPair{ Color::Gray, Color::DarkBlue };
     this->Colors.SameSelection = ColorPair{ Color::Black, Color::Green };
