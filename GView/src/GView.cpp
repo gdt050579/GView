@@ -1,8 +1,30 @@
 #include "../GViewCore/include/GView.hpp"
 #include <iostream>
 
+enum class CommandID
+{
+    Unknown,
+    Help,
+    Open,
+    Reset,
+    UpdateConfig
+};
+
+struct CommandInfo
+{
+    CommandID ID;
+    std::string_view name;
+};
+
+CommandInfo commands[] = {
+    { CommandID::Help, "help" },
+    { CommandID::Open, "open" },
+    { CommandID::Reset, "reset" },
+    { CommandID::UpdateConfig, "updateconfig" },
+};
+
 std::string_view help = R"HELP(
-Use: GView <command> <options>
+Use: GView <command> <options> [File|Files|Folder]
 Where <command> is on of:
    help                   Shows this help
                           Ex: 'GView help'
@@ -30,6 +52,32 @@ void ShowHelp()
     std::cout << help << std::endl;
 }
 
+CommandID GetCommandID(const char* name)
+{
+    auto cnt = ARRAY_LEN(commands);
+    for (size_t idx = 0;idx<cnt;idx++)
+    {
+        if (AppCUI::Utils::String::Equals(name, commands[idx].name.data()))
+            return commands[idx].ID;
+    }
+    // if nothing is recognize
+    return CommandID::Unknown;
+}
+
+int ProcessOpenCommand(int argc, const char** argv, int start)
+{
+    if (!GView::App::Init())
+        return 1;
+    while (start<argc)
+    {
+        GView::App::OpenFile(argv[start]);
+        start++;
+    }
+    AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Grid);
+    GView::App::Run();
+    return 0;
+}
+
 int main(int argc,const char **argv)
 {
     if (argc<2)
@@ -38,19 +86,23 @@ int main(int argc,const char **argv)
         return 0;
     }
 
-
-    if (AppCUI::Utils::String::Equals(argv[1], "reset"))
+    auto cmdID = GetCommandID(argv[1]);
+    switch (cmdID)
     {
+    case CommandID::Help:
+        ShowHelp();
+        return 0;
+    case CommandID::Reset:
         GView::App::ResetConfiguration();
         return 0;
+    case CommandID::Open:
+        return ProcessOpenCommand(argc, argv, 2);
+    case CommandID::Unknown:
+        return ProcessOpenCommand(argc, argv, 1);
+    default:
+        std::cout << "Unable to process command: " << argv[1] << std::endl;
+        return 1;
     }
-
-
-    
-    if (!GView::App::Init())
-        return 1;    
-    GView::App::OpenFile(argv[1]);
-    GView::App::Run();
-    
+        
     return 0;
 }
