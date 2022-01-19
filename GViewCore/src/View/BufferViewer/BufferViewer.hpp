@@ -56,9 +56,6 @@ namespace View
             {
                 ColorPair Inactive;
                 ColorPair OutsideZone;
-                ColorPair Normal;
-                ColorPair Header;
-                ColorPair Line;
                 ColorPair Cursor;
                 ColorPair Selection;
                 ColorPair Ascii;
@@ -204,7 +201,7 @@ namespace View
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
             void ShowGoToDialog();
-
+            void OpenCurrentSelection();
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -217,6 +214,7 @@ namespace View
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual std::string_view GetName() override;
+            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

@@ -116,6 +116,8 @@ namespace Utils
         {
             return CopyObject(&object, offset, sizeof(T));
         }
+
+        bool WriteTo(Reference<AppCUI::OS::IFile> output, uint64 offset, uint32 size);
     };
 } // namespace Utils
 struct CORE_EXPORT Object
@@ -132,12 +134,14 @@ struct CORE_EXPORT Object
 namespace View
 {
     typedef uint8 MethodID;
+    typedef void* ExtractItem;
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
         virtual bool GoTo(uint64 offset)                                                                       = 0;
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
+        virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)             = 0;
 
         ViewControl() : UserControl("d:c")
         {
@@ -318,5 +322,6 @@ namespace App
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const char*);
+    void CORE_EXPORT OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name);
 }; // namespace App
 }; // namespace GView

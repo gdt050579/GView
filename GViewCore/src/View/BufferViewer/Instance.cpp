@@ -145,6 +145,17 @@ void Instance::SetCodePage(CodePageID id)
     this->CodePage.mapping = CodePages[(uint32) this->CodePage.id].mapping;
 }
 
+void Instance::OpenCurrentSelection()
+{
+    uint64 start, end;
+    auto res = this->selection.OffsetToSelection(this->Cursor.currentPos, start, end);
+    if (res >= 0)
+    {
+        LocalString<128> temp;
+        temp.Format("Buffer_%llx_%llx", start, end);
+        GView::App::OpenItem((ExtractItem) (res), this, (end - start) + 1, temp);
+    }
+}
 void Instance::UpdateCurrentSelection()
 {
     this->CurrentSelection.size  = 0;
@@ -665,11 +676,13 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 }
 void Instance::WriteHeaders(Renderer& renderer)
 {
-    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', config.Colors.Header);
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = config.Colors.Header;
+    params.Color = this->HasFocus() ? this->GetConfig()->Header.Text.Focused : this->GetConfig()->Header.Text.Normal;
+
+    renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', params.Color);
+
     if (this->Layout.lineNameSize > 0)
     {
         params.X     = this->Layout.xName;
@@ -1037,11 +1050,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 }
 void Instance::Paint(Renderer& renderer)
 {
-    if (HasFocus())
-        renderer.Clear(' ', config.Colors.Normal);
-    else
-        renderer.Clear(' ', config.Colors.Inactive);
-
+    renderer.Clear();
     DrawLineInfo dli;
     WriteHeaders(renderer);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
@@ -1278,21 +1287,10 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::S:
         SkipCurentCaracter(select);
         return true;
-        // case VK_MULTIPLY: if (this->File->Bookmarks[0]!=INVALID_FILE_POSITION)
-        // MoveTo(this->File->Bookmarks[0],select); return true; case VK_NUMPAD0	:
-        // this->startViewPoz=this->Cursor.currentPos; return true;
 
-        // case VK_NUMPAD8	: MoveScrollTo(this->startViewPoz-nrX); return true;
-        // case VK_NUMPAD2	: MoveScrollTo(this->startViewPoz+nrX); return true;
-        // case VK_NUMPAD4	: MoveScrollTo(this->startViewPoz-1); return true;
-        // case VK_NUMPAD6	: MoveScrollTo(this->startViewPoz+1); return true;
-        // case VK_NUMPAD5	: MoveScrollTo(this->Cursor.currentPos-(nrX*(ObjectR.h-2)/2)); return true;
-        // case VK_NUMPAD9 : MoveToPrevSection(); return true;
-        // case VK_NUMPAD3 : MoveToNextSection(); return true;
-        // case VK_NUMPAD7 : this->startViewPoz=this->Cursor.currentPos; return true;
-        // case VK_NUMPAD0	: MoveToAlignSection();return true;
-
-        // case VK_MULTIPLY: MoveTo(GetInfo()->F.g->GetEntryPoint(),select); return true;
+    case Key::Enter:
+        OpenCurrentSelection();
+        return true;
     };
 
     if ((charCode >= '0') && (charCode <= '9'))
@@ -1413,7 +1411,14 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-
+bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+{
+    uint32 idx = reinterpret_cast<uint32>(item);
+    uint64 start, end;
+    CHECK(this->selection.GetSelection(idx, start, end), false, "");
+    CHECK(this->obj->cache.WriteTo(output, start, (end - start) + 1), false, "");
+    return true;
+}
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
 {
@@ -1429,7 +1434,7 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
         }
         else
         {
-            r.WriteSingleLineText(x, y, width, "NO Selection", this->CursorColors.Line, TextAlignament::Center);
+            r.WriteSingleLineText(x, y, width, "NO Selection", this->GetConfig()->Text.Inactive, TextAlignament::Center);
         }
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1657,16 +1662,17 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 {
     int x = 0;
     // set up the cursor colors
-    this->CursorColors.Normal      = config.Colors.Normal;
-    this->CursorColors.Line        = config.Colors.Line;
-    this->CursorColors.Highlighted = config.Colors.Unicode;
+    auto cfg                       = this->GetConfig();
+    this->CursorColors.Normal      = cfg->Text.Normal;
+    this->CursorColors.Line        = cfg->Lines.Normal;
+    this->CursorColors.Highlighted = cfg->Text.Highlighted;
     if (!this->HasFocus())
     {
-        this->CursorColors.Normal      = config.Colors.Inactive;
-        this->CursorColors.Line        = config.Colors.Inactive;
-        this->CursorColors.Highlighted = config.Colors.Inactive;
+        this->CursorColors.Normal      = cfg->Text.Inactive;
+        this->CursorColors.Line        = cfg->Lines.Inactive;
+        this->CursorColors.Highlighted = cfg->Text.Inactive;
     }
-    r.Clear(' ', this->CursorColors.Normal);
+    r.Clear();
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8, false);
     switch (height)
     {

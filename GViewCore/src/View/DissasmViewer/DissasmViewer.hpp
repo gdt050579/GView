@@ -220,6 +220,8 @@ namespace View
             bool GoTo(uint64 offset) override;
             bool Select(uint64 offset, uint64 size) override;
             std::string_view GetName() override;
+            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
+
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
             void Paint(AppCUI::Graphics::Renderer& renderer) override;
 

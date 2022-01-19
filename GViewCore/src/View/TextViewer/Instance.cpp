@@ -14,6 +14,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 {
     this->obj  = _obj;
     this->name = _name;
+    this->Cfg  = AppCUI::Application::GetAppConfig();
 
     // settings
     if ((_settings) && (_settings->data))
@@ -178,7 +179,7 @@ void Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gr
         p++;
     }
 
-    renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (c - chars)), DefaultColorPair);
+    renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (c - chars)), Cfg->Text.Normal);
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
@@ -190,7 +191,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
         w = w - (this->lineNumberWidth + 2);
     for (auto y = 0; y < h; y++)
     {
-        DrawLine(10, y, (uint32) y, w, renderer);
+        DrawLine(0, y, (uint32) y, w, renderer);
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -241,7 +242,10 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-
+bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+{
+    NOT_IMPLEMENTED(false);
+}
 //======================================================================[Cursor information]==================
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
