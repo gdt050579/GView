@@ -139,15 +139,11 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
     CHECK(offset <= this->fileSize, Buffer(), "Invalid offset (%llu) , should be less than %llu ", offset, this->fileSize);
     if (failIfRequestedSizeCanNotBeRead)
     {
-        CHECK(offset + (uint64) requestedSize <= this->fileSize,
-              Buffer(),
-              "Unable to read %u bytes from %llu",
-              requestedSize,
-              offset);
+        CHECK(offset + (uint64) requestedSize <= this->fileSize, Buffer(), "Unable to read %u bytes from %llu", requestedSize, offset);
     }
     Buffer b(requestedSize);
     uint32 toRead = this->cacheSize >> 1;
-    auto p              = b.GetData();
+    auto p        = b.GetData();
     while (requestedSize)
     {
         toRead  = std::min(toRead, requestedSize);
@@ -182,4 +178,24 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
         requestedSize -= toRead;
     }
     return b;
+}
+bool FileCache::WriteTo(Reference<AppCUI::OS::IFile> output, uint64 offset, uint32 size)
+{
+    CHECK(output->SetSize(size), false, "");
+    CHECK(output->SetCurrentPos(0), false, "");
+
+    if (size == 0)
+        return true; // nothing to write
+
+    uint32 toRead = this->cacheSize >> 1;
+    while (size)
+    {
+        toRead  = std::min(toRead, size);
+        auto bv = this->Get(offset, toRead, true);
+        CHECK(bv.IsValid(), false, "");
+        CHECK(output->Write(bv.begin(), toRead), false, "");
+        offset += toRead;
+        size -= toRead;
+    }
+    return true;
 }
