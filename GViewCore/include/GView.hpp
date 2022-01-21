@@ -137,13 +137,19 @@ namespace View
     typedef void* ExtractItem;
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
+      protected:
+        const AppCUI::Application::Config& Cfg;
+      public:
         virtual bool GoTo(uint64 offset)                                                                       = 0;
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
         virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)             = 0;
 
-        ViewControl() : UserControl("d:c")
+        int WriteCursorInfo(
+              AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
+
+        ViewControl() : UserControl("d:c"), Cfg(this->GetConfig())
         {
         }
     };

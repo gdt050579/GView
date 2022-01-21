@@ -1,3 +1,5 @@
+target_sources(GViewCore PRIVATE ViewControl.cpp)
+
 add_subdirectory(BufferViewer)
 add_subdirectory(ImageViewer)
 add_subdirectory(GridViewer)
