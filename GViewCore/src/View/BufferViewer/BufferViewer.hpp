@@ -150,7 +150,6 @@ namespace View
             } CodePage;
             bool showTypeObjects;
 
-            Reference<AppCUI::Application::Config> Cfg;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
