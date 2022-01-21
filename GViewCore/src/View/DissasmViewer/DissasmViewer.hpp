@@ -45,15 +45,6 @@ namespace View
             DissamblyLanguage language;
         };
 
-        struct ParseZone
-        {
-            uint32 startLineIndex;
-            uint32 endingLineIndex;
-            uint32 extendedSize;
-            uint32 textLinesOffset;
-            bool isCollapsed;
-        };
-
         enum class InternalDissasmType : uint8
         {
             UInt8,
@@ -83,6 +74,16 @@ namespace View
 
             std::vector<DissasmType> internalTypes;
             uint32 GetExpandedSize() const;
+        };
+
+        struct ParseZone
+        {
+            uint32 startLineIndex;
+            uint32 endingLineIndex;
+            uint32 extendedSize;
+            uint32 textLinesOffset;
+            bool isCollapsed;
+            DissasmType dissasmType;
         };
 
         struct SettingsData

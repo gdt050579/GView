@@ -196,13 +196,19 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         uint32 zonesCount = settings->parseZones.size();
         for (uint32 i = 0; i < zonesCount; i++)
         {
-            if (!(currentLineIndex >= zones[i].startLineIndex && currentLineIndex <= zones[i].endingLineIndex))
+            if ((currentLineIndex >= zones[i].startLineIndex && currentLineIndex <= zones[i].endingLineIndex))
+            {
+                // struct
+                currentLineIndex = currentLineIndex;
+            }
+            else
             {
                 if (i + 1 >= zonesCount)
-                    continue;
-                if (currentLineIndex > zones[i].endingLineIndex && currentLineIndex < zones[i].startLineIndex)
+                    break;
+                if (currentLineIndex < zones[i].startLineIndex)
                 {
-                    //WIP
+                    // text
+                    currentLineIndex = currentLineIndex;
                 }
             }
         }
@@ -678,6 +684,7 @@ void Instance::OnStart()
         parseZone.isCollapsed     = true;
         parseZone.extendedSize    = mapping.second.GetExpandedSize();
         parseZone.textLinesOffset = parseZone.startLineIndex - lastEndMinusLastOffset;
+        parseZone.dissasmType     = mapping.second;
         lastEndMinusLastOffset    = parseZone.endingLineIndex - parseZone.textLinesOffset + 1;
         settings->parseZones.push_back(parseZone);
     }
