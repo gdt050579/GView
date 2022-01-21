@@ -54,8 +54,6 @@ namespace View
         {
             struct
             {
-                ColorPair Inactive;
-                ColorPair OutsideZone;
                 ColorPair Cursor;
                 ColorPair Selection;
                 ColorPair Ascii;
@@ -154,6 +152,7 @@ namespace View
             } CodePage;
             bool showTypeObjects;
 
+            Reference<AppCUI::Application::Config> Cfg;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
