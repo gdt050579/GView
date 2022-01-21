@@ -830,9 +830,9 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
         {
             cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
-                cp = config.Colors.Selection;
+                cp = Cfg->Selection.Editor;
             if (dli.offset == this->Cursor.currentPos)
-                cp = config.Colors.Cursor;
+                cp = Cfg->Cursor.Normal;
             if (StringInfo.type == StringType::Unicode)
             {
                 if (dli.offset > StringInfo.middle)
@@ -878,14 +878,14 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 
             if (selection.Contains(dli.offset))
             {
-                cp = config.Colors.Selection;
+                cp = Cfg->Selection.Editor;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
 
             if (dli.offset == this->Cursor.currentPos)
             {
-                cp = config.Colors.Cursor;
+                cp = Cfg->Cursor.Normal;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }

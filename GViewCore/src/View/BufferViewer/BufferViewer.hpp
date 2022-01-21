@@ -54,8 +54,6 @@ namespace View
         {
             struct
             {
-                ColorPair Cursor;
-                ColorPair Selection;
                 ColorPair Ascii;
                 ColorPair Unicode;
                 ColorPair SameSelection;
