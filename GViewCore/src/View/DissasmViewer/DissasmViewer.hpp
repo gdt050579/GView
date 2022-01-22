@@ -84,10 +84,13 @@ namespace View
             uint32 textLinesOffset;
             bool isCollapsed;
 
+            uint16 structureID;
             int16 structureIndex;
             DissasmType dissasmType;
             std::list<std::reference_wrapper<const DissasmType>> types;
             std::list<int32> levels;
+            uint64 textFileOffset;
+            uint64 initalTextFileOffset;
         };
 
         struct SettingsData
@@ -100,7 +103,6 @@ namespace View
             std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<ParseZone> parseZones;
-            std::unordered_map<uint64, bool> collapsed;
             std::map<uint64, DissasmType> dissasmTypeMapped;          // mapped types against the offset of the file
             std::unordered_map<TypeID, DissasmType> userDeginedTypes; // user defined typess
             SettingsData();
@@ -111,7 +113,6 @@ namespace View
             struct DrawLineInfo
             {
                 uint64 textFileOffset;
-                uint64 viewOffset;
                 uint32 lineOffset;
                 uint32 textSize;
                 const uint8* start;
@@ -119,17 +120,14 @@ namespace View
                 Character* chNameAndSize;
                 Character* chText;
                 bool recomputeOffsets;
-                bool shouldSearchMapping;
-                const DissasmType* dissasmType;
-                bool insideStructure;
 
                 uint32 currentLineFromOffset;
                 uint32 lineToDraw;
                 uint32 actualLineToDraw;
                 AppCUI::Graphics::Renderer& renderer;
+                bool wasInsideStructure;
                 DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
-                    : recomputeOffsets(true), shouldSearchMapping(true), insideStructure(false), currentLineFromOffset(0), lineToDraw(0),
-                      renderer(renderer)
+                    : recomputeOffsets(true), currentLineFromOffset(0), lineToDraw(0), renderer(renderer), wasInsideStructure(false)
                 {
                 }
             };
@@ -162,9 +160,6 @@ namespace View
                 uint32 visibleRows;
                 uint32 charactersPerLine;
                 uint32 startingTextLineOffset;
-
-                uint32 structureLinesDisplayed;
-                uint32 charactersToDelay;
             } Layout;
 
             struct ButtonsData
@@ -174,21 +169,11 @@ namespace View
                 SpecialChars c;
                 ColorPair color;
                 uint64 offsetStructure;
+                ParseZone& zone;
             };
 
             struct
             {
-                uint8 buffer[1024];
-                uint32 length = 1024;
-                std::list<std::reference_wrapper<const DissasmType>> types;
-                std::list<int32> levels;
-                uint64 offset;
-                uint64 initialOffset;
-                bool isCollapsed;
-
-                uint32 currentLineToDraw;
-                uint32 skipLines;
-
                 std::vector<ButtonsData> buttons;
             } MyLine;
 
@@ -202,11 +187,11 @@ namespace View
 
             void RecomputeDissasmLayout();
             bool WriteTextLineToChars(DrawLineInfo& dli, bool writeFromFile = true);
-            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces);
+            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces, ParseZone& zone);
             bool PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
-            bool StructureViewToLines(DrawLineInfo& dli);
-            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c);
+            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone);
+            void ChangeZoneCollapseState(ParseZone& zoneToChange);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);

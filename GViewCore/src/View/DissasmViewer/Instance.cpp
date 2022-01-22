@@ -57,15 +57,9 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->CursorColors.Highlighted = config.Colors.Highlight;
     this->CursorColors.Line        = config.Colors.Line;
 
-    this->Layout.visibleRows             = 1;
-    this->Layout.charactersPerLine       = 1;
-    this->Layout.startingTextLineOffset  = 5;
-    this->Layout.charactersToDelay       = 0;
-    this->Layout.structureLinesDisplayed = 0;
-
-    this->MyLine.skipLines         = 0;
-    this->MyLine.currentLineToDraw = 0;
-    this->MyLine.initialOffset     = 0;
+    this->Layout.visibleRows            = 1;
+    this->Layout.charactersPerLine      = 1;
+    this->Layout.startingTextLineOffset = 5;
 
     RecomputeDissasmLayout();
 }
@@ -205,17 +199,29 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                 // struct
                 dli.actualLineToDraw = currentLineIndex - zones[i].startLineIndex;
                 return PrepareStructureViewToDraw(dli, zones[i]);
-                currentLineIndex = currentLineIndex;
             }
             else
             {
+                if (dli.wasInsideStructure)
+                {
+                    dli.wasInsideStructure = false;
+                    while (zones[i].levels.size() > 1)
+                    {
+                        zones[i].types.pop_back();
+                        zones[i].levels.pop_back();
+                    }
+                    zones[i].levels.pop_back();
+                    zones[i].levels.push_back(0);
+                    zones[i].structureIndex = 0;
+                    zones[i].textFileOffset = zones[i].initalTextFileOffset;
+                }
                 dli.actualLineToDraw = currentLineIndex + zones[i].textLinesOffset - zones[i].endingLineIndex;
                 if (i + 1 >= zonesCount)
                 {
                     return WriteTextLineToChars(dli);
                     break;
                 }
-                if (currentLineIndex < zones[i].startLineIndex)
+                if (currentLineIndex < zones[i + 1].startLineIndex)
                 {
                     currentLineIndex = currentLineIndex;
                     return WriteTextLineToChars(dli);
@@ -230,80 +236,13 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     }
 
     return true;
-
-    if (dli.insideStructure && StructureViewToLines(dli))
-    {
-        Layout.structureLinesDisplayed++;
-        return true;
-    }
-    bool foundStructure = false;
-    if (!settings->offsetsToSearch.empty() && dli.shouldSearchMapping)
-    {
-        dli.shouldSearchMapping   = false;
-        const auto& offsetsVector = settings->offsetsToSearch;
-        for (const auto& foundOffset : offsetsVector)
-        {
-            if (foundOffset >= dli.textFileOffset && foundOffset < dli.textFileOffset + dli.textSize)
-            {
-                bool collapsed       = settings->collapsed[foundOffset];
-                const auto& userType = settings->dissasmTypeMapped[foundOffset];
-                // auto buf             = this->obj->cache.Get(foundOffset, dli.textSize, false);
-
-                // if (dli.dissasmType == &userType) // TODO: kind of a hack
-                //    continue;
-
-                dli.dissasmType = &userType;
-
-                // DissasmType::ToBufferParams params = { (char*) MyLine.buffer, MyLine.length, buf, collapsed, dli.subtype, 0 };
-                // if (!userType.ToBuffer(params))
-                //{
-                // dli.subtype = -2;
-                // break;
-                //}
-
-                if (MyLine.levels.empty())
-                {
-                    MyLine.types.push_back(userType);
-                    MyLine.levels.push_back(-2);
-                }
-
-                MyLine.offset        = foundOffset;
-                MyLine.initialOffset = foundOffset;
-                MyLine.isCollapsed   = collapsed;
-
-                if (!StructureViewToLines(dli))
-                {
-                    break;
-                }
-                foundStructure = true;
-                Layout.structureLinesDisplayed++;
-
-                // dli.start         = MyLine.buffer;
-                // dli.end           = MyLine.buffer + dli.textSize;
-                // dli.chNameAndSize = this->chars.GetBuffer();
-                // dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
-                break;
-            }
-        }
-    }
-    if (!foundStructure)
-    {
-        auto buf          = this->obj->cache.Get(dli.textFileOffset, dli.textSize, false);
-        dli.start         = buf.GetData();
-        dli.end           = buf.GetData() + buf.GetLength();
-        dli.chNameAndSize = this->chars.GetBuffer();
-        dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
-        if (!dli.shouldSearchMapping)
-            dli.shouldSearchMapping = true;
-    }
-
-    return true;
 }
 
 bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
 {
-    uint32 levelToReach = dli.actualLineToDraw - zone.startLineIndex;
-    int16& levelNow     = zone.structureIndex;
+    uint32 levelToReach    = dli.actualLineToDraw;
+    int16& levelNow        = zone.structureIndex;
+    dli.wasInsideStructure = true;
 
     while (levelNow < levelToReach)
     {
@@ -323,6 +262,9 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
             {
                 zone.types.pop_back();
                 zone.levels.pop_back();
+                currentLevel = zone.levels.back() + 1;
+                zone.levels.pop_back();
+                zone.levels.push_back(currentLevel);
                 continue;
             }
             break;
@@ -340,11 +282,11 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         levelNow++;
     }
 
-    WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4);
+    WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4, zone);
     return true;
 }
 
-bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces)
+bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces, ParseZone& zone)
 {
     ColorPair normalColor = config.Colors.Normal;
 
@@ -413,7 +355,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
         AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        // RegisterStructureCollapseButton(dli, SpecialChars::TriangleRight);
+        RegisterStructureCollapseButton(dli, SpecialChars::TriangleRight, zone);
         break;
     default:
         return false;
@@ -422,8 +364,8 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     if (typeSize > 0)
     {
         // TODO
-        auto buf = this->obj->cache.Get(0, typeSize, false);
-        // MyLine.offset += typeSize;
+        auto buf = this->obj->cache.Get(zone.textFileOffset, typeSize, false);
+        zone.textFileOffset += typeSize;
 
         char buffer[9];
         memset(buffer, '\0', 9);
@@ -444,233 +386,14 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 
     this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, false);
-    //WriteTextLineToChars(dli, false);
+    // WriteTextLineToChars(dli, false);
     return true;
 }
 
-bool Instance::StructureViewToLines(DrawLineInfo& dli)
+void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone)
 {
-    const DissasmType& currentType = MyLine.types.back();
-    int currentLevel               = MyLine.levels.back() + 1;
-
-    uint32 typeSize    = 0;
-    bool isSignedValue = false;
-    int spaces         = (MyLine.levels.size() - 1) * 4;
-    MyLine.buffer[0]   = '\0';
-
-    if (MyLine.isCollapsed)
-    {
-        dli.insideStructure = false;
-        MyLine.types.pop_back();
-        MyLine.levels.pop_back();
-    }
-
-    int written           = 100;
-    ColorPair normalColor = config.Colors.Normal;
-
-    dli.chNameAndSize = this->chars.GetBuffer();
-    dli.chText        = dli.chNameAndSize + dli.lineOffset; // + dli.numbersSize);
-
-    if (spaces > 0)
-    {
-        for (int i = 0; i < spaces; i++)
-        {
-            dli.chText->Code  = CodePage_437[' '];
-            dli.chText->Color = normalColor;
-            dli.chText++;
-        }
-    }
-
-    switch (currentType.primaryType)
-    {
-    case GView::View::DissasmViewer::InternalDissasmType::UInt8:
-        typeSize      = 1;
-        isSignedValue = false;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::UInt16:
-        typeSize      = 2;
-        isSignedValue = false;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::UInt32:
-        typeSize      = 4;
-        isSignedValue = false;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::UInt64:
-        typeSize      = 8;
-        isSignedValue = false;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::Int8:
-        typeSize      = 1;
-        isSignedValue = true;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::Int16:
-        typeSize      = 2;
-        isSignedValue = true;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::Int32:
-        typeSize      = 4;
-        isSignedValue = true;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::Int64:
-        typeSize      = 8;
-        isSignedValue = true;
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::AsciiZ:
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::Utf16Z:
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::Utf32Z:
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::UnidimnsionalArray:
-        if (MyLine.isCollapsed)
-        {
-            AddStringToChars(dli, config.Colors.StructureColor, "Array[%u] ", currentType.width);
-            AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        }
-        else
-        {
-            dli.insideStructure = true;
-            if (currentLevel == -1)
-            {
-                AddStringToChars(dli, config.Colors.StructureColor, "Array[%u] ", currentType.width);
-                AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-            }
-            else if (currentLevel < 0 || currentLevel >= currentType.internalTypes.size())
-            {
-                MyLine.types.pop_back();
-                MyLine.levels.pop_back();
-                if (MyLine.levels.empty())
-                    dli.insideStructure = false;
-                else
-                {
-                    int& levelRef = MyLine.levels.back();
-                    levelRef      = levelRef + 1;
-                }
-                return false;
-            }
-            else
-            {
-                size_t currentSize = MyLine.types.size();
-                MyLine.levels.push_back(-2);
-                MyLine.types.push_back(currentType.internalTypes[currentLevel]);
-                StructureViewToLines(dli);
-                if (currentSize == MyLine.types.size())
-                {
-                    int& levelRef = MyLine.levels.back();
-                    levelRef      = levelRef + 1;
-                }
-                if (MyLine.levels.empty())
-                    dli.insideStructure = false;
-                return true;
-            }
-            int& levelRef = MyLine.levels.back();
-            levelRef      = levelRef + 1;
-        }
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::BidimensionalArray:
-        break;
-    case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
-        if (MyLine.isCollapsed)
-        {
-            AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
-            AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-            RegisterStructureCollapseButton(dli, SpecialChars::TriangleRight);
-        }
-        else
-        {
-            if (!dli.insideStructure)
-                RegisterStructureCollapseButton(dli, SpecialChars::TriangleLeft);
-            dli.insideStructure = true;
-            if (currentLevel == -1)
-            {
-                AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
-                AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-            }
-            else if (currentLevel < 0 || currentLevel >= currentType.internalTypes.size())
-            {
-                MyLine.types.pop_back();
-                MyLine.levels.pop_back();
-                if (MyLine.levels.empty())
-                    dli.insideStructure = false;
-                else
-                {
-                    int& levelRef = MyLine.levels.back();
-                    levelRef      = levelRef + 1;
-                }
-                return false;
-            }
-            else
-            {
-                size_t currentSize = MyLine.types.size();
-                MyLine.levels.push_back(-2);
-                MyLine.types.push_back(currentType.internalTypes[currentLevel]);
-                StructureViewToLines(dli);
-                if (currentSize == MyLine.types.size())
-                {
-                    int& levelRef = MyLine.levels.back();
-                    levelRef      = levelRef + 1;
-                }
-                if (MyLine.levels.empty())
-                    dli.insideStructure = false;
-                return true;
-
-                // return currentType.internalTypes[p.subType].ToBuffer(p);
-            }
-            int& levelRef = MyLine.levels.back();
-            levelRef      = levelRef + 1;
-        }
-        break;
-    default:
-        return false;
-    }
-
-    if (typeSize > 0)
-    {
-        if (!MyLine.isCollapsed)
-        {
-            MyLine.types.pop_back();
-            MyLine.levels.pop_back();
-        }
-
-        auto buf = this->obj->cache.Get(MyLine.offset, typeSize, false);
-        MyLine.offset += typeSize;
-
-        char buffer[9];
-        memset(buffer, '\0', 9);
-        for (uint32 i = 0; i < typeSize; i++)
-            buffer[i] = buf[i];
-
-        if (isSignedValue)
-        {
-            int64 value = *(int64*) buffer;
-            AddStringToChars(dli, normalColor, "%s: %lli", currentType.name.data(), value);
-        }
-        else
-        {
-            uint64 value = *(uint64*) buffer;
-            AddStringToChars(dli, normalColor, "%s: %llu", currentType.name.data(), value);
-        }
-    }
-
-    if (written == spaces)
-        return false;
-
-    MyLine.skipLines++;
-
-    // while (written < MyLine.length)
-    //    MyLine.buffer[written++] = ' ';
-    FillRestWithSpaces(dli);
-    if (MyLine.levels.empty())
-        dli.insideStructure = false;
-
-    return true;
-}
-
-void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c)
-{
-    ButtonsData bData = { 3, MyLine.currentLineToDraw + 1, c, config.Colors.DataTypeColor, MyLine.initialOffset };
+    ButtonsData bData = { 3, dli.lineToDraw + 1, c, config.Colors.DataTypeColor, 3, zone };
     MyLine.buttons.push_back(bData);
-    // renderer.WriteSpecialCharacter(poz, 1, SpecialChars::TriangleLeft, c1);
 }
 
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd)
@@ -780,18 +503,11 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         renderer.Clear(' ', config.Colors.Inactive);
 
     DrawLineInfo dli(renderer);
-    Layout.structureLinesDisplayed = 0;
-    dli.shouldSearchMapping        = !settings->dissasmTypeMapped.empty();
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        this->MyLine.currentLineToDraw = tr;
-        dli.lineToDraw                 = tr;
+        dli.lineToDraw = tr;
         if (!PrepareDrawLineInfo(dli))
             break;
-        // if (MyLine.skipLines > 0)
-        //    MyLine.skipLines--;
-        // else
-        //    WriteTextLineToChars(dli);
 
         // uint64 val2 = ((uint64) tr - 1) * Layout.charactersPerLine;
         // if (dli.viewOffset <= Cursor.currentPos && Cursor.currentPos < nextOffset)
@@ -849,6 +565,7 @@ void Instance::OnStart()
     uint32 textSize   = width - (1 + lineOffset);
 
     uint32 lastEndMinusLastOffset = 0;
+    uint16 currentIndex           = 0;
 
     for (const auto& mapping : this->settings->dissasmTypeMapped)
     {
@@ -856,15 +573,18 @@ void Instance::OnStart()
         parseZone.startLineIndex  = mapping.first / (uint64) textSize;
         parseZone.endingLineIndex = parseZone.startLineIndex + 1;
         parseZone.isCollapsed     = true;
-        parseZone.extendedSize    = mapping.second.GetExpandedSize();
+        parseZone.extendedSize    = mapping.second.GetExpandedSize() - 1;
         parseZone.textLinesOffset = parseZone.startLineIndex - lastEndMinusLastOffset;
         parseZone.dissasmType     = mapping.second;
         parseZone.levels.push_back(0);
         parseZone.types.push_back(mapping.second);
-        parseZone.structureIndex = 0;
+        parseZone.structureIndex       = 0;
+        parseZone.textFileOffset       = mapping.first;
+        parseZone.initalTextFileOffset = mapping.first;
+        parseZone.structureID          = currentIndex++;
 
         // TODO: remove
-        parseZone.endingLineIndex += parseZone.extendedSize;
+        // parseZone.endingLineIndex += parseZone.extendedSize;
 
         lastEndMinusLastOffset = parseZone.endingLineIndex - parseZone.textLinesOffset + 1;
         settings->parseZones.push_back(parseZone);
@@ -961,10 +681,34 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         for (const auto& btn : MyLine.buttons)
             if (btn.x == x && btn.y == y)
             {
-                settings->collapsed[btn.offsetStructure] = !settings->collapsed[btn.offsetStructure];
+                ChangeZoneCollapseState(btn.zone);
                 break;
             }
     }
+}
+
+void Instance::ChangeZoneCollapseState(ParseZone& zoneToChange)
+{
+    int16 sizeToAdjust;
+    sizeToAdjust = zoneToChange.extendedSize;
+    if (!zoneToChange.isCollapsed)
+        sizeToAdjust *= -1;
+    zoneToChange.isCollapsed = !zoneToChange.isCollapsed;
+    zoneToChange.endingLineIndex += sizeToAdjust;
+
+    bool foundZone = false;
+    for (auto& zone : settings->parseZones)
+    {
+        if (foundZone)
+        {
+            zone.startLineIndex += sizeToAdjust;
+            zone.endingLineIndex += sizeToAdjust;
+        }
+        if (zoneToChange.structureID == zone.structureID)
+            foundZone = true;
+    }
+
+    // TODO: search for following zones and update their size
 }
 
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
