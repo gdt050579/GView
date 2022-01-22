@@ -168,16 +168,16 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         switch (ID)
         {
         case MenuCommands::ARRANGE_CASCADE:
-            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Cascade);
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Cascade);
             return true;
         case MenuCommands::ARRANGE_GRID:
-            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Grid);
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
             return true;
         case MenuCommands::ARRANGE_HORIZONTALLY:
-            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Horizontal);
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Horizontal);
             return true;
         case MenuCommands::ARRANGE_VERTICALLY:
-            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Vertical);
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Vertical);
             return true;
         case MenuCommands::SHOW_WINDOW_MANAGER:
             AppCUI::Dialogs::WindowManager::Show();
