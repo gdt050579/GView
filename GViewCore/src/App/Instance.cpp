@@ -15,6 +15,15 @@ struct _MenuCommand_
     int commandID;
     Key shortCutKey;
 };
+constexpr _MenuCommand_ menuFileList[] = {
+    { "&Open file", MenuCommands::OPEN_FILE, Key::None },
+    { "Open &folder", MenuCommands::OPEN_FOLDER, Key::None },
+    { "", 0, Key::None },
+    { "Open &process", MenuCommands::OPEN_PID, Key::None },
+    { "Open process &tree", MenuCommands::OPEN_PROCESS_TREE, Key::None },
+    { "", 0, Key::None },
+    { "E&xit", MenuCommands::EXIT_GVIEW, Key::Shift | Key::Escape },
+};
 constexpr _MenuCommand_ menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
     { "Arrange &Horizontally", MenuCommands::ARRANGE_HORIZONTALLY, Key::None },
@@ -57,6 +66,9 @@ Instance::Instance()
 {
     this->defaultCacheSize = DEFAULT_CACHE_SIZE; // 1 MB
     this->keyToChangeViews = Key::F4;
+    this->mnuWindow        = nullptr;
+    this->mnuHelp          = nullptr;
+    this->mnuFile          = nullptr;
 }
 bool Instance::LoadSettings()
 {
@@ -69,8 +81,14 @@ bool Instance::LoadSettings()
         if (String::StartsWith(section.GetName(), std::string_view("type."), true))
         {
             GView::Type::Plugin p;
-            CHECK(p.Init(section), false, "Fail to initialize pluggin !");
-            this->typePlugins.push_back(p);
+            if (p.Init(section))
+            {
+                this->typePlugins.push_back(p);
+            }
+            else
+            {
+                errList.AddWarning("Fail to load type plugin ");
+            }            
         }
     }
     // sort all plugins based on their priority
@@ -86,6 +104,8 @@ bool Instance::LoadSettings()
 }
 bool Instance::BuildMainMenus()
 {
+    CHECK(mnuFile = AppCUI::Application::AddMenu("File"), false, "Unable to create 'File' menu");
+    CHECK(AddMenuCommands(mnuFile, menuFileList, ARRAY_LEN(menuFileList)), false, "");
     CHECK(mnuWindow = AppCUI::Application::AddMenu("&Windows"), false, "Unable to create 'Windows' menu");
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
@@ -105,7 +125,10 @@ bool Instance::Init()
     CHECK(LoadSettings(), false, "Fail to load settings !");
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
-
+    // set up handlers
+    auto dsk = AppCUI::Application::GetDesktop();
+    dsk->Handlers()->OnEvent = this;
+    dsk->Handlers()->OnStart = this;
     return true;
 }
 bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
@@ -152,10 +175,51 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
     auto f = std::make_unique<AppCUI::OS::File>();
-    CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
+    if (f->OpenRead(path)==false)
+    {
+        errList.AddError("Fail to open file: %s", path.u8string().c_str());
+        RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+    }
     return Add(std::move(f), path.u16string(), path.extension().string());
 }
 
+//===============================[APPCUI HANDLERS]==============================
+bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
+{
+    if (eventType == Event::Command)
+    {
+        switch (ID)
+        {
+        case MenuCommands::ARRANGE_CASCADE:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Cascade);
+            return true;
+        case MenuCommands::ARRANGE_GRID:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
+            return true;
+        case MenuCommands::ARRANGE_HORIZONTALLY:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Horizontal);
+            return true;
+        case MenuCommands::ARRANGE_VERTICALLY:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Vertical);
+            return true;
+        case MenuCommands::SHOW_WINDOW_MANAGER:
+            AppCUI::Dialogs::WindowManager::Show();
+            return true;
+        case MenuCommands::EXIT_GVIEW:
+            AppCUI::Application::Close();
+            return true;
+        }
+    }
+    return true;
+}
+void Instance::OnStart(Reference<Control> control)
+{
+    if (!errList.Empty())
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Errors", "There are errors");
+        errList.Clear();
+    }
+}
 //===============================[PROPERTIES]==================================
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 {

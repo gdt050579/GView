@@ -73,7 +73,7 @@ int ProcessOpenCommand(int argc, const char** argv, int start)
         GView::App::OpenFile(argv[start]);
         start++;
     }
-    AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Grid);
+    AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
     GView::App::Run();
     return 0;
 }

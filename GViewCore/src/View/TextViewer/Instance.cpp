@@ -14,7 +14,6 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 {
     this->obj  = _obj;
     this->name = _name;
-    this->Cfg  = AppCUI::Application::GetAppConfig();
 
     // settings
     if ((_settings) && (_settings->data))
@@ -127,6 +126,7 @@ void Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gr
     uint32 sz;
     BufferView buf;
     NumericFormatter n;
+    
 
     if (GetLineInfo(lineNo, ofs, sz))
         buf = this->obj->cache.Get(ofs, sz, false);
@@ -179,7 +179,7 @@ void Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gr
         p++;
     }
 
-    renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (c - chars)), Cfg->Text.Normal);
+    renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (c - chars)), Cfg.Text.Normal);
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {

@@ -159,17 +159,27 @@ namespace App
         constexpr int CLOSE_ALL                = 100005;
         constexpr int CLOSE_ALL_EXCEPT_CURRENT = 100006;
         constexpr int SHOW_WINDOW_MANAGER      = 100007;
+        constexpr int EXIT_GVIEW               = 100008;
 
         constexpr int CHECK_FOR_UPDATES = 110000;
         constexpr int ABOUT             = 110001;
 
+        constexpr int OPEN_FILE         = 120000;
+        constexpr int OPEN_FOLDER       = 120001;
+        constexpr int OPEN_PID          = 120002;
+        constexpr int OPEN_PROCESS_TREE = 120003;
+
     }; // namespace MenuCommands
-    class Instance : public AppCUI::Utils::PropertiesInterface
+    class Instance : public AppCUI::Utils::PropertiesInterface,
+                     public AppCUI::Controls::Handlers::OnEventInterface,
+                     public AppCUI::Controls::Handlers::OnStartInterface
     {
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
+        AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
         GView::Type::Plugin defaultPlugin;
+        GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
         AppCUI::Input::Key keyToChangeViews, keyToSwitchToView;
 
@@ -202,6 +212,10 @@ namespace App
         virtual void SetCustomPropertyValue(uint32 propertyID) override;
         virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
         virtual const vector<Property> GetPropertiesList() override;
+
+        // AppCUI Handlers
+        virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
+        virtual void OnStart(Reference<Control> control) override;
     };
     class FileWindowProperties : public Window
     {

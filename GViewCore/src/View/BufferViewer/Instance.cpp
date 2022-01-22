@@ -92,7 +92,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 {
     this->obj  = _obj;
     this->name = _name;
-    this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+    this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
     this->showTypeObjects            = true;
     this->Layout.nrCols              = 0;
     this->Layout.charFormatMode      = CharacterFormatMode::Hex;
@@ -521,7 +521,7 @@ ColorPair Instance::OffsetToColorZone(uint64 offset)
 {
     auto* z = this->settings->zList.OffsetToZone(offset);
     if (z == nullptr)
-        return config.Colors.OutsideZone;
+        return Cfg.Text.Inactive;
     else
         return z->color;
 }
@@ -531,7 +531,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     if ((this->CurrentSelection.size) && (this->CurrentSelection.highlight))
     {
         if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
-            return config.Colors.SameSelection;
+            return Cfg.Selection.SimilarText;
 
         auto b = this->obj->cache.Get(offset, this->CurrentSelection.size, true);
         if (b.IsValid())
@@ -542,7 +542,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
                 {
                     this->CurrentSelection.start = offset;
                     this->CurrentSelection.end   = offset + this->CurrentSelection.size;
-                    return config.Colors.SameSelection;
+                    return Cfg.Selection.SimilarText;
                 }
             }
         }
@@ -679,7 +679,7 @@ void Instance::WriteHeaders(Renderer& renderer)
     WriteTextParams params(WriteTextFlags::OverwriteColors | WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth);
     params.Align = TextAlignament::Left;
     params.Y     = 0;
-    params.Color = this->HasFocus() ? this->GetConfig()->Header.Text.Focused : this->GetConfig()->Header.Text.Normal;
+    params.Color = this->HasFocus() ? Cfg.Header.Text.Focused : Cfg.Header.Text.Normal;
 
     renderer.FillHorizontalLine(0, 0, this->GetWidth(), ' ', params.Color);
 
@@ -725,7 +725,7 @@ void Instance::WriteHeaders(Renderer& renderer)
 void Instance::WriteLineAddress(DrawLineInfo& dli)
 {
     uint64 ofs                  = dli.offset;
-    auto c                      = config.Colors.Inactive;
+    auto c                      = Cfg.Text.Inactive;
     auto n                      = dli.chNameAndSize;
     const GView::Utils::Zone* z = nullptr;
 
@@ -783,7 +783,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
             while (s >= prev_n)
             {
                 s->Code  = '-';
-                s->Color = config.Colors.Inactive;
+                s->Color = Cfg.Text.Inactive;
                 s--;
             }
         }
@@ -820,7 +820,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
 }
 void Instance::WriteLineTextToChars(DrawLineInfo& dli)
 {
-    auto cp    = config.Colors.Inactive;
+    auto cp    = Cfg.Text.Inactive;
     bool activ = this->HasFocus();
 
     if (activ)
@@ -829,9 +829,9 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
         {
             cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
-                cp = config.Colors.Selection;
+                cp = Cfg.Selection.Editor;
             if (dli.offset == this->Cursor.currentPos)
-                cp = config.Colors.Cursor;
+                cp = Cfg.Cursor.Normal;
             if (StringInfo.type == StringType::Unicode)
             {
                 if (dli.offset > StringInfo.middle)
@@ -854,7 +854,7 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
         while (dli.start < dli.end)
         {
             dli.chText->Code  = CodePage.mapping[*dli.start];
-            dli.chText->Color = config.Colors.Inactive;
+            dli.chText->Color = Cfg.Text.Inactive;
             dli.chText++;
             dli.start++;
         }
@@ -864,7 +864,7 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
 void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 {
     auto c     = dli.chNumbers;
-    auto cp    = config.Colors.Inactive;
+    auto cp    = Cfg.Text.Inactive;
     bool activ = this->HasFocus();
     auto ut    = (uint8) 0;
     auto sps   = dli.chText;
@@ -877,14 +877,14 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 
             if (selection.Contains(dli.offset))
             {
-                cp = config.Colors.Selection;
+                cp = Cfg.Selection.Editor;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
 
             if (dli.offset == this->Cursor.currentPos)
             {
-                cp = config.Colors.Cursor;
+                cp = Cfg.Cursor.Normal;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
@@ -1043,7 +1043,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
     while (c < sps)
     {
         c->Code  = ' ';
-        c->Color = config.Colors.Inactive;
+        c->Color = Cfg.Text.Inactive;
         c++;
     }
     this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
@@ -1434,7 +1434,7 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
         }
         else
         {
-            r.WriteSingleLineText(x, y, width, "NO Selection", this->GetConfig()->Text.Inactive, TextAlignament::Center);
+            r.WriteSingleLineText(x, y, width, "NO Selection", Cfg.Text.Inactive, TextAlignament::Center);
         }
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1662,16 +1662,18 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 {
     int x = 0;
     // set up the cursor colors
-    auto cfg                       = this->GetConfig();
-    this->CursorColors.Normal      = cfg->Text.Normal;
-    this->CursorColors.Line        = cfg->Lines.Normal;
-    this->CursorColors.Highlighted = cfg->Text.Highlighted;
-    if (!this->HasFocus())
+
+    if (this->HasFocus())
     {
-        this->CursorColors.Normal      = cfg->Text.Inactive;
-        this->CursorColors.Line        = cfg->Lines.Inactive;
-        this->CursorColors.Highlighted = cfg->Text.Inactive;
-    }
+        this->CursorColors.Normal      = Cfg.Text.Normal;
+        this->CursorColors.Line        = Cfg.Lines.Normal;
+        this->CursorColors.Highlighted = Cfg.Text.Highlighted;
+    } else
+    {
+        this->CursorColors.Normal      = Cfg.Text.Inactive;
+        this->CursorColors.Line        = Cfg.Lines.Inactive;
+        this->CursorColors.Highlighted = Cfg.Text.Inactive;
+    } 
     r.Clear();
     auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8, false);
     switch (height)

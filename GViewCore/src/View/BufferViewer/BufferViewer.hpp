@@ -54,13 +54,8 @@ namespace View
         {
             struct
             {
-                ColorPair Inactive;
-                ColorPair OutsideZone;
-                ColorPair Cursor;
-                ColorPair Selection;
                 ColorPair Ascii;
                 ColorPair Unicode;
-                ColorPair SameSelection;
             } Colors;
             struct
             {

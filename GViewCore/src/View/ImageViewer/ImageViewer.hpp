@@ -23,13 +23,7 @@ namespace View
 
         struct Config
         {
-            struct
-            {
-                ColorPair Inactive;
-                ColorPair Normal;
-                ColorPair Line;
-                ColorPair Highlighted;
-            } Colors;
+            
             struct
             {
                 AppCUI::Input::Key ZoomIn;
