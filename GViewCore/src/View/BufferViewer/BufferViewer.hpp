@@ -56,7 +56,6 @@ namespace View
             {
                 ColorPair Ascii;
                 ColorPair Unicode;
-                ColorPair SameSelection;
             } Colors;
             struct
             {

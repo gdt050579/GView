@@ -14,7 +14,6 @@ void Config::Initialize()
 {
     this->Colors.Ascii         = ColorPair{ Color::Red, Color::DarkBlue };
     this->Colors.Unicode       = ColorPair{ Color::Yellow, Color::DarkBlue };
-    this->Colors.SameSelection = ColorPair{ Color::Black, Color::Green };
 
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)

@@ -531,7 +531,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     if ((this->CurrentSelection.size) && (this->CurrentSelection.highlight))
     {
         if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
-            return config.Colors.SameSelection;
+            return Cfg.Selection.SimilarText;
 
         auto b = this->obj->cache.Get(offset, this->CurrentSelection.size, true);
         if (b.IsValid())
@@ -542,7 +542,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
                 {
                     this->CurrentSelection.start = offset;
                     this->CurrentSelection.end   = offset + this->CurrentSelection.size;
-                    return config.Colors.SameSelection;
+                    return Cfg.Selection.SimilarText;
                 }
             }
         }
