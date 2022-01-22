@@ -170,13 +170,16 @@ namespace App
         constexpr int OPEN_PROCESS_TREE = 120003;
 
     }; // namespace MenuCommands
-    class Instance : public AppCUI::Utils::PropertiesInterface, public AppCUI::Controls::Handlers::OnEventInterface
+    class Instance : public AppCUI::Utils::PropertiesInterface,
+                     public AppCUI::Controls::Handlers::OnEventInterface,
+                     public AppCUI::Controls::Handlers::OnStartInterface
     {
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
         AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
         GView::Type::Plugin defaultPlugin;
+        GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
         AppCUI::Input::Key keyToChangeViews, keyToSwitchToView;
 
@@ -212,6 +215,7 @@ namespace App
 
         // AppCUI Handlers
         virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
+        virtual void OnStart(Reference<Control> control) override;
     };
     class FileWindowProperties : public Window
     {

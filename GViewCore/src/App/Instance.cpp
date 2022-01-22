@@ -66,6 +66,9 @@ Instance::Instance()
 {
     this->defaultCacheSize = DEFAULT_CACHE_SIZE; // 1 MB
     this->keyToChangeViews = Key::F4;
+    this->mnuWindow        = nullptr;
+    this->mnuHelp          = nullptr;
+    this->mnuFile          = nullptr;
 }
 bool Instance::LoadSettings()
 {
@@ -78,8 +81,14 @@ bool Instance::LoadSettings()
         if (String::StartsWith(section.GetName(), std::string_view("type."), true))
         {
             GView::Type::Plugin p;
-            CHECK(p.Init(section), false, "Fail to initialize pluggin !");
-            this->typePlugins.push_back(p);
+            if (p.Init(section))
+            {
+                this->typePlugins.push_back(p);
+            }
+            else
+            {
+                errList.AddWarning("Fail to load type plugin ");
+            }            
         }
     }
     // sort all plugins based on their priority
@@ -119,6 +128,7 @@ bool Instance::Init()
     // set up handlers
     auto dsk = AppCUI::Application::GetDesktop();
     dsk->Handlers()->OnEvent = this;
+    dsk->Handlers()->OnStart = this;
     return true;
 }
 bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
@@ -165,7 +175,11 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
     auto f = std::make_unique<AppCUI::OS::File>();
-    CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
+    if (f->OpenRead(path)==false)
+    {
+        errList.AddError("Fail to open file: %s", path.u8string().c_str());
+        RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+    }
     return Add(std::move(f), path.u16string(), path.extension().string());
 }
 
@@ -198,7 +212,14 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
     }
     return true;
 }
-
+void Instance::OnStart(Reference<Control> control)
+{
+    if (!errList.Empty())
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Errors", "There are errors");
+        errList.Clear();
+    }
+}
 //===============================[PROPERTIES]==================================
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
 {
