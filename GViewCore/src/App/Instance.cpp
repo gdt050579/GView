@@ -26,6 +26,8 @@ constexpr _MenuCommand_ menuWindowList[] = {
     { "Close All e&xcept current", MenuCommands::CLOSE_ALL, Key::None },
     { "", 0, Key::None },
     { "&Windows manager", MenuCommands::SHOW_WINDOW_MANAGER, Key::Alt | Key::N0 },
+    { "", 0, Key::None },
+    { "E&xit", MenuCommands::EXIT_GVIEW, Key::Shift | Key::Escape},
 };
 constexpr _MenuCommand_ menuHelpList[] = {
     { "Check for &updates", MenuCommands::CHECK_FOR_UPDATES, Key::None },
@@ -105,7 +107,9 @@ bool Instance::Init()
     CHECK(LoadSettings(), false, "Fail to load settings !");
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
-
+    // set up handlers
+    auto dsk = AppCUI::Application::GetDesktop();
+    dsk->Handlers()->OnEvent = this;
     return true;
 }
 bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
@@ -154,6 +158,36 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     auto f = std::make_unique<AppCUI::OS::File>();
     CHECK(f->OpenRead(path), false, "Fail to open file: %s", path.u8string().c_str());
     return Add(std::move(f), path.u16string(), path.extension().string());
+}
+
+//===============================[APPCUI HANDLERS]==============================
+bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
+{
+    if (eventType == Event::Command)
+    {
+        switch (ID)
+        {
+        case MenuCommands::ARRANGE_CASCADE:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Cascade);
+            return true;
+        case MenuCommands::ARRANGE_GRID:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Grid);
+            return true;
+        case MenuCommands::ARRANGE_HORIZONTALLY:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Horizontal);
+            return true;
+        case MenuCommands::ARRANGE_VERTICALLY:
+            AppCUI::Application::ArrangeWindows(AppCUI::Application::ArangeWindowsMethod::Vertical);
+            return true;
+        case MenuCommands::SHOW_WINDOW_MANAGER:
+            AppCUI::Dialogs::WindowManager::Show();
+            return true;
+        case MenuCommands::EXIT_GVIEW:
+            AppCUI::Application::Close();
+            return true;
+        }
+    }
+    return true;
 }
 
 //===============================[PROPERTIES]==================================

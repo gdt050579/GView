@@ -159,12 +159,13 @@ namespace App
         constexpr int CLOSE_ALL                = 100005;
         constexpr int CLOSE_ALL_EXCEPT_CURRENT = 100006;
         constexpr int SHOW_WINDOW_MANAGER      = 100007;
+        constexpr int EXIT_GVIEW               = 100008;
 
         constexpr int CHECK_FOR_UPDATES = 110000;
         constexpr int ABOUT             = 110001;
 
     }; // namespace MenuCommands
-    class Instance : public AppCUI::Utils::PropertiesInterface
+    class Instance : public AppCUI::Utils::PropertiesInterface, public AppCUI::Controls::Handlers::OnEventInterface
     {
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
@@ -202,6 +203,9 @@ namespace App
         virtual void SetCustomPropertyValue(uint32 propertyID) override;
         virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
         virtual const vector<Property> GetPropertiesList() override;
+
+        // AppCUI Handlers
+        virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
     };
     class FileWindowProperties : public Window
     {
