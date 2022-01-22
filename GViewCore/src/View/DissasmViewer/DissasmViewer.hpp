@@ -83,7 +83,11 @@ namespace View
             uint32 extendedSize;
             uint32 textLinesOffset;
             bool isCollapsed;
+
+            int16 structureIndex;
             DissasmType dissasmType;
+            std::list<std::reference_wrapper<const DissasmType>> types;
+            std::list<int32> levels;
         };
 
         struct SettingsData
@@ -197,7 +201,9 @@ namespace View
             Utils::Selection selection;
 
             void RecomputeDissasmLayout();
-            bool WriteTextLineToChars(DrawLineInfo& dli);
+            bool WriteTextLineToChars(DrawLineInfo& dli, bool writeFromFile = true);
+            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces);
+            bool PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
             bool StructureViewToLines(DrawLineInfo& dli);
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c);

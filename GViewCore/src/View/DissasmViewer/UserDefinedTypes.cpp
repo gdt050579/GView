@@ -139,6 +139,6 @@ uint32 DissasmType::GetExpandedSize() const
 {
     uint32 result = 1;
     for (const auto& child : this->internalTypes)
-        result = 1 + child.GetExpandedSize();
+        result += 1 + child.GetExpandedSize();
     return result;
 }
