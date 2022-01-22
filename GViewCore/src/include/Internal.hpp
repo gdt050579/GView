@@ -164,11 +164,17 @@ namespace App
         constexpr int CHECK_FOR_UPDATES = 110000;
         constexpr int ABOUT             = 110001;
 
+        constexpr int OPEN_FILE         = 120000;
+        constexpr int OPEN_FOLDER       = 120001;
+        constexpr int OPEN_PID          = 120002;
+        constexpr int OPEN_PROCESS_TREE = 120003;
+
     }; // namespace MenuCommands
     class Instance : public AppCUI::Utils::PropertiesInterface, public AppCUI::Controls::Handlers::OnEventInterface
     {
         AppCUI::Controls::Menu* mnuWindow;
         AppCUI::Controls::Menu* mnuHelp;
+        AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
         GView::Type::Plugin defaultPlugin;
         uint32 defaultCacheSize;

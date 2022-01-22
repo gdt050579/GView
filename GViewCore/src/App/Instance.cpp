@@ -15,6 +15,15 @@ struct _MenuCommand_
     int commandID;
     Key shortCutKey;
 };
+constexpr _MenuCommand_ menuFileList[] = {
+    { "&Open file", MenuCommands::OPEN_FILE, Key::None },
+    { "Open &folder", MenuCommands::OPEN_FOLDER, Key::None },
+    { "", 0, Key::None },
+    { "Open &process", MenuCommands::OPEN_PID, Key::None },
+    { "Open process &tree", MenuCommands::OPEN_PROCESS_TREE, Key::None },
+    { "", 0, Key::None },
+    { "E&xit", MenuCommands::EXIT_GVIEW, Key::Shift | Key::Escape },
+};
 constexpr _MenuCommand_ menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
     { "Arrange &Horizontally", MenuCommands::ARRANGE_HORIZONTALLY, Key::None },
@@ -26,8 +35,6 @@ constexpr _MenuCommand_ menuWindowList[] = {
     { "Close All e&xcept current", MenuCommands::CLOSE_ALL, Key::None },
     { "", 0, Key::None },
     { "&Windows manager", MenuCommands::SHOW_WINDOW_MANAGER, Key::Alt | Key::N0 },
-    { "", 0, Key::None },
-    { "E&xit", MenuCommands::EXIT_GVIEW, Key::Shift | Key::Escape},
 };
 constexpr _MenuCommand_ menuHelpList[] = {
     { "Check for &updates", MenuCommands::CHECK_FOR_UPDATES, Key::None },
@@ -88,6 +95,8 @@ bool Instance::LoadSettings()
 }
 bool Instance::BuildMainMenus()
 {
+    CHECK(mnuFile = AppCUI::Application::AddMenu("File"), false, "Unable to create 'File' menu");
+    CHECK(AddMenuCommands(mnuFile, menuFileList, ARRAY_LEN(menuFileList)), false, "");
     CHECK(mnuWindow = AppCUI::Application::AddMenu("&Windows"), false, "Unable to create 'Windows' menu");
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
