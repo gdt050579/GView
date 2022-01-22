@@ -121,8 +121,11 @@ namespace View
 
                 uint32 currentLineFromOffset;
                 uint32 lineToDraw;
-                DrawLineInfo()
-                    : recomputeOffsets(true), shouldSearchMapping(true), insideStructure(false), currentLineFromOffset(0), lineToDraw(0)
+                uint32 actualLineToDraw;
+                AppCUI::Graphics::Renderer& renderer;
+                DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
+                    : recomputeOffsets(true), shouldSearchMapping(true), insideStructure(false), currentLineFromOffset(0), lineToDraw(0),
+                      renderer(renderer)
                 {
                 }
             };
@@ -194,7 +197,7 @@ namespace View
             Utils::Selection selection;
 
             void RecomputeDissasmLayout();
-            void WriteLineToChars(DrawLineInfo& dli);
+            bool WriteTextLineToChars(DrawLineInfo& dli);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
             bool StructureViewToLines(DrawLineInfo& dli);
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c);

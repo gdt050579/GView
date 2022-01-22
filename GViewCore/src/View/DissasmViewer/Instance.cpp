@@ -194,34 +194,38 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     {
         auto& zones       = settings->parseZones;
         uint32 zonesCount = settings->parseZones.size();
+        //TODO: optimization -> instead of search every time keep the last zone index inside memmory and search from there
         for (uint32 i = 0; i < zonesCount; i++)
         {
-            if ((currentLineIndex >= zones[i].startLineIndex && currentLineIndex <= zones[i].endingLineIndex))
+            if ((currentLineIndex >= zones[i].startLineIndex && currentLineIndex < zones[i].endingLineIndex))
             {
                 // struct
-                currentLineIndex = currentLineIndex;
+                dli.actualLineToDraw = currentLineIndex - zones[i].startLineIndex;
+                currentLineIndex     = currentLineIndex;
             }
             else
             {
+                dli.actualLineToDraw  = currentLineIndex + zones[i].textLinesOffset - zones[i].endingLineIndex;
                 if (i + 1 >= zonesCount)
+                {
+                    return WriteTextLineToChars(dli);
                     break;
+                }
                 if (currentLineIndex < zones[i].startLineIndex)
                 {
-                    // text
                     currentLineIndex = currentLineIndex;
+                    return WriteTextLineToChars(dli);
                 }
             }
         }
     }
     else
     {
-        dli.textFileOffset =
-              ((uint64) this->Layout.charactersPerLine) * (dli.lineToDraw - Layout.structureLinesDisplayed) + this->Cursor.startView;
-        dli.viewOffset = ((uint64) this->Layout.charactersPerLine) * dli.lineToDraw + this->Cursor.startView;
+        dli.actualLineToDraw = currentLineIndex;
+        return WriteTextLineToChars(dli);
     }
 
-    if (dli.textFileOffset >= this->obj->cache.GetSize())
-        return false;
+    return true;
 
     if (dli.insideStructure && StructureViewToLines(dli))
     {
@@ -560,8 +564,19 @@ void Instance::FillRestWithSpaces(DrawLineInfo& dli)
     }
 }
 
-void Instance::WriteLineToChars(DrawLineInfo& dli)
+bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
+    dli.textFileOffset = ((uint64) this->Layout.charactersPerLine) * dli.actualLineToDraw;
+
+    if (dli.textFileOffset >= this->obj->cache.GetSize())
+        return false;
+
+    auto buf          = this->obj->cache.Get(dli.textFileOffset, dli.textSize, false);
+    dli.start         = buf.GetData();
+    dli.end           = buf.GetData() + buf.GetLength();
+    dli.chNameAndSize = this->chars.GetBuffer()+dli.lineOffset;
+    dli.chText        = dli.chNameAndSize;
+
     auto cp    = config.Colors.Inactive;
     bool activ = this->HasFocus();
 
@@ -573,14 +588,13 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
             // cp = OffsetToColor(dli.offset);
             // if (selection.Contains(dli.textFileOffset))
             //    cp = config.Colors.Selection;
-            if (dli.viewOffset == this->Cursor.currentPos)
+            if (dli.textFileOffset == this->Cursor.currentPos)
                 cp = config.Colors.Cursor;
             dli.chText->Code  = CodePage_437[*dli.start];
             dli.chText->Color = cp;
             dli.chText++;
             dli.start++;
             dli.textFileOffset++;
-            dli.viewOffset++;
         }
     }
     else
@@ -593,7 +607,9 @@ void Instance::WriteLineToChars(DrawLineInfo& dli)
             dli.start++;
         }
     }
-    this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
+    this->chars.Resize((uint32) (dli.textSize));
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, false);
+    return true;
 }
 
 void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
@@ -605,7 +621,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     else
         renderer.Clear(' ', config.Colors.Inactive);
 
-    DrawLineInfo dli;
+    DrawLineInfo dli(renderer);
     Layout.structureLinesDisplayed = 0;
     dli.shouldSearchMapping        = !settings->dissasmTypeMapped.empty();
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
@@ -614,10 +630,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         dli.lineToDraw                 = tr;
         if (!PrepareDrawLineInfo(dli))
             break;
-        if (MyLine.skipLines > 0)
-            MyLine.skipLines--;
-        else
-            WriteLineToChars(dli);
+        // if (MyLine.skipLines > 0)
+        //    MyLine.skipLines--;
+        // else
+        //    WriteTextLineToChars(dli);
 
         // uint64 val2 = ((uint64) tr - 1) * Layout.charactersPerLine;
         // if (dli.viewOffset <= Cursor.currentPos && Cursor.currentPos < nextOffset)
@@ -629,7 +645,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // srenderer.WriteSingleLineText(0, tr + 1, asdasdasd, DefaultColorPair);
 
         // chars.Resize(10);
-        renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
+        //renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 
     if (!MyLine.buttons.empty())
