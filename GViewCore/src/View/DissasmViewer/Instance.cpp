@@ -197,24 +197,12 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             if ((currentLineIndex >= zones[i].startLineIndex && currentLineIndex < zones[i].endingLineIndex))
             {
                 // struct
-                dli.actualLineToDraw = currentLineIndex - zones[i].startLineIndex;
+                dli.actualLineToDraw     = currentLineIndex - zones[i].startLineIndex;
+                dli.lastZoneIndexToReset = i;
                 return PrepareStructureViewToDraw(dli, zones[i]);
             }
             else
             {
-                if (dli.wasInsideStructure)
-                {
-                    dli.wasInsideStructure = false;
-                    while (zones[i].levels.size() > 1)
-                    {
-                        zones[i].types.pop_back();
-                        zones[i].levels.pop_back();
-                    }
-                    zones[i].levels.pop_back();
-                    zones[i].levels.push_back(0);
-                    zones[i].structureIndex = 0;
-                    zones[i].textFileOffset = zones[i].initalTextFileOffset;
-                }
                 dli.actualLineToDraw = currentLineIndex + zones[i].textLinesOffset - zones[i].endingLineIndex;
                 if (i + 1 >= zonesCount)
                 {
@@ -240,6 +228,20 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 
 bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
 {
+    if (zone.structureIndex == zone.extendedSize)
+    {
+        while (zone.levels.size() > 1)
+        {
+            zone.types.pop_back();
+            zone.levels.pop_back();
+        }
+        zone.levels.pop_back();
+        zone.levels.push_back(0);
+        zone.structureIndex = 0;
+        zone.textFileOffset = zone.initalTextFileOffset;
+    }
+
+
     uint32 levelToReach    = dli.actualLineToDraw;
     int16& levelNow        = zone.structureIndex;
     dli.wasInsideStructure = true;
@@ -440,21 +442,18 @@ void Instance::FillRestWithSpaces(DrawLineInfo& dli)
     }
 }
 
-bool Instance::WriteTextLineToChars(DrawLineInfo& dli, bool writeFromFile)
+bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
     dli.textFileOffset = ((uint64) this->Layout.charactersPerLine) * dli.actualLineToDraw;
 
     if (dli.textFileOffset >= this->obj->cache.GetSize())
         return false;
 
-    if (writeFromFile)
-    {
-        auto buf          = this->obj->cache.Get(dli.textFileOffset, dli.textSize, false);
-        dli.start         = buf.GetData();
-        dli.end           = buf.GetData() + buf.GetLength();
-        dli.chNameAndSize = this->chars.GetBuffer() + dli.lineOffset;
-        dli.chText        = dli.chNameAndSize;
-    }
+    auto buf          = this->obj->cache.Get(dli.textFileOffset, dli.textSize, false);
+    dli.start         = buf.GetData();
+    dli.end           = buf.GetData() + buf.GetLength();
+    dli.chNameAndSize = this->chars.GetBuffer() + dli.lineOffset;
+    dli.chText        = dli.chNameAndSize;
 
     auto cp    = config.Colors.Inactive;
     bool activ = this->HasFocus();
@@ -487,8 +486,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli, bool writeFromFile)
         }
     }
 
-    if (writeFromFile)
-        this->chars.Resize((uint32) (dli.textSize));
+    this->chars.Resize((uint32) (dli.textSize));
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, false);
     return true;
 }
@@ -586,7 +584,7 @@ void Instance::OnStart()
         // TODO: remove
         // parseZone.endingLineIndex += parseZone.extendedSize;
 
-        lastEndMinusLastOffset = parseZone.endingLineIndex - parseZone.textLinesOffset + 1;
+        lastEndMinusLastOffset = parseZone.endingLineIndex + parseZone.textLinesOffset;
         settings->parseZones.push_back(parseZone);
     }
 }

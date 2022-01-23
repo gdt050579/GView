@@ -126,6 +126,7 @@ namespace View
                 uint32 actualLineToDraw;
                 AppCUI::Graphics::Renderer& renderer;
                 bool wasInsideStructure;
+                uint32 lastZoneIndexToReset;
                 DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
                     : recomputeOffsets(true), currentLineFromOffset(0), lineToDraw(0), renderer(renderer), wasInsideStructure(false)
                 {
@@ -186,7 +187,7 @@ namespace View
             Utils::Selection selection;
 
             void RecomputeDissasmLayout();
-            bool WriteTextLineToChars(DrawLineInfo& dli, bool writeFromFile = true);
+            bool WriteTextLineToChars(DrawLineInfo& dli);
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces, ParseZone& zone);
             bool PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
