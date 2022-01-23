@@ -216,7 +216,8 @@ void Instance::OnStart(Reference<Control> control)
 {
     if (!errList.Empty())
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Errors", "There are errors");
+        ErrorDialog err(errList);
+        err.Show();
         errList.Clear();
     }
 }

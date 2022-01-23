@@ -256,6 +256,12 @@ namespace App
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
     };
+    class ErrorDialog: public AppCUI::Controls::Window
+    {
+      public:
+        ErrorDialog(const GView::Utils::ErrorList& errList);
+        bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
+    };
 } // namespace App
 
 } // namespace GView
