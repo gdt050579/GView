@@ -815,6 +815,8 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
     bool activ = this->HasFocus();
     auto ut    = (uint8) 0;
     auto sps   = dli.chText;
+    auto start = dli.offset;
+    auto end   = start + (dli.end - dli.start);
 
     while (dli.start < dli.end)
     {
@@ -825,13 +827,6 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
             if (selection.Contains(dli.offset))
             {
                 cp = Cfg.Selection.Editor;
-                if (c > this->chars.GetBuffer())
-                    (c - 1)->Color = cp;
-            }
-
-            if (dli.offset == this->Cursor.currentPos)
-            {
-                cp = Cfg.Cursor.Normal;
                 if (c > this->chars.GetBuffer())
                     (c - 1)->Color = cp;
             }
@@ -992,6 +987,13 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Code  = ' ';
         c->Color = Cfg.Text.Inactive;
         c++;
+    }
+    if ((activ) && (this->Cursor.currentPos >= start) && (this->Cursor.currentPos < end))
+    {
+        c = dli.chNumbers + (this->Cursor.currentPos - start);
+        if (c > this->chars.GetBuffer())
+            c--;
+        c->Color = Cfg.Cursor.Normal;
     }
     this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
 }
