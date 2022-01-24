@@ -161,6 +161,7 @@ namespace View
                 uint32 visibleRows;
                 uint32 charactersPerLine;
                 uint32 startingTextLineOffset;
+                bool structuresInitialCollapsedState;
             } Layout;
 
             struct ButtonsData

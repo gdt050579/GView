@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <cassert>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -57,9 +58,10 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->CursorColors.Highlighted = config.Colors.Highlight;
     this->CursorColors.Line        = config.Colors.Line;
 
-    this->Layout.visibleRows            = 1;
-    this->Layout.charactersPerLine      = 1;
-    this->Layout.startingTextLineOffset = 5;
+    this->Layout.visibleRows                     = 1;
+    this->Layout.charactersPerLine               = 1;
+    this->Layout.startingTextLineOffset          = 5;
+    this->Layout.structuresInitialCollapsedState = false;
 
     RecomputeDissasmLayout();
 }
@@ -241,10 +243,12 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         zone.textFileOffset = zone.initalTextFileOffset;
     }
 
-
     uint32 levelToReach    = dli.actualLineToDraw;
     int16& levelNow        = zone.structureIndex;
     dli.wasInsideStructure = true;
+
+    //levelNow     = 0;
+    //levelToReach = 47;
 
     while (levelNow < levelToReach)
     {
@@ -283,6 +287,61 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
 
         levelNow++;
     }
+
+    //levelNow     = 47;
+    //levelToReach = 0;
+
+    bool isFromBreak = true;
+
+    while (levelNow > levelToReach)
+    {
+        int c                          = zone.types.size();
+        const DissasmType& currentType = zone.types.back();
+        int currentLevel               = zone.levels.back();
+
+        switch (currentType.primaryType)
+        {
+        case InternalDissasmType::UnidimnsionalArray:
+        case InternalDissasmType::UserDefined:
+            if (currentLevel > 0)
+            {
+                zone.levels.pop_back();
+                currentLevel--;
+                zone.levels.push_back(currentLevel);
+                zone.types.push_back(currentType.internalTypes[currentLevel]);
+                int32 anteiorLevel = currentType.internalTypes[currentLevel].internalTypes.size();
+                if (anteiorLevel > 0)
+                    anteiorLevel--;
+                zone.levels.push_back(anteiorLevel);
+                isFromBreak = false;
+            }
+            else
+            {
+                if (isFromBreak)
+                {
+                    isFromBreak = false;
+                    break;
+                }
+                zone.types.pop_back();
+                zone.levels.pop_back();
+                continue;
+            }
+            break;
+        default:
+            // for basic types remove them and go back
+            zone.types.pop_back();
+            zone.levels.pop_back();
+            isFromBreak = true;
+            continue;
+            break;
+        }
+
+        levelNow--;
+    }
+
+    //assert(zone.levels.size() == 1);
+    //assert(zone.levels.back() == 0);
+
 
     WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4, zone);
     return true;
@@ -570,7 +629,7 @@ void Instance::OnStart()
         ParseZone parseZone;
         parseZone.startLineIndex  = mapping.first / (uint64) textSize;
         parseZone.endingLineIndex = parseZone.startLineIndex + 1;
-        parseZone.isCollapsed     = true;
+        parseZone.isCollapsed     = Layout.structuresInitialCollapsedState;
         parseZone.extendedSize    = mapping.second.GetExpandedSize() - 1;
         parseZone.textLinesOffset = parseZone.startLineIndex - lastEndMinusLastOffset;
         parseZone.dissasmType     = mapping.second;
@@ -581,8 +640,8 @@ void Instance::OnStart()
         parseZone.initalTextFileOffset = mapping.first;
         parseZone.structureID          = currentIndex++;
 
-        // TODO: remove
-        // parseZone.endingLineIndex += parseZone.extendedSize;
+        if (!parseZone.isCollapsed)
+            parseZone.endingLineIndex += parseZone.extendedSize;
 
         lastEndMinusLastOffset = parseZone.endingLineIndex + parseZone.textLinesOffset;
         settings->parseZones.push_back(parseZone);
