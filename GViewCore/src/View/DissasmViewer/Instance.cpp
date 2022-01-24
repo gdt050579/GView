@@ -247,8 +247,8 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
     int16& levelNow        = zone.structureIndex;
     dli.wasInsideStructure = true;
 
-    //levelNow     = 0;
-    //levelToReach = 47;
+    // levelNow     = 0;
+    // levelToReach = 47;
 
     while (levelNow < levelToReach)
     {
@@ -288,8 +288,8 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         levelNow++;
     }
 
-    //levelNow     = 47;
-    //levelToReach = 0;
+    // levelNow     = 47;
+    // levelToReach = 0;
 
     bool isFromBreak = true;
 
@@ -339,9 +339,8 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         levelNow--;
     }
 
-    //assert(zone.levels.size() == 1);
-    //assert(zone.levels.back() == 0);
-
+    // assert(zone.levels.size() == 1);
+    // assert(zone.levels.back() == 0);
 
     WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4, zone);
     return true;
@@ -445,9 +444,11 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
         }
     }
 
-    this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, false);
-    // WriteTextLineToChars(dli, false);
+    size_t buffer_size = dli.chText - dli.chNameAndSize;
+    auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
+
+    // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, bufferToDraw, false);
     return true;
 }
 
