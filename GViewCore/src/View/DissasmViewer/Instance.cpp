@@ -61,7 +61,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.visibleRows                     = 1;
     this->Layout.charactersPerLine               = 1;
     this->Layout.startingTextLineOffset          = 5;
-    this->Layout.structuresInitialCollapsedState = false;
+    this->Layout.structuresInitialCollapsedState = true;
 
     RecomputeDissasmLayout();
 }
@@ -228,6 +228,20 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
+inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, ParseZone& zone, bool increaseOffset)
+{
+    if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
+    {
+        // Uint8 - index 0 -> 1 byte, Int8 -> index 4 -> 1 byte
+        uint32 val = ((uint8) cType.primaryType + 1u) % 4;
+        if (increaseOffset)
+            zone.textFileOffset += val;
+        else
+            zone.textFileOffset -= val;
+        // zone.textFileOffset += (increaseOffset ? 1 : -1) * (((int) cType.primaryType + 1u) % 4);
+    }
+}
+
 bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
 {
     if (zone.structureIndex == zone.extendedSize)
@@ -246,6 +260,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
     uint32 levelToReach    = dli.actualLineToDraw;
     int16& levelNow        = zone.structureIndex;
     dli.wasInsideStructure = true;
+    bool increaseOffset    = levelNow < levelToReach;
 
     // levelNow     = 0;
     // levelToReach = 47;
@@ -261,6 +276,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         case InternalDissasmType::UserDefined:
             if (currentLevel < currentType.internalTypes.size())
             {
+                UpdateCurrentZoneIndex(currentType.internalTypes[currentLevel], zone, true);
                 zone.types.push_back(currentType.internalTypes[currentLevel]);
                 zone.levels.push_back(0);
             }
@@ -322,6 +338,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
                     isFromBreak = false;
                     break;
                 }
+                UpdateCurrentZoneIndex(zone.types.back(), zone, false);
                 zone.types.pop_back();
                 zone.levels.pop_back();
                 continue;
@@ -329,6 +346,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
             break;
         default:
             // for basic types remove them and go back
+            UpdateCurrentZoneIndex(zone.types.back(), zone, false);
             zone.types.pop_back();
             zone.levels.pop_back();
             isFromBreak = true;
@@ -339,10 +357,14 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         levelNow--;
     }
 
+    WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4, zone);
+    // if (increaseOffset)
+    //    UpdateCurrentZoneIndex(zone.types.back(), zone, true);
+
     // assert(zone.levels.size() == 1);
     // assert(zone.levels.back() == 0);
+    // assert(zone.textFileOffset == zone.initalTextFileOffset);
 
-    WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4, zone);
     return true;
 }
 
@@ -415,7 +437,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
         AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        RegisterStructureCollapseButton(dli, SpecialChars::TriangleRight, zone);
+        RegisterStructureCollapseButton(dli, zone.isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
         break;
     default:
         return false;
@@ -423,9 +445,8 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 
     if (typeSize > 0)
     {
-        // TODO
-        auto buf = this->obj->cache.Get(zone.textFileOffset, typeSize, false);
-        zone.textFileOffset += typeSize;
+        // TODO: check textFileOffset!!
+        auto buf = this->obj->cache.Get(zone.textFileOffset - typeSize, typeSize, false);
 
         char buffer[9];
         memset(buffer, '\0', 9);
@@ -471,6 +492,7 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view s
 
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...)
 {
+    // TODO: increase and use more size
     char buffer[256];
     buffer[0] = '\0';
     va_list args;

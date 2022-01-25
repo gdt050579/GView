@@ -187,6 +187,8 @@ namespace View
             CharacterBuffer chars;
             Utils::Selection selection;
 
+            inline void UpdateCurrentZoneIndex(const DissasmType& cType, ParseZone& zone, bool increaseOffset);
+
             void RecomputeDissasmLayout();
             bool WriteTextLineToChars(DrawLineInfo& dli);
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces, ParseZone& zone);
