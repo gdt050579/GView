@@ -186,6 +186,7 @@ namespace View
             static Config config;
             CharacterBuffer chars;
             Utils::Selection selection;
+            CodePage codePage;
 
             inline void UpdateCurrentZoneIndex(const DissasmType& cType, ParseZone& zone, bool increaseOffset);
 
