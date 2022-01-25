@@ -172,6 +172,14 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     obj->type = nullptr;
     return false;
 }
+void Instance::ShowErrors()
+{
+    if (errList.Empty())
+        return;
+    ErrorDialog err(errList);
+    err.Show();
+    errList.Clear();
+}
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
     auto f = std::make_unique<AppCUI::OS::File>();
@@ -182,7 +190,15 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
     }
     return Add(std::move(f), path.u16string(), path.extension().string());
 }
-
+void Instance::OpenFile()
+{
+    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", ".");
+    if (res.has_value())
+    {
+        if (AddFileWindow(res.value()) == false)
+            ShowErrors();
+    }
+}
 //===============================[APPCUI HANDLERS]==============================
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
@@ -208,17 +224,16 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         case MenuCommands::EXIT_GVIEW:
             AppCUI::Application::Close();
             return true;
+        case MenuCommands::OPEN_FILE:
+            OpenFile();
+            return true;
         }
     }
     return true;
 }
 void Instance::OnStart(Reference<Control> control)
 {
-    if (!errList.Empty())
-    {
-        AppCUI::Dialogs::MessageBox::ShowError("Errors", "There are errors");
-        errList.Clear();
-    }
+    ShowErrors();
 }
 //===============================[PROPERTIES]==================================
 bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)

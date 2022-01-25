@@ -185,6 +185,8 @@ namespace App
 
         bool BuildMainMenus();
         bool LoadSettings();
+        void OpenFile();
+        void ShowErrors();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
 
       public:
@@ -255,6 +257,12 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
         void OnFocus(Reference<Control> control) override;
+    };
+    class ErrorDialog: public AppCUI::Controls::Window
+    {
+      public:
+        ErrorDialog(const GView::Utils::ErrorList& errList);
+        bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
     };
 } // namespace App
 
