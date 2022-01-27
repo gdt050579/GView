@@ -42,7 +42,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.visibleRows                     = 1;
     this->Layout.charactersPerLine               = 1;
     this->Layout.startingTextLineOffset          = 5;
-    this->Layout.structuresInitialCollapsedState = true;
+    this->Layout.structuresInitialCollapsedState = false;
 
     this->codePage = CodePageID::DOS_437;
 
@@ -628,12 +628,13 @@ void Instance::OnStart()
     uint32 textSize   = width - (1 + lineOffset);
 
     uint32 lastEndMinusLastOffset = 0;
+    uint32 lastZoneEndingIndex    = 0;
     uint16 currentIndex           = 0;
 
     for (const auto& mapping : this->settings->dissasmTypeMapped)
     {
         ParseZone parseZone;
-        parseZone.startLineIndex  = mapping.first / (uint64) textSize;
+        parseZone.startLineIndex  = mapping.first / (uint64) textSize + lastZoneEndingIndex;
         parseZone.endingLineIndex = parseZone.startLineIndex + 1;
         parseZone.isCollapsed     = Layout.structuresInitialCollapsedState;
         parseZone.extendedSize    = mapping.second.GetExpandedSize() - 1;
@@ -650,6 +651,7 @@ void Instance::OnStart()
             parseZone.endingLineIndex += parseZone.extendedSize;
 
         lastEndMinusLastOffset = parseZone.endingLineIndex + parseZone.textLinesOffset;
+        lastZoneEndingIndex    = parseZone.endingLineIndex - 1;
         settings->parseZones.push_back(parseZone);
     }
 }
