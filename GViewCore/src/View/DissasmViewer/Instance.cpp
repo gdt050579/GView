@@ -42,7 +42,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.visibleRows                     = 1;
     this->Layout.charactersPerLine               = 1;
     this->Layout.startingTextLineOffset          = 5;
-    this->Layout.structuresInitialCollapsedState = false;
+    this->Layout.structuresInitialCollapsedState = true;
 
     this->codePage = CodePageID::DOS_437;
 
