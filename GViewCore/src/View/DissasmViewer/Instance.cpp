@@ -290,7 +290,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
     // levelNow     = 47;
     // levelToReach = 0;
 
-    bool isFromBreak = true;
+    bool isFromBreak = false;
 
     while (levelNow > levelToReach)
     {
