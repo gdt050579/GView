@@ -884,3 +884,13 @@ void Instance::MoveTo(uint64 offset, bool select)
          UpdateCurrentSelection();
      }*/
 }
+
+Instance::~Instance()
+{
+    while (!settings->buffersToDelete.empty())
+    {
+        char* bufferToDelete = settings->buffersToDelete.back();
+        settings->buffersToDelete.pop_back();
+        delete bufferToDelete;
+    }
+}

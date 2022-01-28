@@ -236,6 +236,7 @@ namespace View
             void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
 
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
+            ~Instance();
         };
     } // namespace DissasmViewer
 } // namespace View
