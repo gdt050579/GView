@@ -36,11 +36,11 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->CursorColors.Highlighted = config.Colors.Highlight;
     this->CursorColors.Line        = config.Colors.Line;
 
-    this->Layout.visibleRows                        = 1;
-    this->Layout.charactersPerLineWithoutLineOffset = 1;
-    this->Layout.charactersPerLine                  = 1;
-    this->Layout.startingTextLineOffset             = 5;
-    this->Layout.structuresInitialCollapsedState    = true;
+    this->Layout.visibleRows                     = 1;
+    this->Layout.textSize                        = 1;
+    this->Layout.charactersPerLine               = 1;
+    this->Layout.startingTextLineOffset          = 5;
+    this->Layout.structuresInitialCollapsedState = true;
 
     this->codePage = CodePageID::DOS_437;
 
@@ -111,12 +111,9 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
-        dli.lineOffset = Layout.startingTextLineOffset;
-        dli.textSize   = Layout.charactersPerLineWithoutLineOffset;
-
-        this->chars.Resize((uint32) dli.textFileOffset + dli.textSize);
+        this->chars.Resize(Layout.textSize);
         dli.recomputeOffsets      = false;
-        dli.currentLineFromOffset = (uint32) (this->Cursor.startView / this->Layout.charactersPerLineWithoutLineOffset);
+        dli.currentLineFromOffset = (uint32) (this->Cursor.startView / this->Layout.textSize);
     }
 
     // TODO: send multiple lines to be drawn with each other instead of searching line by line
@@ -307,7 +304,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     ColorPair normalColor = config.Colors.Normal;
 
     dli.chNameAndSize = this->chars.GetBuffer();
-    dli.chText        = dli.chNameAndSize + dli.lineOffset;
+    dli.chText        = dli.chNameAndSize + Layout.startingTextLineOffset;
 
     if (spaces > 0)
     {
@@ -445,50 +442,29 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
-    dli.textFileOffset = ((uint64) this->Layout.charactersPerLineWithoutLineOffset) * dli.actualLineToDraw;
+    uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.actualLineToDraw;
 
-    if (dli.textFileOffset >= this->obj->cache.GetSize())
+    if (textFileOffset >= this->obj->cache.GetSize())
         return false;
 
-    auto buf          = this->obj->cache.Get(dli.textFileOffset, dli.textSize, false);
+    auto buf          = this->obj->cache.Get(textFileOffset, Layout.textSize, false);
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
-    dli.chNameAndSize = this->chars.GetBuffer() + dli.lineOffset;
+    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
 
-    auto cp    = config.Colors.Inactive;
-    bool activ = this->HasFocus();
+    bool activ     = this->HasFocus();
+    auto textColor = activ ? config.Colors.Normal : config.Colors.Inactive;
 
-    if (activ)
+    while (dli.start < dli.end)
     {
-        while (dli.start < dli.end)
-        {
-            cp = config.Colors.Normal; // OutsideZone;
-            // cp = OffsetToColor(dli.offset);
-            // if (selection.Contains(dli.textFileOffset))
-            //    cp = config.Colors.Selection;
-            if (dli.textFileOffset == this->Cursor.currentPos)
-                cp = config.Colors.Cursor;
-            dli.chText->Code  = codePage[*dli.start];
-            dli.chText->Color = cp;
-            dli.chText++;
-            dli.start++;
-            dli.textFileOffset++;
-        }
-    }
-    else
-    {
-        while (dli.start < dli.end)
-        {
-            dli.chText->Code  = codePage[*dli.start];
-            dli.chText->Color = config.Colors.Inactive;
-            dli.chText++;
-            dli.start++;
-        }
+        dli.chText->Code  = codePage[*dli.start];
+        dli.chText->Color = textColor;
+        dli.chText++;
+        dli.start++;
     }
 
-    this->chars.Resize((uint32) (dli.textSize));
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, false);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, true);
     return true;
 }
 
@@ -595,9 +571,9 @@ void Instance::OnStart()
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
 {
-    this->Layout.visibleRows                        = this->GetHeight() - 1;
-    this->Layout.charactersPerLine                  = this->GetWidth() - 1;
-    this->Layout.charactersPerLineWithoutLineOffset = this->Layout.charactersPerLine - this->Layout.startingTextLineOffset;
+    this->Layout.visibleRows       = this->GetHeight() - 1;
+    this->Layout.charactersPerLine = this->GetWidth() - 1;
+    this->Layout.textSize          = this->Layout.charactersPerLine - this->Layout.startingTextLineOffset;
 }
 
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
@@ -658,10 +634,10 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
         return;
     }
     auto xPoz = (uint32) x;
-    if ((xPoz >= Layout.startingTextLineOffset) && (xPoz < Layout.startingTextLineOffset + Layout.charactersPerLineWithoutLineOffset))
+    if ((xPoz >= Layout.startingTextLineOffset) && (xPoz < Layout.startingTextLineOffset + Layout.textSize))
     {
         mpInfo.location     = MouseLocation::OnView;
-        mpInfo.bufferOffset = yPoz * Layout.charactersPerLineWithoutLineOffset + xPoz - Layout.startingTextLineOffset;
+        mpInfo.bufferOffset = yPoz * Layout.textSize + xPoz - Layout.startingTextLineOffset;
     }
     if (mpInfo.location == MouseLocation::OnView)
     {
@@ -723,11 +699,11 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     switch (keyCode)
     {
     case Key::Down:
-        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLineWithoutLineOffset, select);
+        MoveTo(this->Cursor.currentPos + this->Layout.textSize, select);
         return true;
     case Key::Up:
-        if (this->Cursor.currentPos > this->Layout.charactersPerLineWithoutLineOffset)
-            MoveTo(this->Cursor.currentPos - this->Layout.charactersPerLineWithoutLineOffset, select);
+        if (this->Cursor.currentPos > this->Layout.textSize)
+            MoveTo(this->Cursor.currentPos - this->Layout.textSize, select);
         else
             MoveTo(0, select);
         return true;
@@ -739,35 +715,31 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveTo(this->Cursor.currentPos + 1, select);
         return true;
     case Key::PageDown:
-        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLineWithoutLineOffset * this->Layout.visibleRows, select);
+        MoveTo(this->Cursor.currentPos + this->Layout.textSize * this->Layout.visibleRows, select);
         return true;
     case Key::PageUp:
-        if (this->Cursor.currentPos > this->Layout.charactersPerLineWithoutLineOffset * this->Layout.visibleRows)
-            MoveTo(this->Cursor.currentPos - (this->Layout.charactersPerLineWithoutLineOffset * this->Layout.visibleRows), select);
+        if (this->Cursor.currentPos > this->Layout.textSize * this->Layout.visibleRows)
+            MoveTo(this->Cursor.currentPos - (this->Layout.textSize * this->Layout.visibleRows), select);
         else
             MoveTo(0, select);
         return true;
     case Key::Home:
-        MoveTo(
-              this->Cursor.currentPos -
-                    (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLineWithoutLineOffset,
-              select);
+        MoveTo(this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.textSize, select);
         return true;
     case Key::End:
         MoveTo(
-              this->Cursor.currentPos -
-                    (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLineWithoutLineOffset +
-                    this->Layout.charactersPerLineWithoutLineOffset - 1,
+              this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.textSize + this->Layout.textSize -
+                    1,
               select);
         return true;
     case Key::Ctrl | Key::Up:
-        if (this->Cursor.startView > this->Layout.charactersPerLineWithoutLineOffset)
-            MoveScrollTo(this->Cursor.startView - this->Layout.charactersPerLineWithoutLineOffset);
+        if (this->Cursor.startView > this->Layout.textSize)
+            MoveScrollTo(this->Cursor.startView - this->Layout.textSize);
         else
             MoveScrollTo(0);
         return true;
     case Key::Ctrl | Key::Down:
-        MoveScrollTo(this->Cursor.startView + this->Layout.charactersPerLineWithoutLineOffset);
+        MoveScrollTo(this->Cursor.startView + this->Layout.textSize);
         return true;
     case Key::Ctrl | Key::Left:
         if (this->Cursor.startView >= 1)
@@ -794,7 +766,7 @@ void Instance::MoveTo(uint64 offset, bool select)
     }
 
     auto h    = this->Layout.visibleRows;
-    auto sz   = this->Layout.charactersPerLineWithoutLineOffset * h;
+    auto sz   = this->Layout.textSize * h;
     auto sidx = -1;
     /*if (select)
         sidx = this->selection.BeginSelection(this->Cursor.currentPos);*/

@@ -112,9 +112,6 @@ namespace View
         {
             struct DrawLineInfo
             {
-                uint64 textFileOffset;
-                uint32 lineOffset;
-                uint32 textSize;
                 const uint8* start;
                 const uint8* end;
                 Character* chNameAndSize;
@@ -160,7 +157,7 @@ namespace View
             {
                 uint32 visibleRows;
                 uint32 charactersPerLine;
-                uint32 charactersPerLineWithoutLineOffset;
+                uint32 textSize; // charactersPerLine minus the left parts
                 uint32 startingTextLineOffset;
                 bool structuresInitialCollapsedState;
             } Layout;
