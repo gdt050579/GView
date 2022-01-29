@@ -192,7 +192,7 @@ namespace View
 
             void RecomputeDissasmLayout();
             bool WriteTextLineToChars(DrawLineInfo& dli);
-            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces, ParseZone& zone);
+            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, ParseZone& zone);
             bool PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone);

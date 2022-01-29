@@ -165,7 +165,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 
         this->chars.Resize((uint32) dli.textFileOffset + dli.textSize);
         dli.recomputeOffsets      = false;
-        dli.currentLineFromOffset = this->Cursor.startView / this->Layout.charactersPerLine;
+        dli.currentLineFromOffset = (uint32) (this->Cursor.startView / this->Layout.charactersPerLine);
     }
 
     // TODO: send multiple lines to be drawn with each other instead of searching line by line
@@ -175,7 +175,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     if (!settings->parseZones.empty())
     {
         auto& zones       = settings->parseZones;
-        uint32 zonesCount = settings->parseZones.size();
+        uint32 zonesCount = (uint32) settings->parseZones.size();
         // TODO: optimization -> instead of search every time keep the last zone index inside memmory and search from there
         for (uint32 i = 0; i < zonesCount; i++)
         {
@@ -243,12 +243,13 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
     uint32 levelToReach    = dli.actualLineToDraw;
     int16& levelNow        = zone.structureIndex;
     dli.wasInsideStructure = true;
-    bool increaseOffset    = levelNow < levelToReach;
+    // TODO: consider if this value can be biffer than int16
+    bool increaseOffset = levelNow < (int16) levelToReach;
 
     // levelNow     = 0;
     // levelToReach = 47;
 
-    while (levelNow < levelToReach)
+    while (levelNow < (int16) levelToReach)
     {
         const DissasmType& currentType = zone.types.back();
         int currentLevel               = zone.levels.back();
@@ -292,9 +293,8 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
 
     bool isFromBreak = false;
 
-    while (levelNow > levelToReach)
+    while (levelNow > (int16) levelToReach)
     {
-        int c                          = zone.types.size();
         const DissasmType& currentType = zone.types.back();
         int currentLevel               = zone.levels.back();
 
@@ -308,7 +308,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
                 currentLevel--;
                 zone.levels.push_back(currentLevel);
                 zone.types.push_back(currentType.internalTypes[currentLevel]);
-                int32 anteiorLevel = currentType.internalTypes[currentLevel].internalTypes.size();
+                int32 anteiorLevel = (int32) currentType.internalTypes[currentLevel].internalTypes.size();
                 if (anteiorLevel > 0)
                     anteiorLevel--;
                 zone.levels.push_back(anteiorLevel);
@@ -340,7 +340,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         levelNow--;
     }
 
-    WriteStructureToScreen(dli, zone.types.back(), (zone.levels.size() - 1) * 4, zone);
+    WriteStructureToScreen(dli, zone.types.back(), (uint32) (zone.levels.size() - 1) * 4, zone);
     // if (increaseOffset)
     //    UpdateCurrentZoneIndex(zone.types.back(), zone, true);
 
@@ -351,7 +351,7 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
     return true;
 }
 
-bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, int spaces, ParseZone& zone)
+bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, ParseZone& zone)
 {
     ColorPair normalColor = config.Colors.Normal;
 
@@ -360,7 +360,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 
     if (spaces > 0)
     {
-        for (int i = 0; i < spaces; i++)
+        for (uint32 i = 0; i < spaces; i++)
         {
             dli.chText->Code  = codePage[' '];
             dli.chText->Color = normalColor;
@@ -458,7 +458,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 
 void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone)
 {
-    ButtonsData bData = { 3, dli.lineToDraw + 1, c, config.Colors.DataTypeColor, 3, zone };
+    ButtonsData bData = { 3, (int) (dli.lineToDraw + 1), c, config.Colors.DataTypeColor, 3, zone };
     MyLine.buttons.push_back(bData);
 }
 
@@ -634,7 +634,9 @@ void Instance::OnStart()
     for (const auto& mapping : this->settings->dissasmTypeMapped)
     {
         ParseZone parseZone;
-        parseZone.startLineIndex  = mapping.first / (uint64) textSize + lastZoneEndingIndex;
+        parseZone.startLineIndex = (uint32) (mapping.first / textSize);
+        if (parseZone.startLineIndex < lastZoneEndingIndex)
+            parseZone.startLineIndex = lastZoneEndingIndex;
         parseZone.endingLineIndex = parseZone.startLineIndex + 1;
         parseZone.isCollapsed     = Layout.structuresInitialCollapsedState;
         parseZone.extendedSize    = mapping.second.GetExpandedSize() - 1;
@@ -651,7 +653,7 @@ void Instance::OnStart()
             parseZone.endingLineIndex += parseZone.extendedSize;
 
         lastEndMinusLastOffset = parseZone.endingLineIndex + parseZone.textLinesOffset;
-        lastZoneEndingIndex    = parseZone.endingLineIndex - 1;
+        lastZoneEndingIndex    = parseZone.endingLineIndex;
         settings->parseZones.push_back(parseZone);
     }
 }
