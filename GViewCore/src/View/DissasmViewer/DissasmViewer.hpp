@@ -206,6 +206,7 @@ namespace View
             void MoveScrollTo(uint64 offset);
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
+            int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);

@@ -70,23 +70,37 @@ bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height)
 {
     this->CursorColors.Normal      = config.Colors.Normal;
-    this->CursorColors.Line        = config.Colors.Line;
     this->CursorColors.Highlighted = config.Colors.Highlight;
     if (!this->HasFocus())
     {
         this->CursorColors.Normal      = config.Colors.Inactive;
         this->CursorColors.Highlighted = config.Colors.Inactive;
     }
+
     renderer.Clear(' ', this->CursorColors.Normal);
+
     int x = 0;
-    x     = PrintCursorPosInfo(x, 0, 16, false, renderer);
+    switch (height)
+    {
+    case 0:
+        break;
+    case 1:
+        x = PrintCursorPosInfo(x, 0, 16, false, renderer);
+        x = PrintCursorLineInfo(x, 0, 16, false, renderer);
+        break;
+    default:
+        PrintCursorPosInfo(x, 0, 16, false, renderer);
+        PrintCursorLineInfo(x, 1, 16, false, renderer);
+        break;
+    }
 }
 
 int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos, this->Cursor.base), this->CursorColors.Normal);
+    r.WriteSingleLineText(
+          x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos % Layout.textSize, this->Cursor.base), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -102,6 +116,26 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
     {
         r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
     }
+    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+
+    return x + 5;
+}
+
+int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
+{
+    NumericFormatter n;
+    r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
+    r.WriteSingleLineText(
+          x + 5,
+          y,
+          width - 4,
+          n.ToString(this->Cursor.currentPos / Layout.charactersPerLine, NumericFormatFlags::None),
+          this->CursorColors.Normal);
+    x += width;
+
+    if (addSeparator)
+        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 
     return x + 5;
