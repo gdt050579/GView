@@ -23,13 +23,7 @@ namespace View
 
         struct Config
         {
-            struct
-            {
-                ColorPair Inactive;
-                ColorPair Normal;
-                ColorPair Line;
-                ColorPair Highlighted;
-            } Colors;
+            
             struct
             {
                 AppCUI::Input::Key ZoomIn;
@@ -66,6 +60,7 @@ namespace View
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual std::string_view GetName() override;
+            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

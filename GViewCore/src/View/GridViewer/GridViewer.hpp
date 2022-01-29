@@ -59,6 +59,7 @@ namespace View
             bool GoTo(unsigned long long offset) override;
             bool Select(unsigned long long offset, unsigned long long size) override;
             std::string_view GetName() override;
+            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

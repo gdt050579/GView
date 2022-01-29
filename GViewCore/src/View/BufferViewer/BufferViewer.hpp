@@ -54,13 +54,8 @@ namespace View
         {
             struct
             {
-                ColorPair Inactive;
-                ColorPair OutsideZone;
-                ColorPair Cursor;
-                ColorPair Selection;
                 ColorPair Ascii;
                 ColorPair Unicode;
-                ColorPair SameSelection;
             } Colors;
             struct
             {
@@ -77,19 +72,7 @@ namespace View
             static void Update(IniSection sect);
             void Initialize();
         };
-        struct CodePageInfo
-        {
-            const char16* mapping;
-            string_view name;
-        };
-        enum class CodePageID : uint32
-        {
-            DOS_437,
-            Latin_1,
-            PrintableAscii,
 
-            Count // must be the last
-        };
         class Instance : public View::ViewControl
         {
             struct DrawLineInfo
@@ -146,14 +129,9 @@ namespace View
                 uint64 start, end;
                 bool highlight;
             } CurrentSelection;
-            struct
-            {
-                CodePageID id;
-                const char16* mapping;
-                String stringList;
-            } CodePage;
-            bool showTypeObjects;
 
+            bool showTypeObjects;
+            CodePage codePage;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             Utils::Selection selection;
@@ -194,14 +172,12 @@ namespace View
             std::string_view GetAsciiMaskStringRepresentation();
             bool SetStringAsciiMask(string_view stringRepresentation);
 
-            void SetCodePage(CodePageID id);
-
             ColorPair OffsetToColorZone(uint64 offset);
             ColorPair OffsetToColor(uint64 offset);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
             void ShowGoToDialog();
-
+            void OpenCurrentSelection();
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -214,6 +190,7 @@ namespace View
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual std::string_view GetName() override;
+            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

@@ -105,6 +105,11 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
     }
 }
 
+bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+{
+    NOT_IMPLEMENTED(false);
+}
+
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(config.keys.replaceHeaderWith1stRow, "ReplaceHeader", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW);

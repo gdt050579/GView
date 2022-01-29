@@ -74,7 +74,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
     commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
-    if (this->settings->imgList.size()>1)
+    if (this->settings->imgList.size() > 1)
     {
         commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
         commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
@@ -172,24 +172,20 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-
+bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+{
+    NOT_IMPLEMENTED(false);
+}
 //======================================================================[Cursor information]==================
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
     LocalString<128> tmp;
-    r.WriteSingleLineText(0, 0, "Size:", config.Colors.Highlighted);
-    r.WriteSingleLineText(6, 0, tmp.Format("%u x %u", img.GetWidth(), img.GetHeight()), config.Colors.Normal);
-    r.DrawVerticalLine(16, 0, height, config.Colors.Line, true);
 
-    r.WriteSingleLineText(18, 0, "Image:", config.Colors.Highlighted);
-    r.WriteSingleLineText(
-          25, 0, tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()), config.Colors.Normal);
-    r.DrawVerticalLine(32, 0, height, config.Colors.Line, true);
-
-    r.WriteSingleLineText(34, 0, "Zoom:", config.Colors.Highlighted);
-    r.WriteSingleLineText(39, 0, tmp.Format("%3u%%", 100U / (uint32) scale), config.Colors.Normal);
-    r.DrawVerticalLine(44, 0, height, config.Colors.Line, true);
+    auto poz = this->WriteCursorInfo(r, 0, 0, 16, "Size:", tmp.Format("%u x %u", img.GetWidth(), img.GetHeight()));
+    poz      = this->WriteCursorInfo(
+          r, poz, 0, 16, "Image:", tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()));
+    poz = this->WriteCursorInfo(r, poz, 0, 16, "Zoom:", tmp.Format("%3u%%", 100U / (uint32) scale));
 }
 
 //======================================================================[PROPERTY]============================
@@ -239,7 +235,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->RedrawImage();
         return true;
     case PropertyID::CurrentImageIndex:
-        if ((std::get<uint32>(value))>=this->settings->imgList.size())
+        if ((std::get<uint32>(value)) >= this->settings->imgList.size())
         {
             error.SetFormat("Invalid image index (should be between 0 and %d)", (int) (this->settings->imgList.size() - 1));
             return false;
