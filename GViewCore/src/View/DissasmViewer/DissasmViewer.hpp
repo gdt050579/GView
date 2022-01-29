@@ -160,6 +160,7 @@ namespace View
             {
                 uint32 visibleRows;
                 uint32 charactersPerLine;
+                uint32 charactersPerLineWithoutLineOffset;
                 uint32 startingTextLineOffset;
                 bool structuresInitialCollapsedState;
             } Layout;
@@ -195,12 +196,12 @@ namespace View
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, ParseZone& zone);
             bool PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
+
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone);
             void ChangeZoneCollapseState(ParseZone& zoneToChange);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
-            void FillRestWithSpaces(DrawLineInfo& dli);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
@@ -211,32 +212,32 @@ namespace View
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            virtual ~Instance();
 
-            bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
-            bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
-            void SetCustomPropertyValue(uint32 propertyID) override;
-            bool IsPropertyValueReadOnly(uint32 propertyID) override;
-            const vector<Property> GetPropertiesList() override;
-            bool GoTo(uint64 offset) override;
-            bool Select(uint64 offset, uint64 size) override;
-            std::string_view GetName() override;
+            virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
+            virtual void OnAfterResize(int newWidth, int newHeight) override;
+            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
+            virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            virtual void OnStart() override;
+
+            virtual bool GoTo(uint64 offset) override;
+            virtual bool Select(uint64 offset, uint64 size) override;
+            virtual std::string_view GetName() override;
             virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
 
-            void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
-            void Paint(AppCUI::Graphics::Renderer& renderer) override;
-
-            bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-            bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-
-            void OnAfterResize(int newWidth, int newHeight) override;
-            void OnStart() override;
+            virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // Mouse events
-            bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
-            void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
 
-            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
-            ~Instance();
+            // Proporty interface
+            virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
+            virtual bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
+            virtual void SetCustomPropertyValue(uint32 propertyID) override;
+            virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
+            virtual const vector<Property> GetPropertiesList() override;
         };
     } // namespace DissasmViewer
 } // namespace View
