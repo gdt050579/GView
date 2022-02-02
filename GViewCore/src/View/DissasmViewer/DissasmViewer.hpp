@@ -156,7 +156,7 @@ namespace View
             struct
             {
                 uint32 visibleRows;
-                uint32 charactersPerLine;
+                uint32 totalCharactersPerLine;
                 uint32 textSize; // charactersPerLine minus the left parts
                 uint32 startingTextLineOffset;
                 bool structuresInitialCollapsedState;

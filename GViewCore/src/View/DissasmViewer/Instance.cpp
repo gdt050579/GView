@@ -38,13 +38,11 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
 
     this->Layout.visibleRows                     = 1;
     this->Layout.textSize                        = 1;
-    this->Layout.charactersPerLine               = 1;
+    this->Layout.totalCharactersPerLine          = 1;
     this->Layout.startingTextLineOffset          = 5;
     this->Layout.structuresInitialCollapsedState = true;
 
     this->codePage = CodePageID::DOS_437;
-
-    RecomputeDissasmLayout();
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -126,11 +124,7 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
     r.WriteSingleLineText(
-          x + 5,
-          y,
-          width - 4,
-          n.ToString(this->Cursor.currentPos / Layout.charactersPerLine, NumericFormatFlags::None),
-          this->CursorColors.Normal);
+          x + 5, y, width - 4, n.ToString(this->Cursor.currentPos / Layout.textSize, NumericFormatFlags::None), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -569,8 +563,7 @@ void Instance::OnStart()
     this->RecomputeDissasmLayout();
 
     // from dli, may need to be recomputed
-    uint32 lineOffset = Layout.startingTextLineOffset;
-    uint32 textSize   = Layout.charactersPerLine;
+    const uint32 textSize = Layout.textSize;
 
     uint32 lastEndMinusLastOffset = 0;
     uint32 lastZoneEndingIndex    = 0;
@@ -605,9 +598,9 @@ void Instance::OnStart()
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
 {
-    this->Layout.visibleRows       = this->GetHeight() - 1;
-    this->Layout.charactersPerLine = this->GetWidth() - 1;
-    this->Layout.textSize          = this->Layout.charactersPerLine - this->Layout.startingTextLineOffset;
+    this->Layout.visibleRows            = this->GetHeight() - 1;
+    this->Layout.totalCharactersPerLine = this->GetWidth() - 1;
+    this->Layout.textSize               = this->Layout.totalCharactersPerLine - this->Layout.startingTextLineOffset;
 }
 
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
