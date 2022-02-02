@@ -1,3 +1,6 @@
 [submodule "AppCUI"]
 	path = AppCUI
 	url = https://github.com/gdt050579/AppCUI.git
+[submodule "GViewCore/3rdparty/distorm"]
+	path = GViewCore/3rdparty/distorm
+	url = git@github.com:rzaharia/distorm.git

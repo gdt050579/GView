@@ -64,6 +64,7 @@ include_directories(src/View/GridViewer)
 include_directories(src/View/DissasmViewer)
 include_directories(src/View/TextViewer)
 add_subdirectory(src)
+add_subdirectory(3rdparty)
 
 
 file(GLOB_RECURSE GVIEWCORE_HEADERS include/*.hpp)
