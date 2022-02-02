@@ -214,9 +214,6 @@ namespace View
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
-            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
-            virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             virtual void OnStart() override;
 
             virtual bool GoTo(uint64 offset) override;
@@ -229,6 +226,11 @@ namespace View
             // Mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+
+            // Events
+            virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
+            virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             // Proporty interface
             virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
