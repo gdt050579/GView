@@ -145,7 +145,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
-        this->chars.Resize(Layout.textSize);
+        this->chars.Resize(Layout.totalCharactersPerLine);
         dli.recomputeOffsets      = false;
         dli.currentLineFromOffset = (uint32) (this->Cursor.startView / this->Layout.textSize);
     }
