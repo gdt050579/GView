@@ -990,10 +990,19 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
     }
     if ((activ) && (this->Cursor.currentPos >= start) && (this->Cursor.currentPos < end))
     {
-        c = dli.chNumbers + (this->Cursor.currentPos - start);
-        if (c > this->chars.GetBuffer())
-            c--;
-        c->Color = Cfg.Cursor.Normal;
+        const auto reprsz = characterFormatModeSize[static_cast<uint32>(this->Layout.charFormatMode)] + 1;
+        c                 = dli.chNumbers + (this->Cursor.currentPos - start) * reprsz;
+        const auto st     = this->chars.GetBuffer();
+        const auto c_e    = std::min<>(c + reprsz, sps);
+        c                 = std::max<>(c - 1, st);
+        while (c < c_e)
+        {
+            c->Color = Cfg.Cursor.Normal;
+            c++;
+        }
+        c = sps + (this->Cursor.currentPos - start);
+        if ((c >= st) && (c < dli.chText))
+            c->Color = Cfg.Cursor.Normal;
     }
     this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
 }
