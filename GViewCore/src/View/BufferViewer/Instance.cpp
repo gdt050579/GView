@@ -779,8 +779,6 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
             cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
                 cp = Cfg.Selection.Editor;
-            // if (dli.offset == this->Cursor.currentPos)
-            //     cp = Cfg.Cursor.Normal;
             if (StringInfo.type == StringType::Unicode)
             {
                 if (dli.offset > StringInfo.middle)
