@@ -772,13 +772,15 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
 
     if (activ)
     {
+        const auto startCh  = dli.chText;
+        const auto ofsStart = dli.offset;
         while (dli.start < dli.end)
         {
             cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
                 cp = Cfg.Selection.Editor;
-            if (dli.offset == this->Cursor.currentPos)
-                cp = Cfg.Cursor.Normal;
+            // if (dli.offset == this->Cursor.currentPos)
+            //     cp = Cfg.Cursor.Normal;
             if (StringInfo.type == StringType::Unicode)
             {
                 if (dli.offset > StringInfo.middle)
@@ -794,6 +796,10 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
             dli.chText++;
             dli.start++;
             dli.offset++;
+        }
+        if ((this->Cursor.currentPos >= ofsStart) && (this->Cursor.currentPos < dli.offset))
+        {
+            (startCh + (this->Cursor.currentPos - ofsStart))->Color = Cfg.Cursor.Normal;
         }
     }
     else
