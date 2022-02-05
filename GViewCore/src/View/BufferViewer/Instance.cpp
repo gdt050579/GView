@@ -504,19 +504,19 @@ ColorPair Instance::OffsetToColor(uint64 offset)
         // no color provided for the specific buffer --> check strings and zones
     }
     // check strings
-    if ((offset >= StringInfo.start) && (offset < StringInfo.end))
+    if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
     {
-        switch (StringInfo.type)
+        if ((offset >= StringInfo.start) && (offset < StringInfo.end))
         {
-        case StringType::Ascii:
-            return config.Colors.Ascii;
-        case StringType::Unicode:
-            return config.Colors.Unicode;
+            switch (StringInfo.type)
+            {
+            case StringType::Ascii:
+                return config.Colors.Ascii;
+            case StringType::Unicode:
+                return config.Colors.Unicode;
+            }
         }
-    }
-    else
-    {
-        if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
+        else
         {
             UpdateStringInfo(offset);
             if ((offset >= StringInfo.start) && (offset < StringInfo.end))
