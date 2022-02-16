@@ -155,22 +155,32 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         // TODO: optimization -> instead of search every time keep the last zone index inside memmory and search from there
         for (uint32 i = 0; i < zonesCount; i++)
         {
-            if ((currentLineIndex >= zones[i].startLineIndex && currentLineIndex < zones[i].endingLineIndex))
+            if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
             {
                 // struct
-                dli.actualLineToDraw     = currentLineIndex - zones[i].startLineIndex;
+                dli.actualLineToDraw     = currentLineIndex - zones[i]->startLineIndex;
                 dli.lastZoneIndexToReset = i;
-                return PrepareStructureViewToDraw(dli, zones[i]);
+                switch (zones[i]->zoneType)
+                {
+                case DissasmParseZoneType::StructureParseZone:
+                    return DrawStructureZone(dli, (DissasmParseStructureZone*) zones[i].get());
+
+                // TODO:
+                case DissasmParseZoneType::DissasmCodeParseZone:
+                    return DrawStructureZone(dli, (DissasmParseStructureZone*) zones[i].get());
+                default:
+                    return false;
+                }
             }
             else
             {
-                dli.actualLineToDraw = currentLineIndex + zones[i].textLinesOffset - zones[i].endingLineIndex;
+                dli.actualLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
                 if (i + 1 >= zonesCount)
                 {
                     return WriteTextLineToChars(dli);
                     break;
                 }
-                if (currentLineIndex < zones[i + 1].startLineIndex)
+                if (currentLineIndex < zones[i + 1]->startLineIndex)
                 {
                     return WriteTextLineToChars(dli);
                 }
@@ -186,37 +196,38 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
-inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, ParseZone& zone, bool increaseOffset)
+inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
+      const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
     {
         // Uint8 - index 0 -> 1 byte, Int8 -> index 4 -> 1 byte
         uint32 val = ((uint8) cType.primaryType + 1u) % 4;
         if (increaseOffset)
-            zone.textFileOffset += val;
+            zone->textFileOffset += val;
         else
-            zone.textFileOffset -= val;
+            zone->textFileOffset -= val;
         // zone.textFileOffset += (increaseOffset ? 1 : -1) * (((int) cType.primaryType + 1u) % 4);
     }
 }
 
-bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
+bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone)
 {
-    if (zone.structureIndex == zone.extendedSize)
+    if (structureZone->structureIndex == structureZone->extendedSize)
     {
-        while (zone.levels.size() > 1)
+        while (structureZone->levels.size() > 1)
         {
-            zone.types.pop_back();
-            zone.levels.pop_back();
+            structureZone->types.pop_back();
+            structureZone->levels.pop_back();
         }
-        zone.levels.pop_back();
-        zone.levels.push_back(0);
-        zone.structureIndex = 0;
-        zone.textFileOffset = zone.initalTextFileOffset;
+        structureZone->levels.pop_back();
+        structureZone->levels.push_back(0);
+        structureZone->structureIndex = 0;
+        structureZone->textFileOffset = structureZone->initalTextFileOffset;
     }
 
     uint32 levelToReach    = dli.actualLineToDraw;
-    int16& levelNow        = zone.structureIndex;
+    int16& levelNow        = structureZone->structureIndex;
     dli.wasInsideStructure = true;
     // TODO: consider if this value can be biffer than int16
     bool increaseOffset = levelNow < (int16) levelToReach;
@@ -227,8 +238,8 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
     // TODO: consider optimization if the levelToReach > levelNow and levelToReach should reach close to 0 then it all should be reset to 0
     while (levelNow < (int16) levelToReach)
     {
-        const DissasmType& currentType = zone.types.back();
-        int currentLevel               = zone.levels.back();
+        const DissasmType& currentType = structureZone->types.back();
+        int currentLevel               = structureZone->levels.back();
 
         switch (currentType.primaryType)
         {
@@ -236,27 +247,27 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         case InternalDissasmType::UserDefined:
             if (currentLevel < currentType.internalTypes.size())
             {
-                UpdateCurrentZoneIndex(currentType.internalTypes[currentLevel], zone, true);
-                zone.types.push_back(currentType.internalTypes[currentLevel]);
-                zone.levels.push_back(0);
+                UpdateCurrentZoneIndex(currentType.internalTypes[currentLevel], structureZone, true);
+                structureZone->types.push_back(currentType.internalTypes[currentLevel]);
+                structureZone->levels.push_back(0);
             }
             else
             {
-                zone.types.pop_back();
-                zone.levels.pop_back();
-                currentLevel = zone.levels.back() + 1;
-                zone.levels.pop_back();
-                zone.levels.push_back(currentLevel);
+                structureZone->types.pop_back();
+                structureZone->levels.pop_back();
+                currentLevel = structureZone->levels.back() + 1;
+                structureZone->levels.pop_back();
+                structureZone->levels.push_back(currentLevel);
                 continue;
             }
             break;
         default:
             // for basic types remove them and go back
-            zone.types.pop_back();
-            zone.levels.pop_back();
-            currentLevel = zone.levels.back() + 1;
-            zone.levels.pop_back();
-            zone.levels.push_back(currentLevel);
+            structureZone->types.pop_back();
+            structureZone->levels.pop_back();
+            currentLevel = structureZone->levels.back() + 1;
+            structureZone->levels.pop_back();
+            structureZone->levels.push_back(currentLevel);
             continue;
             break;
         }
@@ -271,8 +282,8 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
 
     while (levelNow > (int16) levelToReach)
     {
-        const DissasmType& currentType = zone.types.back();
-        int currentLevel               = zone.levels.back();
+        const DissasmType& currentType = structureZone->types.back();
+        int currentLevel               = structureZone->levels.back();
 
         switch (currentType.primaryType)
         {
@@ -280,14 +291,14 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         case InternalDissasmType::UserDefined:
             if (currentLevel > 0)
             {
-                zone.levels.pop_back();
+                structureZone->levels.pop_back();
                 currentLevel--;
-                zone.levels.push_back(currentLevel);
-                zone.types.push_back(currentType.internalTypes[currentLevel]);
+                structureZone->levels.push_back(currentLevel);
+                structureZone->types.push_back(currentType.internalTypes[currentLevel]);
                 int32 anteiorLevel = (int32) currentType.internalTypes[currentLevel].internalTypes.size();
                 if (anteiorLevel > 0)
                     anteiorLevel--;
-                zone.levels.push_back(anteiorLevel);
+                structureZone->levels.push_back(anteiorLevel);
                 isFromBreak = false;
             }
             else
@@ -297,17 +308,17 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
                     isFromBreak = false;
                     break;
                 }
-                UpdateCurrentZoneIndex(zone.types.back(), zone, false);
-                zone.types.pop_back();
-                zone.levels.pop_back();
+                UpdateCurrentZoneIndex(structureZone->types.back(), structureZone, false);
+                structureZone->types.pop_back();
+                structureZone->levels.pop_back();
                 continue;
             }
             break;
         default:
             // for basic types remove them and go back
-            UpdateCurrentZoneIndex(zone.types.back(), zone, false);
-            zone.types.pop_back();
-            zone.levels.pop_back();
+            UpdateCurrentZoneIndex(structureZone->types.back(), structureZone, false);
+            structureZone->types.pop_back();
+            structureZone->levels.pop_back();
             isFromBreak = true;
             continue;
             break;
@@ -316,18 +327,19 @@ bool Instance::PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone)
         levelNow--;
     }
 
-    WriteStructureToScreen(dli, zone.types.back(), (uint32) (zone.levels.size() - 1) * 4, zone);
+    WriteStructureToScreen(dli, structureZone->types.back(), (uint32) (structureZone->levels.size() - 1) * 4, structureZone);
     // if (increaseOffset)
-    //    UpdateCurrentZoneIndex(zone.types.back(), zone, true);
+    //    UpdateCurrentZoneIndex(structureZone->types.back(), zone, true);
 
-    // assert(zone.levels.size() == 1);
-    // assert(zone.levels.back() == 0);
-    // assert(zone.textFileOffset == zone.initalTextFileOffset);
+    // assert(structureZone->levels.size() == 1);
+    // assert(structureZone->levels.back() == 0);
+    // assert(structureZone->textFileOffset == structureZone->initalTextFileOffset);
 
     return true;
 }
 
-bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, ParseZone& zone)
+bool Instance::WriteStructureToScreen(
+      DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
 {
     ColorPair normalColor = config.Colors.Normal;
 
@@ -396,7 +408,8 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
         AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        RegisterStructureCollapseButton(dli, zone.isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+        RegisterStructureCollapseButton(
+              dli, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
         break;
     default:
         return false;
@@ -405,7 +418,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     if (typeSize > 0)
     {
         // TODO: check textFileOffset!!
-        auto buf = this->obj->cache.Get(zone.textFileOffset - typeSize, typeSize, false);
+        auto buf = this->obj->cache.Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
         char buffer[9];
         memset(buffer, '\0', 9);
@@ -432,7 +445,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
     return true;
 }
 
-void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone)
+void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone)
 {
     ButtonsData bData = { 3, (int) (dli.lineToDraw + 1), c, config.Colors.DataTypeColor, 3, zone };
     MyLine.buttons.push_back(bData);
@@ -550,28 +563,29 @@ void Instance::OnStart()
 
     for (const auto& mapping : this->settings->dissasmTypeMapped)
     {
-        ParseZone parseZone;
-        parseZone.startLineIndex = (uint32) (mapping.first / textSize);
-        if (parseZone.startLineIndex < lastZoneEndingIndex)
-            parseZone.startLineIndex = lastZoneEndingIndex;
-        parseZone.endingLineIndex = parseZone.startLineIndex + 1;
-        parseZone.isCollapsed     = Layout.structuresInitialCollapsedState;
-        parseZone.extendedSize    = mapping.second.GetExpandedSize() - 1;
-        parseZone.textLinesOffset = parseZone.startLineIndex - lastEndMinusLastOffset;
-        parseZone.dissasmType     = mapping.second;
-        parseZone.levels.push_back(0);
-        parseZone.types.push_back(mapping.second);
-        parseZone.structureIndex       = 0;
-        parseZone.textFileOffset       = mapping.first;
-        parseZone.initalTextFileOffset = mapping.first;
-        parseZone.structureID          = currentIndex++;
+        std::unique_ptr<DissasmParseStructureZone> parseZone = std::make_unique<DissasmParseStructureZone>();
+        parseZone->startLineIndex                            = (uint32) (mapping.first / textSize);
+        if (parseZone->startLineIndex < lastZoneEndingIndex)
+            parseZone->startLineIndex = lastZoneEndingIndex;
+        parseZone->endingLineIndex = parseZone->startLineIndex + 1;
+        parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+        parseZone->extendedSize    = mapping.second.GetExpandedSize() - 1;
+        parseZone->textLinesOffset = parseZone->startLineIndex - lastEndMinusLastOffset;
+        parseZone->dissasmType     = mapping.second;
+        parseZone->levels.push_back(0);
+        parseZone->types.push_back(mapping.second);
+        parseZone->structureIndex       = 0;
+        parseZone->textFileOffset       = mapping.first;
+        parseZone->initalTextFileOffset = mapping.first;
+        parseZone->zoneID               = currentIndex++;
+        parseZone->zoneType             = DissasmParseZoneType::StructureParseZone;
 
-        if (!parseZone.isCollapsed)
-            parseZone.endingLineIndex += parseZone.extendedSize;
+        if (!parseZone->isCollapsed)
+            parseZone->endingLineIndex += parseZone->extendedSize;
 
-        lastEndMinusLastOffset = parseZone.endingLineIndex + parseZone.textLinesOffset;
-        lastZoneEndingIndex    = parseZone.endingLineIndex;
-        settings->parseZones.push_back(parseZone);
+        lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
+        lastZoneEndingIndex    = parseZone->endingLineIndex;
+        settings->parseZones.push_back(std::move(parseZone));
     }
 }
 
@@ -582,24 +596,24 @@ void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
     this->Layout.textSize               = this->Layout.totalCharactersPerLine - this->Layout.startingTextLineOffset;
 }
 
-void Instance::ChangeZoneCollapseState(ParseZone& zoneToChange)
+void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
 {
     int16 sizeToAdjust;
-    sizeToAdjust = zoneToChange.extendedSize;
-    if (!zoneToChange.isCollapsed)
+    sizeToAdjust = zoneToChange->extendedSize;
+    if (!zoneToChange->isCollapsed)
         sizeToAdjust *= -1;
-    zoneToChange.isCollapsed = !zoneToChange.isCollapsed;
-    zoneToChange.endingLineIndex += sizeToAdjust;
+    zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
+    zoneToChange->endingLineIndex += sizeToAdjust;
 
     bool foundZone = false;
     for (auto& zone : settings->parseZones)
     {
         if (foundZone)
         {
-            zone.startLineIndex += sizeToAdjust;
-            zone.endingLineIndex += sizeToAdjust;
+            zone->startLineIndex += sizeToAdjust;
+            zone->endingLineIndex += sizeToAdjust;
         }
-        if (zoneToChange.structureID == zone.structureID)
+        if (zoneToChange->zoneID == zone->zoneID)
             foundZone = true;
     }
 

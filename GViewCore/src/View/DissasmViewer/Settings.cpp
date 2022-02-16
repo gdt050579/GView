@@ -16,14 +16,9 @@ void Settings::SetDefaultDissasemblyLanguage(DissamblyLanguage lang)
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
-void Settings::ReserverZonesCapacity(uint32 reserved_size)
-{
-    INTERNAL_SETTINGS->zones.reserve(reserved_size);
-}
-
 void Settings::AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang)
 {
-    INTERNAL_SETTINGS->zones.emplace_back(start, size, lang);
+    INTERNAL_SETTINGS->dissasemblyZones[start] = { size, lang };
 }
 
 void Settings::AddMemmoryMapping(uint64 address, std::string_view name)

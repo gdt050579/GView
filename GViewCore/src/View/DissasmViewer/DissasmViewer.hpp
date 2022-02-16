@@ -40,7 +40,6 @@ namespace View
 
         struct DissasemblyZone
         {
-            uint64 offset;
             uint64 size;
             DissamblyLanguage language;
         };
@@ -76,15 +75,26 @@ namespace View
             uint32 GetExpandedSize() const;
         };
 
+        enum class DissasmParseZoneType : uint8
+        {
+            StructureParseZone,
+            DissasmCodeParseZone
+        };
+
         struct ParseZone
         {
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
             uint32 textLinesOffset;
+            uint16 zoneID;
             bool isCollapsed;
 
-            uint16 structureID;
+            DissasmParseZoneType zoneType;
+        };
+
+        struct DissasmParseStructureZone : public ParseZone
+        {
             int16 structureIndex;
             DissasmType dissasmType;
             std::list<std::reference_wrapper<const DissasmType>> types;
@@ -96,13 +106,13 @@ namespace View
         struct SettingsData
         {
             DissamblyLanguage defaultLanguage;
-            std::vector<DissasemblyZone> zones;
+            std::map<uint64, DissasemblyZone> dissasemblyZones;
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
             std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
             std::vector<uint64> offsetsToSearch;
-            std::vector<ParseZone> parseZones;
+            std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmType> dissasmTypeMapped;          // mapped types against the offset of the file
             std::unordered_map<TypeID, DissasmType> userDeginedTypes; // user defined typess
             SettingsData();
@@ -169,7 +179,7 @@ namespace View
                 SpecialChars c;
                 ColorPair color;
                 uint64 offsetStructure;
-                ParseZone& zone;
+                ParseZone *zone;
             };
 
             struct
@@ -186,16 +196,17 @@ namespace View
             Utils::Selection selection;
             CodePage codePage;
 
-            inline void UpdateCurrentZoneIndex(const DissasmType& cType, ParseZone& zone, bool increaseOffset);
+            inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
             void RecomputeDissasmLayout();
             bool WriteTextLineToChars(DrawLineInfo& dli);
-            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, ParseZone& zone);
-            bool PrepareStructureViewToDraw(DrawLineInfo& dli, ParseZone& zone);
+            bool WriteStructureToScreen(
+                  DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
+            bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
-            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone& zone);
-            void ChangeZoneCollapseState(ParseZone& zoneToChange);
+            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
+            void ChangeZoneCollapseState(ParseZone* zoneToChange);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
