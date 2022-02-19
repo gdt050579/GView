@@ -504,19 +504,19 @@ ColorPair Instance::OffsetToColor(uint64 offset)
         // no color provided for the specific buffer --> check strings and zones
     }
     // check strings
-    if ((offset >= StringInfo.start) && (offset < StringInfo.end))
+    if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
     {
-        switch (StringInfo.type)
+        if ((offset >= StringInfo.start) && (offset < StringInfo.end))
         {
-        case StringType::Ascii:
-            return config.Colors.Ascii;
-        case StringType::Unicode:
-            return config.Colors.Unicode;
+            switch (StringInfo.type)
+            {
+            case StringType::Ascii:
+                return config.Colors.Ascii;
+            case StringType::Unicode:
+                return config.Colors.Unicode;
+            }
         }
-    }
-    else
-    {
-        if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
+        else
         {
             UpdateStringInfo(offset);
             if ((offset >= StringInfo.start) && (offset < StringInfo.end))
@@ -772,13 +772,13 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
 
     if (activ)
     {
+        const auto startCh  = dli.chText;
+        const auto ofsStart = dli.offset;
         while (dli.start < dli.end)
         {
             cp = OffsetToColor(dli.offset);
             if (selection.Contains(dli.offset))
                 cp = Cfg.Selection.Editor;
-            if (dli.offset == this->Cursor.currentPos)
-                cp = Cfg.Cursor.Normal;
             if (StringInfo.type == StringType::Unicode)
             {
                 if (dli.offset > StringInfo.middle)
@@ -794,6 +794,10 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
             dli.chText++;
             dli.start++;
             dli.offset++;
+        }
+        if ((this->Cursor.currentPos >= ofsStart) && (this->Cursor.currentPos < dli.offset))
+        {
+            (startCh + (this->Cursor.currentPos - ofsStart))->Color = Cfg.Cursor.Normal;
         }
     }
     else
@@ -990,10 +994,19 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
     }
     if ((activ) && (this->Cursor.currentPos >= start) && (this->Cursor.currentPos < end))
     {
-        c = dli.chNumbers + (this->Cursor.currentPos - start);
-        if (c > this->chars.GetBuffer())
-            c--;
-        c->Color = Cfg.Cursor.Normal;
+        const auto reprsz = characterFormatModeSize[static_cast<uint32>(this->Layout.charFormatMode)] + 1;
+        c                 = dli.chNumbers + (this->Cursor.currentPos - start) * reprsz;
+        const auto st     = this->chars.GetBuffer();
+        const auto c_e    = std::min<>(c + reprsz, sps);
+        c                 = std::max<>(c - 1, st);
+        while (c < c_e)
+        {
+            c->Color = Cfg.Cursor.Normal;
+            c++;
+        }
+        c = sps + (this->Cursor.currentPos - start);
+        if ((c >= st) && (c < dli.chText))
+            c->Color = Cfg.Cursor.Normal;
     }
     this->chars.Resize((uint32) (dli.chText - this->chars.GetBuffer()));
 }
