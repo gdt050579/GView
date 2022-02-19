@@ -72,7 +72,7 @@ void Panels::Resources::SaveCurrentResource()
     if (res.has_value())
     {
         auto buf = this->win->GetObject()->cache.CopyToBuffer(r->Start, r->Size);
-        if (AppCUI::OS::File::WriteContent(res.value(), buf) == false)
+        if (AppCUI::OS::File::WriteContent(res.value(), BufferView{ buf }) == false)
         {
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");
         }
