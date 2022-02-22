@@ -38,7 +38,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
               "d:c,w:100%,h:100%",
               static_cast<uint32>(settings->cols),
               static_cast<uint32>(settings->rows),
-              AppCUI::Controls::GridFlags::Sort);
+              AppCUI::Controls::GridFlags::Sort | AppCUI::Controls::GridFlags::Filter);
 
         grid->SetSeparator(settings->separator);
     }
