@@ -41,7 +41,7 @@ namespace View
         struct DissasemblyZone
         {
             uint64 size;
-            DissamblyLanguage language;
+            DissasemblyLanguage language;
         };
 
         enum class InternalDissasmType : uint8
@@ -103,9 +103,14 @@ namespace View
             uint64 initalTextFileOffset;
         };
 
+        struct DissasmCodeZone : public ParseZone
+        {
+            DissasemblyZone zoneDetails;
+        };
+
         struct SettingsData
         {
-            DissamblyLanguage defaultLanguage;
+            DissasemblyLanguage defaultLanguage;
             std::map<uint64, DissasemblyZone> dissasemblyZones;
             std::deque<char*> buffersToDelete;
             uint32 availableID;
@@ -179,7 +184,7 @@ namespace View
                 SpecialChars c;
                 ColorPair color;
                 uint64 offsetStructure;
-                ParseZone *zone;
+                ParseZone* zone;
             };
 
             struct

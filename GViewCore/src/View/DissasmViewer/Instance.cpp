@@ -587,6 +587,25 @@ void Instance::OnStart()
         lastZoneEndingIndex    = parseZone->endingLineIndex;
         settings->parseZones.push_back(std::move(parseZone));
     }
+
+    // TODO: rethink
+    if (settings->defaultLanguage == DissasemblyLanguage::Default)
+        settings->defaultLanguage = DissasemblyLanguage::x86;
+
+    // TODO: fix dissasemblyZones to be where they belong not really after structuress
+
+    for (const auto& dissasmZone : settings->dissasemblyZones)
+    {
+        std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
+        codeZone->zoneDetails                     = dissasmZone.second;
+        codeZone->startLineIndex                  = (uint32) (dissasmZone.first / textSize);
+        if (codeZone->startLineIndex < lastZoneEndingIndex)
+            codeZone->startLineIndex = lastZoneEndingIndex;
+        codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+        codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
+        codeZone->zoneID          = currentIndex++;
+        codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
+    }
 }
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()

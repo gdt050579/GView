@@ -11,12 +11,12 @@ Settings::Settings()
     INTERNAL_SETTINGS->availableID = (uint32) InternalDissasmType::UserDefined + 1;
 }
 
-void Settings::SetDefaultDissasemblyLanguage(DissamblyLanguage lang)
+void Settings::SetDefaultDissasemblyLanguage(DissasemblyLanguage lang)
 {
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
-void Settings::AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang)
+void Settings::AddDissasemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang)
 {
     INTERNAL_SETTINGS->dissasemblyZones[start] = { size, lang };
 }
@@ -63,5 +63,5 @@ void Settings::AddBiDiminesionalArray(uint64 offset, std::string_view name, Type
 
 SettingsData::SettingsData()
 {
-    defaultLanguage = DissamblyLanguage::Default;
+    defaultLanguage = DissasemblyLanguage::Default;
 }
