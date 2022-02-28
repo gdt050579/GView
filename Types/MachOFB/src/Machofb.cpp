@@ -60,7 +60,6 @@ extern "C"
         BufferViewer::Settings settings;
         uint64_t offset = 0;
 
-        const auto a = sizeof(macho->header);
         settings.AddZone(offset, sizeof(macho->header), macho->colors.header, "Header");
         offset += sizeof(macho->header);
 
@@ -83,8 +82,6 @@ extern "C"
         {
             for (const auto& arch : macho->archs)
             {
-
-                const auto a = sizeof(arch);
                 temp.Format("Arch #%u", objectCount);
                 settings.AddZone(offset, sizeof(arch), macho->colors.archs, temp);
 

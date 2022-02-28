@@ -6,8 +6,6 @@ MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file)
     this->file = file;
 }
 
-#include <climits>
-
 template <typename T>
 T SwapEndian(T u)
 {
@@ -85,11 +83,11 @@ bool MachOFBFile::Update()
 
 uint64_t MachOFBFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
 {
-    return uint64_t();
+    return value;
 }
 
 uint64_t MachOFBFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
 {
-    return uint64_t();
+    return value;
 }
 } // namespace GView::Type::MachOFB
