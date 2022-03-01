@@ -65,31 +65,42 @@ extern "C"
 
         uint32_t objectCount = 0;
         LocalString<128> temp;
-        if (macho->is64)
+
+        for (const auto& vArch : macho->archs)
         {
-            for (const auto& archs : macho->archs64)
+            uint64_t structSize = 0;
+            uint64_t offset     = 0;
+            uint64_t size       = 0;
+
+            switch (vArch.index())
             {
-                temp.Format("Arch #%u", objectCount);
-                settings.AddZone(offset, sizeof(archs), macho->colors.arch, temp);
-
-                temp.Format("Obj #%u", objectCount);
-                settings.AddZone(archs.offset, archs.size, macho->colors.object, temp);
-
-                objectCount++;
-            }
-        }
-        else
-        {
-            for (const auto& archs : macho->archs)
+            case 0:
             {
-                temp.Format("Arch #%u", objectCount);
-                settings.AddZone(offset, sizeof(archs), macho->colors.arch, temp);
-
-                temp.Format("Obj #%u", objectCount);
-                settings.AddZone(archs.offset, archs.size, macho->colors.object, temp);
-
-                objectCount++;
+                const auto& arch = std::get<0>(vArch);
+                structSize       = sizeof(arch);
+                offset           = arch.offset;
+                size             = arch.size;
             }
+            break;
+            case 1:
+            {
+                const auto& arch = std::get<1>(vArch);
+                structSize       = sizeof(arch);
+                offset           = arch.offset;
+                size             = arch.size;
+            }
+            break;
+            default:
+                break;
+            }
+
+            temp.Format("Arch #%u", objectCount);
+            settings.AddZone(offset, structSize, macho->colors.arch, temp);
+
+            temp.Format("Obj #%u", objectCount);
+            settings.AddZone(offset, size, macho->colors.object, temp);
+
+            objectCount++;
         }
 
         win->CreateViewer("BufferView", settings);
@@ -103,7 +114,14 @@ extern "C"
         CreateBufferView(win, mach);
 
         if (mach->HasPanel(MachOFB::Panels::IDs::Information))
+        {
             win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Information(mach)), true);
+        }
+
+        if (mach->HasPanel(MachOFB::Panels::IDs::Objects))
+        {
+            win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Objects(mach, win)), false);
+        }
 
         return true;
     }

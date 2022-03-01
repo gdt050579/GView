@@ -18,7 +18,7 @@ T SwapEndian(T u)
     return dest.object;
 }
 
-MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false)
+MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;
 }
@@ -40,7 +40,6 @@ bool MachOFBFile::Update()
     }
 
     archs.reserve(header.nfat_arch);
-    archs64.reserve(header.nfat_arch);
 
     if (is64)
     {
@@ -57,7 +56,7 @@ bool MachOFBFile::Update()
                 fa64.align      = SwapEndian(fa64.align);
                 fa64.reserved   = SwapEndian(fa64.reserved);
             }
-            archs64.push_back(fa64);
+            archs.push_back(fa64);
             offset += sizeof(fat_arch64);
         }
     }
@@ -82,6 +81,7 @@ bool MachOFBFile::Update()
     }
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Objects);
 
     return true;
 }

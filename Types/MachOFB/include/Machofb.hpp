@@ -355,7 +355,8 @@ namespace Panels
 {
     enum class IDs : uint8_t
     {
-        Information = 0
+        Information = 0,
+        Objects     = 1
     };
 };
 
@@ -373,8 +374,7 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
   public:
     Reference<GView::Utils::FileCache> file;
     fat_header header;
-    std::vector<fat_arch> archs;
-    std::vector<fat_arch64> archs64;
+    std::vector<std::variant<fat_arch, fat_arch64>> archs;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -404,20 +404,39 @@ namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
-        Reference<GView::Type::MachOFB::MachOFBFile> fat;
+        Reference<MachOFBFile> fat;
         Reference<AppCUI::Controls::ListView> general;
 
         void UpdateGeneralInformation();
         void RecomputePanelsPositions();
 
       public:
-        Information(Reference<GView::Type::MachOFB::MachOFBFile> fat);
+        Information(Reference<MachOFBFile> fat);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             RecomputePanelsPositions();
         }
+    };
+
+    class Objects : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFBFile> fat;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64_t value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        Objects(Reference<MachOFBFile> fat, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
 } // namespace GView::Type::MachOFB
