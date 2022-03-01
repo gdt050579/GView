@@ -67,26 +67,26 @@ extern "C"
         LocalString<128> temp;
         if (macho->is64)
         {
-            for (const auto& arch : macho->archs64)
+            for (const auto& archs : macho->archs64)
             {
                 temp.Format("Arch #%u", objectCount);
-                settings.AddZone(offset, sizeof(arch), macho->colors.archs, temp);
+                settings.AddZone(offset, sizeof(archs), macho->colors.arch, temp);
 
                 temp.Format("Obj #%u", objectCount);
-                settings.AddZone(arch.offset, arch.size, macho->colors.object, temp);
+                settings.AddZone(archs.offset, archs.size, macho->colors.object, temp);
 
                 objectCount++;
             }
         }
         else
         {
-            for (const auto& arch : macho->archs)
+            for (const auto& archs : macho->archs)
             {
                 temp.Format("Arch #%u", objectCount);
-                settings.AddZone(offset, sizeof(arch), macho->colors.archs, temp);
+                settings.AddZone(offset, sizeof(archs), macho->colors.arch, temp);
 
                 temp.Format("Obj #%u", objectCount);
-                settings.AddZone(arch.offset, arch.size, macho->colors.object, temp);
+                settings.AddZone(archs.offset, archs.size, macho->colors.object, temp);
 
                 objectCount++;
             }
@@ -101,6 +101,9 @@ extern "C"
         mach->Update();
 
         CreateBufferView(win, mach);
+
+        if (mach->HasPanel(MachOFB::Panels::IDs::Information))
+            win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Information(mach)), true);
 
         return true;
     }

@@ -351,13 +351,21 @@ struct load_command
     uint32_t cmdsize;    /* total size of command in bytes */
 };
 
+namespace Panels
+{
+    enum class IDs : uint8_t
+    {
+        Information = 0
+    };
+};
+
 class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
 {
   public:
     struct Colors
     {
         ColorPair header{ Color::Olive, Color::Transparent };
-        ColorPair archs{ Color::Magenta, Color::Transparent };
+        ColorPair arch{ Color::Magenta, Color::Transparent };
         ColorPair objectName{ Color::DarkRed, Color::Transparent };
         ColorPair object{ Color::Silver, Color::Transparent };
     } colors;
@@ -369,6 +377,8 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
     std::vector<fat_arch64> archs64;
     bool shouldSwapEndianess;
     bool is64;
+
+    uint64_t panelsMask;
 
   public:
     // OffsetTranslateInterface
@@ -386,5 +396,28 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
     virtual ~MachOFBFile(){};
 
     bool Update();
+
+    bool HasPanel(Panels::IDs id);
 };
+
+namespace Panels
+{
+    class Information : public AppCUI::Controls::TabPage
+    {
+        Reference<GView::Type::MachOFB::MachOFBFile> fat;
+        Reference<AppCUI::Controls::ListView> general;
+
+        void UpdateGeneralInformation();
+        void RecomputePanelsPositions();
+
+      public:
+        Information(Reference<GView::Type::MachOFB::MachOFBFile> fat);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            RecomputePanelsPositions();
+        }
+    };
+} // namespace Panels
 } // namespace GView::Type::MachOFB

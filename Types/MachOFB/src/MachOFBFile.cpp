@@ -1,24 +1,26 @@
 #include "machofb.hpp"
 namespace GView::Type::MachOFB
 {
-MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file)
-{
-    this->file = file;
-}
-
 template <typename T>
 T SwapEndian(T u)
 {
     union
     {
-        T u;
-        unsigned char u8[sizeof(T)];
+        T object;
+        unsigned char bytes[sizeof(T)];
     } source{ u }, dest{};
 
-    for (size_t k = 0; k < sizeof(T); k++)
-        dest.u8[k] = source.u8[sizeof(T) - k - 1];
+    for (decltype(sizeof(T)) i = 0; i < sizeof(T); i++)
+    {
+        dest.bytes[i] = source.bytes[sizeof(T) - i - 1];
+    }
 
-    return dest.u;
+    return dest.object;
+}
+
+MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false)
+{
+    this->file = file;
 }
 
 bool MachOFBFile::Update()
@@ -37,6 +39,7 @@ bool MachOFBFile::Update()
         header.nfat_arch = SwapEndian(header.nfat_arch);
     }
 
+    archs.reserve(header.nfat_arch);
     archs64.reserve(header.nfat_arch);
 
     if (is64)
@@ -78,7 +81,14 @@ bool MachOFBFile::Update()
         }
     }
 
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
+
     return true;
+}
+
+bool MachOFBFile::HasPanel(Panels::IDs id)
+{
+    return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
 }
 
 uint64_t MachOFBFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)

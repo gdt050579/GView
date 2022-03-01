@@ -1,3 +1,4 @@
 target_sources(MachOFB PRIVATE 
 	MachOFB.cpp 
-	MachOFBFile.cpp)
+	MachOFBFile.cpp
+	PanelInformation.cpp)
