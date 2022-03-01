@@ -23,6 +23,7 @@ add_subdirectory(Types/PE)
 add_subdirectory(Types/ICO)
 add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
+add_subdirectory(Types/MachOFB)
 
 if(MSVC)
   target_compile_options(GView PUBLIC "/ZI")

@@ -1364,7 +1364,7 @@ bool Instance::Select(uint64 offset, uint64 size)
     auto end = offset + size;
     if ((end < offset) || (end < size))
         return false;
-    if (end >= this->obj->cache.GetSize())
+    if (end > this->obj->cache.GetSize())
         return false;
     this->selection.SetSelection(0, offset, end);
     return true;
