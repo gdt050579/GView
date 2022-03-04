@@ -2,24 +2,16 @@
 
 #include "GView.hpp"
 
-namespace GView::Type::MachOFB
+namespace GView::Type::MachO
 {
 // https://opensource.apple.com/source/xnu/xnu-344/EXTERNAL_HEADERS/mach-o/fat.h
 // https://github.com/grumbach/nm_otool
-constexpr uint32_t MH_MAGIC     = 0xfeedface; /* the mach magic number */
-constexpr uint32_t MH_CIGAM     = 0xcefaedfe; /* NXSwapInt(MH_MAGIC) */
-constexpr uint32_t MH_MAGIC_64  = 0xfeedfacf; /* the 64-bit mach magic number */
-constexpr uint32_t MH_CIGAM_64  = 0xcffaedfe; /* NXSwapInt(MH_MAGIC_64) */
-constexpr uint32_t FAT_MAGIC    = 0xcafebabe; /* the fat magic number */
-constexpr uint32_t FAT_CIGAM    = 0xbebafeca; /* NXSwapLong(FAT_MAGIC) */
-constexpr uint32_t FAT_MAGIC_64 = 0xcafebabf; /* the 64-bit fat magic number */
-constexpr uint32_t FAT_CIGAM_64 = 0xbfbafeca; /* NXSwapLong(FAT_MAGIC_64) */
+constexpr uint32_t MH_MAGIC    = 0xfeedface; /* the mach magic number */
+constexpr uint32_t MH_CIGAM    = 0xcefaedfe; /* NXSwapInt(MH_MAGIC) */
+constexpr uint32_t MH_MAGIC_64 = 0xfeedfacf; /* the 64-bit mach magic number */
+constexpr uint32_t MH_CIGAM_64 = 0xcffaedfe; /* NXSwapInt(MH_MAGIC_64) */
 
-struct fat_header
-{
-    unsigned long magic;     /* FAT_MAGIC or FAT_MAGIC_64 */
-    unsigned long nfat_arch; /* number of structs that follow */
-};
+// TODO: macho header
 
 // https://opensource.apple.com/source/xnu/xnu-4570.41.2/osfmk/mach/machine.h.auto.html
 
@@ -268,25 +260,7 @@ enum class CPU_Family : uint32_t
 // https://opensource.apple.com/source/xnu/xnu-344/EXTERNAL_HEADERS/mach-o/fat.h
 // https://olszanowski.blog/posts/macho-reader-parsing-headers/
 
-struct fat_arch
-{
-    CPU_TYPE cputype;       /* cpu specifier (int) */
-    CPU_SUBTYPE cpusubtype; /* machine specifier (int) */
-    uint32_t offset;        /* file offset to this object file */
-    uint32_t size;          /* size of this object file */
-    uint32_t align;         /* alignment as a power of 2 */
-};
-
-// https://opensource.apple.com/source/cctools/cctools-895/include/mach-o/fat.h.auto.html
-struct fat_arch64
-{
-    CPU_TYPE cputype;       /* cpu specifier (int) */
-    CPU_SUBTYPE cpusubtype; /* machine specifier (int) */
-    uint64_t offset;        /* file offset to this object file */
-    uint64_t size;          /* size of this object file */
-    uint32_t align;         /* alignment as a power of 2 */
-    uint64_t reserved;      /* reserved */
-};
+// TODO: mach o arch
 
 // https://opensource.apple.com/source/cctools/cctools-895/include/mach-o/loader.h.auto.html
 enum class LoadCommandType : uint32_t
@@ -360,7 +334,7 @@ namespace Panels
     };
 };
 
-class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+class MachOFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
 {
   public:
     struct Colors
@@ -373,8 +347,8 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
 
   public:
     Reference<GView::Utils::FileCache> file;
-    fat_header header;
-    std::vector<std::variant<fat_arch, fat_arch64>> archs;
+    // fat_header header;
+    // std::vector<std::variant<fat_arch, fat_arch64>> archs;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -388,12 +362,12 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
     // TypeInterface
     std::string_view GetTypeName() override
     {
-        return "Mach-O Fat Binary";
+        return "Mach-O";
     }
 
   public:
-    MachOFBFile(Reference<GView::Utils::FileCache> file);
-    virtual ~MachOFBFile(){};
+    MachOFile(Reference<GView::Utils::FileCache> file);
+    virtual ~MachOFile(){};
 
     bool Update();
 
@@ -404,14 +378,14 @@ namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
-        Reference<MachOFBFile> fat;
+        Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
         void UpdateGeneralInformation();
         void RecomputePanelsPositions();
 
       public:
-        Information(Reference<MachOFBFile> fat);
+        Information(Reference<MachOFile> machO);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
@@ -422,7 +396,7 @@ namespace Panels
 
     class Objects : public AppCUI::Controls::TabPage
     {
-        Reference<MachOFBFile> fat;
+        Reference<MachOFile> machO;
         Reference<GView::View::WindowInterface> win;
         Reference<AppCUI::Controls::ListView> list;
         int Base;
@@ -432,11 +406,11 @@ namespace Panels
         void SelectCurrentSection();
 
       public:
-        Objects(Reference<MachOFBFile> fat, Reference<GView::View::WindowInterface> win);
+        Objects(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
-} // namespace GView::Type::MachOFB
+} // namespace GView::Type::MachO

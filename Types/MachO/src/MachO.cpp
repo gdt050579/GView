@@ -40,87 +40,87 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        auto header = buf.GetObject<MachOFB::fat_header>();
-        CHECK(header != nullptr, false, "");
-        CHECK(header->magic == MachOFB::FAT_MAGIC || header->magic == MachOFB::FAT_CIGAM || header->magic == MachOFB::FAT_MAGIC_64 ||
-                    header->magic == MachOFB::FAT_CIGAM_64,
-              false,
-              "Magic is [%u]!",
-              header->magic);
+        // auto header = buf.GetObject<MachO::fat_header>();
+        // CHECK(header != nullptr, false, "");
+        // CHECK(header->magic == MachO::MH_MAGIC || header->magic == MachO::MH_CIGAM || header->magic == MachO::MH_MAGIC_64 ||
+        //             header->magic == MachO::MH_CIGAM_64,
+        //       false,
+        //       "Magic is [%u]!",
+        //       header->magic);
         return true;
     }
 
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
     {
-        return new MachOFB::MachOFBFile(file);
+        return new MachO::MachOFile(file);
     }
 
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFB::MachOFBFile> macho)
+    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachO::MachOFile> machO)
     {
         BufferViewer::Settings settings;
         uint64_t offset = 0;
 
-        settings.AddZone(offset, sizeof(macho->header), macho->colors.header, "Header");
-        offset += sizeof(macho->header);
+        // settings.AddZone(offset, sizeof(machO->header), macho->colors.header, "Header");
+        // offset += sizeof(machO->header);
 
         uint32_t objectCount = 0;
         LocalString<128> temp;
 
-        for (const auto& vArch : macho->archs)
-        {
-            uint64_t structSize = 0;
-            uint64_t offset     = 0;
-            uint64_t size       = 0;
-
-            switch (vArch.index())
-            {
-            case 0:
-            {
-                const auto& arch = std::get<0>(vArch);
-                structSize       = sizeof(arch);
-                offset           = arch.offset;
-                size             = arch.size;
-            }
-            break;
-            case 1:
-            {
-                const auto& arch = std::get<1>(vArch);
-                structSize       = sizeof(arch);
-                offset           = arch.offset;
-                size             = arch.size;
-            }
-            break;
-            default:
-                break;
-            }
-
-            temp.Format("Arch #%u", objectCount);
-            settings.AddZone(offset, structSize, macho->colors.arch, temp);
-
-            temp.Format("Obj #%u", objectCount);
-            settings.AddZone(offset, size, macho->colors.object, temp);
-
-            objectCount++;
-        }
+        // for (const auto& vArch : machO->archs)
+        // {
+        //     uint64_t structSize = 0;
+        //     uint64_t offset     = 0;
+        //     uint64_t size       = 0;
+        //
+        //     switch (vArch.index())
+        //     {
+        //     case 0:
+        //     {
+        //         const auto& arch = std::get<0>(vArch);
+        //         structSize       = sizeof(arch);
+        //         offset           = arch.offset;
+        //         size             = arch.size;
+        //     }
+        //     break;
+        //     case 1:
+        //     {
+        //         const auto& arch = std::get<1>(vArch);
+        //         structSize       = sizeof(arch);
+        //         offset           = arch.offset;
+        //         size             = arch.size;
+        //     }
+        //     break;
+        //     default:
+        //         break;
+        //     }
+        //
+        //     temp.Format("Arch #%u", objectCount);
+        //     settings.AddZone(offset, structSize, machO->colors.arch, temp);
+        //
+        //     temp.Format("Obj #%u", objectCount);
+        //     settings.AddZone(offset, size, machO->colors.object, temp);
+        //
+        //     objectCount++;
+        // }
 
         win->CreateViewer("BufferView", settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto mach = reinterpret_cast<MachOFB::MachOFBFile*>(win->GetObject()->type);
+        auto mach = reinterpret_cast<MachO::MachOFile*>(win->GetObject()->type);
         mach->Update();
 
         CreateBufferView(win, mach);
 
-        if (mach->HasPanel(MachOFB::Panels::IDs::Information))
+        if (mach->HasPanel(MachO::Panels::IDs::Information))
         {
-            win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Information(mach)), true);
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Information(mach)), true);
         }
 
-        if (mach->HasPanel(MachOFB::Panels::IDs::Objects))
+        if (mach->HasPanel(MachO::Panels::IDs::Objects))
         {
-            win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Objects(mach, win)), false);
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Objects(mach, win)), false);
         }
 
         return true;
@@ -129,10 +129,10 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         static const std::initializer_list<std::string> patterns = {
-            "hex:'" + BinaryToHexString(MachOFB::FAT_MAGIC, sizeof(MachOFB::FAT_MAGIC)) + "'",
-            "hex:'" + BinaryToHexString(MachOFB::FAT_CIGAM, sizeof(MachOFB::FAT_CIGAM)) + "'",
-            "hex:'" + BinaryToHexString(MachOFB::FAT_MAGIC_64, sizeof(MachOFB::FAT_MAGIC_64)) + "'",
-            "hex:'" + BinaryToHexString(MachOFB::FAT_CIGAM_64, sizeof(MachOFB::FAT_CIGAM_64)) + "'"
+            "hex:'" + BinaryToHexString(MachO::MH_MAGIC, sizeof(MachO::MH_MAGIC)) + "'",
+            "hex:'" + BinaryToHexString(MachO::MH_CIGAM, sizeof(MachO::MH_CIGAM)) + "'",
+            "hex:'" + BinaryToHexString(MachO::MH_MAGIC_64, sizeof(MachO::MH_MAGIC_64)) + "'",
+            "hex:'" + BinaryToHexString(MachO::MH_CIGAM_64, sizeof(MachO::MH_CIGAM_64)) + "'"
         };
 
         sect["Pattern"]  = patterns;

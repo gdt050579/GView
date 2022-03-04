@@ -1,6 +1,6 @@
 #include "MachO.hpp"
 
-namespace GView::Type::MachOFB
+namespace GView::Type::MachO
 {
 template <typename T>
 T SwapEndian(T u)
@@ -19,66 +19,68 @@ T SwapEndian(T u)
     return dest.object;
 }
 
-MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
+MachOFile::MachOFile(Reference<GView::Utils::FileCache> file)
+    : // header({}),
+      is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;
 }
 
-bool MachOFBFile::Update()
+bool MachOFile::Update()
 {
     uint64_t offset = 0;
 
-    CHECK(file->Copy<fat_header>(offset, header), false, "");
-    offset += sizeof(fat_header);
+    // CHECK(file->Copy<fat_header>(offset, header), false, "");
+    // offset += sizeof(fat_header);
 
-    is64                = header.magic == FAT_MAGIC_64 || header.magic == FAT_CIGAM_64;
-    shouldSwapEndianess = header.magic == FAT_CIGAM || header.magic == FAT_CIGAM_64;
+    // is64                = header.magic == MH_MAGIC_64 || header.magic == MH_CIGAM_64;
+    // shouldSwapEndianess = header.magic == MH_CIGAM || header.magic == MH_CIGAM_64;
 
     if (shouldSwapEndianess)
     {
-        header.magic     = SwapEndian(header.magic);
-        header.nfat_arch = SwapEndian(header.nfat_arch);
+        // header.magic     = SwapEndian(header.magic);
+        // header.nfat_arch = SwapEndian(header.nfat_arch);
     }
 
-    archs.reserve(header.nfat_arch);
+    // archs.reserve(header.nfat_arch);
 
     if (is64)
     {
-        for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
-        {
-            fat_arch64 fa64;
-            CHECK(file->Copy<fat_arch64>(offset, fa64), false, "");
-            if (shouldSwapEndianess)
-            {
-                fa64.cputype    = SwapEndian(fa64.cputype);
-                fa64.cpusubtype = SwapEndian(fa64.cpusubtype);
-                fa64.offset     = SwapEndian(fa64.offset);
-                fa64.size       = SwapEndian(fa64.size);
-                fa64.align      = SwapEndian(fa64.align);
-                fa64.reserved   = SwapEndian(fa64.reserved);
-            }
-            archs.push_back(fa64);
-            offset += sizeof(fat_arch64);
-        }
+        // for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
+        //{
+        //     fat_arch64 fa64;
+        //     CHECK(file->Copy<fat_arch64>(offset, fa64), false, "");
+        //     if (shouldSwapEndianess)
+        //     {
+        //         fa64.cputype    = SwapEndian(fa64.cputype);
+        //         fa64.cpusubtype = SwapEndian(fa64.cpusubtype);
+        //         fa64.offset     = SwapEndian(fa64.offset);
+        //         fa64.size       = SwapEndian(fa64.size);
+        //         fa64.align      = SwapEndian(fa64.align);
+        //         fa64.reserved   = SwapEndian(fa64.reserved);
+        //     }
+        //     archs.push_back(fa64);
+        //     offset += sizeof(fat_arch64);
+        // }
     }
     else
     {
-        for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
-        {
-            fat_arch fa;
-            CHECK(file->Copy<fat_arch>(offset, fa), false, "");
-
-            if (shouldSwapEndianess)
-            {
-                fa.cputype    = SwapEndian(fa.cputype);
-                fa.cpusubtype = SwapEndian(fa.cpusubtype);
-                fa.offset     = SwapEndian(fa.offset);
-                fa.size       = SwapEndian(fa.size);
-                fa.align      = SwapEndian(fa.align);
-            }
-            archs.push_back(fa);
-            offset += sizeof(fat_arch);
-        }
+        // for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
+        //{
+        //     fat_arch fa;
+        //     CHECK(file->Copy<fat_arch>(offset, fa), false, "");
+        //
+        //     if (shouldSwapEndianess)
+        //     {
+        //         fa.cputype    = SwapEndian(fa.cputype);
+        //         fa.cpusubtype = SwapEndian(fa.cpusubtype);
+        //         fa.offset     = SwapEndian(fa.offset);
+        //         fa.size       = SwapEndian(fa.size);
+        //         fa.align      = SwapEndian(fa.align);
+        //     }
+        //     archs.push_back(fa);
+        //     offset += sizeof(fat_arch);
+        // }
     }
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
@@ -87,18 +89,18 @@ bool MachOFBFile::Update()
     return true;
 }
 
-bool MachOFBFile::HasPanel(Panels::IDs id)
+bool MachOFile::HasPanel(Panels::IDs id)
 {
     return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
 }
 
-uint64_t MachOFBFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
+uint64_t MachOFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
 {
     return value;
 }
 
-uint64_t MachOFBFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
+uint64_t MachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
 {
     return value;
 }
-} // namespace GView::Type::MachOFB
+} // namespace GView::Type::MachO

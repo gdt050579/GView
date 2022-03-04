@@ -1,6 +1,6 @@
 #include "MachO.hpp"
 
-namespace GView::Type::MachOFB::Panels
+namespace GView::Type::MachO::Panels
 {
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
@@ -18,11 +18,11 @@ enum class ObjectAction : int32_t
     ChangeBase = 4
 };
 
-Objects::Objects(Reference<MachOFBFile> _fat, Reference<GView::View::WindowInterface> _win) : TabPage("&Objects")
+Objects::Objects(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("&Objects")
 {
-    fat  = _fat;
-    win  = _win;
-    Base = 16;
+    machO = _machO;
+    win   = _win;
+    Base  = 16;
 
     list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
     list->AddColumn("Name", TextAlignament::Right, 6);
@@ -47,61 +47,61 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    const auto& vArch = list->GetItemData<Identity<decltype(fat->archs)>::type::value_type>(list->GetCurrentItem())
-                              .
-                              operator Identity<decltype(fat->archs)>::type::value_type&();
-
+    // const auto& vArch = list->GetItemData<Identity<decltype(fat->archs)>::type::value_type>(list->GetCurrentItem())
+    //                           .
+    //                           operator Identity<decltype(fat->archs)>::type::value_type&();
+    //
     uint64_t offset = 0;
-
-    switch (vArch.index())
-    {
-    case 0:
-    {
-        const auto& arch = std::get<0>(vArch);
-        offset           = arch.offset;
-    }
-    break;
-    case 1:
-    {
-        const auto& arch = std::get<1>(vArch);
-        offset           = arch.offset;
-    }
-    break;
-    default:
-        break;
-    }
+    //
+    // switch (vArch.index())
+    //{
+    // case 0:
+    //{
+    //    const auto& arch = std::get<0>(vArch);
+    //    offset           = arch.offset;
+    //}
+    // break;
+    // case 1:
+    //{
+    //    const auto& arch = std::get<1>(vArch);
+    //    offset           = arch.offset;
+    //}
+    // break;
+    // default:
+    //    break;
+    //}
 
     win->GetCurrentView()->GoTo(offset);
 }
 
 void Panels::Objects::SelectCurrentSection()
 {
-    const auto& vArch = list->GetItemData<Identity<decltype(fat->archs)>::type::value_type>(list->GetCurrentItem())
-                              .
-                              operator Identity<decltype(fat->archs)>::type::value_type&();
+    // const auto& vArch = list->GetItemData<Identity<decltype(fat->archs)>::type::value_type>(list->GetCurrentItem())
+    //                           .
+    //                           operator Identity<decltype(fat->archs)>::type::value_type&();
 
     uint64_t offset = 0;
     uint64_t size   = 0;
 
-    switch (vArch.index())
-    {
-    case 0:
-    {
-        const auto& arch = std::get<0>(vArch);
-        offset           = arch.offset;
-        size             = arch.size;
-    }
-    break;
-    case 1:
-    {
-        const auto& arch = std::get<1>(vArch);
-        offset           = arch.offset;
-        size             = arch.size;
-    }
-    break;
-    default:
-        break;
-    }
+    // switch (vArch.index())
+    //{
+    // case 0:
+    //{
+    //     const auto& arch = std::get<0>(vArch);
+    //     offset           = arch.offset;
+    //     size             = arch.size;
+    // }
+    // break;
+    // case 1:
+    //{
+    //     const auto& arch = std::get<1>(vArch);
+    //     offset           = arch.offset;
+    //     size             = arch.size;
+    // }
+    // break;
+    // default:
+    //     break;
+    // }
 
     win->GetCurrentView()->Select(offset, size);
 }
@@ -112,51 +112,51 @@ void Panels::Objects::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    for (decltype(fat->header.nfat_arch) i = 0U; i < fat->header.nfat_arch; i++)
-    {
-        temp.Format("#%lu", i);
-        auto item = list->AddItem(temp); // name
-
-        list->SetItemData<Identity<decltype(fat->archs)>::type::value_type>(item, &fat->archs[i]);
-
-        CPU_TYPE cputype{};
-        CPU_SUBTYPE cpusubtype{};
-        uint64_t offset{};
-        uint64_t size{};
-        uint64_t align{};
-
-        switch (fat->archs[i].index())
-        {
-        case 0:
-        {
-            const auto& arch = std::get<0>(fat->archs[i]);
-            cputype          = arch.cputype;
-            cpusubtype       = arch.cpusubtype;
-            offset           = arch.offset;
-            size             = arch.size;
-            align            = arch.align;
-        }
-        break;
-        case 1:
-        {
-            const auto& arch = std::get<1>(fat->archs[i]);
-            cputype          = arch.cputype;
-            cpusubtype       = arch.cpusubtype;
-            offset           = arch.offset;
-            size             = arch.size;
-            align            = arch.align;
-        }
-        break;
-        default:
-            break;
-        }
-
-        list->SetItemText(item, 1, GetValue(n, static_cast<uint64_t>(cputype)));
-        list->SetItemText(item, 2, GetValue(n, static_cast<uint64_t>(cpusubtype)));
-        list->SetItemText(item, 3, GetValue(n, offset));
-        list->SetItemText(item, 4, GetValue(n, size));
-        list->SetItemText(item, 5, GetValue(n, align));
-    }
+    // for (decltype(fat->header.nfat_arch) i = 0U; i < fat->header.nfat_arch; i++)
+    //{
+    //     temp.Format("#%lu", i);
+    //     auto item = list->AddItem(temp); // name
+    //
+    //     list->SetItemData<Identity<decltype(fat->archs)>::type::value_type>(item, &fat->archs[i]);
+    //
+    //     CPU_TYPE cputype{};
+    //     CPU_SUBTYPE cpusubtype{};
+    //     uint64_t offset{};
+    //     uint64_t size{};
+    //     uint64_t align{};
+    //
+    //     switch (fat->archs[i].index())
+    //     {
+    //     case 0:
+    //     {
+    //         const auto& arch = std::get<0>(fat->archs[i]);
+    //         cputype          = arch.cputype;
+    //         cpusubtype       = arch.cpusubtype;
+    //         offset           = arch.offset;
+    //         size             = arch.size;
+    //         align            = arch.align;
+    //     }
+    //     break;
+    //     case 1:
+    //     {
+    //         const auto& arch = std::get<1>(fat->archs[i]);
+    //         cputype          = arch.cputype;
+    //         cpusubtype       = arch.cpusubtype;
+    //         offset           = arch.offset;
+    //         size             = arch.size;
+    //         align            = arch.align;
+    //     }
+    //     break;
+    //     default:
+    //         break;
+    //     }
+    //
+    //     list->SetItemText(item, 1, GetValue(n, static_cast<uint64_t>(cputype)));
+    //     list->SetItemText(item, 2, GetValue(n, static_cast<uint64_t>(cpusubtype)));
+    //     list->SetItemText(item, 3, GetValue(n, offset));
+    //     list->SetItemText(item, 4, GetValue(n, size));
+    //     list->SetItemText(item, 5, GetValue(n, align));
+    // }
 }
 
 bool Panels::Objects::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -198,4 +198,4 @@ bool Panels::Objects::OnEvent(Reference<Control> ctrl, Event evnt, int controlID
     return false;
 }
 
-} // namespace GView::Type::MachOFB::Panels
+} // namespace GView::Type::MachO::Panels
