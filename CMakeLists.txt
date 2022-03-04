@@ -24,6 +24,7 @@ add_subdirectory(Types/ICO)
 add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
 add_subdirectory(Types/MachOFB)
+add_subdirectory(Types/MachO)
 
 if(MSVC)
   target_compile_options(GView PUBLIC "/ZI")

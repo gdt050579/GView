@@ -1,4 +1,4 @@
-#include "MachOFB.hpp"
+#include "MachO.hpp"
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;

@@ -1,4 +1,4 @@
-#include "MachOFB.hpp"
+#include "MachO.hpp"
 
 namespace GView::Type::MachOFB
 {
