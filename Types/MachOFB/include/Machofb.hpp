@@ -34,31 +34,66 @@ enum class CPU_ARCH : uint32_t
     ABI64 = 0x01000000  /* 64 bit ABI */
 };
 
+// https://opensource.apple.com/source/xnu/xnu-4570.41.2/osfmk/mach/machine.h.auto.html
+// https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach/machine.h
+
 enum class CPU_TYPE : uint32_t
 {
-    ANY = static_cast<uint32_t>(-1),
-    VAX = 1,
-    /* skip	((cpu_type_t) 2)	*/
+    ANY  = static_cast<uint32_t>(-1),
+    VAX  = 1,
+    ROMP = 2,
     /* skip	((cpu_type_t) 3)	*/
-    /* skip	((cpu_type_t) 4)	*/
-    /* skip	((cpu_type_t) 5)	*/
-    MC680x0 = 6,
-    X86     = 7,
-    I386    = X86, /* compatibility */
-    X86_64  = (X86 | static_cast<uint32_t>(CPU_ARCH::ABI64)),
-    /* skip CPU_TYPE_MIPS ((cpu_type_t) 8)	*/
-    /* skip 			  ((cpu_type_t) 9)	*/
-    MC98000 = 10,
-    HPPA    = 11,
-    ARM     = 12,
-    ARM64   = (ARM | static_cast<uint32_t>(CPU_ARCH::ABI64)),
-    MC88000 = 13,
-    SPARC   = 14,
-    I860    = 15,
-    /* skip	CPU_TYPE_ALPHA ((cpu_type_t) 16)	*/
-    /* skip				   ((cpu_type_t) 17)	*/
-    POWERPC   = 18,
-    POWERPC64 = (POWERPC | static_cast<uint32_t>(CPU_ARCH::ABI64))
+    NS32032     = 4,
+    NS32332     = 5,
+    MC680x0     = 6,
+    X86         = 7,
+    I386        = X86, /* compatibility */
+    X86_64      = (X86 | static_cast<uint32_t>(CPU_ARCH::ABI64)),
+    MIPS        =  8,
+    NS32532     =  9,
+    MC98000     = 10,
+    HPPA        = 11,
+    ARM         = 12,
+    ARM64       = (ARM | static_cast<uint32_t>(CPU_ARCH::ABI64)),
+    MC88000     = 13,
+    SPARC       = 14,
+    I860        = 15, // big-endian
+    I860_LITTLE = 16, // little-endian
+    RS6000      = 17,
+    POWERPC     = 18,
+    POWERPC64   = (POWERPC | static_cast<uint32_t>(CPU_ARCH::ABI64)),
+    VEO         = 255
+};
+
+#define GET_VARIABLE_NAME(x) (#x)
+#define GET_PAIR(x) {x, (GET_VARIABLE_NAME(x))}
+
+static const std::map<CPU_TYPE, std::string_view> CpuTypeNames
+{
+    GET_PAIR(CPU_TYPE::ANY),
+    GET_PAIR(CPU_TYPE::VAX),
+    GET_PAIR(CPU_TYPE::ROMP),
+    // skipped
+    GET_PAIR(CPU_TYPE::NS32032),
+    GET_PAIR(CPU_TYPE::NS32332),
+    GET_PAIR(CPU_TYPE::MC680x0),
+    GET_PAIR(CPU_TYPE::X86),
+    GET_PAIR(CPU_TYPE::I386),
+    GET_PAIR(CPU_TYPE::X86_64),
+    GET_PAIR(CPU_TYPE::MIPS),
+    GET_PAIR(CPU_TYPE::NS32532),
+    GET_PAIR(CPU_TYPE::MC98000),
+    GET_PAIR(CPU_TYPE::HPPA),
+    GET_PAIR(CPU_TYPE::ARM),
+    GET_PAIR(CPU_TYPE::ARM64),
+    GET_PAIR(CPU_TYPE::MC88000),
+    GET_PAIR(CPU_TYPE::SPARC),
+    GET_PAIR(CPU_TYPE::I860),
+    GET_PAIR(CPU_TYPE::I860_LITTLE),
+    GET_PAIR(CPU_TYPE::RS6000),
+    GET_PAIR(CPU_TYPE::POWERPC),
+    GET_PAIR(CPU_TYPE::POWERPC64),
+    GET_PAIR(CPU_TYPE::VEO)    
 };
 
 enum class CPU_SUBTYPE_COMPATIBILITY : uint32_t
@@ -91,12 +126,20 @@ enum class CPU_SUBTYPE_VAX : uint32_t
     UVAXIII = 12,
 };
 
+enum class CPU_SUBTYPE_RT
+{
+    ALL  = 0,
+    PC   = 1,
+    APC  = 2,
+    _135 = 3
+};
+
 enum class CPU_SUBTYPE_MC680 : uint32_t
 {
-    ALL          = 1,
-    MC68030      = 1, /* compat */
-    MC68040      = 2,
-    MC68030_ONLY = 3,
+    x0_ALL   = 1,
+    _30      = 1, /* compat */
+    _40      = 2,
+    _30_ONLY = 3,
 };
 
 #define CPU_SUBTYPE_INTEL(f, m) ((f) + ((m) << 4))
@@ -229,6 +272,20 @@ enum class CPU_SUBTYPE_ARM64 : uint32_t
     V8  = 1
 };
 
+/* https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach/machine.h
+ * VEO subtypes
+ * Note: the CPU_SUBTYPE_VEO_ALL will likely change over time to be defined as
+ * one of the specific subtypes.
+ */
+enum class CPU_SUBTYPE_VEO : uint32_t
+{
+    _1  = 1,
+    _2  = 2,
+    _3  = 3,
+    _4  = 4,
+    ALL = 1
+};
+
 enum class CPU_Family : uint32_t
 {
     UNKNOWN           = 0,
@@ -284,6 +341,126 @@ struct fat_arch64
     uint64_t reserved;      /* reserved */
 };
 
+/*
+ * https://unix.superglobalmegacorp.com/xnu/newsrc/EXTERNAL_HEADERS/architecture/byte_order.h.html
+ * Identify the byte order of the current host.
+ */
+
+enum class ByteOrder
+{
+    UnknownByteOrder,
+    LittleEndian,
+    BigEndian
+};
+
+struct ArchInfo
+{
+    std::string name;
+    CPU_TYPE cputype;
+    uint32_t cpusubtype;
+    ByteOrder byteorder;
+    std::string description;
+};
+
+static const ArchInfo ArchInfoTable[] =
+{
+    { "hppa",    CPU_TYPE::HPPA,      static_cast<uint32_t>(CPU_SUBTYPE_HPPA::ALL),     ByteOrder::BigEndian,        "HP-PA"                    },
+    { "i386",    CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_X86::ALL),      ByteOrder::LittleEndian,     "Intel 80x86"              },
+    { "x86_64",  CPU_TYPE::X86_64,    static_cast<uint32_t>(CPU_SUBTYPE_X86::_64_ALL),  ByteOrder::LittleEndian,     "Intel x86-64"             },
+    { "x86_64h", CPU_TYPE::X86_64,    static_cast<uint32_t>(CPU_SUBTYPE_X86::_64_H),    ByteOrder::LittleEndian,     "Intel x86-64h Haswell"    },
+    { "i860",    CPU_TYPE::I860,      static_cast<uint32_t>(CPU_SUBTYPE_I860::ALL),     ByteOrder::BigEndian,        "Intel 860"                },
+    { "m68k",    CPU_TYPE::MC680x0,   static_cast<uint32_t>(CPU_SUBTYPE_MC680::x0_ALL), ByteOrder::BigEndian,        "Motorola 68K"             },
+    { "m88k",    CPU_TYPE::MC88000,   static_cast<uint32_t>(CPU_SUBTYPE_MC88000::ALL),  ByteOrder::BigEndian,        "Motorola 88K"             },
+    { "ppc",     CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::ALL),  ByteOrder::BigEndian,        "PowerPC"                  },
+    { "ppc64",   CPU_TYPE::POWERPC64, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::ALL),  ByteOrder::BigEndian,        "PowerPC 64-bit"           },
+    { "sparc",   CPU_TYPE::SPARC,     static_cast<uint32_t>(CPU_SUBTYPE_SPARC::ALL),    ByteOrder::BigEndian,        "SPARC"                    },
+    { "arm",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::ALL),      ByteOrder::LittleEndian,     "ARM"                      },
+    { "arm64",   CPU_TYPE::ARM64,     static_cast<uint32_t>(CPU_SUBTYPE_ARM64::ALL),    ByteOrder::LittleEndian,     "ARM64"                    },
+    { "any",     CPU_TYPE::ANY,       static_cast<uint32_t>(CPU_SUBTYPE::MULTIPLE),     ByteOrder::UnknownByteOrder, "Architecture Independent" },
+    { "veo",     CPU_TYPE::VEO,       static_cast<uint32_t>(CPU_SUBTYPE_VEO::ALL),      ByteOrder::BigEndian,        "veo"                      },
+    /* specific architecture implementations */
+    { "hppa7100LC", CPU_TYPE::HPPA,      static_cast<uint32_t>(CPU_SUBTYPE_HPPA::_7100LC),    ByteOrder::BigEndian,    "HP-PA 7100LC"             },
+    { "m68030",     CPU_TYPE::MC680x0,   static_cast<uint32_t>(CPU_SUBTYPE_MC680::_30_ONLY),  ByteOrder::BigEndian,    "Motorola 68030"           },
+    { "m68040",     CPU_TYPE::MC680x0,   static_cast<uint32_t>(CPU_SUBTYPE_MC680::_40),       ByteOrder::BigEndian,    "Motorola 68040"           },
+    { "i486",       CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::_486),      ByteOrder::LittleEndian, "Intel 80486"              },
+    { "i486SX",     CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::_486SX),    ByteOrder::LittleEndian, "Intel 80486SX"            },
+    { "pentium",    CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENT),      ByteOrder::LittleEndian, "Intel Pentium"            }, /* same as 586 */
+    { "i586",       CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::_586),      ByteOrder::LittleEndian, "Intel 80586"              },
+    { "pentpro",    CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTPRO),   ByteOrder::LittleEndian, "Intel Pentium Pro"        }, /* same as 686 */
+    { "i686",       CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTPRO),   ByteOrder::LittleEndian, "Intel Pentium Pro"        },
+    { "pentIIm3",   CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTII_M3), ByteOrder::LittleEndian, "Intel Pentium II Model 3" },
+    { "pentIIm5",   CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTII_M5), ByteOrder::LittleEndian, "Intel Pentium II Model 5" },
+    { "pentium4",   CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTIUM_4), ByteOrder::LittleEndian, "Intel Pentium 4"          },
+    { "x86_64h",    CPU_TYPE::I386,      static_cast<uint32_t>(CPU_SUBTYPE_X86::_64_H),       ByteOrder::LittleEndian, "Intel x86-64h Haswell"    },
+    { "ppc601",     CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_601),    ByteOrder::BigEndian,    "PowerPC 601"              },
+    { "ppc603",     CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603),    ByteOrder::BigEndian,    "PowerPC 603"              },
+    { "ppc603e",    CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603e),   ByteOrder::BigEndian,    "PowerPC 603e"             },
+    { "ppc603ev",   CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603ev),  ByteOrder::BigEndian,    "PowerPC 603ev"            },
+    { "ppc604",     CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_604),    ByteOrder::BigEndian,    "PowerPC 604"              },
+    { "ppc604e",    CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_604e),   ByteOrder::BigEndian,    "PowerPC 604e"             },
+    { "ppc750",     CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_750),    ByteOrder::BigEndian,    "PowerPC 750"              },
+    { "ppc7400",    CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_7400),   ByteOrder::BigEndian,    "PowerPC 7400"             },
+    { "ppc7450",    CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_7450),   ByteOrder::BigEndian,    "PowerPC 7450"             },
+    { "ppc970",     CPU_TYPE::POWERPC,   static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_970),    ByteOrder::BigEndian,    "PowerPC 970"              },
+    { "ppc970-64",  CPU_TYPE::POWERPC64, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_970),    ByteOrder::BigEndian,    "PowerPC 970 64-bit"       },
+    { "armv4t",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V4T),         ByteOrder::LittleEndian, "arm v4t"                  },
+    { "armv5",      CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V5TEJ),       ByteOrder::LittleEndian, "arm v5"                   },
+    { "xscale",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::XSCALE),      ByteOrder::LittleEndian, "arm xscale"               },
+    { "armv6",      CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V6),          ByteOrder::LittleEndian, "arm v6"                   },
+    { "armv6m",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V6M),         ByteOrder::LittleEndian, "arm v6m"                  },
+    { "armv7",      CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7),          ByteOrder::LittleEndian, "arm v7"                   },
+    { "armv7f",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7F),         ByteOrder::LittleEndian, "arm v7f"                  },
+    { "armv7s",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7S),         ByteOrder::LittleEndian, "arm v7s"                  },
+    { "armv7k",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7K),         ByteOrder::LittleEndian, "arm v7k"                  },
+    { "armv7m",     CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7M),         ByteOrder::LittleEndian, "arm v7m"                  },
+    { "armv7em",    CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7EM),        ByteOrder::LittleEndian, "arm v7em"                 },
+    { "armv8",      CPU_TYPE::ARM,       static_cast<uint32_t>(CPU_SUBTYPE_ARM::V8),          ByteOrder::LittleEndian, "arm v8"                   },
+    { "arm64",      CPU_TYPE::ARM64,     static_cast<uint32_t>(CPU_SUBTYPE_ARM64::V8),        ByteOrder::LittleEndian, "arm64 v8"                 },
+    { "little",     CPU_TYPE::ANY,       static_cast<uint32_t>(CPU_SUBTYPE::LITTLE_ENDIAN),   ByteOrder::LittleEndian, "Little Endian"            },
+    { "big",        CPU_TYPE::ANY,       static_cast<uint32_t>(CPU_SUBTYPE::BIG_ENDIAN),      ByteOrder::BigEndian,    "Big Endian"               },
+    { "veo1",       CPU_TYPE::VEO,       static_cast<uint32_t>(CPU_SUBTYPE_VEO::_1),          ByteOrder::BigEndian,    "veo 1"                    },
+    { "veo2",       CPU_TYPE::VEO,       static_cast<uint32_t>(CPU_SUBTYPE_VEO::_2),          ByteOrder::BigEndian,    "veo 2"                    }
+};
+
+static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(CPU_TYPE cputype, uint32_t cpusubtype)
+{
+    for (const auto& arch : ArchInfoTable)
+    {
+        if (arch.cputype == cputype && (cpusubtype == static_cast<uint32_t>(CPU_SUBTYPE::MULTIPLE) ||
+                                        ((arch.cpusubtype & ~static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK)) ==
+                                         (cpusubtype & ~static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK)))))
+        {
+            return arch;
+        }
+    }
+
+    ArchInfo ai;
+    for (const auto& arch : ArchInfoTable)
+    {
+        if (arch.cputype == cputype)
+        {
+            ai = arch;
+            break;
+        }
+    }
+
+    ai.cpusubtype = cpusubtype;
+
+    if (cputype == CPU_TYPE::I386)
+    {
+        const auto family = std::to_string(CPU_SUBTYPE_INTEL_FAMILY(cpusubtype & ~(static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK))));
+        const auto model  = std::to_string(CPU_SUBTYPE_INTEL_MODEL(cpusubtype & ~(static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK))));
+
+        ai.description = "Intel family " + family + " model " + model;
+    }
+    else if (cputype == CPU_TYPE::POWERPC)
+    {
+        ai.description = "PowerPC cpusubtype " + std::to_string(cpusubtype);
+    }
+
+    return ai;
+}
+
 namespace Panels
 {
     enum class IDs : uint8_t
@@ -306,8 +483,10 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
 
   public:
     Reference<GView::Utils::FileCache> file;
+    ArchInfo ai;
     fat_header header;
     std::vector<std::variant<fat_arch, fat_arch64>> archs;
+    std::vector<ArchInfo> archsInfo;
     bool shouldSwapEndianess;
     bool is64;
 

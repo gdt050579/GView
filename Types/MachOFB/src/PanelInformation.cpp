@@ -26,9 +26,9 @@ void Information::UpdateGeneralInformation()
     general->AddItem("File");
 
     general->AddItem("Size", tempStr.Format("%s bytes", n.ToString(fat->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
-    general->AddItem("Architecture", fat->is64 ? "x64" : "x86");
+    general->AddItem("Arch", fat->is64 ? "x64" : "x86");
     general->AddItem(
-          "Objects count",
+          "Objects",
           tempStr.Format("%s", n.ToString(static_cast<uint64_t>(fat->header.nfat_arch), { NumericFormatFlags::None, 10, 3, ',' }).data()));
 }
 

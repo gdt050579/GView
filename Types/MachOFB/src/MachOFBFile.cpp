@@ -40,7 +40,11 @@ bool MachOFBFile::Update()
         header.nfat_arch = SwapEndian(header.nfat_arch);
     }
 
+    archs.clear();
     archs.reserve(header.nfat_arch);
+
+    archsInfo.clear();
+    archsInfo.reserve(header.nfat_arch);
 
     if (is64)
     {
@@ -59,6 +63,9 @@ bool MachOFBFile::Update()
             }
             archs.push_back(fa64);
             offset += sizeof(fat_arch64);
+
+            auto ai = GetArchInfoFromCPUTypeAndSubtype(fa64.cputype, static_cast<uint32_t>(fa64.cpusubtype));
+            archsInfo.emplace_back(std::move(ai));
         }
     }
     else
@@ -78,6 +85,9 @@ bool MachOFBFile::Update()
             }
             archs.push_back(fa);
             offset += sizeof(fat_arch);
+
+            auto ai = GetArchInfoFromCPUTypeAndSubtype(fa.cputype, static_cast<uint32_t>(fa.cpusubtype));
+            archsInfo.emplace_back(std::move(ai));
         }
     }
 

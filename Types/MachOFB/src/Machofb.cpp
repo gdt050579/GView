@@ -58,10 +58,10 @@ extern "C"
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFB::MachOFBFile> macho)
     {
         BufferViewer::Settings settings;
-        uint64_t offset = 0;
+        uint64_t offsetHeaders = 0;
 
-        settings.AddZone(offset, sizeof(macho->header), macho->colors.header, "Header");
-        offset += sizeof(macho->header);
+        settings.AddZone(offsetHeaders, sizeof(macho->header), macho->colors.header, "Header");
+        offsetHeaders += sizeof(macho->header);
 
         uint32_t objectCount = 0;
         LocalString<128> temp;
@@ -95,9 +95,11 @@ extern "C"
             }
 
             temp.Format("Arch #%u", objectCount);
-            settings.AddZone(offset, structSize, macho->colors.arch, temp);
+            settings.AddZone(offsetHeaders, structSize, macho->colors.arch, temp);
+            offsetHeaders += structSize;
 
-            temp.Format("Obj #%u", objectCount);
+            const auto& ai = macho->archsInfo[objectCount];
+            temp.Format("#%u %s", objectCount, ai.name.c_str());
             settings.AddZone(offset, size, macho->colors.object, temp);
 
             objectCount++;

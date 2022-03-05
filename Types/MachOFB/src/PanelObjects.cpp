@@ -25,8 +25,9 @@ Objects::Objects(Reference<MachOFBFile> _fat, Reference<GView::View::WindowInter
     Base = 16;
 
     list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Right, 6);
-    list->AddColumn("CPU type", TextAlignament::Right, 14);
+    list->AddColumn("Name", TextAlignament::Right, 10);
+    list->AddColumn("Description", TextAlignament::Right, 30);
+    list->AddColumn("CPU type", TextAlignament::Right, 20);
     list->AddColumn("CPU subtype", TextAlignament::Right, 14);
     list->AddColumn("Offset", TextAlignament::Right, 12);
     list->AddColumn("Size", TextAlignament::Right, 12);
@@ -114,8 +115,11 @@ void Panels::Objects::Update()
 
     for (decltype(fat->header.nfat_arch) i = 0U; i < fat->header.nfat_arch; i++)
     {
-        temp.Format("#%lu", i);
+        const auto& ai = fat->archsInfo[i];
+
+        temp.Format("#%lu %s", i, ai.name.c_str());
         auto item = list->AddItem(temp); // name
+        list->SetItemText(item, 1, ai.description.c_str());
 
         list->SetItemData<Identity<decltype(fat->archs)>::type::value_type>(item, &fat->archs[i]);
 
@@ -151,11 +155,11 @@ void Panels::Objects::Update()
             break;
         }
 
-        list->SetItemText(item, 1, GetValue(n, static_cast<uint64_t>(cputype)));
-        list->SetItemText(item, 2, GetValue(n, static_cast<uint64_t>(cpusubtype)));
-        list->SetItemText(item, 3, GetValue(n, offset));
-        list->SetItemText(item, 4, GetValue(n, size));
-        list->SetItemText(item, 5, GetValue(n, align));
+        list->SetItemText(item, 2, CpuTypeNames.at(cputype));
+        list->SetItemText(item, 3, GetValue(n, static_cast<uint64_t>(cpusubtype)));
+        list->SetItemText(item, 4, GetValue(n, offset));
+        list->SetItemText(item, 5, GetValue(n, size));
+        list->SetItemText(item, 6, GetValue(n, align));
     }
 }
 
