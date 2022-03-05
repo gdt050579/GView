@@ -9,41 +9,14 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-template <typename T>
-constexpr std::string BinaryToHexString(const T number, const size_t length)
-{
-    constexpr const char digits[] = "0123456789ABCDEF";
-
-    std::string output;
-    output.reserve(length * 3);
-
-    const auto input = reinterpret_cast<const uint8_t*>(&number);
-    std::for_each(
-          input,
-          input + length,
-          [&output](uint8_t byte)
-          {
-              output.push_back(digits[byte >> 4]);
-              output.push_back(digits[byte & 0x0F]);
-              output.push_back(' ');
-          });
-
-    if (output.empty() == false)
-    {
-        output.resize(output.size() - 1);
-    }
-
-    return output;
-}
-
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        auto header = buf.GetObject<MachOFB::fat_header>();
+        auto header = buf.GetObject<MachOFB::MAC::fat_header>();
         CHECK(header != nullptr, false, "");
-        CHECK(header->magic == MachOFB::FAT_MAGIC || header->magic == MachOFB::FAT_CIGAM || header->magic == MachOFB::FAT_MAGIC_64 ||
-                    header->magic == MachOFB::FAT_CIGAM_64,
+        CHECK(header->magic == MachOFB::MAC::FAT_MAGIC || header->magic == MachOFB::MAC::FAT_CIGAM ||
+                    header->magic == MachOFB::MAC::FAT_MAGIC_64 || header->magic == MachOFB::MAC::FAT_CIGAM_64,
               false,
               "Magic is [%u]!",
               header->magic);
@@ -131,10 +104,10 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         static const std::initializer_list<std::string> patterns = {
-            "hex:'" + BinaryToHexString(MachOFB::FAT_MAGIC, sizeof(MachOFB::FAT_MAGIC)) + "'",
-            "hex:'" + BinaryToHexString(MachOFB::FAT_CIGAM, sizeof(MachOFB::FAT_CIGAM)) + "'",
-            "hex:'" + BinaryToHexString(MachOFB::FAT_MAGIC_64, sizeof(MachOFB::FAT_MAGIC_64)) + "'",
-            "hex:'" + BinaryToHexString(MachOFB::FAT_CIGAM_64, sizeof(MachOFB::FAT_CIGAM_64)) + "'"
+            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_MAGIC, sizeof(MachOFB::MAC::FAT_MAGIC)) + "'",
+            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_CIGAM, sizeof(MachOFB::MAC::FAT_CIGAM)) + "'",
+            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_MAGIC_64, sizeof(MachOFB::MAC::FAT_MAGIC_64)) + "'",
+            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_CIGAM_64, sizeof(MachOFB::MAC::FAT_CIGAM_64)) + "'"
         };
 
         sect["Pattern"]  = patterns;
