@@ -124,7 +124,7 @@ void Panels::Objects::Update()
         list->SetItemData<Identity<decltype(fat->archs)>::type::value_type>(item, &fat->archs[i]);
 
         MAC::CPU_TYPE cputype{};
-        MAC::CPU_SUBTYPE cpusubtype{};
+        uint32_t cpusubtype{};
         uint64_t offset{};
         uint64_t size{};
         uint64_t align{};
@@ -159,8 +159,7 @@ void Panels::Objects::Update()
         list->SetItemText(
               item,
               3,
-              std::string(MAC::GetCPUSubtype(cputype, static_cast<uint32_t>(cpusubtype))) + " (" +
-                    std::to_string(static_cast<uint32_t>(cpusubtype)) + ")");
+              std::string(MAC::GetCPUSubtype(cputype, static_cast<uint32_t>(cpusubtype))) + " (" + std::to_string(cpusubtype) + ")");
         list->SetItemText(item, 4, GetValue(n, offset));
         list->SetItemText(item, 5, GetValue(n, size));
         list->SetItemText(item, 6, GetValue(n, align));

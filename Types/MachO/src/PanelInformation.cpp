@@ -17,19 +17,33 @@ Information::Information(Reference<MachOFile> _machO) : TabPage("Informa&Tion")
 void Information::UpdateGeneralInformation()
 {
     ItemHandle item;
-    LocalString<256> tempStr;
+    LocalString<256> tmp;
     NumericFormatter n;
 
     general->DeleteAllItems();
-    item = general->AddItem("Fat Binary Info");
+    item = general->AddItem("MachO Info");
     general->SetItemType(item, ListViewItemType::Category);
     general->AddItem("File");
-
-    general->AddItem("Size", tempStr.Format("%s bytes", n.ToString(machO->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
+    general->AddItem("Size", tmp.Format("%s bytes", n.ToString(machO->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
     general->AddItem("Architecture", machO->is64 ? "x64" : "x86");
-    //general->AddItem(
-    //      "Objects count",
-    //      tempStr.Format("%s", n.ToString(static_cast<uint64_t>(machO->header.nfat_arch), { NumericFormatFlags::None, 10, 3, ',' }).data()));
+
+    const char* fmt = "%u (0x%X)";
+    general->AddItem("Magic", tmp.Format(fmt, machO->header.magic, machO->header.magic));
+    general->AddItem("CPU Type", tmp.Format(fmt, machO->header.cputype, machO->header.cputype));
+    general->AddItem("CPU Subtype", tmp.Format(fmt, machO->header.cpusubtype, machO->header.cpusubtype));
+    general->AddItem("File Type", tmp.Format(fmt, machO->header.filetype, machO->header.filetype));
+    general->AddItem("Load Commands", tmp.Format(fmt, machO->header.ncmds, machO->header.ncmds));
+    general->AddItem(
+          "Size of Commands",
+          tmp.Format(
+                "%s (%s)",
+                n.ToString(machO->header.sizeofcmds, { NumericFormatFlags::None, 10, 3, ',' }).data(),
+                n.ToString(machO->header.sizeofcmds, { NumericFormatFlags::HexPrefix, 10, 3, ',' }).data()));
+    general->AddItem("Flags", tmp.Format(fmt, machO->header.flags, machO->header.flags));
+    if (machO->is64)
+    {
+        general->AddItem("Reserved", tmp.Format(fmt, machO->header.reserved, machO->header.reserved));
+    }
 }
 
 void Information::RecomputePanelsPositions()

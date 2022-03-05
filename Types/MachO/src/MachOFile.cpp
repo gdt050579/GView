@@ -30,16 +30,30 @@ bool MachOFile::Update()
 {
     uint64_t offset = 0;
 
-    // CHECK(file->Copy<fat_header>(offset, header), false, "");
-    // offset += sizeof(fat_header);
+    {
+        uint32_t magic = 0;
+        CHECK(file->Copy<uint32_t>(offset, magic), false, "");
 
-    // is64                = header.magic == MH_MAGIC_64 || header.magic == MH_CIGAM_64;
-    // shouldSwapEndianess = header.magic == MH_CIGAM || header.magic == MH_CIGAM_64;
+        is64                = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
+        shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64;
+    }
+
+    CHECK(file->Copy<MachO::MAC::mach_header>(offset, header), false, "");
+    offset += sizeof(header);
+    if (is64 == false)
+    {
+        offset -= sizeof(MachO::MAC::mach_header::reserved);
+    }
 
     if (shouldSwapEndianess)
     {
-        // header.magic     = SwapEndian(header.magic);
-        // header.nfat_arch = SwapEndian(header.nfat_arch);
+        header.magic      = SwapEndian(header.magic);
+        header.cputype    = SwapEndian(header.cputype);
+        header.cpusubtype = SwapEndian(header.cpusubtype);
+        header.filetype   = SwapEndian(header.filetype);
+        header.ncmds      = SwapEndian(header.ncmds);
+        header.sizeofcmds = SwapEndian(header.sizeofcmds);
+        header.flags      = SwapEndian(header.flags);
     }
 
     // archs.reserve(header.nfat_arch);

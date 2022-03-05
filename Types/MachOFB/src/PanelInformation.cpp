@@ -23,8 +23,6 @@ void Information::UpdateGeneralInformation()
     general->DeleteAllItems();
     item = general->AddItem("Fat Binary Info");
     general->SetItemType(item, ListViewItemType::Category);
-    general->AddItem("File");
-
     general->AddItem("Size", tempStr.Format("%s bytes", n.ToString(fat->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
     general->AddItem("Arch", fat->is64 ? "x64" : "x86");
     general->AddItem(

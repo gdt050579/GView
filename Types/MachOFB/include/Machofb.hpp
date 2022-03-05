@@ -523,22 +523,22 @@ static const std::string_view GetCPUSubtype(CPU_TYPE type, uint32_t subtype)
 
 struct fat_arch
 {
-    CPU_TYPE cputype;       /* cpu specifier (int) */
-    CPU_SUBTYPE cpusubtype; /* machine specifier (int) */
-    uint32_t offset;        /* file offset to this object file */
-    uint32_t size;          /* size of this object file */
-    uint32_t align;         /* alignment as a power of 2 */
+    CPU_TYPE cputype;    /* cpu specifier (int) */
+    uint32_t cpusubtype; /* machine specifier (int) */
+    uint32_t offset;     /* file offset to this object file */
+    uint32_t size;       /* size of this object file */
+    uint32_t align;      /* alignment as a power of 2 */
 };
 
 // https://opensource.apple.com/source/cctools/cctools-895/include/mach-o/fat.h.auto.html
 struct fat_arch64
 {
-    CPU_TYPE cputype;       /* cpu specifier (int) */
-    CPU_SUBTYPE cpusubtype; /* machine specifier (int) */
-    uint64_t offset;        /* file offset to this object file */
-    uint64_t size;          /* size of this object file */
-    uint32_t align;         /* alignment as a power of 2 */
-    uint64_t reserved;      /* reserved */
+    CPU_TYPE cputype;    /* cpu specifier (int) */
+    uint32_t cpusubtype; /* machine specifier (int) */
+    uint64_t offset;     /* file offset to this object file */
+    uint64_t size;       /* size of this object file */
+    uint32_t align;      /* alignment as a power of 2 */
+    uint64_t reserved;   /* reserved */
 };
 
 /*

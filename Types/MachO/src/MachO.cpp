@@ -40,13 +40,14 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        // auto header = buf.GetObject<MachO::fat_header>();
-        // CHECK(header != nullptr, false, "");
-        // CHECK(header->magic == MachO::MH_MAGIC || header->magic == MachO::MH_CIGAM || header->magic == MachO::MH_MAGIC_64 ||
-        //             header->magic == MachO::MH_CIGAM_64,
-        //       false,
-        //       "Magic is [%u]!",
-        //       header->magic);
+        auto dword = buf.GetObject<uint32_t>();
+        CHECK(dword != nullptr, false, "");
+        const uint32_t magic = dword;
+        CHECK(magic == MachO::MAC::MH_MAGIC || magic == MachO::MAC::MH_CIGAM || magic == MachO::MAC::MH_MAGIC_64 ||
+                    magic == MachO::MAC::MH_CIGAM_64,
+              false,
+              "Magic is [%u]!",
+              magic);
         return true;
     }
 
@@ -60,48 +61,15 @@ extern "C"
         BufferViewer::Settings settings;
         uint64_t offset = 0;
 
-        // settings.AddZone(offset, sizeof(machO->header), macho->colors.header, "Header");
-        // offset += sizeof(machO->header);
+        const auto headerSize =
+              machO->is64 ? sizeof(MachO::MAC::mach_header) + sizeof(MachO::MAC::mach_header::reserved) : sizeof(MachO::MAC::mach_header);
+        settings.AddZone(offset, headerSize, machO->colors.header, "Header");
+        offset += headerSize;
 
         uint32_t objectCount = 0;
         LocalString<128> temp;
 
-        // for (const auto& vArch : machO->archs)
-        // {
-        //     uint64_t structSize = 0;
-        //     uint64_t offset     = 0;
-        //     uint64_t size       = 0;
         //
-        //     switch (vArch.index())
-        //     {
-        //     case 0:
-        //     {
-        //         const auto& arch = std::get<0>(vArch);
-        //         structSize       = sizeof(arch);
-        //         offset           = arch.offset;
-        //         size             = arch.size;
-        //     }
-        //     break;
-        //     case 1:
-        //     {
-        //         const auto& arch = std::get<1>(vArch);
-        //         structSize       = sizeof(arch);
-        //         offset           = arch.offset;
-        //         size             = arch.size;
-        //     }
-        //     break;
-        //     default:
-        //         break;
-        //     }
-        //
-        //     temp.Format("Arch #%u", objectCount);
-        //     settings.AddZone(offset, structSize, machO->colors.arch, temp);
-        //
-        //     temp.Format("Obj #%u", objectCount);
-        //     settings.AddZone(offset, size, machO->colors.object, temp);
-        //
-        //     objectCount++;
-        // }
 
         win->CreateViewer("BufferView", settings);
     }
@@ -129,10 +97,10 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         static const std::initializer_list<std::string> patterns = {
-            "hex:'" + BinaryToHexString(MachO::MH_MAGIC, sizeof(MachO::MH_MAGIC)) + "'",
-            "hex:'" + BinaryToHexString(MachO::MH_CIGAM, sizeof(MachO::MH_CIGAM)) + "'",
-            "hex:'" + BinaryToHexString(MachO::MH_MAGIC_64, sizeof(MachO::MH_MAGIC_64)) + "'",
-            "hex:'" + BinaryToHexString(MachO::MH_CIGAM_64, sizeof(MachO::MH_CIGAM_64)) + "'"
+            "hex:'" + BinaryToHexString(MachO::MAC::MH_MAGIC, sizeof(MachO::MAC::MH_MAGIC)) + "'",
+            "hex:'" + BinaryToHexString(MachO::MAC::MH_CIGAM, sizeof(MachO::MAC::MH_CIGAM)) + "'",
+            "hex:'" + BinaryToHexString(MachO::MAC::MH_MAGIC_64, sizeof(MachO::MAC::MH_MAGIC_64)) + "'",
+            "hex:'" + BinaryToHexString(MachO::MAC::MH_CIGAM_64, sizeof(MachO::MAC::MH_CIGAM_64)) + "'"
         };
 
         sect["Pattern"]  = patterns;
