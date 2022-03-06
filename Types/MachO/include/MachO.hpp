@@ -228,8 +228,10 @@ enum class CPU_SUBTYPE_X86 : uint32_t
 
 enum class CPU_SUBTYPE_X86_64 : uint32_t
 {
-    ALL = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 3,
-    H   = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 8, /* Haswell feature subset */
+    ALL   = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 3,
+    ALL64 = 3,
+    H     = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 8, /* Haswell feature subset */
+    H64   = 8                                                            /* Haswell feature subset */
 };
 
 enum class CPU_THREADTYPE : uint32_t
@@ -413,7 +415,9 @@ static const std::map<CPU_SUBTYPE_X86, std::string_view> CpuSubtypeX86Names{ { C
                                                                              { CPU_SUBTYPE_X86::ARCH1, "ARCH1" } };
 
 static const std::map<CPU_SUBTYPE_X86_64, std::string_view> CpuSubtypeX86_64Names{ { CPU_SUBTYPE_X86_64::ALL, "ALL" },
-                                                                                   { CPU_SUBTYPE_X86_64::H, "Haswell" } };
+                                                                                   { CPU_SUBTYPE_X86_64::ALL64, "ALL" },
+                                                                                   { CPU_SUBTYPE_X86_64::H, "Haswell" },
+                                                                                   { CPU_SUBTYPE_X86_64::H64, "Haswell" } };
 
 static const std::map<CPU_SUBTYPE_MIPS, std::string_view> CpuSubtypeMipsNames{
     GET_PAIR(CPU_SUBTYPE_MIPS::ALL),    GET_PAIR(CPU_SUBTYPE_MIPS::R2300),  GET_PAIR(CPU_SUBTYPE_MIPS::R2600),
@@ -698,32 +702,34 @@ static const std::map<FileType, std::string_view> FileTypeNames{
 
 enum class MachHeaderFlags : uint32_t
 {
-    NOUNDEFS                = 0x1,
-    INCRLINK                = 0x2,
-    DYLDLINK                = 0x4,
-    BINDATLOAD              = 0x8,
-    PREBOUND                = 0x10,
-    SPLIT_SEGS              = 0x20,
-    LAZY_INIT               = 0x40,
-    TWOLEVEL                = 0x80,
-    FORCE_FLAT              = 0x100,
-    NOMULTIDEFS             = 0x200,
-    NOFIXPREBINDING         = 0x400,
-    PREBINDABLE             = 0x800,
-    ALLMODSBOUND            = 0x1000,
-    SUBSECTIONS_VIA_SYMBOLS = 0x2000,
-    CANONICAL               = 0x4000,
-    WEAK_DEFINES            = 0x8000,
-    BINDS_TO_WEAK           = 0x10000,
-    ALLOW_STACK_EXECUTION   = 0x20000,
-    ROOT_SAFE               = 0x40000,
-    SETUID_SAFE             = 0x80000,
-    NO_REEXPORTED_DYLIBS    = 0x100000,
-    PIE                     = 0x200000,
-    DEAD_STRIPPABLE_DYLIB   = 0x400000,
-    HAS_TLV_DESCRIPTORS     = 0x800000,
-    NO_HEAP_EXECUTION       = 0x1000000,
-    APP_EXTENSION_SAFE      = 0x02000000
+    NOUNDEFS                      = 0x1,
+    INCRLINK                      = 0x2,
+    DYLDLINK                      = 0x4,
+    BINDATLOAD                    = 0x8,
+    PREBOUND                      = 0x10,
+    SPLIT_SEGS                    = 0x20,
+    LAZY_INIT                     = 0x40,
+    TWOLEVEL                      = 0x80,
+    FORCE_FLAT                    = 0x100,
+    NOMULTIDEFS                   = 0x200,
+    NOFIXPREBINDING               = 0x400,
+    PREBINDABLE                   = 0x800,
+    ALLMODSBOUND                  = 0x1000,
+    SUBSECTIONS_VIA_SYMBOLS       = 0x2000,
+    CANONICAL                     = 0x4000,
+    WEAK_DEFINES                  = 0x8000,
+    BINDS_TO_WEAK                 = 0x10000,
+    ALLOW_STACK_EXECUTION         = 0x20000,
+    ROOT_SAFE                     = 0x40000,
+    SETUID_SAFE                   = 0x80000,
+    NO_REEXPORTED_DYLIBS          = 0x100000,
+    PIE                           = 0x200000,
+    DEAD_STRIPPABLE_DYLIB         = 0x400000,
+    HAS_TLV_DESCRIPTORS           = 0x800000,
+    NO_HEAP_EXECUTION             = 0x1000000,
+    APP_EXTENSION_SAFE            = 0x02000000,
+    NLIST_OUTOFSYNC_WITH_DYLDINFO = 0x04000000,
+    SIM_SUPPORT                   = 0x08000000
 };
 
 static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescriptions{
@@ -739,34 +745,42 @@ static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescript
     { MachHeaderFlags::TWOLEVEL, "The image is using two-level name space bindings." },
     { MachHeaderFlags::FORCE_FLAT, "The executable is forcing all images to use flat name space bindings." },
     { MachHeaderFlags::NOMULTIDEFS,
-      "This umbrella guarantees no multiple defintions of symbols in its sub-images so the two-level namespace hints can always be used." },
+      "This umbrella guarantees no multiple defintions of symbols in its sub-images so the two-level namespace hints can always be "
+      "used." },
     { MachHeaderFlags::NOFIXPREBINDING, "Do not have dyld notify the prebinding agent about this executable." },
     { MachHeaderFlags::PREBINDABLE,
-      "The binary is not prebound but can have its prebinding redone -> only used when MH_PREBOUND is not set." },
+      "The binary is not prebound but can have its prebinding redone -> only used when FileType::PREBOUND is not set." },
     { MachHeaderFlags::ALLMODSBOUND,
-      "Indicates that this binary binds to all two-level namespace modules of its dependent libraries -> only used when MH_PREBINDABLE and "
+      "Indicates that this binary binds to all two-level namespace modules of its dependent libraries -> only used when "
+      "MH_PREBINDABLE and "
       "MH_TWOLEVEL are both set." },
     { MachHeaderFlags::SUBSECTIONS_VIA_SYMBOLS, "Safe to divide up the sections into sub-sections via symbols for dead code stripping." },
     { MachHeaderFlags::CANONICAL, "The binary has been canonicalized via the unprebind operation." },
     { MachHeaderFlags::WEAK_DEFINES, "The final linked image contains external weak symbols." },
     { MachHeaderFlags::BINDS_TO_WEAK, "The final linked image uses weak symbols." },
     { MachHeaderFlags::ALLOW_STACK_EXECUTION,
-      "When this bit is set, all stacks in the task will be given stack execution privilege -> only used in MH_EXECUTE filetypes." },
+      "When this bit is set, all stacks in the task will be given stack execution privilege -> only used in FileType::EXECUTE "
+      "filetypes." },
     { MachHeaderFlags::ROOT_SAFE, "When this bit is set, the binary declares it is safe for use in processes with uid zero." },
     { MachHeaderFlags::SETUID_SAFE, "When this bit is set, the binary declares it is safe for use in processes when issetugid() is true." },
     { MachHeaderFlags::NO_REEXPORTED_DYLIBS,
       "When this bit is set on a dylib, the static linker does not need to examine dependent dylibs to see if any are re-exported." },
     { MachHeaderFlags::PIE,
-      "When this bit is set, the OS will load the main executable at a random address -> only used in MH_EXECUTE filetypes." },
+      "When this bit is set, the OS will load the main executable at a random address -> only used in FileType::EXECUTE filetypes." },
     { MachHeaderFlags::DEAD_STRIPPABLE_DYLIB,
-      "Only for use on dylibs -> when linking against a dylib that has this bit set, the static linker will automatically not create a "
+      "Only for use on dylibs -> when linking against a dylib that has this bit set, the static linker will automatically not create "
+      "a "
       "LC_LOAD_DYLIB load command to the dylib if no symbols are being referenced from the dylib." },
     { MachHeaderFlags::HAS_TLV_DESCRIPTORS, "Contains a section of type S_THREAD_LOCAL_VARIABLES." },
     { MachHeaderFlags::NO_HEAP_EXECUTION,
       "When this bit is set, the OS will run the main executable with a non-executable heap even on platforms (e.g.i386) that don't "
       "require it -> only used in MH_EXECUTE filetypes." },
-    { MachHeaderFlags::APP_EXTENSION_SAFE, "When this bit is set, the binary declares it is safe for use in processes with uid zero." },
-    { MachHeaderFlags::ROOT_SAFE, "The code was linked for use in an application extension." }
+    { MachHeaderFlags::APP_EXTENSION_SAFE, "The code was linked for use in an application extension." },
+    { MachHeaderFlags::NLIST_OUTOFSYNC_WITH_DYLDINFO,
+      "The external symbols listed in the nlist symbol table do not include all the symbols listed in the dyld info." },
+    { MachHeaderFlags::SIM_SUPPORT,
+      "Allow LC_MIN_VERSION_MACOS and LoadCommandType::BUILD_VERSION load commands with the platforms macOS, iOSMac, iOSSimulator, "
+      "tvOSSimulator and watchOSSimulator." }
 };
 
 static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ GET_PAIR_FROM_ENUM(MachHeaderFlags::NOUNDEFS),
@@ -865,8 +879,11 @@ enum class LoadCommandType : uint32_t
     LINKER_OPTION            = 0x2D,
     LINKER_OPTIMIZATION_HINT = 0x2E,
     VERSION_MIN_TVOS         = 0x2F,
-    VERSION_MIN_WATCHOS      = 0x30
-
+    VERSION_MIN_WATCHOS      = 0x30,
+    BUILD_VERSION            = 0x31,
+    NOTE                     = 0x32,
+    DYLD_EXPORTS_TRIE        = 0x33,
+    DYLD_CHAINED_FIXUPS      = 0x34
 };
 
 struct load_command
@@ -924,7 +941,11 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_P
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::LINKER_OPTION),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::LINKER_OPTIMIZATION_HINT),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_TVOS),
-                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_WATCHOS) };
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_WATCHOS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::BUILD_VERSION),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::NOTE),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_EXPORTS_TRIE),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_CHAINED_FIXUPS) };
 
 static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions{
     { LoadCommandType::REQ_DYLD, "Requires dynamic linker." },
@@ -977,7 +998,79 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions
     { LoadCommandType::LINKER_OPTION, "Linker options in FileType::OBJECT files." },
     { LoadCommandType::LINKER_OPTIMIZATION_HINT, "Optimization hints in FileType::OBJECT files." },
     { LoadCommandType::VERSION_MIN_TVOS, "Build for AppleTV min OS version." },
-    { LoadCommandType::VERSION_MIN_WATCHOS, "Build for Watch min OS version." }
+    { LoadCommandType::VERSION_MIN_WATCHOS, "Build for Watch min OS version." },
+    { LoadCommandType::BUILD_VERSION, "Build for platform min OS version." },
+    { LoadCommandType::NOTE, "Arbitrary data included within a Mach-O file." },
+    { LoadCommandType::DYLD_EXPORTS_TRIE, "Used with `LinkeditDataCommand`, payload is trie." },
+    { LoadCommandType::DYLD_CHAINED_FIXUPS, "Used with `LinkeditDataCommand." }
+};
+
+union lc_str
+{
+    uint32_t offset; /* offset to the string */
+    char* ptr;       /* pointer to the string */
+};
+
+// https://opensource.apple.com/source/xnu/xnu-1228/osfmk/mach/vm_prot.h.auto.html
+enum class VM_PROT : uint32_t
+{
+    NONE      = 0x0,
+    READ      = 0x1,                      /* read permission */
+    WRITE     = 0x2,                      /* write permission */
+    EXECUTE   = 0x4,                      /* execute permission */
+    DEFAULT   = (READ | WRITE),           /* The default protection for newly-created virtual memory. */
+    ALL       = (READ | WRITE | EXECUTE), /* The maximum privileges possible, for parameter checking. */
+    NO_CHANGE = 0x8,  /* An invalid protection value. Used only by memory_object_lock_request to indicate no change to page locks.  Using
+                       -1 here is a bad idea because it looks like VM_PROT::ALL and then some. */
+    COPY = 0x10,      /* When a caller finds that he cannot obtain write permission on a mapped entry, the following flag can be used.  The
+                       * entry will be made "needs copy" effectively copying the object (using COW), and write permission will be added to
+                       * the maximum protections for the associated entry. */
+    WANTS_COPY = 0x10 /* Another invalid protection value. Used only by memory_object_data_request upon an object which has specified a
+                       * copy_call copy strategy. It is used when the kernel wants a page belonging to a copy of the object, and is only
+                       * asking the object as a result of following a shadow chain. This solves the race between pages being pushed up
+                       * by the memory manager and the kernel walking down the shadow chain.
+                       */
+};
+
+struct segment_command
+{
+    LoadCommandType cmd; /* LC_SEGMENT */
+    uint32_t cmdsize;    /* includes sizeof section structs */
+    char segname[16];    /* segment name */
+    uint32_t vmaddr;     /* memory address of this segment */
+    uint32_t vmsize;     /* memory size of this segment */
+    uint32_t fileoff;    /* file offset of this segment */
+    uint32_t filesize;   /* amount to map from the file */
+    VM_PROT maxprot;     /* maximum VM protection */
+    VM_PROT initprot;    /* initial VM protection */
+    uint32_t nsects;     /* number of sections in segment */
+    uint32_t flags;      /* flags */
+};
+
+struct segment_command_64
+{
+    LoadCommandType cmd; /* LC_SEGMENT_64 */
+    uint32_t cmdsize;    /* includes sizeof section_64 structs */
+    char segname[16];    /* segment name */
+    uint64_t vmaddr;     /* memory address of this segment */
+    uint64_t vmsize;     /* memory size of this segment */
+    uint64_t fileoff;    /* file offset of this segment */
+    uint64_t filesize;   /* amount to map from the file */
+    VM_PROT maxprot;     /* maximum VM protection */
+    VM_PROT initprot;    /* initial VM protection */
+    uint32_t nsects;     /* number of sections in segment */
+    uint32_t flags;      /* flags */
+};
+
+enum class SegmentCommandFlags : uint32_t
+{
+    HIGHVM = 0x01,  /* the file contents for this segment is for the high part of the VM space, the low part is zero filled (for stacks
+                       in  core files) */
+    FVMLIB  = 0x02, /* this segment is the VM that is allocated by a fixed VM library, for overlap checking in the link editor */
+    NORELOC = 0x04, /* this segment has nothing that was relocated in it and nothing relocated to it, that is it maybe safely replaced
+                       without relocation */
+    PROTECTED_VERSION_1 = 0x08, /* This segment is protected. If the segment starts at file offset 0, the first page of the segment is
+                                   not protected.  All other pages of the segment are protected. */
 };
 
 } // namespace GView::Type::MachO::MAC
@@ -989,7 +1082,8 @@ namespace Panels
     enum class IDs : uint8_t
     {
         Information  = 0,
-        LoadCommands = 1
+        LoadCommands = 1,
+        Segments     = 2
     };
 };
 
@@ -1000,7 +1094,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     {
         ColorPair header{ Color::Olive, Color::Transparent };
         ColorPair loadCommand{ Color::Magenta, Color::Transparent };
-        ColorPair objectName{ Color::DarkRed, Color::Transparent };
+        ColorPair section{ Color::DarkRed, Color::Transparent };
         ColorPair object{ Color::Silver, Color::Transparent };
     } colors;
 
@@ -1010,10 +1104,17 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         uint64_t offset;
     };
 
+    union Segment
+    {
+        MAC::segment_command x86;
+        MAC::segment_command_64 x64;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
+    std::vector<Segment> segments;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1072,6 +1173,25 @@ namespace Panels
 
       public:
         LoadCommands(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class Segments : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64_t value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        Segments(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

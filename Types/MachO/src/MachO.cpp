@@ -92,6 +92,11 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new MachO::Panels::LoadCommands(mach, win)), false);
         }
 
+        if (mach->HasPanel(MachO::Panels::IDs::Segments))
+        {
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Segments(mach, win)), false);
+        }
+
         return true;
     }
 
