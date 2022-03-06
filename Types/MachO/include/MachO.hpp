@@ -51,60 +51,211 @@ constexpr std::string BinaryToHexString(const T number, const size_t length)
 
 namespace GView::Type::MachO::MAC
 {
-// https://opensource.apple.com/source/xnu/xnu-344/EXTERNAL_HEADERS/mach-o/fat.h
-// https://github.com/grumbach/nm_otool
 constexpr uint32_t MH_MAGIC    = 0xfeedface; /* the mach magic number */
 constexpr uint32_t MH_CIGAM    = 0xcefaedfe; /* NXSwapInt(MH_MAGIC) */
 constexpr uint32_t MH_MAGIC_64 = 0xfeedfacf; /* the 64-bit mach magic number */
 constexpr uint32_t MH_CIGAM_64 = 0xcffaedfe; /* NXSwapInt(MH_MAGIC_64) */
 
-// https://opensource.apple.com/source/xnu/xnu-4570.41.2/osfmk/mach/machine.h.auto.html
+typedef int32_t cpu_type_t;
+typedef int32_t cpu_subtype_t;
+typedef int32_t cpu_threadtype_t;
 
-enum class CPU_STATE : uint32_t
-{
-    USER   = 0,
-    SYSTEM = 1,
-    IDLE   = 2,
-    NICE   = 3,
-    MAX    = 4
-};
+constexpr uint32_t CPU_STATE_MAX = 3;
 
-enum class CPU_ARCH : uint32_t
-{
-    MASK  = 0xff000000, /* mask for architecture bits */
-    ABI64 = 0x01000000  /* 64 bit ABI */
-};
+constexpr uint32_t CPU_STATE_USER   = 0;
+constexpr uint32_t CPU_STATE_SYSTEM = 1;
+constexpr uint32_t CPU_STATE_IDLE   = 2;
 
-// https://opensource.apple.com/source/xnu/xnu-4570.41.2/osfmk/mach/machine.h.auto.html
-// https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach/machine.h
+constexpr uint32_t CPU_ARCH_ABI64    = 0x1000000;
+constexpr uint32_t CPU_ARCH_ABI64_32 = 0x2000000;
 
-enum class CPU_TYPE : uint32_t
-{
-    ANY  = static_cast<uint32_t>(-1),
-    VAX  = 1,
-    ROMP = 2,
-    /* skip	((cpu_type_t) 3)	*/
-    NS32032     = 4,
-    NS32332     = 5,
-    MC680x0     = 6,
-    X86         = 7,
-    I386        = X86, /* compatibility */
-    X86_64      = (X86 | static_cast<uint32_t>(CPU_ARCH::ABI64)),
-    MIPS        = 8,
-    NS32532     = 9,
-    MC98000     = 10,
-    HPPA        = 11,
-    ARM         = 12,
-    ARM64       = (ARM | static_cast<uint32_t>(CPU_ARCH::ABI64)),
-    MC88000     = 13,
-    SPARC       = 14,
-    I860        = 15, // big-endian
-    I860_LITTLE = 16, // little-endian
-    RS6000      = 17,
-    POWERPC     = 18,
-    POWERPC64   = (POWERPC | static_cast<uint32_t>(CPU_ARCH::ABI64)),
-    VEO         = 255
-};
+constexpr cpu_type_t CPU_TYPE_ANY         = -1;
+constexpr cpu_type_t CPU_TYPE_VAX         = 1;
+constexpr cpu_type_t CPU_TYPE_ROMP        = 2;
+constexpr cpu_type_t CPU_TYPE_NS32032     = 4;
+constexpr cpu_type_t CPU_TYPE_NS32332     = 5;
+constexpr cpu_type_t CPU_TYPE_MC680x0     = 6;
+constexpr cpu_type_t CPU_TYPE_I386        = 7;
+constexpr cpu_type_t CPU_TYPE_X86_64      = (CPU_TYPE_I386 | CPU_ARCH_ABI64);
+constexpr cpu_type_t CPU_TYPE_MIPS        = 8;
+constexpr cpu_type_t CPU_TYPE_NS32532     = 9;
+constexpr cpu_type_t CPU_TYPE_HPPA        = 11;
+constexpr cpu_type_t CPU_TYPE_ARM         = 12;
+constexpr cpu_type_t CPU_TYPE_MC88000     = 13;
+constexpr cpu_type_t CPU_TYPE_SPARC       = 14;
+constexpr cpu_type_t CPU_TYPE_I860        = 15; // big-endian
+constexpr cpu_type_t CPU_TYPE_I860_LITTLE = 16; // little-endian
+constexpr cpu_type_t CPU_TYPE_RS6000      = 17;
+constexpr cpu_type_t CPU_TYPE_MC98000     = 18;
+constexpr cpu_type_t CPU_TYPE_POWERPC     = 18;
+constexpr cpu_type_t CPU_TYPE_POWERPC64   = (CPU_TYPE_POWERPC | CPU_ARCH_ABI64);
+constexpr cpu_type_t CPU_TYPE_VEO         = 255;
+constexpr cpu_type_t CPU_TYPE_ARM64       = (CPU_TYPE_ARM | CPU_ARCH_ABI64);
+constexpr cpu_type_t CPU_TYPE_ARM64_32    = (CPU_TYPE_ARM | CPU_ARCH_ABI64_32);
+
+/* Capability bits used in the definition of cpu_subtype. */
+constexpr uint32_t CPU_SUBTYPE_MASK  = 0xff000000; /* mask for feature flags */
+constexpr uint32_t CPU_SUBTYPE_LIB64 = 0x80000000; /* 64 bit libraries */
+
+/* CPU subtype capability flags for ptrauth on arm64e platforms */
+constexpr uint32_t CPU_SUBTYPE_ARM64_PTR_AUTH_MASK = 0x0f000000;
+
+/* CPU subtype capability flags for ptrauth on arm64e platforms, take 2 */
+constexpr uint32_t CPU_SUBTYPE_ARM64E_VERSIONED_ABI_MASK = 0x80000000;
+constexpr uint32_t CPU_SUBTYPE_ARM64E_KERNEL_ABI_MASK    = 0x40000000;
+constexpr uint32_t CPU_SUBTYPE_ARM64E_PTR_AUTH_MASK      = 0x3f000000;
+
+constexpr cpu_subtype_t CPU_SUBTYPE_MULTIPLE = -1;
+
+/* VAX subtypes (these do *not* necessary conform to the actual cpu ID assigned by DEC available via the SID register). */
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX780  = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX785  = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX750  = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX730  = 4;
+constexpr cpu_subtype_t CPU_SUBTYPE_UVAXI   = 5;
+constexpr cpu_subtype_t CPU_SUBTYPE_UVAXII  = 6;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX8200 = 7;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX8500 = 8;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX8600 = 9;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX8650 = 10;
+constexpr cpu_subtype_t CPU_SUBTYPE_VAX8800 = 11;
+constexpr cpu_subtype_t CPU_SUBTYPE_UVAXIII = 12;
+
+/* ROMP subtypes. */
+constexpr cpu_subtype_t CPU_SUBTYPE_RT_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_RT_PC  = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_RT_APC = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_RT_135 = 3;
+
+/* 32032/32332/32532 subtypes. */
+
+constexpr cpu_subtype_t CPU_SUBTYPE_MMAX_ALL     = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_MMAX_DPC     = 1; /* 032 CPU */
+constexpr cpu_subtype_t CPU_SUBTYPE_SQT          = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_MMAX_APC_FPU = 3; /* 32081 FPU */
+constexpr cpu_subtype_t CPU_SUBTYPE_MMAX_APC_FPA = 4; /* Weitek FPA */
+constexpr cpu_subtype_t CPU_SUBTYPE_MMAX_XPC     = 5; /* 532 CPU */
+
+/* I386 subtypes. */
+constexpr cpu_subtype_t CPU_SUBTYPE_I386_ALL   = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_X86_64_ALL = CPU_SUBTYPE_I386_ALL;
+constexpr cpu_subtype_t CPU_SUBTYPE_386        = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_486        = 4;
+constexpr cpu_subtype_t CPU_SUBTYPE_486SX      = 4 + 128;
+constexpr cpu_subtype_t CPU_SUBTYPE_586        = 5;
+#define CPU_SUBTYPE_INTEL(f, m) ((cpu_subtype_t) (f) + ((m) << 4))
+constexpr cpu_subtype_t CPU_SUBTYPE_PENT      = CPU_SUBTYPE_INTEL(5, 0);
+constexpr cpu_subtype_t CPU_SUBTYPE_PENTPRO   = CPU_SUBTYPE_INTEL(6, 1);
+constexpr cpu_subtype_t CPU_SUBTYPE_PENTII_M3 = CPU_SUBTYPE_INTEL(6, 3);
+constexpr cpu_subtype_t CPU_SUBTYPE_PENTII_M5 = CPU_SUBTYPE_INTEL(6, 5);
+constexpr cpu_subtype_t CPU_SUBTYPE_PENTIUM_4 = CPU_SUBTYPE_INTEL(10, 0);
+
+#define CPU_SUBTYPE_INTEL_FAMILY(x) ((x) &15)
+constexpr uint32_t CPU_SUBTYPE_INTEL_FAMILY_MAX = 15;
+
+#define CPU_SUBTYPE_INTEL_MODEL(x) ((x) >> 4)
+constexpr uint32_t CPU_SUBTYPE_INTEL_MODEL_ALL = 0;
+
+constexpr cpu_subtype_t CPU_SUBTYPE_X86_64_H = 8; /* Haswell and compatible */
+
+/* Mips subtypes. */
+constexpr cpu_subtype_t CPU_SUBTYPE_MIPS_ALL    = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_MIPS_R2300  = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_MIPS_R2600  = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_MIPS_R2800  = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_MIPS_R2000a = 4;
+
+/* 680x0 subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_MC680x0_ALL  = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_MC68030      = 1; /* compat */
+constexpr cpu_subtype_t CPU_SUBTYPE_MC68040      = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_MC68030_ONLY = 3;
+
+/* HPPA subtypes for Hewlett-Packard HP-PA family of risc processors. Port by NeXT to 700 series. */
+constexpr cpu_subtype_t CPU_SUBTYPE_HPPA_ALL    = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_HPPA_7100   = 0; /* compat */
+constexpr cpu_subtype_t CPU_SUBTYPE_HPPA_7100LC = 1;
+
+/* Acorn subtypes - Acorn Risc Machine */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_ALL       = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_A500_ARCH = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_A500      = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_A440      = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_M4        = 4;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V4T       = 5;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V6        = 6;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V5TEJ     = 7;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_XSCALE    = 8;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V7        = 9;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V7F       = 10; /* Cortex A9 */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V7S       = 11; /* Swift */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V7K       = 12; /* Kirkwood40 */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V6M       = 14; /* Not meant to be run under xnu */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V7M       = 15; /* Not meant to be run under xnu */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V7EM      = 16; /* Not meant to be run under xnu */
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM_V8        = 13;
+
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM64_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM64_V8  = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM64E    = 2;
+
+constexpr cpu_subtype_t CPU_SUBTYPE_ARM64_32_V8 = 1;
+
+/* MC88000 subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_MC88000_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_MMAX_JPC    = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_MC88100     = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_MC88110     = 2;
+
+/* MC98000 (PowerPC) subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_MC98000_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_MC98601     = 1;
+
+/* I860 subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_I860_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_I860_860 = 1;
+
+/* I860 subtypes for NeXT-internal backwards compatability. */
+constexpr cpu_subtype_t CPU_SUBTYPE_LITTLE_ENDIAN = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_BIG_ENDIAN    = 1;
+
+/* I860_LITTLE subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_I860_LITTLE_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_I860_LITTLE     = 1;
+
+/* RS6000 subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_RS6000_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_RS6000     = 1;
+
+/* Sun4 subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_SUN4_ALL = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_SUN4_260 = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_SUN4_110 = 2;
+
+constexpr cpu_subtype_t CPU_SUBTYPE_SPARC_ALL = 0;
+
+/* PowerPC subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_ALL   = 0;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_601   = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_602   = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_603   = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_603e  = 4;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_603ev = 5;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_604   = 6;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_604e  = 7;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_620   = 8;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_750   = 9;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_7400  = 10;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_7450  = 11;
+constexpr cpu_subtype_t CPU_SUBTYPE_POWERPC_970   = 100;
+
+/* VEO subtypes */
+constexpr cpu_subtype_t CPU_SUBTYPE_VEO_1   = 1;
+constexpr cpu_subtype_t CPU_SUBTYPE_VEO_2   = 2;
+constexpr cpu_subtype_t CPU_SUBTYPE_VEO_3   = 3;
+constexpr cpu_subtype_t CPU_SUBTYPE_VEO_4   = 4;
+constexpr cpu_subtype_t CPU_SUBTYPE_VEO_ALL = CPU_SUBTYPE_VEO_2;
 
 #define GET_PAIR(x)                                                                                                                        \
     {                                                                                                                                      \
@@ -115,415 +266,6 @@ enum class CPU_TYPE : uint32_t
     {                                                                                                                                      \
         x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                       \
     }
-
-static const std::map<CPU_TYPE, std::string_view> CpuTypeNames{ GET_PAIR_FROM_ENUM(CPU_TYPE::ANY),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::VAX),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::ROMP),
-                                                                // skipped
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::NS32032),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::NS32332),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MC680x0),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::X86),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::I386),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::X86_64),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MIPS),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::NS32532),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MC98000),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::HPPA),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::ARM),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::ARM64),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MC88000),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::SPARC),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::I860),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::I860_LITTLE),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::RS6000),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::POWERPC),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::POWERPC64),
-                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::VEO) };
-
-enum class CPU_SUBTYPE_COMPATIBILITY : uint32_t
-{
-    MASK  = 0xff000000, /* mask for feature flags */
-    LIB64 = 0x80000000  /* 64 bit libraries */
-};
-
-enum class CPU_SUBTYPE : uint32_t
-{
-    MULTIPLE      = static_cast<uint32_t>(-1),
-    LITTLE_ENDIAN = 0,
-    BIG_ENDIAN    = 1,
-};
-
-enum class CPU_SUBTYPE_VAX : uint32_t
-{
-    ALL     = 0,
-    VAX780  = 1,
-    VAX785  = 2,
-    VAX750  = 3,
-    VAX730  = 4,
-    UVAXI   = 5,
-    UVAXII  = 6,
-    VAX8200 = 7,
-    VAX8500 = 8,
-    VAX8600 = 9,
-    VAX8650 = 10,
-    VAX8800 = 11,
-    UVAXIII = 12,
-};
-
-enum class CPU_SUBTYPE_RT
-{
-    ALL  = 0,
-    PC   = 1,
-    APC  = 2,
-    _135 = 3
-};
-
-enum class CPU_SUBTYPE_MC680 : uint32_t
-{
-    x0_ALL   = 1,
-    _30      = 1, /* compat */
-    _40      = 2,
-    _30_ONLY = 3,
-};
-
-#define CPU_SUBTYPE_INTEL(f, m) ((f) + ((m) << 4))
-
-enum class CPU_SUBTYPE_INTEL : uint32_t
-{
-    I386_ALL       = CPU_SUBTYPE_INTEL(3, 0),
-    _386           = CPU_SUBTYPE_INTEL(3, 0),
-    _486           = CPU_SUBTYPE_INTEL(4, 0),
-    _486SX         = CPU_SUBTYPE_INTEL(4, 8), // 8 << 4 = 128
-    _586           = CPU_SUBTYPE_INTEL(5, 0),
-    PENT           = CPU_SUBTYPE_INTEL(5, 0),
-    PENTPRO        = CPU_SUBTYPE_INTEL(6, 1),
-    PENTII_M3      = CPU_SUBTYPE_INTEL(6, 3),
-    PENTII_M5      = CPU_SUBTYPE_INTEL(6, 5),
-    CELERON        = CPU_SUBTYPE_INTEL(7, 6),
-    CELERON_MOBILE = CPU_SUBTYPE_INTEL(7, 7),
-    PENTIUM_3      = CPU_SUBTYPE_INTEL(8, 0),
-    PENTIUM_3_M    = CPU_SUBTYPE_INTEL(8, 1),
-    PENTIUM_3_XEON = CPU_SUBTYPE_INTEL(8, 2),
-    PENTIUM_M      = CPU_SUBTYPE_INTEL(9, 0),
-    PENTIUM_4      = CPU_SUBTYPE_INTEL(10, 0),
-    PENTIUM_4_M    = CPU_SUBTYPE_INTEL(10, 1),
-    ITANIUM        = CPU_SUBTYPE_INTEL(11, 0),
-    ITANIUM_2      = CPU_SUBTYPE_INTEL(11, 1),
-    XEON           = CPU_SUBTYPE_INTEL(12, 0),
-    XEON_MP        = CPU_SUBTYPE_INTEL(12, 1)
-};
-
-#define CPU_SUBTYPE_INTEL_FAMILY(x) ((x) &15)
-constexpr uint32_t CPU_SUBTYPE_INTEL_FAMILY_MAX = 15;
-
-#define CPU_SUBTYPE_INTEL_MODEL(x) ((x) >> 4)
-constexpr uint32_t CPU_SUBTYPE_INTEL_MODEL_ALL = 0;
-
-enum class CPU_SUBTYPE_X86 : uint32_t
-{
-    ALL   = 3,
-    ARCH1 = 4
-};
-
-enum class CPU_SUBTYPE_X86_64 : uint32_t
-{
-    ALL   = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 3,
-    ALL64 = 3,
-    H     = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 8, /* Haswell feature subset */
-    H64   = 8                                                            /* Haswell feature subset */
-};
-
-enum class CPU_THREADTYPE : uint32_t
-{
-    NONE      = 0,
-    INTEL_HTT = 1
-};
-
-enum class CPU_SUBTYPE_MIPS : uint32_t
-{
-    ALL    = 0,
-    R2300  = 1,
-    R2600  = 2,
-    R2800  = 3,
-    R2000a = 4, /* pmax */
-    R2000  = 5,
-    R3000a = 6, /* 3max */
-    R3000  = 7,
-};
-
-enum class CPU_SUBTYPE_MC98000 : uint32_t
-{
-    ALL  = 0,
-    _601 = 1
-};
-
-enum class CPU_SUBTYPE_HPPA : uint32_t
-{
-    ALL     = 0,
-    _7100   = 0, /* compat */
-    _7100LC = 1
-};
-
-enum class CPU_SUBTYPE_MC88000 : uint32_t
-{
-    ALL  = 0,
-    _100 = 1,
-    _110 = 2
-};
-
-enum class CPU_SUBTYPE_SPARC : uint32_t
-{
-    ALL = 0
-};
-
-enum class CPU_SUBTYPE_I860 : uint32_t
-{
-    ALL  = 0,
-    _860 = 1
-};
-
-enum class CPU_SUBTYPE_I860_LITTLE : uint32_t
-{
-    ALL  = 0,
-    _860 = 1
-};
-
-enum class CPU_SUBTYPE_RS6000 : uint32_t
-{
-    ALL = 0,
-    _1  = 1
-};
-
-enum class CPU_SUBTYPE_SUN4
-{
-    ALL  = 0,
-    _260 = 1,
-    _110 = 2
-};
-
-enum class CPU_SUBTYPE_PowerPC : uint32_t
-{
-    ALL    = 0,
-    _601   = 1,
-    _602   = 2,
-    _603   = 3,
-    _603e  = 4,
-    _603ev = 5,
-    _604   = 6,
-    _604e  = 7,
-    _620   = 8,
-    _750   = 9,
-    _7400  = 10,
-    _7450  = 11,
-    _970   = 100
-};
-
-enum class CPU_SUBTYPE_ARM : uint32_t
-{
-    ALL    = 0,
-    V4T    = 5,
-    V6     = 6,
-    V5TEJ  = 7,
-    XSCALE = 8,
-    V7     = 9,
-    V7F    = 10, /* Cortex A9 */
-    V7S    = 11, /* Swift */
-    V7K    = 12,
-    V8     = 13,
-    V6M    = 14, /* Not meant to be run under xnu */
-    V7M    = 15, /* Not meant to be run under xnu */
-    V7EM   = 16  /* Not meant to be run under xnu */
-};
-
-enum class CPU_SUBTYPE_ARM64 : uint32_t
-{
-    ALL = 0,
-    V8  = 1
-};
-
-/* https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach/machine.h
- * VEO subtypes
- * Note: the CPU_SUBTYPE_VEO_ALL will likely change over time to be defined as
- * one of the specific subtypes.
- */
-enum class CPU_SUBTYPE_VEO : uint32_t
-{
-    _1  = 1,
-    _2  = 2,
-    _3  = 3,
-    _4  = 4,
-    ALL = 1
-};
-
-enum class CPU_Family : uint32_t
-{
-    UNKNOWN           = 0,
-    POWERPC_G3        = 0xcee41549,
-    POWERPC_G4        = 0x77c184ae,
-    POWERPC_G5        = 0xed76d8aa,
-    INTEL_6_13        = 0xaa33392b,
-    INTEL_PENRYN      = 0x78ea4fbc,
-    INTEL_NEHALEM     = 0x6b5a4cd2,
-    INTEL_WESTMERE    = 0x573b5eec,
-    INTEL_SANDYBRIDGE = 0x5490b78c,
-    INTEL_IVYBRIDGE   = 0x1f65e835,
-    INTEL_HASWELL     = 0x10b282dc,
-    INTEL_BROADWELL   = 0x582ed09c,
-    INTEL_SKYLAKE     = 0x37fc219f,
-    INTEL_KABYLAKE    = 0x0f817246,
-    ARM_9             = 0xe73283ae,
-    ARM_11            = 0x8ff620d8,
-    ARM_XSCALE        = 0x53b005f5,
-    ARM_12            = 0xbd1b0ae9,
-    ARM_13            = 0x0cc90e64,
-    ARM_14            = 0x96077ef1,
-    ARM_15            = 0xa8511bca,
-    ARM_SWIFT         = 0x1e2d6381,
-    ARM_CYCLONE       = 0x37a09642,
-    ARM_TYPHOON       = 0x2c91a47e,
-    ARM_TWISTER       = 0x92fb37c8,
-    ARM_HURRICANE     = 0x67ceee93,
-    INTEL_6_23        = INTEL_PENRYN,  /* synonim is deprecated */
-    INTEL_6_26        = INTEL_NEHALEM, /* synonim is deprecated */
-};
-
-static const std::map<CPU_SUBTYPE, std::string_view> CpuSubtypeNames{
-    GET_PAIR(CPU_SUBTYPE::MULTIPLE),
-    GET_PAIR(CPU_SUBTYPE::LITTLE_ENDIAN),
-    GET_PAIR(CPU_SUBTYPE::BIG_ENDIAN),
-};
-
-static const std::map<CPU_SUBTYPE_VAX, std::string_view> CpuSubtypeVaxNames{
-    GET_PAIR(CPU_SUBTYPE_VAX::ALL),     GET_PAIR(CPU_SUBTYPE_VAX::VAX780),  GET_PAIR(CPU_SUBTYPE_VAX::VAX785),
-    GET_PAIR(CPU_SUBTYPE_VAX::VAX750),  GET_PAIR(CPU_SUBTYPE_VAX::VAX730),  GET_PAIR(CPU_SUBTYPE_VAX::UVAXI),
-    GET_PAIR(CPU_SUBTYPE_VAX::UVAXII),  GET_PAIR(CPU_SUBTYPE_VAX::VAX8200), GET_PAIR(CPU_SUBTYPE_VAX::VAX8500),
-    GET_PAIR(CPU_SUBTYPE_VAX::VAX8600), GET_PAIR(CPU_SUBTYPE_VAX::VAX8650), GET_PAIR(CPU_SUBTYPE_VAX::VAX8800),
-    GET_PAIR(CPU_SUBTYPE_VAX::UVAXIII)
-};
-
-static const std::map<CPU_SUBTYPE_RT, std::string_view> CpuSubtypeRompNames{
-    GET_PAIR(CPU_SUBTYPE_RT::ALL), GET_PAIR(CPU_SUBTYPE_RT::PC), GET_PAIR(CPU_SUBTYPE_RT::APC), GET_PAIR(CPU_SUBTYPE_RT::_135)
-};
-
-static const std::map<CPU_SUBTYPE_MC680, std::string_view> CpuSubtypeMC680Names{ GET_PAIR(CPU_SUBTYPE_MC680::x0_ALL),
-                                                                                 GET_PAIR(CPU_SUBTYPE_MC680::_30),
-                                                                                 GET_PAIR(CPU_SUBTYPE_MC680::_40),
-                                                                                 GET_PAIR(CPU_SUBTYPE_MC680::_30_ONLY) };
-
-static const std::map<CPU_SUBTYPE_X86, std::string_view> CpuSubtypeX86Names{ { CPU_SUBTYPE_X86::ALL, "ALL" },
-                                                                             { CPU_SUBTYPE_X86::ARCH1, "ARCH1" } };
-
-static const std::map<CPU_SUBTYPE_X86_64, std::string_view> CpuSubtypeX86_64Names{ { CPU_SUBTYPE_X86_64::ALL, "ALL" },
-                                                                                   { CPU_SUBTYPE_X86_64::ALL64, "ALL" },
-                                                                                   { CPU_SUBTYPE_X86_64::H, "Haswell" },
-                                                                                   { CPU_SUBTYPE_X86_64::H64, "Haswell" } };
-
-static const std::map<CPU_SUBTYPE_MIPS, std::string_view> CpuSubtypeMipsNames{
-    GET_PAIR(CPU_SUBTYPE_MIPS::ALL),    GET_PAIR(CPU_SUBTYPE_MIPS::R2300),  GET_PAIR(CPU_SUBTYPE_MIPS::R2600),
-    GET_PAIR(CPU_SUBTYPE_MIPS::R2800),  GET_PAIR(CPU_SUBTYPE_MIPS::R2000a), GET_PAIR(CPU_SUBTYPE_MIPS::R2000),
-    GET_PAIR(CPU_SUBTYPE_MIPS::R3000a), GET_PAIR(CPU_SUBTYPE_MIPS::R3000),
-
-};
-
-static const std::map<CPU_SUBTYPE_MC98000, std::string_view> CpuSubtypeMC98000Names{ GET_PAIR(CPU_SUBTYPE_MC98000::ALL),
-                                                                                     GET_PAIR(CPU_SUBTYPE_MC98000::_601) };
-
-static const std::map<CPU_SUBTYPE_HPPA, std::string_view> CpuSubtypeHppaNames{ GET_PAIR(CPU_SUBTYPE_HPPA::ALL),
-                                                                               GET_PAIR(CPU_SUBTYPE_HPPA::_7100),
-                                                                               GET_PAIR(CPU_SUBTYPE_HPPA::_7100LC) };
-
-static const std::map<CPU_SUBTYPE_ARM, std::string_view> CpuSubtypeArmNames{
-    GET_PAIR(CPU_SUBTYPE_ARM::ALL),    GET_PAIR(CPU_SUBTYPE_ARM::V4T), GET_PAIR(CPU_SUBTYPE_ARM::V6),  GET_PAIR(CPU_SUBTYPE_ARM::V5TEJ),
-    GET_PAIR(CPU_SUBTYPE_ARM::XSCALE), GET_PAIR(CPU_SUBTYPE_ARM::V7),  GET_PAIR(CPU_SUBTYPE_ARM::V7F), GET_PAIR(CPU_SUBTYPE_ARM::V7S),
-    GET_PAIR(CPU_SUBTYPE_ARM::V7K),    GET_PAIR(CPU_SUBTYPE_ARM::V8),  GET_PAIR(CPU_SUBTYPE_ARM::V6M), GET_PAIR(CPU_SUBTYPE_ARM::V7M),
-    GET_PAIR(CPU_SUBTYPE_ARM::V7EM)
-};
-
-static const std::map<CPU_SUBTYPE_ARM64, std::string_view> CpuSubtypeArm64Names{ GET_PAIR(CPU_SUBTYPE_ARM64::ALL),
-                                                                                 GET_PAIR(CPU_SUBTYPE_ARM64::ALL),
-                                                                                 GET_PAIR(CPU_SUBTYPE_ARM64::V8) };
-
-static const std::map<CPU_SUBTYPE_MC88000, std::string_view> CpuSubtypeMC8800Names{ GET_PAIR(CPU_SUBTYPE_MC88000::ALL),
-                                                                                    GET_PAIR(CPU_SUBTYPE_MC88000::_100),
-                                                                                    GET_PAIR(CPU_SUBTYPE_MC88000::_110) };
-
-static const std::map<CPU_SUBTYPE_SPARC, std::string_view> CpuSubtypeSparcNames{ GET_PAIR(CPU_SUBTYPE_SPARC::ALL) };
-
-static const std::map<CPU_SUBTYPE_I860, std::string_view> CpuSubtypeI860Names{ GET_PAIR(CPU_SUBTYPE_I860::ALL),
-                                                                               GET_PAIR(CPU_SUBTYPE_I860::_860) };
-
-static const std::map<CPU_SUBTYPE_I860_LITTLE, std::string_view> CpuSubtypeI860LittleNames{ GET_PAIR(CPU_SUBTYPE_I860_LITTLE::ALL),
-                                                                                            GET_PAIR(CPU_SUBTYPE_I860_LITTLE::_860) };
-
-static const std::map<CPU_SUBTYPE_RS6000, std::string_view> CpuSubtypeRS6000Names{ GET_PAIR(CPU_SUBTYPE_RS6000::ALL),
-                                                                                   GET_PAIR(CPU_SUBTYPE_RS6000::_1) };
-
-static const std::map<CPU_SUBTYPE_PowerPC, std::string_view> CpuSubtypePowerPcNames{
-    GET_PAIR(CPU_SUBTYPE_PowerPC::ALL),  GET_PAIR(CPU_SUBTYPE_PowerPC::_601),  GET_PAIR(CPU_SUBTYPE_PowerPC::_602),
-    GET_PAIR(CPU_SUBTYPE_PowerPC::_603), GET_PAIR(CPU_SUBTYPE_PowerPC::_603e), GET_PAIR(CPU_SUBTYPE_PowerPC::_603ev),
-    GET_PAIR(CPU_SUBTYPE_PowerPC::_604), GET_PAIR(CPU_SUBTYPE_PowerPC::_604e), GET_PAIR(CPU_SUBTYPE_PowerPC::_620),
-    GET_PAIR(CPU_SUBTYPE_PowerPC::_750), GET_PAIR(CPU_SUBTYPE_PowerPC::_7400), GET_PAIR(CPU_SUBTYPE_PowerPC::_7450),
-    GET_PAIR(CPU_SUBTYPE_PowerPC::_970)
-};
-
-static const std::map<CPU_SUBTYPE_VEO, std::string_view> CpuSubtypeVeoNames{ GET_PAIR(CPU_SUBTYPE_VEO::_1),
-                                                                             GET_PAIR(CPU_SUBTYPE_VEO::_2),
-                                                                             GET_PAIR(CPU_SUBTYPE_VEO::_3),
-                                                                             GET_PAIR(CPU_SUBTYPE_VEO::_4),
-                                                                             GET_PAIR(CPU_SUBTYPE_VEO::ALL) };
-
-static const std::string_view GetCPUSubtype(CPU_TYPE type, uint32_t subtype)
-{
-    switch (type)
-    {
-    case CPU_TYPE::ANY:
-        return CpuSubtypeNames.at(static_cast<CPU_SUBTYPE>(subtype));
-    case CPU_TYPE::VAX:
-        return CpuSubtypeVaxNames.at(static_cast<CPU_SUBTYPE_VAX>(subtype));
-    case CPU_TYPE::ROMP:
-        return CpuSubtypeRompNames.at(static_cast<CPU_SUBTYPE_RT>(subtype));
-    case CPU_TYPE::NS32032:
-        return "(?)";
-    case CPU_TYPE::NS32332:
-        return "(?)";
-    case CPU_TYPE::MC680x0:
-        return CpuSubtypeMC680Names.at(static_cast<CPU_SUBTYPE_MC680>(subtype));
-    case CPU_TYPE::X86: /* I386 */
-        return CpuSubtypeX86Names.at(static_cast<CPU_SUBTYPE_X86>(subtype));
-    case CPU_TYPE::X86_64:
-        return CpuSubtypeX86_64Names.at(static_cast<CPU_SUBTYPE_X86_64>(subtype));
-    case CPU_TYPE::MIPS:
-        return CpuSubtypeMipsNames.at(static_cast<CPU_SUBTYPE_MIPS>(subtype));
-    case CPU_TYPE::NS32532:
-        return "(?)";
-    case CPU_TYPE::MC98000:
-        return CpuSubtypeMC98000Names.at(static_cast<CPU_SUBTYPE_MC98000>(subtype));
-    case CPU_TYPE::HPPA:
-        return CpuSubtypeHppaNames.at(static_cast<CPU_SUBTYPE_HPPA>(subtype));
-    case CPU_TYPE::ARM:
-        return CpuSubtypeArmNames.at(static_cast<CPU_SUBTYPE_ARM>(subtype));
-    case CPU_TYPE::ARM64:
-        return CpuSubtypeArm64Names.at(static_cast<CPU_SUBTYPE_ARM64>(subtype));
-    case CPU_TYPE::MC88000:
-        return CpuSubtypeMC8800Names.at(static_cast<CPU_SUBTYPE_MC88000>(subtype));
-    case CPU_TYPE::SPARC:
-        return CpuSubtypeSparcNames.at(static_cast<CPU_SUBTYPE_SPARC>(subtype));
-    case CPU_TYPE::I860:
-        return CpuSubtypeI860Names.at(static_cast<CPU_SUBTYPE_I860>(subtype));
-    case CPU_TYPE::I860_LITTLE:
-        return CpuSubtypeI860LittleNames.at(static_cast<CPU_SUBTYPE_I860_LITTLE>(subtype));
-    case CPU_TYPE::RS6000:
-        return CpuSubtypeRS6000Names.at(static_cast<CPU_SUBTYPE_RS6000>(subtype));
-    case CPU_TYPE::POWERPC:
-    case CPU_TYPE::POWERPC64:
-        return CpuSubtypePowerPcNames.at(static_cast<CPU_SUBTYPE_PowerPC>(subtype));
-    case CPU_TYPE::VEO:
-        return CpuSubtypeVeoNames.at(static_cast<CPU_SUBTYPE_VEO>(subtype));
-    default:
-        return "(?)";
-    }
-}
 
 enum class FileType : uint32_t
 {
@@ -542,14 +284,14 @@ enum class FileType : uint32_t
 // https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach-o/loader.h
 struct mach_header
 {
-    uint32_t magic;      /* mach magic number identifier */
-    CPU_TYPE cputype;    /* cpu specifier */
-    uint32_t cpusubtype; /* machine specifier */
-    FileType filetype;   /* type of file */
-    uint32_t ncmds;      /* number of load commands */
-    uint32_t sizeofcmds; /* the size of all the load commands */
-    uint32_t flags;      /* flags */
-    uint32_t reserved;   /* reserved (for x64 only!) */
+    uint32_t magic;           /* mach magic number identifier */
+    cpu_type_t cputype;       /* cpu specifier */
+    cpu_subtype_t cpusubtype; /* machine specifier */
+    FileType filetype;        /* type of file */
+    uint32_t ncmds;           /* number of load commands */
+    uint32_t sizeofcmds;      /* the size of all the load commands */
+    uint32_t flags;           /* flags */
+    uint32_t reserved;        /* reserved (for x64 only!) */
 };
 
 /*
@@ -573,94 +315,81 @@ static const std::map<ByteOrder, std::string_view> ByteOrderNames{
 struct ArchInfo
 {
     std::string name;
-    CPU_TYPE cputype;
-    uint32_t cpusubtype;
+    cpu_type_t cputype;
+    cpu_subtype_t cpusubtype;
     ByteOrder byteorder;
     std::string description;
 };
 
+/* The array of all currently know architecture flags (terminated with an entry
+ * with all zeros).  Pointer to this returned with NXGetAllArchInfos().
+ */
 static const ArchInfo ArchInfoTable[] = {
-    { "hppa", CPU_TYPE::HPPA, static_cast<uint32_t>(CPU_SUBTYPE_HPPA::ALL), ByteOrder::BigEndian, "HP-PA" },
-    { "i386", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_X86::ALL), ByteOrder::LittleEndian, "Intel 80x86" },
-    { "x86_64", CPU_TYPE::X86_64, static_cast<uint32_t>(CPU_SUBTYPE_X86_64::ALL), ByteOrder::LittleEndian, "Intel x86-64" },
-    { "x86_64h", CPU_TYPE::X86_64, static_cast<uint32_t>(CPU_SUBTYPE_X86_64::H), ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
-    { "i860", CPU_TYPE::I860, static_cast<uint32_t>(CPU_SUBTYPE_I860::ALL), ByteOrder::BigEndian, "Intel 860" },
-    { "m68k", CPU_TYPE::MC680x0, static_cast<uint32_t>(CPU_SUBTYPE_MC680::x0_ALL), ByteOrder::BigEndian, "Motorola 68K" },
-    { "m88k", CPU_TYPE::MC88000, static_cast<uint32_t>(CPU_SUBTYPE_MC88000::ALL), ByteOrder::BigEndian, "Motorola 88K" },
-    { "ppc", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::ALL), ByteOrder::BigEndian, "PowerPC" },
-    { "ppc64", CPU_TYPE::POWERPC64, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::ALL), ByteOrder::BigEndian, "PowerPC 64-bit" },
-    { "sparc", CPU_TYPE::SPARC, static_cast<uint32_t>(CPU_SUBTYPE_SPARC::ALL), ByteOrder::BigEndian, "SPARC" },
-    { "arm", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::ALL), ByteOrder::LittleEndian, "ARM" },
-    { "arm64", CPU_TYPE::ARM64, static_cast<uint32_t>(CPU_SUBTYPE_ARM64::ALL), ByteOrder::LittleEndian, "ARM64" },
-    { "any", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::MULTIPLE), ByteOrder::Unknown, "Architecture Independent" },
-    { "veo", CPU_TYPE::VEO, static_cast<uint32_t>(CPU_SUBTYPE_VEO::ALL), ByteOrder::BigEndian, "veo" },
+    /* architecture families */
+    { "hppa", CPU_TYPE_HPPA, CPU_SUBTYPE_HPPA_ALL, ByteOrder::BigEndian, "HP-PA" },
+    { "i386", CPU_TYPE_I386, CPU_SUBTYPE_I386_ALL, ByteOrder::LittleEndian, "Intel 80x86" },
+    { "x86_64", CPU_TYPE_X86_64, CPU_SUBTYPE_X86_64_ALL, ByteOrder::LittleEndian, "Intel x86-64" },
+    { "x86_64h", CPU_TYPE_X86_64, CPU_SUBTYPE_X86_64_H, ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
+    { "i860", CPU_TYPE_I860, CPU_SUBTYPE_I860_ALL, ByteOrder::BigEndian, "Intel 860" },
+    { "m68k", CPU_TYPE_MC680x0, CPU_SUBTYPE_MC680x0_ALL, ByteOrder::BigEndian, "Motorola 68K" },
+    { "m88k", CPU_TYPE_MC88000, CPU_SUBTYPE_MC88000_ALL, ByteOrder::BigEndian, "Motorola 88K" },
+    { "ppc", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_ALL, ByteOrder::BigEndian, "PowerPC" },
+    { "ppc64", CPU_TYPE_POWERPC64, CPU_SUBTYPE_POWERPC_ALL, ByteOrder::BigEndian, "PowerPC 64-bit" },
+    { "sparc", CPU_TYPE_SPARC, CPU_SUBTYPE_SPARC_ALL, ByteOrder::BigEndian, "SPARC" },
+    { "arm", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_ALL, ByteOrder::LittleEndian, "ARM" },
+    { "arm64", CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64_ALL, ByteOrder::LittleEndian, "ARM64" },
+    { "any", CPU_TYPE_ANY, CPU_SUBTYPE_MULTIPLE, ByteOrder::Unknown, "Architecture Independent" },
+    { "veo", CPU_TYPE_VEO, CPU_SUBTYPE_VEO_ALL, ByteOrder::BigEndian, "veo" },
     /* specific architecture implementations */
-    { "hppa7100LC", CPU_TYPE::HPPA, static_cast<uint32_t>(CPU_SUBTYPE_HPPA::_7100LC), ByteOrder::BigEndian, "HP-PA 7100LC" },
-    { "m68030", CPU_TYPE::MC680x0, static_cast<uint32_t>(CPU_SUBTYPE_MC680::_30_ONLY), ByteOrder::BigEndian, "Motorola 68030" },
-    { "m68040", CPU_TYPE::MC680x0, static_cast<uint32_t>(CPU_SUBTYPE_MC680::_40), ByteOrder::BigEndian, "Motorola 68040" },
-    { "i486", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_INTEL::_486), ByteOrder::LittleEndian, "Intel 80486" },
-    { "i486SX", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_INTEL::_486SX), ByteOrder::LittleEndian, "Intel 80486SX" },
-    { "pentium",
-      CPU_TYPE::I386,
-      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENT),
-      ByteOrder::LittleEndian,
-      "Intel Pentium" }, /* same as 586 */
-    { "i586", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_INTEL::_586), ByteOrder::LittleEndian, "Intel 80586" },
-    { "pentpro",
-      CPU_TYPE::I386,
-      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTPRO),
-      ByteOrder::LittleEndian,
-      "Intel Pentium Pro" }, /* same as 686 */
-    { "i686", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTPRO), ByteOrder::LittleEndian, "Intel Pentium Pro" },
-    { "pentIIm3",
-      CPU_TYPE::I386,
-      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTII_M3),
-      ByteOrder::LittleEndian,
-      "Intel Pentium II Model 3" },
-    { "pentIIm5",
-      CPU_TYPE::I386,
-      static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTII_M5),
-      ByteOrder::LittleEndian,
-      "Intel Pentium II Model 5" },
-    { "pentium4", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTIUM_4), ByteOrder::LittleEndian, "Intel Pentium 4" },
-    { "x86_64h", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_X86_64::H), ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
-    { "ppc601", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_601), ByteOrder::BigEndian, "PowerPC 601" },
-    { "ppc603", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603), ByteOrder::BigEndian, "PowerPC 603" },
-    { "ppc603e", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603e), ByteOrder::BigEndian, "PowerPC 603e" },
-    { "ppc603ev", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603ev), ByteOrder::BigEndian, "PowerPC 603ev" },
-    { "ppc604", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_604), ByteOrder::BigEndian, "PowerPC 604" },
-    { "ppc604e", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_604e), ByteOrder::BigEndian, "PowerPC 604e" },
-    { "ppc750", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_750), ByteOrder::BigEndian, "PowerPC 750" },
-    { "ppc7400", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_7400), ByteOrder::BigEndian, "PowerPC 7400" },
-    { "ppc7450", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_7450), ByteOrder::BigEndian, "PowerPC 7450" },
-    { "ppc970", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_970), ByteOrder::BigEndian, "PowerPC 970" },
-    { "ppc970-64", CPU_TYPE::POWERPC64, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_970), ByteOrder::BigEndian, "PowerPC 970 64-bit" },
-    { "armv4t", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V4T), ByteOrder::LittleEndian, "arm v4t" },
-    { "armv5", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V5TEJ), ByteOrder::LittleEndian, "arm v5" },
-    { "xscale", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::XSCALE), ByteOrder::LittleEndian, "arm xscale" },
-    { "armv6", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V6), ByteOrder::LittleEndian, "arm v6" },
-    { "armv6m", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V6M), ByteOrder::LittleEndian, "arm v6m" },
-    { "armv7", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7), ByteOrder::LittleEndian, "arm v7" },
-    { "armv7f", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7F), ByteOrder::LittleEndian, "arm v7f" },
-    { "armv7s", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7S), ByteOrder::LittleEndian, "arm v7s" },
-    { "armv7k", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7K), ByteOrder::LittleEndian, "arm v7k" },
-    { "armv7m", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7M), ByteOrder::LittleEndian, "arm v7m" },
-    { "armv7em", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7EM), ByteOrder::LittleEndian, "arm v7em" },
-    { "armv8", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V8), ByteOrder::LittleEndian, "arm v8" },
-    { "arm64", CPU_TYPE::ARM64, static_cast<uint32_t>(CPU_SUBTYPE_ARM64::V8), ByteOrder::LittleEndian, "arm64 v8" },
-    { "little", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::LITTLE_ENDIAN), ByteOrder::LittleEndian, "Little Endian" },
-    { "big", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::BIG_ENDIAN), ByteOrder::BigEndian, "Big Endian" },
-    { "veo1", CPU_TYPE::VEO, static_cast<uint32_t>(CPU_SUBTYPE_VEO::_1), ByteOrder::BigEndian, "veo 1" },
-    { "veo2", CPU_TYPE::VEO, static_cast<uint32_t>(CPU_SUBTYPE_VEO::_2), ByteOrder::BigEndian, "veo 2" }
+    { "hppa7100LC", CPU_TYPE_HPPA, CPU_SUBTYPE_HPPA_7100LC, ByteOrder::BigEndian, "HP-PA 7100LC" },
+    { "m68030", CPU_TYPE_MC680x0, CPU_SUBTYPE_MC68030_ONLY, ByteOrder::BigEndian, "Motorola 68030" },
+    { "m68040", CPU_TYPE_MC680x0, CPU_SUBTYPE_MC68040, ByteOrder::BigEndian, "Motorola 68040" },
+    { "i486", CPU_TYPE_I386, CPU_SUBTYPE_486, ByteOrder::LittleEndian, "Intel 80486" },
+    { "i486SX", CPU_TYPE_I386, CPU_SUBTYPE_486SX, ByteOrder::LittleEndian, "Intel 80486SX" },
+    { "pentium", CPU_TYPE_I386, CPU_SUBTYPE_PENT, ByteOrder::LittleEndian, "Intel Pentium" }, /* same as 586 */
+    { "i586", CPU_TYPE_I386, CPU_SUBTYPE_586, ByteOrder::LittleEndian, "Intel 80586" },
+    { "pentpro", CPU_TYPE_I386, CPU_SUBTYPE_PENTPRO, ByteOrder::LittleEndian, "Intel Pentium Pro" }, /* same as 686 */
+    { "i686", CPU_TYPE_I386, CPU_SUBTYPE_PENTPRO, ByteOrder::LittleEndian, "Intel Pentium Pro" },
+    { "pentIIm3", CPU_TYPE_I386, CPU_SUBTYPE_PENTII_M3, ByteOrder::LittleEndian, "Intel Pentium II Model 3" },
+    { "pentIIm5", CPU_TYPE_I386, CPU_SUBTYPE_PENTII_M5, ByteOrder::LittleEndian, "Intel Pentium II Model 5" },
+    { "pentium4", CPU_TYPE_I386, CPU_SUBTYPE_PENTIUM_4, ByteOrder::LittleEndian, "Intel Pentium 4" },
+    { "x86_64h", CPU_TYPE_I386, CPU_SUBTYPE_X86_64_H, ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
+    { "ppc601", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_601, ByteOrder::BigEndian, "PowerPC 601" },
+    { "ppc603", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_603, ByteOrder::BigEndian, "PowerPC 603" },
+    { "ppc603e", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_603e, ByteOrder::BigEndian, "PowerPC 603e" },
+    { "ppc603ev", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_603ev, ByteOrder::BigEndian, "PowerPC 603ev" },
+    { "ppc604", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_604, ByteOrder::BigEndian, "PowerPC 604" },
+    { "ppc604e", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_604e, ByteOrder::BigEndian, "PowerPC 604e" },
+    { "ppc750", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_750, ByteOrder::BigEndian, "PowerPC 750" },
+    { "ppc7400", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_7400, ByteOrder::BigEndian, "PowerPC 7400" },
+    { "ppc7450", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_7450, ByteOrder::BigEndian, "PowerPC 7450" },
+    { "ppc970", CPU_TYPE_POWERPC, CPU_SUBTYPE_POWERPC_970, ByteOrder::BigEndian, "PowerPC 970" },
+    { "ppc970-64", CPU_TYPE_POWERPC64, CPU_SUBTYPE_POWERPC_970, ByteOrder::BigEndian, "PowerPC 970 64-bit" },
+    { "armv4t", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V4T, ByteOrder::LittleEndian, "arm v4t" },
+    { "armv5", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V5TEJ, ByteOrder::LittleEndian, "arm v5" },
+    { "xscale", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_XSCALE, ByteOrder::LittleEndian, "arm xscale" },
+    { "armv6", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V6, ByteOrder::LittleEndian, "arm v6" },
+    { "armv6m", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V6M, ByteOrder::LittleEndian, "arm v6m" },
+    { "armv7", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7, ByteOrder::LittleEndian, "arm v7" },
+    { "armv7f", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7F, ByteOrder::LittleEndian, "arm v7f" },
+    { "armv7s", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7S, ByteOrder::LittleEndian, "arm v7s" },
+    { "armv7k", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7K, ByteOrder::LittleEndian, "arm v7k" },
+    { "armv7m", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7M, ByteOrder::LittleEndian, "arm v7m" },
+    { "armv7em", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7EM, ByteOrder::LittleEndian, "arm v7em" },
+    { "armv8", CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V8, ByteOrder::LittleEndian, "arm v8" },
+    { "arm64", CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64_V8, ByteOrder::LittleEndian, "arm64 v8" },
+    { "little", CPU_TYPE_ANY, CPU_SUBTYPE_LITTLE_ENDIAN, ByteOrder::LittleEndian, "Little Endian" },
+    { "big", CPU_TYPE_ANY, CPU_SUBTYPE_BIG_ENDIAN, ByteOrder::BigEndian, "Big Endian" },
+    { "veo1", CPU_TYPE_VEO, CPU_SUBTYPE_VEO_1, ByteOrder::BigEndian, "veo 1" },
+    { "veo2", CPU_TYPE_VEO, CPU_SUBTYPE_VEO_2, ByteOrder::BigEndian, "veo 2" }
 };
 
-static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(CPU_TYPE cputype, uint32_t cpusubtype)
+static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(cpu_type_t cputype, uint32_t cpusubtype)
 {
     for (const auto& arch : ArchInfoTable)
     {
-        if (arch.cputype == cputype && (cpusubtype == static_cast<uint32_t>(CPU_SUBTYPE::MULTIPLE) ||
-                                        ((arch.cpusubtype & ~static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK)) ==
-                                         (cpusubtype & ~static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK)))))
+        if (arch.cputype == cputype &&
+            (cpusubtype == CPU_SUBTYPE_MULTIPLE || ((arch.cpusubtype & ~CPU_SUBTYPE_MASK) == (cpusubtype & ~CPU_SUBTYPE_MASK))))
         {
             return arch;
         }
@@ -678,14 +407,14 @@ static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(CPU_TYPE cputype, uint32_
 
     ai.cpusubtype = cpusubtype;
 
-    if (cputype == CPU_TYPE::I386)
+    if (cputype == CPU_TYPE_I386)
     {
-        const auto family = std::to_string(CPU_SUBTYPE_INTEL_FAMILY(cpusubtype & ~(static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK))));
-        const auto model  = std::to_string(CPU_SUBTYPE_INTEL_MODEL(cpusubtype & ~(static_cast<uint32>(CPU_SUBTYPE_COMPATIBILITY::MASK))));
+        const auto family = std::to_string(CPU_SUBTYPE_INTEL_FAMILY(cpusubtype & ~CPU_SUBTYPE_MASK));
+        const auto model  = std::to_string(CPU_SUBTYPE_INTEL_MODEL(cpusubtype & ~CPU_SUBTYPE_MASK));
 
         ai.description = "Intel family " + family + " model " + model;
     }
-    else if (cputype == CPU_TYPE::POWERPC)
+    else if (cputype == CPU_TYPE_POWERPC)
     {
         ai.description = "PowerPC cpusubtype " + std::to_string(cpusubtype);
     }
@@ -809,7 +538,9 @@ static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ G
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::HAS_TLV_DESCRIPTORS),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::NO_HEAP_EXECUTION),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::APP_EXTENSION_SAFE),
-                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::ROOT_SAFE) };
+                                                                               GET_PAIR_FROM_ENUM(
+                                                                                     MachHeaderFlags::NLIST_OUTOFSYNC_WITH_DYLDINFO),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::SIM_SUPPORT) };
 
 static const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
 {

@@ -35,12 +35,9 @@ void Information::UpdateGeneralInformation()
 
     general->AddItem("Name", info.name);
     general->AddItem("Byte Order", MAC::ByteOrderNames.at(info.byteorder));
-    general->AddItem("Description", info.description);
     general->AddItem("Magic", tmp.Format("%s (0x%X)", machO->is64 ? "MH_MAGIC_64" : "MH_MAGIC", machO->header.magic));
-    const auto& cpuTypeName = MAC::CpuTypeNames.at(machO->header.cputype);
-    general->AddItem("CPU Type", tmp.Format("%.*s (0x%X)", cpuTypeName.size(), cpuTypeName.data(), machO->header.cputype));
-    const auto& cpuSubtypeName = MAC::GetCPUSubtype(machO->header.cputype, machO->header.cpusubtype);
-    general->AddItem("CPU Subtype", tmp.Format("%.*s (0x%X)", cpuSubtypeName.size(), cpuSubtypeName.data(), machO->header.cpusubtype));
+    general->AddItem("CPU Type", tmp.Format("%.*s (0x%X)", info.name.size(), info.name.data(), machO->header.cputype));
+    general->AddItem("CPU Subtype", tmp.Format("%.*s (0x%X)", info.description.size(), info.description.data(), machO->header.cpusubtype));
     const auto& fileTypeName = MAC::FileTypeNames.at(machO->header.filetype);
     general->AddItem("File Type", tmp.Format("%.*s (0x%X)", fileTypeName.size(), fileTypeName.data(), machO->header.filetype));
     general->AddItem("Load Commands", tmp.Format("%u (0x%X)", machO->header.ncmds, machO->header.ncmds));
