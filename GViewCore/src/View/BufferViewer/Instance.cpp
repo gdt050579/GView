@@ -1391,7 +1391,7 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
         if (this->selection.GetSelection(selectionID, start, end))
         {
             LocalString<32> tmp;
-            tmp.Format("%X,%X", start, (end - start) + 1);
+            tmp.Format("%X,%X", start, (end - start));
             r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
         }
         else

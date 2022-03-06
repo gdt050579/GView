@@ -12,7 +12,7 @@ enum class Action : int32_t
     ChangeBase = 4
 };
 
-Segments::Segments(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("&Segments")
+Segments::Segments(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("Se&gments")
 {
     machO = _machO;
     win   = _win;
@@ -126,7 +126,7 @@ void Panels::Segments::Update()
     }
 }
 
-bool Panels::Segments::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+bool Segments::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
     commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(Action::Select));
@@ -135,7 +135,7 @@ bool Panels::Segments::OnUpdateCommandBar(AppCUI::Application::CommandBar& comma
     return true;
 }
 
-bool Panels::Segments::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
+bool Segments::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
     CHECK(TabPage::OnEvent(ctrl, evnt, controlID) == false, true, "");
 

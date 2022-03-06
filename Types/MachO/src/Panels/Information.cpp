@@ -33,7 +33,6 @@ void Information::UpdateGeneralInformation()
 
     const auto& info = MAC::GetArchInfoFromCPUTypeAndSubtype(machO->header.cputype, machO->header.cpusubtype);
 
-    general->AddItem("Name", info.name);
     general->AddItem("Byte Order", MAC::ByteOrderNames.at(info.byteorder));
     general->AddItem("Magic", tmp.Format("%s (0x%X)", machO->is64 ? "MH_MAGIC_64" : "MH_MAGIC", machO->header.magic));
     general->AddItem("CPU Type", tmp.Format("%.*s (0x%X)", info.name.size(), info.name.data(), machO->header.cputype));

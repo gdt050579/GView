@@ -804,6 +804,50 @@ enum class SegmentCommandFlags : uint32_t
                                    not protected.  All other pages of the segment are protected. */
 };
 
+struct section
+{                       /* for 32-bit architectures */
+    char sectname[16];  /* name of this section */
+    char segname[16];   /* segment this section goes in */
+    uint32_t addr;      /* memory address of this section */
+    uint32_t size;      /* size in bytes of this section */
+    uint32_t offset;    /* file offset of this section */
+    uint32_t align;     /* section alignment (power of 2) */
+    uint32_t reloff;    /* file offset of relocation entries */
+    uint32_t nreloc;    /* number of relocation entries */
+    uint32_t flags;     /* flags (section type and attributes)*/
+    uint32_t reserved1; /* reserved (for offset or index) */
+    uint32_t reserved2; /* reserved (for count or sizeof) */
+};
+
+struct section_64
+{                       /* for 64-bit architectures */
+    char sectname[16];  /* name of this section */
+    char segname[16];   /* segment this section goes in */
+    uint64_t addr;      /* memory address of this section */
+    uint64_t size;      /* size in bytes of this section */
+    uint32_t offset;    /* file offset of this section */
+    uint32_t align;     /* section alignment (power of 2) */
+    uint32_t reloff;    /* file offset of relocation entries */
+    uint32_t nreloc;    /* number of relocation entries */
+    uint32_t flags;     /* flags (section type and attributes)*/
+    uint32_t reserved1; /* reserved (for offset or index) */
+    uint32_t reserved2; /* reserved (for count or sizeof) */
+    uint32_t reserved3; /* reserved */
+};
+
+constexpr uint32_t SECTION_TYPE       = 0x000000ff; /* 256 section types */
+constexpr uint32_t SECTION_ATTRIBUTES = 0xffffff00; /*  24 section attributes */
+
+enum class SectionType : uint32_t
+{
+    REGULAR          = 0x0, /* regular section */
+    ZEROFILL         = 0x1, /* zero fill on demand section */
+    CSTRING_LITERALS = 0x2, /* section with only literal C strings*/
+    _4BYTE_LITERALS  = 0x3, /* section with only 4 byte literals */
+    _8BYTE_LITERALS  = 0x4, /* section with only 8 byte literals */
+    LITERAL_POINTERS = 0x5  /* section with only pointers to literals */
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -814,7 +858,8 @@ namespace Panels
     {
         Information  = 0,
         LoadCommands = 1,
-        Segments     = 2
+        Segments     = 2,
+        Sections     = 3
     };
 };
 
@@ -841,11 +886,18 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::segment_command_64 x64;
     };
 
+    union Section
+    {
+        MAC::section x86;
+        MAC::section_64 x64;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
+    std::vector<Section> sections;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -923,6 +975,25 @@ namespace Panels
 
       public:
         Segments(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class Sections : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64_t value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        Sections(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

@@ -38,6 +38,7 @@ bool MachOFile::Update()
     }
 
     loadCommands.reserve(header.ncmds);
+    const auto commandsStartOffset = offset;
 
     for (decltype(header.ncmds) i = 0; i < header.ncmds; i++)
     {
@@ -85,7 +86,7 @@ bool MachOFile::Update()
             {
                 s.x64.cmd     = Utils::SwapEndian(s.x64.cmd);
                 s.x64.cmdsize = Utils::SwapEndian(s.x64.cmdsize);
-                for (auto i = 0U; i < sizeof(s.x86.segname) / sizeof(s.x86.segname[0]); i++)
+                for (auto i = 0U; i < sizeof(s.x64.segname) / sizeof(s.x64.segname[0]); i++)
                 {
                     s.x64.segname[i] = Utils::SwapEndian(s.x64.segname[i]);
                 }
@@ -102,12 +103,84 @@ bool MachOFile::Update()
         }
     }
 
+    offset = commandsStartOffset;
+    for (const auto& segment : segments)
+    {
+        if (is64)
+        {
+            offset += sizeof(MAC::segment_command_64);
+            for (auto i = 0U; i < segment.x64.nsects; i++)
+            {
+                Section s{};
+                CHECK(file->Copy<MAC::section_64>(offset, s.x64), false, "");
+                if (shouldSwapEndianess)
+                {
+                    for (auto i = 0U; i < sizeof(s.x64.sectname) / sizeof(s.x64.sectname[0]); i++)
+                    {
+                        s.x64.sectname[i] = Utils::SwapEndian(s.x64.sectname[i]);
+                    }
+                    for (auto i = 0U; i < sizeof(s.x64.segname) / sizeof(s.x64.segname[0]); i++)
+                    {
+                        s.x64.segname[i] = Utils::SwapEndian(s.x64.segname[i]);
+                    }
+                    s.x64.addr      = Utils::SwapEndian(s.x64.addr);
+                    s.x64.size      = Utils::SwapEndian(s.x64.size);
+                    s.x64.offset    = Utils::SwapEndian(s.x64.offset);
+                    s.x64.align     = Utils::SwapEndian(s.x64.align);
+                    s.x64.reloff    = Utils::SwapEndian(s.x64.reloff);
+                    s.x64.nreloc    = Utils::SwapEndian(s.x64.nreloc);
+                    s.x64.flags     = Utils::SwapEndian(s.x64.flags);
+                    s.x64.reserved1 = Utils::SwapEndian(s.x64.reserved1);
+                    s.x64.reserved2 = Utils::SwapEndian(s.x64.reserved2);
+                    s.x64.reserved3 = Utils::SwapEndian(s.x64.reserved3);
+                }
+                sections.emplace_back(s);
+                offset += sizeof(MAC::section_64);
+            }
+        }
+        else
+        {
+            for (auto i = 0U; i < segment.x86.nsects; i++)
+            {
+                Section s{};
+                CHECK(file->Copy<MAC::section>(offset, s.x86), false, "");
+                if (shouldSwapEndianess)
+                {
+                    for (auto i = 0U; i < sizeof(s.x86.sectname) / sizeof(s.x86.sectname[0]); i++)
+                    {
+                        s.x86.sectname[i] = Utils::SwapEndian(s.x86.sectname[i]);
+                    }
+                    for (auto i = 0U; i < sizeof(s.x86.segname) / sizeof(s.x86.segname[0]); i++)
+                    {
+                        s.x86.segname[i] = Utils::SwapEndian(s.x86.segname[i]);
+                    }
+                    s.x86.addr      = Utils::SwapEndian(s.x86.addr);
+                    s.x86.size      = Utils::SwapEndian(s.x86.size);
+                    s.x86.offset    = Utils::SwapEndian(s.x86.offset);
+                    s.x86.align     = Utils::SwapEndian(s.x86.align);
+                    s.x86.reloff    = Utils::SwapEndian(s.x86.reloff);
+                    s.x86.nreloc    = Utils::SwapEndian(s.x86.nreloc);
+                    s.x86.flags     = Utils::SwapEndian(s.x86.flags);
+                    s.x86.reserved1 = Utils::SwapEndian(s.x86.reserved1);
+                    s.x86.reserved2 = Utils::SwapEndian(s.x86.reserved2);
+                }
+                sections.emplace_back(s);
+                offset += sizeof(MAC::section_64);
+            }
+        }
+    }
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
     if (segments.empty() == false)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
+    }
+
+    if (sections.empty() == false)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
     }
 
     return true;

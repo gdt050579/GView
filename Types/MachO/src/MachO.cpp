@@ -72,6 +72,18 @@ extern "C"
             commandsCount++;
         }
 
+        for (const auto& s : machO->sections)
+        {
+            if (machO->is64)
+            {
+                settings.AddZone(s.x64.offset, s.x64.size, machO->colors.section, s.x64.sectname);
+            }
+            else
+            {
+                settings.AddZone(s.x86.offset, s.x86.size, machO->colors.section, s.x86.sectname);
+            }
+        }
+
         win->CreateViewer("BufferView", settings);
     }
 
@@ -95,6 +107,11 @@ extern "C"
         if (mach->HasPanel(MachO::Panels::IDs::Segments))
         {
             win->AddPanel(Pointer<TabPage>(new MachO::Panels::Segments(mach, win)), false);
+        }
+
+        if (mach->HasPanel(MachO::Panels::IDs::Sections))
+        {
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Sections(mach, win)), false);
         }
 
         return true;
