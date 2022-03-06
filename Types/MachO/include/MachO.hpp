@@ -816,57 +816,56 @@ static const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
 // https://opensource.apple.com/source/cctools/cctools-895/include/mach-o/loader.h.auto.html
 enum class LoadCommandType : uint32_t
 {
-    REQ_DYLD       = 0x80000000,
-    SEGMENT        = 0x1,  /* segment of this file to be mapped */
-    SYMTAB         = 0x2,  /* link-edit stab symbol table info */
-    SYMSEG         = 0x3,  /* link-edit gdb symbol table info (obsolete) */
-    THREAD         = 0x4,  /* thread */
-    UNIXTHREAD     = 0x5,  /* unix thread (includes a stack) */
-    LOADFVMLIB     = 0x6,  /* load a specified fixed VM shared library */
-    IDFVMLIB       = 0x7,  /* fixed VM shared library identification */
-    IDENT          = 0x8,  /* object identification info (obsolete) */
-    FVMFILE        = 0x9,  /* fixed VM file inclusion (internal use) */
-    PREPAGE        = 0xa,  /* prepage command (internal use) */
-    DYSYMTAB       = 0xb,  /* dynamic link-edit symbol table info */
-    LOAD_DYLIB     = 0xc,  /* load a dynamically linked shared library */
-    ID_DYLIB       = 0xd,  /* dynamically linked shared lib ident */
-    LOAD_DYLINKER  = 0xe,  /* load a dynamic linker */
-    ID_DYLINKER    = 0xf,  /* dynamic linker identification */
-    PREBOUND_DYLIB = 0x10, /* modules prebound for a dynamically linked shared library */
-    ROUTINES       = 0x11, /* image routines */
-    SUB_FRAMEWORK  = 0x12, /* sub framework */
-    SUB_UMBRELLA   = 0x13, /* sub umbrella */
-    SUB_CLIENT     = 0x14, /* sub client */
-    SUB_LIBRARY    = 0x15, /* sub library */
-    TWOLEVEL_HINTS = 0x16, /* two-level namespace lookup hints */
-    PREBIND_CKSUM  = 0x17, /* prebind checksum */
-    LOAD_WEAK_DYLIB =
-          (0x18 | REQ_DYLD), /* load a dynamically linked shared library that is allowed to be missing (all symbols are weak imported). */
-    SEGMENT_64               = 0x19,              /* 64-bit segment of this file to be mapped */
-    ROUTINES_64              = 0x1a,              /* 64-bit image routines */
-    UUID                     = 0x1b,              /* the uuid */
-    RPATH                    = (0x1c | REQ_DYLD), /* runpath additions */
-    CODE_SIGNATURE           = 0x1d,              /* local of code signature */
-    SEGMENT_SPLIT_INFO       = 0x1e,              /* local of info to split segments */
-    REEXPORT_DYLIB           = (0x1f | REQ_DYLD), /* load and re-export dylib */
-    LAZY_LOAD_DYLIB          = 0x20,              /* delay load of dylib until first use */
-    ENCRYPTION_INFO          = 0x21,              /* encrypted segment information */
-    DYLD_INFO                = 0x22,              /* compressed dyld information */
-    DYLD_INFO_ONLY           = (0x22 | REQ_DYLD), /* compressed dyld information only */
-    LOAD_UPWARD_DYLIB        = (0x23 | REQ_DYLD), /* load upward dylib */
-    VERSION_MIN_MACOSX       = 0x24,              /* build for MacOSX min OS version */
-    VERSION_MIN_IPHONEOS     = 0x25,              /* build for iPhoneOS min OS version */
-    FUNCTION_STARTS          = 0x26,              /* compressed table of function start addresses */
-    DYLD_ENVIRONMENT         = 0x27,              /* string for dyld to treat like environment variable */
-    MAIN                     = (0x28 | REQ_DYLD), /* replacement for LC_UNIXTHREAD */
-    DATA_IN_CODE             = 0x29,              /* table of non-instructions in __text */
-    SOURCE_VERSION           = 0x2A,              /* source version used to build binary */
-    DYLIB_CODE_SIGN_DRS      = 0x2B,              /* Code signing DRs copied from linked dylibs */
-    ENCRYPTION_INFO_64       = 0x2C,              /* 64-bit encrypted segment information */
-    LINKER_OPTION            = 0x2D,              /* linker options in MH_OBJECT files */
-    LINKER_OPTIMIZATION_HINT = 0x2E,              /* optimization hints in MH_OBJECT files */
-    VERSION_MIN_TVOS         = 0x2F,              /* build for AppleTV min OS version */
-    VERSION_MIN_WATCHOS      = 0x30               /* build for Watch min OS version */
+    REQ_DYLD                 = 0x80000000,
+    SEGMENT                  = 0x1,
+    SYMTAB                   = 0x2,
+    SYMSEG                   = 0x3,
+    THREAD                   = 0x4,
+    UNIXTHREAD               = 0x5,
+    LOADFVMLIB               = 0x6,
+    IDFVMLIB                 = 0x7,
+    IDENT                    = 0x8,
+    FVMFILE                  = 0x9,
+    PREPAGE                  = 0xa,
+    DYSYMTAB                 = 0xb,
+    LOAD_DYLIB               = 0xc,
+    ID_DYLIB                 = 0xd,
+    LOAD_DYLINKER            = 0xe,
+    ID_DYLINKER              = 0xf,
+    PREBOUND_DYLIB           = 0x10,
+    ROUTINES                 = 0x11,
+    SUB_FRAMEWORK            = 0x12,
+    SUB_UMBRELLA             = 0x13,
+    SUB_CLIENT               = 0x14,
+    SUB_LIBRARY              = 0x15,
+    TWOLEVEL_HINTS           = 0x16,
+    PREBIND_CKSUM            = 0x17,
+    LOAD_WEAK_DYLIB          = (0x18 | REQ_DYLD),
+    SEGMENT_64               = 0x19,
+    ROUTINES_64              = 0x1a,
+    UUID                     = 0x1b,
+    RPATH                    = (0x1c | REQ_DYLD),
+    CODE_SIGNATURE           = 0x1d,
+    SEGMENT_SPLIT_INFO       = 0x1e,
+    REEXPORT_DYLIB           = (0x1f | REQ_DYLD),
+    LAZY_LOAD_DYLIB          = 0x20,
+    ENCRYPTION_INFO          = 0x21,
+    DYLD_INFO                = 0x22,
+    DYLD_INFO_ONLY           = (0x22 | REQ_DYLD),
+    LOAD_UPWARD_DYLIB        = (0x23 | REQ_DYLD),
+    VERSION_MIN_MACOSX       = 0x24,
+    VERSION_MIN_IPHONEOS     = 0x25,
+    FUNCTION_STARTS          = 0x26,
+    DYLD_ENVIRONMENT         = 0x27,
+    MAIN                     = (0x28 | REQ_DYLD),
+    DATA_IN_CODE             = 0x29,
+    SOURCE_VERSION           = 0x2A,
+    DYLIB_CODE_SIGN_DRS      = 0x2B,
+    ENCRYPTION_INFO_64       = 0x2C,
+    LINKER_OPTION            = 0x2D,
+    LINKER_OPTIMIZATION_HINT = 0x2E,
+    VERSION_MIN_TVOS         = 0x2F,
+    VERSION_MIN_WATCHOS      = 0x30
 
 };
 
@@ -875,6 +874,112 @@ struct load_command
     LoadCommandType cmd; /* type of load command */
     uint32_t cmdsize;    /* total size of command in bytes */
 };
+
+static const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_PAIR_FROM_ENUM(LoadCommandType::REQ_DYLD),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SEGMENT),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SYMTAB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SYMSEG),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::THREAD),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::UNIXTHREAD),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LOADFVMLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::IDFVMLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::IDENT),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::FVMFILE),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::PREPAGE),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYSYMTAB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LOAD_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::ID_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LOAD_DYLINKER),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::ID_DYLINKER),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::PREBOUND_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::ROUTINES),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SUB_FRAMEWORK),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SUB_UMBRELLA),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SUB_CLIENT),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SUB_LIBRARY),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::TWOLEVEL_HINTS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::PREBIND_CKSUM),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LOAD_WEAK_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SEGMENT_64),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::ROUTINES_64),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::UUID),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::RPATH),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::CODE_SIGNATURE),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SEGMENT_SPLIT_INFO),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::REEXPORT_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LAZY_LOAD_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::ENCRYPTION_INFO),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_INFO),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_INFO_ONLY),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LOAD_UPWARD_DYLIB),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_MACOSX),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_IPHONEOS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::FUNCTION_STARTS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_ENVIRONMENT),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::MAIN),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DATA_IN_CODE),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::SOURCE_VERSION),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLIB_CODE_SIGN_DRS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::ENCRYPTION_INFO_64),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LINKER_OPTION),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::LINKER_OPTIMIZATION_HINT),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_TVOS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::VERSION_MIN_WATCHOS) };
+
+static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions{
+    { LoadCommandType::REQ_DYLD, "Requires dynamic linker." },
+    { LoadCommandType::SEGMENT, "Segment of this file to be mapped." },
+    { LoadCommandType::SYMTAB, "Link-edit stab symbol table info." },
+    { LoadCommandType::SYMSEG, "Link-edit gdb symbol table info (obsolete)." },
+    { LoadCommandType::THREAD, "Thread." },
+    { LoadCommandType::UNIXTHREAD, "Unix thread (includes a stack)." },
+    { LoadCommandType::LOADFVMLIB, "Load a specified fixed VM shared library." },
+    { LoadCommandType::IDFVMLIB, "Fixed VM shared library identification." },
+    { LoadCommandType::IDENT, "Object identification info (obsolete)." },
+    { LoadCommandType::FVMFILE, "Fixed VM file inclusion (internal use)." },
+    { LoadCommandType::PREPAGE, "Prepage command (internal use)." },
+    { LoadCommandType::DYSYMTAB, "Dynamic link-edit symbol table info." },
+    { LoadCommandType::LOAD_DYLIB, "Load a dynamically linked shared library." },
+    { LoadCommandType::ID_DYLIB, "Dynamically linked shared lib ident." },
+    { LoadCommandType::LOAD_DYLINKER, "Load a dynamic linker." },
+    { LoadCommandType::ID_DYLINKER, "Dynamic linker identification." },
+    { LoadCommandType::PREBOUND_DYLIB, "Modules prebound for a dynamically linked shared library." },
+    { LoadCommandType::ROUTINES, "Image routines." },
+    { LoadCommandType::SUB_FRAMEWORK, "Sub framework." },
+    { LoadCommandType::SUB_UMBRELLA, "Sub umbrella." },
+    { LoadCommandType::SUB_CLIENT, "Sub client." },
+    { LoadCommandType::SUB_LIBRARY, "Sub library." },
+    { LoadCommandType::TWOLEVEL_HINTS, "Two-level namespace lookup hints." },
+    { LoadCommandType::PREBIND_CKSUM, "Prebind checksum." },
+    { LoadCommandType::LOAD_WEAK_DYLIB,
+      "Load a dynamically linked shared library that is allowed to be missing (all symbols are weak imported)." },
+    { LoadCommandType::SEGMENT_64, "64-bit segment of this file to be mapped." },
+    { LoadCommandType::ROUTINES_64, "64-bit image routines." },
+    { LoadCommandType::UUID, "The uuid." },
+    { LoadCommandType::RPATH, "Runpath additions." },
+    { LoadCommandType::CODE_SIGNATURE, "Local of code signature." },
+    { LoadCommandType::SEGMENT_SPLIT_INFO, "Local of info to split segments." },
+    { LoadCommandType::REEXPORT_DYLIB, "Load and re-export dylib." },
+    { LoadCommandType::LAZY_LOAD_DYLIB, "Delay load of dylib until first use." },
+    { LoadCommandType::ENCRYPTION_INFO, "Encrypted segment information." },
+    { LoadCommandType::DYLD_INFO, "Compressed dyld information." },
+    { LoadCommandType::DYLD_INFO_ONLY, "Compressed dyld information only." },
+    { LoadCommandType::LOAD_UPWARD_DYLIB, "Load upward dylib." },
+    { LoadCommandType::VERSION_MIN_MACOSX, "Build for MacOSX min OS version." },
+    { LoadCommandType::VERSION_MIN_IPHONEOS, "Build for iPhoneOS min OS version." },
+    { LoadCommandType::FUNCTION_STARTS, "Compressed table of function start addresses." },
+    { LoadCommandType::DYLD_ENVIRONMENT, "String for dyld to treat like environment variable." },
+    { LoadCommandType::MAIN, "Replacement for LoadCommandType::UNIXTHREAD" },
+    { LoadCommandType::DATA_IN_CODE, "Table of non-instructions in __text." },
+    { LoadCommandType::SOURCE_VERSION, "Source version used to build binary." },
+    { LoadCommandType::DYLIB_CODE_SIGN_DRS, "Code signing DRs copied from linked dylibs." },
+    { LoadCommandType::ENCRYPTION_INFO_64, "64-bit encrypted segment information." },
+    { LoadCommandType::LINKER_OPTION, "Linker options in FileType::OBJECT files." },
+    { LoadCommandType::LINKER_OPTIMIZATION_HINT, "Optimization hints in FileType::OBJECT files." },
+    { LoadCommandType::VERSION_MIN_TVOS, "Build for AppleTV min OS version." },
+    { LoadCommandType::VERSION_MIN_WATCHOS, "Build for Watch min OS version." }
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -883,8 +988,8 @@ namespace Panels
 {
     enum class IDs : uint8_t
     {
-        Information = 0,
-        Objects     = 1
+        Information  = 0,
+        LoadCommands = 1
     };
 };
 
@@ -894,14 +999,21 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     struct Colors
     {
         ColorPair header{ Color::Olive, Color::Transparent };
-        ColorPair arch{ Color::Magenta, Color::Transparent };
+        ColorPair loadCommand{ Color::Magenta, Color::Transparent };
         ColorPair objectName{ Color::DarkRed, Color::Transparent };
         ColorPair object{ Color::Silver, Color::Transparent };
     } colors;
 
+    struct LoadCommand
+    {
+        MAC::load_command value;
+        uint64_t offset;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
+    std::vector<LoadCommand> loadCommands;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -947,7 +1059,7 @@ namespace Panels
         }
     };
 
-    class Objects : public AppCUI::Controls::TabPage
+    class LoadCommands : public AppCUI::Controls::TabPage
     {
         Reference<MachOFile> machO;
         Reference<GView::View::WindowInterface> win;
@@ -959,7 +1071,7 @@ namespace Panels
         void SelectCurrentSection();
 
       public:
-        Objects(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
+        LoadCommands(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

@@ -8,6 +8,8 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
+using namespace MachO;
+using namespace MachO::MAC;
 
 template <typename T>
 constexpr std::string BinaryToHexString(const T number, const size_t length)
@@ -38,38 +40,37 @@ constexpr std::string BinaryToHexString(const T number, const size_t length)
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
     {
         auto dword = buf.GetObject<uint32_t>();
         CHECK(dword != nullptr, false, "");
         const uint32_t magic = dword;
-        CHECK(magic == MachO::MAC::MH_MAGIC || magic == MachO::MAC::MH_CIGAM || magic == MachO::MAC::MH_MAGIC_64 ||
-                    magic == MachO::MAC::MH_CIGAM_64,
-              false,
-              "Magic is [%u]!",
-              magic);
+        CHECK(magic == MH_MAGIC || magic == MH_CIGAM || magic == MH_MAGIC_64 || magic == MH_CIGAM_64, false, "Magic is [%u]!", magic);
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
     {
-        return new MachO::MachOFile(file);
+        return new MachOFile(file);
     }
 
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachO::MachOFile> machO)
+    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
     {
         BufferViewer::Settings settings;
         uint64_t offset = 0;
 
-        const auto headerSize =
-              machO->is64 ? sizeof(MachO::MAC::mach_header) + sizeof(MachO::MAC::mach_header::reserved) : sizeof(MachO::MAC::mach_header);
+        const auto headerSize = sizeof(mach_header) + machO->is64 ? sizeof(mach_header::reserved) : 0;
         settings.AddZone(offset, headerSize, machO->colors.header, "Header");
         offset += headerSize;
 
-        uint32_t objectCount = 0;
-        LocalString<128> temp;
-
-        //
+        LocalString<128> tmp;
+        uint32_t commandsCount = 0;
+        for (const auto& lc : machO->loadCommands)
+        {
+            settings.AddZone(lc.offset, lc.value.cmdsize, machO->colors.loadCommand, tmp.Format("LC (#%u)", commandsCount));
+            offset = lc.offset + lc.value.cmdsize;
+            commandsCount++;
+        }
 
         win->CreateViewer("BufferView", settings);
     }
@@ -86,9 +87,9 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new MachO::Panels::Information(mach)), true);
         }
 
-        if (mach->HasPanel(MachO::Panels::IDs::Objects))
+        if (mach->HasPanel(MachO::Panels::IDs::LoadCommands))
         {
-            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Objects(mach, win)), false);
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::LoadCommands(mach, win)), false);
         }
 
         return true;

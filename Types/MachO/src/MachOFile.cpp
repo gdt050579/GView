@@ -2,23 +2,6 @@
 
 namespace GView::Type::MachO
 {
-template <typename T>
-T SwapEndian(T u)
-{
-    union
-    {
-        T object;
-        unsigned char bytes[sizeof(T)];
-    } source{ u }, dest{};
-
-    for (decltype(sizeof(T)) i = 0; i < sizeof(T); i++)
-    {
-        dest.bytes[i] = source.bytes[sizeof(T) - i - 1];
-    }
-
-    return dest.object;
-}
-
 MachOFile::MachOFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;
@@ -45,16 +28,29 @@ bool MachOFile::Update()
 
     if (shouldSwapEndianess)
     {
-        header.magic      = SwapEndian(header.magic);
-        header.cputype    = SwapEndian(header.cputype);
-        header.cpusubtype = SwapEndian(header.cpusubtype);
-        header.filetype   = SwapEndian(header.filetype);
-        header.ncmds      = SwapEndian(header.ncmds);
-        header.sizeofcmds = SwapEndian(header.sizeofcmds);
-        header.flags      = SwapEndian(header.flags);
+        header.magic      = Utils::SwapEndian(header.magic);
+        header.cputype    = Utils::SwapEndian(header.cputype);
+        header.cpusubtype = Utils::SwapEndian(header.cpusubtype);
+        header.filetype   = Utils::SwapEndian(header.filetype);
+        header.ncmds      = Utils::SwapEndian(header.ncmds);
+        header.sizeofcmds = Utils::SwapEndian(header.sizeofcmds);
+        header.flags      = Utils::SwapEndian(header.flags);
     }
 
-    // archs.reserve(header.nfat_arch);
+    loadCommands.reserve(header.ncmds);
+
+    for (decltype(header.ncmds) i = 0; i < header.ncmds; i++)
+    {
+        MAC::load_command lc{};
+        CHECK(file->Copy<MAC::load_command>(offset, lc), false, "");
+        if (shouldSwapEndianess)
+        {
+            lc.cmd     = Utils::SwapEndian(lc.cmd);
+            lc.cmdsize = Utils::SwapEndian(lc.cmdsize);
+        }
+        loadCommands.push_back({ lc, offset });
+        offset += lc.cmdsize;
+    }
 
     if (is64)
     {
@@ -96,7 +92,7 @@ bool MachOFile::Update()
     }
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Objects);
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
     return true;
 }
