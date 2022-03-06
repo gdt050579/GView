@@ -19,9 +19,7 @@ T SwapEndian(T u)
     return dest.object;
 }
 
-MachOFile::MachOFile(Reference<GView::Utils::FileCache> file)
-    : // header({}),
-      is64(false), shouldSwapEndianess(false), panelsMask(0)
+MachOFile::MachOFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;
 }

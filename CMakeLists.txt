@@ -23,7 +23,7 @@ add_subdirectory(Types/PE)
 add_subdirectory(Types/ICO)
 add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
-add_subdirectory(Types/MachOFB)
+add_subdirectory(Types/UniversalMachO)
 add_subdirectory(Types/MachO)
 
 if(MSVC)

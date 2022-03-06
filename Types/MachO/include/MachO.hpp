@@ -106,36 +106,40 @@ enum class CPU_TYPE : uint32_t
     VEO         = 255
 };
 
-#define GET_VARIABLE_NAME(x) (#x)
 #define GET_PAIR(x)                                                                                                                        \
     {                                                                                                                                      \
-        x, (GET_VARIABLE_NAME(x))                                                                                                          \
+        x, (#x)                                                                                                                            \
     }
 
-static const std::map<CPU_TYPE, std::string_view> CpuTypeNames{ GET_PAIR(CPU_TYPE::ANY),
-                                                                GET_PAIR(CPU_TYPE::VAX),
-                                                                GET_PAIR(CPU_TYPE::ROMP),
+#define GET_PAIR_FROM_ENUM(x)                                                                                                              \
+    {                                                                                                                                      \
+        x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                       \
+    }
+
+static const std::map<CPU_TYPE, std::string_view> CpuTypeNames{ GET_PAIR_FROM_ENUM(CPU_TYPE::ANY),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::VAX),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::ROMP),
                                                                 // skipped
-                                                                GET_PAIR(CPU_TYPE::NS32032),
-                                                                GET_PAIR(CPU_TYPE::NS32332),
-                                                                GET_PAIR(CPU_TYPE::MC680x0),
-                                                                GET_PAIR(CPU_TYPE::X86),
-                                                                GET_PAIR(CPU_TYPE::I386),
-                                                                GET_PAIR(CPU_TYPE::X86_64),
-                                                                GET_PAIR(CPU_TYPE::MIPS),
-                                                                GET_PAIR(CPU_TYPE::NS32532),
-                                                                GET_PAIR(CPU_TYPE::MC98000),
-                                                                GET_PAIR(CPU_TYPE::HPPA),
-                                                                GET_PAIR(CPU_TYPE::ARM),
-                                                                GET_PAIR(CPU_TYPE::ARM64),
-                                                                GET_PAIR(CPU_TYPE::MC88000),
-                                                                GET_PAIR(CPU_TYPE::SPARC),
-                                                                GET_PAIR(CPU_TYPE::I860),
-                                                                GET_PAIR(CPU_TYPE::I860_LITTLE),
-                                                                GET_PAIR(CPU_TYPE::RS6000),
-                                                                GET_PAIR(CPU_TYPE::POWERPC),
-                                                                GET_PAIR(CPU_TYPE::POWERPC64),
-                                                                GET_PAIR(CPU_TYPE::VEO) };
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::NS32032),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::NS32332),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MC680x0),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::X86),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::I386),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::X86_64),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MIPS),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::NS32532),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MC98000),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::HPPA),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::ARM),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::ARM64),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::MC88000),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::SPARC),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::I860),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::I860_LITTLE),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::RS6000),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::POWERPC),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::POWERPC64),
+                                                                GET_PAIR_FROM_ENUM(CPU_TYPE::VEO) };
 
 enum class CPU_SUBTYPE_COMPATIBILITY : uint32_t
 {
@@ -218,10 +222,14 @@ constexpr uint32_t CPU_SUBTYPE_INTEL_MODEL_ALL = 0;
 
 enum class CPU_SUBTYPE_X86 : uint32_t
 {
-    ALL     = 3,
-    _64_ALL = 3,
-    ARCH1   = 4,
-    _64_H   = 8, /* Haswell feature subset */
+    ALL   = 3,
+    ARCH1 = 4
+};
+
+enum class CPU_SUBTYPE_X86_64 : uint32_t
+{
+    ALL = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 3,
+    H   = static_cast<uint32_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64) | 8, /* Haswell feature subset */
 };
 
 enum class CPU_THREADTYPE : uint32_t
@@ -401,10 +409,11 @@ static const std::map<CPU_SUBTYPE_MC680, std::string_view> CpuSubtypeMC680Names{
                                                                                  GET_PAIR(CPU_SUBTYPE_MC680::_40),
                                                                                  GET_PAIR(CPU_SUBTYPE_MC680::_30_ONLY) };
 
-static const std::map<CPU_SUBTYPE_X86, std::string_view> CpuSubtypeX86Names{ GET_PAIR(CPU_SUBTYPE_X86::ALL),
-                                                                             GET_PAIR(CPU_SUBTYPE_X86::_64_ALL),
-                                                                             GET_PAIR(CPU_SUBTYPE_X86::ARCH1),
-                                                                             { CPU_SUBTYPE_X86::_64_H, "CPU_SUBTYPE_X86::_64_Haswell" } };
+static const std::map<CPU_SUBTYPE_X86, std::string_view> CpuSubtypeX86Names{ { CPU_SUBTYPE_X86::ALL, "ALL" },
+                                                                             { CPU_SUBTYPE_X86::ARCH1, "ARCH1" } };
+
+static const std::map<CPU_SUBTYPE_X86_64, std::string_view> CpuSubtypeX86_64Names{ { CPU_SUBTYPE_X86_64::ALL, "ALL" },
+                                                                                   { CPU_SUBTYPE_X86_64::H, "Haswell" } };
 
 static const std::map<CPU_SUBTYPE_MIPS, std::string_view> CpuSubtypeMipsNames{
     GET_PAIR(CPU_SUBTYPE_MIPS::ALL),    GET_PAIR(CPU_SUBTYPE_MIPS::R2300),  GET_PAIR(CPU_SUBTYPE_MIPS::R2600),
@@ -479,7 +488,7 @@ static const std::string_view GetCPUSubtype(CPU_TYPE type, uint32_t subtype)
     case CPU_TYPE::X86: /* I386 */
         return CpuSubtypeX86Names.at(static_cast<CPU_SUBTYPE_X86>(subtype));
     case CPU_TYPE::X86_64:
-        return CpuSubtypeX86Names.at(static_cast<CPU_SUBTYPE_X86>(subtype));
+        return CpuSubtypeX86_64Names.at(static_cast<CPU_SUBTYPE_X86_64>(subtype));
     case CPU_TYPE::MIPS:
         return CpuSubtypeMipsNames.at(static_cast<CPU_SUBTYPE_MIPS>(subtype));
     case CPU_TYPE::NS32532:
@@ -512,13 +521,27 @@ static const std::string_view GetCPUSubtype(CPU_TYPE type, uint32_t subtype)
     }
 }
 
+enum class FileType : uint32_t
+{
+    OBJECT      = 0x1, /* relocatable object file */
+    EXECUTE     = 0x2, /* demand paged executable file */
+    FVMLIB      = 0x3, /* fixed VM shared library file */
+    CORE        = 0x4, /* core file */
+    PRELOAD     = 0x5, /* preloaded executable file */
+    DYLIB       = 0x6, /* dynamically bound shared library */
+    BUNDLE      = 0x8, /* dynamically bound bundle file */
+    DYLIB_STUB  = 0x9, /* shared library stub for static | linking only, no section contents */
+    DSYM        = 0xA, /* companion file with only debug | sections */
+    KEXT_BUNDLE = 0xB, /* x86_64 kexts */
+};
+
 // https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach-o/loader.h
 struct mach_header
 {
     uint32_t magic;      /* mach magic number identifier */
     CPU_TYPE cputype;    /* cpu specifier */
     uint32_t cpusubtype; /* machine specifier */
-    uint32_t filetype;   /* type of file */
+    FileType filetype;   /* type of file */
     uint32_t ncmds;      /* number of load commands */
     uint32_t sizeofcmds; /* the size of all the load commands */
     uint32_t flags;      /* flags */
@@ -532,9 +555,15 @@ struct mach_header
 
 enum class ByteOrder
 {
-    UnknownByteOrder,
+    Unknown,
     LittleEndian,
     BigEndian
+};
+
+static const std::map<ByteOrder, std::string_view> ByteOrderNames{
+    GET_PAIR_FROM_ENUM(ByteOrder::Unknown),
+    GET_PAIR_FROM_ENUM(ByteOrder::LittleEndian),
+    GET_PAIR_FROM_ENUM(ByteOrder::BigEndian),
 };
 
 struct ArchInfo
@@ -549,8 +578,8 @@ struct ArchInfo
 static const ArchInfo ArchInfoTable[] = {
     { "hppa", CPU_TYPE::HPPA, static_cast<uint32_t>(CPU_SUBTYPE_HPPA::ALL), ByteOrder::BigEndian, "HP-PA" },
     { "i386", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_X86::ALL), ByteOrder::LittleEndian, "Intel 80x86" },
-    { "x86_64", CPU_TYPE::X86_64, static_cast<uint32_t>(CPU_SUBTYPE_X86::_64_ALL), ByteOrder::LittleEndian, "Intel x86-64" },
-    { "x86_64h", CPU_TYPE::X86_64, static_cast<uint32_t>(CPU_SUBTYPE_X86::_64_H), ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
+    { "x86_64", CPU_TYPE::X86_64, static_cast<uint32_t>(CPU_SUBTYPE_X86_64::ALL), ByteOrder::LittleEndian, "Intel x86-64" },
+    { "x86_64h", CPU_TYPE::X86_64, static_cast<uint32_t>(CPU_SUBTYPE_X86_64::H), ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
     { "i860", CPU_TYPE::I860, static_cast<uint32_t>(CPU_SUBTYPE_I860::ALL), ByteOrder::BigEndian, "Intel 860" },
     { "m68k", CPU_TYPE::MC680x0, static_cast<uint32_t>(CPU_SUBTYPE_MC680::x0_ALL), ByteOrder::BigEndian, "Motorola 68K" },
     { "m88k", CPU_TYPE::MC88000, static_cast<uint32_t>(CPU_SUBTYPE_MC88000::ALL), ByteOrder::BigEndian, "Motorola 88K" },
@@ -559,7 +588,7 @@ static const ArchInfo ArchInfoTable[] = {
     { "sparc", CPU_TYPE::SPARC, static_cast<uint32_t>(CPU_SUBTYPE_SPARC::ALL), ByteOrder::BigEndian, "SPARC" },
     { "arm", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::ALL), ByteOrder::LittleEndian, "ARM" },
     { "arm64", CPU_TYPE::ARM64, static_cast<uint32_t>(CPU_SUBTYPE_ARM64::ALL), ByteOrder::LittleEndian, "ARM64" },
-    { "any", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::MULTIPLE), ByteOrder::UnknownByteOrder, "Architecture Independent" },
+    { "any", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::MULTIPLE), ByteOrder::Unknown, "Architecture Independent" },
     { "veo", CPU_TYPE::VEO, static_cast<uint32_t>(CPU_SUBTYPE_VEO::ALL), ByteOrder::BigEndian, "veo" },
     /* specific architecture implementations */
     { "hppa7100LC", CPU_TYPE::HPPA, static_cast<uint32_t>(CPU_SUBTYPE_HPPA::_7100LC), ByteOrder::BigEndian, "HP-PA 7100LC" },
@@ -590,7 +619,7 @@ static const ArchInfo ArchInfoTable[] = {
       ByteOrder::LittleEndian,
       "Intel Pentium II Model 5" },
     { "pentium4", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_INTEL::PENTIUM_4), ByteOrder::LittleEndian, "Intel Pentium 4" },
-    { "x86_64h", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_X86::_64_H), ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
+    { "x86_64h", CPU_TYPE::I386, static_cast<uint32_t>(CPU_SUBTYPE_X86_64::H), ByteOrder::LittleEndian, "Intel x86-64h Haswell" },
     { "ppc601", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_601), ByteOrder::BigEndian, "PowerPC 601" },
     { "ppc603", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603), ByteOrder::BigEndian, "PowerPC 603" },
     { "ppc603e", CPU_TYPE::POWERPC, static_cast<uint32_t>(CPU_SUBTYPE_PowerPC::_603e), ByteOrder::BigEndian, "PowerPC 603e" },
@@ -660,7 +689,129 @@ static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(CPU_TYPE cputype, uint32_
     return ai;
 }
 
-// TODO: mach o arch
+static const std::map<FileType, std::string_view> FileTypeNames{
+    GET_PAIR_FROM_ENUM(FileType::OBJECT),     GET_PAIR_FROM_ENUM(FileType::EXECUTE),    GET_PAIR_FROM_ENUM(FileType::FVMLIB),
+    GET_PAIR_FROM_ENUM(FileType::CORE),       GET_PAIR_FROM_ENUM(FileType::PRELOAD),    GET_PAIR_FROM_ENUM(FileType::DYLIB),
+    GET_PAIR_FROM_ENUM(FileType::BUNDLE),     GET_PAIR_FROM_ENUM(FileType::DYLIB_STUB), GET_PAIR_FROM_ENUM(FileType::DSYM),
+    GET_PAIR_FROM_ENUM(FileType::KEXT_BUNDLE)
+};
+
+enum class MachHeaderFlags : uint32_t
+{
+    NOUNDEFS                = 0x1,
+    INCRLINK                = 0x2,
+    DYLDLINK                = 0x4,
+    BINDATLOAD              = 0x8,
+    PREBOUND                = 0x10,
+    SPLIT_SEGS              = 0x20,
+    LAZY_INIT               = 0x40,
+    TWOLEVEL                = 0x80,
+    FORCE_FLAT              = 0x100,
+    NOMULTIDEFS             = 0x200,
+    NOFIXPREBINDING         = 0x400,
+    PREBINDABLE             = 0x800,
+    ALLMODSBOUND            = 0x1000,
+    SUBSECTIONS_VIA_SYMBOLS = 0x2000,
+    CANONICAL               = 0x4000,
+    WEAK_DEFINES            = 0x8000,
+    BINDS_TO_WEAK           = 0x10000,
+    ALLOW_STACK_EXECUTION   = 0x20000,
+    ROOT_SAFE               = 0x40000,
+    SETUID_SAFE             = 0x80000,
+    NO_REEXPORTED_DYLIBS    = 0x100000,
+    PIE                     = 0x200000,
+    DEAD_STRIPPABLE_DYLIB   = 0x400000,
+    HAS_TLV_DESCRIPTORS     = 0x800000,
+    NO_HEAP_EXECUTION       = 0x1000000,
+    APP_EXTENSION_SAFE      = 0x02000000
+};
+
+static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescriptions{
+    { MachHeaderFlags::NOUNDEFS, "The object file has no undefined references." },
+    { MachHeaderFlags::INCRLINK,
+      "The object file is the output of an incremental link against a base file and can't be link edited again." },
+    { MachHeaderFlags::DYLDLINK, "The object file is input for the dynamic linker and can't be staticly link edited again." },
+    { MachHeaderFlags::BINDATLOAD, "The object file's undefined references are bound by the dynamic linker when loaded." },
+    { MachHeaderFlags::PREBOUND, "The file has its dynamic undefined references prebound." },
+    { MachHeaderFlags::SPLIT_SEGS, "The file has its read-only and read-write segments split." },
+    { MachHeaderFlags::LAZY_INIT,
+      "The shared library init routine is to be run lazily via catching memory faults to its writeable segments (obsolete)." },
+    { MachHeaderFlags::TWOLEVEL, "The image is using two-level name space bindings." },
+    { MachHeaderFlags::FORCE_FLAT, "The executable is forcing all images to use flat name space bindings." },
+    { MachHeaderFlags::NOMULTIDEFS,
+      "This umbrella guarantees no multiple defintions of symbols in its sub-images so the two-level namespace hints can always be used." },
+    { MachHeaderFlags::NOFIXPREBINDING, "Do not have dyld notify the prebinding agent about this executable." },
+    { MachHeaderFlags::PREBINDABLE,
+      "The binary is not prebound but can have its prebinding redone -> only used when MH_PREBOUND is not set." },
+    { MachHeaderFlags::ALLMODSBOUND,
+      "Indicates that this binary binds to all two-level namespace modules of its dependent libraries -> only used when MH_PREBINDABLE and "
+      "MH_TWOLEVEL are both set." },
+    { MachHeaderFlags::SUBSECTIONS_VIA_SYMBOLS, "Safe to divide up the sections into sub-sections via symbols for dead code stripping." },
+    { MachHeaderFlags::CANONICAL, "The binary has been canonicalized via the unprebind operation." },
+    { MachHeaderFlags::WEAK_DEFINES, "The final linked image contains external weak symbols." },
+    { MachHeaderFlags::BINDS_TO_WEAK, "The final linked image uses weak symbols." },
+    { MachHeaderFlags::ALLOW_STACK_EXECUTION,
+      "When this bit is set, all stacks in the task will be given stack execution privilege -> only used in MH_EXECUTE filetypes." },
+    { MachHeaderFlags::ROOT_SAFE, "When this bit is set, the binary declares it is safe for use in processes with uid zero." },
+    { MachHeaderFlags::SETUID_SAFE, "When this bit is set, the binary declares it is safe for use in processes when issetugid() is true." },
+    { MachHeaderFlags::NO_REEXPORTED_DYLIBS,
+      "When this bit is set on a dylib, the static linker does not need to examine dependent dylibs to see if any are re-exported." },
+    { MachHeaderFlags::PIE,
+      "When this bit is set, the OS will load the main executable at a random address -> only used in MH_EXECUTE filetypes." },
+    { MachHeaderFlags::DEAD_STRIPPABLE_DYLIB,
+      "Only for use on dylibs -> when linking against a dylib that has this bit set, the static linker will automatically not create a "
+      "LC_LOAD_DYLIB load command to the dylib if no symbols are being referenced from the dylib." },
+    { MachHeaderFlags::HAS_TLV_DESCRIPTORS, "Contains a section of type S_THREAD_LOCAL_VARIABLES." },
+    { MachHeaderFlags::NO_HEAP_EXECUTION,
+      "When this bit is set, the OS will run the main executable with a non-executable heap even on platforms (e.g.i386) that don't "
+      "require it -> only used in MH_EXECUTE filetypes." },
+    { MachHeaderFlags::APP_EXTENSION_SAFE, "When this bit is set, the binary declares it is safe for use in processes with uid zero." },
+    { MachHeaderFlags::ROOT_SAFE, "The code was linked for use in an application extension." }
+};
+
+static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ GET_PAIR_FROM_ENUM(MachHeaderFlags::NOUNDEFS),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::INCRLINK),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::DYLDLINK),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::BINDATLOAD),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::PREBOUND),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::SPLIT_SEGS),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::LAZY_INIT),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::TWOLEVEL),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::FORCE_FLAT),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::NOMULTIDEFS),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::NOFIXPREBINDING),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::PREBINDABLE),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::ALLMODSBOUND),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::SUBSECTIONS_VIA_SYMBOLS),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::CANONICAL),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::WEAK_DEFINES),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::BINDS_TO_WEAK),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::ALLOW_STACK_EXECUTION),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::ROOT_SAFE),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::SETUID_SAFE),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::NO_REEXPORTED_DYLIBS),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::PIE),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::DEAD_STRIPPABLE_DYLIB),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::HAS_TLV_DESCRIPTORS),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::NO_HEAP_EXECUTION),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::APP_EXTENSION_SAFE),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::ROOT_SAFE) };
+
+static const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
+{
+    std::vector<MachHeaderFlags> output;
+
+    for (const auto& data : MachHeaderFlagsNames)
+    {
+        const auto flag = static_cast<MachHeaderFlags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace_back(flag);
+        }
+    }
+
+    return output;
+}
 
 // https://opensource.apple.com/source/cctools/cctools-895/include/mach-o/loader.h.auto.html
 enum class LoadCommandType : uint32_t

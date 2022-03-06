@@ -1,4 +1,4 @@
-#include "MachOFB.hpp"
+#include "UniversalMachO.hpp"
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -8,27 +8,41 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
+using namespace UniversalMachO;
+using namespace UniversalMachO::MAC;
+using namespace UniversalMachO::Utils;
+using namespace UniversalMachO::Panels;
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
     {
-        auto header = buf.GetObject<MachOFB::MAC::fat_header>();
+        auto header = buf.GetObject<fat_header>();
         CHECK(header != nullptr, false, "");
-        CHECK(header->magic == MachOFB::MAC::FAT_MAGIC || header->magic == MachOFB::MAC::FAT_CIGAM ||
-                    header->magic == MachOFB::MAC::FAT_MAGIC_64 || header->magic == MachOFB::MAC::FAT_CIGAM_64,
-              false,
-              "Magic is [%u]!",
-              header->magic);
+        const auto magic = header->magic;
+        CHECK(magic == FAT_MAGIC || magic == FAT_CIGAM || magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64, false, "Magic is [%u]!", magic);
+
+        if (magic == FAT_MAGIC || magic == FAT_CIGAM)
+        {
+            auto maybeArchCount = header->nfat_arch;
+
+            if (magic == FAT_CIGAM)
+            {
+                maybeArchCount = SwapEndian(maybeArchCount);
+            }
+
+            CHECK(maybeArchCount < 0x2D, false, "This is probably a JAR class file!");
+        }
+
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
     {
-        return new MachOFB::MachOFBFile(file);
+        return new UniversalMachOFile(file);
     }
 
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFB::MachOFBFile> macho)
+    void CreateBufferView(Reference<WindowInterface> win, Reference<UniversalMachOFile> macho)
     {
         BufferViewer::Settings settings;
         uint64_t offsetHeaders = 0;
@@ -81,21 +95,21 @@ extern "C"
         win->CreateViewer("BufferView", settings);
     }
 
-    PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
+    PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        auto mach = reinterpret_cast<MachOFB::MachOFBFile*>(win->GetObject()->type);
+        auto mach = reinterpret_cast<UniversalMachOFile*>(win->GetObject()->type);
         mach->Update();
 
         CreateBufferView(win, mach);
 
-        if (mach->HasPanel(MachOFB::Panels::IDs::Information))
+        if (mach->HasPanel(IDs::Information))
         {
-            win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Information(mach)), true);
+            win->AddPanel(Pointer<TabPage>(new Information(mach)), true);
         }
 
-        if (mach->HasPanel(MachOFB::Panels::IDs::Objects))
+        if (mach->HasPanel(IDs::Objects))
         {
-            win->AddPanel(Pointer<TabPage>(new MachOFB::Panels::Objects(mach, win)), false);
+            win->AddPanel(Pointer<TabPage>(new Objects(mach, win)), false);
         }
 
         return true;
@@ -103,15 +117,12 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        static const std::initializer_list<std::string> patterns = {
-            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_MAGIC, sizeof(MachOFB::MAC::FAT_MAGIC)) + "'",
-            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_CIGAM, sizeof(MachOFB::MAC::FAT_CIGAM)) + "'",
-            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_MAGIC_64, sizeof(MachOFB::MAC::FAT_MAGIC_64)) + "'",
-            "hex:'" + MachOFB::Utils::BinaryToHexString(MachOFB::MAC::FAT_CIGAM_64, sizeof(MachOFB::MAC::FAT_CIGAM_64)) + "'"
-        };
-
-        sect["Pattern"]  = patterns;
-        sect["Priority"] = 1;
+        static const auto patterns = { "hex:'" + BinaryToHexString(FAT_MAGIC, sizeof(FAT_MAGIC)) + "'",
+                                       "hex:'" + BinaryToHexString(FAT_CIGAM, sizeof(FAT_CIGAM)) + "'",
+                                       "hex:'" + BinaryToHexString(FAT_MAGIC_64, sizeof(FAT_MAGIC_64)) + "'",
+                                       "hex:'" + BinaryToHexString(FAT_CIGAM_64, sizeof(FAT_CIGAM_64)) + "'" };
+        sect["Pattern"]            = patterns;
+        sect["Priority"]           = 1;
     }
 }
 

@@ -1,13 +1,13 @@
-#include "MachOFB.hpp"
+#include "UniversalMachO.hpp"
 
-namespace GView::Type::MachOFB
+namespace GView::Type::UniversalMachO
 {
-MachOFBFile::MachOFBFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
+UniversalMachOFile::UniversalMachOFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;
 }
 
-bool MachOFBFile::Update()
+bool UniversalMachOFile::Update()
 {
     uint64_t offset = 0;
 
@@ -80,17 +80,17 @@ bool MachOFBFile::Update()
     return true;
 }
 
-bool MachOFBFile::HasPanel(Panels::IDs id)
+bool UniversalMachOFile::HasPanel(Panels::IDs id)
 {
     return (panelsMask & (1ULL << (static_cast<uint8_t>(id)))) != 0;
 }
 
-uint64_t MachOFBFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
+uint64_t UniversalMachOFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
 {
     return value;
 }
 
-uint64_t MachOFBFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
+uint64_t UniversalMachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
 {
     return value;
 }

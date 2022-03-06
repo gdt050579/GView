@@ -2,7 +2,7 @@
 
 #include "GView.hpp"
 
-namespace GView::Type::MachOFB::Utils
+namespace GView::Type::UniversalMachO::Utils
 {
 template <typename T>
 const T SwapEndian(T u)
@@ -47,9 +47,9 @@ constexpr std::string BinaryToHexString(const T number, const size_t length)
 
     return output;
 }
-} // namespace GView::Type::MachOFB::Utils
+} // namespace GView::Type::UniversalMachO::Utils
 
-namespace GView::Type::MachOFB::MAC
+namespace GView::Type::UniversalMachO::MAC
 {
 // https://opensource.apple.com/source/xnu/xnu-344/EXTERNAL_HEADERS/mach-o/fat.h
 // https://github.com/grumbach/nm_otool
@@ -407,10 +407,10 @@ static const std::map<CPU_SUBTYPE_MC680, std::string_view> CpuSubtypeMC680Names{
                                                                                  GET_PAIR(CPU_SUBTYPE_MC680::_40),
                                                                                  GET_PAIR(CPU_SUBTYPE_MC680::_30_ONLY) };
 
-static const std::map<CPU_SUBTYPE_X86, std::string_view> CpuSubtypeX86Names{ GET_PAIR(CPU_SUBTYPE_X86::ALL),
-                                                                             GET_PAIR(CPU_SUBTYPE_X86::_64_ALL),
-                                                                             GET_PAIR(CPU_SUBTYPE_X86::ARCH1),
-                                                                             { CPU_SUBTYPE_X86::_64_H, "CPU_SUBTYPE_X86::_64_Haswell" } };
+static const std::map<CPU_SUBTYPE_X86, std::string_view> CpuSubtypeX86Names{ { CPU_SUBTYPE_X86::ALL, "ALL" },
+                                                                             { CPU_SUBTYPE_X86::_64_ALL, "X86_64_ALL" },
+                                                                             { CPU_SUBTYPE_X86::ARCH1, "ARCH1" },
+                                                                             { CPU_SUBTYPE_X86::_64_H, "X86_64_Haswell" } };
 
 static const std::map<CPU_SUBTYPE_MIPS, std::string_view> CpuSubtypeMipsNames{
     GET_PAIR(CPU_SUBTYPE_MIPS::ALL),    GET_PAIR(CPU_SUBTYPE_MIPS::R2300),  GET_PAIR(CPU_SUBTYPE_MIPS::R2600),
@@ -675,9 +675,9 @@ static const ArchInfo GetArchInfoFromCPUTypeAndSubtype(CPU_TYPE cputype, uint32_
 
     return ai;
 }
-} // namespace GView::Type::MachOFB::MAC
+} // namespace GView::Type::UniversalMachO::MAC
 
-namespace GView::Type::MachOFB
+namespace GView::Type::UniversalMachO
 {
 namespace Panels
 {
@@ -688,7 +688,7 @@ namespace Panels
     };
 };
 
-class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+class UniversalMachOFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
 {
   public:
     const struct Colors
@@ -718,12 +718,12 @@ class MachOFBFile : public TypeInterface, public GView::View::BufferViewer::Offs
     // TypeInterface
     std::string_view GetTypeName() override
     {
-        return "Mach-O Fat Binary";
+        return "Universal Mach-O";
     }
 
   public:
-    MachOFBFile(Reference<GView::Utils::FileCache> file);
-    virtual ~MachOFBFile(){};
+    UniversalMachOFile(Reference<GView::Utils::FileCache> file);
+    virtual ~UniversalMachOFile(){};
 
     bool Update();
 
@@ -734,14 +734,14 @@ namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
-        Reference<MachOFBFile> fat;
+        Reference<UniversalMachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
         void UpdateGeneralInformation();
         void RecomputePanelsPositions();
 
       public:
-        Information(Reference<MachOFBFile> fat);
+        Information(Reference<UniversalMachOFile> machO);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
@@ -752,7 +752,7 @@ namespace Panels
 
     class Objects : public AppCUI::Controls::TabPage
     {
-        Reference<MachOFBFile> fat;
+        Reference<UniversalMachOFile> machO;
         Reference<GView::View::WindowInterface> win;
         Reference<AppCUI::Controls::ListView> list;
         int Base;
@@ -762,11 +762,11 @@ namespace Panels
         void SelectCurrentSection();
 
       public:
-        Objects(Reference<MachOFBFile> fat, Reference<GView::View::WindowInterface> win);
+        Objects(Reference<UniversalMachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
-} // namespace GView::Type::MachOFB
+} // namespace GView::Type::UniversalMachO
