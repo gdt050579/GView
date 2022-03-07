@@ -1068,6 +1068,22 @@ static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
     return output;
 };
 
+struct dyld_info_command
+{
+    LoadCommandType cmd;     /* LC_DYLD_INFO or LC_DYLD_INFO_ONLY */
+    uint32_t cmdsize;        /* sizeof(struct dyld_info_command) */
+    uint32_t rebase_off;     /* file offset to rebase info  */
+    uint32_t rebase_size;    /* size of rebase info   */
+    uint32_t bind_off;       /* file offset to binding info   */
+    uint32_t bind_size;      /* size of binding info  */
+    uint32_t weak_bind_off;  /* file offset to weak binding info   */
+    uint32_t weak_bind_size; /* size of weak binding info  */
+    uint32_t lazy_bind_off;  /* file offset to lazy binding info */
+    uint32_t lazy_bind_size; /* size of lazy binding infs */
+    uint32_t export_off;     /* file offset to lazy binding info */
+    uint32_t export_size;    /* size of lazy binding infs */
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1076,10 +1092,11 @@ namespace Panels
 {
     enum class IDs : uint8_t
     {
-        Information  = 0,
-        LoadCommands = 1,
-        Segments     = 2,
-        Sections     = 3
+        Information  = 0x0,
+        LoadCommands = 0x1,
+        Segments     = 0x2,
+        Sections     = 0x4,
+        DyldInfo     = 0x8
     };
 };
 
@@ -1112,12 +1129,19 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::section_64 x64;
     };
 
+    struct DyldInfo
+    {
+        bool set = false;
+        MAC::dyld_info_command value;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
     std::vector<Section> sections;
+    DyldInfo dyldInfo;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1141,6 +1165,13 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool Update();
 
     bool HasPanel(Panels::IDs id);
+
+    bool SetArchitectureAndEndianess(uint64_t& offset);
+    bool SetHeader(uint64_t& offset);
+    bool SetLoadCommands(uint64_t& offset);
+    bool SetSegments(uint64_t& offset);
+    bool SetSections(uint64_t& offset);
+    bool SetDyldInfo(uint64_t& offset);
 };
 
 namespace Panels
@@ -1218,6 +1249,24 @@ namespace Panels
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class DyldInfo : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> machO;
+        Reference<AppCUI::Controls::ListView> general;
+
+        void UpdateGeneralInformation();
+        void RecomputePanelsPositions();
+
+      public:
+        DyldInfo(Reference<MachOFile> machO);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            RecomputePanelsPositions();
+        }
     };
 } // namespace Panels
 } // namespace GView::Type::MachO

@@ -16,13 +16,13 @@ Information::Information(Reference<MachOFile> _machO) : TabPage("Informa&Tion")
 
 void Information::UpdateGeneralInformation()
 {
-    ItemHandle item;
+    general->DeleteAllItems();
+
+    const ItemHandle item = general->AddItem("MachO Info");
+    general->SetItemType(item, ListViewItemType::Category);
+
     LocalString<256> tmp;
     NumericFormatter n;
-
-    general->DeleteAllItems();
-    item = general->AddItem("MachO Info");
-    general->SetItemType(item, ListViewItemType::Category);
     general->AddItem("File", "NOT IMPLEMENTED");
     general->AddItem(
           "Size",

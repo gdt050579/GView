@@ -11,14 +11,67 @@ bool MachOFile::Update()
 {
     uint64_t offset = 0;
 
-    {
-        uint32_t magic = 0;
-        CHECK(file->Copy<uint32_t>(offset, magic), false, "");
+    SetArchitectureAndEndianess(offset);
+    SetHeader(offset);
+    const auto commandsStartOffset = offset;
+    SetLoadCommands(offset);
+    SetSegments(offset);
 
-        is64                = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
-        shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64;
+    offset = commandsStartOffset;
+    SetSections(offset);
+
+    offset = commandsStartOffset;
+    SetDyldInfo(offset);
+
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
+
+    if (segments.empty() == false)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
     }
 
+    if (sections.empty() == false)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
+    }
+
+    if (dyldInfo.set)
+    {
+        panelsMask |= (1ULL << (uint8_t)Panels::IDs::DyldInfo);
+    }
+
+    return true;
+}
+
+bool MachOFile::HasPanel(Panels::IDs id)
+{
+    return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
+}
+
+uint64_t MachOFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
+{
+    return value;
+}
+
+uint64_t MachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
+{
+    return value;
+}
+
+bool MachOFile::SetArchitectureAndEndianess(uint64_t& offset)
+{
+    uint32_t magic = 0;
+    CHECK(file->Copy<uint32_t>(offset, magic), false, "");
+
+    is64                = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
+    shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64;
+
+    return true;
+}
+
+bool MachOFile::SetHeader(uint64_t& offset)
+{
     CHECK(file->Copy<MachO::MAC::mach_header>(offset, header), false, "");
     offset += sizeof(header);
     if (is64 == false)
@@ -37,8 +90,12 @@ bool MachOFile::Update()
         header.flags      = Utils::SwapEndian(header.flags);
     }
 
+    return true;
+}
+
+bool MachOFile::SetLoadCommands(uint64_t& offset)
+{
     loadCommands.reserve(header.ncmds);
-    const auto commandsStartOffset = offset;
 
     for (decltype(header.ncmds) i = 0; i < header.ncmds; i++)
     {
@@ -53,6 +110,11 @@ bool MachOFile::Update()
         offset += lc.cmdsize;
     }
 
+    return true;
+}
+
+bool MachOFile::SetSegments(uint64_t& offset)
+{
     for (const auto& lc : loadCommands)
     {
         if (lc.value.cmd == MAC::LoadCommandType::SEGMENT)
@@ -103,7 +165,11 @@ bool MachOFile::Update()
         }
     }
 
-    offset = commandsStartOffset;
+    return true;
+}
+
+bool MachOFile::SetSections(uint64_t& offset)
+{
     for (const auto& segment : segments)
     {
         if (is64)
@@ -170,34 +236,29 @@ bool MachOFile::Update()
         }
     }
 
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
-
-    if (segments.empty() == false)
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
-    }
-
-    if (sections.empty() == false)
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
-    }
-
     return true;
 }
 
-bool MachOFile::HasPanel(Panels::IDs id)
+bool MachOFile::SetDyldInfo(uint64_t& offset)
 {
-    return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
-}
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::DYLD_INFO || lc.value.cmd == MAC::LoadCommandType::DYLD_INFO_ONLY)
+        {
+            if (dyldInfo.set == false)
+            {
+                CHECK(file->Copy<MAC::dyld_info_command>(offset, dyldInfo.value), false, "");
+                dyldInfo.set = true;
+            }
+            else
+            {
+                throw "Multiple LoadCommandType::DYLD_INFO or MAC::LoadCommandType::DYLD_INFO_ONLY found! Reimplement this!";
+            }
+        }
 
-uint64_t MachOFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
-{
-    return value;
-}
+        offset += lc.value.cmdsize;
+    }
 
-uint64_t MachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
-{
-    return value;
+    return true;
 }
 } // namespace GView::Type::MachO
