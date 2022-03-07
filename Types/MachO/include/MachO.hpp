@@ -1084,6 +1084,21 @@ struct dyld_info_command
     uint32_t export_size;    /* size of lazy binding infs */
 };
 
+struct dylib
+{
+    union lc_str name;              /* library's path name */
+    uint32_t timestamp;             /* library's build time stamp */
+    uint32_t current_version;       /* library's current version number */
+    uint32_t compatibility_version; /* library's compatibility vers number*/
+};
+
+struct dylib_command
+{
+    LoadCommandType cmd; /* LC_ID_DYLIB, LC_LOAD_{,WEAK_}DYLIB, LC_REEXPORT_DYLIB */
+    uint32_t cmdsize;    /* includes pathname string */
+    dylib dylib;         /* the library identification */
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1096,7 +1111,8 @@ namespace Panels
         LoadCommands = 0x1,
         Segments     = 0x2,
         Sections     = 0x4,
-        DyldInfo     = 0x8
+        DyldInfo     = 0x8,
+        IdDylib      = 0x10
     };
 };
 
@@ -1135,6 +1151,13 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::dyld_info_command value;
     };
 
+    struct IdDylib
+    {
+        bool set = false;
+        MAC::dylib_command value;
+        std::string name;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
@@ -1142,6 +1165,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Segment> segments;
     std::vector<Section> sections;
     DyldInfo dyldInfo;
+    IdDylib idDylib;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1172,6 +1196,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetSegments(uint64_t& offset);
     bool SetSections(uint64_t& offset);
     bool SetDyldInfo(uint64_t& offset);
+    bool SetIdDylib(uint64_t& offset);
 };
 
 namespace Panels
@@ -1261,6 +1286,24 @@ namespace Panels
 
       public:
         DyldInfo(Reference<MachOFile> machO);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            RecomputePanelsPositions();
+        }
+    };
+
+    class IdDylib : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> machO;
+        Reference<AppCUI::Controls::ListView> general;
+
+        void UpdateGeneralInformation();
+        void RecomputePanelsPositions();
+
+      public:
+        IdDylib(Reference<MachOFile> machO);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override

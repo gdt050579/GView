@@ -23,6 +23,9 @@ bool MachOFile::Update()
     offset = commandsStartOffset;
     SetDyldInfo(offset);
 
+    offset = commandsStartOffset;
+    SetIdDylib(offset);
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
@@ -38,7 +41,12 @@ bool MachOFile::Update()
 
     if (dyldInfo.set)
     {
-        panelsMask |= (1ULL << (uint8_t)Panels::IDs::DyldInfo);
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
+    }
+
+    if (idDylib.set)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::IdDylib);
     }
 
     return true;
@@ -253,6 +261,36 @@ bool MachOFile::SetDyldInfo(uint64_t& offset)
             else
             {
                 throw "Multiple LoadCommandType::DYLD_INFO or MAC::LoadCommandType::DYLD_INFO_ONLY found! Reimplement this!";
+            }
+        }
+
+        offset += lc.value.cmdsize;
+    }
+
+    return true;
+}
+
+bool MachOFile::SetIdDylib(uint64_t& offset)
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::ID_DYLIB)
+        {
+            if (idDylib.set == false)
+            {
+                CHECK(file->Copy<MAC::dylib_command>(offset, idDylib.value), false, "");
+
+                const auto pathOffset = offset + idDylib.value.dylib.name.offset;
+                const auto pathSize   = idDylib.value.cmdsize - idDylib.value.dylib.name.offset;
+                const auto buffer     = file->CopyToBuffer(pathOffset, pathSize);
+
+                idDylib.name = reinterpret_cast<char*>(buffer.GetData());
+
+                idDylib.set = true;
+            }
+            else
+            {
+                throw "Multiple MAC::LoadCommandType::ID_DYLIB found! Reimplement this!";
             }
         }
 

@@ -119,6 +119,11 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new MachO::Panels::DyldInfo(mach)), true);
         }
 
+        if (mach->HasPanel(MachO::Panels::IDs::IdDylib))
+        {
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::IdDylib(mach)), true);
+        }
+
         return true;
     }
 
