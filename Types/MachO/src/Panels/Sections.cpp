@@ -26,10 +26,15 @@ Sections::Sections(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     list->AddColumn("File Offset", TextAlignament::Right, 14);
     list->AddColumn("Align", TextAlignament::Right, 10);
     list->AddColumn("Reloc Offset", TextAlignament::Right, 14);
-    list->AddColumn("Flags", TextAlignament::Right, 10);
+    list->AddColumn("Reloc Entries Count", TextAlignament::Right, 22);
+    list->AddColumn("Flags", TextAlignament::Right, 30);
     list->AddColumn("Reserved1", TextAlignament::Right, 12);
     list->AddColumn("Reserved2", TextAlignament::Right, 12);
-    list->AddColumn("Reserved3", TextAlignament::Right, 12);
+
+    if (machO->is64)
+    {
+        list->AddColumn("Reserved3", TextAlignament::Right, 12);
+    }
 
     Update();
 }
@@ -87,7 +92,11 @@ void Panels::Sections::Update()
             list->SetItemText(item, 5, GetValue(n, s.x64.align));
             list->SetItemText(item, 6, GetValue(n, s.x64.reloff));
             list->SetItemText(item, 7, GetValue(n, s.x64.nreloc));
-            list->SetItemText(item, 8, GetValue(n, s.x64.flags));
+
+            const auto flagsNames = MAC::GetSectionTypeAndAttributesFromFlags(s.x64.flags);
+            const auto flagsValue = std::string{ GetValue(n, s.x64.flags) };
+            list->SetItemText(item, 8, temp.Format("%s (%s)", flagsNames.c_str(), flagsValue.c_str()));
+
             list->SetItemText(item, 9, GetValue(n, s.x64.reserved1));
             list->SetItemText(item, 10, GetValue(n, s.x64.reserved2));
             list->SetItemText(item, 11, GetValue(n, s.x64.reserved3));
@@ -104,7 +113,11 @@ void Panels::Sections::Update()
             list->SetItemText(item, 5, GetValue(n, s.x86.align));
             list->SetItemText(item, 6, GetValue(n, s.x86.reloff));
             list->SetItemText(item, 7, GetValue(n, s.x86.nreloc));
-            list->SetItemText(item, 8, GetValue(n, s.x86.flags));
+
+            const auto flagsNames = MAC::GetSectionTypeAndAttributesFromFlags(s.x86.flags);
+            const auto flagsValue = std::string{ GetValue(n, s.x86.flags) };
+            list->SetItemText(item, 8, temp.Format("%s (%s)", flagsNames.c_str(), flagsValue.c_str()));
+
             list->SetItemText(item, 9, GetValue(n, s.x86.reserved1));
             list->SetItemText(item, 10, GetValue(n, s.x86.reserved2));
         }

@@ -743,7 +743,7 @@ union lc_str
 };
 
 // https://opensource.apple.com/source/xnu/xnu-1228/osfmk/mach/vm_prot.h.auto.html
-enum class VM_PROT : uint32_t
+enum class VMProtectionFlags : uint32_t
 {
     NONE      = 0x0,
     READ      = 0x1,                      /* read permission */
@@ -763,6 +763,67 @@ enum class VM_PROT : uint32_t
                        */
 };
 
+static const std::map<VMProtectionFlags, std::string_view> VMProtectionNames{
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::NONE),      GET_PAIR_FROM_ENUM(VMProtectionFlags::READ),
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::WRITE),     GET_PAIR_FROM_ENUM(VMProtectionFlags::EXECUTE),
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::DEFAULT),   GET_PAIR_FROM_ENUM(VMProtectionFlags::ALL),
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::NO_CHANGE), GET_PAIR_FROM_ENUM(VMProtectionFlags::COPY),
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::WANTS_COPY)
+};
+
+static const std::string GetVMProtectionNamesFromFlags(uint32_t flags)
+{
+    static const std::initializer_list types{ VMProtectionFlags::NONE,      VMProtectionFlags::READ,    VMProtectionFlags::WRITE,
+                                              VMProtectionFlags::EXECUTE,   VMProtectionFlags::DEFAULT, VMProtectionFlags::ALL,
+                                              VMProtectionFlags::NO_CHANGE, VMProtectionFlags::COPY,    VMProtectionFlags::WANTS_COPY };
+
+    if (flags == static_cast<uint32_t>(VMProtectionFlags::NONE))
+    {
+        return "NONE";
+    }
+
+    std::string output;
+    for (const auto& t : types)
+    {
+        if (t == VMProtectionFlags::NONE)
+        {
+            continue;
+        }
+
+        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
+        {
+            if ((flags & static_cast<uint32_t>(VMProtectionFlags::DEFAULT)) == static_cast<uint32_t>(VMProtectionFlags::DEFAULT))
+            {
+                if (t == VMProtectionFlags::READ || t == VMProtectionFlags::WRITE)
+                {
+                    continue;
+                }
+            }
+
+            if ((flags & static_cast<uint32_t>(VMProtectionFlags::ALL)) == static_cast<uint32_t>(VMProtectionFlags::ALL))
+            {
+                if (t == VMProtectionFlags::READ || t == VMProtectionFlags::WRITE || t == VMProtectionFlags::EXECUTE ||
+                    t == VMProtectionFlags::DEFAULT)
+                {
+                    continue;
+                }
+            }
+
+            if (output.empty())
+            {
+                output += VMProtectionNames.at(t);
+            }
+            else
+            {
+                output += " | ";
+                output += VMProtectionNames.at(t);
+            }
+        }
+    }
+
+    return output;
+};
+
 struct segment_command
 {
     LoadCommandType cmd; /* LC_SEGMENT */
@@ -772,8 +833,8 @@ struct segment_command
     uint32_t vmsize;     /* memory size of this segment */
     uint32_t fileoff;    /* file offset of this segment */
     uint32_t filesize;   /* amount to map from the file */
-    VM_PROT maxprot;     /* maximum VM protection */
-    VM_PROT initprot;    /* initial VM protection */
+    uint32_t maxprot;    /* maximum VM protection */
+    uint32_t initprot;   /* initial VM protection */
     uint32_t nsects;     /* number of sections in segment */
     uint32_t flags;      /* flags */
 };
@@ -787,21 +848,63 @@ struct segment_command_64
     uint64_t vmsize;     /* memory size of this segment */
     uint64_t fileoff;    /* file offset of this segment */
     uint64_t filesize;   /* amount to map from the file */
-    VM_PROT maxprot;     /* maximum VM protection */
-    VM_PROT initprot;    /* initial VM protection */
+    uint32_t maxprot;    /* maximum VM protection */
+    uint32_t initprot;   /* initial VM protection */
     uint32_t nsects;     /* number of sections in segment */
     uint32_t flags;      /* flags */
 };
 
 enum class SegmentCommandFlags : uint32_t
 {
-    HIGHVM = 0x01,  /* the file contents for this segment is for the high part of the VM space, the low part is zero filled (for stacks
-                       in  core files) */
-    FVMLIB  = 0x02, /* this segment is the VM that is allocated by a fixed VM library, for overlap checking in the link editor */
-    NORELOC = 0x04, /* this segment has nothing that was relocated in it and nothing relocated to it, that is it maybe safely replaced
-                       without relocation */
+    NONE   = 0x0,
+    HIGHVM = 0x01,  /* The file contents for this segment is for the high part of the VM space, the low part is zero filled (for stacks
+                       in  core files). */
+    FVMLIB  = 0x02, /* This segment is the VM that is allocated by a fixed VM library, for overlap checking in the link editor */
+    NORELOC = 0x04, /* This segment has nothing that was relocated in it and nothing relocated to it, that is it maybe safely replaced
+                       without relocation. */
     PROTECTED_VERSION_1 = 0x08, /* This segment is protected. If the segment starts at file offset 0, the first page of the segment is
                                    not protected.  All other pages of the segment are protected. */
+    READONLY = 0x10             /* This segment is made read-only after fixups */
+};
+
+static const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlagsNames{ GET_PAIR_FROM_ENUM(SegmentCommandFlags::HIGHVM),
+                                                                                       GET_PAIR_FROM_ENUM(SegmentCommandFlags::FVMLIB),
+                                                                                       GET_PAIR_FROM_ENUM(SegmentCommandFlags::NORELOC),
+                                                                                       GET_PAIR_FROM_ENUM(
+                                                                                             SegmentCommandFlags::PROTECTED_VERSION_1),
+                                                                                       GET_PAIR_FROM_ENUM(SegmentCommandFlags::READONLY) };
+
+static const std::string GetSegmentCommandNamesFromFlags(uint32_t flags)
+{
+    static const std::initializer_list types{ SegmentCommandFlags::NONE,
+                                              SegmentCommandFlags::HIGHVM,
+                                              SegmentCommandFlags::FVMLIB,
+                                              SegmentCommandFlags::NORELOC,
+                                              SegmentCommandFlags::PROTECTED_VERSION_1 };
+
+    if (flags == static_cast<uint32_t>(SegmentCommandFlags::NONE))
+    {
+        return "NONE";
+    }
+
+    std::string output;
+    for (const auto& t : types)
+    {
+        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
+        {
+            if (output.empty())
+            {
+                output += SegmentCommandFlagsNames.at(t);
+            }
+            else
+            {
+                output += " | ";
+                output += SegmentCommandFlagsNames.at(t);
+            }
+        }
+    }
+
+    return output;
 };
 
 struct section
@@ -838,14 +941,131 @@ struct section_64
 constexpr uint32_t SECTION_TYPE       = 0x000000ff; /* 256 section types */
 constexpr uint32_t SECTION_ATTRIBUTES = 0xffffff00; /*  24 section attributes */
 
+/* The flags field of a section structure is separated into two parts a section type and section attributes.  The section types are mutually
+ * exclusive (it can only have one type) but the section attributes are not (it may have more than one attribute). */
 enum class SectionType : uint32_t
 {
-    REGULAR          = 0x0, /* regular section */
-    ZEROFILL         = 0x1, /* zero fill on demand section */
-    CSTRING_LITERALS = 0x2, /* section with only literal C strings*/
-    _4BYTE_LITERALS  = 0x3, /* section with only 4 byte literals */
-    _8BYTE_LITERALS  = 0x4, /* section with only 8 byte literals */
-    LITERAL_POINTERS = 0x5  /* section with only pointers to literals */
+    REGULAR                             = 0x00, /* regular section */
+    ZEROFILL                            = 0x01, /* zero fill on demand section */
+    CSTRING_LITERALS                    = 0x02, /* section with only literal C strings*/
+    _4BYTE_LITERALS                     = 0x03, /* section with only 4 byte literals */
+    _8BYTE_LITERALS                     = 0x04, /* section with only 8 byte literals */
+    LITERAL_POINTERS                    = 0x05, /* section with only pointers to literals */
+    NON_LAZY_SYMBOL_POINTERS            = 0x06, /* section with only non-lazy symbol pointers */
+    LAZY_SYMBOL_POINTERS                = 0x07, /* section with only lazy symbol pointers */
+    SYMBOL_STUBS                        = 0x08, /* section with only symbol stubs, byte size of stub in the reserved2 field */
+    MOD_INIT_FUNC_POINTERS              = 0x09, /* section with only function pointers for initialization*/
+    MOD_TERM_FUNC_POINTERS              = 0x0a, /* section with only function pointers for termination */
+    COALESCED                           = 0x0b, /* section contains symbols that are to be coalesced */
+    GB_ZEROFILL                         = 0x0c, /* zero fill on demand section (that can be larger than 4 gigabytes) */
+    INTERPOSING                         = 0x0d, /* section with only pairs of function pointers for interposing */
+    _16BYTE_LITERALS                    = 0x0e, /* section with only 16 byte literals */
+    DTRACE_DOF                          = 0x0f, /* section contains DTrace Object Format */
+    LAZY_DYLIB_SYMBOL_POINTERS          = 0x10, /* section with only lazy symbol pointers to lazy loaded dylibs */
+    THREAD_LOCAL_REGULAR                = 0x11, /* template of initial values for TLVs */
+    THREAD_LOCAL_ZEROFILL               = 0x12, /* template of initial values for TLVs */
+    THREAD_LOCAL_VARIABLES              = 0x13, /* TLV descriptors */
+    THREAD_LOCAL_VARIABLE_POINTERS      = 0x14, /* pointers to TLV descriptors */
+    THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15  /* functions to call to initialize TLV values */
+};
+
+static const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_FROM_ENUM(SectionType::REGULAR),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::ZEROFILL),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::CSTRING_LITERALS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::_4BYTE_LITERALS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::_8BYTE_LITERALS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::LITERAL_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::NON_LAZY_SYMBOL_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::LAZY_SYMBOL_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::SYMBOL_STUBS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::MOD_INIT_FUNC_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::MOD_TERM_FUNC_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::COALESCED),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::GB_ZEROFILL),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::INTERPOSING),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::_16BYTE_LITERALS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::DTRACE_DOF),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::LAZY_DYLIB_SYMBOL_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_REGULAR),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_ZEROFILL),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_VARIABLES),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_VARIABLE_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(
+                                                                             SectionType::THREAD_LOCAL_INIT_FUNCTION_POINTERS) };
+
+enum class SectionAttributtes : uint32_t
+{
+    USR                 = 0xff000000, /* User setable attributes */
+    PURE_INSTRUCTIONS   = 0x80000000, /* section contains only true machine instructions */
+    NO_TOC              = 0x40000000, /* section contains coalesced symbols that are not to be in a ranlib table of contents */
+    STRIP_STATIC_SYMS   = 0x20000000, /* ok to strip static symbols in this section in files with the MH_DYLDLINK flag */
+    NO_DEAD_STRIP       = 0x10000000, /* no dead stripping */
+    LIVE_SUPPORT        = 0x08000000, /* blocks are live if they reference live blocks */
+    SELF_MODIFYING_CODE = 0x04000000, /* Used with i386 code stubs written on by dyld */
+    DEBUG               = 0x02000000, /* a debug section */
+    SYS                 = 0x00ffff00, /* system setable attributes */
+    SOME_INSTRUCTIONS   = 0x00000400, /* section contains some machine instructions */
+    EXT_RELOC           = 0x00000200, /* section has external relocation entries */
+    LOC_RELOC           = 0x00000100  /* section has local relocation entries */
+};
+
+static const std::map<SectionAttributtes, std::string_view> SectionAttributtesNames{
+    GET_PAIR_FROM_ENUM(SectionAttributtes::USR),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::PURE_INSTRUCTIONS),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::NO_TOC),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::STRIP_STATIC_SYMS),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::NO_DEAD_STRIP),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::LIVE_SUPPORT),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::SELF_MODIFYING_CODE),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::DEBUG),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::SYS),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::SOME_INSTRUCTIONS),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::EXT_RELOC),
+    GET_PAIR_FROM_ENUM(SectionAttributtes::LOC_RELOC)
+};
+
+static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
+{
+    const std::string sectionType{ SectionTypeNames.at(static_cast<SectionType>(flags & SECTION_TYPE)) };
+
+    static const std::initializer_list types{ SectionAttributtes::USR,
+                                              SectionAttributtes::PURE_INSTRUCTIONS,
+                                              SectionAttributtes::NO_TOC,
+                                              SectionAttributtes::STRIP_STATIC_SYMS,
+                                              SectionAttributtes::NO_DEAD_STRIP,
+                                              SectionAttributtes::NO_DEAD_STRIP,
+                                              SectionAttributtes::LIVE_SUPPORT,
+                                              SectionAttributtes::SELF_MODIFYING_CODE,
+                                              SectionAttributtes::DEBUG,
+                                              SectionAttributtes::SYS,
+                                              SectionAttributtes::SOME_INSTRUCTIONS,
+                                              SectionAttributtes::EXT_RELOC,
+                                              SectionAttributtes::LOC_RELOC };
+
+    std::string sectionAttributes;
+    for (const auto& t : types)
+    {
+        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
+        {
+            if (sectionAttributes.empty())
+            {
+                sectionAttributes += SectionAttributtesNames.at(t);
+            }
+            else
+            {
+                sectionAttributes += " | ";
+                sectionAttributes += SectionAttributtesNames.at(t);
+            }
+        }
+    }
+
+    if (sectionAttributes.empty())
+    {
+        sectionAttributes = "NONE";
+    }
+
+    const std::string output = sectionType + " [ " + sectionAttributes + " ]";
+    return output;
 };
 
 } // namespace GView::Type::MachO::MAC
