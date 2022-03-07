@@ -84,6 +84,11 @@ extern "C"
             }
         }
 
+        if (machO->main.isSet)
+        {
+            settings.SetEntryPointOffset(machO->main.ep.entryoff);
+        }
+
         win->CreateViewer("BufferView", settings);
     }
 
@@ -122,6 +127,11 @@ extern "C"
         if (mach->HasPanel(MachO::Panels::IDs::Dylib))
         {
             win->AddPanel(Pointer<TabPage>(new MachO::Panels::Dylib(mach, win)), false);
+        }
+
+        if (mach->HasPanel(MachO::Panels::IDs::Main))
+        {
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Main(mach)), true);
         }
 
         return true;

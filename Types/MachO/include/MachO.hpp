@@ -290,7 +290,6 @@ enum class FileType : uint32_t
     KEXT_BUNDLE = 0xB, /* x86_64 kexts */
 };
 
-// https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach-o/loader.h
 struct mach_header
 {
     uint32_t magic;           /* mach magic number identifier */
@@ -302,11 +301,6 @@ struct mach_header
     uint32_t flags;           /* flags */
     uint32_t reserved;        /* reserved (for x64 only!) */
 };
-
-/*
- * https://unix.superglobalmegacorp.com/xnu/newsrc/EXTERNAL_HEADERS/architecture/byte_order.h.html
- * Identify the byte order of the current host.
- */
 
 enum class ByteOrder
 {
@@ -330,9 +324,6 @@ struct ArchInfo
     std::string description;
 };
 
-/* The array of all currently know architecture flags (terminated with an entry
- * with all zeros).  Pointer to this returned with NXGetAllArchInfos().
- */
 static const ArchInfo ArchInfoTable[] = {
     /* architecture families */
     { "hppa", CPU_TYPE_HPPA, CPU_SUBTYPE_HPPA_ALL, ByteOrder::BigEndian, "HP-PA" },
@@ -567,7 +558,6 @@ static const std::vector<MachHeaderFlags> GetMachHeaderFlagsData(uint32_t flags)
     return output;
 }
 
-// https://opensource.apple.com/source/cctools/cctools-895/include/mach-o/loader.h.auto.html
 enum class LoadCommandType : uint32_t
 {
     REQ_DYLD                 = 0x80000000,
@@ -623,7 +613,8 @@ enum class LoadCommandType : uint32_t
     BUILD_VERSION            = 0x31,
     NOTE                     = 0x32,
     DYLD_EXPORTS_TRIE        = 0x33,
-    DYLD_CHAINED_FIXUPS      = 0x34
+    DYLD_CHAINED_FIXUPS      = 0x34,
+    FILESET_ENTRY            = (0x35 | REQ_DYLD)
 };
 
 struct load_command
@@ -685,7 +676,8 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_P
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::BUILD_VERSION),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::NOTE),
                                                                            GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_EXPORTS_TRIE),
-                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_CHAINED_FIXUPS) };
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::DYLD_CHAINED_FIXUPS),
+                                                                           GET_PAIR_FROM_ENUM(LoadCommandType::FILESET_ENTRY) };
 
 static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions{
     { LoadCommandType::REQ_DYLD, "Requires dynamic linker." },
@@ -742,7 +734,8 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions
     { LoadCommandType::BUILD_VERSION, "Build for platform min OS version." },
     { LoadCommandType::NOTE, "Arbitrary data included within a Mach-O file." },
     { LoadCommandType::DYLD_EXPORTS_TRIE, "Used with `LinkeditDataCommand`, payload is trie." },
-    { LoadCommandType::DYLD_CHAINED_FIXUPS, "Used with `LinkeditDataCommand." }
+    { LoadCommandType::DYLD_CHAINED_FIXUPS, "Used with `LinkeditDataCommand." },
+    { LoadCommandType::DYLD_CHAINED_FIXUPS, "Used with fileset_entry_command." },
 };
 
 union lc_str
@@ -751,7 +744,6 @@ union lc_str
     uint64_t ptr;    /* pointer to the string */
 };
 
-// https://opensource.apple.com/source/xnu/xnu-1228/osfmk/mach/vm_prot.h.auto.html
 enum class VMProtectionFlags : uint32_t
 {
     NONE      = 0x0,
@@ -1108,6 +1100,14 @@ struct dylib_command
     dylib dylib;         /* the library identification */
 };
 
+struct entry_point_command
+{
+    LoadCommandType cmd; /* LC_MAIN only used in MH_EXECUTE filetypes */
+    uint32_t cmdsize;    /* 24 */
+    uint64_t entryoff;   /* file (__TEXT) offset of main() */
+    uint64_t stacksize;  /* if not zero, initial stack size */
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1121,7 +1121,8 @@ namespace Panels
         Segments     = 0x2,
         Sections     = 0x4,
         DyldInfo     = 0x8,
-        Dylib        = 0x10
+        Dylib        = 0x10,
+        Main         = 0x20
     };
 };
 
@@ -1156,7 +1157,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
 
     struct DyldInfo
     {
-        bool set = false;
+        bool isSet = false;
         MAC::dyld_info_command value;
     };
 
@@ -1167,6 +1168,12 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         uint64_t offset;
     };
 
+    struct Main
+    {
+        bool isSet = false;
+        MAC::entry_point_command ep;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
@@ -1175,6 +1182,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Section> sections;
     DyldInfo dyldInfo;
     std::vector<Dylib> dylibs;
+    Main main;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1205,7 +1213,8 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetSegments(uint64_t& offset);
     bool SetSections(uint64_t& offset);
     bool SetDyldInfo(uint64_t& offset);
-    bool SetIdDylib(uint64_t& offset);
+    bool SetIdDylibs(uint64_t& offset);
+    bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD
 };
 
 namespace Panels
@@ -1320,6 +1329,24 @@ namespace Panels
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class Main : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> machO;
+        Reference<AppCUI::Controls::ListView> general;
+
+        void UpdateGeneralInformation();
+        void RecomputePanelsPositions();
+
+      public:
+        Main(Reference<MachOFile> machO);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            RecomputePanelsPositions();
+        }
     };
 } // namespace Panels
 } // namespace GView::Type::MachO

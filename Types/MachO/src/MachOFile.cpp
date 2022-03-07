@@ -24,7 +24,10 @@ bool MachOFile::Update()
     SetDyldInfo(offset);
 
     offset = commandsStartOffset;
-    SetIdDylib(offset);
+    SetIdDylibs(offset);
+
+    offset = commandsStartOffset;
+    SetMain(offset);
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
@@ -39,7 +42,7 @@ bool MachOFile::Update()
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
     }
 
-    if (dyldInfo.set)
+    if (dyldInfo.isSet)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
     }
@@ -47,6 +50,11 @@ bool MachOFile::Update()
     if (dylibs.empty() == false)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
+    }
+
+    if (main.isSet)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Main);
     }
 
     return true;
@@ -254,10 +262,10 @@ bool MachOFile::SetDyldInfo(uint64_t& offset)
     {
         if (lc.value.cmd == MAC::LoadCommandType::DYLD_INFO || lc.value.cmd == MAC::LoadCommandType::DYLD_INFO_ONLY)
         {
-            if (dyldInfo.set == false)
+            if (dyldInfo.isSet == false)
             {
                 CHECK(file->Copy<MAC::dyld_info_command>(offset, dyldInfo.value), false, "");
-                dyldInfo.set = true;
+                dyldInfo.isSet = true;
             }
             else
             {
@@ -271,7 +279,7 @@ bool MachOFile::SetDyldInfo(uint64_t& offset)
     return true;
 }
 
-bool MachOFile::SetIdDylib(uint64_t& offset)
+bool MachOFile::SetIdDylibs(uint64_t& offset)
 {
     for (const auto& lc : loadCommands)
     {
@@ -298,12 +306,12 @@ bool MachOFile::SetIdDylib(uint64_t& offset)
             d.value.cmdsize = *(uint32_t*) (ptr);
 
             ptr += sizeof(d.value.cmdsize);
-            if (is64)
-            {
-                d.value.dylib.name.ptr = *(uint64_t*) (ptr);
-                ptr += sizeof(d.value.dylib.name.ptr);
-            }
-            else
+            // if (is64)
+            //{
+            //     d.value.dylib.name.ptr = *(uint64_t*) (ptr);
+            //     ptr += sizeof(d.value.dylib.name.ptr);
+            // }
+            // else
             {
                 d.value.dylib.name.offset = *(uint32_t*) (ptr);
                 ptr += sizeof(d.value.dylib.name.offset);
@@ -339,6 +347,135 @@ bool MachOFile::SetIdDylib(uint64_t& offset)
             d.name = reinterpret_cast<char*>(ptr);
 
             dylibs.emplace_back(d);
+        }
+
+        offset += lc.value.cmdsize;
+    }
+
+    return true;
+}
+
+bool MachOFile::SetMain(uint64_t& offset)
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::MAIN)
+        {
+            if (main.isSet == false)
+            {
+                CHECK(file->Copy<MAC::entry_point_command>(offset, main.ep), false, "");
+                main.isSet = true;
+            }
+            else
+            {
+                throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
+            }
+        }
+        else if (lc.value.cmd == MAC::LoadCommandType::UNIXTHREAD)
+        {
+            main.ep.cmd = lc.value.cmd;
+
+            file->Copy<uint32_t>(offset + 4, main.ep.cmdsize);
+            auto cmd = file->CopyToBuffer(offset, main.ep.cmdsize);
+
+            if (header.cputype == MAC::CPU_TYPE_I386)
+            {
+                typedef struct
+                {
+                    uint32_t eax;
+                    uint32_t ebx;
+                    uint32_t ecx;
+                    uint32_t edx;
+                    uint32_t edi;
+                    uint32_t esi;
+                    uint32_t ebp;
+                    uint32_t esp;
+                    uint32_t ss;
+                    uint32_t eflags;
+                    uint32_t eip;
+                    uint32_t cs;
+                    uint32_t ds;
+                    uint32_t es;
+                    uint32_t fs;
+                    uint32_t gs;
+                } i386_thread_state_t;
+
+                const auto registers = (i386_thread_state_t*) (((char*) cmd.GetData()) + 16);
+
+                main.isSet       = true;
+                main.ep.entryoff = registers->eip;
+            }
+            else if (header.cputype == MAC::CPU_TYPE_X86_64)
+            {
+                struct x86_thread_state64_t
+                {
+                    uint64_t rax;
+                    uint64_t rbx;
+                    uint64_t rcx;
+                    uint64_t rdx;
+                    uint64_t rdi;
+                    uint64_t rsi;
+                    uint64_t rbp;
+                    uint64_t rsp;
+                    uint64_t r8;
+                    uint64_t r9;
+                    uint64_t r10;
+                    uint64_t r11;
+                    uint64_t r12;
+                    uint64_t r13;
+                    uint64_t r14;
+                    uint64_t r15;
+                    uint64_t rip;
+                    uint64_t rflags;
+                    uint64_t cs;
+                    uint64_t fs;
+                    uint64_t gs;
+                };
+
+                const x86_thread_state64_t* registers = (x86_thread_state64_t*) (((char*) cmd.GetData()) + 16);
+                main.isSet                            = true;
+                main.ep.entryoff                      = registers->rip;
+            }
+            else if (header.cputype == MAC::CPU_TYPE_POWERPC)
+            {
+                typedef struct
+                {
+                    uint32_t srr0; /* Instruction address register (PC) */
+                    uint32_t srr1; /* Machine state register (supervisor) */
+                    uint32_t r[32];
+
+                    uint32_t cr;  /* Condition register */
+                    uint32_t xer; /* User's integer exception register */
+                    uint32_t lr;  /* Link register */
+                    uint32_t ctr; /* Count register */
+                    uint32_t mq;  /* MQ register (601 only) */
+
+                    uint32_t vrsave; /* Vector Save Register */
+                } ppc_thread_state_t;
+
+                const auto registers = (ppc_thread_state_t*) (((char*) cmd.GetData()) + 16);
+                main.isSet           = true;
+                main.ep.entryoff     = registers->srr0;
+            }
+            else if (header.cputype == MAC::CPU_TYPE_POWERPC64)
+            {
+                typedef struct
+                {
+                    uint64_t srr0, srr1;
+                    uint64_t r[32];
+                    uint32_t cr;
+                    uint64_t xer, lr, ctr;
+                    uint32_t vrsave;
+                } ppc_thread_state64_t;
+
+                const auto registers = (ppc_thread_state64_t*) (((char*) cmd.GetData()) + 16);
+                main.isSet           = true;
+                main.ep.entryoff     = registers->srr0;
+            }
+            else
+            {
+                throw "EP not handled for CPU from LoadCommandType::UNIXTHREAD!";
+            }
         }
 
         offset += lc.value.cmdsize;
