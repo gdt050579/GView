@@ -44,9 +44,9 @@ bool MachOFile::Update()
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
     }
 
-    if (idDylib.set)
+    if (dylibs.empty() == false)
     {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::IdDylib);
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
     }
 
     return true;
@@ -214,6 +214,7 @@ bool MachOFile::SetSections(uint64_t& offset)
         }
         else
         {
+            offset += sizeof(MAC::segment_command);
             for (auto i = 0U; i < segment.x86.nsects; i++)
             {
                 Section s{};
@@ -239,7 +240,7 @@ bool MachOFile::SetSections(uint64_t& offset)
                     s.x86.reserved2 = Utils::SwapEndian(s.x86.reserved2);
                 }
                 sections.emplace_back(s);
-                offset += sizeof(MAC::section_64);
+                offset += sizeof(MAC::section);
             }
         }
     }
@@ -274,24 +275,70 @@ bool MachOFile::SetIdDylib(uint64_t& offset)
 {
     for (const auto& lc : loadCommands)
     {
-        if (lc.value.cmd == MAC::LoadCommandType::ID_DYLIB)
+        if (lc.value.cmd == MAC::LoadCommandType::ID_DYLIB || lc.value.cmd == MAC::LoadCommandType::LOAD_DYLIB ||
+            lc.value.cmd == MAC::LoadCommandType::LOAD_WEAK_DYLIB || lc.value.cmd == MAC::LoadCommandType::REEXPORT_DYLIB ||
+            lc.value.cmd == MAC::LoadCommandType::LAZY_LOAD_DYLIB || lc.value.cmd == MAC::LoadCommandType::LOAD_UPWARD_DYLIB)
         {
-            if (idDylib.set == false)
+            uint32_t cmdSize = 0;
+            CHECK(file->Copy<uint32_t>(offset + 4, cmdSize), false, "");
+            if (shouldSwapEndianess)
             {
-                CHECK(file->Copy<MAC::dylib_command>(offset, idDylib.value), false, "");
+                cmdSize = Utils::SwapEndian(cmdSize);
+            }
 
-                const auto pathOffset = offset + idDylib.value.dylib.name.offset;
-                const auto pathSize   = idDylib.value.cmdsize - idDylib.value.dylib.name.offset;
-                const auto buffer     = file->CopyToBuffer(pathOffset, pathSize);
+            auto buffer = file->CopyToBuffer(offset, cmdSize);
+            auto ptr    = buffer.GetData();
 
-                idDylib.name = reinterpret_cast<char*>(buffer.GetData());
+            Dylib d{};
+            d.offset = lc.offset;
 
-                idDylib.set = true;
+            d.value.cmd = *(MAC::LoadCommandType*) buffer.GetData();
+
+            ptr += sizeof(MAC::LoadCommandType);
+            d.value.cmdsize = *(uint32_t*) (ptr);
+
+            ptr += sizeof(d.value.cmdsize);
+            if (is64)
+            {
+                d.value.dylib.name.ptr = *(uint64_t*) (ptr);
+                ptr += sizeof(d.value.dylib.name.ptr);
             }
             else
             {
-                throw "Multiple MAC::LoadCommandType::ID_DYLIB found! Reimplement this!";
+                d.value.dylib.name.offset = *(uint32_t*) (ptr);
+                ptr += sizeof(d.value.dylib.name.offset);
             }
+
+            d.value.dylib.timestamp = *(uint32_t*) (ptr);
+            ptr += sizeof(d.value.dylib.timestamp);
+
+            d.value.dylib.current_version = *(uint32_t*) (ptr);
+            ptr += sizeof(d.value.dylib.current_version);
+
+            d.value.dylib.compatibility_version = *(uint32_t*) (ptr);
+            ptr += sizeof(d.value.dylib.compatibility_version);
+
+            if (shouldSwapEndianess)
+            {
+                d.value.cmd     = Utils::SwapEndian(d.value.cmd);
+                d.value.cmdsize = Utils::SwapEndian(d.value.cmdsize);
+
+                if (is64)
+                {
+                    d.value.dylib.name.ptr = Utils::SwapEndian(d.value.dylib.name.ptr);
+                }
+                else
+                {
+                    d.value.dylib.name.offset = Utils::SwapEndian(d.value.dylib.name.offset);
+                }
+                d.value.dylib.timestamp             = Utils::SwapEndian(d.value.dylib.timestamp);
+                d.value.dylib.current_version       = Utils::SwapEndian(d.value.dylib.current_version);
+                d.value.dylib.compatibility_version = Utils::SwapEndian(d.value.dylib.compatibility_version);
+            }
+
+            d.name = reinterpret_cast<char*>(ptr);
+
+            dylibs.emplace_back(d);
         }
 
         offset += lc.value.cmdsize;

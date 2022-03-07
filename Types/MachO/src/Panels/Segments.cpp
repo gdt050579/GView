@@ -95,11 +95,11 @@ void Panels::Segments::Update()
             list->SetItemText(item, 6, GetValue(n, s.x86.filesize));
 
             const auto vmMaxProtectionNames       = MAC::GetVMProtectionNamesFromFlags(s.x86.maxprot);
-            const auto vmMaxProtectionStringValue = GetValue(n, s.x86.maxprot);
-            list->SetItemText(item, 7, temp.Format("%s (%s)", vmMaxProtectionNames.c_str(), vmMaxProtectionStringValue));
+            const auto vmMaxProtectionStringValue = std::string{ GetValue(n, s.x86.maxprot) };
+            list->SetItemText(item, 7, temp.Format("%s (%s)", vmMaxProtectionNames.c_str(), vmMaxProtectionStringValue.c_str()));
             const auto vmInitProtectionNames       = MAC::GetVMProtectionNamesFromFlags(s.x86.initprot);
-            const auto vmInitProtectionStringValue = GetValue(n, s.x86.initprot);
-            list->SetItemText(item, 8, temp.Format("%s (%s)", vmInitProtectionNames.c_str(), vmInitProtectionStringValue));
+            const auto vmInitProtectionStringValue = std::string{ GetValue(n, s.x86.initprot) };
+            list->SetItemText(item, 8, temp.Format("%s (%s)", vmInitProtectionNames.c_str(), vmInitProtectionStringValue.c_str()));
             list->SetItemText(item, 9, GetValue(n, s.x86.nsects));
             const auto segmentsFlagsNames = MAC::GetSegmentCommandNamesFromFlags(s.x86.flags);
             const auto segmentsFlagsValue = std::string{ GetValue(n, s.x86.flags) };

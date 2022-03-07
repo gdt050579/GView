@@ -13,12 +13,21 @@ const T SwapEndian(T u)
         unsigned char bytes[sizeof(T)];
     } source{ u }, dest{};
 
-    for (decltype(sizeof(T)) i = 0; i < sizeof(T); i++)
+    for (auto i = 0; i < sizeof(T); i++)
     {
         dest.bytes[i] = source.bytes[sizeof(T) - i - 1];
     }
 
     return dest.object;
+}
+
+template <typename T>
+void SwapEndianInplace(T* u, uint64_t size)
+{
+    for (auto i = 0; i < size; i++)
+    {
+        u[i] = u[size - i - 1];
+    }
 }
 
 template <typename T>
@@ -739,7 +748,7 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions
 union lc_str
 {
     uint32_t offset; /* offset to the string */
-    char* ptr;       /* pointer to the string */
+    uint64_t ptr;    /* pointer to the string */
 };
 
 // https://opensource.apple.com/source/xnu/xnu-1228/osfmk/mach/vm_prot.h.auto.html
@@ -867,7 +876,8 @@ enum class SegmentCommandFlags : uint32_t
     READONLY = 0x10             /* This segment is made read-only after fixups */
 };
 
-static const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlagsNames{ GET_PAIR_FROM_ENUM(SegmentCommandFlags::HIGHVM),
+static const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlagsNames{ GET_PAIR_FROM_ENUM(SegmentCommandFlags::NONE),
+                                                                                       GET_PAIR_FROM_ENUM(SegmentCommandFlags::HIGHVM),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::FVMLIB),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::NORELOC),
                                                                                        GET_PAIR_FROM_ENUM(
@@ -1033,7 +1043,6 @@ static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
                                               SectionAttributtes::NO_TOC,
                                               SectionAttributtes::STRIP_STATIC_SYMS,
                                               SectionAttributtes::NO_DEAD_STRIP,
-                                              SectionAttributtes::NO_DEAD_STRIP,
                                               SectionAttributtes::LIVE_SUPPORT,
                                               SectionAttributtes::SELF_MODIFYING_CODE,
                                               SectionAttributtes::DEBUG,
@@ -1112,7 +1121,7 @@ namespace Panels
         Segments     = 0x2,
         Sections     = 0x4,
         DyldInfo     = 0x8,
-        IdDylib      = 0x10
+        Dylib        = 0x10
     };
 };
 
@@ -1151,11 +1160,11 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::dyld_info_command value;
     };
 
-    struct IdDylib
+    struct Dylib
     {
-        bool set = false;
         MAC::dylib_command value;
         std::string name;
+        uint64_t offset;
     };
 
   public:
@@ -1165,7 +1174,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Segment> segments;
     std::vector<Section> sections;
     DyldInfo dyldInfo;
-    IdDylib idDylib;
+    std::vector<Dylib> dylibs;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1294,22 +1303,23 @@ namespace Panels
         }
     };
 
-    class IdDylib : public AppCUI::Controls::TabPage
+    class Dylib : public AppCUI::Controls::TabPage
     {
         Reference<MachOFile> machO;
-        Reference<AppCUI::Controls::ListView> general;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int Base;
 
-        void UpdateGeneralInformation();
-        void RecomputePanelsPositions();
+        std::string_view GetValue(NumericFormatter& n, uint64_t value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
 
       public:
-        IdDylib(Reference<MachOFile> machO);
+        Dylib(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
-        virtual void OnAfterResize(int newWidth, int newHeight) override
-        {
-            RecomputePanelsPositions();
-        }
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
 } // namespace GView::Type::MachO
