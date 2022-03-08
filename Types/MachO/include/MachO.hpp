@@ -1108,6 +1108,96 @@ struct entry_point_command
     uint64_t stacksize;  /* if not zero, initial stack size */
 };
 
+struct symtab_command
+{
+    LoadCommandType cmd; /* LC_SYMTAB */
+    uint32_t cmdsize;    /* sizeof(struct symtab_command) */
+    uint32_t symoff;     /* symbol table offset */
+    uint32_t nsyms;      /* number of symbol table entries */
+    uint32_t stroff;     /* string table offset */
+    uint32_t strsize;    /* string table size in bytes */
+};
+
+struct nlist
+{
+    union
+    {
+        // char* n_name; /* for use when in-core */
+        uint32_t n_strx; /* index into the string table */
+    } n_un;
+    uint8_t n_type;   /* type flag, see below */
+    uint8_t n_sect;   /* section number or NO_SECT */
+    int16_t n_desc;   /* see <mach-o/stab.h> */
+    uint32_t n_value; /* value of this symbol (or stab offset) */
+};
+
+struct nlist_64
+{
+    union
+    {
+        uint32_t n_strx; /* index into the string table */
+    } n_un;
+    uint8_t n_type;   /* type flag, see below */
+    uint8_t n_sect;   /* section number or NO_SECT */
+    uint16_t n_desc;  /* see <mach-o/stab.h> */
+    uint64_t n_value; /* value of this symbol (or stab offset) */
+};
+
+/* Symbols with a index into the string table of zero (n_un.n_strx == 0) are defined to have a null, "", name. Therefore all string indexes
+ * to non null names must not have a zero string index.  This is bit historical information that has never been well documented. */
+
+// n_type field
+#define N_STAB 0xe0 /* if any of these bits set, a symbolic debugging entry */
+#define N_PEXT 0x10 /* private external symbol bit */
+#define N_TYPE 0x0e /* mask for the type bits */
+#define N_EXT  0x01 /* external symbol bit, set for external symbols */
+
+// N_TYPE bits of the n_type field
+#define N_UNDF 0x0 /* undefined, n_sect == NO_SECT */
+#define N_ABS  0x2 /* absolute, n_sect == NO_SECT */
+#define N_SECT 0xe /* defined in section number n_sect */
+#define N_PBUD 0xc /* prebound undefined (defined in a dylib) */
+#define N_INDR 0xa /* indirect */
+
+#define NO_SECT  0   /* symbol is not in any section */
+#define MAX_SECT 255 /* 1 thru 255 inclusive */
+
+#define GET_COMM_ALIGN(n_desc)        (((n_desc) >> 8) & 0x0f)
+#define SET_COMM_ALIGN(n_desc, align) (n_desc) = (((n_desc) &0xf0ff) | (((align) &0x0f) << 8))
+
+/* Reference type bits of the n_desc field of undefined symbols */
+#define REFERENCE_TYPE 0x7
+/* types of references */
+#define REFERENCE_FLAG_UNDEFINED_NON_LAZY         0
+#define REFERENCE_FLAG_UNDEFINED_LAZY             1
+#define REFERENCE_FLAG_DEFINED                    2
+#define REFERENCE_FLAG_PRIVATE_DEFINED            3
+#define REFERENCE_FLAG_PRIVATE_UNDEFINED_NON_LAZY 4
+#define REFERENCE_FLAG_PRIVATE_UNDEFINED_LAZY     5
+
+#define REFERENCED_DYNAMICALLY 0x0010
+
+#define GET_LIBRARY_ORDINAL(n_desc)          (((n_desc) >> 8) & 0xff)
+#define SET_LIBRARY_ORDINAL(n_desc, ordinal) (n_desc) = (((n_desc) &0x00ff) | (((ordinal) &0xff) << 8))
+#define SELF_LIBRARY_ORDINAL                 0x0
+#define MAX_LIBRARY_ORDINAL                  0xfd
+#define DYNAMIC_LOOKUP_ORDINAL               0xfe
+#define EXECUTABLE_ORDINAL                   0xff
+
+#define N_NO_DEAD_STRIP  0x0020 /* symbol is not to be dead stripped */
+#define N_DESC_DISCARDED 0x0020 /* symbol is discarded */
+#define N_WEAK_REF       0x0040 /* symbol is weak referenced */
+#define N_WEAK_DEF       0x0080 /* coalesed symbol is a weak definition */
+#define N_REF_TO_WEAK    0x0080 /* reference to a weak symbol */
+#define N_ARM_THUMB_DEF  0x0008 /* symbol is a Thumb function (ARM) */
+
+/* The N_SYMBOL_RESOLVER bit of the n_desc field indicates that the that the function is actually a resolver function and
+ * should be called to get the address of the real function to use. * This bit is only available in .o files (MH_OBJECT filetype) */
+#define N_SYMBOL_RESOLVER 0x0100
+
+/* The N_ALT_ENTRY bit of the n_desc field indicates that the symbol is pinned to the previous content. */
+#define N_ALT_ENTRY 0x0200
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1119,10 +1209,11 @@ namespace Panels
         Information  = 0x0,
         LoadCommands = 0x1,
         Segments     = 0x2,
-        Sections     = 0x4,
-        DyldInfo     = 0x8,
-        Dylib        = 0x10,
-        Main         = 0x20
+        Sections     = 0x3,
+        DyldInfo     = 0x4,
+        Dylib        = 0x5,
+        Main         = 0x6,
+        DySymTab     = 0x7
     };
 };
 
@@ -1174,6 +1265,14 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::entry_point_command ep;
     };
 
+    struct DySymTab
+    {
+        MAC::symtab_command sc;
+        std::unique_ptr<char[]> symbolTable;
+        std::unique_ptr<char[]> stringTable;
+        bool isSet = false;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
@@ -1182,6 +1281,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Section> sections;
     DyldInfo dyldInfo;
     std::vector<Dylib> dylibs;
+    DySymTab dySymTab;
     Main main;
     bool shouldSwapEndianess;
     bool is64;
@@ -1215,6 +1315,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetDyldInfo(uint64_t& offset);
     bool SetIdDylibs(uint64_t& offset);
     bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD
+    bool SetSymbols(uint64_t& offset);
 };
 
 namespace Panels
@@ -1347,6 +1448,25 @@ namespace Panels
         {
             RecomputePanelsPositions();
         }
+    };
+
+    class SymTab : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64_t value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        SymTab(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
 } // namespace GView::Type::MachO

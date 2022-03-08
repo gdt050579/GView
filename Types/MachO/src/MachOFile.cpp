@@ -29,6 +29,9 @@ bool MachOFile::Update()
     offset = commandsStartOffset;
     SetMain(offset);
 
+    offset = commandsStartOffset;
+    SetSymbols(offset);
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
@@ -55,6 +58,11 @@ bool MachOFile::Update()
     if (main.isSet)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Main);
+    }
+
+    if (dySymTab.isSet)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
     }
 
     return true;
@@ -481,6 +489,55 @@ bool MachOFile::SetMain(uint64_t& offset)
         offset += lc.value.cmdsize;
     }
 
+    return true;
+}
+
+bool MachOFile::SetSymbols(uint64_t& offset)
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::SYMTAB)
+        {
+            if (dySymTab.isSet)
+            {
+                throw "Got a second LoadCommandType::SYMTAB command!";
+            }
+
+            CHECK(file->Copy<MAC::symtab_command>(offset, dySymTab.sc), false, "");
+
+            if (shouldSwapEndianess)
+            {
+                dySymTab.sc.cmd     = Utils::SwapEndian(dySymTab.sc.cmd);
+                dySymTab.sc.cmdsize = Utils::SwapEndian(dySymTab.sc.cmdsize);
+                dySymTab.sc.symoff  = Utils::SwapEndian(dySymTab.sc.symoff);
+                dySymTab.sc.nsyms   = Utils::SwapEndian(dySymTab.sc.nsyms);
+                dySymTab.sc.stroff  = Utils::SwapEndian(dySymTab.sc.stroff);
+                dySymTab.sc.strsize = Utils::SwapEndian(dySymTab.sc.strsize);
+            }
+
+            {
+                const auto buffer = file->CopyToBuffer(dySymTab.sc.stroff, dySymTab.sc.strsize);
+                dySymTab.stringTable.reset(new char[dySymTab.sc.strsize]);
+                memcpy(dySymTab.stringTable.get(), (char*) buffer.GetData(), dySymTab.sc.strsize);
+            }
+
+            if (is64)
+            {
+                const auto buffer = file->CopyToBuffer(dySymTab.sc.symoff, dySymTab.sc.nsyms * sizeof(MAC::nlist_64));
+                dySymTab.symbolTable.reset(new char[dySymTab.sc.nsyms * sizeof(MAC::nlist_64)]);
+                memcpy(dySymTab.symbolTable.get(), (char*) buffer.GetData(), dySymTab.sc.nsyms * sizeof(MAC::nlist_64));
+            }
+            else
+            {
+                const auto buffer = file->CopyToBuffer(dySymTab.sc.symoff, dySymTab.sc.nsyms * sizeof(MAC::nlist));
+                dySymTab.symbolTable.reset(new char[dySymTab.sc.nsyms * sizeof(MAC::nlist)]);
+                memcpy(dySymTab.symbolTable.get(), (char*) buffer.GetData(), dySymTab.sc.nsyms * sizeof(MAC::nlist));
+            }
+
+            dySymTab.isSet = true;
+        }
+        offset += lc.value.cmdsize;
+    }
     return true;
 }
 } // namespace GView::Type::MachO

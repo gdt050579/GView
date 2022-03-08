@@ -27,11 +27,6 @@ void Main::UpdateGeneralInformation()
     static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
     static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    uint32_t cmd;       /* LC_MAIN only used in MH_EXECUTE filetypes */
-    uint32_t cmdsize;   /* 24 */
-    uint64_t entryoff;  /* file (__TEXT) offset of main() */
-    uint64_t stacksize; /* if not zero, initial stack size */
-
     general->AddItem(
           "Command",
           tmp.Format(
