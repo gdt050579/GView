@@ -372,6 +372,15 @@ bool MachOFile::SetMain(uint64_t& offset)
             if (main.isSet == false)
             {
                 CHECK(file->Copy<MAC::entry_point_command>(offset, main.ep), false, "");
+
+                if (shouldSwapEndianess)
+                {
+                    main.ep.cmd       = Utils::SwapEndian(main.ep.cmd);
+                    main.ep.cmdsize   = Utils::SwapEndian(main.ep.cmdsize);
+                    main.ep.entryoff  = Utils::SwapEndian(main.ep.entryoff);
+                    main.ep.stacksize = Utils::SwapEndian(main.ep.stacksize);
+                }
+
                 main.isSet = true;
             }
             else
@@ -381,10 +390,9 @@ bool MachOFile::SetMain(uint64_t& offset)
         }
         else if (lc.value.cmd == MAC::LoadCommandType::UNIXTHREAD)
         {
-            main.ep.cmd = lc.value.cmd;
-
-            file->Copy<uint32_t>(offset + 4, main.ep.cmdsize);
-            auto cmd = file->CopyToBuffer(offset, main.ep.cmdsize);
+            main.ep.cmd     = lc.value.cmd;
+            main.ep.cmdsize = lc.value.cmdsize;
+            auto cmd        = file->CopyToBuffer(offset, main.ep.cmdsize);
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {

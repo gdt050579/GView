@@ -1139,7 +1139,7 @@ struct nlist_64
     } n_un;
     uint8_t n_type;   /* type flag, see below */
     uint8_t n_sect;   /* section number or NO_SECT */
-    uint16_t n_desc;  /* see <mach-o/stab.h> */
+    uint16_t n_desc;  /* see <mach-o/stab.h> -> description field */
     uint64_t n_value; /* value of this symbol (or stab offset) */
 };
 
@@ -1147,57 +1147,174 @@ struct nlist_64
  * to non null names must not have a zero string index.  This is bit historical information that has never been well documented. */
 
 // n_type field
-#define N_STAB 0xe0 /* if any of these bits set, a symbolic debugging entry */
-#define N_PEXT 0x10 /* private external symbol bit */
-#define N_TYPE 0x0e /* mask for the type bits */
-#define N_EXT  0x01 /* external symbol bit, set for external symbols */
+enum class N_TYPE
+{
+    STAB = 0xe0, /* if any of these bits set, a symbolic debugging entry */
+    PEXT = 0x10, /* private external symbol bit */
+    TYPE = 0x0e, /* mask for the type bits */
+    EXT  = 0x01  /* external symbol bit, set for external symbols */
+};
+
+static const std::map<N_TYPE, std::string_view> NTypeNames{
+    GET_PAIR_FROM_ENUM(N_TYPE::STAB), GET_PAIR_FROM_ENUM(N_TYPE::PEXT), GET_PAIR_FROM_ENUM(N_TYPE::TYPE), GET_PAIR_FROM_ENUM(N_TYPE::EXT)
+};
 
 // N_TYPE bits of the n_type field
-#define N_UNDF 0x0 /* undefined, n_sect == NO_SECT */
-#define N_ABS  0x2 /* absolute, n_sect == NO_SECT */
-#define N_SECT 0xe /* defined in section number n_sect */
-#define N_PBUD 0xc /* prebound undefined (defined in a dylib) */
-#define N_INDR 0xa /* indirect */
+enum class N_TYPE_BITS
+{
+    UNDF = 0x0,  /* undefined, n_sect == NO_SECT */
+    ABS  = 0x2,  /* absolute, n_sect == NO_SECT */
+    TEXT = 0x4,  /* text */
+    DATA = 0x6,  /* data */
+    BSS  = 0x8,  /* bss */
+    SECT = 0xe,  /* defined in section number n_sect */
+    PBUD = 0xc,  /* prebound undefined (defined in a dylib) */
+    INDR = 0xa,  /* indirect */
+    COMM = 0x12, /* common (internal to ld) */
+    FN   = 0x1f  /* file name symbol */
+};
 
-#define NO_SECT  0   /* symbol is not in any section */
-#define MAX_SECT 255 /* 1 thru 255 inclusive */
+static const std::map<N_TYPE_BITS, std::string_view> NTypeBitsNames{
+    GET_PAIR_FROM_ENUM(N_TYPE_BITS::UNDF), GET_PAIR_FROM_ENUM(N_TYPE_BITS::ABS),  GET_PAIR_FROM_ENUM(N_TYPE_BITS::TEXT),
+    GET_PAIR_FROM_ENUM(N_TYPE_BITS::DATA), GET_PAIR_FROM_ENUM(N_TYPE_BITS::BSS),  GET_PAIR_FROM_ENUM(N_TYPE_BITS::SECT),
+    GET_PAIR_FROM_ENUM(N_TYPE_BITS::PBUD), GET_PAIR_FROM_ENUM(N_TYPE_BITS::INDR), GET_PAIR_FROM_ENUM(N_TYPE_BITS::COMM),
+    GET_PAIR_FROM_ENUM(N_TYPE_BITS::FN)
+};
 
-#define GET_COMM_ALIGN(n_desc)        (((n_desc) >> 8) & 0x0f)
-#define SET_COMM_ALIGN(n_desc, align) (n_desc) = (((n_desc) &0xf0ff) | (((align) &0x0f) << 8))
+constexpr uint32_t NO_SECT  = 0;   /* symbol is not in any section */
+constexpr uint32_t MAX_SECT = 255; /* 1 thru 255 inclusive */
+
+inline static uint16_t GET_COMM_ALIGN(uint16_t n_desc)
+{
+    return (((n_desc) >> 8) & 0x0f);
+}
 
 /* Reference type bits of the n_desc field of undefined symbols */
-#define REFERENCE_TYPE 0x7
+constexpr uint32_t REFERENCE_TYPE = 0x0F; // (0x07?)
+
 /* types of references */
-#define REFERENCE_FLAG_UNDEFINED_NON_LAZY         0
-#define REFERENCE_FLAG_UNDEFINED_LAZY             1
-#define REFERENCE_FLAG_DEFINED                    2
-#define REFERENCE_FLAG_PRIVATE_DEFINED            3
-#define REFERENCE_FLAG_PRIVATE_UNDEFINED_NON_LAZY 4
-#define REFERENCE_FLAG_PRIVATE_UNDEFINED_LAZY     5
+enum class ReferenceFlag
+{
+    UNDEFINED_NON_LAZY         = 0,
+    UNDEFINED_LAZY             = 1,
+    DEFINED                    = 2,
+    PRIVATE_DEFINED            = 3,
+    PRIVATE_UNDEFINED_NON_LAZY = 4,
+    PRIVATE_UNDEFINED_LAZY     = 5
+};
 
-#define REFERENCED_DYNAMICALLY 0x0010
+static const std::map<ReferenceFlag, std::string_view> ReferenceFlagNames{ GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_NON_LAZY),
+                                                                           GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_LAZY),
+                                                                           GET_PAIR_FROM_ENUM(ReferenceFlag::DEFINED),
+                                                                           GET_PAIR_FROM_ENUM(ReferenceFlag::PRIVATE_DEFINED),
+                                                                           GET_PAIR_FROM_ENUM(ReferenceFlag::PRIVATE_UNDEFINED_NON_LAZY),
+                                                                           GET_PAIR_FROM_ENUM(ReferenceFlag::PRIVATE_UNDEFINED_LAZY) };
 
-#define GET_LIBRARY_ORDINAL(n_desc)          (((n_desc) >> 8) & 0xff)
-#define SET_LIBRARY_ORDINAL(n_desc, ordinal) (n_desc) = (((n_desc) &0x00ff) | (((ordinal) &0xff) << 8))
-#define SELF_LIBRARY_ORDINAL                 0x0
-#define MAX_LIBRARY_ORDINAL                  0xfd
-#define DYNAMIC_LOOKUP_ORDINAL               0xfe
-#define EXECUTABLE_ORDINAL                   0xff
+inline static uint16_t GET_LIBRARY_ORDINAL(uint16_t n_desc)
+{
+    return (((n_desc) >> 8) & 0xff);
+}
 
-#define N_NO_DEAD_STRIP  0x0020 /* symbol is not to be dead stripped */
-#define N_DESC_DISCARDED 0x0020 /* symbol is discarded */
-#define N_WEAK_REF       0x0040 /* symbol is weak referenced */
-#define N_WEAK_DEF       0x0080 /* coalesed symbol is a weak definition */
-#define N_REF_TO_WEAK    0x0080 /* reference to a weak symbol */
-#define N_ARM_THUMB_DEF  0x0008 /* symbol is a Thumb function (ARM) */
+enum class OrdinalType
+{
+    SELF_LIBRARY   = 0x00,
+    MAX_LIBRARY    = 0xfd,
+    DYNAMIC_LOOKUP = 0xfe,
+    EXECUTABLE     = 0xff
+};
 
-/* The N_SYMBOL_RESOLVER bit of the n_desc field indicates that the that the function is actually a resolver function and
- * should be called to get the address of the real function to use. * This bit is only available in .o files (MH_OBJECT filetype) */
-#define N_SYMBOL_RESOLVER 0x0100
+static const std::map<OrdinalType, std::string_view> OrdinalTypeNames{ GET_PAIR_FROM_ENUM(OrdinalType::SELF_LIBRARY),
+                                                                       GET_PAIR_FROM_ENUM(OrdinalType::MAX_LIBRARY),
+                                                                       GET_PAIR_FROM_ENUM(OrdinalType::DYNAMIC_LOOKUP),
+                                                                       GET_PAIR_FROM_ENUM(OrdinalType::EXECUTABLE) };
 
-/* The N_ALT_ENTRY bit of the n_desc field indicates that the symbol is pinned to the previous content. */
-#define N_ALT_ENTRY 0x0200
+enum class N_DESC_BIT_TYPE
+{
+    REFERENCED_DYNAMICALLY = 0x0010,
+    /* The bit 0x0020 of the n_desc field is used for two non-overlapping purposes and has two different symbolic names, N_NO_DEAD_STRIP and
+     N_DESC_DISCARDED. The N_NO_DEAD_STRIP bit of the n_desc field only ever appears in a relocatable .o file (MH_OBJECT filetype). And is
+     used to indicate to the static link editor it is never to dead strip the symbol. */
+    NO_DEAD_STRIP  = 0x0020, /* symbol is not to be dead stripped */
+    DESC_DISCARDED = 0x0020, /* symbol is discarded */
+    /* The N_WEAK_REF bit of the n_desc field indicates to the dynamic linker that the undefined symbol is allowed to be missing and is to
+    have the address of zero when missing. */
+    WEAK_REF = 0x0040, /* symbol is weak referenced */
+    /* The N_WEAK_DEF bit of the n_desc field indicates to the staticand dynamic linkers that the symbol definition is weak, allowing a
+    non-weak symbol to also be used which causes the weak definition to be discared.  Currently this is only supported for symbols in
+    coalesed sections. */
+    WEAK_DEF = 0x0080, /* coalesed symbol is a weak definition */
+    /* The N_REF_TO_WEAK bit of the n_desc field indicates to the dynamic linker that the undefined symbol should be resolved using flat
+       namespace searching. */
+    REF_TO_WEAK   = 0x0080, /* reference to a weak symbol */
+    ARM_THUMB_DEF = 0x0008, /* symbol is a Thumb function (ARM) */
+    /* The N_SYMBOL_RESOLVER bit of the n_desc field indicates that the that the function is actually a resolver function and should be
+       called to get the address of the real function to use. * This bit is only available in .o files (MH_OBJECT filetype) */
+    SYMBOL_RESOLVER = 0x0100,
+    /* The N_ALT_ENTRY bit of the n_desc field indicates that the symbol is pinned to the previous content. */
+    ALT_ENTRY = 0x0200
+};
 
+static const std::map<N_DESC_BIT_TYPE, std::string_view> NDescBitTypeNames{ GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::REFERENCED_DYNAMICALLY),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::NO_DEAD_STRIP),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::DESC_DISCARDED),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::WEAK_REF),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::WEAK_DEF),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::REF_TO_WEAK),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::ARM_THUMB_DEF),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::SYMBOL_RESOLVER),
+                                                                            GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::ALT_ENTRY) };
+
+enum class N_STAB_TYPE
+{
+    GSYM    = 0x20, // global symbol
+    FNAME   = 0x22, // F77 function name
+    FUN     = 0x24, // procedure name
+    STSYM   = 0x26, // data segment variable
+    LCSYM   = 0x28, // bss segment variable
+    MAIN    = 0x2a, // main function name
+    BNSYM   = 0x2e, /* begin nsect sym: 0,,n_sect,0,address */
+    PC      = 0x30, // global Pascal symbol
+    OPT     = 0x3c, /* emitted with gcc2_compiled and in gcc source */
+    RSYM    = 0x40, // register variable
+    SLINE   = 0x44, // text segment line number
+    ENSYM   = 0x4e, /* end nsect sym: 0,,n_sect,0,address */
+    DSLINE  = 0x46, // data segment line number
+    BSLINE  = 0x48, // bss segment line number
+    SSYM    = 0x60, // structure/union element
+    SO      = 0x64, // main source file name
+    OSO     = 0x66, /* object file name: name,,0,0,st_mtime */
+    LSYM    = 0x80, // stack variable
+    BINCL   = 0x82, // include file beginning
+    SOL     = 0x84, // included source file name
+    PARAMS  = 0x86, /* compiler parameters: name,,NO_SECT,0,0 */
+    VERSION = 0x88, /* compiler version: name,,NO_SECT,0,0 */
+    OLEVEL  = 0x8A, /* compiler -O level: name,,NO_SECT,0,0 */
+    PSYM    = 0xa0, // parameter variable
+    EINCL   = 0xa2, // include file end
+    ENTRY   = 0xa4, // alternate entry point
+    LBRAC   = 0xc0, // left bracket
+    EXCL    = 0xc2, // deleted include file
+    RBRAC   = 0xe0, // right bracket
+    BCOMM   = 0xe2, // begin common
+    ECOMM   = 0xe4, // end common
+    ECOML   = 0xe8, // end common (local name)
+    LENG    = 0xfe  // length of preceding entry
+};
+
+static const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::GSYM),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::FNAME),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::FUN),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::STSYM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::LCSYM),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::MAIN),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::BNSYM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::PC),      GET_PAIR_FROM_ENUM(N_STAB_TYPE::OPT),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::RSYM),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::SLINE),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::ENSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::DSLINE), GET_PAIR_FROM_ENUM(N_STAB_TYPE::BSLINE),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::SSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::SO),     GET_PAIR_FROM_ENUM(N_STAB_TYPE::OSO),     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::BINCL),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::SOL),     GET_PAIR_FROM_ENUM(N_STAB_TYPE::PARAMS),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::SOL),    GET_PAIR_FROM_ENUM(N_STAB_TYPE::VERSION), GET_PAIR_FROM_ENUM(N_STAB_TYPE::OLEVEL),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::EINCL),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::ENTRY),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::LBRAC),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::EXCL),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::RBRAC),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::BCOMM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::ECOMM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::ECOML),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::LENG)
+
+};
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO

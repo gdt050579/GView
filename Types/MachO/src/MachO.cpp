@@ -136,7 +136,7 @@ extern "C"
 
         if (mach->HasPanel(MachO::Panels::IDs::DySymTab))
         {
-            win->AddPanel(Pointer<TabPage>(new MachO::Panels::SymTab(mach, win)), true);
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::SymTab(mach, win)), false);
         }
 
         return true;
