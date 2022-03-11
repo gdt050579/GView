@@ -612,8 +612,8 @@ enum class LoadCommandType : uint32_t
     VERSION_MIN_WATCHOS      = 0x30,
     BUILD_VERSION            = 0x31,
     NOTE                     = 0x32,
-    DYLD_EXPORTS_TRIE        = 0x33,
-    DYLD_CHAINED_FIXUPS      = 0x34,
+    DYLD_EXPORTS_TRIE        = (0x33 | REQ_DYLD),
+    DYLD_CHAINED_FIXUPS      = (0x34 | REQ_DYLD),
     FILESET_ENTRY            = (0x35 | REQ_DYLD)
 };
 
