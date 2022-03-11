@@ -34,8 +34,8 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
-    horizontal = this->CreateChildControl<Splitter>("d:c", false);
-    vertical   = horizontal->CreateChildControl<Splitter>("d:c", true);
+    horizontal = this->CreateChildControl<Splitter>("d:c", SplitterFlags::Horizontal);
+    vertical   = horizontal->CreateChildControl<Splitter>("d:c", SplitterFlags::Vertical | SplitterFlags::AutoCollapsePanel2);
     horizontal->SetSecondPanelSize(1);
 
     // create tabs
