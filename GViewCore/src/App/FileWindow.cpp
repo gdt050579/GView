@@ -34,17 +34,18 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
-    horizontal = this->CreateChildControl<Splitter>("d:c", false);
-    vertical   = horizontal->CreateChildControl<Splitter>("d:c", true);
+    horizontal = this->CreateChildControl<Splitter>("d:c", SplitterFlags::Horizontal | SplitterFlags::AutoCollapsePanel2);
+    vertical   = horizontal->CreateChildControl<Splitter>("d:c", SplitterFlags::Vertical | SplitterFlags::AutoCollapsePanel2);
+    horizontal->SetPanel2Bounderies(1); // minim size (1 line)
     horizontal->SetSecondPanelSize(1);
+    vertical->SetDefaultPanelSize(30); // default panel upon extension
+    horizontal->SetDefaultPanelSize(10); // default h-splitter size upon extension
 
     // create tabs
     view                      = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
     verticalPanels            = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
     horizontalPanels          = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
-    view->Handlers()->OnFocus = this;
-    verticalPanels->Handlers()->OnFocus   = this;
-    horizontalPanels->Handlers()->OnFocus = this;
+
 
     // CursorInformation
     horizontalPanels->CreateChildControl<CursorInformation>(this);
@@ -142,6 +143,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 }
 void FileWindow::UpdateDefaultPanelsSizes(Reference<Splitter> splitter)
 {
+    return;
     // logic is as follows
     // horizontal|vertical view are only updated when those panels are resized and have the focus
     if ((!horizontalPanels.IsValid()) || (!verticalPanels.IsValid()))
@@ -197,28 +199,28 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     }
     return false;
 }
-void FileWindow::OnFocus(Reference<Control> control)
-{
-    if (control == view)
-    {
-        // minimize vertical and horizontal panels
-        if (vertical.IsValid())
-            vertical->SetSecondPanelSize(0);
-        if (horizontal.IsValid())
-            horizontal->SetSecondPanelSize(defaultCursorViewSize);
-        horizontalPanels->SetCurrentTabPageByIndex(0); // force cursor information show when
-        this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft).SetItemCheck(cursorInfoHandle, true);
-        // test
-    }
-    if (control == verticalPanels)
-    {
-        vertical->SetSecondPanelSize(defaultHorizontalPanelsSize);
-    }
-    if (control == horizontalPanels)
-    {
-        horizontal->SetSecondPanelSize(defaultVerticalPanelsSize);
-    }
-}
+//void FileWindow::OnFocus(Reference<Control> control)
+//{
+//    // if (control == view)
+//    //{
+//    //     // minimize vertical and horizontal panels
+//    //     if (vertical.IsValid())
+//    //         vertical->SetSecondPanelSize(0);
+//    //     if (horizontal.IsValid())
+//    //         horizontal->SetSecondPanelSize(defaultCursorViewSize);
+//    //     horizontalPanels->SetCurrentTabPageByIndex(0); // force cursor information show when
+//    //     this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft).SetItemCheck(cursorInfoHandle, true);
+//    //     // test
+//    // }
+//    // if (control == verticalPanels)
+//    //{
+//    //     vertical->SetSecondPanelSize(defaultHorizontalPanelsSize);
+//    // }
+//    // if (control == horizontalPanels)
+//    //{
+//    //     horizontal->SetSecondPanelSize(defaultVerticalPanelsSize);
+//    // }
+//}
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(
