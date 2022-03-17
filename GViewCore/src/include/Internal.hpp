@@ -225,7 +225,7 @@ namespace App
         FileWindowProperties(Reference<Tab> viewContainer);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
-    class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
+    class FileWindow : public Window, public GView::View::WindowInterface
     {
         Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
@@ -256,7 +256,6 @@ namespace App
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
-        void OnFocus(Reference<Control> control) override;
     };
     class ErrorDialog: public AppCUI::Controls::Window
     {
