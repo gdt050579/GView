@@ -102,6 +102,38 @@ void Information::UpdateEntryPoint()
     general->AddItem("Stack Size", ls.Format("%-14s (%s)", stackSize.data(), stackSizeHex.data()));
 }
 
+void Information::UpdateSourceVersion()
+{
+    CHECKRET(machO->sourceVersion.isSet, "");
+
+    LocalString<1024> ls;
+    LocalString<1024> ls2;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+    general->SetItemType(general->AddItem("Source Version"), ListViewItemType::Category);
+
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->sourceVersion.svc.cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->sourceVersion.svc.cmd), hex);
+    general->AddItem("Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()));
+
+    const auto cmdSize    = nf.ToString(machO->sourceVersion.svc.cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->sourceVersion.svc.cmdsize), hex);
+    general->AddItem("Cmd Size", ls.Format("%-22s (%s)", cmdSize.data(), hexCmdSize.data()));
+
+    const auto a          = (machO->sourceVersion.svc.version >> 40) & 0xffffff;
+    const auto b          = (machO->sourceVersion.svc.version >> 30) & 0x3ff;
+    const auto c          = (machO->sourceVersion.svc.version >> 20) & 0x3ff;
+    const auto d          = (machO->sourceVersion.svc.version >> 10) & 0x3ff;
+    const auto e          = machO->sourceVersion.svc.version & 0x3ff;
+    const auto version    = ls.Format("%llu.%llu.%llu.%llu.%llu", a, b, c, d, e);
+    const auto versionHex = nf2.ToString(machO->sourceVersion.svc.version, hex);
+    general->AddItem("Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()));
+}
+
 void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
@@ -114,6 +146,7 @@ void Information::Update()
 
     UpdateBasicInfo();
     UpdateEntryPoint();
+    UpdateSourceVersion();
     RecomputePanelsPositions();
 }
 } // namespace GView::Type::MachO::Panels

@@ -1315,6 +1315,36 @@ static const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{
     GET_PAIR_FROM_ENUM(N_STAB_TYPE::ECOMM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::ECOML),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::LENG)
 
 };
+
+enum class PlatformType
+{
+    UNKNOWN          = 0,
+    MACOS            = 1,
+    IOS              = 2,
+    TVOS             = 3,
+    WATCHOS          = 4,
+    BRIDGEOS         = 5,
+    MACCATALYST      = 6,
+    IOSSIMULATOR     = 7,
+    TVOSSIMULATOR    = 8,
+    WATCHOSSIMULATOR = 9,
+    DRIVERKIT        = 10,
+};
+
+enum class Tool
+{
+    CLANG = 1,
+    SWIFT = 2,
+    LD    = 3
+};
+
+struct source_version_command
+{
+    LoadCommandType cmd; /* LC_SOURCE_VERSION */
+    uint32_t cmdsize;    // Size of the command, typically 16 bytes.
+    uint64_t version;    // A.B.C.D.E packed as a24.b10.c10.d10.e10
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1389,6 +1419,12 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         bool isSet = false;
     };
 
+    struct SourceVersion
+    {
+        bool isSet = false;
+        MAC::source_version_command svc;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
@@ -1399,6 +1435,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Dylib> dylibs;
     DySymTab dySymTab;
     Main main;
+    SourceVersion sourceVersion;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1432,6 +1469,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetIdDylibs(uint64_t& offset);
     bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD
     bool SetSymbols(uint64_t& offset);
+    bool SetSourceVersion(uint64_t& offset);
 };
 
 namespace Panels
@@ -1443,6 +1481,7 @@ namespace Panels
 
         void UpdateBasicInfo();
         void UpdateEntryPoint();
+        void UpdateSourceVersion();
         void RecomputePanelsPositions();
 
       public:

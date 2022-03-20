@@ -32,6 +32,9 @@ bool MachOFile::Update()
     offset = commandsStartOffset;
     SetSymbols(offset);
 
+    offset = commandsStartOffset;
+    SetSourceVersion(offset);
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
@@ -541,6 +544,35 @@ bool MachOFile::SetSymbols(uint64_t& offset)
         }
         offset += lc.value.cmdsize;
     }
+    return true;
+}
+
+bool MachOFile::SetSourceVersion(uint64_t& offset)
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::SOURCE_VERSION)
+        {
+            if (sourceVersion.isSet == false)
+            {
+                sourceVersion.svc.cmd     = lc.value.cmd;
+                sourceVersion.svc.cmdsize = lc.value.cmdsize;
+
+                CHECK(file->Copy<uint64_t>(offset + 8, sourceVersion.svc.version), false, "");
+                if (shouldSwapEndianess)
+                {
+                    sourceVersion.svc.version = Utils::SwapEndian(sourceVersion.svc.version);
+                }
+
+                sourceVersion.isSet = true;
+            }
+            else
+            {
+                throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
+            }
+        }
+    }
+
     return true;
 }
 } // namespace GView::Type::MachO
