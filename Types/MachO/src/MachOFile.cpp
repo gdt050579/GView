@@ -35,6 +35,9 @@ bool MachOFile::Update()
     offset = commandsStartOffset;
     SetSourceVersion(offset);
 
+    offset = commandsStartOffset;
+    SetUUID(offset);
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
@@ -569,6 +572,38 @@ bool MachOFile::SetSourceVersion(uint64_t& offset)
             else
             {
                 throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
+            }
+        }
+    }
+
+    return true;
+}
+
+bool MachOFile::SetUUID(uint64_t& offset)
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::UUID)
+        {
+            if (uuid.isSet == false)
+            {
+                uuid.value.cmd     = lc.value.cmd;
+                uuid.value.cmdsize = lc.value.cmdsize;
+
+                CHECK(file->Copy<decltype(uuid.value.uuid)>(offset + 8, uuid.value.uuid), false, "");
+                if (shouldSwapEndianess)
+                {
+                    for (auto i = 0U; i < sizeof(uuid.value.uuid) / sizeof(uuid.value.uuid[0]); i++)
+                    {
+                        uuid.value.uuid[i] = Utils::SwapEndian(uuid.value.uuid[i]);
+                    }
+                }
+
+                uuid.isSet = true;
+            }
+            else
+            {
+                throw "Multiple LoadCommandType::UUID found! Reimplement this!";
             }
         }
     }

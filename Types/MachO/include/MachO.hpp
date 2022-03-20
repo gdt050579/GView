@@ -1345,6 +1345,13 @@ struct source_version_command
     uint64_t version;    // A.B.C.D.E packed as a24.b10.c10.d10.e10
 };
 
+struct uuid_command
+{
+    LoadCommandType cmd; /* UUID */
+    uint32_t cmdsize;
+    uint8_t uuid[16];
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1425,6 +1432,12 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::source_version_command svc;
     };
 
+    struct UUID
+    {
+        bool isSet = false;
+        MAC::uuid_command value;
+    };
+
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
@@ -1436,6 +1449,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     DySymTab dySymTab;
     Main main;
     SourceVersion sourceVersion;
+    UUID uuid;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1470,6 +1484,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD
     bool SetSymbols(uint64_t& offset);
     bool SetSourceVersion(uint64_t& offset);
+    bool SetUUID(uint64_t& offset);
 };
 
 namespace Panels
@@ -1482,6 +1497,7 @@ namespace Panels
         void UpdateBasicInfo();
         void UpdateEntryPoint();
         void UpdateSourceVersion();
+        void UpdateUUID();
         void RecomputePanelsPositions();
 
       public:

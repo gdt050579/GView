@@ -134,6 +134,68 @@ void Information::UpdateSourceVersion()
     general->AddItem("Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()));
 }
 
+void Information::UpdateUUID()
+{
+    CHECKRET(machO->uuid.isSet, "");
+
+    LocalString<1024> ls;
+    LocalString<1024> ls2;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+    general->SetItemType(general->AddItem("UUID"), ListViewItemType::Category);
+
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid.value.cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid.value.cmd), hex);
+    general->AddItem("Command", ls.Format("%-35s (%s)", lcName.data(), hexCommand.data()));
+
+    const auto cmdSize    = nf.ToString(machO->uuid.value.cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->uuid.value.cmdsize), hex);
+    general->AddItem("Cmd Size", ls.Format("%-35s (%s)", cmdSize.data(), hexCmdSize.data()));
+
+    const auto& uuid         = machO->uuid.value.uuid;
+    const auto uuidFormmated = ls.Format(
+          "%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x",
+          uuid[0],
+          uuid[1],
+          uuid[2],
+          uuid[3],
+          uuid[4],
+          uuid[5],
+          uuid[6],
+          uuid[7],
+          uuid[8],
+          uuid[9],
+          uuid[10],
+          uuid[11],
+          uuid[12],
+          uuid[13],
+          uuid[14],
+          uuid[15]);
+    const auto uuidHex = ls2.Format(
+          "0x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x",
+          uuid[0],
+          uuid[1],
+          uuid[2],
+          uuid[3],
+          uuid[4],
+          uuid[5],
+          uuid[6],
+          uuid[7],
+          uuid[8],
+          uuid[9],
+          uuid[10],
+          uuid[11],
+          uuid[12],
+          uuid[13],
+          uuid[14],
+          uuid[15]);
+    general->AddItem("UUID", ls.Format("%-35s (%s)", uuidFormmated.data(), uuidHex.data()));
+}
+
 void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
@@ -147,6 +209,7 @@ void Information::Update()
     UpdateBasicInfo();
     UpdateEntryPoint();
     UpdateSourceVersion();
+    UpdateUUID();
     RecomputePanelsPositions();
 }
 } // namespace GView::Type::MachO::Panels
