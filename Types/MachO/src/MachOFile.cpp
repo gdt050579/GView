@@ -41,6 +41,10 @@ bool MachOFile::Update()
     offset = commandsStartOffset;
     SetLinkEditData(offset);
 
+    SetCodeSignature();
+
+    SetVersionMin();
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
@@ -67,6 +71,11 @@ bool MachOFile::Update()
     if (dySymTab.isSet)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
+    }
+
+    if (codeSignature.isSet)
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::CodeSign);
     }
 
     return true;
@@ -653,6 +662,145 @@ bool MachOFile::SetLinkEditData(uint64_t& offset)
         }
 
         offset += lc.value.cmdsize;
+    }
+
+    return true;
+}
+
+bool MachOFile::SetCodeSignature()
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::CODE_SIGNATURE)
+        {
+            codeSignature.isSet = true;
+
+            CHECK(file->Copy<MAC::linkedit_data_command>(lc.offset, codeSignature.ledc), false, "");
+
+            if (shouldSwapEndianess)
+            {
+                codeSignature.ledc.cmd      = Utils::SwapEndian(codeSignature.ledc.cmd);
+                codeSignature.ledc.cmdsize  = Utils::SwapEndian(codeSignature.ledc.cmdsize);
+                codeSignature.ledc.dataoff  = Utils::SwapEndian(codeSignature.ledc.dataoff);
+                codeSignature.ledc.datasize = Utils::SwapEndian(codeSignature.ledc.datasize);
+            }
+
+            CHECK(file->Copy<MAC::CS_SuperBlob>(codeSignature.ledc.dataoff, codeSignature.superBlob), false, "");
+
+            // All fields are big endian (in case PPC ever makes a comeback)
+            codeSignature.superBlob.magic  = Utils::SwapEndian(codeSignature.superBlob.magic);
+            codeSignature.superBlob.length = Utils::SwapEndian(codeSignature.superBlob.length);
+            codeSignature.superBlob.count  = Utils::SwapEndian(codeSignature.superBlob.count);
+
+            const auto startBlobOffset = codeSignature.ledc.dataoff + sizeof(MAC::CS_SuperBlob);
+            auto currentBlobOffset     = startBlobOffset;
+            for (auto i = 0U; i < codeSignature.superBlob.count; i++)
+            {
+                MAC::CS_BlobIndex blob{};
+
+                CHECK(file->Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
+                blob.type   = Utils::SwapEndian(blob.type);
+                blob.offset = Utils::SwapEndian(blob.offset);
+
+                codeSignature.blobs.emplace_back(blob);
+
+                currentBlobOffset += sizeof(MAC::CS_BlobIndex);
+            }
+
+            for (const auto& blob : codeSignature.blobs)
+            {
+                switch (blob.type)
+                {
+                case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
+                {
+                    const auto csOffset = codeSignature.ledc.dataoff + blob.offset;
+                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature.codeDirectory), false, "");
+
+                    codeSignature.codeDirectory.magic         = Utils::SwapEndian(codeSignature.codeDirectory.magic);
+                    codeSignature.codeDirectory.length        = Utils::SwapEndian(codeSignature.codeDirectory.length);
+                    codeSignature.codeDirectory.version       = Utils::SwapEndian(codeSignature.codeDirectory.version);
+                    codeSignature.codeDirectory.flags         = Utils::SwapEndian(codeSignature.codeDirectory.flags);
+                    codeSignature.codeDirectory.hashOffset    = Utils::SwapEndian(codeSignature.codeDirectory.hashOffset);
+                    codeSignature.codeDirectory.identOffset   = Utils::SwapEndian(codeSignature.codeDirectory.identOffset);
+                    codeSignature.codeDirectory.nSpecialSlots = Utils::SwapEndian(codeSignature.codeDirectory.nSpecialSlots);
+                    codeSignature.codeDirectory.nCodeSlots    = Utils::SwapEndian(codeSignature.codeDirectory.nCodeSlots);
+                    codeSignature.codeDirectory.codeLimit     = Utils::SwapEndian(codeSignature.codeDirectory.codeLimit);
+                    codeSignature.codeDirectory.hashSize      = Utils::SwapEndian(codeSignature.codeDirectory.hashSize);
+                    codeSignature.codeDirectory.hashType      = Utils::SwapEndian(codeSignature.codeDirectory.hashType);
+                    codeSignature.codeDirectory.platform      = Utils::SwapEndian(codeSignature.codeDirectory.platform);
+                    codeSignature.codeDirectory.pageSize      = Utils::SwapEndian(codeSignature.codeDirectory.pageSize);
+                    codeSignature.codeDirectory.spare2        = Utils::SwapEndian(codeSignature.codeDirectory.spare2);
+                    codeSignature.codeDirectory.scatterOffset = Utils::SwapEndian(codeSignature.codeDirectory.scatterOffset);
+                    codeSignature.codeDirectory.teamOffset    = Utils::SwapEndian(codeSignature.codeDirectory.teamOffset);
+                    codeSignature.codeDirectory.spare3        = Utils::SwapEndian(codeSignature.codeDirectory.spare3);
+                    codeSignature.codeDirectory.codeLimit64   = Utils::SwapEndian(codeSignature.codeDirectory.codeLimit64);
+                    codeSignature.codeDirectory.execSegBase   = Utils::SwapEndian(codeSignature.codeDirectory.execSegBase);
+                    codeSignature.codeDirectory.execSegLimit  = Utils::SwapEndian(codeSignature.codeDirectory.execSegLimit);
+                    codeSignature.codeDirectory.execSegFlags  = Utils::SwapEndian(codeSignature.codeDirectory.execSegFlags);
+                }
+                break;
+                case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
+                    break;
+                case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
+                    break;
+                case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:
+                    break;
+                case MAC::CodeSignMagic::CSSLOT_APPLICATION:
+                    break;
+                case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
+                    break;
+
+                case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
+                    break;
+
+                case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
+                    break;
+                default:
+                    throw "Slot type not supported!";
+                }
+            }
+
+            // auto pageSize  = codeDirectory->pageSize ? (1U << codeDirectory->pageSize) : 0U;
+            // auto remaining = codeDirectory->codeLimit;
+            // auto processed = 0ULL;
+            // for (auto slot = 0U; slot < codeDirectory->nCodeSlots; slot++)
+            // {
+            //     const auto size = std::min<>(remaining, pageSize);
+            //     CHECK(ValidateSlot(b.GetData() + processed, size, slot, codeDirectory), false, "Failed validating slot [%u]!", slot);
+            //
+            //     processed += size;
+            //     remaining -= size;
+            // }
+        }
+    }
+
+    return true;
+}
+
+bool MachOFile::SetVersionMin()
+{
+    for (const auto& lc : loadCommands)
+    {
+        if (lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_IPHONEOS || lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_MACOSX ||
+            lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_TVOS || lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_WATCHOS)
+        {
+            if (versionMinCommand.isSet)
+            {
+                throw "Version min command already set!";
+            }
+
+            versionMinCommand.isSet = true;
+
+            CHECK(file->Copy<MAC::version_min_command>(lc.offset, versionMinCommand.vmc), false, "");
+
+            if (shouldSwapEndianess)
+            {
+                versionMinCommand.vmc.cmd     = Utils::SwapEndian(versionMinCommand.vmc.cmd);
+                versionMinCommand.vmc.cmdsize = Utils::SwapEndian(versionMinCommand.vmc.cmdsize);
+                versionMinCommand.vmc.version = Utils::SwapEndian(versionMinCommand.vmc.version);
+                versionMinCommand.vmc.sdk     = Utils::SwapEndian(versionMinCommand.vmc.sdk);
+            }
+        }
     }
 
     return true;
