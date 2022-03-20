@@ -335,7 +335,8 @@ enum class CPU_SUBTYPE_ARM : uint32_t
 enum class CPU_SUBTYPE_ARM64 : uint32_t
 {
     ALL = 0,
-    V8  = 1
+    V8  = 1,
+    E   = 2
 };
 
 /* https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/include/mach/machine.h
@@ -433,9 +434,12 @@ static const std::map<CPU_SUBTYPE_ARM, std::string_view> CpuSubtypeArmNames{
     GET_PAIR(CPU_SUBTYPE_ARM::V7EM)
 };
 
-static const std::map<CPU_SUBTYPE_ARM64, std::string_view> CpuSubtypeArm64Names{ GET_PAIR(CPU_SUBTYPE_ARM64::ALL),
-                                                                                 GET_PAIR(CPU_SUBTYPE_ARM64::ALL),
-                                                                                 GET_PAIR(CPU_SUBTYPE_ARM64::V8) };
+static const std::map<CPU_SUBTYPE_ARM64, std::string_view> CpuSubtypeArm64Names{
+    GET_PAIR(CPU_SUBTYPE_ARM64::ALL),
+    GET_PAIR(CPU_SUBTYPE_ARM64::ALL),
+    GET_PAIR(CPU_SUBTYPE_ARM64::V8),
+    GET_PAIR(CPU_SUBTYPE_ARM64::E),
+};
 
 static const std::map<CPU_SUBTYPE_MC88000, std::string_view> CpuSubtypeMC8800Names{ GET_PAIR(CPU_SUBTYPE_MC88000::ALL),
                                                                                     GET_PAIR(CPU_SUBTYPE_MC88000::_100),
@@ -497,7 +501,10 @@ static const std::string_view GetCPUSubtype(CPU_TYPE type, uint32_t subtype)
     case CPU_TYPE::ARM:
         return CpuSubtypeArmNames.at(static_cast<CPU_SUBTYPE_ARM>(subtype));
     case CPU_TYPE::ARM64:
-        return CpuSubtypeArm64Names.at(static_cast<CPU_SUBTYPE_ARM64>(subtype));
+    {
+        const auto s = subtype & ~static_cast<uint64_t>(CPU_SUBTYPE_COMPATIBILITY::LIB64);
+        return CpuSubtypeArm64Names.at(static_cast<CPU_SUBTYPE_ARM64>(s));
+    }
     case CPU_TYPE::MC88000:
         return CpuSubtypeMC8800Names.at(static_cast<CPU_SUBTYPE_MC88000>(subtype));
     case CPU_TYPE::SPARC:
