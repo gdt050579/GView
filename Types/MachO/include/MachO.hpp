@@ -150,6 +150,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::CS_SuperBlob superBlob;
         std::vector<MAC::CS_BlobIndex> blobs;
         MAC::CS_CodeDirectory codeDirectory;
+        std::vector<MAC::CS_CodeDirectory> alternateDirectories;
     };
 
     struct VersionMinCommand
@@ -352,6 +353,7 @@ namespace Panels
 
     class CodeSignMagic : public AppCUI::Controls::TabPage
     {
+      private:
         Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
@@ -362,6 +364,8 @@ namespace Panels
         void UpdateSuperBlob();
         void UpdateSlots();
         void UpdateBlobs();
+        void UpdateCodeDirectory(const MAC::CS_CodeDirectory& code);
+
         void RecomputePanelsPositions();
 
       public:

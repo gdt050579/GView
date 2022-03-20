@@ -755,6 +755,38 @@ bool MachOFile::SetCodeSignature()
 
                 case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
                     break;
+
+                case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
+                {
+                    const auto csOffset = codeSignature.ledc.dataoff + blob.offset;
+                    MAC::CS_CodeDirectory cd{};
+                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "");
+
+                    cd.magic         = Utils::SwapEndian(cd.magic);
+                    cd.length        = Utils::SwapEndian(cd.length);
+                    cd.version       = Utils::SwapEndian(cd.version);
+                    cd.flags         = Utils::SwapEndian(cd.flags);
+                    cd.hashOffset    = Utils::SwapEndian(cd.hashOffset);
+                    cd.identOffset   = Utils::SwapEndian(cd.identOffset);
+                    cd.nSpecialSlots = Utils::SwapEndian(cd.nSpecialSlots);
+                    cd.nCodeSlots    = Utils::SwapEndian(cd.nCodeSlots);
+                    cd.codeLimit     = Utils::SwapEndian(cd.codeLimit);
+                    cd.hashSize      = Utils::SwapEndian(cd.hashSize);
+                    cd.hashType      = Utils::SwapEndian(cd.hashType);
+                    cd.platform      = Utils::SwapEndian(cd.platform);
+                    cd.pageSize      = Utils::SwapEndian(cd.pageSize);
+                    cd.spare2        = Utils::SwapEndian(cd.spare2);
+                    cd.scatterOffset = Utils::SwapEndian(cd.scatterOffset);
+                    cd.teamOffset    = Utils::SwapEndian(cd.teamOffset);
+                    cd.spare3        = Utils::SwapEndian(cd.spare3);
+                    cd.codeLimit64   = Utils::SwapEndian(cd.codeLimit64);
+                    cd.execSegBase   = Utils::SwapEndian(cd.execSegBase);
+                    cd.execSegLimit  = Utils::SwapEndian(cd.execSegLimit);
+                    cd.execSegFlags  = Utils::SwapEndian(cd.execSegFlags);
+
+                    codeSignature.alternateDirectories.emplace_back(cd);
+                }
+                break;
                 default:
                     throw "Slot type not supported!";
                 }

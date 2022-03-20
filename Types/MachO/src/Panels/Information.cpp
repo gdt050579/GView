@@ -23,7 +23,7 @@ void Information::UpdateBasicInfo()
     static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
     static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    general->SetItemType(general->AddItem("Basic Info"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Info"), ListViewItemType::Category);
 
     general->AddItem("File", "NOT IMPLEMENTED");
 
@@ -62,7 +62,7 @@ void Information::UpdateBasicInfo()
         const auto flagName        = MAC::MachHeaderFlagsNames.at(flag).data();
         const auto flagDescription = MAC::MachHeaderFlagsDescriptions.at(flag).data();
 
-        const auto fh = general->AddItem("", ls.Format("%-14s %-12s %s", flagName, hfls.GetText(), flagDescription));
+        const auto fh = general->AddItem("", ls.Format("%-20s %-12s %s", flagName, hfls.GetText(), flagDescription));
         general->SetItemType(fh, ListViewItemType::Emphasized_2);
     }
 
