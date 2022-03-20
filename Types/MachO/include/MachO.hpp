@@ -1248,7 +1248,7 @@ enum class N_DESC_BIT_TYPE
     REF_TO_WEAK   = 0x0080, /* reference to a weak symbol */
     ARM_THUMB_DEF = 0x0008, /* symbol is a Thumb function (ARM) */
     /* The N_SYMBOL_RESOLVER bit of the n_desc field indicates that the that the function is actually a resolver function and should be
-       called to get the address of the real function to use. * This bit is only available in .o files (MH_OBJECT filetype) */
+       called to get the address of the real function to use. This bit is only available in .o files (MH_OBJECT filetype) */
     SYMBOL_RESOLVER = 0x0100,
     /* The N_ALT_ENTRY bit of the n_desc field indicates that the symbol is pinned to the previous content. */
     ALT_ENTRY = 0x0200
@@ -1352,6 +1352,15 @@ struct uuid_command
     uint8_t uuid[16];
 };
 
+struct linkedit_data_command
+{
+    LoadCommandType cmd; // LC_CODE_SIGNATURE, LC_SEGMENT_SPLIT_INFO, LC_FUNCTION_STARTS, LC_DATA_IN_CODE, LC_DYLIB_CODE_SIGN_DRS,
+                         // LC_LINKER_OPTIMIZATION_HINT, LC_DYLD_EXPORTS_TRIE, LC_DYLD_CHAINED_FIXUPS
+    uint32_t cmdsize;    // Sizeof(struct linkedit_data_command).
+    uint32_t dataoff;    // File offset of data in __LINKEDIT segment.
+    uint32_t datasize;   // File size of data in __LINKEDIT segment.
+};
+
 } // namespace GView::Type::MachO::MAC
 
 namespace GView::Type::MachO
@@ -1450,6 +1459,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     Main main;
     SourceVersion sourceVersion;
     UUID uuid;
+    std::vector<MAC::linkedit_data_command> linkEditDatas;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -1485,6 +1495,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetSymbols(uint64_t& offset);
     bool SetSourceVersion(uint64_t& offset);
     bool SetUUID(uint64_t& offset);
+    bool SetLinkEditData(uint64_t& offset);
 };
 
 namespace Panels

@@ -12,7 +12,7 @@ enum class Action : int32_t
     ChangeBase = 4
 };
 
-Dylib::Dylib(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("D&ylib")
+Dylib::Dylib(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("D&ylibs")
 {
     machO = _machO;
     win   = _win;

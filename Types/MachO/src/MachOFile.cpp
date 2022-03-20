@@ -38,6 +38,9 @@ bool MachOFile::Update()
     offset = commandsStartOffset;
     SetUUID(offset);
 
+    offset = commandsStartOffset;
+    SetLinkEditData(offset);
+
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
@@ -574,6 +577,8 @@ bool MachOFile::SetSourceVersion(uint64_t& offset)
                 throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
             }
         }
+
+        offset += lc.value.cmdsize;
     }
 
     return true;
@@ -606,6 +611,48 @@ bool MachOFile::SetUUID(uint64_t& offset)
                 throw "Multiple LoadCommandType::UUID found! Reimplement this!";
             }
         }
+
+        offset += lc.value.cmdsize;
+    }
+
+    return true;
+}
+
+bool MachOFile::SetLinkEditData(uint64_t& offset)
+{
+    for (const auto& lc : loadCommands)
+    {
+        switch (lc.value.cmd)
+        {
+        case MAC::LoadCommandType::CODE_SIGNATURE:
+        case MAC::LoadCommandType::SEGMENT_SPLIT_INFO:
+        case MAC::LoadCommandType::FUNCTION_STARTS:
+        case MAC::LoadCommandType::DATA_IN_CODE:
+        case MAC::LoadCommandType::DYLIB_CODE_SIGN_DRS:
+        case MAC::LoadCommandType::LINKER_OPTIMIZATION_HINT:
+        case MAC::LoadCommandType::DYLD_EXPORTS_TRIE:
+        case MAC::LoadCommandType::DYLD_CHAINED_FIXUPS:
+        {
+            MAC::linkedit_data_command ledc{};
+            CHECK(file->Copy<MAC::linkedit_data_command>(offset, ledc), false, "");
+
+            if (shouldSwapEndianess)
+            {
+                ledc.cmd      = Utils::SwapEndian(ledc.cmd);
+                ledc.cmdsize  = Utils::SwapEndian(ledc.cmdsize);
+                ledc.dataoff  = Utils::SwapEndian(ledc.dataoff);
+                ledc.datasize = Utils::SwapEndian(ledc.datasize);
+            }
+
+            linkEditDatas.emplace_back(ledc);
+        }
+
+        break;
+        default:
+            break;
+        }
+
+        offset += lc.value.cmdsize;
     }
 
     return true;

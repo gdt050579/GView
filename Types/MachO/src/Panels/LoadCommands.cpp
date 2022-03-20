@@ -12,7 +12,7 @@ enum class Action : int32_t
     ChangeBase = 4
 };
 
-LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("&LoadCommands")
+LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("&Commands")
 {
     machO = _machO;
     win   = _win;
@@ -52,27 +52,24 @@ void Panels::LoadCommands::SelectCurrentSection()
 
 void Panels::LoadCommands::Update()
 {
-    LocalString<128> temp;
-    NumericFormatter n;
+    LocalString<128> ls;
+    NumericFormatter nf;
     list->DeleteAllItems();
 
     uint32_t i = 0;
     for (const auto& lc : machO->loadCommands)
     {
-        temp.Format("#%lu", i);
-        auto item = list->AddItem(temp); // index
-
+        const auto item = list->AddItem(ls.Format("#%lu", i));
         list->SetItemData<MachOFile::LoadCommand>(item, const_cast<MachOFile::LoadCommand*>(&lc));
 
-        list->SetItemText(
-              item,
-              1,
-              temp.Format(
-                    "%s (%s)",
-                    std::string(MAC::LoadCommandNames.at(lc.value.cmd)).c_str(),
-                    GetValue(n, static_cast<uint32_t>(lc.value.cmd)).data()));
-        list->SetItemText(item, 2, GetValue(n, lc.offset));
-        list->SetItemText(item, 3, GetValue(n, lc.value.cmdsize));
+        const auto& lcName     = MAC::LoadCommandNames.at(lc.value.cmd);
+        const auto& lcHexValue = GetValue(nf, static_cast<uint32_t>(lc.value.cmd));
+        list->SetItemText(item, 1, ls.Format("%s (%s)", lcName.data(), lcHexValue.data()));
+
+        list->SetItemText(item, 2, GetValue(nf, lc.offset));
+
+        list->SetItemText(item, 3, GetValue(nf, lc.value.cmdsize));
+
         list->SetItemText(item, 4, MAC::LoadCommandDescriptions.at(lc.value.cmd));
 
         i++;
