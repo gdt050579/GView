@@ -1329,8 +1329,7 @@ namespace Panels
         Sections     = 0x3,
         DyldInfo     = 0x4,
         Dylib        = 0x5,
-        Main         = 0x6,
-        DySymTab     = 0x7
+        DySymTab     = 0x6
     };
 };
 
@@ -1442,7 +1441,8 @@ namespace Panels
         Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
-        void UpdateGeneralInformation();
+        void UpdateBasicInfo();
+        void UpdateEntryPoint();
         void RecomputePanelsPositions();
 
       public:
@@ -1517,7 +1517,7 @@ namespace Panels
         Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
-        void UpdateGeneralInformation();
+        void UpdateBasicInfo();
         void RecomputePanelsPositions();
 
       public:
@@ -1547,24 +1547,6 @@ namespace Panels
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
-    };
-
-    class Main : public AppCUI::Controls::TabPage
-    {
-        Reference<MachOFile> machO;
-        Reference<AppCUI::Controls::ListView> general;
-
-        void UpdateGeneralInformation();
-        void RecomputePanelsPositions();
-
-      public:
-        Main(Reference<MachOFile> machO);
-
-        void Update();
-        virtual void OnAfterResize(int newWidth, int newHeight) override
-        {
-            RecomputePanelsPositions();
-        }
     };
 
     class SymTab : public AppCUI::Controls::TabPage

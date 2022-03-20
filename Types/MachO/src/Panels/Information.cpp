@@ -8,59 +8,98 @@ Information::Information(Reference<MachOFile> _machO) : TabPage("Informa&Tion")
 {
     machO   = _machO;
     general = CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    general->AddColumn("Field", TextAlignament::Left, 12);
-    general->AddColumn("Value", TextAlignament::Left, 100);
+    general->AddColumn("Key", TextAlignament::Left, 16);
+    general->AddColumn("Value", TextAlignament::Left, 48);
 
     Update();
 }
 
-void Information::UpdateGeneralInformation()
+void Information::UpdateBasicInfo()
 {
-    general->DeleteAllItems();
+    LocalString<1024> ls;
+    NumericFormatter nf;
+    NumericFormatter nf2;
 
-    const ItemHandle item = general->AddItem("MachO Info");
-    general->SetItemType(item, ListViewItemType::Category);
+    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    LocalString<256> tmp;
-    NumericFormatter n;
+    general->SetItemType(general->AddItem("Basic Info"), ListViewItemType::Category);
+
     general->AddItem("File", "NOT IMPLEMENTED");
-    general->AddItem(
-          "Size",
-          tmp.Format(
-                "%s (%s)",
-                n.ToString(machO->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data(),
-                std::string(n.ToString(machO->file->GetSize(), { NumericFormatFlags::HexPrefix, 16 }).data()).c_str()));
+
+    const auto fileSize    = nf.ToString(machO->file->GetSize(), dec);
+    const auto hexfileSize = nf2.ToString(machO->file->GetSize(), hex);
+    general->AddItem("Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()));
 
     const auto& info = MAC::GetArchInfoFromCPUTypeAndSubtype(machO->header.cputype, machO->header.cpusubtype);
 
     general->AddItem("Byte Order", MAC::ByteOrderNames.at(info.byteorder));
-    general->AddItem("Magic", tmp.Format("%s (0x%X)", machO->is64 ? "MH_MAGIC_64" : "MH_MAGIC", machO->header.magic));
-    general->AddItem("CPU Type", tmp.Format("%.*s (0x%X)", info.name.size(), info.name.data(), machO->header.cputype));
-    general->AddItem("CPU Subtype", tmp.Format("%.*s (0x%X)", info.description.size(), info.description.data(), machO->header.cpusubtype));
+
+    general->AddItem("Magic", ls.Format("%-14s (0x%X)", machO->is64 ? "MH_MAGIC_64" : "MH_MAGIC", machO->header.magic));
+
+    general->AddItem("CPU Type", ls.Format("%-14s (0x%X)", info.name.c_str(), machO->header.cputype));
+
+    general->AddItem("CPU Subtype", ls.Format("%-14s (0x%X)", info.description.c_str(), machO->header.cpusubtype));
+
     const auto& fileTypeName = MAC::FileTypeNames.at(machO->header.filetype);
-    general->AddItem("File Type", tmp.Format("%.*s (0x%X)", fileTypeName.size(), fileTypeName.data(), machO->header.filetype));
-    general->AddItem("Load Commands", tmp.Format("%u (0x%X)", machO->header.ncmds, machO->header.ncmds));
-    general->AddItem(
-          "Size of Commands",
-          tmp.Format(
-                "%s (%s)",
-                n.ToString(machO->header.sizeofcmds, { NumericFormatFlags::HexPrefix, 10, 3, ',' }).data(),
-                std::string(n.ToString(machO->header.sizeofcmds, { NumericFormatFlags::HexPrefix, 16 }).data()).c_str()));
-    general->AddItem("Flags", tmp.Format("%u (0x%X)", machO->header.flags, machO->header.flags));
+    auto ftHandle            = general->AddItem("File Type", ls.Format("%-14s (0x%X)", fileTypeName.data(), machO->header.filetype));
+    general->SetItemType(ftHandle, ListViewItemType::Emphasized_1);
+
+    general->AddItem("Load Commands", ls.Format("%-14s (0x%X)", nf.ToString(machO->header.ncmds, dec).data(), machO->header.ncmds));
+
+    const auto sizeOfCommands = nf.ToString(machO->header.sizeofcmds, dec);
+    const auto sizeOfHex      = nf2.ToString(machO->header.sizeofcmds, hex);
+    general->AddItem("Size of Commands", ls.Format("%-14s (%s)", sizeOfCommands.data(), sizeOfHex.data()));
+
+    general->AddItem("Flags", ls.Format("%-14s (0x%X)", nf.ToString(machO->header.flags, dec).data(), machO->header.flags));
 
     const auto flags = MAC::GetMachHeaderFlagsData(machO->header.flags);
     for (const auto& flag : flags)
     {
-        general->AddItem(
-              "",
-              tmp.Format(
-                    "%s (0x%X) %s", MAC::MachHeaderFlagsNames.at(flag).data(), flag, MAC::MachHeaderFlagsDescriptions.at(flag).data()));
+        LocalString<16> hfls;
+        hfls.Format("(0x%X)", flag);
+
+        const auto flagName        = MAC::MachHeaderFlagsNames.at(flag).data();
+        const auto flagDescription = MAC::MachHeaderFlagsDescriptions.at(flag).data();
+
+        const auto fh = general->AddItem("", ls.Format("%-14s %-12s %s", flagName, hfls.GetText(), flagDescription));
+        general->SetItemType(fh, ListViewItemType::Emphasized_2);
     }
 
     if (machO->is64)
     {
-        general->AddItem("Reserved", tmp.Format("%u (0x%X)", machO->header.reserved, machO->header.reserved));
+        general->AddItem("Reserved", ls.Format("%-14s (0x%X)", nf.ToString(machO->header.reserved, dec).data(), machO->header.reserved));
     }
+}
+
+void Information::UpdateEntryPoint()
+{
+    CHECKRET(machO->main.isSet, "");
+
+    LocalString<1024> ls;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+    general->SetItemType(general->AddItem("Entry Point"), ListViewItemType::Category);
+
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->main.ep.cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->main.ep.cmd), hex);
+    general->AddItem("Command", ls.Format("%-14s (%s)", lcName.data(), hexCommand.data()));
+
+    const auto cmdSize    = nf.ToString(machO->main.ep.cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->main.ep.cmdsize), hex);
+    general->AddItem("Cmd Size", ls.Format("%-14s (%s)", cmdSize.data(), hexCmdSize.data()));
+
+    const auto epOffset    = nf.ToString(machO->main.ep.entryoff, dec);
+    const auto epOffsetHex = nf2.ToString(machO->main.ep.entryoff, hex);
+    general->AddItem("EP offset", ls.Format("%-14s (%s)", epOffset.data(), epOffsetHex.data()));
+
+    const auto stackSize    = nf.ToString(machO->main.ep.stacksize, dec);
+    const auto stackSizeHex = nf2.ToString(machO->main.ep.stacksize, hex);
+    general->AddItem("Stack Size", ls.Format("%-14s (%s)", stackSize.data(), stackSizeHex.data()));
 }
 
 void Information::RecomputePanelsPositions()
@@ -71,7 +110,10 @@ void Information::RecomputePanelsPositions()
 
 void Information::Update()
 {
-    UpdateGeneralInformation();
+    general->DeleteAllItems();
+
+    UpdateBasicInfo();
+    UpdateEntryPoint();
     RecomputePanelsPositions();
 }
 } // namespace GView::Type::MachO::Panels

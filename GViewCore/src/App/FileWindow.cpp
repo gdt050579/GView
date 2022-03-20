@@ -38,7 +38,7 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     vertical   = horizontal->CreateChildControl<Splitter>("d:c", SplitterFlags::Vertical | SplitterFlags::AutoCollapsePanel2);
     horizontal->SetPanel2Bounderies(1); // minim size (1 line)
     horizontal->SetSecondPanelSize(1);
-    vertical->SetDefaultPanelSize(30); // default panel upon extension
+    vertical->SetDefaultPanelSize(64); // default panel upon extension
     horizontal->SetDefaultPanelSize(10); // default h-splitter size upon extension
 
     // create tabs

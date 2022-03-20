@@ -14,7 +14,7 @@ DyldInfo::DyldInfo(Reference<MachOFile> _machO) : TabPage("&DyldInfo")
     Update();
 }
 
-void DyldInfo::UpdateGeneralInformation()
+void DyldInfo::UpdateBasicInfo()
 {
     ItemHandle item;
     LocalString<256> tmp;
@@ -110,7 +110,7 @@ void DyldInfo::RecomputePanelsPositions()
 
 void DyldInfo::Update()
 {
-    UpdateGeneralInformation();
+    UpdateBasicInfo();
     RecomputePanelsPositions();
 }
 } // namespace GView::Type::MachO::Panels

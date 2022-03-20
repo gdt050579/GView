@@ -55,11 +55,6 @@ bool MachOFile::Update()
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
     }
 
-    if (main.isSet)
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Main);
-    }
-
     if (dySymTab.isSet)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
