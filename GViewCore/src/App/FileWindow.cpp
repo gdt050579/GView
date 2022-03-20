@@ -42,10 +42,9 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     horizontal->SetDefaultPanelSize(10); // default h-splitter size upon extension
 
     // create tabs
-    view                      = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
-    verticalPanels            = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
-    horizontalPanels          = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
-
+    view             = vertical->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
+    verticalPanels   = vertical->CreateChildControl<Tab>("d:c", TabFlags::ListView | TabFlags::TransparentBackground, 16);
+    horizontalPanels = horizontal->CreateChildControl<Tab>("d:c", TabFlags::HideTabs | TabFlags::TransparentBackground, 16);
 
     // CursorInformation
     horizontalPanels->CreateChildControl<CursorInformation>(this);
@@ -141,39 +140,13 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     }
     return false;
 }
-void FileWindow::UpdateDefaultPanelsSizes(Reference<Splitter> splitter)
-{
-    return;
-    // logic is as follows
-    // horizontal|vertical view are only updated when those panels are resized and have the focus
-    if ((!horizontalPanels.IsValid()) || (!verticalPanels.IsValid()))
-        return;
-    // if the resized is done when the view is active, only the cursor size is stored
-    if (view->HasFocus())
-    {
-        if (splitter == horizontal)
-        {
-            defaultCursorViewSize = horizontal->GetSecondPanelSize();
-        }
-    }
-    else
-    {
-        if (verticalPanels->HasFocus())
-        {
-            defaultHorizontalPanelsSize = vertical->GetSecondPanelSize();
-        }
-        if (horizontalPanels->HasFocus())
-        {
-            defaultVerticalPanelsSize = horizontal->GetSecondPanelSize();
-        }
-    }
-}
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 {
     if (Window::OnEvent(ctrl, eventType, ID))
         return true;
-    if (eventType == Event::Command)
+    switch (eventType)
     {
+    case Event::Command:
         if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
         {
             FileWindowProperties dlg(view);
@@ -191,36 +164,19 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             horizontalPanels->SetFocus();
             return true;
         }
-    }
-    if (eventType == Event::SplitterPositionChanged)
-    {
-        UpdateDefaultPanelsSizes(ctrl.ToObjectRef<Splitter>());
+        break;
+    case Event::SplitterPanelAutoCollapsed:
+        if (ctrl == horizontal)
+        {
+            horizontalPanels->SetCurrentTabPageByIndex(0);
+            this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft).SetItemCheck(cursorInfoHandle, true);
+        }
         return true;
     }
+
     return false;
 }
-//void FileWindow::OnFocus(Reference<Control> control)
-//{
-//    // if (control == view)
-//    //{
-//    //     // minimize vertical and horizontal panels
-//    //     if (vertical.IsValid())
-//    //         vertical->SetSecondPanelSize(0);
-//    //     if (horizontal.IsValid())
-//    //         horizontal->SetSecondPanelSize(defaultCursorViewSize);
-//    //     horizontalPanels->SetCurrentTabPageByIndex(0); // force cursor information show when
-//    //     this->GetControlBar(WindowControlsBarLayout::BottomBarFromLeft).SetItemCheck(cursorInfoHandle, true);
-//    //     // test
-//    // }
-//    // if (control == verticalPanels)
-//    //{
-//    //     vertical->SetSecondPanelSize(defaultHorizontalPanelsSize);
-//    // }
-//    // if (control == horizontalPanels)
-//    //{
-//    //     horizontal->SetSecondPanelSize(defaultVerticalPanelsSize);
-//    // }
-//}
+
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(

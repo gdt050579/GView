@@ -237,8 +237,6 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
 
-        void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
-
       public:
         FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> gviewApp);
 
