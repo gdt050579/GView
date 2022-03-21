@@ -709,11 +709,12 @@ bool MachOFile::SetCodeSignature()
 
             for (const auto& blob : codeSignature.blobs)
             {
+                const auto csOffset = codeSignature.ledc.dataoff + blob.offset;
+
                 switch (blob.type)
                 {
                 case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
                 {
-                    const auto csOffset = codeSignature.ledc.dataoff + blob.offset;
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature.codeDirectory), false, "");
 
                     codeSignature.codeDirectory.magic         = Utils::SwapEndian(codeSignature.codeDirectory.magic);
@@ -742,13 +743,38 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
                     break;
                 case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
-                    break;
+                {
+                    CHECK(file->Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature.requirements.blob), false, "");
+
+                    codeSignature.requirements.blob.magic  = Utils::SwapEndian(codeSignature.requirements.blob.magic);
+                    codeSignature.requirements.blob.length = Utils::SwapEndian(codeSignature.requirements.blob.length);
+                    codeSignature.requirements.blob.data   = Utils::SwapEndian(codeSignature.requirements.blob.data);
+
+                    codeSignature.requirements.data = file->CopyToBuffer(
+                          csOffset + sizeof(MAC::CS_RequirementsBlob),
+                          codeSignature.requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
+
+                    // TODO: needs to parse requirements and translate them to human readable text...
+                    MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature.requirements.data.GetData();
+                    r->type                = Utils::SwapEndian(r->type);
+                    r->offset              = Utils::SwapEndian(r->offset);
+                    const auto c           = codeSignature.requirements.data.GetData() + sizeof(MAC::CS_Requirement) + r->offset + 4;
+                }
+                break;
                 case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:
                     break;
                 case MAC::CodeSignMagic::CSSLOT_APPLICATION:
                     break;
                 case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
-                    break;
+                {
+                    CHECK(file->Copy<MAC::CS_GenericBlob>(csOffset, codeSignature.entitlements.blob), false, "");
+
+                    codeSignature.entitlements.blob.magic  = Utils::SwapEndian(codeSignature.entitlements.blob.magic);
+                    codeSignature.entitlements.blob.length = Utils::SwapEndian(codeSignature.entitlements.blob.length);
+                    codeSignature.entitlements.data =
+                          file->CopyToBuffer(csOffset + sizeof(blob), codeSignature.entitlements.blob.length - sizeof(blob));
+                }
+                break;
 
                 case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
                     break;
@@ -758,7 +784,6 @@ bool MachOFile::SetCodeSignature()
 
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
                 {
-                    const auto csOffset = codeSignature.ledc.dataoff + blob.offset;
                     MAC::CS_CodeDirectory cd{};
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "");
 

@@ -151,6 +151,18 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         std::vector<MAC::CS_BlobIndex> blobs;
         MAC::CS_CodeDirectory codeDirectory;
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
+
+        struct
+        {
+            MAC::CS_RequirementsBlob blob;
+            Buffer data;
+        } requirements;
+
+        struct
+        {
+            MAC::CS_GenericBlob blob;
+            std::string data;
+        } entitlements;
     };
 
     struct VersionMinCommand

@@ -1580,7 +1580,7 @@ static const std::map<CodeSignMagic, std::string_view> CodeSignMagicNames{ GET_P
                                                                            GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_DETACHED_SIGNATURE),
                                                                            GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_BLOBWRAPPER) };
 
-static const std::map<CodeSignMagic, std::string_view> SlotNames{
+static const std::map<CodeSignMagic, std::string_view> CodeSignSlotNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_CODEDIRECTORY),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_INFOSLOT),
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_REQUIREMENTS),
@@ -1646,22 +1646,37 @@ struct CS_CodeDirectory
 
 struct CS_Blob
 {
-    uint32_t magic;  // magic number
-    uint32_t length; // total length of blob
+    CodeSignMagic magic; // magic number
+    uint32_t length;     // total length of blob
 };
 
 struct CS_GenericBlob
 {
-    uint32_t magic;  /* magic number */
-    uint32_t length; /* total length of blob */
-    // char data[]; // warning C4200: nonstandard extension used: zero-sized array in struct/union
+    CodeSignMagic magic; /* magic number */
+    uint32_t length;     /* total length of blob */
+    // char data[];
 };
 
 struct CS_RequirementsBlob
 {
-    uint32_t magic;  // magic number
-    uint32_t length; // total length of blob
-    uint32_t data;   // zero for dyld shared cache
+    CodeSignMagic magic; // magic number
+    uint32_t length;     // total length of blob
+    uint32_t data;       // zero for dyld shared cache
+};
+
+enum class CS_RequirementType : uint32_t
+{
+    Host       = 1, /* what hosts may run us */
+    Guest      = 2, /* what guests we may run */
+    Designated = 3, /* designated requirement */
+    Library    = 4, /* what libraries we may link against */
+    Plugin     = 5  /* what plug-ins we may load */
+};
+
+struct CS_Requirement
+{
+    CS_RequirementType type; // type of entry
+    uint32_t offset;         // offset of entry
 };
 
 struct CS_Scatter

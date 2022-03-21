@@ -77,7 +77,7 @@ void CodeSignMagic::UpdateSlots()
 
     for (const auto& blob : machO->codeSignature.blobs)
     {
-        const auto& slot   = MAC::SlotNames.at(blob.type);
+        const auto& slot   = MAC::CodeSignSlotNames.at(blob.type);
         const auto hexSlot = nf2.ToString(static_cast<uint32_t>(blob.type), hex);
         general->AddItem("Slot Type", ls.Format("%-32s (%s)", slot.data(), hexSlot.data()));
 
@@ -98,7 +98,7 @@ void CodeSignMagic::UpdateBlobs()
     auto alternateDirectoryCount = 0U;
     for (const auto& blob : machO->codeSignature.blobs)
     {
-        const auto& slot = MAC::SlotNames.at(blob.type);
+        const auto& slot = MAC::CodeSignSlotNames.at(blob.type);
         general->SetItemType(general->AddItem(slot.data()), ListViewItemType::Category);
 
         switch (blob.type)
@@ -109,12 +109,61 @@ void CodeSignMagic::UpdateBlobs()
             UpdateCodeDirectory(code);
         }
         break;
-
         case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
         {
             const auto& code = machO->codeSignature.alternateDirectories[alternateDirectoryCount];
             UpdateCodeDirectory(code);
             alternateDirectoryCount++;
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
+        {
+            const auto& r = machO->codeSignature.requirements.blob;
+
+            const auto& magic   = MAC::CodeSignMagicNames.at(r.magic);
+            const auto hexMagic = nf2.ToString(static_cast<uint32_t>(r.magic), hex);
+            general->AddItem("Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()));
+
+            const auto length    = nf.ToString(r.length, dec);
+            const auto hexLength = nf2.ToString(r.length, hex);
+            general->AddItem("Offset", ls.Format("%-26s (%s)", length.data(), hexLength.data()));
+
+            // const auto data    = nf.ToString(r.data, dec);
+            // const auto hexData = nf2.ToString(r.data, hex);
+            // general->AddItem("Data", ls.Format("%-26s (%s)", data.data(), hexData.data()));
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
+        {
+            const auto& b = machO->codeSignature.entitlements.blob;
+
+            const auto& magic   = MAC::CodeSignMagicNames.at(b.magic);
+            const auto hexMagic = nf2.ToString(static_cast<uint32_t>(b.magic), hex);
+            general->AddItem("Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()));
+
+            const auto length    = nf.ToString(blob.offset, dec);
+            const auto hexLength = nf2.ToString(blob.offset, hex);
+            general->AddItem("Offset", ls.Format("%-26s (%s)", length.data(), hexLength.data()));
+
+            const auto& data       = machO->codeSignature.entitlements.data;
+            const auto dataSize    = nf.ToString(data.size(), dec);
+            const auto hexDataSize = nf2.ToString(data.size(), hex);
+            general->AddItem("Data", ls.Format("%-26s (%s)", dataSize.data(), hexDataSize.data()));
+
+            std::vector<std::string> lines;
+            auto pos  = 0ULL;
+            auto prev = 0ULL;
+            while ((pos = data.find("\n", prev)) != std::string::npos)
+            {
+                lines.push_back(data.substr(prev, pos - prev));
+                prev = pos + 1;
+            }
+            lines.push_back(data.substr(prev));
+
+            for (auto i = 0U; i < lines.size(); i++)
+            {
+                general->AddItem("", ls.Format("%s", lines[i].c_str()));
+            }
         }
         break;
         default:
@@ -131,7 +180,7 @@ void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
 
     const auto& magic   = MAC::CodeSignMagicNames.at(code.magic);
     const auto hexMagic = nf2.ToString(static_cast<uint32_t>(code.magic), hex);
-    general->AddItem("Type", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()));
+    general->AddItem("Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()));
 
     const auto length    = nf.ToString(code.length, dec);
     const auto hexLength = nf2.ToString(code.length, hex);
