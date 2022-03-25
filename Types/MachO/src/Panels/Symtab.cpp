@@ -87,30 +87,19 @@ void SymTab::Update()
 
         if (machO->is64)
         {
-            auto nl = reinterpret_cast<MAC::nlist_64*>(machO->dySymTab.symbolTable.get())[i];
-
-            if (machO->shouldSwapEndianess)
-            {
-                nl.n_un.n_strx = Utils::SwapEndian(nl.n_un.n_strx);
-                nl.n_desc      = Utils::SwapEndian(nl.n_desc);
-                nl.n_sect      = Utils::SwapEndian(nl.n_sect);
-                nl.n_type      = Utils::SwapEndian(nl.n_type);
-                nl.n_value     = Utils::SwapEndian(nl.n_value);
-            }
-
-            list->SetItemText(item, 1, machO->dySymTab.stringTable.get() + nl.n_un.n_strx);
+            list->SetItemText(item, 1, machO->dySymTab.symbolsDemangled[i]);
 
             std::string _1s;
             std::string _2s;
 
-            const auto _1 = (nl.n_type & (uint32_t) MAC::N_TYPE::TYPE);
-            if (_1 == 1)
+            auto nl = reinterpret_cast<MAC::nlist_64*>(machO->dySymTab.symbolTable.get())[i];
+            if ((nl.n_type & (uint32_t) MAC::N_TYPE::TYPE) == 1)
             {
-                _1s = MAC::NTypeNames.at((MAC::N_TYPE) _1);
+                _1s = MAC::NTypeNames.at((MAC::N_TYPE)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE));
             }
             else
             {
-                _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS) _1);
+                _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE));
             }
 
             if (nl.n_type & (uint32_t) MAC::N_TYPE::STAB)
@@ -189,7 +178,7 @@ void SymTab::Update()
                 break;
             }
 
-            if ((MAC::N_TYPE_BITS) _1 == MAC::N_TYPE_BITS::INDR)
+            if ((MAC::N_TYPE_BITS)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE) == MAC::N_TYPE_BITS::INDR)
             {
                 /*
                  TODO:
@@ -206,30 +195,19 @@ void SymTab::Update()
         }
         else
         {
-            auto nl = reinterpret_cast<MAC::nlist*>(machO->dySymTab.symbolTable.get())[i];
-
-            if (machO->shouldSwapEndianess)
-            {
-                nl.n_un.n_strx = Utils::SwapEndian(nl.n_un.n_strx);
-                nl.n_desc      = Utils::SwapEndian(nl.n_desc);
-                nl.n_sect      = Utils::SwapEndian(nl.n_sect);
-                nl.n_type      = Utils::SwapEndian(nl.n_type);
-                nl.n_value     = Utils::SwapEndian(nl.n_value);
-            }
-
-            list->SetItemText(item, 1, machO->dySymTab.stringTable.get() + nl.n_un.n_strx);
+            list->SetItemText(item, 1, machO->dySymTab.symbolsDemangled[i]);
 
             std::string _1s;
             std::string _2s;
 
-            const auto _1 = (nl.n_type & (uint32_t) MAC::N_TYPE::TYPE);
-            if (_1 == 1)
+            auto nl = reinterpret_cast<MAC::nlist*>(machO->dySymTab.symbolTable.get())[i];
+            if ((nl.n_type & (uint32_t) MAC::N_TYPE::TYPE) == 1)
             {
-                _1s = MAC::NTypeNames.at((MAC::N_TYPE) _1);
+                _1s = MAC::NTypeNames.at((MAC::N_TYPE)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE));
             }
             else
             {
-                _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS) _1);
+                _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE));
             }
 
             if (nl.n_type & (uint32_t) MAC::N_TYPE::STAB)
@@ -308,7 +286,7 @@ void SymTab::Update()
                 break;
             }
 
-            if ((MAC::N_TYPE_BITS) _1 == MAC::N_TYPE_BITS::INDR)
+            if (((MAC::N_TYPE_BITS)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE)) == MAC::N_TYPE_BITS::INDR)
             {
                 /*
                  TODO:

@@ -129,6 +129,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         std::unique_ptr<char[]> symbolTable;
         std::unique_ptr<char[]> stringTable;
         bool isSet = false;
+        std::vector<std::string> symbolsDemangled;
     };
 
     struct SourceVersion

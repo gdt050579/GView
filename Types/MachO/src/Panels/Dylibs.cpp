@@ -91,8 +91,9 @@ void Dylib::Update()
         }
 
         const auto timestamp = (time_t) d.value.dylib.timestamp;
-
-        list->SetItemText(item, 4, tmp.Format("%s (%s)", ctime(&timestamp), GetValue(n, d.value.dylib.timestamp).data()));
+        char timestampBuffer[100]{ 0 };
+        ctime_s(timestampBuffer, 100, &timestamp);
+        list->SetItemText(item, 4, tmp.Format("%s (%s)", timestampBuffer, GetValue(n, d.value.dylib.timestamp).data()));
         list->SetItemText(
               item,
               5,

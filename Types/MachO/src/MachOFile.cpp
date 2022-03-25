@@ -555,6 +555,57 @@ bool MachOFile::SetSymbols(uint64_t& offset)
                 memcpy(dySymTab.symbolTable.get(), (char*) buffer.GetData(), dySymTab.sc.nsyms * sizeof(MAC::nlist));
             }
 
+            if (is64)
+            {
+                for (auto i = 0U; i < dySymTab.sc.nsyms; i++)
+                {
+                    auto nl = reinterpret_cast<MAC::nlist_64*>(dySymTab.symbolTable.get())[i];
+
+                    if (shouldSwapEndianess)
+                    {
+                        nl.n_un.n_strx = Utils::SwapEndian(nl.n_un.n_strx);
+                        nl.n_desc      = Utils::SwapEndian(nl.n_desc);
+                        nl.n_sect      = Utils::SwapEndian(nl.n_sect);
+                        nl.n_type      = Utils::SwapEndian(nl.n_type);
+                        nl.n_value     = Utils::SwapEndian(nl.n_value);
+                    }
+
+                    const auto str = dySymTab.stringTable.get() + nl.n_un.n_strx;
+                    String demangled;
+                    if (GView::Utils::Demangle(str, demangled) == false)
+                    {
+                        demangled = str;
+                    }
+
+                    dySymTab.symbolsDemangled.push_back(demangled.GetText());
+                }
+            }
+            else
+            {
+                for (auto i = 0U; i < dySymTab.sc.nsyms; i++)
+                {
+                    auto nl = reinterpret_cast<MAC::nlist*>(dySymTab.symbolTable.get())[i];
+
+                    if (shouldSwapEndianess)
+                    {
+                        nl.n_un.n_strx = Utils::SwapEndian(nl.n_un.n_strx);
+                        nl.n_desc      = Utils::SwapEndian(nl.n_desc);
+                        nl.n_sect      = Utils::SwapEndian(nl.n_sect);
+                        nl.n_type      = Utils::SwapEndian(nl.n_type);
+                        nl.n_value     = Utils::SwapEndian(nl.n_value);
+                    }
+
+                    const auto str = dySymTab.stringTable.get() + nl.n_un.n_strx;
+                    String demangled;
+                    if (GView::Utils::Demangle(str, demangled) == false)
+                    {
+                        demangled = str;
+                    }
+
+                    dySymTab.symbolsDemangled.push_back(demangled.GetText());
+                }
+            }
+
             dySymTab.isSet = true;
         }
         offset += lc.value.cmdsize;
