@@ -255,7 +255,7 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DissamblyLanguage : uint32
+        enum class DissasemblyLanguage : uint32
         {
             Default,
             x86,
@@ -284,9 +284,8 @@ namespace View
         {
             void* data;
 
-            void SetDefaultDissasemblyLanguage(DissamblyLanguage lang);
-            void ReserverZonesCapacity(uint32 reserved_size);
-            void AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang = DissamblyLanguage::Default);
+            void SetDefaultDissasemblyLanguage(DissasemblyLanguage lang);
+            void AddDissasemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang = DissasemblyLanguage::Default);
 
             void AddMemmoryMapping(uint64 address, std::string_view name);
 
@@ -319,6 +318,7 @@ namespace View
             Settings();
         };
     }; // namespace DissasmViewer
+
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                      = 0;
