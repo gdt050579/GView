@@ -92,6 +92,24 @@ namespace Utils
         const Zone* OffsetToZone(unsigned long long offset);
     };
 } // namespace Utils
+namespace Generic
+{
+    constexpr uint32 MAX_PLUGINS_COMMANDS = 8;
+    class Plugin
+    {
+        FixSizeString<29> Name;
+        struct
+        {
+            FixSizeString<25> Name;
+            Input::Key ShortKey;
+        } Commands[MAX_PLUGINS_COMMANDS];
+        uint32 CommandsCount;
+
+      public:
+        Plugin();
+        bool Init(AppCUI::Utils::IniSection section);
+    };
+}; // namespace Generic
 namespace Type
 {
     namespace DefaultTypePlugin
@@ -255,7 +273,7 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
-    class ErrorDialog: public AppCUI::Controls::Window
+    class ErrorDialog : public AppCUI::Controls::Window
     {
       public:
         ErrorDialog(const GView::Utils::ErrorList& errList);
