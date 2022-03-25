@@ -14,6 +14,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/../bin/Debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/../bin/Release)
 
+if (MSVC)
+  add_compile_options(/MP)
+endif()
+
+add_subdirectory(3rdPartyLibs/LLVMDemangle)
+
 add_subdirectory(AppCUI)
 add_subdirectory(GViewCore)
 add_subdirectory(GView)

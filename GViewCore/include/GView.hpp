@@ -119,6 +119,16 @@ namespace Utils
 
         bool WriteTo(Reference<AppCUI::OS::IFile> output, uint64 offset, uint32 size);
     };
+
+    enum class DemangleKind : uint8
+    {
+        Auto,
+        Microsoft,
+        Itanium,
+        Rust,
+    };
+    CORE_EXPORT bool Demangle(const char* input, String& output, DemangleKind format = DemangleKind::Auto);
+
 } // namespace Utils
 struct CORE_EXPORT Object
 {
@@ -139,6 +149,7 @@ namespace View
     {
       protected:
         const AppCUI::Application::Config& Cfg;
+
       public:
         virtual bool GoTo(uint64 offset)                                                                       = 0;
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
@@ -146,8 +157,7 @@ namespace View
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
         virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)             = 0;
 
-        int WriteCursorInfo(
-              AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
+        int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
 
         ViewControl() : UserControl("d:c"), Cfg(this->GetConfig())
         {
