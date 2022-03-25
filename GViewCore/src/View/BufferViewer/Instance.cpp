@@ -100,7 +100,7 @@ void Instance::OpenCurrentSelection()
     {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        GView::App::OpenItem((ExtractItem) (res), this, (end - start) + 1, temp);
+        GView::App::OpenItem((ExtractItem) (size_t) (res), this, (end - start) + 1, temp);
     }
 }
 void Instance::UpdateCurrentSelection()
