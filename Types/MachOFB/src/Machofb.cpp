@@ -1,4 +1,4 @@
-#include "machofb.hpp"
+#include "Machofb.hpp"
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -12,7 +12,6 @@ using namespace GView::View;
 template <typename T>
 constexpr std::string BinaryToHexString(const T number, const size_t length)
 {
-    constexpr const char digits[] = "0123456789ABCDEF";
 
     std::string output;
     output.reserve(length * 3);
@@ -23,6 +22,7 @@ constexpr std::string BinaryToHexString(const T number, const size_t length)
           input + length,
           [&output](uint8_t byte)
           {
+              constexpr const char digits[] = "0123456789ABCDEF";
               output.push_back(digits[byte >> 4]);
               output.push_back(digits[byte & 0x0F]);
               output.push_back(' ');

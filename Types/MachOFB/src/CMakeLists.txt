@@ -1,5 +1,5 @@
 target_sources(MachOFB PRIVATE 
-	MachOFB.cpp 
+	Machofb.cpp 
 	MachOFBFile.cpp
 	PanelInformation.cpp
 	PanelObjects.cpp)
