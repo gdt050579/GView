@@ -9,4 +9,6 @@ add_library(LLVMDemangle STATIC
 )
 
 target_include_directories(LLVMDemangle PUBLIC include/)
-target_compile_options(LLVMDemangle PRIVATE -Wno-deprecated-declarations)
+if (NOT MSVC)
+  target_compile_options(LLVMDemangle PRIVATE -Wno-deprecated-declarations)
+endif()
