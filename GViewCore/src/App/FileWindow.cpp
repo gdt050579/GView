@@ -160,7 +160,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
-            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL);
+            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL,true);
             horizontalPanels->SetFocus();
             return true;
         }
