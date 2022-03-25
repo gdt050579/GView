@@ -1,3 +1,4 @@
+#include <memory>
 #include <GView.hpp>
 #include <llvm/Demangle/Demangle.h>
 
@@ -7,17 +8,17 @@ namespace GView::Utils
 {
 bool Demangle(const char* input, String& output, DemangleKind format)
 {
-    char* result{};
+    unique_ptr<char, decltype(free)*> result(nullptr, free);
     switch (format)
     {
     case DemangleKind::Itanium:
-        result = itaniumDemangle(input, nullptr, nullptr, nullptr);
+        result.reset(itaniumDemangle(input, nullptr, nullptr, nullptr));
         break;
     case DemangleKind::Microsoft:
-        result = microsoftDemangle(input, nullptr, nullptr, nullptr, nullptr);
+        result.reset(microsoftDemangle(input, nullptr, nullptr, nullptr, nullptr));
         break;
     case DemangleKind::Rust:
-        result = rustDemangle(input, nullptr, nullptr, nullptr);
+        result.reset(rustDemangle(input, nullptr, nullptr, nullptr));
         break;
     case DemangleKind::Auto:
     {
@@ -31,8 +32,7 @@ bool Demangle(const char* input, String& output, DemangleKind format)
     if (result == nullptr)
         return false;
 
-    output.Add(result);
-    free(result);
+    output.Add(&*result);
     return true;
 }
 } // namespace GView::Utils
