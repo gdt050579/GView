@@ -239,9 +239,11 @@ void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
     const auto hexPlatform = nf2.ToString(static_cast<uint32_t>(code.platform), hex);
     general->AddItem("Platform", ls.Format("%-26s (%s)", platform.data(), hexPlatform.data()));
 
-    const auto pageSize    = nf.ToString(code.pageSize, dec);
-    const auto hexPageSize = nf2.ToString(code.pageSize, hex);
-    general->AddItem("Page Size", ls.Format("%-26s (%s)", pageSize.data(), hexPageSize.data()));
+    const auto realPageSize = static_cast<uint32>(1 << code.pageSize);
+    const auto pageSize     = nf.ToString(static_cast<uint32>(code.pageSize), dec);
+    const auto hexPageSize  = nf2.ToString(static_cast<uint32>(code.pageSize), hex);
+    general->AddItem(
+          "Page Size", ls.Format("%-26s (%s) -> 1 << (%s) = 0x%x", pageSize.data(), hexPageSize.data(), hexPageSize.data(), realPageSize));
 
     const auto spare2    = nf.ToString(code.spare2, dec);
     const auto hexSpare2 = nf2.ToString(code.spare2, hex);

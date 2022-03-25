@@ -1514,6 +1514,8 @@ enum class CodeSignMagic : uint32_t
     CSMAGIC_DETACHED_SIGNATURE     = 0xfade0cc1, /* multi-arch collection of embedded signatures */
     CSMAGIC_BLOBWRAPPER            = 0xfade0b01, /* CMS Signature, among other things */
 
+    CSMAGIC_BYTE = 0xfa, /* shared first byte */
+
     CS_SUPPORTSSCATTER     = 0x20100,
     CS_SUPPORTSTEAMID      = 0x20200,
     CS_SUPPORTSCODELIMIT64 = 0x20300,
@@ -1570,15 +1572,17 @@ static const std::map<CodeSignMagic, std::string_view> CodeSignHashTypeNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA384),  GET_PAIR_FROM_ENUM(CodeSignMagic::CS_HASHTYPE_SHA512)
 };
 
-static const std::map<CodeSignMagic, std::string_view> CodeSignMagicNames{ GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_REQUIREMENT),
-                                                                           GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_REQUIREMENTS),
-                                                                           GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_CODEDIRECTORY),
-                                                                           GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_EMBEDDED_SIGNATURE),
-                                                                           GET_PAIR_FROM_ENUM(
-                                                                                 CodeSignMagic::CSMAGIC_EMBEDDED_SIGNATURE_OLD),
-                                                                           GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_EMBEDDED_ENTITLEMENTS),
-                                                                           GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_DETACHED_SIGNATURE),
-                                                                           GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_BLOBWRAPPER) };
+static const std::map<CodeSignMagic, std::string_view> CodeSignMagicNames{
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_REQUIREMENT),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_REQUIREMENTS),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_CODEDIRECTORY),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_EMBEDDED_SIGNATURE),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_EMBEDDED_SIGNATURE_OLD),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_EMBEDDED_ENTITLEMENTS),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_DETACHED_SIGNATURE),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_BLOBWRAPPER),
+    GET_PAIR_FROM_ENUM(CodeSignMagic::CSMAGIC_BYTE),
+};
 
 static const std::map<CodeSignMagic, std::string_view> CodeSignSlotNames{
     GET_PAIR_FROM_ENUM(CodeSignMagic::CSSLOT_CODEDIRECTORY),
