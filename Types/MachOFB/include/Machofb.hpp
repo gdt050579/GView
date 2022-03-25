@@ -73,9 +73,9 @@ enum class CPU_SUBTYPE_COMPATIBILITY : uint32_t
 
 enum class CPU_SUBTYPE : uint32_t
 {
-    MULTIPLE      = static_cast<uint32_t>(-1),
-    LITTLE_ENDIAN = 0,
-    BIG_ENDIAN    = 1,
+    MULTIPLE       = static_cast<uint32_t>(-1),
+    LITTLE_ENDIAN_ = 0,
+    BIG_ENDIAN_    = 1,
 };
 
 enum class CPU_SUBTYPE_VAX : uint32_t

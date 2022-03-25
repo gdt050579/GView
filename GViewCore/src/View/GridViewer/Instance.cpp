@@ -52,12 +52,12 @@ std::string_view Instance::GetName()
     return name;
 }
 
-bool Instance::GoTo(unsigned long long offset)
+bool Instance::GoTo(uint64 offset)
 {
     return true;
 }
 
-bool Instance::Select(unsigned long long offset, unsigned long long size)
+bool Instance::Select(uint64 offset, uint64 size)
 {
     return true;
 }
