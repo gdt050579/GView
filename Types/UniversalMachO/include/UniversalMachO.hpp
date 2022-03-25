@@ -22,7 +22,7 @@ const T SwapEndian(T u)
 }
 
 template <typename T>
-constexpr std::string BinaryToHexString(const T number, const size_t length)
+static const std::string BinaryToHexString(const T number, const size_t length)
 {
     constexpr const char digits[] = "0123456789ABCDEF";
 
@@ -151,9 +151,9 @@ enum class CPU_SUBTYPE_COMPATIBILITY : uint32_t
 
 enum class CPU_SUBTYPE : uint32_t
 {
-    MULTIPLE      = static_cast<uint32_t>(-1),
-    LITTLE_ENDIAN = 0,
-    BIG_ENDIAN    = 1,
+    MULTIPLE       = static_cast<uint32_t>(-1),
+    LITTLE_ENDIAN_ = 0,
+    BIG_ENDIAN_    = 1,
 };
 
 enum class CPU_SUBTYPE_VAX : uint32_t
@@ -387,8 +387,8 @@ enum class CPU_Family : uint32_t
 
 static const std::map<CPU_SUBTYPE, std::string_view> CpuSubtypeNames{
     GET_PAIR(CPU_SUBTYPE::MULTIPLE),
-    GET_PAIR(CPU_SUBTYPE::LITTLE_ENDIAN),
-    GET_PAIR(CPU_SUBTYPE::BIG_ENDIAN),
+    GET_PAIR(CPU_SUBTYPE::LITTLE_ENDIAN_),
+    GET_PAIR(CPU_SUBTYPE::BIG_ENDIAN_),
 };
 
 static const std::map<CPU_SUBTYPE_VAX, std::string_view> CpuSubtypeVaxNames{
@@ -638,8 +638,8 @@ static const ArchInfo ArchInfoTable[] = {
     { "armv7em", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V7EM), ByteOrder::LittleEndian, "arm v7em" },
     { "armv8", CPU_TYPE::ARM, static_cast<uint32_t>(CPU_SUBTYPE_ARM::V8), ByteOrder::LittleEndian, "arm v8" },
     { "arm64", CPU_TYPE::ARM64, static_cast<uint32_t>(CPU_SUBTYPE_ARM64::V8), ByteOrder::LittleEndian, "arm64 v8" },
-    { "little", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::LITTLE_ENDIAN), ByteOrder::LittleEndian, "Little Endian" },
-    { "big", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::BIG_ENDIAN), ByteOrder::BigEndian, "Big Endian" },
+    { "little", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::LITTLE_ENDIAN_), ByteOrder::LittleEndian, "Little Endian" },
+    { "big", CPU_TYPE::ANY, static_cast<uint32_t>(CPU_SUBTYPE::BIG_ENDIAN_), ByteOrder::BigEndian, "Big Endian" },
     { "veo1", CPU_TYPE::VEO, static_cast<uint32_t>(CPU_SUBTYPE_VEO::_1), ByteOrder::BigEndian, "veo 1" },
     { "veo2", CPU_TYPE::VEO, static_cast<uint32_t>(CPU_SUBTYPE_VEO::_2), ByteOrder::BigEndian, "veo 2" }
 };

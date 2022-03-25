@@ -24,14 +24,14 @@ const T SwapEndian(T u)
 template <typename T>
 void SwapEndianInplace(T* u, uint64_t size)
 {
-    for (auto i = 0; i < size; i++)
+    for (auto i = 0ULL; i < size; i++)
     {
         u[i] = u[size - i - 1];
     }
 }
 
 template <typename T>
-constexpr std::string BinaryToHexString(const T number, const size_t length)
+static const std::string BinaryToHexString(const T number, const size_t length)
 {
     constexpr const char digits[] = "0123456789ABCDEF";
 

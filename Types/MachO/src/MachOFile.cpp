@@ -806,10 +806,10 @@ bool MachOFile::SetCodeSignature()
                           codeSignature.requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
 
                     // TODO: needs to parse requirements and translate them to human readable text...
-                    MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature.requirements.data.GetData();
-                    r->type                = Utils::SwapEndian(r->type);
-                    r->offset              = Utils::SwapEndian(r->offset);
-                    const auto c           = codeSignature.requirements.data.GetData() + sizeof(MAC::CS_Requirement) + r->offset + 4;
+                    // MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature.requirements.data.GetData();
+                    // r->type                = Utils::SwapEndian(r->type);
+                    // r->offset              = Utils::SwapEndian(r->offset);
+                    // const auto c           = codeSignature.requirements.data.GetData() + sizeof(MAC::CS_Requirement) + r->offset + 4;
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:

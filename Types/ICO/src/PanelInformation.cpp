@@ -32,7 +32,7 @@ void Panels::Information::UpdateGeneralInformation()
     else
         general->AddItem("Type", "CURSOR");
     // dirs
-    general->AddItem("Images", n.ToDec(ico->dirs.size()));
+    general->AddItem("Images", n.ToDec(static_cast<uint64>(ico->dirs.size())));
 
 
 

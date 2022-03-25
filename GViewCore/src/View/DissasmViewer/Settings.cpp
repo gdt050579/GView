@@ -27,7 +27,7 @@ void Settings::ReserverZonesCapacity(uint32 reserved_size)
 
 void Settings::AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang)
 {
-    INTERNAL_SETTINGS->zones.emplace_back(start, size, lang);
+    INTERNAL_SETTINGS->zones.emplace_back(DissasemblyZone{start, size, lang});
 }
 
 void Settings::AddMemmoryMapping(uint64 address, std::string_view name)

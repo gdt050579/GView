@@ -718,7 +718,7 @@ static const std::map<VMProtectionFlags, std::string_view> VMProtectionNames{
 
 static const std::string GetVMProtectionNamesFromFlags(uint32_t flags)
 {
-    static const std::initializer_list types{ VMProtectionFlags::NONE,      VMProtectionFlags::READ,    VMProtectionFlags::WRITE,
+    static const std::initializer_list<VMProtectionFlags> types{ VMProtectionFlags::NONE,      VMProtectionFlags::READ,    VMProtectionFlags::WRITE,
                                               VMProtectionFlags::EXECUTE,   VMProtectionFlags::DEFAULT, VMProtectionFlags::ALL,
                                               VMProtectionFlags::NO_CHANGE, VMProtectionFlags::COPY,    VMProtectionFlags::WANTS_COPY };
 
@@ -822,7 +822,7 @@ static const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlags
 
 static const std::string GetSegmentCommandNamesFromFlags(uint32_t flags)
 {
-    static const std::initializer_list types{ SegmentCommandFlags::NONE,
+    static const std::initializer_list<SegmentCommandFlags> types{ SegmentCommandFlags::NONE,
                                               SegmentCommandFlags::HIGHVM,
                                               SegmentCommandFlags::FVMLIB,
                                               SegmentCommandFlags::NORELOC,
@@ -974,7 +974,7 @@ static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
 {
     const std::string sectionType{ SectionTypeNames.at(static_cast<SectionType>(flags & SECTION_TYPE)) };
 
-    static const std::initializer_list types{ SectionAttributtes::USR,
+    static const std::initializer_list<SectionAttributtes> types{ SectionAttributtes::USR,
                                               SectionAttributtes::PURE_INSTRUCTIONS,
                                               SectionAttributtes::NO_TOC,
                                               SectionAttributtes::STRIP_STATIC_SYMS,

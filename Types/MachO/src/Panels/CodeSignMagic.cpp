@@ -146,8 +146,8 @@ void CodeSignMagic::UpdateBlobs()
             general->AddItem("Offset", ls.Format("%-26s (%s)", length.data(), hexLength.data()));
 
             const auto& data       = machO->codeSignature.entitlements.data;
-            const auto dataSize    = nf.ToString(data.size(), dec);
-            const auto hexDataSize = nf2.ToString(data.size(), hex);
+            const auto dataSize    = nf.ToString(static_cast<uint64>(data.size()), dec);
+            const auto hexDataSize = nf2.ToString(static_cast<uint64>(data.size()), hex);
             general->AddItem("Data", ls.Format("%-26s (%s)", dataSize.data(), hexDataSize.data()));
 
             std::vector<std::string> lines;

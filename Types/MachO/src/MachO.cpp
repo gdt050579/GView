@@ -12,7 +12,7 @@ using namespace MachO;
 using namespace MachO::MAC;
 
 template <typename T>
-constexpr std::string BinaryToHexString(const T number, const size_t length)
+static const std::string BinaryToHexString(const T number, const size_t length)
 {
     constexpr const char digits[] = "0123456789ABCDEF";
 
