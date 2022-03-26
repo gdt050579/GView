@@ -26,6 +26,20 @@ bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::files
     fnUpdateSettings(sect);
     return true;
 }
+bool UpdateSettingsForGenericPlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
+{
+    // First load the plugin
+    AppCUI::OS::Library lib;
+    CHECK(lib.Load(pluginPath), false, "Fail to load: %s", pluginPath.string().c_str());
+    void (*fnUpdateSettings)(AppCUI::Utils::IniSection sect);
+    fnUpdateSettings = lib.GetFunction<decltype(fnUpdateSettings)>("UpdateSettings");
+    CHECK(fnUpdateSettings, false, "'UpdateSettings' export was not located in: %s", pluginPath.string().c_str());
+    auto nm = pluginPath.filename().string();
+    // format is lib<....>.tpl
+    auto sect = ini["Generic." + nm.substr(3, nm.length() - 7)];
+    fnUpdateSettings(sect);
+    return true;
+}
 bool GView::App::Init()
 {
     gviewAppInstance = new GView::App::Instance();
@@ -63,6 +77,16 @@ bool GView::App::ResetConfiguration()
     {
         if ((fileEntry.path().extension() == ".tpl") && (fileEntry.path().filename().string().starts_with("lib")))
             UpdateSettingsForTypePlugin(ini, fileEntry.path());
+    }
+
+    // parse generic plugins and add specs
+    auto genericPluginsPath = AppCUI::OS::GetCurrentApplicationPath();
+    genericPluginsPath.remove_filename();
+    genericPluginsPath += "GenericPlugins";
+    for (const auto& fileEntry : std::filesystem::directory_iterator(genericPluginsPath))
+    {
+        if ((fileEntry.path().extension() == ".gpl") && (fileEntry.path().filename().string().starts_with("lib")))
+            UpdateSettingsForGenericPlugin(ini, fileEntry.path());
     }
 
     // generic GView settings
