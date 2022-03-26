@@ -12,7 +12,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
     // set the name
     auto name = section.GetName();
-    CHECK(name.length() > 8, false, "Expected a name after 'General.' !");
+    CHECK(name.length() > 8, false, "Expected a name after 'Generic.' !");
     this->Name          = name.substr(8);
     this->CommandsCount = 0;
     for (auto val : section)

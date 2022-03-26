@@ -76,9 +76,10 @@ bool Instance::LoadSettings()
     CHECK(ini, false, "");
 
     // check plugins
-    for (const auto& section : ini->GetSections())
+    for (auto section : *ini)
     {
-        if (String::StartsWith(section.GetName(), std::string_view("type."), true))
+        auto sectionName = section.GetName();
+        if (String::StartsWith(sectionName, std::string_view("type."), true))
         {
             GView::Type::Plugin p;
             if (p.Init(section))
@@ -87,8 +88,20 @@ bool Instance::LoadSettings()
             }
             else
             {
-                errList.AddWarning("Fail to load type plugin ");
+                errList.AddWarning("Fail to load type plugin (%s)",sectionName.data());
             }            
+        }
+        if (String::StartsWith(sectionName, std::string_view("generic."), true))
+        {
+            GView::Generic::Plugin p;
+            if (p.Init(section))
+            {
+                this->genericPlugins.push_back(p);
+            }
+            else
+            {
+                errList.AddWarning("Fail to load generic plugin (%s)", sectionName.data());
+            }
         }
     }
     // sort all plugins based on their priority

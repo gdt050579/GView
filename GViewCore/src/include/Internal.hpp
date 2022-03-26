@@ -196,6 +196,7 @@ namespace App
         AppCUI::Controls::Menu* mnuHelp;
         AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
+        std::vector<GView::Generic::Plugin> genericPlugins;
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
