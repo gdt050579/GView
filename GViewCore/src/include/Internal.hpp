@@ -104,7 +104,7 @@ namespace Generic
             Input::Key ShortKey;
         } Commands[MAX_PLUGINS_COMMANDS];
         uint32 CommandsCount;
-
+        bool (*fnRun)(const string_view command);
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);

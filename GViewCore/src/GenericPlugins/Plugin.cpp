@@ -10,6 +10,7 @@ namespace GView::Generic
 Plugin::Plugin()
 {
     this->CommandsCount = 0;
+    this->fnRun         = nullptr;
 }
 bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
@@ -18,6 +19,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
     CHECK(name.length() > 8, false, "Expected a name after 'Generic.' !");
     this->Name          = name.substr(8);
     this->CommandsCount = 0;
+    this->fnRun         = nullptr;
     //for (auto val : section)
     for (auto val : section.GetValues())
     {
@@ -37,7 +39,40 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 }
 void Plugin::Run(uint32 commandIndex)
 {
-    AppCUI::Dialogs::MessageBox::ShowNotification("Run command", "Run");
+    if (!this->fnRun)
+    {
+        // we need to load the library
+        AppCUI::OS::Library lib;
+        auto path = AppCUI::OS::GetCurrentApplicationPath();
+        path.remove_filename();
+        path /= "GenericPlugins";
+        path /= "lib";
+        path += (std::string_view) this->Name;
+        path += ".gpl";
+        if (lib.Load(path)==false)
+        {
+            LocalString<1024> info;
+            info.Format("Fail to load library: %s", path.generic_string().c_str());
+            AppCUI::Dialogs::MessageBox::ShowError("Error", info);
+            return;
+        }
+
+        this->fnRun            = lib.GetFunction<decltype(this->fnRun)>("Run");
+        if (!this->fnRun)
+        {
+            LocalString<1024> info;
+            info.Format("Unable to find `Run` export in : %s", path.generic_string().c_str());
+            AppCUI::Dialogs::MessageBox::ShowError("Error", info);
+            return;
+        }
+    }
+    // all good -> is loaded ==> try to run
+    if (!this->fnRun(this->Commands[commandIndex].Name))
+    {
+        LocalString<1024> info;
+        info.Format("Command `%s` from generic plugin: `%s` failed !", this->Commands[commandIndex].Name.GetText(), this->Name.GetText());
+        AppCUI::Dialogs::MessageBox::ShowError("Error", info);
+    }
 }
 void Plugin::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID)
 {

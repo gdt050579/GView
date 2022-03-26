@@ -13,6 +13,8 @@ extern "C"
     PLUGIN_EXPORT bool Run(const string_view command)
     {
         // all good
+
+        AppCUI::Dialogs::MessageBox::ShowNotification("Run", command);
         return true;
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
