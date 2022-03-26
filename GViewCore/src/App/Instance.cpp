@@ -9,6 +9,7 @@ using namespace AppCUI::Utils;
 constexpr uint32 DEFAULT_CACHE_SIZE    = 0x100000; // 1 MB
 constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
 constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
+constexpr uint32 GENERIC_PLUGINS_FRAME = 100;
 
 struct _MenuCommand_
 {
@@ -77,7 +78,7 @@ bool Instance::LoadSettings()
     CHECK(ini, false, "");
 
     // check plugins
-    //for (auto section : *ini)
+    // for (auto section : *ini)
     for (auto section : ini->GetSections())
     {
         auto sectionName = section.GetName();
@@ -106,7 +107,6 @@ bool Instance::LoadSettings()
             }
         }
     }
-    
 
     // sort all plugins based on their priority
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
@@ -221,7 +221,8 @@ void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     auto idx = GENERIC_PLUGINS_CMDID;
     for (auto& p : this->genericPlugins)
     {
-        p.UpdateCommandBar(commandBar, idx++);
+        p.UpdateCommandBar(commandBar, idx);
+        idx += GENERIC_PLUGINS_FRAME;
     }
 }
 //===============================[APPCUI HANDLERS]==============================
@@ -251,6 +252,12 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_FILE:
             OpenFile();
+            return true;
+        }
+        if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000))
+        {
+            auto packedValue = ((uint32) ID)- GENERIC_PLUGINS_CMDID;
+            this->genericPlugins[packedValue / GENERIC_PLUGINS_FRAME].Run(packedValue % GENERIC_PLUGINS_FRAME);
             return true;
         }
     }

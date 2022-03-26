@@ -35,6 +35,10 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 
     return true;
 }
+void Plugin::Run(uint32 commandIndex)
+{
+    AppCUI::Dialogs::MessageBox::ShowNotification("Run command", "Run");
+}
 void Plugin::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID)
 {
     for (auto idx = 0U; idx < this->CommandsCount; idx++)

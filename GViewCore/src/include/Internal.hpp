@@ -109,6 +109,7 @@ namespace Generic
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
+        void Run(uint32 commandIndex);
     };
 }; // namespace Generic
 namespace Type
