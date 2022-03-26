@@ -6,8 +6,9 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
-constexpr uint32 DEFAULT_CACHE_SIZE = 0x100000; // 1 MB
-constexpr uint32 MIN_CACHE_SIZE     = 0x10000;  // 64 K
+constexpr uint32 DEFAULT_CACHE_SIZE    = 0x100000; // 1 MB
+constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
+constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
 
 struct _MenuCommand_
 {
@@ -76,10 +77,11 @@ bool Instance::LoadSettings()
     CHECK(ini, false, "");
 
     // check plugins
-    for (auto section : *ini)
+    //for (auto section : *ini)
+    for (auto section : ini->GetSections())
     {
         auto sectionName = section.GetName();
-        if (String::StartsWith(sectionName, std::string_view("type."), true))
+        if (String::StartsWith(sectionName, "type.", true))
         {
             GView::Type::Plugin p;
             if (p.Init(section))
@@ -88,10 +90,10 @@ bool Instance::LoadSettings()
             }
             else
             {
-                errList.AddWarning("Fail to load type plugin (%s)",sectionName.data());
-            }            
+                errList.AddWarning("Fail to load type plugin (%s)", sectionName.data());
+            }
         }
-        if (String::StartsWith(sectionName, std::string_view("generic."), true))
+        if (String::StartsWith(sectionName, "generic.", true))
         {
             GView::Generic::Plugin p;
             if (p.Init(section))
@@ -104,6 +106,8 @@ bool Instance::LoadSettings()
             }
         }
     }
+    
+
     // sort all plugins based on their priority
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
 
@@ -139,7 +143,7 @@ bool Instance::Init()
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
     // set up handlers
-    auto dsk = AppCUI::Application::GetDesktop();
+    auto dsk                 = AppCUI::Application::GetDesktop();
     dsk->Handlers()->OnEvent = this;
     dsk->Handlers()->OnStart = this;
     return true;
@@ -196,7 +200,7 @@ void Instance::ShowErrors()
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
     auto f = std::make_unique<AppCUI::OS::File>();
-    if (f->OpenRead(path)==false)
+    if (f->OpenRead(path) == false)
     {
         errList.AddError("Fail to open file: %s", path.u8string().c_str());
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
@@ -210,6 +214,14 @@ void Instance::OpenFile()
     {
         if (AddFileWindow(res.value()) == false)
             ShowErrors();
+    }
+}
+void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    auto idx = GENERIC_PLUGINS_CMDID;
+    for (auto& p : this->genericPlugins)
+    {
+        p.UpdateCommandBar(commandBar, idx++);
     }
 }
 //===============================[APPCUI HANDLERS]==============================

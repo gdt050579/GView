@@ -181,6 +181,8 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(
           this->gviewApp->GetKeyToChangeViewes(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    // add all generic plugins
+    this->gviewApp->UpdateCommandBar(commandBar);
     return true;
 }
 void FileWindow::Start()

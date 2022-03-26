@@ -108,6 +108,7 @@ namespace Generic
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
+        void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
     };
 }; // namespace Generic
 namespace Type
@@ -212,6 +213,7 @@ namespace App
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
+        void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
         constexpr inline uint32 GetDefaultCacheSize() const
