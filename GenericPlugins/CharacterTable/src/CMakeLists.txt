@@ -1,0 +1,1 @@
+target_sources(CharacterTable PRIVATE CharacterTable.cpp)

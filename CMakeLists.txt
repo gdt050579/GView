@@ -32,6 +32,10 @@ add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
 add_subdirectory(Types/MachOFB)
 
+# Generic plugins supported by GView
+add_subdirectory(GenericPlugins/CharacterTable)
+
+
 if(MSVC)
   target_compile_options(GView PUBLIC "/ZI")
   target_link_options(GView PUBLIC "/ZI" "/INCREMENTAL")
