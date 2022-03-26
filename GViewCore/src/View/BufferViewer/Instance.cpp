@@ -100,7 +100,7 @@ void Instance::OpenCurrentSelection()
     {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        GView::App::OpenItem((ExtractItem) (res), this, (end - start) + 1, temp);
+        GView::App::OpenItem((ExtractItem) (size_t) (res), this, (end - start) + 1, temp);
     }
 }
 void Instance::UpdateCurrentSelection()
@@ -1375,7 +1375,7 @@ std::string_view Instance::GetName()
 }
 bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
 {
-    uint32 idx = reinterpret_cast<uint32>(item);
+    uint32 idx = static_cast<uint32>(reinterpret_cast<size_t>(item));
     uint64 start, end;
     CHECK(this->selection.GetSelection(idx, start, end), false, "");
     CHECK(this->obj->cache.WriteTo(output, start, (end - start) + 1), false, "");

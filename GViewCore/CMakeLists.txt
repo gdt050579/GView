@@ -8,6 +8,8 @@ add_library(GViewCore SHARED)
 set_target_properties(GViewCore PROPERTIES PREFIX "lib")
 target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
+target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
+target_link_libraries(GViewCore PRIVATE LLVMDemangle)
 
 if (MSVC)
     add_definitions(-DBUILD_FOR_WINDOWS)

@@ -75,7 +75,7 @@ namespace Utils
         AppCUI::Utils::FixSizeString<25> name;
 
         Zone();
-        void Set(unsigned long long s, unsigned long long e, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        void Set(uint64 s, uint64 e, AppCUI::Graphics::ColorPair c, std::string_view txt);
     };
     class ZonesList
     {
@@ -87,9 +87,9 @@ namespace Utils
       public:
         ZonesList();
         ~ZonesList();
-        bool Add(unsigned long long start, unsigned long long end, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
         bool Reserve(unsigned int count);
-        const Zone* OffsetToZone(unsigned long long offset);
+        const Zone* OffsetToZone(uint64 offset);
     };
 } // namespace Utils
 namespace Generic

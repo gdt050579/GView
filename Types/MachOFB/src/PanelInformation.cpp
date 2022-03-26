@@ -1,4 +1,4 @@
-#include "machofb.hpp"
+#include "Machofb.hpp"
 
 namespace GView::Type::MachOFB::Panels
 {
