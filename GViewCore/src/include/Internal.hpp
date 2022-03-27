@@ -242,6 +242,7 @@ namespace App
         virtual void OnStart(Reference<Control> control) override;
 
         // infos
+        uint32 GetObjectsCount();
         Reference<GView::Object> GetObject(uint32 index);
         Reference<GView::Object> GetCurrentObject();
     };

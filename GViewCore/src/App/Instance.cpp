@@ -225,6 +225,12 @@ void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         idx += GENERIC_PLUGINS_FRAME;
     }
 }
+uint32 Instance::GetObjectsCount()
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    CHECK(dsk.IsValid(), 0, "Fail to get Desktop object from AppCUI !");
+    return dsk->GetChildrenCount();
+}
 Reference<GView::Object> Instance::GetObject(uint32 index)
 {
     auto dsk = AppCUI::Application::GetDesktop();

@@ -119,3 +119,8 @@ Reference<GView::Object> GView::App::GetObject(uint32 index)
     CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
     return gviewAppInstance->GetObject(index);
 }
+uint32 GView::App::GetObjectsCount()
+{
+    CHECK(gviewAppInstance, 0U, "GView was not initialized !");
+    return gviewAppInstance->GetObjectsCount();
+}
