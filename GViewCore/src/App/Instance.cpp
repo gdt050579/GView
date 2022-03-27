@@ -229,15 +229,13 @@ Reference<GView::Object> Instance::GetObject(uint32 index)
 {
     auto dsk = AppCUI::Application::GetDesktop();
     CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
-    // get the first child (focus one);
-    NOT_IMPLEMENTED(nullptr);
+    return dsk->GetChild(index).ToObjectRef<FileWindow>()->GetObject();
 }
 Reference<GView::Object> Instance::GetCurrentObject()
 {
     auto dsk = AppCUI::Application::GetDesktop();
     CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
-    // get the first child (focus one);
-    NOT_IMPLEMENTED(nullptr);
+    return dsk->GetFocusedChild().ToObjectRef<FileWindow>()->GetObject();
 }
 //===============================[APPCUI HANDLERS]==============================
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
