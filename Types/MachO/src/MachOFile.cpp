@@ -64,7 +64,7 @@ bool MachOFile::Update()
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
     }
 
-    if (dySymTab.isSet)
+    if (dySymTab.has_value())
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
     }
@@ -397,84 +397,71 @@ bool MachOFile::SetSymbols(uint64_t& offset)
     {
         if (lc.value.cmd == MAC::LoadCommandType::SYMTAB)
         {
-            if (dySymTab.isSet)
+            if (dySymTab.has_value())
             {
                 throw "Got a second LoadCommandType::SYMTAB command!";
             }
 
-            CHECK(file->Copy<MAC::symtab_command>(offset, dySymTab.sc), false, "");
+            dySymTab.emplace(DySymTab{});
+            CHECK(file->Copy<MAC::symtab_command>(offset, dySymTab->sc), false, "");
 
             if (shouldSwapEndianess)
             {
-                Swap(dySymTab.sc);
+                Swap(dySymTab->sc);
             }
 
-            {
-                const auto buffer = file->CopyToBuffer(dySymTab.sc.stroff, dySymTab.sc.strsize);
-                dySymTab.stringTable.reset(new char[dySymTab.sc.strsize]);
-                memcpy(dySymTab.stringTable.get(), (char*) buffer.GetData(), dySymTab.sc.strsize);
-            }
+            const auto stringTable       = file->CopyToBuffer(dySymTab->sc.stroff, dySymTab->sc.strsize);
+            const auto symbolTableOffset = dySymTab->sc.nsyms * (is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
+            const auto symbolTable       = file->CopyToBuffer(dySymTab->sc.symoff, symbolTableOffset);
 
-            if (is64)
+            for (auto i = 0U; i < dySymTab->sc.nsyms; i++)
             {
-                const auto buffer = file->CopyToBuffer(dySymTab.sc.symoff, dySymTab.sc.nsyms * sizeof(MAC::nlist_64));
-                dySymTab.symbolTable.reset(new char[dySymTab.sc.nsyms * sizeof(MAC::nlist_64)]);
-                memcpy(dySymTab.symbolTable.get(), (char*) buffer.GetData(), dySymTab.sc.nsyms * sizeof(MAC::nlist_64));
-            }
-            else
-            {
-                const auto buffer = file->CopyToBuffer(dySymTab.sc.symoff, dySymTab.sc.nsyms * sizeof(MAC::nlist));
-                dySymTab.symbolTable.reset(new char[dySymTab.sc.nsyms * sizeof(MAC::nlist)]);
-                memcpy(dySymTab.symbolTable.get(), (char*) buffer.GetData(), dySymTab.sc.nsyms * sizeof(MAC::nlist));
-            }
+                MyNList nlist{};
 
-            if (is64)
-            {
-                for (auto i = 0U; i < dySymTab.sc.nsyms; i++)
+                if (is64)
                 {
-                    auto nl = reinterpret_cast<MAC::nlist_64*>(dySymTab.symbolTable.get())[i];
-
+                    auto nl = reinterpret_cast<MAC::nlist_64*>(symbolTable.GetData())[i];
                     if (shouldSwapEndianess)
                     {
                         Swap(nl);
                     }
 
-                    const auto str = dySymTab.stringTable.get() + nl.n_un.n_strx;
-                    String demangled;
-                    if (GView::Utils::Demangle(str, demangled) == false)
-                    {
-                        demangled = str;
-                    }
-
-                    dySymTab.symbolsDemangled.push_back(demangled.GetText());
+                    nlist.n_strx  = nl.n_un.n_strx;
+                    nlist.n_type  = nl.n_type;
+                    nlist.n_sect  = nl.n_sect;
+                    nlist.n_desc  = nl.n_desc;
+                    nlist.n_value = nl.n_value;
                 }
-            }
-            else
-            {
-                for (auto i = 0U; i < dySymTab.sc.nsyms; i++)
+                else
                 {
-                    auto nl = reinterpret_cast<MAC::nlist*>(dySymTab.symbolTable.get())[i];
-
+                    auto nl = reinterpret_cast<MAC::nlist*>(symbolTable.GetData())[i];
                     if (shouldSwapEndianess)
                     {
                         Swap(nl);
                     }
 
-                    const auto str = dySymTab.stringTable.get() + nl.n_un.n_strx;
-                    String demangled;
-                    if (GView::Utils::Demangle(str, demangled) == false)
-                    {
-                        demangled = str;
-                    }
-
-                    dySymTab.symbolsDemangled.push_back(demangled.GetText());
+                    nlist.n_strx  = nl.n_un.n_strx;
+                    nlist.n_type  = nl.n_type;
+                    nlist.n_sect  = nl.n_sect;
+                    nlist.n_desc  = nl.n_desc;
+                    nlist.n_value = nl.n_value;
                 }
-            }
 
-            dySymTab.isSet = true;
+                String demangled;
+                const auto str = reinterpret_cast<char*>(stringTable.GetData() + nlist.n_strx);
+                if (GView::Utils::Demangle(str, demangled) == false)
+                {
+                    demangled = str;
+                }
+
+                nlist.symbolNameDemangled = demangled;
+                dySymTab->objects.emplace_back(nlist);
+            }
         }
+
         offset += lc.value.cmdsize;
     }
+
     return true;
 }
 

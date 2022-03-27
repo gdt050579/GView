@@ -89,13 +89,21 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::entry_point_command ep;
     };
 
+    struct MyNList
+    {
+        uint32_t n_strx;  /* index into the string table */
+        uint8_t n_type;   /* type flag, see below */
+        uint8_t n_sect;   /* section number or NO_SECT */
+        uint16_t n_desc;  /* see <mach-o/stab.h> -> description field */
+        uint64_t n_value; /* value of this symbol (or stab offset) */
+
+        std::string symbolNameDemangled;
+    };
+
     struct DySymTab
     {
         MAC::symtab_command sc;
-        std::unique_ptr<char[]> symbolTable;
-        std::unique_ptr<char[]> stringTable;
-        bool isSet = false;
-        std::vector<std::string> symbolsDemangled;
+        std::vector<MyNList> objects;
     };
 
     struct SourceVersion
@@ -145,7 +153,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Segment> segments;
     DyldInfo dyldInfo;
     std::vector<Dylib> dylibs;
-    DySymTab dySymTab;
+    std::optional<DySymTab> dySymTab;
     Main main;
     SourceVersion sourceVersion;
     UUID uuid;
