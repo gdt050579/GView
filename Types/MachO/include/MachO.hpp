@@ -37,16 +37,37 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         uint64_t offset;
     };
 
-    union Segment
+    struct Section
     {
-        MAC::segment_command x86;
-        MAC::segment_command_64 x64;
+        char sectname[16]; /* name of this section */
+        char segname[16];  /* segment this section goes in */
+        uint64 addr;       /* memory address of this section */
+        uint64 size;       /* size in bytes of this section */
+        uint32 offset;     /* file offset of this section */
+        uint32 align;      /* section alignment (power of 2) */
+        uint32 reloff;     /* file offset of relocation entries */
+        uint32 nreloc;     /* number of relocation entries */
+        uint32 flags;      /* flags (section type and attributes)*/
+        uint32 reserved1;  /* reserved (for offset or index) */
+        uint32 reserved2;  /* reserved (for count or sizeof) */
+        uint32 reserved3;  /* reserved */
     };
 
-    union Section
+    struct Segment
     {
-        MAC::section x86;
-        MAC::section_64 x64;
+        MAC::LoadCommandType cmd; /* LC_SEGMENT(_64) */
+        uint32 cmdsize;           /* includes sizeof section_64 structs */
+        char segname[16];         /* segment name */
+        uint64 vmaddr;            /* memory address of this segment */
+        uint64 vmsize;            /* memory size of this segment */
+        uint64 fileoff;           /* file offset of this segment */
+        uint64 filesize;          /* amount to map from the file */
+        uint32 maxprot;           /* maximum VM protection */
+        uint32 initprot;          /* initial VM protection */
+        uint32 nsects;            /* number of sections in segment */
+        uint32 flags;             /* flags */
+
+        std::vector<Section> sections;
     };
 
     struct DyldInfo
@@ -122,7 +143,6 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
-    std::vector<Section> sections;
     DyldInfo dyldInfo;
     std::vector<Dylib> dylibs;
     DySymTab dySymTab;
@@ -159,8 +179,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetArchitectureAndEndianess(uint64_t& offset);
     bool SetHeader(uint64_t& offset);
     bool SetLoadCommands(uint64_t& offset);
-    bool SetSegments(uint64_t& offset);
-    bool SetSections(uint64_t& offset);
+    bool SetSegmentsAndTheirSections();
     bool SetDyldInfo(uint64_t& offset);
     bool SetIdDylibs(uint64_t& offset);
     bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD

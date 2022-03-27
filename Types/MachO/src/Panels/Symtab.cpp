@@ -129,8 +129,23 @@ void SymTab::Update()
             }
             else
             {
-                _1s = machO->sections.at(nl.n_sect - 1ULL).x64.sectname;
-                _2s = machO->sections.at(nl.n_sect - 1ULL).x64.segname;
+                auto current        = 0U;
+                const auto required = nl.n_sect - 1ULL;
+                for (const auto& segment : machO->segments)
+                {
+                    for (const auto& section : segment.sections)
+                    {
+                        if (current == required)
+                        {
+                            _1s = section.sectname;
+                            _2s = section.segname;
+
+                            break;
+                        }
+
+                        current++;
+                    }
+                }
             }
 
             list->SetItemText(item, 3, tmp.Format("[%s | %s] (%s)", _1s.c_str(), _2s.c_str(), GetValue(n, nl.n_sect).data()));
@@ -237,8 +252,23 @@ void SymTab::Update()
             }
             else
             {
-                _1s = machO->sections.at(nl.n_sect - 1ULL).x64.sectname;
-                _2s = machO->sections.at(nl.n_sect - 1ULL).x64.segname;
+                auto current        = 0U;
+                const auto required = nl.n_sect - 1ULL;
+                for (const auto& segment : machO->segments)
+                {
+                    for (const auto& section : segment.sections)
+                    {
+                        if (current == required)
+                        {
+                            _1s = section.sectname;
+                            _2s = section.segname;
+
+                            break;
+                        }
+
+                        current++;
+                    }
+                }
             }
 
             list->SetItemText(item, 3, tmp.Format("[%s | %s] (%s)", _1s.c_str(), _2s.c_str(), GetValue(n, nl.n_sect).data()));

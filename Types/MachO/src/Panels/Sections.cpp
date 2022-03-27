@@ -25,6 +25,7 @@ Sections::Sections(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     list->AddColumn("Size", TextAlignament::Right, 14);
     list->AddColumn("File Offset", TextAlignament::Right, 14);
     list->AddColumn("Align", TextAlignament::Right, 10);
+    list->AddColumn("Real Align", TextAlignament::Right, 12);
     list->AddColumn("Reloc Offset", TextAlignament::Right, 14);
     list->AddColumn("Reloc Entries Count", TextAlignament::Right, 22);
     list->AddColumn("Flags", TextAlignament::Right, 30);
@@ -52,23 +53,13 @@ std::string_view Sections::GetValue(NumericFormatter& n, uint64_t value)
 void Panels::Sections::GoToSelectedSection()
 {
     auto s = list->GetItemData<const MachOFile::Section>(list->GetCurrentItem());
-    if (machO->is64)
-    {
-        win->GetCurrentView()->GoTo(s->x64.offset);
-        return;
-    }
-    win->GetCurrentView()->GoTo(s->x86.offset);
+    win->GetCurrentView()->GoTo(s->offset);
 }
 
 void Panels::Sections::SelectCurrentSection()
 {
     auto s = list->GetItemData<const MachOFile::Section>(list->GetCurrentItem());
-    if (machO->is64)
-    {
-        win->GetCurrentView()->Select(s->x64.offset, s->x64.size);
-        return;
-    }
-    win->GetCurrentView()->Select(s->x86.offset, s->x86.size);
+    win->GetCurrentView()->Select(s->offset, s->size);
 }
 
 void Panels::Sections::Update()
@@ -78,51 +69,35 @@ void Panels::Sections::Update()
     list->DeleteAllItems();
 
     uint32_t i = 0;
-    for (const auto& s : machO->sections)
+    for (const auto& segment : machO->segments)
     {
-        if (machO->is64)
+        for (const auto& s : segment.sections)
         {
-            auto item = list->AddItem(s.x64.sectname); // name
+            auto item = list->AddItem(s.sectname);
 
             list->SetItemData<MachOFile::Section>(item, const_cast<MachOFile::Section*>(&s));
-            list->SetItemText(item, 1, s.x64.segname);
-            list->SetItemText(item, 2, GetValue(n, s.x64.addr));
-            list->SetItemText(item, 3, GetValue(n, s.x64.size));
-            list->SetItemText(item, 4, GetValue(n, s.x64.offset));
-            list->SetItemText(item, 5, GetValue(n, s.x64.align));
-            list->SetItemText(item, 6, GetValue(n, s.x64.reloff));
-            list->SetItemText(item, 7, GetValue(n, s.x64.nreloc));
+            list->SetItemText(item, 1, s.segname);
+            list->SetItemText(item, 2, GetValue(n, s.addr));
+            list->SetItemText(item, 3, GetValue(n, s.size));
+            list->SetItemText(item, 4, GetValue(n, s.offset));
+            list->SetItemText(item, 5, GetValue(n, s.align));
+            list->SetItemText(item, 6, GetValue(n, 1ULL << s.align));
+            list->SetItemText(item, 7, GetValue(n, s.reloff));
+            list->SetItemText(item, 8, GetValue(n, s.nreloc));
 
-            const auto flagsNames = MAC::GetSectionTypeAndAttributesFromFlags(s.x64.flags);
-            const auto flagsValue = std::string{ GetValue(n, s.x64.flags) };
-            list->SetItemText(item, 8, temp.Format("%s (%s)", flagsNames.c_str(), flagsValue.c_str()));
+            const auto flagsNames = MAC::GetSectionTypeAndAttributesFromFlags(s.flags);
+            const auto flagsValue = std::string{ GetValue(n, s.flags) };
+            list->SetItemText(item, 9, temp.Format("%s (%s)", flagsNames.c_str(), flagsValue.c_str()));
 
-            list->SetItemText(item, 9, GetValue(n, s.x64.reserved1));
-            list->SetItemText(item, 10, GetValue(n, s.x64.reserved2));
-            list->SetItemText(item, 11, GetValue(n, s.x64.reserved3));
+            list->SetItemText(item, 10, GetValue(n, s.reserved1));
+            list->SetItemText(item, 11, GetValue(n, s.reserved2));
+            if (machO->is64)
+            {
+                list->SetItemText(item, 12, GetValue(n, s.reserved3));
+            }
+
+            i++;
         }
-        else
-        {
-            auto item = list->AddItem(s.x86.sectname); // name
-
-            list->SetItemData<MachOFile::Section>(item, const_cast<MachOFile::Section*>(&s));
-            list->SetItemText(item, 1, s.x86.segname);
-            list->SetItemText(item, 2, GetValue(n, s.x86.addr));
-            list->SetItemText(item, 3, GetValue(n, s.x86.size));
-            list->SetItemText(item, 4, GetValue(n, s.x86.offset));
-            list->SetItemText(item, 5, GetValue(n, s.x86.align));
-            list->SetItemText(item, 6, GetValue(n, s.x86.reloff));
-            list->SetItemText(item, 7, GetValue(n, s.x86.nreloc));
-
-            const auto flagsNames = MAC::GetSectionTypeAndAttributesFromFlags(s.x86.flags);
-            const auto flagsValue = std::string{ GetValue(n, s.x86.flags) };
-            list->SetItemText(item, 8, temp.Format("%s (%s)", flagsNames.c_str(), flagsValue.c_str()));
-
-            list->SetItemText(item, 9, GetValue(n, s.x86.reserved1));
-            list->SetItemText(item, 10, GetValue(n, s.x86.reserved2));
-        }
-
-        i++;
     }
 }
 

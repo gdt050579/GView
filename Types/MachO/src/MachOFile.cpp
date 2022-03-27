@@ -12,13 +12,13 @@ bool MachOFile::Update()
     uint64_t offset = 0;
 
     SetArchitectureAndEndianess(offset);
+
     SetHeader(offset);
+
     const auto commandsStartOffset = offset;
     SetLoadCommands(offset);
-    SetSegments(offset);
 
-    offset = commandsStartOffset;
-    SetSections(offset);
+    SetSegmentsAndTheirSections();
 
     offset = commandsStartOffset;
     SetDyldInfo(offset);
@@ -51,10 +51,6 @@ bool MachOFile::Update()
     if (segments.empty() == false)
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
-    }
-
-    if (sections.empty() == false)
-    {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
     }
 
@@ -143,68 +139,114 @@ bool MachOFile::SetLoadCommands(uint64_t& offset)
     return true;
 }
 
-bool MachOFile::SetSegments(uint64_t& offset)
+bool MachOFile::SetSegmentsAndTheirSections()
 {
     for (const auto& lc : loadCommands)
     {
+        Segment segment;
+
         if (lc.value.cmd == MAC::LoadCommandType::SEGMENT)
         {
-            Segment s{};
-            CHECK(file->Copy<MAC::segment_command>(lc.offset, s.x86), false, "");
+            MAC::segment_command sc{};
+            CHECK(file->Copy<decltype(sc)>(lc.offset, sc), false, "");
             if (shouldSwapEndianess)
             {
-                Swap(s.x86);
+                Swap(sc);
             }
-            segments.emplace_back(s);
+
+            segment.cmd     = sc.cmd;
+            segment.cmdsize = sc.cmdsize;
+            memcpy(segment.segname, sc.segname, 16);
+            segment.vmaddr   = sc.vmaddr;
+            segment.vmsize   = sc.vmsize;
+            segment.fileoff  = sc.fileoff;
+            segment.filesize = sc.filesize;
+            segment.maxprot  = sc.maxprot;
+            segment.initprot = sc.initprot;
+            segment.nsects   = sc.nsects;
+            segment.flags    = sc.flags;
+
+            auto offset = lc.offset + sizeof(decltype(sc));
+            for (auto i = 0U; i < sc.nsects; i++)
+            {
+                MAC::section section{};
+                CHECK(file->Copy<decltype(section)>(offset, section), false, "");
+                if (shouldSwapEndianess)
+                {
+                    Swap(section);
+                }
+
+                Section s{};
+                memcpy(s.sectname, section.sectname, 16);
+                memcpy(s.segname, section.segname, 16);
+                s.addr      = section.addr;
+                s.size      = section.size;
+                s.offset    = section.offset;
+                s.align     = section.align;
+                s.reloff    = section.reloff;
+                s.nreloc    = section.nreloc;
+                s.flags     = section.flags;
+                s.reserved1 = section.reserved1;
+                s.reserved2 = section.reserved2;
+                s.reserved3 = 0ULL /* section.reserved3 */;
+
+                segment.sections.emplace_back(s);
+                offset += sizeof(decltype(section));
+            }
         }
         else if (lc.value.cmd == MAC::LoadCommandType::SEGMENT_64)
         {
-            Segment s{};
-            CHECK(file->Copy<MAC::segment_command_64>(lc.offset, s.x64), false, "");
+            MAC::segment_command_64 sc{};
+            CHECK(file->Copy<MAC::segment_command_64>(lc.offset, sc), false, "");
             if (shouldSwapEndianess)
             {
-                Swap(s.x64);
+                Swap(sc);
             }
-            segments.emplace_back(s);
-        }
-    }
 
-    return true;
-}
+            segment.cmd     = sc.cmd;
+            segment.cmdsize = sc.cmdsize;
+            memcpy(segment.segname, sc.segname, 16);
+            segment.vmaddr   = sc.vmaddr;
+            segment.vmsize   = sc.vmsize;
+            segment.fileoff  = sc.fileoff;
+            segment.filesize = sc.filesize;
+            segment.maxprot  = sc.maxprot;
+            segment.initprot = sc.initprot;
+            segment.nsects   = sc.nsects;
+            segment.flags    = sc.flags;
 
-bool MachOFile::SetSections(uint64_t& offset)
-{
-    for (const auto& segment : segments)
-    {
-        if (is64)
-        {
-            offset += sizeof(MAC::segment_command_64);
-            for (auto i = 0U; i < segment.x64.nsects; i++)
+            auto offset = lc.offset + sizeof(decltype(sc));
+            for (auto i = 0U; i < sc.nsects; i++)
             {
-                Section s{};
-                CHECK(file->Copy<MAC::section_64>(offset, s.x64), false, "");
+                MAC::section_64 section{};
+                CHECK(file->Copy<decltype(section)>(offset, section), false, "");
                 if (shouldSwapEndianess)
                 {
-                    Swap(s.x64);
+                    Swap(section);
                 }
-                sections.emplace_back(s);
-                offset += sizeof(MAC::section_64);
+
+                Section s{};
+                memcpy(s.sectname, section.sectname, 16);
+                memcpy(s.segname, section.segname, 16);
+                s.addr      = section.addr;
+                s.size      = section.size;
+                s.offset    = section.offset;
+                s.align     = section.align;
+                s.reloff    = section.reloff;
+                s.nreloc    = section.nreloc;
+                s.flags     = section.flags;
+                s.reserved1 = section.reserved1;
+                s.reserved2 = section.reserved2;
+                s.reserved3 = section.reserved3;
+
+                segment.sections.emplace_back(s);
+                offset += sizeof(decltype(section));
             }
         }
-        else
+
+        if (lc.value.cmd == MAC::LoadCommandType::SEGMENT || lc.value.cmd == MAC::LoadCommandType::SEGMENT_64)
         {
-            offset += sizeof(MAC::segment_command);
-            for (auto i = 0U; i < segment.x86.nsects; i++)
-            {
-                Section s{};
-                CHECK(file->Copy<MAC::section>(offset, s.x86), false, "");
-                if (shouldSwapEndianess)
-                {
-                    Swap(s.x86);
-                }
-                sections.emplace_back(s);
-                offset += sizeof(MAC::section);
-            }
+            segments.emplace_back(segment);
         }
     }
 

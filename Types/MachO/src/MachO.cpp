@@ -45,15 +45,11 @@ extern "C"
             commandsCount++;
         }
 
-        for (const auto& s : machO->sections)
+        for (const auto& segment : machO->segments)
         {
-            if (machO->is64)
+            for (const auto& s : segment.sections)
             {
-                settings.AddZone(s.x64.offset, s.x64.size, machO->colors.section, s.x64.sectname);
-            }
-            else
-            {
-                settings.AddZone(s.x86.offset, s.x86.size, machO->colors.section, s.x86.sectname);
+                settings.AddZone(s.offset, s.size, machO->colors.section, s.sectname);
             }
         }
 
