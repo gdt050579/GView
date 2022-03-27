@@ -25,13 +25,13 @@ Objects::Objects(Reference<UniversalMachOFile> _machO, Reference<GView::View::Wi
     Base  = 16;
 
     list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 10);
-    list->AddColumn("Description", TextAlignament::Right, 25);
-    list->AddColumn("CPU type", TextAlignament::Right, 30);
-    list->AddColumn("CPU subtype", TextAlignament::Right, 40);
+    list->AddColumn("CPU type", TextAlignament::Right, 25);
+    list->AddColumn("CPU subtype", TextAlignament::Right, 25);
+    list->AddColumn("File type", TextAlignament::Left, 80);
     list->AddColumn("Offset", TextAlignament::Right, 12);
     list->AddColumn("Size", TextAlignament::Right, 12);
     list->AddColumn("Align", TextAlignament::Right, 12);
+    list->AddColumn("Real Align", TextAlignament::Right, 12);
 
     Update();
 }
@@ -48,120 +48,45 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    const auto& vArch = list->GetItemData<Identity<decltype(machO->archs)>::type::value_type>(list->GetCurrentItem())
-                              .
-                              operator Identity<decltype(machO->archs)>::type::value_type&();
-
-    uint64_t offset = 0;
-
-    switch (vArch.index())
-    {
-    case 0:
-    {
-        const auto& arch = std::get<0>(vArch);
-        offset           = arch.offset;
-    }
-    break;
-    case 1:
-    {
-        const auto& arch = std::get<1>(vArch);
-        offset           = arch.offset;
-    }
-    break;
-    default:
-        break;
-    }
-
-    win->GetCurrentView()->GoTo(offset);
+    const auto& arch = list->GetItemData<Identity<decltype(machO->archs)>::type::value_type>(list->GetCurrentItem())
+                             .
+                             operator Identity<decltype(machO->archs)>::type::value_type&();
+    win->GetCurrentView()->GoTo(arch.offset);
 }
 
 void Panels::Objects::SelectCurrentSection()
 {
-    const auto& vArch = list->GetItemData<Identity<decltype(machO->archs)>::type::value_type>(list->GetCurrentItem())
-                              .
-                              operator Identity<decltype(machO->archs)>::type::value_type&();
-
-    uint64_t offset = 0;
-    uint64_t size   = 0;
-
-    switch (vArch.index())
-    {
-    case 0:
-    {
-        const auto& arch = std::get<0>(vArch);
-        offset           = arch.offset;
-        size             = arch.size;
-    }
-    break;
-    case 1:
-    {
-        const auto& arch = std::get<1>(vArch);
-        offset           = arch.offset;
-        size             = arch.size;
-    }
-    break;
-    default:
-        break;
-    }
-
-    win->GetCurrentView()->Select(offset, size);
+    const auto& arch = list->GetItemData<Identity<decltype(machO->archs)>::type::value_type>(list->GetCurrentItem())
+                             .
+                             operator Identity<decltype(machO->archs)>::type::value_type&();
+    win->GetCurrentView()->Select(arch.offset, arch.size);
 }
 
 void Panels::Objects::Update()
 {
     LocalString<128> tmp;
     NumericFormatter n;
+
     list->DeleteAllItems();
 
     for (decltype(machO->header.nfat_arch) i = 0U; i < machO->header.nfat_arch; i++)
     {
-        const auto& ai = machO->archsInfo[i];
+        const auto& info = machO->archs[i].info;
 
-        tmp.Format("#%lu %s", i, ai.name.c_str());
-        auto item = list->AddItem(tmp); // name
-        list->SetItemText(item, 1, ai.description.c_str());
+        auto item = list->AddItem(tmp.Format("%s (%s)", info.name.c_str(), GetValue(n, machO->archs[i].cputype).data()));
+        list->SetItemText(item, 1, tmp.Format("%s (%s)", info.description.c_str(), GetValue(n, machO->archs[i].cpusubtype).data()));
+
+        const auto fileType             = machO->archs[i].filetype;
+        const auto& fileTypeName        = MAC::FileTypeNames.at(fileType);
+        const auto& fileTypeDescription = MAC::FileTypeDescriptions.at(fileType);
+        list->SetItemText(item, 2, tmp.Format("%s (0x%X) %s", fileTypeName.data(), fileType, fileTypeDescription.data()));
+
+        list->SetItemText(item, 3, GetValue(n, machO->archs[i].offset));
+        list->SetItemText(item, 4, GetValue(n, machO->archs[i].size));
+        list->SetItemText(item, 5, GetValue(n, machO->archs[i].align));
+        list->SetItemText(item, 6, GetValue(n, 1ULL << machO->archs[i].align));
 
         list->SetItemData<Identity<decltype(machO->archs)>::type::value_type>(item, &machO->archs[i]);
-
-        MAC::CPU_TYPE cputype{};
-        uint32_t cpusubtype{};
-        uint64_t offset{};
-        uint64_t size{};
-        uint64_t align{};
-
-        switch (machO->archs[i].index())
-        {
-        case 0:
-        {
-            const auto& arch = std::get<0>(machO->archs[i]);
-            cputype          = arch.cputype;
-            cpusubtype       = arch.cpusubtype;
-            offset           = arch.offset;
-            size             = arch.size;
-            align            = arch.align;
-        }
-        break;
-        case 1:
-        {
-            const auto& arch = std::get<1>(machO->archs[i]);
-            cputype          = arch.cputype;
-            cpusubtype       = arch.cpusubtype;
-            offset           = arch.offset;
-            size             = arch.size;
-            align            = arch.align;
-        }
-        break;
-        default:
-            break;
-        }
-
-        const auto value = GetValue(n, static_cast<uint32_t>(cputype));
-        list->SetItemText(item, 2, tmp.Format("%s (%.*s)", MAC::CpuTypeNames.at(cputype).data(), value.size(), value.data()));
-        GetValue(n, cpusubtype);
-        list->SetItemText(item, 3, tmp.Format("%s (%.*s)", MAC::GetCPUSubtype(cputype, cpusubtype).data(), value.size(), value.data()));
-        list->SetItemText(item, 4, GetValue(n, offset));
-        list->SetItemText(item, 5, GetValue(n, size));
-        list->SetItemText(item, 6, GetValue(n, align));
     }
 }
 

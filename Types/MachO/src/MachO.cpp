@@ -8,8 +8,8 @@ using namespace GView::Utils;
 using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
-using namespace MachO;
-using namespace MachO::MAC;
+using namespace GView::Type::MachO;
+using namespace MAC;
 
 extern "C"
 {
@@ -118,10 +118,10 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         static const std::initializer_list<std::string> patterns = {
-            "hex:'" + BinaryToHexString(MachO::MAC::MH_MAGIC, sizeof(MachO::MAC::MH_MAGIC)) + "'",
-            "hex:'" + BinaryToHexString(MachO::MAC::MH_CIGAM, sizeof(MachO::MAC::MH_CIGAM)) + "'",
-            "hex:'" + BinaryToHexString(MachO::MAC::MH_MAGIC_64, sizeof(MachO::MAC::MH_MAGIC_64)) + "'",
-            "hex:'" + BinaryToHexString(MachO::MAC::MH_CIGAM_64, sizeof(MachO::MAC::MH_CIGAM_64)) + "'"
+            "hex:'" + BinaryToHexString(MAC::MH_MAGIC, sizeof(MAC::MH_MAGIC)) + "'",
+            "hex:'" + BinaryToHexString(MAC::MH_CIGAM, sizeof(MAC::MH_CIGAM)) + "'",
+            "hex:'" + BinaryToHexString(MAC::MH_MAGIC_64, sizeof(MAC::MH_MAGIC_64)) + "'",
+            "hex:'" + BinaryToHexString(MAC::MH_CIGAM_64, sizeof(MAC::MH_CIGAM_64)) + "'"
         };
 
         sect["Pattern"]  = patterns;

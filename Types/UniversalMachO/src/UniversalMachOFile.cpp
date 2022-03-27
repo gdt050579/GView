@@ -2,7 +2,8 @@
 
 namespace GView::Type::UniversalMachO
 {
-UniversalMachOFile::UniversalMachOFile(Reference<GView::Utils::FileCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
+UniversalMachOFile::UniversalMachOFile(Reference<GView::Utils::FileCache> file)
+    : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;
 }
@@ -19,59 +20,60 @@ bool UniversalMachOFile::Update()
 
     if (shouldSwapEndianess)
     {
-        header.magic     = Utils::SwapEndian(header.magic);
-        header.nfat_arch = Utils::SwapEndian(header.nfat_arch);
+        Swap(header);
     }
 
     archs.clear();
     archs.reserve(header.nfat_arch);
 
-    archsInfo.clear();
-    archsInfo.reserve(header.nfat_arch);
-
-    if (is64)
+    for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
     {
-        for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
+        MAC::Arch arch{};
+        if (is64)
         {
             MAC::fat_arch64 fa64;
             CHECK(file->Copy<MAC::fat_arch64>(offset, fa64), false, "");
             if (shouldSwapEndianess)
             {
-                fa64.cputype    = Utils::SwapEndian(fa64.cputype);
-                fa64.cpusubtype = Utils::SwapEndian(fa64.cpusubtype);
-                fa64.offset     = Utils::SwapEndian(fa64.offset);
-                fa64.size       = Utils::SwapEndian(fa64.size);
-                fa64.align      = Utils::SwapEndian(fa64.align);
-                fa64.reserved   = Utils::SwapEndian(fa64.reserved);
+                Swap(fa64);
             }
-            archs.push_back(fa64);
             offset += sizeof(MAC::fat_arch64);
 
-            auto ai = GetArchInfoFromCPUTypeAndSubtype(fa64.cputype, static_cast<uint32_t>(fa64.cpusubtype));
-            archsInfo.emplace_back(std::move(ai));
+            arch.cputype    = fa64.cputype;
+            arch.cpusubtype = fa64.cpusubtype;
+            arch.offset     = fa64.offset;
+            arch.size       = fa64.size;
+            arch.align      = fa64.align;
+            arch.reserved   = fa64.reserved;
         }
-    }
-    else
-    {
-        for (decltype(header.nfat_arch) i = 0; i < header.nfat_arch; i++)
+        else
         {
             MAC::fat_arch fa;
             CHECK(file->Copy<MAC::fat_arch>(offset, fa), false, "");
-
             if (shouldSwapEndianess)
             {
-                fa.cputype    = Utils::SwapEndian(fa.cputype);
-                fa.cpusubtype = Utils::SwapEndian(fa.cpusubtype);
-                fa.offset     = Utils::SwapEndian(fa.offset);
-                fa.size       = Utils::SwapEndian(fa.size);
-                fa.align      = Utils::SwapEndian(fa.align);
+                Swap(fa);
             }
-            archs.push_back(fa);
             offset += sizeof(MAC::fat_arch);
 
-            auto ai = GetArchInfoFromCPUTypeAndSubtype(fa.cputype, static_cast<uint32_t>(fa.cpusubtype));
-            archsInfo.emplace_back(std::move(ai));
+            arch.cputype    = fa.cputype;
+            arch.cpusubtype = fa.cpusubtype;
+            arch.offset     = fa.offset;
+            arch.size       = fa.size;
+            arch.align      = fa.align;
         }
+
+        MAC::mach_header mh{};
+        CHECK(file->Copy<MAC::mach_header>(arch.offset, mh), false, "");
+        if (mh.magic == MAC::MH_CIGAM || mh.magic == MAC::MH_CIGAM_64)
+        {
+            Swap(mh);
+        }
+
+        arch.filetype = mh.filetype;
+
+        arch.info = MAC::GetArchInfoFromCPUTypeAndSubtype(arch.cputype, arch.cpusubtype);
+        archs.emplace_back(arch);
     }
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
@@ -94,4 +96,4 @@ uint64_t UniversalMachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTr
 {
     return value;
 }
-} // namespace GView::Type::MachOFB
+} // namespace GView::Type::UniversalMachO

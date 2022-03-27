@@ -109,11 +109,11 @@ bool MachOFile::SetArchitectureAndEndianess(uint64_t& offset)
 
 bool MachOFile::SetHeader(uint64_t& offset)
 {
-    CHECK(file->Copy<MachO::MAC::mach_header>(offset, header), false, "");
+    CHECK(file->Copy<MAC::mach_header>(offset, header), false, "");
     offset += sizeof(header);
     if (is64 == false)
     {
-        offset -= sizeof(MachO::MAC::mach_header::reserved);
+        offset -= sizeof(MAC::mach_header::reserved);
     }
 
     if (shouldSwapEndianess)

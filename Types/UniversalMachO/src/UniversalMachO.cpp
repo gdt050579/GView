@@ -9,30 +9,28 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 using namespace UniversalMachO;
-using namespace UniversalMachO::MAC;
-using namespace UniversalMachO::Utils;
 using namespace UniversalMachO::Panels;
+using namespace MAC;
 
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
     {
         auto header = buf.GetObject<fat_header>();
-        CHECK(header != nullptr, false, "");
+        CHECK(header.IsValid(), false, "");
         const auto magic = header->magic;
-        CHECK(magic == FAT_MAGIC || magic == FAT_CIGAM || magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64, false, "Magic is [%u]!", magic);
+        CHECK(header->magic == FAT_MAGIC || header->magic == FAT_CIGAM || header->magic == FAT_MAGIC_64 || header->magic == FAT_CIGAM_64,
+              false,
+              "Magic is [%u]!",
+              header->magic);
 
-        if (magic == FAT_MAGIC || magic == FAT_CIGAM)
+        auto fh = *reinterpret_cast<const fat_header*>(buf.GetData());
+        if (header->magic == FAT_CIGAM || header->magic == FAT_CIGAM_64)
         {
-            auto maybeArchCount = header->nfat_arch;
-
-            if (magic == FAT_CIGAM)
-            {
-                maybeArchCount = SwapEndian(maybeArchCount);
-            }
-
-            CHECK(maybeArchCount < 0x2D, false, "This is probably a JAR class file!");
+            Swap(fh);
         }
+
+        CHECK(fh.nfat_arch < 0x2D, false, "This is probably a JAR class file!");
 
         return true;
     }
@@ -55,39 +53,15 @@ extern "C"
 
         for (const auto& vArch : macho->archs)
         {
-            uint64_t structSize = 0;
-            uint64_t offset     = 0;
-            uint64_t size       = 0;
-
-            switch (vArch.index())
-            {
-            case 0:
-            {
-                const auto& arch = std::get<0>(vArch);
-                structSize       = sizeof(arch);
-                offset           = arch.offset;
-                size             = arch.size;
-            }
-            break;
-            case 1:
-            {
-                const auto& arch = std::get<1>(vArch);
-                structSize       = sizeof(arch);
-                offset           = arch.offset;
-                size             = arch.size;
-            }
-            break;
-            default:
-                break;
-            }
-
             temp.Format("Arch #%u", objectCount);
+
+            const auto structSize = macho->is64 ? sizeof(fat_arch64) : sizeof(fat_arch);
             settings.AddZone(offsetHeaders, structSize, macho->colors.arch, temp);
             offsetHeaders += structSize;
 
-            const auto& ai = macho->archsInfo[objectCount];
+            const auto& ai = macho->archs[objectCount].info;
             temp.Format("#%u %s", objectCount, ai.name.c_str());
-            settings.AddZone(offset, size, macho->colors.object, temp);
+            settings.AddZone(macho->archs[objectCount].offset, macho->archs[objectCount].size, macho->colors.object, temp);
 
             objectCount++;
         }
