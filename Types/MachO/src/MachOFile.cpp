@@ -20,8 +20,7 @@ bool MachOFile::Update()
 
     SetSegmentsAndTheirSections();
 
-    offset = commandsStartOffset;
-    SetDyldInfo(offset);
+    SetDyldInfo();
 
     offset = commandsStartOffset;
     SetIdDylibs(offset);
@@ -54,7 +53,7 @@ bool MachOFile::Update()
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
     }
 
-    if (dyldInfo.isSet)
+    if (dyldInfo.has_value())
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
     }
@@ -253,24 +252,25 @@ bool MachOFile::SetSegmentsAndTheirSections()
     return true;
 }
 
-bool MachOFile::SetDyldInfo(uint64_t& offset)
+bool MachOFile::SetDyldInfo()
 {
     for (const auto& lc : loadCommands)
     {
         if (lc.value.cmd == MAC::LoadCommandType::DYLD_INFO || lc.value.cmd == MAC::LoadCommandType::DYLD_INFO_ONLY)
         {
-            if (dyldInfo.isSet == false)
-            {
-                CHECK(file->Copy<MAC::dyld_info_command>(offset, dyldInfo.value), false, "");
-                dyldInfo.isSet = true;
-            }
-            else
+            if (dyldInfo.has_value())
             {
                 throw "Multiple LoadCommandType::DYLD_INFO or MAC::LoadCommandType::DYLD_INFO_ONLY found! Reimplement this!";
             }
-        }
 
-        offset += lc.value.cmdsize;
+            dyldInfo.emplace(MAC::dyld_info_command{});
+            CHECK(file->Copy<MAC::dyld_info_command>(lc.offset, *dyldInfo), false, "");
+
+            if (shouldSwapEndianess)
+            {
+                Swap(*dyldInfo);
+            }
+        }
     }
 
     return true;
@@ -412,7 +412,7 @@ bool MachOFile::SetSymbols(uint64_t& offset)
 
             const auto stringTable       = file->CopyToBuffer(dySymTab->sc.stroff, dySymTab->sc.strsize);
             const auto symbolTableOffset = dySymTab->sc.nsyms * (is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
-            const auto symbolTable       = file->CopyToBuffer(dySymTab->sc.symoff, symbolTableOffset);
+            const auto symbolTable       = file->CopyToBuffer(dySymTab->sc.symoff, static_cast<uint32>(symbolTableOffset));
 
             for (auto i = 0U; i < dySymTab->sc.nsyms; i++)
             {

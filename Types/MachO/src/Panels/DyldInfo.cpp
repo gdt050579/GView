@@ -31,75 +31,75 @@ void DyldInfo::UpdateBasicInfo()
           "Command",
           tmp.Format(
                 "%s (%s)",
-                std::string(MAC::LoadCommandNames.at(machO->dyldInfo.value.cmd)).c_str(),
-                std::string(n.ToString(static_cast<uint32_t>(machO->dyldInfo.value.cmd), hex).data()).c_str()));
+                std::string(MAC::LoadCommandNames.at(machO->dyldInfo->cmd)).c_str(),
+                std::string(n.ToString(static_cast<uint32_t>(machO->dyldInfo->cmd), hex).data()).c_str()));
 
     general->AddItem(
           "Cmd Size",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.cmdsize, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.cmdsize, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->cmdsize, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->cmdsize, hex).data()).c_str()));
     general->AddItem(
           "Rebase Info File Offset",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.rebase_off, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.rebase_off, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->rebase_off, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->rebase_off, hex).data()).c_str()));
     general->AddItem(
           "Rebase Info Size",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.rebase_size, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.rebase_size, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->rebase_size, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->rebase_size, hex).data()).c_str()));
     general->AddItem(
           "Binding Info File Offset",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.bind_off, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.bind_off, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->bind_off, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->bind_off, hex).data()).c_str()));
     general->AddItem(
           "Binding Info Size",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.bind_size, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.bind_size, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->bind_size, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->bind_size, hex).data()).c_str()));
     general->AddItem(
           "Weak Binding File Offset",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.weak_bind_off, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.weak_bind_off, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->weak_bind_off, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->weak_bind_off, hex).data()).c_str()));
     general->AddItem(
           "Weak Binding Size",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.weak_bind_size, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.weak_bind_size, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->weak_bind_size, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->weak_bind_size, hex).data()).c_str()));
     general->AddItem(
           "Lazy Binding File Offset",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.lazy_bind_off, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.lazy_bind_off, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->lazy_bind_off, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->lazy_bind_off, hex).data()).c_str()));
     general->AddItem(
           "Lazy Binding Size",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.lazy_bind_size, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.lazy_bind_size, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->lazy_bind_size, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->lazy_bind_size, hex).data()).c_str()));
     general->AddItem(
           "Export File Offset",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.export_off, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.export_off, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->export_off, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->export_off, hex).data()).c_str()));
     general->AddItem(
           "Export Size",
           tmp.Format(
                 "%s (%s)",
-                n.ToString(machO->dyldInfo.value.export_size, dec).data(),
-                std::string(n.ToString(machO->dyldInfo.value.export_size, hex).data()).c_str()));
+                n.ToString(machO->dyldInfo->export_size, dec).data(),
+                std::string(n.ToString(machO->dyldInfo->export_size, hex).data()).c_str()));
 }
 
 void DyldInfo::RecomputePanelsPositions()

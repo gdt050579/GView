@@ -240,4 +240,20 @@ static void Swap(version_min_command& obj)
     SwapEndianInplace(obj.version);
     SwapEndianInplace(obj.sdk);
 }
+
+static void Swap(dyld_info_command& obj)
+{
+    SwapEndianInplace(obj.cmd);
+    SwapEndianInplace(obj.cmdsize);
+    SwapEndianInplace(obj.rebase_off);
+    SwapEndianInplace(obj.rebase_size);
+    SwapEndianInplace(obj.bind_off);
+    SwapEndianInplace(obj.bind_size);
+    SwapEndianInplace(obj.weak_bind_off);
+    SwapEndianInplace(obj.weak_bind_size);
+    SwapEndianInplace(obj.lazy_bind_off);
+    SwapEndianInplace(obj.lazy_bind_size);
+    SwapEndianInplace(obj.export_off);
+    SwapEndianInplace(obj.export_size);
+}
 } // namespace MAC

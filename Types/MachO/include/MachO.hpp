@@ -70,12 +70,6 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         std::vector<Section> sections;
     };
 
-    struct DyldInfo
-    {
-        bool isSet = false;
-        MAC::dyld_info_command value;
-    };
-
     struct Dylib
     {
         MAC::dylib_command value;
@@ -151,7 +145,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
-    DyldInfo dyldInfo;
+    std::optional<MAC::dyld_info_command> dyldInfo;
     std::vector<Dylib> dylibs;
     std::optional<DySymTab> dySymTab;
     Main main;
@@ -188,7 +182,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetHeader(uint64_t& offset);
     bool SetLoadCommands(uint64_t& offset);
     bool SetSegmentsAndTheirSections();
-    bool SetDyldInfo(uint64_t& offset);
+    bool SetDyldInfo();
     bool SetIdDylibs(uint64_t& offset);
     bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD
     bool SetSymbols(uint64_t& offset);
