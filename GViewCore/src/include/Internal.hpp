@@ -92,6 +92,26 @@ namespace Utils
         const Zone* OffsetToZone(uint64 offset);
     };
 } // namespace Utils
+namespace Generic
+{
+    constexpr uint32 MAX_PLUGINS_COMMANDS = 8;
+    class Plugin
+    {
+        FixSizeString<29> Name;
+        struct
+        {
+            FixSizeString<25> Name;
+            Input::Key ShortKey;
+        } Commands[MAX_PLUGINS_COMMANDS];
+        uint32 CommandsCount;
+        bool (*fnRun)(const string_view command);
+      public:
+        Plugin();
+        bool Init(AppCUI::Utils::IniSection section);
+        void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
+        void Run(uint32 commandIndex);
+    };
+}; // namespace Generic
 namespace Type
 {
     namespace DefaultTypePlugin
@@ -178,6 +198,7 @@ namespace App
         AppCUI::Controls::Menu* mnuHelp;
         AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
+        std::vector<GView::Generic::Plugin> genericPlugins;
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
@@ -193,6 +214,7 @@ namespace App
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
+        void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
         constexpr inline uint32 GetDefaultCacheSize() const
@@ -255,7 +277,7 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
-    class ErrorDialog: public AppCUI::Controls::Window
+    class ErrorDialog : public AppCUI::Controls::Window
     {
       public:
         ErrorDialog(const GView::Utils::ErrorList& errList);

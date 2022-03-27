@@ -81,14 +81,7 @@ void Dylib::Update()
         list->SetItemText(item, 1, GetValue(n, d.value.cmdsize).data());
         list->SetItemText(item, 2, d.name.c_str());
 
-        if (machO->is64)
-        {
-            list->SetItemText(item, 3, GetValue(n, (uintptr_t) d.value.dylib.name.ptr).data());
-        }
-        else
-        {
-            list->SetItemText(item, 3, GetValue(n, d.value.dylib.name.offset).data());
-        }
+        list->SetItemText(item, 3, GetValue(n, d.value.dylib.name.offset).data());
 
         const auto timestamp = (time_t) d.value.dylib.timestamp;
         list->SetItemText(item, 4, tmp.Format("%s (%s)", ctime(&timestamp), GetValue(n, d.value.dylib.timestamp).data()));

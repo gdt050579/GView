@@ -1,62 +1,7 @@
 #pragma once
 
-#include "Mac.hpp"
-
-namespace GView::Type::MachO::Utils
-{
-template <typename T>
-const T SwapEndian(T u)
-{
-    union
-    {
-        T object;
-        unsigned char bytes[sizeof(T)];
-    } source{ u }, dest{};
-
-    for (auto i = 0; i < sizeof(T); i++)
-    {
-        dest.bytes[i] = source.bytes[sizeof(T) - i - 1];
-    }
-
-    return dest.object;
-}
-
-template <typename T>
-void SwapEndianInplace(T* u, uint64_t size)
-{
-    for (auto i = 0ULL; i < size; i++)
-    {
-        u[i] = u[size - i - 1];
-    }
-}
-
-template <typename T>
-static const std::string BinaryToHexString(const T number, const size_t length)
-{
-    constexpr const char digits[] = "0123456789ABCDEF";
-
-    std::string output;
-    output.reserve(length * 3);
-
-    const auto input = reinterpret_cast<const uint8_t*>(&number);
-    std::for_each(
-          input,
-          input + length,
-          [&output](uint8_t byte)
-          {
-              output.push_back(digits[byte >> 4]);
-              output.push_back(digits[byte & 0x0F]);
-              output.push_back(' ');
-          });
-
-    if (output.empty() == false)
-    {
-        output.resize(output.size() - 1);
-    }
-
-    return output;
-}
-} // namespace GView::Type::MachO::Utils
+#include "Utils.hpp"
+#include "Swap.hpp"
 
 namespace GView::Type::MachO
 {

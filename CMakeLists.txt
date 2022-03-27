@@ -8,9 +8,8 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(DEBUG_BUILD 1)
+     set(DEBUG_BUILD 1)
 endif()
-
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
@@ -57,9 +56,7 @@ endif()
 
 if (NOT DEBUG_BUILD)
     if (MSVC)
-        #add_compile_options(-O2)
         add_compile_options(-Ob2)
-	#string( REPLACE "/RTC1" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} )
     else()
         add_compile_options(-O3)
     endif()
@@ -70,11 +67,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # target_link_libraries(GViewCore PUBLIC ${CXX_FILESYSTEM_LIBRARIES})
-
-if(MSVC)
-  target_compile_options(GView PUBLIC "/ZI")
-  target_link_options(GView PUBLIC "/ZI" "/INCREMENTAL")
-endif()
 
 add_subdirectory(3rdPartyLibs/LLVMDemangle)
 
@@ -91,3 +83,10 @@ add_subdirectory(Types/UniversalMachO)
 add_subdirectory(Types/MachO)
 
 
+# Generic plugins supported by GView
+add_subdirectory(GenericPlugins/CharacterTable)
+
+if(MSVC)
+  target_compile_options(GView PUBLIC "/ZI")
+  target_link_options(GView PUBLIC "/ZI" "/INCREMENTAL")
+endif()

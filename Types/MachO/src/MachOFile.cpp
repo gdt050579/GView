@@ -118,13 +118,7 @@ bool MachOFile::SetHeader(uint64_t& offset)
 
     if (shouldSwapEndianess)
     {
-        header.magic      = Utils::SwapEndian(header.magic);
-        header.cputype    = Utils::SwapEndian(header.cputype);
-        header.cpusubtype = Utils::SwapEndian(header.cpusubtype);
-        header.filetype   = Utils::SwapEndian(header.filetype);
-        header.ncmds      = Utils::SwapEndian(header.ncmds);
-        header.sizeofcmds = Utils::SwapEndian(header.sizeofcmds);
-        header.flags      = Utils::SwapEndian(header.flags);
+        Swap(header);
     }
 
     return true;
@@ -140,8 +134,7 @@ bool MachOFile::SetLoadCommands(uint64_t& offset)
         CHECK(file->Copy<MAC::load_command>(offset, lc), false, "");
         if (shouldSwapEndianess)
         {
-            lc.cmd     = Utils::SwapEndian(lc.cmd);
-            lc.cmdsize = Utils::SwapEndian(lc.cmdsize);
+            Swap(lc);
         }
         loadCommands.push_back({ lc, offset });
         offset += lc.cmdsize;
@@ -160,20 +153,7 @@ bool MachOFile::SetSegments(uint64_t& offset)
             CHECK(file->Copy<MAC::segment_command>(lc.offset, s.x86), false, "");
             if (shouldSwapEndianess)
             {
-                s.x86.cmd     = Utils::SwapEndian(s.x86.cmd);
-                s.x86.cmdsize = Utils::SwapEndian(s.x86.cmdsize);
-                for (auto i = 0U; i < sizeof(s.x86.segname) / sizeof(s.x86.segname[0]); i++)
-                {
-                    s.x86.segname[i] = Utils::SwapEndian(s.x86.segname[i]);
-                }
-                s.x86.vmaddr   = Utils::SwapEndian(s.x86.vmaddr);
-                s.x86.vmsize   = Utils::SwapEndian(s.x86.vmsize);
-                s.x86.fileoff  = Utils::SwapEndian(s.x86.fileoff);
-                s.x86.filesize = Utils::SwapEndian(s.x86.filesize);
-                s.x86.maxprot  = Utils::SwapEndian(s.x86.maxprot);
-                s.x86.initprot = Utils::SwapEndian(s.x86.initprot);
-                s.x86.nsects   = Utils::SwapEndian(s.x86.nsects);
-                s.x86.flags    = Utils::SwapEndian(s.x86.flags);
+                Swap(s.x86);
             }
             segments.emplace_back(s);
         }
@@ -183,20 +163,7 @@ bool MachOFile::SetSegments(uint64_t& offset)
             CHECK(file->Copy<MAC::segment_command_64>(lc.offset, s.x64), false, "");
             if (shouldSwapEndianess)
             {
-                s.x64.cmd     = Utils::SwapEndian(s.x64.cmd);
-                s.x64.cmdsize = Utils::SwapEndian(s.x64.cmdsize);
-                for (auto i = 0U; i < sizeof(s.x64.segname) / sizeof(s.x64.segname[0]); i++)
-                {
-                    s.x64.segname[i] = Utils::SwapEndian(s.x64.segname[i]);
-                }
-                s.x64.vmaddr   = Utils::SwapEndian(s.x64.vmaddr);
-                s.x64.vmsize   = Utils::SwapEndian(s.x64.vmsize);
-                s.x64.fileoff  = Utils::SwapEndian(s.x64.fileoff);
-                s.x64.filesize = Utils::SwapEndian(s.x64.filesize);
-                s.x64.maxprot  = Utils::SwapEndian(s.x64.maxprot);
-                s.x64.initprot = Utils::SwapEndian(s.x64.initprot);
-                s.x64.nsects   = Utils::SwapEndian(s.x64.nsects);
-                s.x64.flags    = Utils::SwapEndian(s.x64.flags);
+                Swap(s.x64);
             }
             segments.emplace_back(s);
         }
@@ -218,24 +185,7 @@ bool MachOFile::SetSections(uint64_t& offset)
                 CHECK(file->Copy<MAC::section_64>(offset, s.x64), false, "");
                 if (shouldSwapEndianess)
                 {
-                    for (auto i = 0U; i < sizeof(s.x64.sectname) / sizeof(s.x64.sectname[0]); i++)
-                    {
-                        s.x64.sectname[i] = Utils::SwapEndian(s.x64.sectname[i]);
-                    }
-                    for (auto i = 0U; i < sizeof(s.x64.segname) / sizeof(s.x64.segname[0]); i++)
-                    {
-                        s.x64.segname[i] = Utils::SwapEndian(s.x64.segname[i]);
-                    }
-                    s.x64.addr      = Utils::SwapEndian(s.x64.addr);
-                    s.x64.size      = Utils::SwapEndian(s.x64.size);
-                    s.x64.offset    = Utils::SwapEndian(s.x64.offset);
-                    s.x64.align     = Utils::SwapEndian(s.x64.align);
-                    s.x64.reloff    = Utils::SwapEndian(s.x64.reloff);
-                    s.x64.nreloc    = Utils::SwapEndian(s.x64.nreloc);
-                    s.x64.flags     = Utils::SwapEndian(s.x64.flags);
-                    s.x64.reserved1 = Utils::SwapEndian(s.x64.reserved1);
-                    s.x64.reserved2 = Utils::SwapEndian(s.x64.reserved2);
-                    s.x64.reserved3 = Utils::SwapEndian(s.x64.reserved3);
+                    Swap(s.x64);
                 }
                 sections.emplace_back(s);
                 offset += sizeof(MAC::section_64);
@@ -250,23 +200,7 @@ bool MachOFile::SetSections(uint64_t& offset)
                 CHECK(file->Copy<MAC::section>(offset, s.x86), false, "");
                 if (shouldSwapEndianess)
                 {
-                    for (auto i = 0U; i < sizeof(s.x86.sectname) / sizeof(s.x86.sectname[0]); i++)
-                    {
-                        s.x86.sectname[i] = Utils::SwapEndian(s.x86.sectname[i]);
-                    }
-                    for (auto i = 0U; i < sizeof(s.x86.segname) / sizeof(s.x86.segname[0]); i++)
-                    {
-                        s.x86.segname[i] = Utils::SwapEndian(s.x86.segname[i]);
-                    }
-                    s.x86.addr      = Utils::SwapEndian(s.x86.addr);
-                    s.x86.size      = Utils::SwapEndian(s.x86.size);
-                    s.x86.offset    = Utils::SwapEndian(s.x86.offset);
-                    s.x86.align     = Utils::SwapEndian(s.x86.align);
-                    s.x86.reloff    = Utils::SwapEndian(s.x86.reloff);
-                    s.x86.nreloc    = Utils::SwapEndian(s.x86.nreloc);
-                    s.x86.flags     = Utils::SwapEndian(s.x86.flags);
-                    s.x86.reserved1 = Utils::SwapEndian(s.x86.reserved1);
-                    s.x86.reserved2 = Utils::SwapEndian(s.x86.reserved2);
+                    Swap(s.x86);
                 }
                 sections.emplace_back(s);
                 offset += sizeof(MAC::section);
@@ -308,15 +242,9 @@ bool MachOFile::SetIdDylibs(uint64_t& offset)
             lc.value.cmd == MAC::LoadCommandType::LOAD_WEAK_DYLIB || lc.value.cmd == MAC::LoadCommandType::REEXPORT_DYLIB ||
             lc.value.cmd == MAC::LoadCommandType::LAZY_LOAD_DYLIB || lc.value.cmd == MAC::LoadCommandType::LOAD_UPWARD_DYLIB)
         {
-            uint32_t cmdSize = 0;
-            CHECK(file->Copy<uint32_t>(offset + 4, cmdSize), false, "");
-            if (shouldSwapEndianess)
-            {
-                cmdSize = Utils::SwapEndian(cmdSize);
-            }
-
-            auto buffer = file->CopyToBuffer(offset, cmdSize);
+            auto buffer = file->CopyToBuffer(lc.offset, lc.value.cmdsize);
             auto ptr    = buffer.GetData();
+            auto ptr2   = buffer.GetData();
 
             Dylib d{};
             d.offset = lc.offset;
@@ -327,16 +255,9 @@ bool MachOFile::SetIdDylibs(uint64_t& offset)
             d.value.cmdsize = *(uint32_t*) (ptr);
 
             ptr += sizeof(d.value.cmdsize);
-            // if (is64)
-            //{
-            //     d.value.dylib.name.ptr = *(uint64_t*) (ptr);
-            //     ptr += sizeof(d.value.dylib.name.ptr);
-            // }
-            // else
-            {
-                d.value.dylib.name.offset = *(uint32_t*) (ptr);
-                ptr += sizeof(d.value.dylib.name.offset);
-            }
+
+            d.value.dylib.name.ptr = *(uint64_t*) (ptr);
+            ptr += sizeof(d.value.dylib.name.offset);
 
             d.value.dylib.timestamp = *(uint32_t*) (ptr);
             ptr += sizeof(d.value.dylib.timestamp);
@@ -349,28 +270,15 @@ bool MachOFile::SetIdDylibs(uint64_t& offset)
 
             if (shouldSwapEndianess)
             {
-                d.value.cmd     = Utils::SwapEndian(d.value.cmd);
-                d.value.cmdsize = Utils::SwapEndian(d.value.cmdsize);
-
-                if (is64)
-                {
-                    d.value.dylib.name.ptr = Utils::SwapEndian(d.value.dylib.name.ptr);
-                }
-                else
-                {
-                    d.value.dylib.name.offset = Utils::SwapEndian(d.value.dylib.name.offset);
-                }
-                d.value.dylib.timestamp             = Utils::SwapEndian(d.value.dylib.timestamp);
-                d.value.dylib.current_version       = Utils::SwapEndian(d.value.dylib.current_version);
-                d.value.dylib.compatibility_version = Utils::SwapEndian(d.value.dylib.compatibility_version);
+                Swap(d.value);
             }
 
             d.name = reinterpret_cast<char*>(ptr);
 
+            const auto a = ptr - ptr2;
+
             dylibs.emplace_back(d);
         }
-
-        offset += lc.value.cmdsize;
     }
 
     return true;
@@ -388,10 +296,7 @@ bool MachOFile::SetMain(uint64_t& offset)
 
                 if (shouldSwapEndianess)
                 {
-                    main.ep.cmd       = Utils::SwapEndian(main.ep.cmd);
-                    main.ep.cmdsize   = Utils::SwapEndian(main.ep.cmdsize);
-                    main.ep.entryoff  = Utils::SwapEndian(main.ep.entryoff);
-                    main.ep.stacksize = Utils::SwapEndian(main.ep.stacksize);
+                    Swap(main.ep);
                 }
 
                 main.isSet = true;
@@ -409,95 +314,26 @@ bool MachOFile::SetMain(uint64_t& offset)
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {
-                typedef struct
-                {
-                    uint32_t eax;
-                    uint32_t ebx;
-                    uint32_t ecx;
-                    uint32_t edx;
-                    uint32_t edi;
-                    uint32_t esi;
-                    uint32_t ebp;
-                    uint32_t esp;
-                    uint32_t ss;
-                    uint32_t eflags;
-                    uint32_t eip;
-                    uint32_t cs;
-                    uint32_t ds;
-                    uint32_t es;
-                    uint32_t fs;
-                    uint32_t gs;
-                } i386_thread_state_t;
-
-                const auto registers = (i386_thread_state_t*) (((char*) cmd.GetData()) + 16);
+                const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>((((char*) cmd.GetData()) + 16));
 
                 main.isSet       = true;
                 main.ep.entryoff = registers->eip;
             }
             else if (header.cputype == MAC::CPU_TYPE_X86_64)
             {
-                struct x86_thread_state64_t
-                {
-                    uint64_t rax;
-                    uint64_t rbx;
-                    uint64_t rcx;
-                    uint64_t rdx;
-                    uint64_t rdi;
-                    uint64_t rsi;
-                    uint64_t rbp;
-                    uint64_t rsp;
-                    uint64_t r8;
-                    uint64_t r9;
-                    uint64_t r10;
-                    uint64_t r11;
-                    uint64_t r12;
-                    uint64_t r13;
-                    uint64_t r14;
-                    uint64_t r15;
-                    uint64_t rip;
-                    uint64_t rflags;
-                    uint64_t cs;
-                    uint64_t fs;
-                    uint64_t gs;
-                };
-
-                const x86_thread_state64_t* registers = (x86_thread_state64_t*) (((char*) cmd.GetData()) + 16);
-                main.isSet                            = true;
-                main.ep.entryoff                      = registers->rip;
+                const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>((((char*) cmd.GetData()) + 16));
+                main.isSet           = true;
+                main.ep.entryoff     = registers->rip;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC)
             {
-                typedef struct
-                {
-                    uint32_t srr0; /* Instruction address register (PC) */
-                    uint32_t srr1; /* Machine state register (supervisor) */
-                    uint32_t r[32];
-
-                    uint32_t cr;  /* Condition register */
-                    uint32_t xer; /* User's integer exception register */
-                    uint32_t lr;  /* Link register */
-                    uint32_t ctr; /* Count register */
-                    uint32_t mq;  /* MQ register (601 only) */
-
-                    uint32_t vrsave; /* Vector Save Register */
-                } ppc_thread_state_t;
-
-                const auto registers = (ppc_thread_state_t*) (((char*) cmd.GetData()) + 16);
+                const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>((((char*) cmd.GetData()) + 16));
                 main.isSet           = true;
                 main.ep.entryoff     = registers->srr0;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC64)
             {
-                typedef struct
-                {
-                    uint64_t srr0, srr1;
-                    uint64_t r[32];
-                    uint32_t cr;
-                    uint64_t xer, lr, ctr;
-                    uint32_t vrsave;
-                } ppc_thread_state64_t;
-
-                const auto registers = (ppc_thread_state64_t*) (((char*) cmd.GetData()) + 16);
+                const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>((((char*) cmd.GetData()) + 16));
                 main.isSet           = true;
                 main.ep.entryoff     = registers->srr0;
             }
@@ -528,12 +364,7 @@ bool MachOFile::SetSymbols(uint64_t& offset)
 
             if (shouldSwapEndianess)
             {
-                dySymTab.sc.cmd     = Utils::SwapEndian(dySymTab.sc.cmd);
-                dySymTab.sc.cmdsize = Utils::SwapEndian(dySymTab.sc.cmdsize);
-                dySymTab.sc.symoff  = Utils::SwapEndian(dySymTab.sc.symoff);
-                dySymTab.sc.nsyms   = Utils::SwapEndian(dySymTab.sc.nsyms);
-                dySymTab.sc.stroff  = Utils::SwapEndian(dySymTab.sc.stroff);
-                dySymTab.sc.strsize = Utils::SwapEndian(dySymTab.sc.strsize);
+                Swap(dySymTab.sc);
             }
 
             {
@@ -563,11 +394,7 @@ bool MachOFile::SetSymbols(uint64_t& offset)
 
                     if (shouldSwapEndianess)
                     {
-                        nl.n_un.n_strx = Utils::SwapEndian(nl.n_un.n_strx);
-                        nl.n_desc      = Utils::SwapEndian(nl.n_desc);
-                        nl.n_sect      = Utils::SwapEndian(nl.n_sect);
-                        nl.n_type      = Utils::SwapEndian(nl.n_type);
-                        nl.n_value     = Utils::SwapEndian(nl.n_value);
+                        Swap(nl);
                     }
 
                     const auto str = dySymTab.stringTable.get() + nl.n_un.n_strx;
@@ -588,11 +415,7 @@ bool MachOFile::SetSymbols(uint64_t& offset)
 
                     if (shouldSwapEndianess)
                     {
-                        nl.n_un.n_strx = Utils::SwapEndian(nl.n_un.n_strx);
-                        nl.n_desc      = Utils::SwapEndian(nl.n_desc);
-                        nl.n_sect      = Utils::SwapEndian(nl.n_sect);
-                        nl.n_type      = Utils::SwapEndian(nl.n_type);
-                        nl.n_value     = Utils::SwapEndian(nl.n_value);
+                        Swap(nl);
                     }
 
                     const auto str = dySymTab.stringTable.get() + nl.n_un.n_strx;
@@ -621,13 +444,11 @@ bool MachOFile::SetSourceVersion(uint64_t& offset)
         {
             if (sourceVersion.isSet == false)
             {
-                sourceVersion.svc.cmd     = lc.value.cmd;
-                sourceVersion.svc.cmdsize = lc.value.cmdsize;
+                CHECK(file->Copy<MAC::source_version_command>(offset, sourceVersion.svc), false, "");
 
-                CHECK(file->Copy<uint64_t>(offset + 8, sourceVersion.svc.version), false, "");
                 if (shouldSwapEndianess)
                 {
-                    sourceVersion.svc.version = Utils::SwapEndian(sourceVersion.svc.version);
+                    Swap(sourceVersion.svc);
                 }
 
                 sourceVersion.isSet = true;
@@ -652,16 +473,11 @@ bool MachOFile::SetUUID(uint64_t& offset)
         {
             if (uuid.isSet == false)
             {
-                uuid.value.cmd     = lc.value.cmd;
-                uuid.value.cmdsize = lc.value.cmdsize;
+                CHECK(file->Copy<MAC::uuid_command>(offset, uuid.value), false, "");
 
-                CHECK(file->Copy<decltype(uuid.value.uuid)>(offset + 8, uuid.value.uuid), false, "");
                 if (shouldSwapEndianess)
                 {
-                    for (auto i = 0U; i < sizeof(uuid.value.uuid) / sizeof(uuid.value.uuid[0]); i++)
-                    {
-                        uuid.value.uuid[i] = Utils::SwapEndian(uuid.value.uuid[i]);
-                    }
+                    Swap(uuid.value);
                 }
 
                 uuid.isSet = true;
@@ -698,15 +514,11 @@ bool MachOFile::SetLinkEditData(uint64_t& offset)
 
             if (shouldSwapEndianess)
             {
-                ledc.cmd      = Utils::SwapEndian(ledc.cmd);
-                ledc.cmdsize  = Utils::SwapEndian(ledc.cmdsize);
-                ledc.dataoff  = Utils::SwapEndian(ledc.dataoff);
-                ledc.datasize = Utils::SwapEndian(ledc.datasize);
+                Swap(ledc);
             }
 
             linkEditDatas.emplace_back(ledc);
         }
-
         break;
         default:
             break;
@@ -730,18 +542,13 @@ bool MachOFile::SetCodeSignature()
 
             if (shouldSwapEndianess)
             {
-                codeSignature.ledc.cmd      = Utils::SwapEndian(codeSignature.ledc.cmd);
-                codeSignature.ledc.cmdsize  = Utils::SwapEndian(codeSignature.ledc.cmdsize);
-                codeSignature.ledc.dataoff  = Utils::SwapEndian(codeSignature.ledc.dataoff);
-                codeSignature.ledc.datasize = Utils::SwapEndian(codeSignature.ledc.datasize);
+                Swap(codeSignature.ledc);
             }
 
             CHECK(file->Copy<MAC::CS_SuperBlob>(codeSignature.ledc.dataoff, codeSignature.superBlob), false, "");
 
             // All fields are big endian (in case PPC ever makes a comeback)
-            codeSignature.superBlob.magic  = Utils::SwapEndian(codeSignature.superBlob.magic);
-            codeSignature.superBlob.length = Utils::SwapEndian(codeSignature.superBlob.length);
-            codeSignature.superBlob.count  = Utils::SwapEndian(codeSignature.superBlob.count);
+            Swap(codeSignature.superBlob);
 
             const auto startBlobOffset = codeSignature.ledc.dataoff + sizeof(MAC::CS_SuperBlob);
             auto currentBlobOffset     = startBlobOffset;
@@ -750,8 +557,7 @@ bool MachOFile::SetCodeSignature()
                 MAC::CS_BlobIndex blob{};
 
                 CHECK(file->Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
-                blob.type   = Utils::SwapEndian(blob.type);
-                blob.offset = Utils::SwapEndian(blob.offset);
+                Swap(blob);
 
                 codeSignature.blobs.emplace_back(blob);
 
@@ -767,28 +573,7 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
                 {
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature.codeDirectory), false, "");
-
-                    codeSignature.codeDirectory.magic         = Utils::SwapEndian(codeSignature.codeDirectory.magic);
-                    codeSignature.codeDirectory.length        = Utils::SwapEndian(codeSignature.codeDirectory.length);
-                    codeSignature.codeDirectory.version       = Utils::SwapEndian(codeSignature.codeDirectory.version);
-                    codeSignature.codeDirectory.flags         = Utils::SwapEndian(codeSignature.codeDirectory.flags);
-                    codeSignature.codeDirectory.hashOffset    = Utils::SwapEndian(codeSignature.codeDirectory.hashOffset);
-                    codeSignature.codeDirectory.identOffset   = Utils::SwapEndian(codeSignature.codeDirectory.identOffset);
-                    codeSignature.codeDirectory.nSpecialSlots = Utils::SwapEndian(codeSignature.codeDirectory.nSpecialSlots);
-                    codeSignature.codeDirectory.nCodeSlots    = Utils::SwapEndian(codeSignature.codeDirectory.nCodeSlots);
-                    codeSignature.codeDirectory.codeLimit     = Utils::SwapEndian(codeSignature.codeDirectory.codeLimit);
-                    codeSignature.codeDirectory.hashSize      = Utils::SwapEndian(codeSignature.codeDirectory.hashSize);
-                    codeSignature.codeDirectory.hashType      = Utils::SwapEndian(codeSignature.codeDirectory.hashType);
-                    codeSignature.codeDirectory.platform      = Utils::SwapEndian(codeSignature.codeDirectory.platform);
-                    codeSignature.codeDirectory.pageSize      = Utils::SwapEndian(codeSignature.codeDirectory.pageSize);
-                    codeSignature.codeDirectory.spare2        = Utils::SwapEndian(codeSignature.codeDirectory.spare2);
-                    codeSignature.codeDirectory.scatterOffset = Utils::SwapEndian(codeSignature.codeDirectory.scatterOffset);
-                    codeSignature.codeDirectory.teamOffset    = Utils::SwapEndian(codeSignature.codeDirectory.teamOffset);
-                    codeSignature.codeDirectory.spare3        = Utils::SwapEndian(codeSignature.codeDirectory.spare3);
-                    codeSignature.codeDirectory.codeLimit64   = Utils::SwapEndian(codeSignature.codeDirectory.codeLimit64);
-                    codeSignature.codeDirectory.execSegBase   = Utils::SwapEndian(codeSignature.codeDirectory.execSegBase);
-                    codeSignature.codeDirectory.execSegLimit  = Utils::SwapEndian(codeSignature.codeDirectory.execSegLimit);
-                    codeSignature.codeDirectory.execSegFlags  = Utils::SwapEndian(codeSignature.codeDirectory.execSegFlags);
+                    Swap(codeSignature.codeDirectory);
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
@@ -796,10 +581,7 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
                 {
                     CHECK(file->Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature.requirements.blob), false, "");
-
-                    codeSignature.requirements.blob.magic  = Utils::SwapEndian(codeSignature.requirements.blob.magic);
-                    codeSignature.requirements.blob.length = Utils::SwapEndian(codeSignature.requirements.blob.length);
-                    codeSignature.requirements.blob.data   = Utils::SwapEndian(codeSignature.requirements.blob.data);
+                    Swap(codeSignature.requirements.blob);
 
                     codeSignature.requirements.data = file->CopyToBuffer(
                           csOffset + sizeof(MAC::CS_RequirementsBlob),
@@ -819,9 +601,7 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
                 {
                     CHECK(file->Copy<MAC::CS_GenericBlob>(csOffset, codeSignature.entitlements.blob), false, "");
-
-                    codeSignature.entitlements.blob.magic  = Utils::SwapEndian(codeSignature.entitlements.blob.magic);
-                    codeSignature.entitlements.blob.length = Utils::SwapEndian(codeSignature.entitlements.blob.length);
+                    Swap(codeSignature.entitlements.blob);
                     codeSignature.entitlements.data =
                           file->CopyToBuffer(csOffset + sizeof(blob), codeSignature.entitlements.blob.length - sizeof(blob));
                 }
@@ -836,30 +616,8 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
                 {
                     MAC::CS_CodeDirectory cd{};
-                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "");
-
-                    cd.magic         = Utils::SwapEndian(cd.magic);
-                    cd.length        = Utils::SwapEndian(cd.length);
-                    cd.version       = Utils::SwapEndian(cd.version);
-                    cd.flags         = Utils::SwapEndian(cd.flags);
-                    cd.hashOffset    = Utils::SwapEndian(cd.hashOffset);
-                    cd.identOffset   = Utils::SwapEndian(cd.identOffset);
-                    cd.nSpecialSlots = Utils::SwapEndian(cd.nSpecialSlots);
-                    cd.nCodeSlots    = Utils::SwapEndian(cd.nCodeSlots);
-                    cd.codeLimit     = Utils::SwapEndian(cd.codeLimit);
-                    cd.hashSize      = Utils::SwapEndian(cd.hashSize);
-                    cd.hashType      = Utils::SwapEndian(cd.hashType);
-                    cd.platform      = Utils::SwapEndian(cd.platform);
-                    cd.pageSize      = Utils::SwapEndian(cd.pageSize);
-                    cd.spare2        = Utils::SwapEndian(cd.spare2);
-                    cd.scatterOffset = Utils::SwapEndian(cd.scatterOffset);
-                    cd.teamOffset    = Utils::SwapEndian(cd.teamOffset);
-                    cd.spare3        = Utils::SwapEndian(cd.spare3);
-                    cd.codeLimit64   = Utils::SwapEndian(cd.codeLimit64);
-                    cd.execSegBase   = Utils::SwapEndian(cd.execSegBase);
-                    cd.execSegLimit  = Utils::SwapEndian(cd.execSegLimit);
-                    cd.execSegFlags  = Utils::SwapEndian(cd.execSegFlags);
-
+                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
+                    Swap(cd);
                     codeSignature.alternateDirectories.emplace_back(cd);
                 }
                 break;
@@ -903,10 +661,7 @@ bool MachOFile::SetVersionMin()
 
             if (shouldSwapEndianess)
             {
-                versionMinCommand.vmc.cmd     = Utils::SwapEndian(versionMinCommand.vmc.cmd);
-                versionMinCommand.vmc.cmdsize = Utils::SwapEndian(versionMinCommand.vmc.cmdsize);
-                versionMinCommand.vmc.version = Utils::SwapEndian(versionMinCommand.vmc.version);
-                versionMinCommand.vmc.sdk     = Utils::SwapEndian(versionMinCommand.vmc.sdk);
+                Swap(versionMinCommand.vmc);
             }
         }
     }

@@ -11,33 +11,6 @@ using namespace GView::View;
 using namespace MachO;
 using namespace MachO::MAC;
 
-template <typename T>
-static const std::string BinaryToHexString(const T number, const size_t length)
-{
-    constexpr const char digits[] = "0123456789ABCDEF";
-
-    std::string output;
-    output.reserve(length * 3);
-
-    const auto input = reinterpret_cast<const uint8_t*>(&number);
-    std::for_each(
-          input,
-          input + length,
-          [&output](uint8_t byte)
-          {
-              output.push_back(digits[byte >> 4]);
-              output.push_back(digits[byte & 0x0F]);
-              output.push_back(' ');
-          });
-
-    if (output.empty() == false)
-    {
-        output.resize(output.size() - 1);
-    }
-
-    return output;
-}
-
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
