@@ -53,13 +53,13 @@ std::string_view Sections::GetValue(NumericFormatter& n, uint64_t value)
 void Panels::Sections::GoToSelectedSection()
 {
     auto s = list->GetItemData<const MachOFile::Section>(list->GetCurrentItem());
-    win->GetCurrentView()->GoTo(s->offset);
+    win->GetCurrentView()->GoTo(s->offset != 0 ? s->offset : s->addr /* handling __bss section */);
 }
 
 void Panels::Sections::SelectCurrentSection()
 {
     auto s = list->GetItemData<const MachOFile::Section>(list->GetCurrentItem());
-    win->GetCurrentView()->Select(s->offset, s->size);
+    win->GetCurrentView()->Select(s->offset != 0 ? s->offset : s->addr /* handling __bss section */, s->size);
 }
 
 void Panels::Sections::Update()

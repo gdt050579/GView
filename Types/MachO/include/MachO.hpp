@@ -27,8 +27,8 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     {
         ColorPair header{ Color::Olive, Color::Transparent };
         ColorPair loadCommand{ Color::Magenta, Color::Transparent };
-        ColorPair section{ Color::DarkRed, Color::Transparent };
-        ColorPair object{ Color::Silver, Color::Transparent };
+        ColorPair section{ Color::Silver, Color::Transparent };
+        ColorPair linkEdit{ Color::Teal, Color::Transparent };
     } colors;
 
     struct LoadCommand

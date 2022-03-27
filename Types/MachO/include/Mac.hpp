@@ -780,8 +780,7 @@ struct uuid_command // The uuid load command contains a single 128-bit unique ra
     uint8_t uuid[16];
 };
 
-struct linkedit_data_command // The uuid load command contains a single 128-bit unique random number that identifies an object produced by
-                             // the static link editor.
+struct linkedit_data_command // The linkedit_data_command contains the offsets and sizes of a blob of data in the __LINKEDIT segment.
 {
     LoadCommandType cmd; // LC_CODE_SIGNATURE, LC_SEGMENT_SPLIT_INFO, LC_FUNCTION_STARTS, LC_DATA_IN_CODE, LC_DYLIB_CODE_SIGN_DRS,
                          // LC_LINKER_OPTIMIZATION_HINT, LC_DYLD_EXPORTS_TRIE, LC_DYLD_CHAINED_FIXUPS

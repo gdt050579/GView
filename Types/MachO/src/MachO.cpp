@@ -30,32 +30,50 @@ extern "C"
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
     {
         BufferViewer::Settings settings;
-        uint64_t offset = 0;
 
         const auto headerSize = sizeof(mach_header) + machO->is64 ? sizeof(mach_header::reserved) : 0;
-        settings.AddZone(offset, headerSize, machO->colors.header, "Header");
-        offset += headerSize;
+        settings.AddZone(0, headerSize, machO->colors.header, "Header");
 
         LocalString<128> tmp;
-        uint32_t commandsCount = 0;
-        for (const auto& lc : machO->loadCommands)
         {
-            settings.AddZone(lc.offset, lc.value.cmdsize, machO->colors.loadCommand, tmp.Format("LC (#%u)", commandsCount));
-            offset = lc.offset + lc.value.cmdsize;
-            commandsCount++;
+            auto i = 0ULL;
+            for (const auto& lc : machO->loadCommands)
+            {
+                settings.AddZone(lc.offset, lc.value.cmdsize, machO->colors.loadCommand, tmp.Format("(#%u)LC", i));
+                i++;
+            }
         }
 
         for (const auto& segment : machO->segments)
         {
             for (const auto& s : segment.sections)
             {
-                settings.AddZone(s.offset, s.size, machO->colors.section, s.sectname);
+                settings.AddZone(s.offset != 0 ? s.offset : s.addr /* handling __bss section */, s.size, machO->colors.section, s.sectname);
             }
         }
 
         if (machO->main.has_value())
         {
             settings.SetEntryPointOffset(machO->main->entryoff);
+        }
+
+        if (machO->dySymTab.has_value())
+        {
+            settings.AddZone(
+                  machO->dySymTab->sc.symoff,
+                  machO->dySymTab->sc.nsyms * (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist)),
+                  machO->colors.section,
+                  "Symbol_Table");
+            settings.AddZone(machO->dySymTab->sc.stroff, machO->dySymTab->sc.strsize, machO->colors.section, "Symbol_Strings");
+        }
+
+        {
+            auto i = 0ULL;
+            for (const auto& linkEdit : machO->linkEditDatas)
+            {
+                settings.AddZone(linkEdit.dataoff, linkEdit.datasize, machO->colors.linkEdit, tmp.Format("(#%u)Link_Edit", i));
+                i++;
+            }
         }
 
         win->CreateViewer("BufferView", settings);
