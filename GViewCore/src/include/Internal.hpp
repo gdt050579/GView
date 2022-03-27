@@ -104,12 +104,12 @@ namespace Generic
             Input::Key ShortKey;
         } Commands[MAX_PLUGINS_COMMANDS];
         uint32 CommandsCount;
-        bool (*fnRun)(const string_view command);
+        bool (*fnRun)(const string_view command, Reference<GView::Object> currentObject);
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
-        void Run(uint32 commandIndex);
+        void Run(uint32 commandIndex, Reference<GView::Object> currentObject);
     };
 }; // namespace Generic
 namespace Type
@@ -240,6 +240,11 @@ namespace App
         // AppCUI Handlers
         virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
         virtual void OnStart(Reference<Control> control) override;
+
+        // infos
+        uint32 GetObjectsCount();
+        Reference<GView::Object> GetObject(uint32 index);
+        Reference<GView::Object> GetCurrentObject();
     };
     class FileWindowProperties : public Window
     {

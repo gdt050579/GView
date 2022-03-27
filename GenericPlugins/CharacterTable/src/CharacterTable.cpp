@@ -25,7 +25,7 @@ class CharacterTableExample : public Window, public Handlers::OnButtonPressedInt
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Run(const string_view command)
+    PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> currentObject)
     {
         // all good
         if (command == "CharacterTable")

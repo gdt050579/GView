@@ -37,7 +37,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
 
     return true;
 }
-void Plugin::Run(uint32 commandIndex)
+void Plugin::Run(uint32 commandIndex, Reference<GView::Object> currentObject)
 {
     if (!this->fnRun)
     {
@@ -67,7 +67,7 @@ void Plugin::Run(uint32 commandIndex)
         }
     }
     // all good -> is loaded ==> try to run
-    if (!this->fnRun(this->Commands[commandIndex].Name))
+    if (!this->fnRun(this->Commands[commandIndex].Name, currentObject))
     {
         LocalString<1024> info;
         info.Format("Command `%s` from generic plugin: `%s` failed !", this->Commands[commandIndex].Name.GetText(), this->Name.GetText());
