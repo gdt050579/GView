@@ -16,7 +16,7 @@ CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO) : TabPage("CodeSign&Ma
 
 void CodeSignMagic::UpdateLinkeditDataCommand()
 {
-    CHECKRET(machO->codeSignature.isSet, "");
+    CHECKRET(machO->codeSignature.has_value(), "");
 
     NumericFormatter nf;
     NumericFormatter nf2;
@@ -24,26 +24,26 @@ void CodeSignMagic::UpdateLinkeditDataCommand()
 
     general->SetItemType(general->AddItem("Code Sign Magic"), ListViewItemType::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->codeSignature.ledc.cmd);
-    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->codeSignature.ledc.cmd), hex);
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->codeSignature->ledc.cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->codeSignature->ledc.cmd), hex);
     general->AddItem("Command", ls.Format("%-14s (%s)", lcName.data(), hexCommand.data()));
 
-    const auto cmdSize    = nf.ToString(machO->codeSignature.ledc.cmdsize, dec);
-    const auto hexCmdSize = nf2.ToString(machO->codeSignature.ledc.cmdsize, hex);
+    const auto cmdSize    = nf.ToString(machO->codeSignature->ledc.cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(machO->codeSignature->ledc.cmdsize, hex);
     general->AddItem("Cmd Size", ls.Format("%-14s (%s)", cmdSize.data(), hexCmdSize.data()));
 
-    const auto dataOffset    = nf.ToString(machO->codeSignature.ledc.dataoff, dec);
-    const auto hexDataOffset = nf2.ToString(machO->codeSignature.ledc.dataoff, hex);
+    const auto dataOffset    = nf.ToString(machO->codeSignature->ledc.dataoff, dec);
+    const auto hexDataOffset = nf2.ToString(machO->codeSignature->ledc.dataoff, hex);
     general->AddItem("Data Offset", ls.Format("%-14s (%s)", dataOffset.data(), hexDataOffset.data()));
 
-    const auto dataSize    = nf.ToString(machO->codeSignature.ledc.datasize, dec);
-    const auto hexDataSize = nf2.ToString(machO->codeSignature.ledc.datasize, hex);
+    const auto dataSize    = nf.ToString(machO->codeSignature->ledc.datasize, dec);
+    const auto hexDataSize = nf2.ToString(machO->codeSignature->ledc.datasize, hex);
     general->AddItem("Data Size", ls.Format("%-14s (%s)", dataSize.data(), hexDataSize.data()));
 }
 
 void CodeSignMagic::UpdateSuperBlob()
 {
-    CHECKRET(machO->codeSignature.isSet, "");
+    CHECKRET(machO->codeSignature.has_value(), "");
 
     LocalString<1024> ls;
     NumericFormatter nf;
@@ -51,22 +51,22 @@ void CodeSignMagic::UpdateSuperBlob()
 
     general->SetItemType(general->AddItem("Super Blob"), ListViewItemType::Category);
 
-    const auto& magic   = MAC::CodeSignMagicNames.at(machO->codeSignature.superBlob.magic);
-    const auto hexMagic = nf2.ToString(static_cast<uint32_t>(machO->codeSignature.superBlob.magic), hex);
+    const auto& magic   = MAC::CodeSignMagicNames.at(machO->codeSignature->superBlob.magic);
+    const auto hexMagic = nf2.ToString(static_cast<uint32_t>(machO->codeSignature->superBlob.magic), hex);
     general->AddItem("Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()));
 
-    const auto length    = nf.ToString(machO->codeSignature.superBlob.length, dec);
-    const auto hexLength = nf2.ToString(machO->codeSignature.superBlob.length, hex);
+    const auto length    = nf.ToString(machO->codeSignature->superBlob.length, dec);
+    const auto hexLength = nf2.ToString(machO->codeSignature->superBlob.length, hex);
     general->AddItem("Length", ls.Format("%-26s (%s)", length.data(), hexLength.data()));
 
-    const auto count    = nf.ToString(machO->codeSignature.superBlob.count, dec);
-    const auto hexCount = nf2.ToString(machO->codeSignature.superBlob.count, hex);
+    const auto count    = nf.ToString(machO->codeSignature->superBlob.count, dec);
+    const auto hexCount = nf2.ToString(machO->codeSignature->superBlob.count, hex);
     general->AddItem("Count", ls.Format("%-26s (%s)", count.data(), hexCount.data()));
 }
 
 void CodeSignMagic::UpdateSlots()
 {
-    CHECKRET(machO->codeSignature.isSet, "");
+    CHECKRET(machO->codeSignature.has_value(), "");
 
     LocalString<1024> ls;
     LocalString<1024> ls2;
@@ -75,7 +75,7 @@ void CodeSignMagic::UpdateSlots()
 
     general->SetItemType(general->AddItem("Slots"), ListViewItemType::Category);
 
-    for (const auto& blob : machO->codeSignature.blobs)
+    for (const auto& blob : machO->codeSignature->blobs)
     {
         const auto& slot   = MAC::CodeSignSlotNames.at(blob.type);
         const auto hexSlot = nf2.ToString(static_cast<uint32_t>(blob.type), hex);
@@ -89,14 +89,14 @@ void CodeSignMagic::UpdateSlots()
 
 void CodeSignMagic::UpdateBlobs()
 {
-    CHECKRET(machO->codeSignature.isSet, "");
+    CHECKRET(machO->codeSignature.has_value(), "");
 
     LocalString<1024> ls;
     NumericFormatter nf;
     NumericFormatter nf2;
 
     auto alternateDirectoryCount = 0U;
-    for (const auto& blob : machO->codeSignature.blobs)
+    for (const auto& blob : machO->codeSignature->blobs)
     {
         const auto& slot = MAC::CodeSignSlotNames.at(blob.type);
         general->SetItemType(general->AddItem(slot.data()), ListViewItemType::Category);
@@ -105,20 +105,20 @@ void CodeSignMagic::UpdateBlobs()
         {
         case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
         {
-            const auto& code = machO->codeSignature.codeDirectory;
+            const auto& code = machO->codeSignature->codeDirectory;
             UpdateCodeDirectory(code);
         }
         break;
         case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
         {
-            const auto& code = machO->codeSignature.alternateDirectories[alternateDirectoryCount];
+            const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
             UpdateCodeDirectory(code);
             alternateDirectoryCount++;
         }
         break;
         case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
         {
-            const auto& r = machO->codeSignature.requirements.blob;
+            const auto& r = machO->codeSignature->requirements.blob;
 
             const auto& magic   = MAC::CodeSignMagicNames.at(r.magic);
             const auto hexMagic = nf2.ToString(static_cast<uint32_t>(r.magic), hex);
@@ -135,7 +135,7 @@ void CodeSignMagic::UpdateBlobs()
         break;
         case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
         {
-            const auto& b = machO->codeSignature.entitlements.blob;
+            const auto& b = machO->codeSignature->entitlements.blob;
 
             const auto& magic   = MAC::CodeSignMagicNames.at(b.magic);
             const auto hexMagic = nf2.ToString(static_cast<uint32_t>(b.magic), hex);
@@ -145,7 +145,7 @@ void CodeSignMagic::UpdateBlobs()
             const auto hexLength = nf2.ToString(blob.offset, hex);
             general->AddItem("Offset", ls.Format("%-26s (%s)", length.data(), hexLength.data()));
 
-            const auto& data       = machO->codeSignature.entitlements.data;
+            const auto& data       = machO->codeSignature->entitlements.data;
             const auto dataSize    = nf.ToString(static_cast<uint64>(data.size()), dec);
             const auto hexDataSize = nf2.ToString(static_cast<uint64>(data.size()), hex);
             general->AddItem("Data", ls.Format("%-26s (%s)", dataSize.data(), hexDataSize.data()));

@@ -94,21 +94,8 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         std::vector<MyNList> objects;
     };
 
-    struct SourceVersion
-    {
-        bool isSet = false;
-        MAC::source_version_command svc;
-    };
-
-    struct UUID
-    {
-        bool isSet = false;
-        MAC::uuid_command value;
-    };
-
     struct CodeSignature
     {
-        bool isSet = false;
         MAC::linkedit_data_command ledc;
         MAC::CS_SuperBlob superBlob;
         std::vector<MAC::CS_BlobIndex> blobs;
@@ -128,12 +115,6 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         } entitlements;
     };
 
-    struct VersionMinCommand
-    {
-        bool isSet = false;
-        MAC::version_min_command vmc;
-    };
-
   public:
     Reference<GView::Utils::FileCache> file;
     MAC::mach_header header;
@@ -143,11 +124,11 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<Dylib> dylibs;
     std::optional<DySymTab> dySymTab;
     std::optional<MAC::entry_point_command> main;
-    SourceVersion sourceVersion;
-    UUID uuid;
+    std::optional<MAC::source_version_command> sourceVersion;
+    std::optional<MAC::uuid_command> uuid;
     std::vector<MAC::linkedit_data_command> linkEditDatas;
-    CodeSignature codeSignature;
-    VersionMinCommand versionMinCommand;
+    std::optional<CodeSignature> codeSignature;
+    std::optional<MAC::version_min_command> versionMin;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -177,12 +158,12 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetLoadCommands(uint64_t& offset);
     bool SetSegmentsAndTheirSections();
     bool SetDyldInfo();
-    bool SetIdDylibs(uint64_t& offset);
-    bool SetMain(uint64_t& offset); // LC_MAIN & LC_UNIX_THREAD
-    bool SetSymbols(uint64_t& offset);
-    bool SetSourceVersion(uint64_t& offset);
-    bool SetUUID(uint64_t& offset);
-    bool SetLinkEditData(uint64_t& offset);
+    bool SetIdDylibs();
+    bool SetMain(); // LC_MAIN & LC_UNIX_THREAD
+    bool SetSymbols();
+    bool SetSourceVersion();
+    bool SetUUID();
+    bool SetLinkEditData();
     bool SetCodeSignature();
     bool SetVersionMin();
 };

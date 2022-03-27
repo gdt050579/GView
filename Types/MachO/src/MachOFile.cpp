@@ -15,30 +15,23 @@ bool MachOFile::Update()
 
     SetHeader(offset);
 
-    const auto commandsStartOffset = offset;
     SetLoadCommands(offset);
 
     SetSegmentsAndTheirSections();
 
     SetDyldInfo();
 
-    offset = commandsStartOffset;
-    SetIdDylibs(offset);
+    SetIdDylibs();
 
-    offset = commandsStartOffset;
-    SetMain(offset);
+    SetMain();
 
-    offset = commandsStartOffset;
-    SetSymbols(offset);
+    SetSymbols();
 
-    offset = commandsStartOffset;
-    SetSourceVersion(offset);
+    SetSourceVersion();
 
-    offset = commandsStartOffset;
-    SetUUID(offset);
+    SetUUID();
 
-    offset = commandsStartOffset;
-    SetLinkEditData(offset);
+    SetLinkEditData();
 
     SetCodeSignature();
 
@@ -68,7 +61,7 @@ bool MachOFile::Update()
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
     }
 
-    if (codeSignature.isSet)
+    if (codeSignature.has_value())
     {
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::CodeSign);
     }
@@ -276,7 +269,7 @@ bool MachOFile::SetDyldInfo()
     return true;
 }
 
-bool MachOFile::SetIdDylibs(uint64_t& offset)
+bool MachOFile::SetIdDylibs()
 {
     for (const auto& lc : loadCommands)
     {
@@ -286,7 +279,6 @@ bool MachOFile::SetIdDylibs(uint64_t& offset)
         {
             auto buffer = file->CopyToBuffer(lc.offset, lc.value.cmdsize);
             auto ptr    = buffer.GetData();
-            auto ptr2   = buffer.GetData();
 
             Dylib d{};
             d.offset = lc.offset;
@@ -317,8 +309,6 @@ bool MachOFile::SetIdDylibs(uint64_t& offset)
 
             d.name = reinterpret_cast<char*>(ptr);
 
-            const auto a = ptr - ptr2;
-
             dylibs.emplace_back(d);
         }
     }
@@ -326,7 +316,7 @@ bool MachOFile::SetIdDylibs(uint64_t& offset)
     return true;
 }
 
-bool MachOFile::SetMain(uint64_t& offset)
+bool MachOFile::SetMain()
 {
     for (const auto& lc : loadCommands)
     {
@@ -338,7 +328,7 @@ bool MachOFile::SetMain(uint64_t& offset)
             }
 
             main.emplace(MAC::entry_point_command{});
-            CHECK(file->Copy<MAC::entry_point_command>(offset, *main), false, "");
+            CHECK(file->Copy<MAC::entry_point_command>(lc.offset, *main), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(*main);
@@ -346,11 +336,16 @@ bool MachOFile::SetMain(uint64_t& offset)
         }
         else if (lc.value.cmd == MAC::LoadCommandType::UNIXTHREAD)
         {
+            if (main.has_value())
+            {
+                throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
+            }
+
             main.emplace(MAC::entry_point_command{});
 
             main->cmd     = lc.value.cmd;
             main->cmdsize = lc.value.cmdsize;
-            auto cmd      = file->CopyToBuffer(offset, main->cmdsize);
+            auto cmd      = file->CopyToBuffer(lc.offset, main->cmdsize);
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {
@@ -377,14 +372,12 @@ bool MachOFile::SetMain(uint64_t& offset)
                 throw "EP not handled for CPU from LoadCommandType::UNIXTHREAD!";
             }
         }
-
-        offset += lc.value.cmdsize;
     }
 
     return true;
 }
 
-bool MachOFile::SetSymbols(uint64_t& offset)
+bool MachOFile::SetSymbols()
 {
     for (const auto& lc : loadCommands)
     {
@@ -396,7 +389,7 @@ bool MachOFile::SetSymbols(uint64_t& offset)
             }
 
             dySymTab.emplace(DySymTab{});
-            CHECK(file->Copy<MAC::symtab_command>(offset, dySymTab->sc), false, "");
+            CHECK(file->Copy<MAC::symtab_command>(lc.offset, dySymTab->sc), false, "");
 
             if (shouldSwapEndianess)
             {
@@ -451,72 +444,58 @@ bool MachOFile::SetSymbols(uint64_t& offset)
                 dySymTab->objects.emplace_back(nlist);
             }
         }
-
-        offset += lc.value.cmdsize;
     }
 
     return true;
 }
 
-bool MachOFile::SetSourceVersion(uint64_t& offset)
+bool MachOFile::SetSourceVersion()
 {
     for (const auto& lc : loadCommands)
     {
         if (lc.value.cmd == MAC::LoadCommandType::SOURCE_VERSION)
         {
-            if (sourceVersion.isSet == false)
-            {
-                CHECK(file->Copy<MAC::source_version_command>(offset, sourceVersion.svc), false, "");
-
-                if (shouldSwapEndianess)
-                {
-                    Swap(sourceVersion.svc);
-                }
-
-                sourceVersion.isSet = true;
-            }
-            else
+            if (sourceVersion.has_value())
             {
                 throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
             }
-        }
 
-        offset += lc.value.cmdsize;
+            sourceVersion.emplace(MAC::source_version_command{});
+            CHECK(file->Copy<MAC::source_version_command>(lc.offset, *sourceVersion), false, "");
+            if (shouldSwapEndianess)
+            {
+                Swap(*sourceVersion);
+            }
+        }
     }
 
     return true;
 }
 
-bool MachOFile::SetUUID(uint64_t& offset)
+bool MachOFile::SetUUID()
 {
     for (const auto& lc : loadCommands)
     {
         if (lc.value.cmd == MAC::LoadCommandType::UUID)
         {
-            if (uuid.isSet == false)
-            {
-                CHECK(file->Copy<MAC::uuid_command>(offset, uuid.value), false, "");
-
-                if (shouldSwapEndianess)
-                {
-                    Swap(uuid.value);
-                }
-
-                uuid.isSet = true;
-            }
-            else
+            if (uuid.has_value())
             {
                 throw "Multiple LoadCommandType::UUID found! Reimplement this!";
             }
-        }
 
-        offset += lc.value.cmdsize;
+            uuid.emplace(MAC::uuid_command{});
+            CHECK(file->Copy<MAC::uuid_command>(lc.offset, *uuid), false, "");
+            if (shouldSwapEndianess)
+            {
+                Swap(*uuid);
+            }
+        }
     }
 
     return true;
 }
 
-bool MachOFile::SetLinkEditData(uint64_t& offset)
+bool MachOFile::SetLinkEditData()
 {
     for (const auto& lc : loadCommands)
     {
@@ -532,7 +511,7 @@ bool MachOFile::SetLinkEditData(uint64_t& offset)
         case MAC::LoadCommandType::DYLD_CHAINED_FIXUPS:
         {
             MAC::linkedit_data_command ledc{};
-            CHECK(file->Copy<MAC::linkedit_data_command>(offset, ledc), false, "");
+            CHECK(file->Copy<MAC::linkedit_data_command>(lc.offset, ledc), false, "");
 
             if (shouldSwapEndianess)
             {
@@ -545,8 +524,6 @@ bool MachOFile::SetLinkEditData(uint64_t& offset)
         default:
             break;
         }
-
-        offset += lc.value.cmdsize;
     }
 
     return true;
@@ -558,56 +535,55 @@ bool MachOFile::SetCodeSignature()
     {
         if (lc.value.cmd == MAC::LoadCommandType::CODE_SIGNATURE)
         {
-            codeSignature.isSet = true;
+            codeSignature.emplace(CodeSignature{});
 
-            CHECK(file->Copy<MAC::linkedit_data_command>(lc.offset, codeSignature.ledc), false, "");
-
+            CHECK(file->Copy<MAC::linkedit_data_command>(lc.offset, codeSignature->ledc), false, "");
             if (shouldSwapEndianess)
             {
-                Swap(codeSignature.ledc);
+                Swap(codeSignature->ledc);
             }
 
-            CHECK(file->Copy<MAC::CS_SuperBlob>(codeSignature.ledc.dataoff, codeSignature.superBlob), false, "");
+            CHECK(file->Copy<MAC::CS_SuperBlob>(codeSignature->ledc.dataoff, codeSignature->superBlob), false, "");
 
             // All fields are big endian (in case PPC ever makes a comeback)
-            Swap(codeSignature.superBlob);
+            Swap(codeSignature->superBlob);
 
-            const auto startBlobOffset = codeSignature.ledc.dataoff + sizeof(MAC::CS_SuperBlob);
+            const auto startBlobOffset = codeSignature->ledc.dataoff + sizeof(MAC::CS_SuperBlob);
             auto currentBlobOffset     = startBlobOffset;
-            for (auto i = 0U; i < codeSignature.superBlob.count; i++)
+            for (auto i = 0U; i < codeSignature->superBlob.count; i++)
             {
                 MAC::CS_BlobIndex blob{};
 
                 CHECK(file->Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
                 Swap(blob);
 
-                codeSignature.blobs.emplace_back(blob);
+                codeSignature->blobs.emplace_back(blob);
 
                 currentBlobOffset += sizeof(MAC::CS_BlobIndex);
             }
 
-            for (const auto& blob : codeSignature.blobs)
+            for (const auto& blob : codeSignature->blobs)
             {
-                const auto csOffset = codeSignature.ledc.dataoff + blob.offset;
+                const auto csOffset = codeSignature->ledc.dataoff + blob.offset;
 
                 switch (blob.type)
                 {
                 case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
                 {
-                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature.codeDirectory), false, "");
-                    Swap(codeSignature.codeDirectory);
+                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
+                    Swap(codeSignature->codeDirectory);
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
                     break;
                 case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
                 {
-                    CHECK(file->Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature.requirements.blob), false, "");
-                    Swap(codeSignature.requirements.blob);
+                    CHECK(file->Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature->requirements.blob), false, "");
+                    Swap(codeSignature->requirements.blob);
 
-                    codeSignature.requirements.data = file->CopyToBuffer(
+                    codeSignature->requirements.data = file->CopyToBuffer(
                           csOffset + sizeof(MAC::CS_RequirementsBlob),
-                          codeSignature.requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
+                          codeSignature->requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
 
                     // TODO: needs to parse requirements and translate them to human readable text...
                     // MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature.requirements.data.GetData();
@@ -622,10 +598,10 @@ bool MachOFile::SetCodeSignature()
                     break;
                 case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
                 {
-                    CHECK(file->Copy<MAC::CS_GenericBlob>(csOffset, codeSignature.entitlements.blob), false, "");
-                    Swap(codeSignature.entitlements.blob);
-                    codeSignature.entitlements.data =
-                          file->CopyToBuffer(csOffset + sizeof(blob), codeSignature.entitlements.blob.length - sizeof(blob));
+                    CHECK(file->Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
+                    Swap(codeSignature->entitlements.blob);
+                    codeSignature->entitlements.data =
+                          file->CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
                 }
                 break;
 
@@ -640,7 +616,7 @@ bool MachOFile::SetCodeSignature()
                     MAC::CS_CodeDirectory cd{};
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
                     Swap(cd);
-                    codeSignature.alternateDirectories.emplace_back(cd);
+                    codeSignature->alternateDirectories.emplace_back(cd);
                 }
                 break;
                 default:
@@ -672,18 +648,16 @@ bool MachOFile::SetVersionMin()
         if (lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_IPHONEOS || lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_MACOSX ||
             lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_TVOS || lc.value.cmd == MAC::LoadCommandType::VERSION_MIN_WATCHOS)
         {
-            if (versionMinCommand.isSet)
+            if (versionMin.has_value())
             {
                 throw "Version min command already set!";
             }
 
-            versionMinCommand.isSet = true;
-
-            CHECK(file->Copy<MAC::version_min_command>(lc.offset, versionMinCommand.vmc), false, "");
-
+            versionMin.emplace(MAC::version_min_command{});
+            CHECK(file->Copy<MAC::version_min_command>(lc.offset, *versionMin), false, "");
             if (shouldSwapEndianess)
             {
-                Swap(versionMinCommand.vmc);
+                Swap(*versionMin);
             }
         }
     }

@@ -98,7 +98,7 @@ void Information::UpdateEntryPoint()
 
 void Information::UpdateSourceVersion()
 {
-    CHECKRET(machO->sourceVersion.isSet, "");
+    CHECKRET(machO->sourceVersion.has_value(), "");
 
     LocalString<1024> ls;
     LocalString<1024> ls2;
@@ -107,27 +107,27 @@ void Information::UpdateSourceVersion()
 
     general->SetItemType(general->AddItem("Source Version"), ListViewItemType::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->sourceVersion.svc.cmd);
-    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->sourceVersion.svc.cmd), hex);
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->sourceVersion->cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->sourceVersion->cmd), hex);
     general->AddItem("Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()));
 
-    const auto cmdSize    = nf.ToString(machO->sourceVersion.svc.cmdsize, dec);
-    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->sourceVersion.svc.cmdsize), hex);
+    const auto cmdSize    = nf.ToString(machO->sourceVersion->cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->sourceVersion->cmdsize), hex);
     general->AddItem("Cmd Size", ls.Format("%-22s (%s)", cmdSize.data(), hexCmdSize.data()));
 
-    const auto a          = (machO->sourceVersion.svc.version >> 40) & 0xffffff;
-    const auto b          = (machO->sourceVersion.svc.version >> 30) & 0x3ff;
-    const auto c          = (machO->sourceVersion.svc.version >> 20) & 0x3ff;
-    const auto d          = (machO->sourceVersion.svc.version >> 10) & 0x3ff;
-    const auto e          = machO->sourceVersion.svc.version & 0x3ff;
+    const auto a          = (machO->sourceVersion->version >> 40) & 0xffffff;
+    const auto b          = (machO->sourceVersion->version >> 30) & 0x3ff;
+    const auto c          = (machO->sourceVersion->version >> 20) & 0x3ff;
+    const auto d          = (machO->sourceVersion->version >> 10) & 0x3ff;
+    const auto e          = machO->sourceVersion->version & 0x3ff;
     const auto version    = ls.Format("%llu.%llu.%llu.%llu.%llu", a, b, c, d, e);
-    const auto versionHex = nf2.ToString(machO->sourceVersion.svc.version, hex);
+    const auto versionHex = nf2.ToString(machO->sourceVersion->version, hex);
     general->AddItem("Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()));
 }
 
 void Information::UpdateUUID()
 {
-    CHECKRET(machO->uuid.isSet, "");
+    CHECKRET(machO->uuid.has_value(), "");
 
     LocalString<1024> ls;
     LocalString<1024> ls2;
@@ -139,15 +139,15 @@ void Information::UpdateUUID()
 
     general->SetItemType(general->AddItem("UUID"), ListViewItemType::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid.value.cmd);
-    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid.value.cmd), hex);
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid->cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid->cmd), hex);
     general->AddItem("Command", ls.Format("%-35s (%s)", lcName.data(), hexCommand.data()));
 
-    const auto cmdSize    = nf.ToString(machO->uuid.value.cmdsize, dec);
-    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->uuid.value.cmdsize), hex);
+    const auto cmdSize    = nf.ToString(machO->uuid->cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->uuid->cmdsize), hex);
     general->AddItem("Cmd Size", ls.Format("%-35s (%s)", cmdSize.data(), hexCmdSize.data()));
 
-    const auto& uuid         = machO->uuid.value.uuid;
+    const auto& uuid         = machO->uuid->uuid;
     const auto uuidFormmated = ls.Format(
           "%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x",
           uuid[0],
@@ -189,7 +189,7 @@ void Information::UpdateUUID()
 
 void Information::UpdateVersionMin()
 {
-    CHECKRET(machO->versionMinCommand.isSet, "");
+    CHECKRET(machO->versionMin.has_value(), "");
 
     LocalString<1024> ls;
     LocalString<1024> ls2;
@@ -198,28 +198,22 @@ void Information::UpdateVersionMin()
 
     general->SetItemType(general->AddItem("Version Min"), ListViewItemType::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->versionMinCommand.vmc.cmd);
-    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->versionMinCommand.vmc.cmd), hex);
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->versionMin->cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->versionMin->cmd), hex);
     general->AddItem("Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()));
 
-    const auto cmdSize    = nf.ToString(machO->versionMinCommand.vmc.cmdsize, dec);
-    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->versionMinCommand.vmc.cmdsize), hex);
+    const auto cmdSize    = nf.ToString(machO->versionMin->cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(machO->versionMin->cmdsize, hex);
     general->AddItem("Cmd Size", ls.Format("%-22s (%s)", cmdSize.data(), hexCmdSize.data()));
 
     const auto version = ls.Format(
-          "%u.%u.%u",
-          machO->versionMinCommand.vmc.version >> 16,
-          (machO->versionMinCommand.vmc.version >> 8) & 0xff,
-          machO->versionMinCommand.vmc.version & 0xff);
-    const auto versionHex = nf2.ToString(machO->versionMinCommand.vmc.version, hex);
+          "%u.%u.%u", machO->versionMin->version >> 16, (machO->versionMin->version >> 8) & 0xff, machO->versionMin->version & 0xff);
+    const auto versionHex = nf2.ToString(machO->versionMin->version, hex);
     general->AddItem("Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()));
 
-    const auto sdk = ls.Format(
-          "%u.%u.%u",
-          machO->versionMinCommand.vmc.sdk >> 16,
-          (machO->versionMinCommand.vmc.sdk >> 8) & 0xff,
-          machO->versionMinCommand.vmc.sdk & 0xff);
-    const auto sdkHex = nf2.ToString(machO->versionMinCommand.vmc.sdk, hex);
+    const auto sdk =
+          ls.Format("%u.%u.%u", machO->versionMin->sdk >> 16, (machO->versionMin->sdk >> 8) & 0xff, machO->versionMin->sdk & 0xff);
+    const auto sdkHex = nf2.ToString(machO->versionMin->sdk, hex);
     general->AddItem("SDK", ls.Format("%-22s (%s)", sdk.data(), sdkHex.data()));
 }
 
