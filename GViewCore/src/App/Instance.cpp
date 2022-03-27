@@ -78,8 +78,7 @@ bool Instance::LoadSettings()
     CHECK(ini, false, "");
 
     // check plugins
-    // for (auto section : *ini)
-    for (auto section : ini->GetSections())
+    for (auto section : *ini)
     {
         auto sectionName = section.GetName();
         if (String::StartsWith(sectionName, "type.", true))

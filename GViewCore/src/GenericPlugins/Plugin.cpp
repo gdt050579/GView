@@ -20,8 +20,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
     this->Name          = name.substr(8);
     this->CommandsCount = 0;
     this->fnRun         = nullptr;
-    //for (auto val : section)
-    for (auto val : section.GetValues())
+    for (auto val : section)
     {
         auto valueName = val.GetName();
         if (String::StartsWith(valueName, "command.", true))
