@@ -33,7 +33,6 @@ void DyldInfo::UpdateBasicInfo()
                 "%s (%s)",
                 std::string(MAC::LoadCommandNames.at(machO->dyldInfo->cmd)).c_str(),
                 std::string(n.ToString(static_cast<uint32_t>(machO->dyldInfo->cmd), hex).data()).c_str()));
-
     general->AddItem(
           "Cmd Size",
           tmp.Format(

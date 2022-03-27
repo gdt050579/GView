@@ -53,9 +53,9 @@ extern "C"
             }
         }
 
-        if (machO->main.isSet)
+        if (machO->main.has_value())
         {
-            settings.SetEntryPointOffset(machO->main.ep.entryoff);
+            settings.SetEntryPointOffset(machO->main->entryoff);
         }
 
         win->CreateViewer("BufferView", settings);

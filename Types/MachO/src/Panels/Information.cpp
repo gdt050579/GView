@@ -20,9 +20,6 @@ void Information::UpdateBasicInfo()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
     general->SetItemType(general->AddItem("Info"), ListViewItemType::Category);
 
     general->AddItem("File", "NOT IMPLEMENTED");
@@ -74,31 +71,28 @@ void Information::UpdateBasicInfo()
 
 void Information::UpdateEntryPoint()
 {
-    CHECKRET(machO->main.isSet, "");
+    CHECKRET(machO->main.has_value(), "");
 
     LocalString<1024> ls;
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
     general->SetItemType(general->AddItem("Entry Point"), ListViewItemType::Category);
 
-    const auto& lcName    = MAC::LoadCommandNames.at(machO->main.ep.cmd);
-    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->main.ep.cmd), hex);
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->main->cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->main->cmd), hex);
     general->AddItem("Command", ls.Format("%-14s (%s)", lcName.data(), hexCommand.data()));
 
-    const auto cmdSize    = nf.ToString(machO->main.ep.cmdsize, dec);
-    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->main.ep.cmdsize), hex);
+    const auto cmdSize    = nf.ToString(machO->main->cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->main->cmdsize), hex);
     general->AddItem("Cmd Size", ls.Format("%-14s (%s)", cmdSize.data(), hexCmdSize.data()));
 
-    const auto epOffset    = nf.ToString(machO->main.ep.entryoff, dec);
-    const auto epOffsetHex = nf2.ToString(machO->main.ep.entryoff, hex);
+    const auto epOffset    = nf.ToString(machO->main->entryoff, dec);
+    const auto epOffsetHex = nf2.ToString(machO->main->entryoff, hex);
     general->AddItem("EP offset", ls.Format("%-14s (%s)", epOffset.data(), epOffsetHex.data()));
 
-    const auto stackSize    = nf.ToString(machO->main.ep.stacksize, dec);
-    const auto stackSizeHex = nf2.ToString(machO->main.ep.stacksize, hex);
+    const auto stackSize    = nf.ToString(machO->main->stacksize, dec);
+    const auto stackSizeHex = nf2.ToString(machO->main->stacksize, hex);
     general->AddItem("Stack Size", ls.Format("%-14s (%s)", stackSize.data(), stackSizeHex.data()));
 }
 
@@ -110,9 +104,6 @@ void Information::UpdateSourceVersion()
     LocalString<1024> ls2;
     NumericFormatter nf;
     NumericFormatter nf2;
-
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
     general->SetItemType(general->AddItem("Source Version"), ListViewItemType::Category);
 
@@ -204,9 +195,6 @@ void Information::UpdateVersionMin()
     LocalString<1024> ls2;
     NumericFormatter nf;
     NumericFormatter nf2;
-
-    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
     general->SetItemType(general->AddItem("Version Min"), ListViewItemType::Category);
 

@@ -77,12 +77,6 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         uint64_t offset;
     };
 
-    struct Main
-    {
-        bool isSet = false;
-        MAC::entry_point_command ep;
-    };
-
     struct MyNList
     {
         uint32_t n_strx;  /* index into the string table */
@@ -148,7 +142,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::optional<MAC::dyld_info_command> dyldInfo;
     std::vector<Dylib> dylibs;
     std::optional<DySymTab> dySymTab;
-    Main main;
+    std::optional<MAC::entry_point_command> main;
     SourceVersion sourceVersion;
     UUID uuid;
     std::vector<MAC::linkedit_data_command> linkEditDatas;
@@ -199,6 +193,9 @@ namespace Panels
     {
         Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
+
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
         void UpdateBasicInfo();
         void UpdateEntryPoint();

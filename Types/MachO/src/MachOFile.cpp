@@ -332,52 +332,45 @@ bool MachOFile::SetMain(uint64_t& offset)
     {
         if (lc.value.cmd == MAC::LoadCommandType::MAIN)
         {
-            if (main.isSet == false)
-            {
-                CHECK(file->Copy<MAC::entry_point_command>(offset, main.ep), false, "");
-
-                if (shouldSwapEndianess)
-                {
-                    Swap(main.ep);
-                }
-
-                main.isSet = true;
-            }
-            else
+            if (main.has_value())
             {
                 throw "Multiple LoadCommandType::MAIN found! Reimplement this!";
+            }
+
+            main.emplace(MAC::entry_point_command{});
+            CHECK(file->Copy<MAC::entry_point_command>(offset, *main), false, "");
+            if (shouldSwapEndianess)
+            {
+                Swap(*main);
             }
         }
         else if (lc.value.cmd == MAC::LoadCommandType::UNIXTHREAD)
         {
-            main.ep.cmd     = lc.value.cmd;
-            main.ep.cmdsize = lc.value.cmdsize;
-            auto cmd        = file->CopyToBuffer(offset, main.ep.cmdsize);
+            main.emplace(MAC::entry_point_command{});
+
+            main->cmd     = lc.value.cmd;
+            main->cmdsize = lc.value.cmdsize;
+            auto cmd      = file->CopyToBuffer(offset, main->cmdsize);
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {
                 const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>((((char*) cmd.GetData()) + 16));
-
-                main.isSet       = true;
-                main.ep.entryoff = registers->eip;
+                main->entryoff       = registers->eip;
             }
             else if (header.cputype == MAC::CPU_TYPE_X86_64)
             {
                 const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>((((char*) cmd.GetData()) + 16));
-                main.isSet           = true;
-                main.ep.entryoff     = registers->rip;
+                main->entryoff       = registers->rip;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC)
             {
                 const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>((((char*) cmd.GetData()) + 16));
-                main.isSet           = true;
-                main.ep.entryoff     = registers->srr0;
+                main->entryoff       = registers->srr0;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC64)
             {
                 const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>((((char*) cmd.GetData()) + 16));
-                main.isSet           = true;
-                main.ep.entryoff     = registers->srr0;
+                main->entryoff       = registers->srr0;
             }
             else
             {
