@@ -338,5 +338,6 @@ namespace App
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const char*);
     void CORE_EXPORT OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name);
+    Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
 }; // namespace App
 }; // namespace GView

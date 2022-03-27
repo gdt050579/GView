@@ -78,7 +78,7 @@ bool Instance::LoadSettings()
     CHECK(ini, false, "");
 
     // check plugins
-    //for (auto section : *ini)
+    // for (auto section : *ini)
     for (auto section : ini->GetSections())
     {
         auto sectionName = section.GetName();
@@ -225,6 +225,20 @@ void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         idx += GENERIC_PLUGINS_FRAME;
     }
 }
+Reference<GView::Object> Instance::GetObject(uint32 index)
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
+    // get the first child (focus one);
+    NOT_IMPLEMENTED(nullptr);
+}
+Reference<GView::Object> Instance::GetCurrentObject()
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
+    // get the first child (focus one);
+    NOT_IMPLEMENTED(nullptr);
+}
 //===============================[APPCUI HANDLERS]==============================
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
@@ -256,8 +270,10 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000))
         {
-            auto packedValue = ((uint32) ID)- GENERIC_PLUGINS_CMDID;
-            this->genericPlugins[packedValue / GENERIC_PLUGINS_FRAME].Run(packedValue % GENERIC_PLUGINS_FRAME);
+            auto packedValue = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
+            // get current focused object
+
+            this->genericPlugins[packedValue / GENERIC_PLUGINS_FRAME].Run(packedValue % GENERIC_PLUGINS_FRAME, this->GetCurrentObject());
             return true;
         }
     }

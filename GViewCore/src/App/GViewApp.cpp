@@ -114,3 +114,8 @@ void GView::App::OpenItem(View::ExtractItem item, Reference<View::ViewControl> v
     // API to OpenFile has to be changed (remove that cont char* path)
     OpenFile(name.data());
 }
+Reference<GView::Object> GView::App::GetObject(uint32 index)
+{
+    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    return gviewAppInstance->GetObject(index);
+}
