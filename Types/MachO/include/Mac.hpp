@@ -4,10 +4,10 @@
 
 namespace MAC
 {
-constexpr uint32_t FAT_MAGIC    = 0xcafebabe; /* the fat magic number */
-constexpr uint32_t FAT_CIGAM    = 0xbebafeca; /* NXSwapLong(FAT_MAGIC) */
-constexpr uint32_t FAT_MAGIC_64 = 0xcafebabf; /* the 64-bit fat magic number */
-constexpr uint32_t FAT_CIGAM_64 = 0xbfbafeca; /* NXSwapLong(FAT_MAGIC_64) */
+constexpr uint32 FAT_MAGIC    = 0xcafebabe; /* the fat magic number */
+constexpr uint32 FAT_CIGAM    = 0xbebafeca; /* NXSwapLong(FAT_MAGIC) */
+constexpr uint32 FAT_MAGIC_64 = 0xcafebabf; /* the 64-bit fat magic number */
+constexpr uint32 FAT_CIGAM_64 = 0xbfbafeca; /* NXSwapLong(FAT_MAGIC_64) */
 
 struct fat_header
 {
@@ -15,42 +15,42 @@ struct fat_header
     unsigned long nfat_arch; /* number of structs that follow */
 };
 
-constexpr uint32_t MH_MAGIC    = 0xfeedface; /* the mach magic number */
-constexpr uint32_t MH_CIGAM    = 0xcefaedfe; /* NXSwapInt(MH_MAGIC) */
-constexpr uint32_t MH_MAGIC_64 = 0xfeedfacf; /* the 64-bit mach magic number */
-constexpr uint32_t MH_CIGAM_64 = 0xcffaedfe; /* NXSwapInt(MH_MAGIC_64) */
+constexpr uint32 MH_MAGIC    = 0xfeedface; /* the mach magic number */
+constexpr uint32 MH_CIGAM    = 0xcefaedfe; /* NXSwapInt(MH_MAGIC) */
+constexpr uint32 MH_MAGIC_64 = 0xfeedfacf; /* the 64-bit mach magic number */
+constexpr uint32 MH_CIGAM_64 = 0xcffaedfe; /* NXSwapInt(MH_MAGIC_64) */
 
-typedef int32_t cpu_type_t;
-typedef int32_t cpu_subtype_t;
-typedef int32_t cpu_threadtype_t;
+typedef int32 cpu_type_t;
+typedef int32 cpu_subtype_t;
+typedef int32 cpu_threadtype_t;
 
 struct fat_arch
 {
     cpu_type_t cputype;       /* cpu specifier (int) */
     cpu_subtype_t cpusubtype; /* machine specifier (int) */
-    uint32_t offset;          /* file offset to this object file */
-    uint32_t size;            /* size of this object file */
-    uint32_t align;           /* alignment as a power of 2 */
+    uint32 offset;            /* file offset to this object file */
+    uint32 size;              /* size of this object file */
+    uint32 align;             /* alignment as a power of 2 */
 };
 
 struct fat_arch64
 {
     cpu_type_t cputype;       /* cpu specifier (int) */
     cpu_subtype_t cpusubtype; /* machine specifier (int) */
-    uint64_t offset;          /* file offset to this object file */
-    uint64_t size;            /* size of this object file */
-    uint32_t align;           /* alignment as a power of 2 */
-    uint64_t reserved;        /* reserved */
+    uint64 offset;            /* file offset to this object file */
+    uint64 size;              /* size of this object file */
+    uint32 align;             /* alignment as a power of 2 */
+    uint64 reserved;          /* reserved */
 };
 
-constexpr uint32_t CPU_STATE_MAX = 3;
+constexpr uint32 CPU_STATE_MAX = 3;
 
-constexpr uint32_t CPU_STATE_USER   = 0;
-constexpr uint32_t CPU_STATE_SYSTEM = 1;
-constexpr uint32_t CPU_STATE_IDLE   = 2;
+constexpr uint32 CPU_STATE_USER   = 0;
+constexpr uint32 CPU_STATE_SYSTEM = 1;
+constexpr uint32 CPU_STATE_IDLE   = 2;
 
-constexpr uint32_t CPU_ARCH_ABI64    = 0x1000000;
-constexpr uint32_t CPU_ARCH_ABI64_32 = 0x2000000;
+constexpr uint32 CPU_ARCH_ABI64    = 0x1000000;
+constexpr uint32 CPU_ARCH_ABI64_32 = 0x2000000;
 
 constexpr cpu_type_t CPU_TYPE_ANY         = -1;
 constexpr cpu_type_t CPU_TYPE_VAX         = 1;
@@ -77,16 +77,16 @@ constexpr cpu_type_t CPU_TYPE_ARM64       = (CPU_TYPE_ARM | CPU_ARCH_ABI64);
 constexpr cpu_type_t CPU_TYPE_ARM64_32    = (CPU_TYPE_ARM | CPU_ARCH_ABI64_32);
 
 /* Capability bits used in the definition of cpu_subtype. */
-constexpr uint32_t CPU_SUBTYPE_MASK  = 0xff000000; /* mask for feature flags */
-constexpr uint32_t CPU_SUBTYPE_LIB64 = 0x80000000; /* 64 bit libraries */
+constexpr uint32 CPU_SUBTYPE_MASK  = 0xff000000; /* mask for feature flags */
+constexpr uint32 CPU_SUBTYPE_LIB64 = 0x80000000; /* 64 bit libraries */
 
 /* CPU subtype capability flags for ptrauth on arm64e platforms */
-constexpr uint32_t CPU_SUBTYPE_ARM64_PTR_AUTH_MASK = 0x0f000000;
+constexpr uint32 CPU_SUBTYPE_ARM64_PTR_AUTH_MASK = 0x0f000000;
 
 /* CPU subtype capability flags for ptrauth on arm64e platforms, take 2 */
-constexpr uint32_t CPU_SUBTYPE_ARM64E_VERSIONED_ABI_MASK = 0x80000000;
-constexpr uint32_t CPU_SUBTYPE_ARM64E_KERNEL_ABI_MASK    = 0x40000000;
-constexpr uint32_t CPU_SUBTYPE_ARM64E_PTR_AUTH_MASK      = 0x3f000000;
+constexpr uint32 CPU_SUBTYPE_ARM64E_VERSIONED_ABI_MASK = 0x80000000;
+constexpr uint32 CPU_SUBTYPE_ARM64E_KERNEL_ABI_MASK    = 0x40000000;
+constexpr uint32 CPU_SUBTYPE_ARM64E_PTR_AUTH_MASK      = 0x3f000000;
 
 constexpr cpu_subtype_t CPU_SUBTYPE_MULTIPLE = -1;
 
@@ -135,10 +135,10 @@ constexpr cpu_subtype_t CPU_SUBTYPE_PENTII_M5 = CPU_SUBTYPE_INTEL(6, 5);
 constexpr cpu_subtype_t CPU_SUBTYPE_PENTIUM_4 = CPU_SUBTYPE_INTEL(10, 0);
 
 #define CPU_SUBTYPE_INTEL_FAMILY(x) ((x) &15)
-constexpr uint32_t CPU_SUBTYPE_INTEL_FAMILY_MAX = 15;
+constexpr uint32 CPU_SUBTYPE_INTEL_FAMILY_MAX = 15;
 
 #define CPU_SUBTYPE_INTEL_MODEL(x) ((x) >> 4)
-constexpr uint32_t CPU_SUBTYPE_INTEL_MODEL_ALL = 0;
+constexpr uint32 CPU_SUBTYPE_INTEL_MODEL_ALL = 0;
 
 constexpr cpu_subtype_t CPU_SUBTYPE_X86_64_H = 8; /* Haswell and compatible */
 
@@ -240,7 +240,7 @@ constexpr cpu_subtype_t CPU_SUBTYPE_VEO_3   = 3;
 constexpr cpu_subtype_t CPU_SUBTYPE_VEO_4   = 4;
 constexpr cpu_subtype_t CPU_SUBTYPE_VEO_ALL = CPU_SUBTYPE_VEO_2;
 
-enum class FileType : uint32_t
+enum class FileType : uint32
 {
     OBJECT      = 0x1, /* relocatable object file */
     EXECUTE     = 0x2, /* demand paged executable file */
@@ -256,14 +256,14 @@ enum class FileType : uint32_t
 
 struct mach_header
 {
-    uint32_t magic;           /* mach magic number identifier */
+    uint32 magic;             /* mach magic number identifier */
     cpu_type_t cputype;       /* cpu specifier */
     cpu_subtype_t cpusubtype; /* machine specifier */
     FileType filetype;        /* type of file */
-    uint32_t ncmds;           /* number of load commands */
-    uint32_t sizeofcmds;      /* the size of all the load commands */
-    uint32_t flags;           /* flags */
-    uint32_t reserved;        /* reserved (for x64 only!) */
+    uint32 ncmds;             /* number of load commands */
+    uint32 sizeofcmds;        /* the size of all the load commands */
+    uint32 flags;             /* flags */
+    uint32 reserved;          /* reserved (for x64 only!) */
 };
 
 enum class ByteOrder
@@ -288,15 +288,15 @@ struct Arch
 
     cpu_type_t cputype;       /* cpu specifier (int) */
     cpu_subtype_t cpusubtype; /* machine specifier (int) */
-    uint64_t offset;          /* file offset to this object file */
-    uint64_t size;            /* size of this object file */
-    uint32_t align;           /* alignment as a power of 2 */
-    uint64_t reserved;        /* reserved */
+    uint64 offset;            /* file offset to this object file */
+    uint64 size;              /* size of this object file */
+    uint32 align;             /* alignment as a power of 2 */
+    uint64 reserved;          /* reserved */
 
     FileType filetype;
 };
 
-enum class MachHeaderFlags : uint32_t
+enum class MachHeaderFlags : uint32
 {
     NOUNDEFS                      = 0x1,
     INCRLINK                      = 0x2,
@@ -328,7 +328,7 @@ enum class MachHeaderFlags : uint32_t
     SIM_SUPPORT                   = 0x08000000
 };
 
-enum class LoadCommandType : uint32_t
+enum class LoadCommandType : uint32
 {
     REQ_DYLD                 = 0x80000000,
     SEGMENT                  = 0x1,
@@ -390,16 +390,16 @@ enum class LoadCommandType : uint32_t
 struct load_command
 {
     LoadCommandType cmd; /* type of load command */
-    uint32_t cmdsize;    /* total size of command in bytes */
+    uint32 cmdsize;      /* total size of command in bytes */
 };
 
 union lc_str
 {
-    uint32_t offset; /* offset to the string */
-    uint64_t ptr;    /* pointer to the string */
+    uint32 offset; /* offset to the string */
+    uint64 ptr;    /* pointer to the string */
 };
 
-enum class VMProtectionFlags : uint32_t
+enum class VMProtectionFlags : uint32
 {
     NONE      = 0x0,
     READ      = 0x1,                      /* read permission */
@@ -422,31 +422,31 @@ enum class VMProtectionFlags : uint32_t
 struct segment_command
 {
     LoadCommandType cmd; /* LC_SEGMENT */
-    uint32_t cmdsize;    /* includes sizeof section structs */
+    uint32 cmdsize;      /* includes sizeof section structs */
     char segname[16];    /* segment name */
-    uint32_t vmaddr;     /* memory address of this segment */
-    uint32_t vmsize;     /* memory size of this segment */
-    uint32_t fileoff;    /* file offset of this segment */
-    uint32_t filesize;   /* amount to map from the file */
-    uint32_t maxprot;    /* maximum VM protection */
-    uint32_t initprot;   /* initial VM protection */
-    uint32_t nsects;     /* number of sections in segment */
-    uint32_t flags;      /* flags */
+    uint32 vmaddr;       /* memory address of this segment */
+    uint32 vmsize;       /* memory size of this segment */
+    uint32 fileoff;      /* file offset of this segment */
+    uint32 filesize;     /* amount to map from the file */
+    uint32 maxprot;      /* maximum VM protection */
+    uint32 initprot;     /* initial VM protection */
+    uint32 nsects;       /* number of sections in segment */
+    uint32 flags;        /* flags */
 };
 
 struct segment_command_64
 {
     LoadCommandType cmd; /* LC_SEGMENT_64 */
-    uint32_t cmdsize;    /* includes sizeof section_64 structs */
+    uint32 cmdsize;      /* includes sizeof section_64 structs */
     char segname[16];    /* segment name */
-    uint64_t vmaddr;     /* memory address of this segment */
-    uint64_t vmsize;     /* memory size of this segment */
-    uint64_t fileoff;    /* file offset of this segment */
-    uint64_t filesize;   /* amount to map from the file */
-    uint32_t maxprot;    /* maximum VM protection */
-    uint32_t initprot;   /* initial VM protection */
-    uint32_t nsects;     /* number of sections in segment */
-    uint32_t flags;      /* flags */
+    uint64 vmaddr;       /* memory address of this segment */
+    uint64 vmsize;       /* memory size of this segment */
+    uint64 fileoff;      /* file offset of this segment */
+    uint64 filesize;     /* amount to map from the file */
+    uint32 maxprot;      /* maximum VM protection */
+    uint32 initprot;     /* initial VM protection */
+    uint32 nsects;       /* number of sections in segment */
+    uint32 flags;        /* flags */
 };
 
 enum class SegmentCommandFlags : uint32_t
@@ -463,42 +463,42 @@ enum class SegmentCommandFlags : uint32_t
 };
 
 struct section
-{                       /* for 32-bit architectures */
-    char sectname[16];  /* name of this section */
-    char segname[16];   /* segment this section goes in */
-    uint32_t addr;      /* memory address of this section */
-    uint32_t size;      /* size in bytes of this section */
-    uint32_t offset;    /* file offset of this section */
-    uint32_t align;     /* section alignment (power of 2) */
-    uint32_t reloff;    /* file offset of relocation entries */
-    uint32_t nreloc;    /* number of relocation entries */
-    uint32_t flags;     /* flags (section type and attributes)*/
-    uint32_t reserved1; /* reserved (for offset or index) */
-    uint32_t reserved2; /* reserved (for count or sizeof) */
+{                      /* for 32-bit architectures */
+    char sectname[16]; /* name of this section */
+    char segname[16];  /* segment this section goes in */
+    uint32 addr;       /* memory address of this section */
+    uint32 size;       /* size in bytes of this section */
+    uint32 offset;     /* file offset of this section */
+    uint32 align;      /* section alignment (power of 2) */
+    uint32 reloff;     /* file offset of relocation entries */
+    uint32 nreloc;     /* number of relocation entries */
+    uint32 flags;      /* flags (section type and attributes)*/
+    uint32 reserved1;  /* reserved (for offset or index) */
+    uint32 reserved2;  /* reserved (for count or sizeof) */
 };
 
 struct section_64
-{                       /* for 64-bit architectures */
-    char sectname[16];  /* name of this section */
-    char segname[16];   /* segment this section goes in */
-    uint64_t addr;      /* memory address of this section */
-    uint64_t size;      /* size in bytes of this section */
-    uint32_t offset;    /* file offset of this section */
-    uint32_t align;     /* section alignment (power of 2) */
-    uint32_t reloff;    /* file offset of relocation entries */
-    uint32_t nreloc;    /* number of relocation entries */
-    uint32_t flags;     /* flags (section type and attributes)*/
-    uint32_t reserved1; /* reserved (for offset or index) */
-    uint32_t reserved2; /* reserved (for count or sizeof) */
-    uint32_t reserved3; /* reserved */
+{                      /* for 64-bit architectures */
+    char sectname[16]; /* name of this section */
+    char segname[16];  /* segment this section goes in */
+    uint64 addr;       /* memory address of this section */
+    uint64 size;       /* size in bytes of this section */
+    uint32 offset;     /* file offset of this section */
+    uint32 align;      /* section alignment (power of 2) */
+    uint32 reloff;     /* file offset of relocation entries */
+    uint32 nreloc;     /* number of relocation entries */
+    uint32 flags;      /* flags (section type and attributes)*/
+    uint32 reserved1;  /* reserved (for offset or index) */
+    uint32 reserved2;  /* reserved (for count or sizeof) */
+    uint32 reserved3;  /* reserved */
 };
 
-constexpr uint32_t SECTION_TYPE       = 0x000000ff; /* 256 section types */
-constexpr uint32_t SECTION_ATTRIBUTES = 0xffffff00; /*  24 section attributes */
+constexpr uint32 SECTION_TYPE       = 0x000000ff; /* 256 section types */
+constexpr uint32 SECTION_ATTRIBUTES = 0xffffff00; /*  24 section attributes */
 
 /* The flags field of a section structure is separated into two parts a section type and section attributes.  The section types are mutually
  * exclusive (it can only have one type) but the section attributes are not (it may have more than one attribute). */
-enum class SectionType : uint32_t
+enum class SectionType : uint32
 {
     REGULAR                             = 0x00, /* regular section */
     ZEROFILL                            = 0x01, /* zero fill on demand section */
@@ -524,7 +524,7 @@ enum class SectionType : uint32_t
     THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15  /* functions to call to initialize TLV values */
 };
 
-enum class SectionAttributtes : uint32_t
+enum class SectionAttributtes : uint32
 {
     USR                 = 0xff000000, /* User setable attributes */
     PURE_INSTRUCTIONS   = 0x80000000, /* section contains only true machine instructions */
@@ -542,51 +542,51 @@ enum class SectionAttributtes : uint32_t
 
 struct dyld_info_command
 {
-    LoadCommandType cmd;     /* LC_DYLD_INFO or LC_DYLD_INFO_ONLY */
-    uint32_t cmdsize;        /* sizeof(struct dyld_info_command) */
-    uint32_t rebase_off;     /* file offset to rebase info  */
-    uint32_t rebase_size;    /* size of rebase info   */
-    uint32_t bind_off;       /* file offset to binding info   */
-    uint32_t bind_size;      /* size of binding info  */
-    uint32_t weak_bind_off;  /* file offset to weak binding info   */
-    uint32_t weak_bind_size; /* size of weak binding info  */
-    uint32_t lazy_bind_off;  /* file offset to lazy binding info */
-    uint32_t lazy_bind_size; /* size of lazy binding infs */
-    uint32_t export_off;     /* file offset to lazy binding info */
-    uint32_t export_size;    /* size of lazy binding infs */
+    LoadCommandType cmd;   /* LC_DYLD_INFO or LC_DYLD_INFO_ONLY */
+    uint32 cmdsize;        /* sizeof(struct dyld_info_command) */
+    uint32 rebase_off;     /* file offset to rebase info  */
+    uint32 rebase_size;    /* size of rebase info   */
+    uint32 bind_off;       /* file offset to binding info   */
+    uint32 bind_size;      /* size of binding info  */
+    uint32 weak_bind_off;  /* file offset to weak binding info   */
+    uint32 weak_bind_size; /* size of weak binding info  */
+    uint32 lazy_bind_off;  /* file offset to lazy binding info */
+    uint32 lazy_bind_size; /* size of lazy binding infs */
+    uint32 export_off;     /* file offset to lazy binding info */
+    uint32 export_size;    /* size of lazy binding infs */
 };
 
 struct dylib
 {
-    union lc_str name;              /* library's path name */
-    uint32_t timestamp;             /* library's build time stamp */
-    uint32_t current_version;       /* library's current version number */
-    uint32_t compatibility_version; /* library's compatibility vers number*/
+    union lc_str name;            /* library's path name */
+    uint32 timestamp;             /* library's build time stamp */
+    uint32 current_version;       /* library's current version number */
+    uint32 compatibility_version; /* library's compatibility vers number*/
 };
 
 struct dylib_command
 {
     LoadCommandType cmd; /* LC_ID_DYLIB, LC_LOAD_{,WEAK_}DYLIB, LC_REEXPORT_DYLIB */
-    uint32_t cmdsize;    /* includes pathname string */
+    uint32 cmdsize;      /* includes pathname string */
     dylib dylib;         /* the library identification */
 };
 
 struct entry_point_command
 {
     LoadCommandType cmd; /* LC_MAIN only used in MH_EXECUTE filetypes */
-    uint32_t cmdsize;    /* 24 */
-    uint64_t entryoff;   /* file (__TEXT) offset of main() */
-    uint64_t stacksize;  /* if not zero, initial stack size */
+    uint32 cmdsize;      /* 24 */
+    uint64 entryoff;     /* file (__TEXT) offset of main() */
+    uint64 stacksize;    /* if not zero, initial stack size */
 };
 
 struct symtab_command
 {
     LoadCommandType cmd; /* LC_SYMTAB */
-    uint32_t cmdsize;    /* sizeof(struct symtab_command) */
-    uint32_t symoff;     /* symbol table offset */
-    uint32_t nsyms;      /* number of symbol table entries */
-    uint32_t stroff;     /* string table offset */
-    uint32_t strsize;    /* string table size in bytes */
+    uint32 cmdsize;      /* sizeof(struct symtab_command) */
+    uint32 symoff;       /* symbol table offset */
+    uint32 nsyms;        /* number of symbol table entries */
+    uint32 stroff;       /* string table offset */
+    uint32 strsize;      /* string table size in bytes */
 };
 
 struct nlist
@@ -594,24 +594,24 @@ struct nlist
     union
     {
         // char* n_name; /* for use when in-core */
-        uint32_t n_strx; /* index into the string table */
+        uint32 n_strx; /* index into the string table */
     } n_un;
-    uint8_t n_type;   /* type flag, see below */
-    uint8_t n_sect;   /* section number or NO_SECT */
-    int16_t n_desc;   /* see <mach-o/stab.h> */
-    uint32_t n_value; /* value of this symbol (or stab offset) */
+    uint8 n_type;   /* type flag, see below */
+    uint8 n_sect;   /* section number or NO_SECT */
+    int16 n_desc;   /* see <mach-o/stab.h> */
+    uint32 n_value; /* value of this symbol (or stab offset) */
 };
 
 struct nlist_64
 {
     union
     {
-        uint32_t n_strx; /* index into the string table */
+        uint32 n_strx; /* index into the string table */
     } n_un;
-    uint8_t n_type;   /* type flag, see below */
-    uint8_t n_sect;   /* section number or NO_SECT */
-    uint16_t n_desc;  /* see <mach-o/stab.h> -> description field */
-    uint64_t n_value; /* value of this symbol (or stab offset) */
+    uint8 n_type;   /* type flag, see below */
+    uint8 n_sect;   /* section number or NO_SECT */
+    uint16 n_desc;  /* see <mach-o/stab.h> -> description field */
+    uint64 n_value; /* value of this symbol (or stab offset) */
 };
 
 /* Symbols with a index into the string table of zero (n_un.n_strx == 0) are defined to have a null, "", name. Therefore all string indexes
@@ -641,16 +641,16 @@ enum class N_TYPE_BITS
     FN   = 0x1f  /* file name symbol */
 };
 
-constexpr uint32_t NO_SECT  = 0;   /* symbol is not in any section */
-constexpr uint32_t MAX_SECT = 255; /* 1 thru 255 inclusive */
+constexpr uint32 NO_SECT  = 0;   /* symbol is not in any section */
+constexpr uint32 MAX_SECT = 255; /* 1 thru 255 inclusive */
 
-inline static uint16_t GET_COMM_ALIGN(uint16_t n_desc)
+inline static uint16 GET_COMM_ALIGN(uint16 n_desc)
 {
     return (((n_desc) >> 8) & 0x0f);
 }
 
 /* Reference type bits of the n_desc field of undefined symbols */
-constexpr uint32_t REFERENCE_TYPE = 0x0F; // (0x07?)
+constexpr uint32 REFERENCE_TYPE = 0x0F; // (0x07?)
 
 /* types of references */
 enum class ReferenceFlag
@@ -663,7 +663,7 @@ enum class ReferenceFlag
     PRIVATE_UNDEFINED_LAZY     = 5
 };
 
-inline static uint16_t GET_LIBRARY_ORDINAL(uint16_t n_desc)
+inline static uint16 GET_LIBRARY_ORDINAL(uint16 n_desc)
 {
     return (((n_desc) >> 8) & 0xff);
 }
@@ -739,7 +739,7 @@ enum class N_STAB_TYPE
     LENG    = 0xfe  // length of preceding entry
 };
 
-enum class PlatformType : uint8_t
+enum class PlatformType : uint8
 {
     UNKNOWN          = 0,
     MACOS            = 1,
@@ -789,7 +789,7 @@ struct linkedit_data_command // The linkedit_data_command contains the offsets a
     uint32_t datasize;   // File size of data in __LINKEDIT segment.
 };
 
-enum class CodeSignFlags : uint32_t
+enum class CodeSignFlags : uint32
 {
     VALID                  = 0x00000001, /* dynamically valid */
     ADHOC                  = 0x00000002, /* ad hoc signed */
@@ -834,7 +834,7 @@ enum class CodeSignExecSegFlags
     CAN_EXEC_CDHASH = 0x200, /* can execute blessed cdhash */
 };
 
-enum class CodeSignMagic : uint32_t
+enum class CodeSignMagic : uint32
 {
     CSMAGIC_REQUIREMENT            = 0xfade0c00, /* single Requirement blob */
     CSMAGIC_REQUIREMENTS           = 0xfade0c01, /* Requirements vector (internal requirements) */
@@ -901,14 +901,14 @@ enum class CodeSignMagic : uint32_t
 struct CS_BlobIndex
 {
     CodeSignMagic type; /* type of entry */
-    uint32_t offset;    /* offset of entry */
+    uint32 offset;      /* offset of entry */
 };
 
 struct CS_SuperBlob
 {
     CodeSignMagic magic; /* magic number */
-    uint32_t length;     /* total length of SuperBlob */
-    uint32_t count;      /* number of index entries following */
+    uint32 length;       /* total length of SuperBlob */
+    uint32 count;        /* number of index entries following */
     // CS_BlobIndex index[0]; /* (count) entries */
     /* followed by Blobs in no particular order as indicated by offsets in index */
 };
@@ -916,48 +916,48 @@ struct CS_SuperBlob
 /* C form of a CodeDirectory. */
 struct CS_CodeDirectory
 {
-    CodeSignMagic magic;    // magic number (CSMAGIC_CODEDIRECTORY) */
-    uint32_t length;        // total length of CodeDirectory blob
-    uint32_t version;       // compatibility version
-    uint32_t flags;         // setup and mode flags
-    uint32_t hashOffset;    // offset of hash slot element at index zero
-    uint32_t identOffset;   // offset of identifier string
-    uint32_t nSpecialSlots; // number of special hash slots
-    uint32_t nCodeSlots;    // number of ordinary (code) hash slots
-    uint32_t codeLimit;     // limit to main image signature range
-    uint8_t hashSize;       // size of each hash in bytes
-    uint8_t hashType;       // type of hash (cdHashType* constants)
-    PlatformType platform;  // platform identifier; zero if not platform binary
-    uint8_t pageSize;       // log2(page size in bytes); 0 => infinite
-    uint32_t spare2;        // unused (must be zero)
-    uint32_t scatterOffset; /* Version 0x20100 -> offset of optional scatter vector */
-    uint32_t teamOffset;    /* Version 0x20200 -> offset of optional team identifier */
-    uint32_t spare3;        /* Version 0x20300 -> unused (must be zero) */
-    uint64_t codeLimit64;   /* Version 0x20300 -> limit to main image signature range, 64 bits */
-    uint64_t execSegBase;   /* Version 0x20400 -> offset of executable segment */
-    uint64_t execSegLimit;  /* Version 0x20400 -> limit of executable segment */
-    uint64_t execSegFlags;  /* Version 0x20400 -> executable segment flags */
+    CodeSignMagic magic;   // magic number (CSMAGIC_CODEDIRECTORY) */
+    uint32 length;         // total length of CodeDirectory blob
+    uint32 version;        // compatibility version
+    uint32 flags;          // setup and mode flags
+    uint32 hashOffset;     // offset of hash slot element at index zero
+    uint32 identOffset;    // offset of identifier string
+    uint32 nSpecialSlots;  // number of special hash slots
+    uint32 nCodeSlots;     // number of ordinary (code) hash slots
+    uint32 codeLimit;      // limit to main image signature range
+    uint8 hashSize;        // size of each hash in bytes
+    uint8 hashType;        // type of hash (cdHashType* constants)
+    PlatformType platform; // platform identifier; zero if not platform binary
+    uint8 pageSize;        // log2(page size in bytes); 0 => infinite
+    uint32 spare2;         // unused (must be zero)
+    uint32 scatterOffset;  /* Version 0x20100 -> offset of optional scatter vector */
+    uint32 teamOffset;     /* Version 0x20200 -> offset of optional team identifier */
+    uint32 spare3;         /* Version 0x20300 -> unused (must be zero) */
+    uint64 codeLimit64;    /* Version 0x20300 -> limit to main image signature range, 64 bits */
+    uint64 execSegBase;    /* Version 0x20400 -> offset of executable segment */
+    uint64 execSegLimit;   /* Version 0x20400 -> limit of executable segment */
+    uint64 execSegFlags;   /* Version 0x20400 -> executable segment flags */
     /* followed by dynamic content as located by offset fields above */
 };
 
 struct CS_Blob
 {
     CodeSignMagic magic; // magic number
-    uint32_t length;     // total length of blob
+    uint32 length;       // total length of blob
 };
 
 struct CS_GenericBlob
 {
     CodeSignMagic magic; /* magic number */
-    uint32_t length;     /* total length of blob */
+    uint32 length;       /* total length of blob */
     // char data[];
 };
 
 struct CS_RequirementsBlob
 {
     CodeSignMagic magic; // magic number
-    uint32_t length;     // total length of blob
-    uint32_t data;       // zero for dyld shared cache
+    uint32 length;       // total length of blob
+    uint32 data;         // zero for dyld shared cache
 };
 
 enum class CS_RequirementType : uint32_t
@@ -972,95 +972,95 @@ enum class CS_RequirementType : uint32_t
 struct CS_Requirement
 {
     CS_RequirementType type; // type of entry
-    uint32_t offset;         // offset of entry
+    uint32 offset;           // offset of entry
 };
 
 struct CS_Scatter
 {
-    uint32_t count;        // number of pages; zero for sentinel (only)
-    uint32_t base;         // first page number
-    uint64_t targetOffset; // byte offset in target
-    uint64_t spare;        // reserved (must be zero)
+    uint32 count;        // number of pages; zero for sentinel (only)
+    uint32 base;         // first page number
+    uint64 targetOffset; // byte offset in target
+    uint64 spare;        // reserved (must be zero)
 };
 
 struct version_min_command
 {
     LoadCommandType cmd; // LC_VERSION_MIN_MACOSX or
                          // LC_VERSION_MIN_IPHONEOS
-    uint32_t cmdsize;    // sizeof(struct version_min_command)
-    uint32_t version;    // X.Y.Z is encoded in nibbles xxxx.yy.zz
-    uint32_t sdk;        // X.Y.Z is encoded in nibbles xxxx.yy.zz
+    uint32 cmdsize;      // sizeof(struct version_min_command)
+    uint32 version;      // X.Y.Z is encoded in nibbles xxxx.yy.zz
+    uint32 sdk;          // X.Y.Z is encoded in nibbles xxxx.yy.zz
 };
 
 constexpr auto CC_SHA1_DIGEST_LENGTH = 20U; /* digest length in bytes */
-typedef uint32_t CC_LONG;                   /* 32 bit unsigned integer */
+typedef uint32 CC_LONG;                     /* 32 bit unsigned integer */
 
 typedef struct
 {
-    uint32_t eax;
-    uint32_t ebx;
-    uint32_t ecx;
-    uint32_t edx;
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t esp;
-    uint32_t ss;
-    uint32_t eflags;
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t ds;
-    uint32_t es;
-    uint32_t fs;
-    uint32_t gs;
+    uint32 eax;
+    uint32 ebx;
+    uint32 ecx;
+    uint32 edx;
+    uint32 edi;
+    uint32 esi;
+    uint32 ebp;
+    uint32 esp;
+    uint32 ss;
+    uint32 eflags;
+    uint32 eip;
+    uint32 cs;
+    uint32 ds;
+    uint32 es;
+    uint32 fs;
+    uint32 gs;
 } i386_thread_state_t;
 
 struct x86_thread_state64_t
 {
-    uint64_t rax;
-    uint64_t rbx;
-    uint64_t rcx;
-    uint64_t rdx;
-    uint64_t rdi;
-    uint64_t rsi;
-    uint64_t rbp;
-    uint64_t rsp;
-    uint64_t r8;
-    uint64_t r9;
-    uint64_t r10;
-    uint64_t r11;
-    uint64_t r12;
-    uint64_t r13;
-    uint64_t r14;
-    uint64_t r15;
-    uint64_t rip;
-    uint64_t rflags;
-    uint64_t cs;
-    uint64_t fs;
-    uint64_t gs;
+    uint64 rax;
+    uint64 rbx;
+    uint64 rcx;
+    uint64 rdx;
+    uint64 rdi;
+    uint64 rsi;
+    uint64 rbp;
+    uint64 rsp;
+    uint64 r8;
+    uint64 r9;
+    uint64 r10;
+    uint64 r11;
+    uint64 r12;
+    uint64 r13;
+    uint64 r14;
+    uint64 r15;
+    uint64 rip;
+    uint64 rflags;
+    uint64 cs;
+    uint64 fs;
+    uint64 gs;
 };
 
 typedef struct
 {
-    uint32_t srr0; /* Instruction address register (PC) */
-    uint32_t srr1; /* Machine state register (supervisor) */
-    uint32_t r[32];
+    uint32 srr0; /* Instruction address register (PC) */
+    uint32 srr1; /* Machine state register (supervisor) */
+    uint32 r[32];
 
-    uint32_t cr;  /* Condition register */
-    uint32_t xer; /* User's integer exception register */
-    uint32_t lr;  /* Link register */
-    uint32_t ctr; /* Count register */
-    uint32_t mq;  /* MQ register (601 only) */
+    uint32 cr;  /* Condition register */
+    uint32 xer; /* User's integer exception register */
+    uint32 lr;  /* Link register */
+    uint32 ctr; /* Count register */
+    uint32 mq;  /* MQ register (601 only) */
 
-    uint32_t vrsave; /* Vector Save Register */
+    uint32 vrsave; /* Vector Save Register */
 } ppc_thread_state_t;
 
 typedef struct
 {
-    uint64_t srr0, srr1;
-    uint64_t r[32];
-    uint32_t cr;
-    uint64_t xer, lr, ctr;
-    uint32_t vrsave;
+    uint64 srr0, srr1;
+    uint64 r[32];
+    uint32 cr;
+    uint64 xer, lr, ctr;
+    uint32 vrsave;
 } ppc_thread_state64_t;
 } // namespace MAC
