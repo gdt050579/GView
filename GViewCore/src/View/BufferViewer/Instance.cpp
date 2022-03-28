@@ -1375,9 +1375,10 @@ std::string_view Instance::GetName()
 }
 bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
 {
-    uint32 idx = static_cast<uint32>(reinterpret_cast<size_t>(item));
-    uint64 start, end;
-    CHECK(this->selection.GetSelection(idx, start, end), false, "");
+    uint64 start;
+    uint64 end;
+    const auto idx = reinterpret_cast<uint64>(item);
+    CHECK(this->selection.GetSelection(static_cast<uint32>(idx), start, end), false, "");
     CHECK(this->obj->cache.WriteTo(output, start, (end - start) + 1), false, "");
     return true;
 }
@@ -1391,7 +1392,7 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
         if (this->selection.GetSelection(selectionID, start, end))
         {
             LocalString<32> tmp;
-            tmp.Format("%X,%X", start, (end - start) + 1);
+            tmp.Format("%X,%X", start, (end - start));
             r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
         }
         else
