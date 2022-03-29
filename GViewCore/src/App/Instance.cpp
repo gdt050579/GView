@@ -188,6 +188,32 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     obj->type = nullptr;
     return false;
 }
+bool Instance::AddFolder(const std::filesystem::path& path)
+{
+    auto win  = std::make_unique<FileWindow>("Folder view", this);
+    auto obj  = win->GetObject();
+    obj->type = GView::Type::FolderViewPlugin::CreateInstance(path);
+  
+    // validate type
+    CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
+
+    // instantiate window
+    while (true)
+    {
+        GView::Type::FolderViewPlugin::PopulateWindow(win.get());
+        win->Start(); // starts the window and set focus
+        // set window TAG (based on type)
+        win->SetTag("FOLDER", "");
+        auto res = AppCUI::Application::AddWindow(std::move(win));
+        CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
+
+        return true;
+    }
+    // error case
+    delete obj->type;
+    obj->type = nullptr;
+    return false;
+}
 void Instance::ShowErrors()
 {
     if (errList.Empty())
@@ -198,13 +224,20 @@ void Instance::ShowErrors()
 }
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
-    auto f = std::make_unique<AppCUI::OS::File>();
-    if (f->OpenRead(path) == false)
+    if (std::filesystem::is_directory(path))
     {
-        errList.AddError("Fail to open file: %s", path.u8string().c_str());
-        RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+        return AddFolder(path);
     }
-    return Add(std::move(f), path.u16string(), path.extension().string());
+    else
+    {
+        auto f = std::make_unique<AppCUI::OS::File>();
+        if (f->OpenRead(path) == false)
+        {
+            errList.AddError("Fail to open file: %s", path.u8string().c_str());
+            RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+        }
+        return Add(std::move(f), path.u16string(), path.extension().string());
+    }
 }
 void Instance::OpenFile()
 {
