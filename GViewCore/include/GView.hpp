@@ -222,6 +222,18 @@ namespace View
         };
     }; // namespace ImageViewer
 
+    namespace ContainerViewer
+    {
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+            void SetIcon(string_view stringFormat16x16);
+            void AddProperty(string_view name, string_view value);
+        };
+    }; // namespace ImageViewer
+
     namespace TextViewer
     {
         struct CORE_EXPORT LoadImageInterface
