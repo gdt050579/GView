@@ -12,16 +12,13 @@ target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/includ
 target_link_libraries(GViewCore PRIVATE LLVMDemangle)
 
 if (MSVC)
-    add_definitions(-DBUILD_FOR_WINDOWS)
     add_compile_options(-W3)
 elseif (APPLE)
-    add_definitions(-DBUILD_FOR_OSX)
     if (DEBUG_BUILD)
         add_compile_options(-g)
         add_compile_options(-W)
     endif()
 elseif (UNIX)
-    add_definitions(-DBUILD_FOR_UNIX)
     if (DEBUG_BUILD)
         add_compile_options(-g)
         add_compile_options(-W)
@@ -29,16 +26,16 @@ elseif (UNIX)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-     add_compile_options(-Wall -Wextra
-             -Wno-switch
-             -Wpointer-arith
-             -Wcast-qual
-             -Wredundant-decls
-             -Wctor-dtor-privacy
-             -Wwrite-strings
-             -Wdisabled-optimization
-             -Wzero-as-null-pointer-constant
-             -Wvla) # -pedantic
+    add_compile_options(-Wall -Wextra
+            -Wno-switch
+            -Wpointer-arith
+            -Wcast-qual
+            -Wredundant-decls
+            -Wctor-dtor-privacy
+            -Wwrite-strings
+            -Wdisabled-optimization
+            -Wzero-as-null-pointer-constant
+            -Wvla) # -pedantic
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
@@ -73,4 +70,3 @@ file(GLOB_RECURSE GVIEWCORE_HEADERS include/*.hpp)
 target_sources(GViewCore PRIVATE ${GVIEWCORE_HEADERS})
 get_target_property(GVIEWCORE_SOURCES GViewCore SOURCES)
 source_group(TREE ${CMAKE_SOURCE_DIR}/GViewCore FILES ${GVIEWCORE_SOURCES} ${GVIEWCORE_HEADERS})
-
