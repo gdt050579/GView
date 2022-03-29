@@ -56,13 +56,18 @@ void Panels::Information::UpdateVolumeDescriptors()
         break;
         case SectorType::Supplementary:
         {
-            SupplementaryVolumeDescriptor pvd{};
-            iso->file->Copy<SupplementaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
-            UpdateSupplementaryVolumeDescriptor(pvd);
+            SupplementaryVolumeDescriptor svd{};
+            iso->file->Copy<SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
+            UpdateSupplementaryVolumeDescriptor(svd);
         }
         break;
         case SectorType::Partition:
-            break;
+        {
+            VolumePartitionDescriptor vpd{};
+            iso->file->Copy<VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
+            UpdateVolumePartitionDescriptor(vpd);
+        }
+        break;
         case SectorType::SetTerminator:
         {
             general->SetItemType(general->AddItem("Terminator Volume Descriptor"), ListViewItemType::Category);
@@ -77,44 +82,11 @@ void Panels::Information::UpdateVolumeDescriptors()
 
 void Panels::Information::UpdateBootRecord(const BootRecord& br)
 {
-    LocalString<1024> ls;
-    LocalString<1024> ls2;
-    NumericFormatter nf;
-    NumericFormatter nf2;
-
     general->SetItemType(general->AddItem("Boot Record"), ListViewItemType::Category);
-
     UpdateVolumeHeader(br.vdh);
-
-    ls2.Format("0x");
-    for (auto i = 0ULL; i < sizeof(br.bootSystemIdentifier); i++)
-    {
-        ls2.AddFormat("%.2x", br.bootSystemIdentifier[i]);
-    }
-    const auto bootSystemIdentifierHex = ls2.GetText();
-    general->AddItem(
-          "Boot System Identifier",
-          ls.Format(
-                "%-10s (%s)", std::string{ br.bootSystemIdentifier, sizeof(br.bootSystemIdentifier) }.c_str(), bootSystemIdentifierHex));
-
-    ls2.Format("0x");
-    for (auto i = 0ULL; i < sizeof(br.bootIdentifier); i++)
-    {
-        ls2.AddFormat("%.2x", br.bootIdentifier[i]);
-    }
-    const auto bootIdentifierHex = ls2.GetText();
-    general->AddItem(
-          "Boot Identifier",
-          ls.Format("%-10s (%s)", std::string{ br.bootIdentifier, sizeof(br.bootIdentifier) }.c_str(), bootIdentifierHex));
-
-    ls2.Format("0x");
-    for (auto i = 0ULL; i < sizeof(br.bootSystemUse); i++)
-    {
-        ls2.AddFormat("%.2x", br.bootSystemUse[i]);
-    }
-    const auto bootSystemUseHex = ls2.GetText();
-    general->AddItem(
-          "Boot System Use", ls.Format("%-10s (%s)", std::string{ br.bootSystemUse, sizeof(br.bootSystemUse) }.c_str(), bootSystemUseHex));
+    AddNameAndHexElement("Boot System Identifier", "%-10s (%s)", br.bootSystemIdentifier);
+    AddNameAndHexElement("Boot Identifier", "%-10s (%s)", br.bootIdentifier);
+    AddNameAndHexElement("Boot System Use", "%-10s (%s)", br.bootSystemUse);
 }
 
 void Panels::Information::UpdatePrimaryVolumeDescriptor(const PrimaryVolumeDescriptor& pvd)
@@ -137,10 +109,10 @@ void Panels::Information::UpdateVolumeDescriptor(const VolumeDescriptorData& vdd
     AddDecAndHexElement("Volume Sequence Number", "%-14s (%s)", vdd.volumeSequenceNumber.LSB);
     AddDecAndHexElement("Logical Block Size", "%-14s (%s)", vdd.logicalBlockSize.LSB);
     AddDecAndHexElement("Path Table Size", "%-14s (%s)", vdd.pathTableSize.LSB);
-    AddDecAndHexElement("Location Of Type-L Path Table", "%-14s (%s)", vdd.locationOfTypeLPathTable.LSB);
-    AddDecAndHexElement("Location Of The Optional Type-L Path Table", "%-14s (%s)", vdd.locationOfTheOptionalTypeLPathTable.LSB);
-    AddDecAndHexElement("Location Of Type-M Path Table", "%-14s (%s)", vdd.locationOfTypeMPathTable.LSB);
-    AddDecAndHexElement("Location Of The Optional Type-M Path Table", "%-14s (%s)", vdd.locationOfTheOptionalTypeMPathTable.LSB);
+    AddDecAndHexElement("Location Of Type-L Path Table", "%-14s (%s)", vdd.locationOfTypeLPathTable);
+    AddDecAndHexElement("Location Of The Optional Type-L Path Table", "%-14s (%s)", vdd.locationOfTheOptionalTypeLPathTable);
+    AddDecAndHexElement("Location Of Type-M Path Table", "%-14s (%s)", vdd.locationOfTypeMPathTable);
+    AddDecAndHexElement("Location Of The Optional Type-M Path Table", "%-14s (%s)", vdd.locationOfTheOptionalTypeMPathTable);
     AddNameAndHexElement("Directory Entry For The Root Directory", "%-14s (%s)", vdd.directoryEntryForTheRootDirectory);
     AddNameAndHexElement("Volume Set Identifier", "%-14s (%s)", vdd.volumeSetIdentifier);
     AddNameAndHexElement("Publisher Set Identifier", "%-14s (%s)", vdd.publisherIdentifier);
@@ -157,6 +129,19 @@ void Panels::Information::UpdateVolumeDescriptor(const VolumeDescriptorData& vdd
     general->AddItem("Unused2", "");
     AddNameAndHexElement("Application Used", "%-14s (%s)", vdd.applicationUsed);
     AddNameAndHexElement("Reserved", "%-14s (%s)", vdd.reserved);
+}
+
+void GView::Type::ISO::Panels::Information::UpdateVolumePartitionDescriptor(const VolumePartitionDescriptor& vpd)
+{
+    general->SetItemType(general->AddItem("Primary Volume Descriptor"), ListViewItemType::Category);
+
+    UpdateVolumeHeader(vpd.vdh);
+    general->AddItem("Unused", "");
+    AddNameAndHexElement("System Identifier", "%-14s (%s)", vpd.systemIdentifier);
+    AddNameAndHexElement("Volume Partition Identifier", "%-14s (%s)", vpd.volumePartitionIdentifier);
+    AddDecAndHexElement("Volume Partition Location", "%-14s (%s)", vpd.volumePartitionLocation.LSB);
+    AddDecAndHexElement("Volume Partition Size", "%-14s (%s)", vpd.volumePartitionSize.LSB);
+    AddNameAndHexElement("System Use", "%-14s (%s)", vpd.systemUse);
 }
 
 void Panels::Information::UpdateSupplementaryVolumeDescriptor(const SupplementaryVolumeDescriptor& svd)

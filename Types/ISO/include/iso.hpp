@@ -54,7 +54,6 @@ static const std::map<SectorType, std::string_view> SectorTypeNames{
  * 7	  2041	         Data	    -	     Depends on the volume descriptor type.
  * clang-format on
 */
-
 #pragma pack(push, 1)
 struct VolumeDescriptorHeader
 {
@@ -64,11 +63,15 @@ struct VolumeDescriptorHeader
 };
 #pragma pack(pop)
 
+#pragma pack(push, 1)
 struct VolumeDescriptor
 {
     VolumeDescriptorHeader vdh;
     char data[0x7F9];
 };
+#pragma pack(pop)
+
+static_assert(sizeof(VolumeDescriptor) == SECTOR_SIZE);
 
 /* clang-format off
  * https://wiki.osdev.org/ISO_9660 | ECMA_119
@@ -88,6 +91,8 @@ struct BootRecord
     char bootIdentifier[0x20];
     char bootSystemUse[0x7B9];
 };
+
+static_assert(sizeof(BootRecord) == SECTOR_SIZE);
 
 struct int32_LSB_MSB
 {
@@ -173,35 +178,35 @@ struct dec_datetime
 struct VolumeDescriptorData
 {
     char unused;
-    char systemIdentifier[32];
-    char volumeIdentifier[32];
-    char unusedField[8];
+    char systemIdentifier[0x20];
+    char volumeIdentifier[0x20];
+    char unusedField[0x8];
     int32_LSB_MSB volumeSpaceSize;
-    char unusedField2[8];
+    char unusedField2[0x20];
     int16_LSB_MSB volumeSetSize;
     int16_LSB_MSB volumeSequenceNumber;
     int16_LSB_MSB logicalBlockSize;
     int32_LSB_MSB pathTableSize;
-    int32_LSB_MSB locationOfTypeLPathTable;
-    int32_LSB_MSB locationOfTheOptionalTypeLPathTable;
-    int32_LSB_MSB locationOfTypeMPathTable;
-    int32_LSB_MSB locationOfTheOptionalTypeMPathTable;
-    char directoryEntryForTheRootDirectory[34];
-    char volumeSetIdentifier[128];
-    char publisherIdentifier[128];
-    char dataPreparerIdentifier[128];
-    char applicationIdentifier[128];
-    char copyrightFileIdentifier[37];
-    char abstractFileIdentifier[37];
-    char bibliographicFileIdentifier[37];
+    int32 locationOfTypeLPathTable;
+    int32 locationOfTheOptionalTypeLPathTable;
+    int32 locationOfTypeMPathTable;
+    int32 locationOfTheOptionalTypeMPathTable;
+    char directoryEntryForTheRootDirectory[0x22];
+    char volumeSetIdentifier[0x80];
+    char publisherIdentifier[0x80];
+    char dataPreparerIdentifier[0x80];
+    char applicationIdentifier[0x80];
+    char copyrightFileIdentifier[0x25];
+    char abstractFileIdentifier[0x25];
+    char bibliographicFileIdentifier[0x25];
     dec_datetime volumeCreationDateAndTime;
     dec_datetime volumeModificationDateAndTime;
     dec_datetime volumeExpirationDateAndTime;
     dec_datetime volumeEffectiveDateAndTime;
     int8 fileStructureVersion;
     char unused2;
-    char applicationUsed[512];
-    char reserved[653];
+    char applicationUsed[0x200];
+    char reserved[0x28D];
 };
 #pragma pack(pop)
 
@@ -213,6 +218,8 @@ struct PrimaryVolumeDescriptor
 };
 #pragma pack(pop)
 
+static_assert(sizeof(PrimaryVolumeDescriptor) == SECTOR_SIZE);
+
 #pragma pack(push, 1)
 struct SupplementaryVolumeDescriptor
 {
@@ -222,76 +229,33 @@ struct SupplementaryVolumeDescriptor
 #pragma pack(pop)
 
 /* clang-format off
- * RBP Length Name                  Contents
- * 0   2      Tag Identifier        Uint16 (1/7.1.3)
- * 2   2      Descriptor Version    Uint16 (1/7.1.3)
- * 4   1      Tag Checksum          Uint8 (1/7.1.1)
- * 5   1      Reserved              #00 byte
- * 6   2      Tag Serial Number     Uint16 (1/7.1.3)
- * 8   2      Descriptor CRC        Uint16 (1/7.1.3)
- * 10  2      Descriptor CRC Length Uint16 (1/7.1.3)
- * 12  4      Tag Location          Uint32 (1/7.1.5)
- * clang-format on
- */
-struct DescriptorTag
-{
-    uint16 tagIdentifier;
-    uint16 descriptorVersion;
-    uint8 tagChecksum;
-    uint8 reserved;
-    uint16 tagSerialNumber;
-    uint16 descriptorCRC;
-    uint16 descriptorCRCLength;
-    uint32 tagLocation;
-};
-
-/*
- * RBP Length Name              Contents
- * 0   1      Flags             Uint8 (1/7.1.1)
- * 1   23     Identifier        bytes
- * 24  8      Identifier Suffix bytes
- */
-struct RegId
-{
-    uint8 flags;
-    char identifier[0x17];
-    char identifierSuffix[0x8];
-};
-
-/* clang-format off
- * https://www.ecma-international.org/wp-content/uploads/ECMA-167_3rd_edition_june_1997.pdf
- * BP  Length Name                              Contents
- * 0   16     Descriptor Tag                    tag    (1/7.2)   (Tag=5)
- * 16  4      Volume Descriptor Sequence Number Uint32 (1/7.1.5)
- * 20  2      Partition Flags                   Uint16 (1/7.1.3)
- * 22  2      Partition Number                  Uint16 (1/7.1.3)
- * 24  32     Partition Contents                regid  (1/7.4)
- * 56  128    Partition Contents Use            bytes
- * 184 4      Access Type                       Uint32 (1/7.1.5)
- * 188 4      Partition Starting Location       Uint32 (1/7.1.5)
- * 192 4      Partition Length                  Uint32 (1/7.1.5)
- * 196 32     Implementation Identifier         regid  (1/7.4)
- * 228 128    Implementation Use                bytes
- * 356 156    Reserved #00                      bytes
+ * https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
+ * BP         Field name                  Content
+ * 1          Volume Descriptor Type      numerical value
+ * 2          to 6 Standard Identifier    CD001
+ * 7          Volume Descriptor Version   numerical value
+ * 8          Unused Field                (00) byte
+ * 9 to 40    System Identifier           a-characters
+ * 41 to 72   Volume Partition Identifier d-characters
+ * 73 to 80   Volume Partition Location   numerical value
+ * 81 to 88   Volume Partition Size       numerical value
+ * 89 to 2048 System Use                  not specified
  * clang-format on
  */
 #pragma pack(push, 1)
-struct PartitionDescriptor
+struct VolumePartitionDescriptor
 {
-    DescriptorTag tag;
-    uint32 volumeDescriptorSequenceNumber;
-    uint32 partitionFlags;
-    uint32 partitionNumber;
-    RegId partitionContents;
-    char partitionContentsUse[0x80];
-    uint32 accessType;
-    uint32 partitionStartingLocation;
-    uint32 partitionLength;
-    RegId implementationIdentifier;
-    char implementationUse[0x80];
-    char reserved[0x9C];
+    VolumeDescriptorHeader vdh;
+    uint8 unused;
+    char systemIdentifier[0x20];
+    char volumePartitionIdentifier[0x20];
+    int32_LSB_MSB volumePartitionLocation;
+    int32_LSB_MSB volumePartitionSize;
+    char systemUse[0x7A8];
 };
 #pragma pack(pop)
+
+static_assert(sizeof(VolumePartitionDescriptor) == SECTOR_SIZE);
 
 class ISOFile : public TypeInterface
 {
@@ -337,6 +301,7 @@ namespace Panels
         void UpdatePrimaryVolumeDescriptor(const PrimaryVolumeDescriptor& pvd);
         void UpdateSupplementaryVolumeDescriptor(const SupplementaryVolumeDescriptor& pvd);
         void UpdateVolumeDescriptor(const VolumeDescriptorData& vdd);
+        void UpdateVolumePartitionDescriptor(const VolumePartitionDescriptor& vpd);
         void UpdateIssues();
         void UpdateVolumeDescriptors();
         void RecomputePanelsPositions();
