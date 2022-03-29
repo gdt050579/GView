@@ -16,20 +16,27 @@ constexpr uint64 SYSTEM_AREA_SIZE   = NUM_SYSTEM_SECTORS * SECTOR_SIZE; // 0x800
 enum class Identifier
 {
     ECMA_119,
-    ECMA_168,
     ECMA_167_PREVIOUS, // ECMA-167 Edition 2
     ECMA_167,          // ECMA-167 has a different identifiers for nearly each volume descriptor.
     ECMA_167_EXTENDED,
     ECMA_167_BOOT,
     ECMO_167_TERMINATOR,
+    ECMA_168,
     UNKNOWN
 };
 
-static const std::map<std::string_view, Identifier> identifiers = {
-    { "CD001", Identifier::ECMA_119 },           { "CDW02", Identifier::ECMA_168 },          { "NSR03", Identifier::ECMA_167 },
-    { "NSR02", Identifier::ECMA_167_PREVIOUS },  { "BEA01", Identifier::ECMA_167_EXTENDED }, { "BOOT2", Identifier::ECMA_167_BOOT },
-    { "TEA01", Identifier::ECMO_167_TERMINATOR }
+// clang-format off
+static const std::map<std::string_view, Identifier> identifiers
+{
+    { "CD001", Identifier::ECMA_119 },           
+    { "NSR03", Identifier::ECMA_167 },
+    { "NSR02", Identifier::ECMA_167_PREVIOUS },  
+    { "BEA01", Identifier::ECMA_167_EXTENDED }, 
+    { "BOOT2", Identifier::ECMA_167_BOOT },
+    { "TEA01", Identifier::ECMO_167_TERMINATOR },
+    { "CDW02", Identifier::ECMA_168 }
 };
+// clang-format on
 
 enum class SectorType : uint8
 {
@@ -47,12 +54,13 @@ static const std::map<SectorType, std::string_view> SectorTypeNames{
 };
 
 /* clang-format off
- * Offset Length (bytes) Field name	Datatype Description
- * 0	  1	             Type	    int8	 Volume Descriptor type code (see below).
- * 1	  5	             Identifier	strA	 Always 'CD001'.
- * 6	  1	             Version	int8	 Volume Descriptor Version (0x01).
- * 7	  2041	         Data	    -	     Depends on the volume descriptor type.
- * clang-format on
+* https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
+* Offset Length (bytes) Field name	Datatype Description
+* 0	  1	             Type	    int8	 Volume Descriptor type code (see below).
+* 1	  5	             Identifier	strA	 Always 'CD001'.
+* 6	  1	             Version	int8	 Volume Descriptor Version (0x01).
+* 7	  2041	         Data	    -	     Depends on the volume descriptor type.
+* clang-format on
 */
 #pragma pack(push, 1)
 struct VolumeDescriptorHeader
@@ -64,7 +72,7 @@ struct VolumeDescriptorHeader
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct VolumeDescriptor
+struct VolumeDescriptor // https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
 {
     VolumeDescriptorHeader vdh;
     char data[0x7F9];
@@ -74,7 +82,7 @@ struct VolumeDescriptor
 static_assert(sizeof(VolumeDescriptor) == SECTOR_SIZE);
 
 /* clang-format off
- * https://wiki.osdev.org/ISO_9660 | ECMA_119
+ * https://wiki.osdev.org/ISO_9660 | ECMA_119 | https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
  * Offset Length (bytes) Field name	            Datatype Description
  * 0	   1	         Type	                int8	 Zero indicates a boot record.
  * 1	   5	         Identifier	            strA	 Always "CD001".
@@ -136,7 +144,7 @@ struct dec_datetime
 #pragma pack(pop)
 
 /* clang-format off
- * https://wiki.osdev.org/ISO_9660 | ECMA_119
+ * https://wiki.osdev.org/ISO_9660 | ECMA_119 | https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
  * Offset	Length (bytes)	Field name	                               Datatype	     Description
  * 0	    1	            Type Code	                               int8	         Always 0x01 for a Primary Volume Descriptor.
  * 1	    5	            Standard Identifier	                       strA	         Always 'CD001'.
@@ -257,6 +265,75 @@ struct VolumePartitionDescriptor
 
 static_assert(sizeof(VolumePartitionDescriptor) == SECTOR_SIZE);
 
+/* clang-format off
+ * BP                Field name                                       Content
+ * 1                 Length of Directory Identifier (LEN_DI)          numerical value
+ * 2                 Extended Attribute Record Length                 numerical value
+ * 3 to 6            Location of Extent                               numerical value
+ * 7 to 8            Parent Directory Number                          numerical value
+ * 9 to (8 + LEN_DI) Directory Identifier d-characters, d1-characters (00) byte
+ * (9 + LEN_DI)      Padding Field                                    (00) byte
+ * clang-format on
+ */
+#pragma pack(push, 1)
+struct PathTableRecord
+{
+    uint8 lengthOfDirectoryIdentifier;
+    uint8 extendedAttributeRecordLength;
+    uint32 locationOfExtent;
+    uint16 parentDirectoryNumber;
+    char dirID[8];
+};
+#pragma pack(pop)
+
+// https://www.ecma-international.org/wp-content/uploads/ECMA-119_4th_edition_june_2019.pdf
+enum FileFlags
+{
+    Existence      = 1 << 0,
+    Directory      = 1 << 1,
+    AssociatedFile = 1 << 2,
+    Record         = 1 << 3,
+    Protection     = 1 << 4,
+    Reserved1      = 1 << 5,
+    Reserved2      = 1 << 6,
+    MultiExtent    = 1 << 7
+};
+
+/* clang-format off
+ * BP                              Field name                          Content
+ * 1                               Length of Directory Record (LEN-DR) numerical value
+ * 2                               Extended Attribute Record Length    numerical value
+ * 3  to 10                        Location of Extent                  numerical value
+ * 11 to 18                        Data Length                         numerical value
+ * 19 to 25                        Recording Date and Time             numerical values
+ * 26                              File Flags                          8 bits
+ * 27                              File Unit Size                      numerical value
+ * 28                              Interleave Gap Size                 numerical value
+ * 29 to 32                        Volume Sequence Number              numerical value
+ * 33                              Length of File Identifier (LEN_FI)  numerical value
+ * 34 to (33 + LEN_FI)             File Identifier                     d-characters, d1-characters, SEPARATOR 1, SEPARATOR 2, (00) or (01) byte
+ * (34 + LEN_FI)                   Padding Field                       (00) byte
+ * (LEN_DR - LEN_SU + 1) to LEN_DR System Use                          LEN_SU bytes
+ * clang-format on
+ */
+#pragma pack(push, 1)
+struct DirectoryRecord
+{
+    uint8 lengthOfDirectoryRecord;
+    uint8 extendedAttributeRecordLength;
+    int32_LSB_MSB locationOfExtent;
+    int32_LSB_MSB dataLength;
+    unsigned char recordingDateAndTime[7];
+    uint8 fileFlags;
+    uint8 fileUnitSize;
+    uint8 interleaveGapSize;
+    uint32 volumeSequenceNumber;
+    uint8 lengthOfFileIdentifier;
+    char fileIdentifier[0x22];
+    /* here is paadded to len of DR */
+};
+#pragma pack(pop)
+
 class ISOFile : public TypeInterface
 {
   public:
@@ -269,6 +346,7 @@ class ISOFile : public TypeInterface
     };
 
     std::vector<MyVolumeDescriptorHeader> headers;
+    std::vector<DirectoryRecord> records;
 
   public:
     ISOFile(Reference<GView::Utils::FileCache> file);
@@ -370,6 +448,25 @@ namespace Panels
         {
             RecomputePanelsPositions();
         }
+    };
+
+    class Objects : public AppCUI::Controls::TabPage
+    {
+        Reference<ISOFile> iso;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        Objects(Reference<ISOFile> iso, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 }; // namespace Panels
 } // namespace GView::Type::ISO
