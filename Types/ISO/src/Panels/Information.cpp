@@ -127,109 +127,36 @@ void Panels::Information::UpdatePrimaryVolumeDescriptor(const PrimaryVolumeDescr
 
 void Panels::Information::UpdateVolumeDescriptor(const VolumeDescriptorData& vdd)
 {
-    LocalString<1024> ls;
-    LocalString<1024> ls2;
-    NumericFormatter nf;
-    NumericFormatter nf2;
-
     general->AddItem("Unused", "");
-
-    ls2.Format("0x");
-    for (auto i = 0ULL; i < sizeof(vdd.systemIdentifier); i++)
-    {
-        ls2.AddFormat("%.2x", vdd.systemIdentifier[i]);
-    }
-    const auto systemIdentifierHex = ls2.GetText();
-    general->AddItem(
-          "System Identifier",
-          ls.Format("%-14s (%s)", std::string{ vdd.systemIdentifier, sizeof(vdd.systemIdentifier) }.c_str(), systemIdentifierHex));
-
-    ls2.Format("0x");
-    for (auto i = 0ULL; i < sizeof(vdd.volumeIdentifier); i++)
-    {
-        ls2.AddFormat("%.2x", vdd.volumeIdentifier[i]);
-    }
-    const auto volumeIdentifierHex = ls2.GetText();
-    general->AddItem(
-          "Volume Identifier",
-          ls.Format("%-14s (%s)", std::string{ vdd.volumeIdentifier, sizeof(vdd.volumeIdentifier) }.c_str(), volumeIdentifierHex));
-
-    general->AddItem("Unused Field", "");
-
-    const auto volumeSpaceSize    = nf.ToString(vdd.volumeSpaceSize.LSB, dec);
-    const auto hexVolumeSpaceSize = nf2.ToString(vdd.volumeSpaceSize.LSB, hex);
-    general->AddItem("Volume Space Size", ls.Format("%-14s (%s)", volumeSpaceSize.data(), hexVolumeSpaceSize.data()));
-
+    AddNameAndHexElement("System Identifier", "%-14s (%s)", vdd.systemIdentifier);
+    AddNameAndHexElement("Volume Identifier", "%-14s (%s)", vdd.volumeIdentifier);
+    general->AddItem("Unused Field");
+    AddDecAndHexElement("Volume Space Size", "%-14s (%s)", vdd.volumeSpaceSize.LSB);
     general->AddItem("Unused Field 2", "");
-
-    const auto volumeSetSize    = nf.ToString(vdd.volumeSetSize.LSB, dec);
-    const auto volumeSetSizeHex = nf2.ToString(vdd.volumeSetSize.LSB, hex);
-    general->AddItem("Volume Set Size", ls.Format("%-14s (%s)", volumeSetSize.data(), volumeSetSizeHex.data()));
-
-    const auto volumeSequenceNumber    = nf.ToString(vdd.volumeSequenceNumber.LSB, dec);
-    const auto volumeSequenceNumberHex = nf2.ToString(vdd.volumeSequenceNumber.LSB, hex);
-    general->AddItem("Volume Sequence Number", ls.Format("%-14s (%s)", volumeSequenceNumber.data(), volumeSequenceNumberHex.data()));
-
-    const auto logicalBlockSize    = nf.ToString(vdd.logicalBlockSize.LSB, dec);
-    const auto logicalBlockSizeHex = nf2.ToString(vdd.logicalBlockSize.LSB, hex);
-    general->AddItem("Logical Block Size", ls.Format("%-14s (%s)", logicalBlockSize.data(), logicalBlockSizeHex.data()));
-
-    const auto pathTableSize    = nf.ToString(vdd.pathTableSize.LSB, dec);
-    const auto pathTableSizeHex = nf2.ToString(vdd.pathTableSize.LSB, hex);
-    general->AddItem("Logical Block Size", ls.Format("%-14s (%s)", pathTableSize.data(), pathTableSizeHex.data()));
-
-    const auto locationOfTypeLPathTable    = nf.ToString(vdd.locationOfTypeLPathTable.LSB, dec);
-    const auto locationOfTypeLPathTableHex = nf2.ToString(vdd.locationOfTypeLPathTable.LSB, hex);
-    general->AddItem(
-          "Location Of Type-L Path Table", ls.Format("%-14s (%s)", locationOfTypeLPathTable.data(), locationOfTypeLPathTableHex.data()));
-
-    const auto locationOfTheOptionalTypeLPathTable    = nf.ToString(vdd.locationOfTheOptionalTypeLPathTable.LSB, dec);
-    const auto locationOfTheOptionalTypeLPathTableHex = nf2.ToString(vdd.locationOfTheOptionalTypeLPathTable.LSB, hex);
-    general->AddItem(
-          "Location Of The Optional Type-L Path Table",
-          ls.Format("%-14s (%s)", locationOfTheOptionalTypeLPathTable.data(), locationOfTheOptionalTypeLPathTableHex.data()));
-
-    const auto locationOfTypeMPathTable    = nf.ToString(vdd.locationOfTypeMPathTable.LSB, dec);
-    const auto locationOfTypeMPathTableHex = nf2.ToString(vdd.locationOfTypeMPathTable.LSB, hex);
-    general->AddItem(
-          "Location Of Type-M Path Table", ls.Format("%-14s (%s)", locationOfTypeMPathTable.data(), locationOfTypeMPathTableHex.data()));
-
-    const auto locationOfTheOptionalTypeMPathTable    = nf.ToString(vdd.locationOfTheOptionalTypeMPathTable.LSB, dec);
-    const auto locationOfTheOptionalTypeMPathTableHex = nf2.ToString(vdd.locationOfTheOptionalTypeMPathTable.LSB, hex);
-    general->AddItem(
-          "Location Of The Optional Type-M Path Table",
-          ls.Format("%-14s (%s)", locationOfTheOptionalTypeMPathTable.data(), locationOfTheOptionalTypeMPathTableHex.data()));
-
-    ls2.Format("0x");
-    for (auto i = 0ULL; i < sizeof(vdd.directoryEntryForTheRootDirectory); i++)
-    {
-        ls2.AddFormat("%.2x", vdd.directoryEntryForTheRootDirectory[i]);
-    }
-    const auto directoryEntryForTheRootDirectoryHex = ls2.GetText();
-    general->AddItem(
-          "Directory Entry For The Root Directory",
-          ls.Format(
-                "%-14s (%s)",
-                std::string{ vdd.directoryEntryForTheRootDirectory, sizeof(vdd.directoryEntryForTheRootDirectory) }.c_str(),
-                directoryEntryForTheRootDirectoryHex));
-
-    /*
-        char volumeSetIdentifier[128];
-        char publisherIdentifier[128];
-        char dataPreparerIdentifier[128];
-        char applicationIdentifier[128];
-        char copyrightFileIdentifier[37];
-        char abstractFileIdentifier[37];
-        char bibliographicFileIdentifier[37];
-        dec_datetime volumeCreationDateAndTime;
-        dec_datetime volumeModificationDateAndTime;
-        dec_datetime volumeExpirationDateAndTime;
-        dec_datetime volumeEffectiveDateAndTime;
-        int8 fileStructureVersion;
-        char unused2;
-        char applicationUsed[512];
-        char reserved[653];
-    */
+    AddDecAndHexElement("Volume Set Size", "%-14s (%s)", vdd.volumeSetSize.LSB);
+    AddDecAndHexElement("Volume Sequence Number", "%-14s (%s)", vdd.volumeSequenceNumber.LSB);
+    AddDecAndHexElement("Logical Block Size", "%-14s (%s)", vdd.logicalBlockSize.LSB);
+    AddDecAndHexElement("Path Table Size", "%-14s (%s)", vdd.pathTableSize.LSB);
+    AddDecAndHexElement("Location Of Type-L Path Table", "%-14s (%s)", vdd.locationOfTypeLPathTable.LSB);
+    AddDecAndHexElement("Location Of The Optional Type-L Path Table", "%-14s (%s)", vdd.locationOfTheOptionalTypeLPathTable.LSB);
+    AddDecAndHexElement("Location Of Type-M Path Table", "%-14s (%s)", vdd.locationOfTypeMPathTable.LSB);
+    AddDecAndHexElement("Location Of The Optional Type-M Path Table", "%-14s (%s)", vdd.locationOfTheOptionalTypeMPathTable.LSB);
+    AddNameAndHexElement("Directory Entry For The Root Directory", "%-14s (%s)", vdd.directoryEntryForTheRootDirectory);
+    AddNameAndHexElement("Volume Set Identifier", "%-14s (%s)", vdd.volumeSetIdentifier);
+    AddNameAndHexElement("Publisher Set Identifier", "%-14s (%s)", vdd.publisherIdentifier);
+    AddNameAndHexElement("Data Preparer Identifier", "%-14s (%s)", vdd.dataPreparerIdentifier);
+    AddNameAndHexElement("Application Identifier", "%-14s (%s)", vdd.applicationIdentifier);
+    AddNameAndHexElement("Copyright File", "%-14s (%s)", vdd.copyrightFileIdentifier);
+    AddNameAndHexElement("Abstract File", "%-14s (%s)", vdd.abstractFileIdentifier);
+    AddNameAndHexElement("Bibliographic File", "%-14s (%s)", vdd.bibliographicFileIdentifier);
+    AddDateAndHexElement("Volume Creation Date And Time", "%-14s (%s)", vdd.volumeCreationDateAndTime);
+    AddDateAndHexElement("Volume Modification Date And Time", "%-14s (%s)", vdd.volumeModificationDateAndTime);
+    AddDateAndHexElement("Volume Expiration Date And Time", "%-14s (%s)", vdd.volumeExpirationDateAndTime);
+    AddDateAndHexElement("Volume Effective Date And Time", "%-14s (%s)", vdd.volumeEffectiveDateAndTime);
+    AddDecAndHexElement("File Structure Version", "%-14s (%s)", vdd.fileStructureVersion);
+    general->AddItem("Unused2", "");
+    AddNameAndHexElement("Application Used", "%-14s (%s)", vdd.applicationUsed);
+    AddNameAndHexElement("Reserved", "%-14s (%s)", vdd.reserved);
 }
 
 void Panels::Information::UpdateSupplementaryVolumeDescriptor(const SupplementaryVolumeDescriptor& svd)
@@ -269,7 +196,7 @@ void Panels::Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
-    general->Resize(GetWidth(), general->GetItemsCount() + 3);
+    general->Resize(GetWidth(), general->GetItemsCount());
 
     // CHECKRET(general.IsValid() & issues.IsValid(), "");
     // issues->SetVisible(issues->GetItemsCount() > 0);

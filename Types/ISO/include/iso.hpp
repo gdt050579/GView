@@ -101,10 +101,34 @@ struct int16_LSB_MSB
     int16 MSB;
 };
 
+/* clang-format off
+ *   The date/time format used in the Primary Volume Descriptor is denoted as dec-datetime 
+ *   and uses ASCII digits to represent the main parts of the date/time:
+ *   Offset	Size Datatype Description
+ *   0	    4	 strD	  Year from 1 to 9999.
+ *   4	    2	 strD	  Month from 1 to 12.
+ *   6	    2	 strD	  Day from 1 to 31.
+ *   8	    2	 strD	  Hour from 0 to 23.
+ *   10	    2	 strD	  Minute from 0 to 59.
+ *   12	    2	 strD	  Second from 0 to 59.
+ *   14	    2	 strD	  Hundredths of a second from 0 to 99.
+ *   16	    1	 int8	  Time zone offset from GMT in 15 minute intervals, starting at interval -48 (west) and running up to interval 52 (east). So value 0 indicates interval -48 which equals GMT-12 hours, and value 100 indicates interval 52 which equals GMT+13 hours.
+ * clang-format on
+ */
+
+#pragma pack(push, 1)
 struct dec_datetime
 {
-    char value[17];
+    char year[4];
+    char months[2];
+    char days[2];
+    char hours[2];
+    char minutes[2];
+    char seconds[2];
+    char milliseconds[2];
+    int8 timezone;
 };
+#pragma pack(pop)
 
 /* clang-format off
  * https://wiki.osdev.org/ISO_9660 | ECMA_119
@@ -197,6 +221,78 @@ struct SupplementaryVolumeDescriptor
 };
 #pragma pack(pop)
 
+/* clang-format off
+ * RBP Length Name                  Contents
+ * 0   2      Tag Identifier        Uint16 (1/7.1.3)
+ * 2   2      Descriptor Version    Uint16 (1/7.1.3)
+ * 4   1      Tag Checksum          Uint8 (1/7.1.1)
+ * 5   1      Reserved              #00 byte
+ * 6   2      Tag Serial Number     Uint16 (1/7.1.3)
+ * 8   2      Descriptor CRC        Uint16 (1/7.1.3)
+ * 10  2      Descriptor CRC Length Uint16 (1/7.1.3)
+ * 12  4      Tag Location          Uint32 (1/7.1.5)
+ * clang-format on
+ */
+struct DescriptorTag
+{
+    uint16 tagIdentifier;
+    uint16 descriptorVersion;
+    uint8 tagChecksum;
+    uint8 reserved;
+    uint16 tagSerialNumber;
+    uint16 descriptorCRC;
+    uint16 descriptorCRCLength;
+    uint32 tagLocation;
+};
+
+/*
+ * RBP Length Name              Contents
+ * 0   1      Flags             Uint8 (1/7.1.1)
+ * 1   23     Identifier        bytes
+ * 24  8      Identifier Suffix bytes
+ */
+struct RegId
+{
+    uint8 flags;
+    char identifier[0x17];
+    char identifierSuffix[0x8];
+};
+
+/* clang-format off
+ * https://www.ecma-international.org/wp-content/uploads/ECMA-167_3rd_edition_june_1997.pdf
+ * BP  Length Name                              Contents
+ * 0   16     Descriptor Tag                    tag    (1/7.2)   (Tag=5)
+ * 16  4      Volume Descriptor Sequence Number Uint32 (1/7.1.5)
+ * 20  2      Partition Flags                   Uint16 (1/7.1.3)
+ * 22  2      Partition Number                  Uint16 (1/7.1.3)
+ * 24  32     Partition Contents                regid  (1/7.4)
+ * 56  128    Partition Contents Use            bytes
+ * 184 4      Access Type                       Uint32 (1/7.1.5)
+ * 188 4      Partition Starting Location       Uint32 (1/7.1.5)
+ * 192 4      Partition Length                  Uint32 (1/7.1.5)
+ * 196 32     Implementation Identifier         regid  (1/7.4)
+ * 228 128    Implementation Use                bytes
+ * 356 156    Reserved #00                      bytes
+ * clang-format on
+ */
+#pragma pack(push, 1)
+struct PartitionDescriptor
+{
+    DescriptorTag tag;
+    uint32 volumeDescriptorSequenceNumber;
+    uint32 partitionFlags;
+    uint32 partitionNumber;
+    RegId partitionContents;
+    char partitionContentsUse[0x80];
+    uint32 accessType;
+    uint32 partitionStartingLocation;
+    uint32 partitionLength;
+    RegId implementationIdentifier;
+    char implementationUse[0x80];
+    char reserved[0x9C];
+};
+#pragma pack(pop)
+
 class ISOFile : public TypeInterface
 {
   public:
@@ -244,6 +340,62 @@ namespace Panels
         void UpdateIssues();
         void UpdateVolumeDescriptors();
         void RecomputePanelsPositions();
+
+        template <typename T>
+        void AddDecAndHexElement(std::string_view name, std::string_view format, T value)
+        {
+            LocalString<1024> ls;
+            NumericFormatter nf;
+            NumericFormatter nf2;
+
+            const auto v    = nf.ToString(value, dec);
+            const auto hexV = nf2.ToString(value, hex);
+            general->AddItem(name, ls.Format(format.data(), v.data(), hexV.data()));
+        }
+
+        template <typename T>
+        void AddNameAndHexElement(std::string_view name, std::string_view format, const T& value)
+        {
+            LocalString<1024> ls;
+            LocalString<1024> ls2;
+
+            constexpr auto size = sizeof(value) / sizeof(value[0]);
+            ls2.Format("0x");
+            for (auto i = 0ULL; i < size; i++)
+            {
+                ls2.AddFormat("%.2x", value[i]);
+            }
+            const auto vHex = ls2.GetText();
+            general->AddItem(name, ls.Format(format.data(), std::string{ value, sizeof(value) }.c_str(), vHex));
+        }
+
+        void AddDateAndHexElement(std::string_view name, std::string_view format, const dec_datetime& date)
+        {
+            LocalString<1024> ls;
+            LocalString<1024> ls2;
+            LocalString<1024> ls3;
+
+            ls.Format(
+                  "%s-%s-%s %s:%s:%s:%s +%u",
+                  date.year,
+                  date.months,
+                  date.days,
+                  date.hours,
+                  date.minutes,
+                  date.seconds,
+                  date.milliseconds,
+                  date.timezone);
+
+            const auto dateBuffer = (unsigned char*) &date;
+            constexpr auto size   = sizeof(date);
+            ls2.Format("0x");
+            for (auto i = 0ULL; i < size; i++)
+            {
+                ls2.AddFormat("%.2x", dateBuffer[i]);
+            }
+            const auto dateHex = ls2.GetText();
+            general->AddItem(name, ls3.Format(format.data(), ls.GetText(), dateHex));
+        }
 
       public:
         Information(Reference<GView::Type::ISO::ISOFile> iso);
