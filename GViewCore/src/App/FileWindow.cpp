@@ -4,6 +4,7 @@
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
 #include "TextViewer.hpp"
+#include "ContainerViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -111,7 +112,11 @@ bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Se
     return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
           .IsValid();
 }
-
+bool FileWindow::CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+          .IsValid();
+}
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)

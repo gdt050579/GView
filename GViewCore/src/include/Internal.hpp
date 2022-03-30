@@ -120,6 +120,11 @@ namespace Type
         TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     }                                               // namespace DefaultTypePlugin
+    namespace FolderViewPlugin
+    {
+        TypeInterface* CreateInstance(const std::filesystem::path& path);
+        bool PopulateWindow(Reference<GView::View::WindowInterface> win);
+    }
     constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
     class SimplePattern
     {
@@ -209,7 +214,7 @@ namespace App
         void OpenFile();
         void ShowErrors();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
-
+        bool AddFolder(const std::filesystem::path& path);
       public:
         Instance();
         bool Init();
@@ -276,6 +281,7 @@ namespace App
         bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;

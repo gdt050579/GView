@@ -1,2 +1,2 @@
-target_sources(GViewCore PRIVATE DefaultTypePlugin.cpp Plugin.cpp SimplePattern.cpp)
+target_sources(GViewCore PRIVATE DefaultTypePlugin.cpp Plugin.cpp SimplePattern.cpp FolderViewPlugin.cpp)
 
