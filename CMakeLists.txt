@@ -86,6 +86,7 @@ add_subdirectory(Types/ISO)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
+add_subdirectory(GenericPlugins/Hashes)
 
 if(MSVC)
   target_compile_options(GView PUBLIC "/ZI")

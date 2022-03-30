@@ -130,6 +130,59 @@ namespace Utils
     CORE_EXPORT bool Demangle(const char* input, String& output, DemangleKind format = DemangleKind::Auto);
 
 } // namespace Utils
+
+namespace Hashes
+{
+    class CORE_EXPORT Adler32
+    {
+      private:
+        uint16 a;
+        uint16 b;
+
+        bool init = false;
+
+      public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint32& hash);
+    };
+
+    enum CRC32Type : uint32
+    {
+        NEGL = 0xFFFFFFFF,
+        ZERO = 0x00000000
+    };
+
+    class CORE_EXPORT CRC32
+    {
+      private:
+        uint32 value;
+        CRC32Type type;
+
+        bool init = false;
+
+      public:
+        bool Init(CRC32Type type);
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint32& hash);
+    };
+
+    class CORE_EXPORT CRC16
+    {
+    private:
+        uint32 value;
+        bool init = false;
+
+    public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint32& hash);
+    };
+} // namespace Hashes
+
 struct CORE_EXPORT Object
 {
     Utils::FileCache cache;
