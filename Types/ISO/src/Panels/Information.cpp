@@ -42,29 +42,29 @@ void Panels::Information::UpdateVolumeDescriptors()
         {
         case SectorType::BootRecord:
         {
-            BootRecord br{};
-            iso->file->Copy<BootRecord>(descriptor.offsetInFile, br);
+            ECMA_119_BootRecord br{};
+            iso->file->Copy<ECMA_119_BootRecord>(descriptor.offsetInFile, br);
             UpdateBootRecord(br);
         }
         break;
         case SectorType::Primary:
         {
-            PrimaryVolumeDescriptor pvd{};
-            iso->file->Copy<PrimaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
+            ECMA_119_PrimaryVolumeDescriptor pvd{};
+            iso->file->Copy<ECMA_119_PrimaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
             UpdatePrimaryVolumeDescriptor(pvd);
         }
         break;
         case SectorType::Supplementary:
         {
-            SupplementaryVolumeDescriptor svd{};
-            iso->file->Copy<SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
+            ECMA_119_SupplementaryVolumeDescriptor svd{};
+            iso->file->Copy<ECMA_119_SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
             UpdateSupplementaryVolumeDescriptor(svd);
         }
         break;
         case SectorType::Partition:
         {
-            VolumePartitionDescriptor vpd{};
-            iso->file->Copy<VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
+            ECMA_119_VolumePartitionDescriptor vpd{};
+            iso->file->Copy<ECMA_119_VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
             UpdateVolumePartitionDescriptor(vpd);
         }
         break;
@@ -80,7 +80,7 @@ void Panels::Information::UpdateVolumeDescriptors()
     }
 }
 
-void Panels::Information::UpdateBootRecord(const BootRecord& br)
+void Panels::Information::UpdateBootRecord(const ECMA_119_BootRecord& br)
 {
     general->SetItemType(general->AddItem("Boot Record"), ListViewItemType::Category);
     UpdateVolumeHeader(br.vdh);
@@ -89,7 +89,7 @@ void Panels::Information::UpdateBootRecord(const BootRecord& br)
     AddNameAndHexElement("Boot System Use", "%-10s (%s)", br.bootSystemUse);
 }
 
-void Panels::Information::UpdatePrimaryVolumeDescriptor(const PrimaryVolumeDescriptor& pvd)
+void Panels::Information::UpdatePrimaryVolumeDescriptor(const ECMA_119_PrimaryVolumeDescriptor& pvd)
 {
     general->SetItemType(general->AddItem("Primary Volume Descriptor"), ListViewItemType::Category);
 
@@ -97,7 +97,7 @@ void Panels::Information::UpdatePrimaryVolumeDescriptor(const PrimaryVolumeDescr
     UpdateVolumeDescriptor(pvd.vdd);
 }
 
-void Panels::Information::UpdateVolumeDescriptor(const VolumeDescriptorData& vdd)
+void Panels::Information::UpdateVolumeDescriptor(const ECMA_119_VolumeDescriptorData& vdd)
 {
     general->AddItem("Unused", "");
     AddNameAndHexElement("System Identifier", "%-14s (%s)", vdd.systemIdentifier);
@@ -131,7 +131,7 @@ void Panels::Information::UpdateVolumeDescriptor(const VolumeDescriptorData& vdd
     AddNameAndHexElement("Reserved", "%-14s (%s)", vdd.reserved);
 }
 
-void GView::Type::ISO::Panels::Information::UpdateVolumePartitionDescriptor(const VolumePartitionDescriptor& vpd)
+void GView::Type::ISO::Panels::Information::UpdateVolumePartitionDescriptor(const ECMA_119_VolumePartitionDescriptor& vpd)
 {
     general->SetItemType(general->AddItem("Primary Volume Descriptor"), ListViewItemType::Category);
 
@@ -144,7 +144,7 @@ void GView::Type::ISO::Panels::Information::UpdateVolumePartitionDescriptor(cons
     AddNameAndHexElement("System Use", "%-14s (%s)", vpd.systemUse);
 }
 
-void Panels::Information::UpdateSupplementaryVolumeDescriptor(const SupplementaryVolumeDescriptor& svd)
+void Panels::Information::UpdateSupplementaryVolumeDescriptor(const ECMA_119_SupplementaryVolumeDescriptor& svd)
 {
     general->SetItemType(general->AddItem("Supplementary Volume Descriptor"), ListViewItemType::Category);
 
@@ -152,14 +152,14 @@ void Panels::Information::UpdateSupplementaryVolumeDescriptor(const Supplementar
     UpdateVolumeDescriptor(svd.vdd);
 }
 
-void Panels::Information::UpdateVolumeHeader(const VolumeDescriptorHeader& vdh)
+void Panels::Information::UpdateVolumeHeader(const ECMA_119_VolumeDescriptorHeader& vdh)
 {
     LocalString<1024> ls;
     LocalString<1024> ls2;
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto& typeName = ISO::SectorTypeNames.at(vdh.type);
+    const auto& typeName = ISO::GetSectorTypeName(vdh.type);
     const auto hexType   = nf.ToString(static_cast<uint8>(vdh.type), hex);
     general->AddItem("Sector Type", ls.Format("%-14s (%s)", typeName.data(), hexType.data()));
 

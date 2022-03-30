@@ -24,7 +24,7 @@ Objects::Objects(Reference<ISOFile> _iso, Reference<GView::View::WindowInterface
     list->AddColumn("Extent Location", TextAlignament::Right, 17);
     list->AddColumn("Data Length", TextAlignament::Right, 13);
     list->AddColumn("Date", TextAlignament::Right, 25);
-    list->AddColumn("File Flags", TextAlignament::Right, 12);
+    list->AddColumn("File Flags", TextAlignament::Right, 28);
     list->AddColumn("File Unit Size", TextAlignament::Right, 11);
     list->AddColumn("Interleave Gap Size", TextAlignament::Right, 21);
     list->AddColumn("Volume Sequence Number", TextAlignament::Right, 24);
@@ -46,16 +46,16 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64 value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    auto record       = list->GetItemData<DirectoryRecord>(list->GetCurrentItem());
-    const auto offset = record->locationOfExtent.LSB * ISO::SECTOR_SIZE;
+    auto record       = list->GetItemData<ECMA_119_DirectoryRecord>(list->GetCurrentItem());
+    const auto offset = record->locationOfExtent.LSB * ISO::ECMA_119_SECTOR_SIZE;
 
     win->GetCurrentView()->GoTo(offset);
 }
 
 void Panels::Objects::SelectCurrentSection()
 {
-        auto record       = list->GetItemData<DirectoryRecord>(list->GetCurrentItem());
-    const auto offset = record->locationOfExtent.LSB * ISO::SECTOR_SIZE;
+    auto record       = list->GetItemData<ECMA_119_DirectoryRecord>(list->GetCurrentItem());
+    const auto offset = record->locationOfExtent.LSB * ISO::ECMA_119_SECTOR_SIZE;
     const auto size   = record->dataLength.LSB;
 
     win->GetCurrentView()->Select(offset, size);
@@ -94,14 +94,15 @@ void Panels::Objects::Update()
                     gmtHours,
                     gmtMinutes));
 
-        list->SetItemText(item, 5, tmp.Format("%s", GetValue(n, record.fileFlags).data()));
+        list->SetItemText(
+              item, 5, tmp.Format("[%s] %s", GetECMA_119_FileFlags(record.fileFlags).c_str(), GetValue(n, record.fileFlags).data()));
         list->SetItemText(item, 6, tmp.Format("%s", GetValue(n, record.fileUnitSize).data()));
         list->SetItemText(item, 7, tmp.Format("%s", GetValue(n, record.interleaveGapSize).data()));
         list->SetItemText(item, 8, tmp.Format("%s", GetValue(n, record.volumeSequenceNumber).data()));
         list->SetItemText(item, 9, tmp.Format("%s", GetValue(n, record.lengthOfFileIdentifier).data()));
-        list->SetItemText(item, 10, tmp.Format("%.*s", record.lengthOfFileIdentifier - 2, record.fileIdentifier));
+        list->SetItemText(item, 10, tmp.Format("%.*s", record.lengthOfFileIdentifier, record.fileIdentifier));
 
-        list->SetItemData<DirectoryRecord>(item, &iso->records[i]);
+        list->SetItemData<ECMA_119_DirectoryRecord>(item, &iso->records[i]);
     }
 }
 
