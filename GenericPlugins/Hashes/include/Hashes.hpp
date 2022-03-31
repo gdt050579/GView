@@ -30,6 +30,7 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     MD4 md4;
     MD5 md5;
     SHA1 sha1;
+    SHA256 sha256;
 
   public:
     HashesDialog();

@@ -193,7 +193,7 @@ bool Instance::AddFolder(const std::filesystem::path& path)
     auto win  = std::make_unique<FileWindow>("Folder view", this);
     auto obj  = win->GetObject();
     obj->type = GView::Type::FolderViewPlugin::CreateInstance(path);
-  
+
     // validate type
     CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
 

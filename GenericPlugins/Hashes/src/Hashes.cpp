@@ -2,7 +2,7 @@
 
 namespace GView::GenericPlugins::Hashes
 {
-HashesDialog::HashesDialog() : Window("Hashes", "d:c,w:70,h:20", WindowFlags::Sizeable | WindowFlags::Maximized)
+HashesDialog::HashesDialog() : Window("Hashes", "d:c,w:90,h:20", WindowFlags::Sizeable | WindowFlags::Maximized)
 {
     hashesList = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:20");
     hashesList->AddColumn("Type", TextAlignament::Left, 12);
@@ -27,14 +27,15 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(md4.Init(), false, "");
     CHECK(md5.Init(), false, "");
     CHECK(sha1.Init(), false, "");
+    CHECK(sha256.Init(), false, "");
 
-    constexpr auto block = 0x4000ULL;
-    auto offset          = 0ULL;
-    auto left            = object->cache.GetSize();
+    const auto block = object->cache.GetCacheSize();
+    auto offset      = 0ULL;
+    auto left        = object->cache.GetSize();
     LocalString<256> ls;
     do
     {
-        CHECK(ProgressStatus::Update(offset, ls.Format("[0x%.8llX/0x%.8llX] bytes", offset, objectSize)) == false, false, "");
+        CHECK(ProgressStatus::Update(offset, ls.Format("[0x%.16llX/0x%.16llX] bytes...", offset, objectSize)) == false, false, "");
 
         const auto sizeToRead = (left >= block ? block : left);
         left -= (left >= block ? block : left);
@@ -52,6 +53,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
         CHECK(md4.Update(buffer), false, "");
         CHECK(md5.Update(buffer), false, "");
         CHECK(sha1.Update(buffer), false, "");
+        CHECK(sha256.Update(buffer), false, "");
 
         offset += sizeToRead;
     } while (left > 0);
@@ -76,6 +78,8 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(md5.Final(md5Hash), false, "");
     uint8 sha1Hash[20] = { 0 };
     CHECK(sha1.Final(sha1Hash), false, "");
+    uint8 sha256Hash[32] = { 0 };
+    CHECK(sha256.Final(sha256Hash), false, "");
 
     NumericFormatter nf;
     hashesList->AddItem("Adler32", ls.Format("0x%.8X", adler32hash));
@@ -168,6 +172,13 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
                 sha1Hash[17],
                 sha1Hash[18],
                 sha1Hash[19]));
+
+    ls.Format("0x");
+    for (auto i = 0U; i < 32; i++)
+    {
+        ls.AddFormat("%X", sha256Hash[i]);
+    }
+    hashesList->AddItem("SHA256", ls.GetText());
 
     return true;
 }
