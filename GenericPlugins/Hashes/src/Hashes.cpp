@@ -22,6 +22,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(crc64Neg.Init(CRC64Type::WE), false, "");
     CHECK(md2.Init(), false, "");
     CHECK(md4.Init(), false, "");
+    CHECK(md5.Init(), false, "");
 
     constexpr auto block = 0x1000ULL;
     auto offset          = 0ULL;
@@ -44,6 +45,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
         CHECK(crc64Neg.Update(buffer), false, "");
         CHECK(md2.Update(buffer), false, "");
         CHECK(md4.Update(buffer), false, "");
+        CHECK(md5.Update(buffer), false, "");
 
         offset += sizeToRead;
     } while (left > 0);
@@ -64,6 +66,8 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(md2.Final(md2Hash), false, "");
     uint8 md4Hash[16] = { 0 };
     CHECK(md4.Final(md4Hash), false, "");
+    uint8 md5Hash[16] = { 0 };
+    CHECK(md5.Final(md5Hash), false, "");
 
     LocalString<256> ls;
     NumericFormatter nf;
@@ -94,25 +98,45 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
                 md2Hash[14],
                 md2Hash[15]));
     hashesList->AddItem(
-        "MD4",
-        ls.Format(
-            "0x%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X",
-            md4Hash[0],
-            md4Hash[1],
-            md4Hash[2],
-            md4Hash[3],
-            md4Hash[4],
-            md4Hash[5],
-            md4Hash[6],
-            md4Hash[7],
-            md4Hash[8],
-            md4Hash[9],
-            md4Hash[10],
-            md4Hash[11],
-            md4Hash[12],
-            md4Hash[13],
-            md4Hash[14],
-            md4Hash[15]));
+          "MD4",
+          ls.Format(
+                "0x%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X",
+                md4Hash[0],
+                md4Hash[1],
+                md4Hash[2],
+                md4Hash[3],
+                md4Hash[4],
+                md4Hash[5],
+                md4Hash[6],
+                md4Hash[7],
+                md4Hash[8],
+                md4Hash[9],
+                md4Hash[10],
+                md4Hash[11],
+                md4Hash[12],
+                md4Hash[13],
+                md4Hash[14],
+                md4Hash[15]));
+    hashesList->AddItem(
+          "MD5",
+          ls.Format(
+                "0x%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X",
+                md5Hash[0],
+                md5Hash[1],
+                md5Hash[2],
+                md5Hash[3],
+                md5Hash[4],
+                md5Hash[5],
+                md5Hash[6],
+                md5Hash[7],
+                md5Hash[8],
+                md5Hash[9],
+                md5Hash[10],
+                md5Hash[11],
+                md5Hash[12],
+                md5Hash[13],
+                md5Hash[14],
+                md5Hash[15]));
 
     return true;
 }

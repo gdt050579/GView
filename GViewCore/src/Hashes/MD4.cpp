@@ -28,11 +28,11 @@ constexpr uint32 S34            = 0x0F;
 #define G(x, y, z) (((x) & (y)) | ((x) & (z)) | ((y) & (z)))
 #define H(x, y, z) ((x) ^ (y) ^ (z))
 
-#define ROTATE_LEFT(a, n) ((a) << (n)) | ((a) >> (32 - (n)))
+#define ROTL(a, n) ((a) << (n)) | ((a) >> (32 - (n)))
 
-#define MD4_ROUND1(a, b, c, d, k, s) (a = ROTATE_LEFT(a + F(b, c, d) + k + K_0, s))
-#define MD4_ROUND2(a, b, c, d, k, s) (a = ROTATE_LEFT(a + G(b, c, d) + k + K_1, s))
-#define MD4_ROUND3(a, b, c, d, k, s) (a = ROTATE_LEFT(a + H(b, c, d) + k + K_2, s))
+#define MD4_ROUND1(a, b, c, d, k, s) (a = ROTL(a + F(b, c, d) + k + K_0, s))
+#define MD4_ROUND2(a, b, c, d, k, s) (a = ROTL(a + G(b, c, d) + k + K_1, s))
+#define MD4_ROUND3(a, b, c, d, k, s) (a = ROTL(a + H(b, c, d) + k + K_2, s))
 
 bool MD4::Init()
 {
