@@ -14,6 +14,9 @@ HashesDialog::HashesDialog() : Window("Hashes", "d:c,w:70,h:20", WindowFlags::Si
 
 bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
 {
+    const auto objectSize = object->cache.GetSize();
+    ProgressStatus::Init("Computing...", objectSize);
+
     CHECK(adler32.Init(), false, "");
     CHECK(crc16.Init(), false, "");
     CHECK(crc32Zero.Init(CRC32Type::ZERO), false, "");
@@ -24,17 +27,18 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(md4.Init(), false, "");
     CHECK(md5.Init(), false, "");
 
-    constexpr auto block = 0x1000ULL;
+    constexpr auto block = 0x4000ULL;
     auto offset          = 0ULL;
     auto left            = object->cache.GetSize();
-
-    Buffer buffer;
+    LocalString<256> ls;
     do
     {
+        CHECK(ProgressStatus::Update(offset, ls.Format("[0x%.8llX/0x%.8llX] bytes", offset, objectSize)) == false, false, "");
+
         const auto sizeToRead = (left >= block ? block : left);
         left -= (left >= block ? block : left);
 
-        buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
+        const Buffer buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
         CHECK(buffer.IsValid(), false, "");
 
         CHECK(adler32.Update(buffer), false, "");
@@ -69,7 +73,6 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     uint8 md5Hash[16] = { 0 };
     CHECK(md5.Final(md5Hash), false, "");
 
-    LocalString<256> ls;
     NumericFormatter nf;
     hashesList->AddItem("Adler32", ls.Format("0x%.8X", adler32hash));
     hashesList->AddItem("CRC16", ls.Format("0x%.8X", crc16Hash));
@@ -154,7 +157,7 @@ extern "C"
         if (command == "Hashes")
         {
             GView::GenericPlugins::Hashes::HashesDialog dlg;
-            dlg.ComputeHashes(object);
+            CHECK(dlg.ComputeHashes(object), true, "");
             dlg.Show();
             return true;
         }
