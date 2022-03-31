@@ -16,8 +16,10 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
 {
     CHECK(adler32.Init(), false, "");
     CHECK(crc16.Init(), false, "");
-    CHECK(crc32Neg.Init(CRC32Type::NEGL), false, "");
     CHECK(crc32Zero.Init(CRC32Type::ZERO), false, "");
+    CHECK(crc32Neg.Init(CRC32Type::NEGL), false, "");
+    CHECK(crc64Zero.Init(CRC64Type::ECMA_182), false, "");
+    CHECK(crc64Neg.Init(CRC64Type::WE), false, "");
 
     constexpr auto block = 0x1000ULL;
     auto offset          = 0ULL;
@@ -39,8 +41,10 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
 
         CHECK(adler32.Update(buffer), false, "");
         CHECK(crc16.Update(buffer), false, "");
-        CHECK(crc32Neg.Update(buffer), false, "");
         CHECK(crc32Zero.Update(buffer), false, "");
+        CHECK(crc32Neg.Update(buffer), false, "");
+        CHECK(crc64Zero.Update(buffer), false, "");
+        CHECK(crc64Neg.Update(buffer), false, "");
 
         offset += sizeToRead;
     } while (left > 0);
@@ -49,17 +53,23 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(adler32.Final(adler32hash), false, "");
     uint16 crc16Hash = 0;
     CHECK(crc16.Final(crc16Hash), false, "");
-    uint32 crc32NegHash = 0;
-    CHECK(crc32Neg.Final(crc32NegHash), false, "");
     uint32 crc32Zerohash = 0;
     CHECK(crc32Zero.Final(crc32Zerohash), false, "");
+    uint32 crc32NegHash = 0;
+    CHECK(crc32Neg.Final(crc32NegHash), false, "");
+    uint64 crc64Zerohash = 0;
+    CHECK(crc64Zero.Final(crc64Zerohash), false, "");
+    uint64 crc64Neghash = 0;
+    CHECK(crc64Neg.Final(crc64Neghash), false, "");
 
     LocalString<256> ls;
     NumericFormatter nf;
     hashesList->AddItem("Adler32", ls.Format("0x%.8X", adler32hash));
     hashesList->AddItem("CRC16", ls.Format("0x%.8X", crc16Hash));
-    hashesList->AddItem("CRC32(-1)", ls.Format("0x%.8X", crc32NegHash));
     hashesList->AddItem("CRC32(0)", ls.Format("0x%.8X", crc32Zerohash));
+    hashesList->AddItem("CRC32(-1)", ls.Format("0x%.8X", crc32NegHash));
+    hashesList->AddItem("CRC64(0)", ls.Format("0x%.16llX", crc64Zerohash));
+    hashesList->AddItem("CRC64(-1)", ls.Format("0x%.16llX", crc64Neghash));
 
     return true;
 }

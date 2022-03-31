@@ -148,7 +148,7 @@ namespace Hashes
         bool Final(uint32& hash);
     };
 
-    enum CRC32Type : uint32
+    enum class CRC32Type : uint32
     {
         NEGL = 0xFFFFFFFF,
         ZERO = 0x00000000
@@ -171,15 +171,36 @@ namespace Hashes
 
     class CORE_EXPORT CRC16
     {
-    private:
+      private:
         uint32 value;
         bool init = false;
 
-    public:
+      public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint16& hash);
+    };
+
+    enum class CRC64Type : uint64
+    {
+        WE       = 0xFFFFFFFFFFFFFFFF,
+        ECMA_182 = 0x0000000000000000
+    };
+
+    class CORE_EXPORT CRC64
+    {
+      private:
+        uint64 value;
+        CRC64Type type;
+
+        bool init = false;
+
+      public:
+        bool Init(CRC64Type type);
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint64& hash);
     };
 } // namespace Hashes
 
