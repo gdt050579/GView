@@ -20,6 +20,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(crc32Neg.Init(CRC32Type::NEGL), false, "");
     CHECK(crc64Zero.Init(CRC64Type::ECMA_182), false, "");
     CHECK(crc64Neg.Init(CRC64Type::WE), false, "");
+    CHECK(md2.Init(), false, "");
 
     constexpr auto block = 0x1000ULL;
     auto offset          = 0ULL;
@@ -45,6 +46,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
         CHECK(crc32Neg.Update(buffer), false, "");
         CHECK(crc64Zero.Update(buffer), false, "");
         CHECK(crc64Neg.Update(buffer), false, "");
+        CHECK(md2.Update(buffer), false, "");
 
         offset += sizeToRead;
     } while (left > 0);
@@ -61,6 +63,8 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(crc64Zero.Final(crc64Zerohash), false, "");
     uint64 crc64Neghash = 0;
     CHECK(crc64Neg.Final(crc64Neghash), false, "");
+    uint8 md2Hash[16] = { 0 };
+    CHECK(md2.Final(md2Hash), false, "");
 
     LocalString<256> ls;
     NumericFormatter nf;
@@ -70,6 +74,26 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     hashesList->AddItem("CRC32(-1)", ls.Format("0x%.8X", crc32NegHash));
     hashesList->AddItem("CRC64(0)", ls.Format("0x%.16llX", crc64Zerohash));
     hashesList->AddItem("CRC64(-1)", ls.Format("0x%.16llX", crc64Neghash));
+    hashesList->AddItem(
+          "MD2",
+          ls.Format(
+                "0x%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X",
+                md2Hash[0],
+                md2Hash[1],
+                md2Hash[2],
+                md2Hash[3],
+                md2Hash[4],
+                md2Hash[5],
+                md2Hash[6],
+                md2Hash[7],
+                md2Hash[8],
+                md2Hash[9],
+                md2Hash[10],
+                md2Hash[11],
+                md2Hash[12],
+                md2Hash[13],
+                md2Hash[14],
+                md2Hash[15]));
 
     return true;
 }

@@ -202,6 +202,23 @@ namespace Hashes
         bool Update(Buffer buffer);
         bool Final(uint64& hash);
     };
+
+    class CORE_EXPORT MD2
+    {
+      private:
+        uint8 m[16];
+        uint8 x[48];
+        uint8 c[16];
+        uint32 size;
+
+        bool init = false;
+
+      public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint8 hash[16]);
+    };
 } // namespace Hashes
 
 struct CORE_EXPORT Object
