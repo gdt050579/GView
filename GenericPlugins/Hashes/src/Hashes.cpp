@@ -26,6 +26,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(md2.Init(), false, "");
     CHECK(md4.Init(), false, "");
     CHECK(md5.Init(), false, "");
+    CHECK(sha1.Init(), false, "");
 
     constexpr auto block = 0x4000ULL;
     auto offset          = 0ULL;
@@ -50,6 +51,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
         CHECK(md2.Update(buffer), false, "");
         CHECK(md4.Update(buffer), false, "");
         CHECK(md5.Update(buffer), false, "");
+        CHECK(sha1.Update(buffer), false, "");
 
         offset += sizeToRead;
     } while (left > 0);
@@ -72,6 +74,8 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     CHECK(md4.Final(md4Hash), false, "");
     uint8 md5Hash[16] = { 0 };
     CHECK(md5.Final(md5Hash), false, "");
+    uint8 sha1Hash[20] = { 0 };
+    CHECK(sha1.Final(sha1Hash), false, "");
 
     NumericFormatter nf;
     hashesList->AddItem("Adler32", ls.Format("0x%.8X", adler32hash));
@@ -140,6 +144,30 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
                 md5Hash[13],
                 md5Hash[14],
                 md5Hash[15]));
+    hashesList->AddItem(
+          "SHA1",
+          ls.Format(
+                "0x%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X%X",
+                sha1Hash[0],
+                sha1Hash[1],
+                sha1Hash[2],
+                sha1Hash[3],
+                sha1Hash[4],
+                sha1Hash[5],
+                sha1Hash[6],
+                sha1Hash[7],
+                sha1Hash[8],
+                sha1Hash[9],
+                sha1Hash[10],
+                sha1Hash[11],
+                sha1Hash[12],
+                sha1Hash[13],
+                sha1Hash[14],
+                sha1Hash[15],
+                sha1Hash[16],
+                sha1Hash[17],
+                sha1Hash[18],
+                sha1Hash[19]));
 
     return true;
 }

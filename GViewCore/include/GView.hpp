@@ -252,6 +252,23 @@ namespace Hashes
         bool Update(Buffer buffer);
         bool Final(uint8 hash[16]);
     };
+
+    class CORE_EXPORT SHA1
+    {
+      private:
+        uint64 length;
+        uint32 state[5];
+        uint32 curlen;
+        uint8 buf[64];
+
+        bool init;
+
+      public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint8 hash[20]);
+    };
 } // namespace Hashes
 
 struct CORE_EXPORT Object

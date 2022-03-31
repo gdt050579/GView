@@ -43,14 +43,8 @@ bool MD5::Init()
 
     return true;
 }
-#define LOAD32L(x, y)                                                                                                                      \
-    do                                                                                                                                     \
-    {                                                                                                                                      \
-        x = ((uint32) ((y)[3] & 255) << 24) | ((uint32) ((y)[2] & 255) << 16) | ((uint32) ((y)[1] & 255) << 8) |                           \
-            ((uint32) ((y)[0] & 255));                                                                                                     \
-    } while (0)
 
-bool ProcessBlock(uint32* state, const unsigned char* buf)
+static bool MD5_ProcessBlock(uint32* state, const unsigned char* buf)
 {
     CHECK(buf != nullptr, false, "");
     CHECK(state != nullptr, false, "");
@@ -151,7 +145,7 @@ bool MD5::Update(const unsigned char* in, uint32 inlen)
     {
         if (curlen == 0 && inlen >= MD5_BLOCKSIZE)
         {
-            CHECK(ProcessBlock(state, in), false, "");
+            CHECK(MD5_ProcessBlock(state, in), false, "");
 
             length += MD5_BLOCKSIZE * 8ULL;
             in += MD5_BLOCKSIZE;
@@ -166,7 +160,7 @@ bool MD5::Update(const unsigned char* in, uint32 inlen)
             inlen -= n;
             if (curlen == MD5_BLOCKSIZE)
             {
-                CHECK(ProcessBlock(state, buf), false, "");
+                CHECK(MD5_ProcessBlock(state, buf), false, "");
                 this->length += 8ULL * MD5_BLOCKSIZE;
                 this->curlen = 0;
             }
@@ -198,7 +192,7 @@ bool MD5::Final(uint8 hash[16])
         {
             buf[curlen++] = 0;
         }
-        ProcessBlock(state, buf);
+        MD5_ProcessBlock(state, buf);
         curlen = 0;
     }
 
@@ -208,7 +202,7 @@ bool MD5::Final(uint8 hash[16])
     }
 
     *(uint64*) (buf + 56) = length;
-    ProcessBlock(state, buf);
+    MD5_ProcessBlock(state, buf);
 
     memcpy(hash, state, 16);
 
