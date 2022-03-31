@@ -15,6 +15,7 @@ HashesDialog::HashesDialog() : Window("Hashes", "d:c,w:70,h:20", WindowFlags::Si
 bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
 {
     CHECK(adler32.Init(), false, "");
+    CHECK(crc16.Init(), false, "");
     CHECK(crc32Neg.Init(CRC32Type::NEGL), false, "");
     CHECK(crc32Zero.Init(CRC32Type::ZERO), false, "");
 
@@ -33,10 +34,11 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
         const auto sizeToRead = (left >= block ? block : left);
         left -= (left >= block ? block : left);
 
-        buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), false);
+        buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
         CHECK(buffer.IsValid(), false, "");
 
         CHECK(adler32.Update(buffer), false, "");
+        CHECK(crc16.Update(buffer), false, "");
         CHECK(crc32Neg.Update(buffer), false, "");
         CHECK(crc32Zero.Update(buffer), false, "");
 
@@ -45,6 +47,8 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
 
     uint32 adler32hash = 0;
     CHECK(adler32.Final(adler32hash), false, "");
+    uint16 crc16Hash = 0;
+    CHECK(crc16.Final(crc16Hash), false, "");
     uint32 crc32NegHash = 0;
     CHECK(crc32Neg.Final(crc32NegHash), false, "");
     uint32 crc32Zerohash = 0;
@@ -53,6 +57,7 @@ bool HashesDialog::ComputeHashes(Reference<GView::Object> object)
     LocalString<256> ls;
     NumericFormatter nf;
     hashesList->AddItem("Adler32", ls.Format("0x%.8X", adler32hash));
+    hashesList->AddItem("CRC16", ls.Format("0x%.8X", crc16Hash));
     hashesList->AddItem("CRC32(-1)", ls.Format("0x%.8X", crc32NegHash));
     hashesList->AddItem("CRC32(0)", ls.Format("0x%.8X", crc32Zerohash));
 

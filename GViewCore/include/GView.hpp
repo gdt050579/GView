@@ -179,7 +179,7 @@ namespace Hashes
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
-        bool Final(uint32& hash);
+        bool Final(uint16& hash);
     };
 } // namespace Hashes
 

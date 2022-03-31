@@ -21,6 +21,7 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     Reference<Button> close;
 
     Adler32 adler32;
+    CRC16 crc16;
     CRC32 crc32Neg;
     CRC32 crc32Zero;
 
