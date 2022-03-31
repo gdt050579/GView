@@ -139,7 +139,7 @@ namespace Hashes
         uint16 a;
         uint16 b;
 
-        bool init = false;
+        bool init;
 
       public:
         bool Init();
@@ -160,7 +160,7 @@ namespace Hashes
         uint32 value;
         CRC32Type type;
 
-        bool init = false;
+        bool init;
 
       public:
         bool Init(CRC32Type type);
@@ -173,7 +173,7 @@ namespace Hashes
     {
       private:
         uint32 value;
-        bool init = false;
+        bool init;
 
       public:
         bool Init();
@@ -194,7 +194,7 @@ namespace Hashes
         uint64 value;
         CRC64Type type;
 
-        bool init = false;
+        bool init;
 
       public:
         bool Init(CRC64Type type);
@@ -211,7 +211,23 @@ namespace Hashes
         uint8 c[16];
         uint32 size;
 
-        bool init = false;
+        bool init;
+
+      public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint8 hash[16]);
+    };
+
+    class CORE_EXPORT MD4
+    {
+      private:
+        uint32 hash[4];
+        uint32 block[16];
+        uint64 size;
+
+        bool init;
 
       public:
         bool Init();

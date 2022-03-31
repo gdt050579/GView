@@ -31,41 +31,42 @@ bool MD2::Init()
     return true;
 }
 
-void md2ProcessBlock(const uint8_t* m, uint8_t* x, uint8_t* c)
+void ProcessBlock(const uint8_t* m, uint8_t* x, uint8_t* c)
 {
     {
         uint8_t t = c[MD2_BLOCK_SIZE - 1];
 
-        for (auto j = 0; j < MD2_BLOCK_SIZE; j++)
+        for (auto i = 0; i < MD2_BLOCK_SIZE; i++)
         {
-            c[j] ^= MD2Table[m[j] ^ t];
-            t = c[j];
+            c[i] ^= MD2Table[m[i] ^ t];
+            t = c[i];
         }
     }
 
-    for (auto j = 0; j < MD2_BLOCK_SIZE; j++)
+    for (auto i = 0; i < MD2_BLOCK_SIZE; i++)
     {
-        x[MD2_BLOCK_SIZE + j]     = m[j];
-        x[MD2_BLOCK_SIZE * 2 + j] = x[MD2_BLOCK_SIZE + j] ^ x[j];
+        x[MD2_BLOCK_SIZE + i]     = m[i];
+        x[MD2_BLOCK_SIZE * 2 + i] = x[MD2_BLOCK_SIZE + i] ^ x[i];
     }
 
     {
         uint8_t t = 0;
-        for (auto j = 0; j < MD2_ROUNDS; j++)
+        for (auto i = 0; i < MD2_ROUNDS; i++)
         {
-            for (auto k = 0; k < MD2_BLOCK_SIZE * 3; k++)
+            for (auto j = 0; j < MD2_BLOCK_SIZE * 3; j++)
             {
-                x[k] ^= MD2Table[t];
-                t = x[k];
+                x[j] ^= MD2Table[t];
+                t = x[j];
             }
 
-            t = (t + j) & 0xFF;
+            t = (t + i) & 0xFF;
         }
     }
 }
 
 bool MD2::Update(const unsigned char* input, uint32 length)
 {
+    CHECK(init, false, "");
     CHECK(input != nullptr, false, "");
 
     while ((int32) length > 0)
@@ -78,7 +79,7 @@ bool MD2::Update(const unsigned char* input, uint32 length)
 
         if (size == MD2_BLOCK_SIZE)
         {
-            md2ProcessBlock(m, x, c);
+            ProcessBlock(m, x, c);
             size = 0;
         }
     }
@@ -98,9 +99,9 @@ bool MD2::Final(uint8 hash[16])
 
     const uint32 n = MD2_BLOCK_SIZE - size;
     memset(m + size, n, n);
-    md2ProcessBlock(m, x, c);
+    ProcessBlock(m, x, c);
     memcpy(m, c, MD2_BLOCK_SIZE);
-    md2ProcessBlock(m, x, c);
+    ProcessBlock(m, x, c);
     memcpy(hash, x, MD2_BLOCK_SIZE);
 
     return true;

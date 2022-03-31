@@ -27,6 +27,7 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     CRC64 crc64Zero;
     CRC64 crc64Neg;
     MD2 md2;
+    MD4 md4;
 
   public:
     HashesDialog();
