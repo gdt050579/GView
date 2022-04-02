@@ -2,15 +2,16 @@
 
 namespace GView::GenericPlugins::Hashes
 {
-constexpr const char* Command_Name_Hashes        = "Hashes";
-constexpr const char* Command_Name_ComputeMD5    = "ComputeMD5";
-constexpr const char* Command_Name_ComputeSHA256 = "ComputeSHA256";
+constexpr int CMD_BUTTON_CLOSE                = 1;
+constexpr const char* CMD_NAME_HASHES         = "Hashes";
+constexpr const char* CMD_NAME_COMPUTE_MD5    = "ComputeMD5";
+constexpr const char* CMD_NAME_COMPUTE_SHA256 = "ComputeSHA256";
 
-HashesDialog::HashesDialog() : Window("Hashes", "d:c,w:90,h:20", WindowFlags::Sizeable | WindowFlags::Maximized)
+HashesDialog::HashesDialog() : Window("Hashes", "d:c,w:160,h:21", WindowFlags::Sizeable | WindowFlags::Maximized)
 {
     hashesList = Factory::ListView::Create(this, "l:0,t:0,r:0,b:3");
     hashesList->AddColumn("Type", TextAlignament::Left, 17);
-    hashesList->AddColumn("Value", TextAlignament::Left, 100);
+    hashesList->AddColumn("Value", TextAlignament::Left, 130);
 
     close                              = Factory::Button::Create(this, "&Close", "d:b,w:20", CMD_BUTTON_CLOSE);
     close->Handlers()->OnButtonPressed = this;
@@ -39,9 +40,9 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
     const auto objectSize = object->cache.GetSize();
     ProgressStatus::Init("Computing...", objectSize);
 
-    static constexpr std::array<Hashes, 11> hashList{
+    static constexpr std::array<Hashes, 13> hashList{
         Hashes::Adler32, Hashes::CRC16, Hashes::CRC32_JAMCRC_0, Hashes::CRC32_JAMCRC, Hashes::CRC64_ECMA_182, Hashes::CRC64_WE, Hashes::MD2,
-        Hashes::MD4,     Hashes::MD5,   Hashes::SHA1,           Hashes::SHA256
+        Hashes::MD4,     Hashes::MD5,   Hashes::SHA1,           Hashes::SHA256,       Hashes::SHA384,         Hashes::SHA512
     };
     Adler32 adler32{};
     CRC16 crc16{};
@@ -54,6 +55,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
     MD5 md5{};
     SHA1 sha1{};
     SHA256 sha256{};
+    SHA512 sha512{};
 
     for (const auto& hash : hashList)
     {
@@ -92,6 +94,10 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         case Hashes::SHA256:
             CHECK(sha256.Init(), false, "");
             break;
+        case Hashes::SHA384:
+        case Hashes::SHA512:
+            CHECK(sha512.Init(), false, "");
+            break;
         default:
             break;
         }
@@ -100,7 +106,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
     const auto block = object->cache.GetCacheSize();
     auto offset      = 0ULL;
     auto left        = object->cache.GetSize();
-    LocalString<256> ls;
+    LocalString<512> ls;
 
     const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
     if (objectSize > 0xFFFFFFFF)
@@ -155,6 +161,10 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             case Hashes::SHA256:
                 CHECK(sha256.Update(buffer), false, "");
                 break;
+            case Hashes::SHA384:
+            case Hashes::SHA512:
+                CHECK(sha512.Update(buffer), false, "");
+                break;
             default:
                 break;
             }
@@ -163,10 +173,14 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         offset += sizeToRead;
     } while (left > 0);
 
+    bool sha512FinalCalled = false;
+    uint8 hashSha512[64]{ 0 };
+
     NumericFormatter nf;
     for (const auto& hash : hashList)
     {
-        switch (static_cast<Hashes>(hashFlags & static_cast<uint32>(hash)))
+        const auto flag = static_cast<Hashes>(hashFlags & static_cast<uint32>(hash));
+        switch (flag)
         {
         case Hashes::Adler32:
         {
@@ -217,7 +231,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             ls.Format("0x");
             for (auto i = 0U; i < 16; i++)
             {
-                ls.AddFormat("%X", hash[i]);
+                ls.AddFormat("%.2X", hash[i]);
             }
             outputs.emplace(std::pair{ "MD2", ls.GetText() });
         }
@@ -229,7 +243,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             ls.Format("0x");
             for (auto i = 0U; i < 16; i++)
             {
-                ls.AddFormat("%X", hash[i]);
+                ls.AddFormat("%.2X", hash[i]);
             }
             outputs.emplace(std::pair{ "MD4", ls.GetText() });
         }
@@ -241,7 +255,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             ls.Format("0x");
             for (auto i = 0U; i < 16; i++)
             {
-                ls.AddFormat("%X", hash[i]);
+                ls.AddFormat("%.2X", hash[i]);
             }
             outputs.emplace(std::pair{ "MD5", ls.GetText() });
         }
@@ -253,7 +267,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             ls.Format("0x");
             for (auto i = 0U; i < 20; i++)
             {
-                ls.AddFormat("%X", hash[i]);
+                ls.AddFormat("%.2X", hash[i]);
             }
             outputs.emplace(std::pair{ "SHA1", ls.GetText() });
         }
@@ -265,9 +279,36 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             ls.Format("0x");
             for (auto i = 0U; i < 32; i++)
             {
-                ls.AddFormat("%X", hash[i]);
+                ls.AddFormat("%.2X", hash[i]);
             }
             outputs.emplace(std::pair{ "SHA256", ls.GetText() });
+        }
+        break;
+        case Hashes::SHA384:
+        case Hashes::SHA512:
+        {
+            if (sha512FinalCalled == false)
+            {
+                CHECK(sha512.Final(hashSha512), false, "");
+                sha512FinalCalled = true;
+            }
+            ls.Format("0x");
+            if (flag == Hashes::SHA384)
+            {
+                for (auto i = 0U; i < 48; i++)
+                {
+                    ls.AddFormat("%.2X", hashSha512[i]);
+                }
+                outputs.emplace(std::pair{ "SHA384", ls.GetText() });
+            }
+            else
+            {
+                for (auto i = 0U; i < 64; i++)
+                {
+                    ls.AddFormat("%.2X", hashSha512[i]);
+                }
+                outputs.emplace(std::pair{ "SHA512", ls.GetText() });
+            }
         }
         break;
         default:
@@ -283,14 +324,14 @@ extern "C"
 {
     PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
     {
-        if (command == GView::GenericPlugins::Hashes::Command_Name_Hashes)
+        if (command == GView::GenericPlugins::Hashes::CMD_NAME_HASHES)
         {
             GView::GenericPlugins::Hashes::HashesDialog dlg;
             CHECK(dlg.ComputeHashes(object), true, "");
             dlg.Show();
             return true;
         }
-        else if (command == GView::GenericPlugins::Hashes::Command_Name_ComputeMD5)
+        else if (command == GView::GenericPlugins::Hashes::CMD_NAME_COMPUTE_MD5)
         {
             std::map<std::string, std::string> outputs;
             if (GView::GenericPlugins::Hashes::ComputeHash(
@@ -313,7 +354,7 @@ extern "C"
 
             return true;
         }
-        else if (command == GView::GenericPlugins::Hashes::Command_Name_ComputeSHA256)
+        else if (command == GView::GenericPlugins::Hashes::CMD_NAME_COMPUTE_SHA256)
         {
             std::map<std::string, std::string> outputs;
             if (GView::GenericPlugins::Hashes::ComputeHash(

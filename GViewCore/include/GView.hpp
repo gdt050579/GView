@@ -272,7 +272,7 @@ namespace Hashes
 
     class CORE_EXPORT SHA256
     {
-    private:
+      private:
         uint64 length;
         uint32 state[8];
         uint32 curlen;
@@ -280,11 +280,35 @@ namespace Hashes
 
         bool init;
 
-    public:
+      public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[32]);
+    };
+
+    class CORE_EXPORT SHA512
+    {
+      protected:
+        uint64 length;
+        uint64 state[8];
+        uint32 curlen;
+        uint8 buf[128];
+
+        bool init;
+
+      public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint8 hash[64]);
+    };
+
+    class CORE_EXPORT SHA384 : public SHA512
+    {
+      public:
+        bool Init();
+        bool Final(uint8 hash[48]);
     };
 } // namespace Hashes
 

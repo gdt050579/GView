@@ -16,25 +16,11 @@ using namespace GView::Utils;
 using namespace GView::View;
 using namespace GView::Hashes;
 
-constexpr int CMD_BUTTON_CLOSE = 1;
-
 class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
 {
   private:
     Reference<ListView> hashesList;
     Reference<Button> close;
-
-    Adler32 adler32;
-    CRC16 crc16;
-    CRC32 crc32Zero;
-    CRC32 crc32Neg;
-    CRC64 crc64Zero;
-    CRC64 crc64Neg;
-    MD2 md2;
-    MD4 md4;
-    MD5 md5;
-    SHA1 sha1;
-    SHA256 sha256;
 
   public:
     HashesDialog();
@@ -55,6 +41,8 @@ enum class Hashes : uint32
     MD5            = 0x00000100,
     SHA1           = 0x00000200,
     SHA256         = 0x00000400,
+    SHA384         = 0x00000800,
+    SHA512         = 0x00001000,
     ALL            = 0xFFFFFFFF,
 };
 
