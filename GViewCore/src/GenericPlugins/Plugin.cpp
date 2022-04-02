@@ -77,7 +77,7 @@ void Plugin::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint3
 {
     for (auto idx = 0U; idx < this->CommandsCount; idx++)
     {
-        commandBar.SetCommand(this->Commands[idx].ShortKey, this->Commands[idx].Name, commandID);
+        commandBar.SetCommand(this->Commands[idx].ShortKey, this->Commands[idx].Name, commandID + idx);
     }
 }
 } // namespace GView::Generic

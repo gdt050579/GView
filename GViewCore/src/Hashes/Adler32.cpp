@@ -86,7 +86,7 @@ bool Adler32::Final(uint32& hash)
 {
     CHECK(init, false, "");
 
-    hash = (int32_t) ((((uint32_t) b) << 16) + (uint32_t) a);
+    hash = (int32) ((((uint32) b) << 16) + (uint32) a);
 
     return true;
 }
