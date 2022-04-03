@@ -81,6 +81,7 @@ add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
 add_subdirectory(Types/UniversalMachO)
 add_subdirectory(Types/MachO)
+add_subdirectory(Types/ISO)
 
 
 # Generic plugins supported by GView
