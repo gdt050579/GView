@@ -349,23 +349,39 @@ bool MachOFile::SetMain()
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {
-                const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->eip;
+                const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->eip;
             }
             else if (header.cputype == MAC::CPU_TYPE_X86_64)
             {
-                const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->rip;
+                const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->rip;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC)
             {
-                const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->srr0;
+                const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->srr0;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC64)
             {
-                const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->srr0;
+                const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->srr0;
             }
             else
             {
