@@ -189,6 +189,18 @@ bool SHA1::Update(Buffer buffer)
 
 bool SHA1::Final(uint8 hash[20])
 {
+    CHECK(Final(), false, "");
+
+    for (auto i = 0; i < 5; i++)
+    {
+        STORE32H(state[i], hash + (4 * i));
+    }
+
+    return true;
+}
+
+bool SHA1::Final()
+{
     CHECK(init, false, "");
     CHECK(curlen < SHA1_BLOCKSIZE, false, "");
 
@@ -213,11 +225,25 @@ bool SHA1::Final(uint8 hash[20])
     STORE64H(length, buf + 56);
     SHA1_ProcessBlock(state, buf);
 
-    for (auto i = 0; i < 5; i++)
-    {
-        STORE32H(state[i], hash + (4 * i));
-    }
+    init = false;
 
     return true;
+}
+
+std::string_view SHA1::GetName()
+{
+    return "SHA1";
+}
+
+const std::string SHA1::GetHexValue()
+{
+    Final();
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x");
+    for (auto i = 0U; i < ResultBytesLength; i++)
+    {
+        ls.AddFormat("%.2X", ((uint8*)(state))[i]);
+    }
+    return std::string{ ls };
 }
 } // namespace GView::Hashes

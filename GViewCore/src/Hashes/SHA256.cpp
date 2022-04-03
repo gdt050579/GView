@@ -220,6 +220,18 @@ bool SHA256::Update(Buffer buffer)
 
 bool SHA256::Final(uint8 hash[32])
 {
+    CHECK(Final(), false, "");
+
+    for (auto i = 0; i < 8; i++)
+    {
+        STORE32H(state[i], hash + (4 * i));
+    }
+
+    return true;
+}
+
+bool SHA256::Final()
+{
     CHECK(init, false, "");
     CHECK(curlen < SHA256_BLOCKSIZE, false, "");
 
@@ -244,11 +256,32 @@ bool SHA256::Final(uint8 hash[32])
     STORE64H(length, buf + 56);
     SHA256_ProcessBlock(state, buf);
 
+    init = false;
+
+    return true;
+}
+
+std::string_view SHA256::GetName()
+{
+    return "SHA256";
+}
+
+const std::string SHA256::GetHexValue()
+{
+    Final();
+
+    uint8 hash[ResultBytesLength];
     for (auto i = 0; i < 8; i++)
     {
         STORE32H(state[i], hash + (4 * i));
     }
 
-    return true;
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x");
+    for (auto i = 0U; i < ResultBytesLength; i++)
+    {
+        ls.AddFormat("%.2X", hash[i]);
+    }
+    return std::string{ ls };
 }
 } // namespace GView::Hashes

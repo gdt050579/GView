@@ -37,4 +37,15 @@ bool SHA384::Final(uint8 hash[48])
 
     return true;
 }
+
+std::string_view SHA384::GetName()
+{
+    return "SHA384";
+}
+
+const std::string SHA384::GetHexValue()
+{
+    const auto hex = SHA512::GetHexValue();
+    return { hex.c_str(), ResultBytesLength * 2 };
+}
 } // namespace GView::Hashes

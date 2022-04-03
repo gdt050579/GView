@@ -2,7 +2,7 @@
 
 namespace GView::Hashes
 {
-constexpr uint32 SHA512_BLOCKSIZE = 128;
+constexpr uint32 SHA512_BLOCKSIZE = 0x80;
 constexpr uint64 IV_A             = 0x6A09E667F3BCC908;
 constexpr uint64 IV_B             = 0xBB67AE8584CAA73B;
 constexpr uint64 IV_C             = 0x3C6EF372FE94F82B;
@@ -192,6 +192,18 @@ bool SHA512::Update(Buffer buffer)
 
 bool SHA512::Final(uint8 hash[64])
 {
+    CHECK(Final(), false, "");
+
+    for (auto i = 0; i < 8; i++)
+    {
+        STORE64H(state[i], hash + (8 * i));
+    }
+
+    return true;
+}
+
+bool SHA512::Final()
+{
     CHECK(init, false, "");
     CHECK(curlen < SHA512_BLOCKSIZE, false, "");
 
@@ -216,11 +228,32 @@ bool SHA512::Final(uint8 hash[64])
     STORE64H(length, buf + 120);
     SHA512_ProcessBlock(state, buf);
 
+    init = false;
+
+    return true;
+}
+
+std::string_view SHA512::GetName()
+{
+    return "SHA512";
+}
+
+const std::string SHA512::GetHexValue()
+{
+    Final();
+
+    uint8 hash[ResultBytesLength];
     for (auto i = 0; i < 8; i++)
     {
         STORE64H(state[i], hash + (8 * i));
     }
 
-    return true;
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x");
+    for (auto i = 0U; i < ResultBytesLength; i++)
+    {
+        ls.AddFormat("%.2X", hash[i]);
+    }
+    return std::string{ ls };
 }
 } // namespace GView::Hashes

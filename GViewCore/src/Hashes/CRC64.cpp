@@ -48,6 +48,14 @@ static const uint64 CRC64Table[256] = {
     0x5DEDC41A34BBEEB2, 0x1F1D25F19D51D821, 0xD80C07CD676F8394, 0x9AFCE626CE85B507
 };
 
+bool CRC64::Final()
+{
+    CHECK(init, false, "");
+    value ^= static_cast<uint64>(type);
+    init = false;
+    return true;
+}
+
 bool CRC64::Init(CRC64Type type)
 {
     this->type = type;
@@ -81,12 +89,25 @@ bool CRC64::Update(Buffer buffer)
 
 bool CRC64::Final(uint64& hash)
 {
-    CHECK(init, false, "");
-
-    uint64 crc = value;
-    crc ^= static_cast<uint64>(type);
-    hash = crc;
-
+    CHECK(Final(), false, "");
+    hash = value;
     return true;
+}
+
+std::string_view CRC64::GetName(CRC64Type type)
+{
+    if (type == CRC64Type::ECMA_182)
+    {
+        return "CRC64 (ECMA_182)";
+    }
+    return "CRC64 (WE)";
+}
+
+const std::string CRC64::GetHexValue()
+{
+    Final();
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x%.16llX", value);
+    return std::string{ ls };
 }
 } // namespace GView::Hashes

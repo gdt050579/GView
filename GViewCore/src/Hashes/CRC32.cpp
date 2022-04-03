@@ -66,9 +66,25 @@ bool CRC32::Final(uint32& hash)
     CHECK(init, false, "");
 
     uint32 crc = value;
-    //crc ^= static_cast<uint32>(type);
+    // crc ^= static_cast<uint32>(type);
     hash = crc;
 
     return true;
+}
+
+std::string_view CRC32::GetName(CRC32Type type)
+{
+    if (type == CRC32Type::JAMCRC)
+    {
+        return "CRC32 (JAMCRC)";
+    }
+    return "CRC32 (JAMCRC(0))";
+}
+
+const std::string CRC32::GetHexValue()
+{
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x%.8X", value);
+    return std::string{ ls };
 }
 } // namespace GView::Hashes

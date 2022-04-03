@@ -178,8 +178,15 @@ bool MD5::Update(Buffer buffer)
 
 bool MD5::Final(uint8 hash[16])
 {
-    CHECK(init, false, "");
+    CHECK(Final(), false, "");
+    memcpy(hash, state, 16);
 
+    return true;
+}
+
+bool MD5::Final()
+{
+    CHECK(init, false, "");
     CHECK(curlen <= sizeof(buf), false, "");
 
     length += curlen * 8ULL;
@@ -204,8 +211,25 @@ bool MD5::Final(uint8 hash[16])
     *(uint64*) (buf + 56) = length;
     MD5_ProcessBlock(state, buf);
 
-    memcpy(hash, state, 16);
+    init = false;
 
     return true;
+}
+
+const std::string MD5::GetHexValue()
+{
+    Final();
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x");
+    for (auto i = 0U; i < ResultBytesLength; i++)
+    {
+        ls.AddFormat("%.2X", ((uint8*) (state))[i]);
+    }
+    return std::string{ ls };
+}
+
+std::string_view MD5::GetName()
+{
+    return "MD5";
 }
 } // namespace GView::Hashes

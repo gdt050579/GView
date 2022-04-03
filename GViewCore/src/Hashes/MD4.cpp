@@ -2,7 +2,7 @@
 
 namespace GView::Hashes
 {
-constexpr uint32 MD4_BLOCKSIZE  = 0x0200;
+constexpr uint32 MD4_BLOCKSIZE  = 0x40;
 constexpr uint32 MD4_DIGESTSIZE = 0x80;
 constexpr uint32 IV_A           = 0x67452301;
 constexpr uint32 IV_B           = 0xEFCDAB89;
@@ -24,124 +24,149 @@ constexpr uint32 S32            = 0x09;
 constexpr uint32 S33            = 0x0B;
 constexpr uint32 S34            = 0x0F;
 
-#define F(x, y, z) (((x) & (y)) | ((~(x)) & (z)))
-#define G(x, y, z) (((x) & (y)) | ((x) & (z)) | ((y) & (z)))
+#define F(x, y, z) (z ^ (x & (y ^ z)))
+#define G(x, y, z) ((x & y) | (z & (x | y)))
 #define H(x, y, z) ((x) ^ (y) ^ (z))
 
 #define ROTL(a, n) ((a) << (n)) | ((a) >> (32 - (n)))
 
-#define MD4_ROUND1(a, b, c, d, k, s) (a = ROTL(a + F(b, c, d) + k + K_0, s))
-#define MD4_ROUND2(a, b, c, d, k, s) (a = ROTL(a + G(b, c, d) + k + K_1, s))
-#define MD4_ROUND3(a, b, c, d, k, s) (a = ROTL(a + H(b, c, d) + k + K_2, s))
+#define FF(a, b, c, d, x, s)                                                                                                               \
+    {                                                                                                                                      \
+        (a) += F((b), (c), (d)) + (x) + K_0;                                                                                               \
+        (a) = ROTL((a), (s));                                                                                                              \
+    }
+#define GG(a, b, c, d, x, s)                                                                                                               \
+    {                                                                                                                                      \
+        (a) += G((b), (c), (d)) + (x) + K_1;                                                                                               \
+        (a) = ROTL((a), (s));                                                                                                              \
+    }
+#define HH(a, b, c, d, x, s)                                                                                                               \
+    {                                                                                                                                      \
+        (a) += H((b), (c), (d)) + (x) + K_2;                                                                                               \
+        (a) = ROTL((a), (s));                                                                                                              \
+    }
 
 bool MD4::Init()
 {
-    hash[0] = IV_A;
-    hash[1] = IV_B;
-    hash[2] = IV_C;
-    hash[3] = IV_D;
-    size    = 0;
-    init    = true;
+    state[0] = IV_A;
+    state[1] = IV_B;
+    state[2] = IV_C;
+    state[3] = IV_D;
+    length   = 0;
+    curlen   = 0;
+    init     = true;
 
     return true;
 }
 
-bool ProcessBlock(uint32* hash, uint32* input)
+bool MD4_ProcessBlock(uint32* state, const unsigned char* buf)
 {
-    CHECK(input != nullptr, false, "");
-    CHECK(hash != nullptr, false, "");
+    CHECK(state != nullptr, false, "");
+    CHECK(buf != nullptr, false, "");
 
-    uint32 a = hash[0];
-    uint32 b = hash[1];
-    uint32 c = hash[2];
-    uint32 d = hash[3];
+    uint32 x[16];
+    for (auto i = 0; i < 16; i++)
+    {
+        memcpy(x + i, buf + (4 * i), 4);
+    }
 
-    MD4_ROUND1(a, b, c, d, input[0], S11);
-    MD4_ROUND1(d, a, b, c, input[1], S12);
-    MD4_ROUND1(c, d, a, b, input[2], S13);
-    MD4_ROUND1(b, c, d, a, input[3], S14);
-    MD4_ROUND1(a, b, c, d, input[4], S11);
-    MD4_ROUND1(d, a, b, c, input[5], S12);
-    MD4_ROUND1(c, d, a, b, input[6], S13);
-    MD4_ROUND1(b, c, d, a, input[7], S14);
-    MD4_ROUND1(a, b, c, d, input[8], S11);
-    MD4_ROUND1(d, a, b, c, input[9], S12);
-    MD4_ROUND1(c, d, a, b, input[10], S13);
-    MD4_ROUND1(b, c, d, a, input[11], S14);
-    MD4_ROUND1(a, b, c, d, input[12], S11);
-    MD4_ROUND1(d, a, b, c, input[13], S12);
-    MD4_ROUND1(c, d, a, b, input[14], S13);
-    MD4_ROUND1(b, c, d, a, input[15], S14);
+    uint32 a = state[0];
+    uint32 b = state[1];
+    uint32 c = state[2];
+    uint32 d = state[3];
 
-    MD4_ROUND2(a, b, c, d, input[0], S21);
-    MD4_ROUND2(d, a, b, c, input[4], S22);
-    MD4_ROUND2(c, d, a, b, input[8], S23);
-    MD4_ROUND2(b, c, d, a, input[12], S24);
-    MD4_ROUND2(a, b, c, d, input[1], S21);
-    MD4_ROUND2(d, a, b, c, input[5], S22);
-    MD4_ROUND2(c, d, a, b, input[9], S23);
-    MD4_ROUND2(b, c, d, a, input[13], S24);
-    MD4_ROUND2(a, b, c, d, input[2], S21);
-    MD4_ROUND2(d, a, b, c, input[6], S22);
-    MD4_ROUND2(c, d, a, b, input[10], S23);
-    MD4_ROUND2(b, c, d, a, input[14], S24);
-    MD4_ROUND2(a, b, c, d, input[3], S21);
-    MD4_ROUND2(d, a, b, c, input[7], S22);
-    MD4_ROUND2(c, d, a, b, input[11], S23);
-    MD4_ROUND2(b, c, d, a, input[15], S24);
+    FF(a, b, c, d, x[0], S11);
+    FF(d, a, b, c, x[1], S12);
+    FF(c, d, a, b, x[2], S13);
+    FF(b, c, d, a, x[3], S14);
+    FF(a, b, c, d, x[4], S11);
+    FF(d, a, b, c, x[5], S12);
+    FF(c, d, a, b, x[6], S13);
+    FF(b, c, d, a, x[7], S14);
+    FF(a, b, c, d, x[8], S11);
+    FF(d, a, b, c, x[9], S12);
+    FF(c, d, a, b, x[10], S13);
+    FF(b, c, d, a, x[11], S14);
+    FF(a, b, c, d, x[12], S11);
+    FF(d, a, b, c, x[13], S12);
+    FF(c, d, a, b, x[14], S13);
+    FF(b, c, d, a, x[15], S14);
 
-    MD4_ROUND3(a, b, c, d, input[0], S31);
-    MD4_ROUND3(d, a, b, c, input[8], S32);
-    MD4_ROUND3(c, d, a, b, input[4], S33);
-    MD4_ROUND3(b, c, d, a, input[12], S34);
-    MD4_ROUND3(a, b, c, d, input[2], S31);
-    MD4_ROUND3(d, a, b, c, input[10], S32);
-    MD4_ROUND3(c, d, a, b, input[6], S33);
-    MD4_ROUND3(b, c, d, a, input[14], S34);
-    MD4_ROUND3(a, b, c, d, input[1], S31);
-    MD4_ROUND3(d, a, b, c, input[9], S32);
-    MD4_ROUND3(c, d, a, b, input[5], S33);
-    MD4_ROUND3(b, c, d, a, input[13], S34);
-    MD4_ROUND3(a, b, c, d, input[3], S31);
-    MD4_ROUND3(d, a, b, c, input[11], S32);
-    MD4_ROUND3(c, d, a, b, input[7], S33);
-    MD4_ROUND3(b, c, d, a, input[15], S34);
+    GG(a, b, c, d, x[0], S21);
+    GG(d, a, b, c, x[4], S22);
+    GG(c, d, a, b, x[8], S23);
+    GG(b, c, d, a, x[12], S24);
+    GG(a, b, c, d, x[1], S21);
+    GG(d, a, b, c, x[5], S22);
+    GG(c, d, a, b, x[9], S23);
+    GG(b, c, d, a, x[13], S24);
+    GG(a, b, c, d, x[2], S21);
+    GG(d, a, b, c, x[6], S22);
+    GG(c, d, a, b, x[10], S23);
+    GG(b, c, d, a, x[14], S24);
+    GG(a, b, c, d, x[3], S21);
+    GG(d, a, b, c, x[7], S22);
+    GG(c, d, a, b, x[11], S23);
+    GG(b, c, d, a, x[15], S24);
 
-    hash[0] += a;
-    hash[1] += b;
-    hash[2] += c;
-    hash[3] += d;
+    HH(a, b, c, d, x[0], S31);
+    HH(d, a, b, c, x[8], S32);
+    HH(c, d, a, b, x[4], S33);
+    HH(b, c, d, a, x[12], S34);
+    HH(a, b, c, d, x[2], S31);
+    HH(d, a, b, c, x[10], S32);
+    HH(c, d, a, b, x[6], S33);
+    HH(b, c, d, a, x[14], S34);
+    HH(a, b, c, d, x[1], S31);
+    HH(d, a, b, c, x[9], S32);
+    HH(c, d, a, b, x[5], S33);
+    HH(b, c, d, a, x[13], S34);
+    HH(a, b, c, d, x[3], S31);
+    HH(d, a, b, c, x[11], S32);
+    HH(c, d, a, b, x[7], S33);
+    HH(b, c, d, a, x[15], S34);
+
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
 
     return true;
 }
 
-bool MD4::Update(const unsigned char* input, uint32 length)
+bool MD4::Update(const unsigned char* in, uint32 inlen)
 {
     CHECK(init, false, "");
-    CHECK(input != nullptr, false, "");
+    CHECK(in != nullptr, false, "");
 
-    const uint32 left = sizeof(block) - (size & 0x3f);
-    size += length;
+    CHECK(curlen <= sizeof(buf), false, "");
+    CHECK((length + inlen * 8ULL) >= length, false, "");
 
-    if (left > length)
+    while (inlen > 0)
     {
-        memcpy(reinterpret_cast<char*>(block) + (sizeof(block) - left), input, length);
-        return true;
+        if (curlen == 0 && inlen >= MD4_BLOCKSIZE)
+        {
+            CHECK(MD4_ProcessBlock(state, in), false, "");
+
+            length += MD4_BLOCKSIZE * 8ULL;
+            in += MD4_BLOCKSIZE;
+            inlen -= MD4_BLOCKSIZE;
+        }
+        else
+        {
+            const uint32 n = std::min<>(inlen, (MD4_BLOCKSIZE - curlen));
+            memcpy(buf + curlen, in, n);
+            curlen += n;
+            in += n;
+            inlen -= n;
+            if (curlen == MD4_BLOCKSIZE)
+            {
+                CHECK(MD4_ProcessBlock(state, buf), false, "");
+                this->length += 8ULL * MD4_BLOCKSIZE;
+                this->curlen = 0;
+            }
+        }
     }
-
-    memcpy(reinterpret_cast<char*>(block) + (sizeof(block) - left), input, left);
-    ProcessBlock(hash, block);
-    input += left;
-    length -= left;
-
-    while (length >= sizeof(block))
-    {
-        memcpy(block, input, sizeof(block));
-        input += sizeof(block);
-        length -= sizeof(block);
-    }
-
-    memcpy(block, input, length);
 
     return true;
 }
@@ -154,29 +179,57 @@ bool MD4::Update(Buffer buffer)
 
 bool MD4::Final(uint8 hash[16])
 {
+    CHECK(Final(), false, "");
+    memcpy(hash, state, sizeof(state));
+    return true;
+}
+
+bool MD4::Final()
+{
     CHECK(init, false, "");
+    CHECK(curlen <= sizeof(buf), false, "");
 
-    const uint32 offset = size & 0x3F;
-    int32 padding       = 0x38 - (offset + 1);
+    length += curlen * 8ULL;
 
-    *(reinterpret_cast<char*>(block) + offset) = static_cast<uint8>(0x80);
-    char* p                                    = (reinterpret_cast<char*>(block) + offset + 1);
+    buf[curlen++] = 0x80;
 
-    if (padding < 0)
+    if (curlen > 56)
     {
-        memset(p, 0, padding + sizeof(uint64));
-        ProcessBlock(this->hash, block);
-        p       = reinterpret_cast<char*>(block);
-        padding = 0x38;
+        while (curlen < MD4_BLOCKSIZE)
+        {
+            buf[curlen++] = 0;
+        }
+        MD4_ProcessBlock(state, buf);
+        curlen = 0;
     }
 
-    memset(p, 0, padding);
-    block[14] = static_cast<uint8>(size << 0x03);
-    block[15] = static_cast<uint8>(size >> 0x1D);
-    ProcessBlock(this->hash, block);
+    while (curlen < 56)
+    {
+        buf[curlen++] = 0;
+    }
 
-    memcpy(hash, this->hash, sizeof(this->hash));
+    *(uint64*) (buf + 56) = length;
+    MD4_ProcessBlock(state, buf);
+
+    init = false;
 
     return true;
+}
+
+std::string_view MD4::GetName()
+{
+    return "MD4";
+}
+
+const std::string MD4::GetHexValue()
+{
+    Final();
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x");
+    for (auto i = 0U; i < ResultBytesLength; i++)
+    {
+        ls.AddFormat("%.2X", ((uint8*) (state))[i]);
+    }
+    return std::string{ ls };
 }
 } // namespace GView::Hashes

@@ -146,12 +146,35 @@ namespace Hashes
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint32& hash);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(a) + sizeof(b);
+    };
+
+    class CORE_EXPORT CRC16
+    {
+      private:
+        uint32 value;
+        bool init;
+
+      public:
+        bool Init();
+        bool Update(const unsigned char* input, uint32 length);
+        bool Update(Buffer buffer);
+        bool Final(uint16& hash);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(value);
     };
 
     enum class CRC32Type : uint32
     {
-        NEGL = 0xFFFFFFFF,
-        ZERO = 0x00000000
+        JAMCRC   = 0xFFFFFFFF,
+        JAMCRC_0 = 0x00000000
     };
 
     class CORE_EXPORT CRC32
@@ -167,19 +190,11 @@ namespace Hashes
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint32& hash);
-    };
-
-    class CORE_EXPORT CRC16
-    {
-      private:
-        uint32 value;
-        bool init;
+        static std::string_view GetName(CRC32Type type);
+        const std::string GetHexValue();
 
       public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
-        bool Final(uint16& hash);
+        inline static const uint32 ResultBytesLength = sizeof(value);
     };
 
     enum class CRC64Type : uint64
@@ -196,11 +211,19 @@ namespace Hashes
 
         bool init;
 
+      private:
+        bool Final();
+
       public:
         bool Init(CRC64Type type);
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint64& hash);
+        static std::string_view GetName(CRC64Type type);
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(value);
     };
 
     class CORE_EXPORT MD2
@@ -213,44 +236,69 @@ namespace Hashes
 
         bool init;
 
+      private:
+        bool Final();
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[16]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
     };
 
     class CORE_EXPORT MD4
     {
       private:
-        uint32 hash[4];
-        uint32 block[16];
-        uint64 size;
+        uint32 state[4];
+        uint32 curlen;
+        uint8 buf[64];
+        uint64 length;
 
         bool init;
+
+      private:
+        bool Final();
 
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[16]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(state);
     };
 
     class CORE_EXPORT MD5
     {
       private:
-        uint64 length;
         uint32 state[4];
         uint32 curlen;
         uint8 buf[64];
+        uint64 length;
 
         bool init;
+
+      private:
+        bool Final();
 
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[16]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(state);
     };
 
     class CORE_EXPORT SHA1
@@ -263,11 +311,19 @@ namespace Hashes
 
         bool init;
 
+      private:
+        bool Final();
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[20]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(state);
     };
 
     class CORE_EXPORT SHA256
@@ -280,11 +336,19 @@ namespace Hashes
 
         bool init;
 
+      private:
+        bool Final();
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[32]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(state);
     };
 
     class CORE_EXPORT SHA512
@@ -297,11 +361,19 @@ namespace Hashes
 
         bool init;
 
+      private:
+        bool Final();
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(Buffer buffer);
         bool Final(uint8 hash[64]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = sizeof(state);
     };
 
     class CORE_EXPORT SHA384 : public SHA512
@@ -309,6 +381,11 @@ namespace Hashes
       public:
         bool Init();
         bool Final(uint8 hash[48]);
+        static std::string_view GetName();
+        const std::string GetHexValue();
+
+      public:
+        inline static const uint32 ResultBytesLength = SHA512::ResultBytesLength - 16;
     };
 } // namespace Hashes
 

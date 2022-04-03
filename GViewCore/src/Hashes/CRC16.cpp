@@ -56,4 +56,15 @@ bool CRC16::Final(uint16& hash)
 
     return true;
 }
+
+std::string_view CRC16::GetName()
+{
+    return "CRC16 (CCITT)";
+}
+const std::string CRC16::GetHexValue()
+{
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x%.8X", value);
+    return std::string{ ls };
+}
 } // namespace GView::Hashes

@@ -45,20 +45,20 @@ HashesDialog::HashesDialog(Reference<GView::Object> object)
 
     options =
           Factory::ListView::Create(this, "l:0,t:0,r:0,b:3", Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
-    options->AddColumn("", TextAlignament::Left);
-    Adler32        = options->AddItem("Adler32");
-    CRC16          = options->AddItem("CRC16");
-    CRC32_JAMCRC_0 = options->AddItem("CRC32_JAMCRC_0");
-    CRC32_JAMCRC   = options->AddItem("CRC32_JAMCRC");
-    CRC64_ECMA_182 = options->AddItem("CRC64_ECMA_182");
-    CRC64_WE       = options->AddItem("CRC64_WE");
-    MD2            = options->AddItem("MD2");
-    MD4            = options->AddItem("MD4");
-    MD5            = options->AddItem("MD5");
-    SHA1           = options->AddItem("SHA1");
-    SHA256         = options->AddItem("SHA256");
-    SHA384         = options->AddItem("SHA384");
-    SHA512         = options->AddItem("SHA512");
+    options->AddColumn("", TextAlignament::Left, 30);
+    Adler32        = options->AddItem(Adler32::GetName());
+    CRC16          = options->AddItem(CRC16::GetName());
+    CRC32_JAMCRC_0 = options->AddItem(CRC32::GetName(CRC32Type::JAMCRC_0));
+    CRC32_JAMCRC   = options->AddItem(CRC32::GetName(CRC32Type::JAMCRC));
+    CRC64_ECMA_182 = options->AddItem(CRC64::GetName(CRC64Type::ECMA_182));
+    CRC64_WE       = options->AddItem(CRC64::GetName(CRC64Type::WE));
+    MD2            = options->AddItem(MD2::GetName());
+    MD4            = options->AddItem(MD4::GetName());
+    MD5            = options->AddItem(MD5::GetName());
+    SHA1           = options->AddItem(SHA1::GetName());
+    SHA256         = options->AddItem(SHA256::GetName());
+    SHA384         = options->AddItem(SHA384::GetName());
+    SHA512         = options->AddItem(SHA512::GetName());
 
     compute                              = Factory::Button::Create(this, "&Ok", "d:b,w:20", CMD_BUTTON_COMPUTE);
     compute->Handlers()->OnButtonPressed = this;
@@ -83,7 +83,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
         std::map<std::string, std::string> outputs;
         CHECKRET(ComputeHash(outputs, flags, object), "");
 
-        this->Resize(widthShowing, outputs.size() + 3);
+        this->Resize(widthShowing, static_cast<uint32>(outputs.size() + 8ULL));
         this->CenterScreen();
 
         options->SetVisible(false);
@@ -388,10 +388,10 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
 
     Adler32 adler32{};
     CRC16 crc16{};
-    CRC32 crc32Zero{};
-    CRC32 crc32Neg{};
-    CRC64 crc64Zero{};
-    CRC64 crc64Neg{};
+    CRC32 crc32JAMCRC0{};
+    CRC32 crc32JAMCRC{};
+    CRC64 crc64ECMA182{};
+    CRC64 crc64WE{};
     MD2 md2{};
     MD4 md4{};
     MD5 md5{};
@@ -410,16 +410,16 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             CHECK(crc16.Init(), false, "");
             break;
         case Hashes::CRC32_JAMCRC_0:
-            CHECK(crc32Zero.Init(CRC32Type::ZERO), false, "");
+            CHECK(crc32JAMCRC0.Init(CRC32Type::JAMCRC_0), false, "");
             break;
         case Hashes::CRC32_JAMCRC:
-            CHECK(crc32Neg.Init(CRC32Type::NEGL), false, "");
+            CHECK(crc32JAMCRC.Init(CRC32Type::JAMCRC), false, "");
             break;
         case Hashes::CRC64_ECMA_182:
-            CHECK(crc64Zero.Init(CRC64Type::ECMA_182), false, "");
+            CHECK(crc64ECMA182.Init(CRC64Type::ECMA_182), false, "");
             break;
         case Hashes::CRC64_WE:
-            CHECK(crc64Neg.Init(CRC64Type::WE), false, "");
+            CHECK(crc64WE.Init(CRC64Type::WE), false, "");
             break;
         case Hashes::MD2:
             CHECK(md2.Init(), false, "");
@@ -466,6 +466,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         const Buffer buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
         CHECK(buffer.IsValid(), false, "");
 
+        bool sha512UpdateCalled = false;
         for (const auto& hash : hashList)
         {
             switch (static_cast<Hashes>(hashFlags & static_cast<uint32>(hash)))
@@ -477,16 +478,16 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
                 CHECK(crc16.Update(buffer), false, "");
                 break;
             case Hashes::CRC32_JAMCRC_0:
-                CHECK(crc32Zero.Update(buffer), false, "");
+                CHECK(crc32JAMCRC0.Update(buffer), false, "");
                 break;
             case Hashes::CRC32_JAMCRC:
-                CHECK(crc32Neg.Update(buffer), false, "");
+                CHECK(crc32JAMCRC.Update(buffer), false, "");
                 break;
             case Hashes::CRC64_ECMA_182:
-                CHECK(crc64Zero.Update(buffer), false, "");
+                CHECK(crc64ECMA182.Update(buffer), false, "");
                 break;
             case Hashes::CRC64_WE:
-                CHECK(crc64Neg.Update(buffer), false, "");
+                CHECK(crc64WE.Update(buffer), false, "");
                 break;
             case Hashes::MD2:
                 CHECK(md2.Update(buffer), false, "");
@@ -505,7 +506,11 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
                 break;
             case Hashes::SHA384:
             case Hashes::SHA512:
-                CHECK(sha512.Update(buffer), false, "");
+                if (sha512UpdateCalled == false)
+                {
+                    sha512UpdateCalled = true;
+                    CHECK(sha512.Update(buffer), false, "");
+                }
                 break;
             default:
                 break;
@@ -515,9 +520,6 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         offset += sizeToRead;
     } while (left > 0);
 
-    bool sha512FinalCalled = false;
-    uint8 hashSha512[64]{ 0 };
-
     NumericFormatter nf;
     for (const auto& hash : hashList)
     {
@@ -525,134 +527,44 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         switch (flag)
         {
         case Hashes::Adler32:
-        {
-            uint32 hash = 0;
-            CHECK(adler32.Final(hash), false, "");
-            outputs.emplace(std::pair{ "Adler32", ls.Format("0x%.8X", hash) });
-        }
-        break;
+            outputs.emplace(std::pair{ Adler32::GetName(), adler32.GetHexValue() });
+            break;
         case Hashes::CRC16:
-        {
-            uint16 hash = 0;
-            CHECK(crc16.Final(hash), false, "");
-            outputs.emplace(std::pair{ "CRC16 (CCITT)", ls.Format("0x%.8X", hash) });
-        }
-        break;
+            outputs.emplace(std::pair{ CRC16::GetName(), crc16.GetHexValue() });
+            break;
         case Hashes::CRC32_JAMCRC_0:
-        {
-            uint32 hash = 0;
-            CHECK(crc32Zero.Final(hash), false, "");
-            outputs.emplace(std::pair{ "CRC32 (JAMCRC(0))", ls.Format("0x%.8X", hash) });
-        }
-        break;
+            outputs.emplace(std::pair{ CRC32::GetName(CRC32Type::JAMCRC_0), crc32JAMCRC0.GetHexValue() });
+            break;
         case Hashes::CRC32_JAMCRC:
-        {
-            uint32 hash = 0;
-            CHECK(crc32Neg.Final(hash), false, "");
-            outputs.emplace(std::pair{ "CRC32 (JAMCRC)", ls.Format("0x%.8X", hash) });
-        }
-        break;
+            outputs.emplace(std::pair{ CRC32::GetName(CRC32Type::JAMCRC), crc32JAMCRC.GetHexValue() });
+            break;
         case Hashes::CRC64_ECMA_182:
-        {
-            uint64 hash = 0;
-            CHECK(crc64Zero.Final(hash), false, "");
-            outputs.emplace(std::pair{ "CRC64 (ECMA_182)", ls.Format("0x%.16llX", hash) });
-        }
-        break;
+            outputs.emplace(std::pair{ CRC64::GetName(CRC64Type::ECMA_182), crc64ECMA182.GetHexValue() });
+            break;
         case Hashes::CRC64_WE:
-        {
-            uint64 hash = 0;
-            CHECK(crc64Neg.Final(hash), false, "");
-            outputs.emplace(std::pair{ "CRC64 (WE)", ls.Format("0x%.16llX", hash) });
-        }
-        break;
+            outputs.emplace(std::pair{ CRC64::GetName(CRC64Type::WE), crc64WE.GetHexValue() });
+            break;
         case Hashes::MD2:
-        {
-            uint8 hash[16]{ 0 };
-            CHECK(md2.Final(hash), false, "");
-            ls.Format("0x");
-            for (auto i = 0U; i < 16; i++)
-            {
-                ls.AddFormat("%.2X", hash[i]);
-            }
-            outputs.emplace(std::pair{ "MD2", ls.GetText() });
-        }
-        break;
+            outputs.emplace(std::pair{ MD2::GetName(), md2.GetHexValue() });
+            break;
         case Hashes::MD4:
-        {
-            uint8 hash[16]{ 0 };
-            CHECK(md4.Final(hash), false, "");
-            ls.Format("0x");
-            for (auto i = 0U; i < 16; i++)
-            {
-                ls.AddFormat("%.2X", hash[i]);
-            }
-            outputs.emplace(std::pair{ "MD4", ls.GetText() });
-        }
-        break;
+            outputs.emplace(std::pair{ MD4::GetName(), md4.GetHexValue() });
+            break;
         case Hashes::MD5:
-        {
-            uint8 hash[16]{ 0 };
-            CHECK(md5.Final(hash), false, "");
-            ls.Format("0x");
-            for (auto i = 0U; i < 16; i++)
-            {
-                ls.AddFormat("%.2X", hash[i]);
-            }
-            outputs.emplace(std::pair{ "MD5", ls.GetText() });
-        }
-        break;
+            outputs.emplace(std::pair{ MD5::GetName(), md5.GetHexValue() });
+            break;
         case Hashes::SHA1:
-        {
-            uint8 hash[20]{ 0 };
-            CHECK(sha1.Final(hash), false, "");
-            ls.Format("0x");
-            for (auto i = 0U; i < 20; i++)
-            {
-                ls.AddFormat("%.2X", hash[i]);
-            }
-            outputs.emplace(std::pair{ "SHA1", ls.GetText() });
-        }
-        break;
+            outputs.emplace(std::pair{ SHA1::GetName(), sha1.GetHexValue() });
+            break;
         case Hashes::SHA256:
-        {
-            uint8 hash[32]{ 0 };
-            CHECK(sha256.Final(hash), false, "");
-            ls.Format("0x");
-            for (auto i = 0U; i < 32; i++)
-            {
-                ls.AddFormat("%.2X", hash[i]);
-            }
-            outputs.emplace(std::pair{ "SHA256", ls.GetText() });
-        }
-        break;
+            outputs.emplace(std::pair{ SHA256::GetName(), sha256.GetHexValue() });
+            break;
         case Hashes::SHA384:
+            outputs.emplace(std::pair{ SHA384::GetName(), ((SHA384*) &sha512)->GetHexValue() });
+            break;
         case Hashes::SHA512:
-        {
-            if (sha512FinalCalled == false)
-            {
-                CHECK(sha512.Final(hashSha512), false, "");
-                sha512FinalCalled = true;
-            }
-            ls.Format("0x");
-            if (flag == Hashes::SHA384)
-            {
-                for (auto i = 0U; i < 48; i++)
-                {
-                    ls.AddFormat("%.2X", hashSha512[i]);
-                }
-                outputs.emplace(std::pair{ "SHA384", ls.GetText() });
-            }
-            else
-            {
-                for (auto i = 0U; i < 64; i++)
-                {
-                    ls.AddFormat("%.2X", hashSha512[i]);
-                }
-                outputs.emplace(std::pair{ "SHA512", ls.GetText() });
-            }
-        }
-        break;
+            outputs.emplace(std::pair{ SHA512::GetName(), sha512.GetHexValue() });
+            break;
         default:
             break;
         }

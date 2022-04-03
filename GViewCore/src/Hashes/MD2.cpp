@@ -31,10 +31,10 @@ bool MD2::Init()
     return true;
 }
 
-void ProcessBlock(const uint8_t* m, uint8_t* x, uint8_t* c)
+void ProcessBlock(const uint8* m, uint8* x, uint8* c)
 {
     {
-        uint8_t t = c[MD2_BLOCK_SIZE - 1];
+        uint8 t = c[MD2_BLOCK_SIZE - 1];
 
         for (auto i = 0; i < MD2_BLOCK_SIZE; i++)
         {
@@ -50,7 +50,7 @@ void ProcessBlock(const uint8_t* m, uint8_t* x, uint8_t* c)
     }
 
     {
-        uint8_t t = 0;
+        uint8 t = 0;
         for (auto i = 0; i < MD2_ROUNDS; i++)
         {
             for (auto j = 0; j < MD2_BLOCK_SIZE * 3; j++)
@@ -62,6 +62,21 @@ void ProcessBlock(const uint8_t* m, uint8_t* x, uint8_t* c)
             t = (t + i) & 0xFF;
         }
     }
+}
+
+bool MD2::Final()
+{
+    CHECK(init, false, "");
+
+    const uint32 n = MD2_BLOCK_SIZE - size;
+    memset(m + size, n, n);
+    ProcessBlock(m, x, c);
+    memcpy(m, c, MD2_BLOCK_SIZE);
+    ProcessBlock(m, x, c);
+
+    init = false;
+
+    return true;
 }
 
 bool MD2::Update(const unsigned char* input, uint32 length)
@@ -95,15 +110,25 @@ bool MD2::Update(Buffer buffer)
 
 bool MD2::Final(uint8 hash[16])
 {
-    CHECK(init, false, "");
-
-    const uint32 n = MD2_BLOCK_SIZE - size;
-    memset(m + size, n, n);
-    ProcessBlock(m, x, c);
-    memcpy(m, c, MD2_BLOCK_SIZE);
-    ProcessBlock(m, x, c);
+    CHECK(Final(), false, "");
     memcpy(hash, x, MD2_BLOCK_SIZE);
 
     return true;
+}
+
+std::string_view MD2::GetName()
+{
+    return "MD2";
+}
+const std::string MD2::GetHexValue()
+{
+    Final();
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("0x");
+    for (auto i = 0U; i < ResultBytesLength; i++)
+    {
+        ls.AddFormat("%.2X", x[i]);
+    }
+    return std::string{ ls };
 }
 } // namespace GView::Hashes
