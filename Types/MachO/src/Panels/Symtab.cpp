@@ -111,6 +111,7 @@ void SymTab::Update()
         {
             auto current        = 0U;
             const auto required = nl.n_sect - 1ULL;
+            auto found = true;
             for (const auto& segment : machO->segments)
             {
                 for (const auto& section : segment.sections)
@@ -120,6 +121,12 @@ void SymTab::Update()
                         _1s = section.sectname;
                         _2s = section.segname;
 
+                        found = true;
+                        break;
+                    }
+
+                    if (found)
+                    {
                         break;
                     }
 

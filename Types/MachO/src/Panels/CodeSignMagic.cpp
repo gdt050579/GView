@@ -110,17 +110,8 @@ void CodeSignMagic::UpdateBlobs()
                   code, machO->codeSignature->cdHash, machO->codeSignature->codeDirectoryIdentifier, machO->codeSignature->cdSlotsHashes);
         }
         break;
-        case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
-        {
-            const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
-            UpdateCodeDirectory(
-                  code,
-                  machO->codeSignature->acdHashes[alternateDirectoryCount],
-                  machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
-                  machO->codeSignature->acdSlotsHashes[alternateDirectoryCount]);
-            alternateDirectoryCount++;
-        }
-        break;
+        case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
+            break;
         case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
         {
             const auto& r = machO->codeSignature->requirements.blob;
@@ -138,6 +129,10 @@ void CodeSignMagic::UpdateBlobs()
             // general->AddItem("Data", ls.Format("%-26s (%s)", data.data(), hexData.data()));
         }
         break;
+        case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:
+            break;
+        case MAC::CodeSignMagic::CSSLOT_APPLICATION:
+            break;
         case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
         {
             const auto& b = machO->codeSignature->entitlements.blob;
@@ -169,6 +164,17 @@ void CodeSignMagic::UpdateBlobs()
             {
                 general->AddItem("", ls.Format("%s", lines[i].c_str()));
             }
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
+        {
+            const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
+            UpdateCodeDirectory(
+                  code,
+                  machO->codeSignature->acdHashes[alternateDirectoryCount],
+                  machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
+                  machO->codeSignature->acdSlotsHashes[alternateDirectoryCount]);
+            alternateDirectoryCount++;
         }
         break;
         default:
