@@ -238,11 +238,17 @@ std::string_view SHA1::GetName()
 const std::string SHA1::GetHexValue()
 {
     Final();
+
+    uint8 hash[ResultBytesLength]{ 0 };
+    for (auto i = 0U; i < 5; i++)
+    {
+        STORE32H(state[i], hash + (4 * i));
+    }
+
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x");
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
-        ls.AddFormat("%.2X", ((uint8*)(state))[i]);
+        ls.AddFormat("%.2X", hash[i]);
     }
     return std::string{ ls };
 }

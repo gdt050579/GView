@@ -270,14 +270,13 @@ const std::string SHA256::GetHexValue()
 {
     Final();
 
-    uint8 hash[ResultBytesLength];
+    uint8 hash[ResultBytesLength]{ 0 };
     for (auto i = 0; i < 8; i++)
     {
         STORE32H(state[i], hash + (4 * i));
     }
 
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x");
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
         ls.AddFormat("%.2X", hash[i]);

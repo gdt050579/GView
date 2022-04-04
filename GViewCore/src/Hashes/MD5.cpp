@@ -220,7 +220,6 @@ const std::string MD5::GetHexValue()
 {
     Final();
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x");
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
         ls.AddFormat("%.2X", ((uint8*) (state))[i]);

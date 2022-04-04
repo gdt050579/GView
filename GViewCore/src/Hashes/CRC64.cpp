@@ -107,7 +107,7 @@ const std::string CRC64::GetHexValue()
 {
     Final();
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x%.16llX", value);
+    ls.Format("s%.16llX", value);
     return std::string{ ls };
 }
 } // namespace GView::Hashes

@@ -2,35 +2,36 @@
 
 namespace GView::GenericPlugins::Hashes
 {
-constexpr int CMD_BUTTON_CLOSE                      = 1;
-constexpr int CMD_BUTTON_COMPUTE                    = 2;
-constexpr const char* CMD_SHORT_NAME_HASHES         = "Hashes";
-constexpr const char* CMD_SHORT_NAME_COMPUTE_MD5    = "ComputeMD5";
-constexpr const char* CMD_SHORT_NAME_COMPUTE_SHA256 = "ComputeSHA256";
+constexpr int32 CMD_BUTTON_CLOSE  = 1;
+constexpr int32 CMD_BUTTON_OK     = 2;
+constexpr int32 CMD_BUTTON_CANCEL = 3;
 
-constexpr const char* CMD_FULL_NAME_HASHES         = "Command.Hashes";
-constexpr const char* CMD_FULL_NAME_COMPUTE_MD5    = "Command.ComputeMD5";
-constexpr const char* CMD_FULL_NAME_COMPUTE_SHA256 = "Command.ComputeSHA256";
+constexpr std::string_view CMD_SHORT_NAME_HASHES         = "Hashes";
+constexpr std::string_view CMD_SHORT_NAME_COMPUTE_MD5    = "ComputeMD5";
+constexpr std::string_view CMD_SHORT_NAME_COMPUTE_SHA256 = "ComputeSHA256";
 
-constexpr const char* TYPES_ADLER32        = "Types.Adler32";
-constexpr const char* TYPES_CRC16          = "Types.CRC16";
-constexpr const char* TYPES_CRC32_JAMCRC_0 = "Types.CRC32_JAMCRC_0";
-constexpr const char* TYPES_CRC32_JAMCRC   = "Types.CRC32_JAMCRC";
-constexpr const char* TYPES_CRC64_ECMA_182 = "Types.CRC64_ECMA_182";
-constexpr const char* TYPES_CRC64_WE       = "Types.CRC64_WE";
-constexpr const char* TYPES_MD2            = "Types.MD2";
-constexpr const char* TYPES_MD4            = "Types.MD4";
-constexpr const char* TYPES_MD5            = "Types.MD5";
-constexpr const char* TYPES_SHA1           = "Types.SHA1";
-constexpr const char* TYPES_SHA256         = "Types.SHA256";
-constexpr const char* TYPES_SHA384         = "Types.SHA384";
-constexpr const char* TYPES_SHA512         = "Types.SHA512";
+constexpr std::string_view CMD_FULL_NAME_HASHES         = "Command.Hashes";
+constexpr std::string_view CMD_FULL_NAME_COMPUTE_MD5    = "Command.ComputeMD5";
+constexpr std::string_view CMD_FULL_NAME_COMPUTE_SHA256 = "Command.ComputeSHA256";
 
-const uint32 widthPicking = 40;
+constexpr std::string_view TYPES_ADLER32        = "Types.Adler32";
+constexpr std::string_view TYPES_CRC16          = "Types.CRC16";
+constexpr std::string_view TYPES_CRC32_JAMCRC_0 = "Types.CRC32_JAMCRC_0";
+constexpr std::string_view TYPES_CRC32_JAMCRC   = "Types.CRC32_JAMCRC";
+constexpr std::string_view TYPES_CRC64_ECMA_182 = "Types.CRC64_ECMA_182";
+constexpr std::string_view TYPES_CRC64_WE       = "Types.CRC64_WE";
+constexpr std::string_view TYPES_MD2            = "Types.MD2";
+constexpr std::string_view TYPES_MD4            = "Types.MD4";
+constexpr std::string_view TYPES_MD5            = "Types.MD5";
+constexpr std::string_view TYPES_SHA1           = "Types.SHA1";
+constexpr std::string_view TYPES_SHA256         = "Types.SHA256";
+constexpr std::string_view TYPES_SHA384         = "Types.SHA384";
+constexpr std::string_view TYPES_SHA512         = "Types.SHA512";
+
+const uint32 widthPicking = 70;
 const uint32 widthShowing = 160;
 
-HashesDialog::HashesDialog(Reference<GView::Object> object)
-    : Window("Hashes", "d:c,w:40,h:21", WindowFlags::Sizeable | WindowFlags::Maximized)
+HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "d:c,w:70,h:21", WindowFlags::ProcessReturn)
 {
     this->object = object;
 
@@ -43,8 +44,13 @@ HashesDialog::HashesDialog(Reference<GView::Object> object)
     close->Handlers()->OnButtonPressed = this;
     close->SetVisible(false);
 
+    computeForFile = Factory::RadioBox::Create(this, "Compute for the &entire file", "x:1,y:1,w:31", 1);
+    computeForFile->SetChecked(true);
+    computeForSelection = Factory::RadioBox::Create(this, "Compute for the &selection", "x:1,y:2,w:31", 1);
+    computeForSelection->SetEnabled(false); /* TODO: when selection object will be passed */
+
     options =
-          Factory::ListView::Create(this, "l:0,t:0,r:0,b:3", Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
+          Factory::ListView::Create(this, "l:1,t:3,r:1,b:3", Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
     options->AddColumn("", TextAlignament::Left, 30);
     Adler32        = options->AddItem(Adler32::GetName());
     CRC16          = options->AddItem(CRC16::GetName());
@@ -60,8 +66,12 @@ HashesDialog::HashesDialog(Reference<GView::Object> object)
     SHA384         = options->AddItem(SHA384::GetName());
     SHA512         = options->AddItem(SHA512::GetName());
 
-    compute                              = Factory::Button::Create(this, "&Ok", "d:b,w:20", CMD_BUTTON_COMPUTE);
-    compute->Handlers()->OnButtonPressed = this;
+    ok                              = Factory::Button::Create(this, "&Ok", "x:25%,y:100%,a:b,w:12", CMD_BUTTON_OK);
+    ok->Handlers()->OnButtonPressed = this;
+    ok->SetFocus();
+
+    cancel                              = Factory::Button::Create(this, "&Cancel", "x:75%,y:100%,a:b,w:12", CMD_BUTTON_CANCEL);
+    cancel->Handlers()->OnButtonPressed = this;
 
     SetFlagsFromSettings();
     SetCheckBoxesFromFlags();
@@ -71,11 +81,11 @@ HashesDialog::HashesDialog(Reference<GView::Object> object)
 
 void HashesDialog::OnButtonPressed(Reference<Button> b)
 {
-    if (b->GetControlID() == CMD_BUTTON_CLOSE)
+    if (b->GetControlID() == CMD_BUTTON_CLOSE || b->GetControlID() == CMD_BUTTON_CANCEL)
     {
         Exit(0);
     }
-    else if (b->GetControlID() == CMD_BUTTON_COMPUTE)
+    else if (b->GetControlID() == CMD_BUTTON_OK)
     {
         SetFlagsFromCheckBoxes();
         SetSettingsFromFlags();
@@ -87,7 +97,10 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
         this->CenterScreen();
 
         options->SetVisible(false);
-        compute->SetVisible(false);
+        ok->SetVisible(false);
+        cancel->SetVisible(false);
+        computeForFile->SetVisible(false);
+        computeForSelection->SetVisible(false);
 
         hashesList->Resize(hashesList->GetWidth(), static_cast<uint32>(outputs.size() + 3ULL));
 
@@ -103,6 +116,22 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
     }
 
     Exit(0);
+}
+
+bool HashesDialog::OnEvent(Reference<Control> c, Event eventType, int id)
+{
+    if (Window::OnEvent(c, eventType, id))
+    {
+        return true;
+    }
+
+    if (eventType == Event::WindowAccept)
+    {
+        OnButtonPressed(ok);
+        return true;
+    }
+
+    return false;
 }
 
 void HashesDialog::SetCheckBoxesFromFlags()

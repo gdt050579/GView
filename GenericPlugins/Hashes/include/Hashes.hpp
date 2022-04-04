@@ -64,7 +64,10 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     ItemHandle SHA512;
 
     Reference<Button> cancel;
-    Reference<Button> compute;
+    Reference<Button> ok;
+
+    Reference<RadioBox> computeForFile;
+    Reference<RadioBox> computeForSelection;
 
   public:
     inline static uint32 flags = static_cast<uint32>(Hashes::None);
@@ -72,6 +75,7 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
   public:
     HashesDialog(Reference<GView::Object> object);
     void OnButtonPressed(Reference<Button> b) override;
+    bool OnEvent(Reference<Control> c, Event eventType, int id) override;
 
   private:
     void SetCheckBoxesFromFlags();

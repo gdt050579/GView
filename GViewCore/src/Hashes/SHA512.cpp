@@ -249,7 +249,6 @@ const std::string SHA512::GetHexValue()
     }
 
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x");
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
         ls.AddFormat("%.2X", hash[i]);

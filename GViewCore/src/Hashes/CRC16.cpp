@@ -64,7 +64,7 @@ std::string_view CRC16::GetName()
 const std::string CRC16::GetHexValue()
 {
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x%.8X", value);
+    ls.Format("%.8X", value);
     return std::string{ ls };
 }
 } // namespace GView::Hashes

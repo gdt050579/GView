@@ -124,7 +124,6 @@ const std::string MD2::GetHexValue()
 {
     Final();
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x");
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
         ls.AddFormat("%.2X", x[i]);
