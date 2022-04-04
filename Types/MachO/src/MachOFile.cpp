@@ -740,7 +740,7 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
         CHECK(sha256.Init(), false, "");
         CHECK(sha256.Update(buffer), false, "");
         output = sha256.GetHexValue();
-        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_SHA256_LEN) * 2ULL);
         return true;
     }
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA256_TRUNCATED:
