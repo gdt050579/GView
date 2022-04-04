@@ -115,9 +115,9 @@ void CodeSignMagic::UpdateBlobs()
             const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
             UpdateCodeDirectory(
                   code,
-                  machO->codeSignature->cdHashes[alternateDirectoryCount],
+                  machO->codeSignature->acdHashes[alternateDirectoryCount],
                   machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
-                  { /* TODO: */ });
+                  machO->codeSignature->acdSlotsHashes[alternateDirectoryCount]);
             alternateDirectoryCount++;
         }
         break;

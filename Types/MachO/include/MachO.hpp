@@ -105,7 +105,8 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         std::vector<std::pair<std::string, std::string>> cdSlotsHashes; // per normal slots
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
         std::vector<std::string> alternateDirectoriesIdentifiers;
-        std::vector<std::string> cdHashes;
+        std::vector<std::string> acdHashes;
+        std::vector<std::vector<std::pair<std::string, std::string>>> acdSlotsHashes; // per normal slots
 
         struct
         {

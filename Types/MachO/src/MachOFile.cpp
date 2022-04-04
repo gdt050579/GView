@@ -677,13 +677,46 @@ bool MachOFile::SetCodeSignature()
                     codeSignature->alternateDirectoriesIdentifiers.emplace_back(
                           (char*) blobBuffer.GetData() + blob.offset + codeSignature->codeDirectory.identOffset);
 
-                    const auto hashType = codeSignature->codeDirectory.hashType;
+                    const auto hashType = cd.hashType;
                     std::string cdHash;
-                    if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                    if (ComputeHash(blobBuffer, hashType, cdHash) == false)
                     {
                         throw "Unable to validate!";
                     }
-                    codeSignature->cdHashes.emplace_back(cdHash);
+                    codeSignature->acdHashes.emplace_back(cdHash);
+
+                    std::vector<std::pair<std::string, std::string>> cdSlotsHashes;
+
+                    auto pageSize  = cd.pageSize ? (1U << cd.pageSize) : 0U;
+                    auto remaining = cd.codeLimit;
+                    auto processed = 0ULL;
+                    for (auto slot = 0U; slot < cd.nCodeSlots; slot++)
+                    {
+                        const auto size             = std::min<>(remaining, pageSize);
+                        const auto hashOffset       = blob.offset + cd.hashOffset + cd.hashSize * slot;
+                        const auto bufferToValidate = file->CopyToBuffer(processed, size);
+
+                        std::string hashComputed;
+                        if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+
+                        const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                        LocalString<128> ls;
+                        for (auto i = 0U; i < cd.hashSize; i++)
+                        {
+                            ls.AddFormat("%.2X", hash[i]);
+                        }
+                        std::string hashFound{ ls };
+
+                        cdSlotsHashes.emplace_back(std::pair<std::string, std::string>{ hashFound, hashComputed });
+
+                        processed += size;
+                        remaining -= size;
+                    }
+
+                    codeSignature->acdSlotsHashes.emplace_back(cdSlotsHashes);
                 }
                 break;
                 default:
