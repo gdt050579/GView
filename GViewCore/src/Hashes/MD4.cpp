@@ -171,7 +171,7 @@ bool MD4::Update(const unsigned char* in, uint32 inlen)
     return true;
 }
 
-bool MD4::Update(Buffer buffer)
+bool MD4::Update(const Buffer& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));

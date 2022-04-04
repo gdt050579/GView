@@ -42,7 +42,7 @@ bool CRC16::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool CRC16::Update(Buffer buffer)
+bool CRC16::Update(const Buffer& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));

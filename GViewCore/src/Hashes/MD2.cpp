@@ -102,7 +102,7 @@ bool MD2::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool MD2::Update(Buffer buffer)
+bool MD2::Update(const Buffer& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));

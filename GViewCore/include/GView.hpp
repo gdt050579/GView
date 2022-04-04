@@ -144,7 +144,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint32& hash);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -162,7 +162,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint16& hash);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -188,7 +188,7 @@ namespace Hashes
       public:
         bool Init(CRC32Type type);
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint32& hash);
         static std::string_view GetName(CRC32Type type);
         const std::string GetHexValue();
@@ -217,7 +217,7 @@ namespace Hashes
       public:
         bool Init(CRC64Type type);
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint64& hash);
         static std::string_view GetName(CRC64Type type);
         const std::string GetHexValue();
@@ -242,7 +242,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint8 hash[16]);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -267,7 +267,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint8 hash[16]);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -292,7 +292,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint8 hash[16]);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -317,7 +317,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint8 hash[20]);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -342,7 +342,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint8 hash[32]);
         static std::string_view GetName();
         const std::string GetHexValue();
@@ -367,7 +367,7 @@ namespace Hashes
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
         bool Final(uint8 hash[64]);
         static std::string_view GetName();
         const std::string GetHexValue();

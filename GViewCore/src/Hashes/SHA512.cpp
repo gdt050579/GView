@@ -184,7 +184,7 @@ bool SHA512::Update(const unsigned char* in, uint32 inlen)
     return true;
 }
 
-bool SHA512::Update(Buffer buffer)
+bool SHA512::Update(const Buffer& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));

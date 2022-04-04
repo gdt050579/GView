@@ -76,7 +76,7 @@ bool Adler32::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool Adler32::Update(Buffer buffer)
+bool Adler32::Update(const Buffer& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
