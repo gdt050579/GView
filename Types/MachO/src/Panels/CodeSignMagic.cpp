@@ -106,13 +106,18 @@ void CodeSignMagic::UpdateBlobs()
         case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
         {
             const auto& code = machO->codeSignature->codeDirectory;
-            UpdateCodeDirectory(code);
+            UpdateCodeDirectory(
+                  code, machO->codeSignature->cdHash, machO->codeSignature->codeDirectoryIdentifier, machO->codeSignature->cdSlotsHashes);
         }
         break;
         case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
         {
             const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
-            UpdateCodeDirectory(code);
+            UpdateCodeDirectory(
+                  code,
+                  machO->codeSignature->cdHashes[alternateDirectoryCount],
+                  machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
+                  { /* TODO: */ });
             alternateDirectoryCount++;
         }
         break;
@@ -172,15 +177,25 @@ void CodeSignMagic::UpdateBlobs()
     }
 }
 
-void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
+void CodeSignMagic::UpdateCodeDirectory(
+      const MAC::CS_CodeDirectory& code,
+      const std::string& cdHash,
+      const std::string& identifier,
+      const std::vector<std::pair<std::string, std::string>>& slotsHashes)
 {
     LocalString<1024> ls;
     NumericFormatter nf;
     NumericFormatter nf2;
 
+    const auto identifierItem = general->AddItem("Identifier", ls.Format("%s", identifier.c_str()));
+    general->SetItemType(identifierItem, ListViewItemType::Emphasized_2);
+
     const auto& magic   = MAC::CodeSignMagicNames.at(code.magic);
     const auto hexMagic = nf2.ToString(static_cast<uint32_t>(code.magic), hex);
     general->AddItem("Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()));
+
+    const auto cdHashItem = general->AddItem("CD Hash", ls.Format("%s", cdHash.c_str()));
+    general->SetItemType(cdHashItem, ListViewItemType::Emphasized_2);
 
     const auto length    = nf.ToString(code.length, dec);
     const auto hexLength = nf2.ToString(code.length, hex);
@@ -222,6 +237,24 @@ void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
     const auto nCodeSlots   = nf.ToString(code.nCodeSlots, dec);
     const auto hexCodeSlots = nf2.ToString(code.nCodeSlots, hex);
     general->AddItem("Code Slots", ls.Format("%-26s (%s)", nCodeSlots.data(), hexCodeSlots.data()));
+
+    {
+        auto i = 0U;
+        for (const auto& [found, computed] : slotsHashes)
+        {
+            if (found == computed)
+            {
+                const auto hash = general->AddItem("", ls.Format("Slot #(%u) %s", i, found.c_str()));
+                general->SetItemType(hash, ListViewItemType::Emphasized_2);
+            }
+            else
+            {
+                const auto hash = general->AddItem("", ls.Format("Slot #(%u) %s (%s)", i, found.c_str(), computed.c_str()));
+                general->SetItemType(hash, ListViewItemType::ErrorInformation);
+            }
+            i++;
+        }
+    }
 
     const auto codeLimit    = nf.ToString(code.codeLimit, dec);
     const auto hexCodeLimit = nf2.ToString(code.codeLimit, hex);
@@ -316,7 +349,7 @@ void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
 void CodeSignMagic::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
-    general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount()), GetHeight()));
+    general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
 }
 
 void CodeSignMagic::Update()

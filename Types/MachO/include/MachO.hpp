@@ -100,7 +100,12 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::CS_SuperBlob superBlob;
         std::vector<MAC::CS_BlobIndex> blobs;
         MAC::CS_CodeDirectory codeDirectory;
+        std::string codeDirectoryIdentifier;
+        std::string cdHash;
+        std::vector<std::pair<std::string, std::string>> cdSlotsHashes; // per normal slots
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
+        std::vector<std::string> alternateDirectoriesIdentifiers;
+        std::vector<std::string> cdHashes;
 
         struct
         {
@@ -166,6 +171,9 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetLinkEditData();
     bool SetCodeSignature();
     bool SetVersionMin();
+
+  private:
+    bool ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const;
 };
 
 namespace Panels
@@ -321,7 +329,11 @@ namespace Panels
         void UpdateSuperBlob();
         void UpdateSlots();
         void UpdateBlobs();
-        void UpdateCodeDirectory(const MAC::CS_CodeDirectory& code);
+        void UpdateCodeDirectory(
+              const MAC::CS_CodeDirectory& code,
+              const std::string& identifier,
+              const std::string& cdHash,
+              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
 
         void RecomputePanelsPositions();
 

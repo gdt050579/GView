@@ -211,13 +211,26 @@ static void Swap(CS_CodeDirectory& obj)
     SwapEndianInplace(obj.platform);
     SwapEndianInplace(obj.pageSize);
     SwapEndianInplace(obj.spare2);
-    SwapEndianInplace(obj.scatterOffset);
-    SwapEndianInplace(obj.teamOffset);
-    SwapEndianInplace(obj.spare3);
-    SwapEndianInplace(obj.codeLimit64);
-    SwapEndianInplace(obj.execSegBase);
-    SwapEndianInplace(obj.execSegLimit);
-    SwapEndianInplace(obj.execSegFlags);
+
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSSCATTER))
+    {
+        SwapEndianInplace(obj.scatterOffset);
+    }
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSTEAMID))
+    {
+        SwapEndianInplace(obj.teamOffset);
+    }
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSCODELIMIT64))
+    {
+        SwapEndianInplace(obj.spare3);
+        SwapEndianInplace(obj.codeLimit64);
+    }
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSEXECSEG))
+    {
+        SwapEndianInplace(obj.execSegBase);
+        SwapEndianInplace(obj.execSegLimit);
+        SwapEndianInplace(obj.execSegFlags);
+    }
 }
 
 static void Swap(CS_RequirementsBlob& obj)

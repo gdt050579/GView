@@ -581,13 +581,52 @@ bool MachOFile::SetCodeSignature()
             for (const auto& blob : codeSignature->blobs)
             {
                 const auto csOffset = codeSignature->ledc.dataoff + blob.offset;
-
                 switch (blob.type)
                 {
                 case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
                 {
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
                     Swap(codeSignature->codeDirectory);
+
+                    const auto blobBuffer = file->CopyToBuffer(codeSignature->ledc.dataoff, codeSignature->ledc.datasize);
+                    codeSignature->codeDirectoryIdentifier =
+                          (char*) blobBuffer.GetData() + blob.offset + codeSignature->codeDirectory.identOffset;
+
+                    const auto hashType = codeSignature->codeDirectory.hashType;
+                    if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                    {
+                        throw "Unable to validate!";
+                    }
+
+                    auto pageSize  = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
+                    auto remaining = codeSignature->codeDirectory.codeLimit;
+                    auto processed = 0ULL;
+                    for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
+                    {
+                        const auto size = std::min<>(remaining, pageSize);
+                        const auto hashOffset =
+                              blob.offset + codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
+                        const auto bufferToValidate = file->CopyToBuffer(processed, size);
+
+                        std::string hashComputed;
+                        if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+
+                        const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                        LocalString<128> ls;
+                        for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++)
+                        {
+                            ls.AddFormat("%.2X", hash[i]);
+                        }
+                        std::string hashFound{ ls };
+
+                        codeSignature->cdSlotsHashes.emplace_back(std::pair<std::string, std::string>{ hashFound, hashComputed });
+
+                        processed += size;
+                        remaining -= size;
+                    }
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
@@ -633,24 +672,24 @@ bool MachOFile::SetCodeSignature()
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
                     Swap(cd);
                     codeSignature->alternateDirectories.emplace_back(cd);
+
+                    const auto blobBuffer = file->CopyToBuffer(codeSignature->ledc.dataoff, codeSignature->ledc.datasize);
+                    codeSignature->alternateDirectoriesIdentifiers.emplace_back(
+                          (char*) blobBuffer.GetData() + blob.offset + codeSignature->codeDirectory.identOffset);
+
+                    const auto hashType = codeSignature->codeDirectory.hashType;
+                    std::string cdHash;
+                    if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                    {
+                        throw "Unable to validate!";
+                    }
+                    codeSignature->cdHashes.emplace_back(cdHash);
                 }
                 break;
                 default:
                     throw "Slot type not supported!";
                 }
             }
-
-            // auto pageSize  = codeDirectory->pageSize ? (1U << codeDirectory->pageSize) : 0U;
-            // auto remaining = codeDirectory->codeLimit;
-            // auto processed = 0ULL;
-            // for (auto slot = 0U; slot < codeDirectory->nCodeSlots; slot++)
-            // {
-            //     const auto size = std::min<>(remaining, pageSize);
-            //     CHECK(ValidateSlot(b.GetData() + processed, size, slot, codeDirectory), false, "Failed validating slot [%u]!", slot);
-            //
-            //     processed += size;
-            //     remaining -= size;
-            // }
         }
     }
 
@@ -679,5 +718,62 @@ bool MachOFile::SetVersionMin()
     }
 
     return true;
+}
+bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const
+{
+    switch (static_cast<MAC::CodeSignMagic>(hashType))
+    {
+    case MAC::CodeSignMagic::CS_HASHTYPE_NO_HASH:
+        throw "What to do?";
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA1:
+    {
+        GView::Hashes::SHA1 sha1{};
+        CHECK(sha1.Init(), false, "");
+        CHECK(sha1.Update(buffer), false, "");
+        output = sha1.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA256:
+    {
+        GView::Hashes::SHA256 sha256{};
+        CHECK(sha256.Init(), false, "");
+        CHECK(sha256.Update(buffer), false, "");
+        output = sha256.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA256_TRUNCATED:
+    {
+        GView::Hashes::SHA256 sha256{};
+        CHECK(sha256.Init(), false, "");
+        CHECK(sha256.Update(buffer), false, "");
+        output = sha256.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_SHA256_TRUNCATED_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA384:
+    {
+        GView::Hashes::SHA384 sha384{};
+        CHECK(sha384.Init(), false, "");
+        CHECK(sha384.Update(buffer), false, "");
+        output = sha384.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA512:
+    {
+        GView::Hashes::SHA512 sha512{};
+        CHECK(sha512.Init(), false, "");
+        CHECK(sha512.Update(buffer), false, "");
+        output = sha512.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    default:
+        throw "What to do?";
+    }
+
+    return false;
 }
 } // namespace GView::Type::MachO
