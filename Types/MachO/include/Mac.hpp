@@ -712,6 +712,7 @@ enum class N_STAB_TYPE
     MAIN    = 0x2a, // main function name
     BNSYM   = 0x2e, /* begin nsect sym: 0,,n_sect,0,address */
     PC      = 0x30, // global Pascal symbol
+    AST     = 0x32,
     OPT     = 0x3c, /* emitted with gcc2_compiled and in gcc source */
     RSYM    = 0x40, // register variable
     SLINE   = 0x44, // text segment line number
