@@ -592,9 +592,8 @@ bool MachOFile::SetCodeSignature()
                     auto processed = 0ULL;
                     for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
                     {
-                        const auto size = std::min<>(remaining, pageSize);
-                        const auto hashOffset =
-                              blob.offset + codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
+                        const auto size       = std::min<>(remaining, pageSize);
+                        const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
                         const auto bufferToValidate = file->CopyToBuffer(processed, size);
 
                         std::string hashComputed;
@@ -663,8 +662,7 @@ bool MachOFile::SetCodeSignature()
                     codeSignature->alternateDirectories.emplace_back(cd);
 
                     const auto blobBuffer = file->CopyToBuffer(csOffset, cd.length);
-                    codeSignature->alternateDirectoriesIdentifiers.emplace_back(
-                          (char*) blobBuffer.GetData() + cd.identOffset);
+                    codeSignature->alternateDirectoriesIdentifiers.emplace_back((char*) blobBuffer.GetData() + cd.identOffset);
 
                     const auto hashType = cd.hashType;
                     {
@@ -684,7 +682,7 @@ bool MachOFile::SetCodeSignature()
                     for (auto slot = 0U; slot < cd.nCodeSlots; slot++)
                     {
                         const auto size             = std::min<>(remaining, pageSize);
-                        const auto hashOffset       = blob.offset + cd.hashOffset + cd.hashSize * slot;
+                        const auto hashOffset       = cd.hashOffset + cd.hashSize * slot;
                         const auto bufferToValidate = file->CopyToBuffer(processed, size);
 
                         std::string hashComputed;
