@@ -12,29 +12,17 @@ bool MachOFile::Update()
     uint64_t offset = 0;
 
     SetArchitectureAndEndianess(offset);
-
     SetHeader(offset);
-
     SetLoadCommands(offset);
-
     SetSegmentsAndTheirSections();
-
     SetDyldInfo();
-
     SetIdDylibs();
-
     SetMain();
-
     SetSymbols();
-
     SetSourceVersion();
-
     SetUUID();
-
     SetLinkEditData();
-
     SetCodeSignature();
-
     SetVersionMin();
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
@@ -588,14 +576,15 @@ bool MachOFile::SetCodeSignature()
                     CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
                     Swap(codeSignature->codeDirectory);
 
-                    const auto blobBuffer = file->CopyToBuffer(codeSignature->ledc.dataoff, codeSignature->ledc.datasize);
-                    codeSignature->codeDirectoryIdentifier =
-                          (char*) blobBuffer.GetData() + blob.offset + codeSignature->codeDirectory.identOffset;
+                    const auto blobBuffer                  = file->CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
+                    codeSignature->codeDirectoryIdentifier = (char*) blobBuffer.GetData() + codeSignature->codeDirectory.identOffset;
 
                     const auto hashType = codeSignature->codeDirectory.hashType;
-                    if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
                     {
-                        throw "Unable to validate!";
+                        if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
                     }
 
                     auto pageSize  = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
@@ -673,17 +662,19 @@ bool MachOFile::SetCodeSignature()
                     Swap(cd);
                     codeSignature->alternateDirectories.emplace_back(cd);
 
-                    const auto blobBuffer = file->CopyToBuffer(codeSignature->ledc.dataoff, codeSignature->ledc.datasize);
+                    const auto blobBuffer = file->CopyToBuffer(csOffset, cd.length);
                     codeSignature->alternateDirectoriesIdentifiers.emplace_back(
-                          (char*) blobBuffer.GetData() + blob.offset + codeSignature->codeDirectory.identOffset);
+                          (char*) blobBuffer.GetData() + cd.identOffset);
 
                     const auto hashType = cd.hashType;
-                    std::string cdHash;
-                    if (ComputeHash(blobBuffer, hashType, cdHash) == false)
                     {
-                        throw "Unable to validate!";
+                        std::string cdHash;
+                        if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+                        codeSignature->acdHashes.emplace_back(cdHash);
                     }
-                    codeSignature->acdHashes.emplace_back(cdHash);
 
                     std::vector<std::pair<std::string, std::string>> cdSlotsHashes;
 
