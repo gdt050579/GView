@@ -254,8 +254,6 @@ bool ClassParser::parse_method()
     READB(method.access_flags);
     READB(method.name_index);
     READB(method.descriptor_index);
-    uint16 attributes_count;
-    READB(attributes_count);
     FCHECK(parse_attributes(method.attributes));
 
     methods.push_back(method);
@@ -289,10 +287,103 @@ bool ClassParser::parse_attribute(AttributeInfo& out)
 
 // ---------------------------------------------------- Demangler ----------------------------------------------------
 
-struct Demangler
+class Demangler
 {
     AstContext& ctx;
+    const char* start;
+    const char* end;
+
+    Type* demangle_class_ref();
+    Type* demangle_array_ref();
+    Type* demangle();
+
+  public:
+    Demangler(AstContext& ctx);
+    Type* demangle_field(string_view in);
 };
+
+Demangler::Demangler(AstContext& ctx) : ctx(ctx)
+{
+}
+
+Type* Demangler::demangle_class_ref()
+{
+    const char* string = start;
+
+    while (start < end && *start != ';')
+        start++;
+
+    if (*start != ';')
+        return nullptr;
+
+    string_view name = { string, static_cast<size_t>(start - string) };
+    ++start;
+
+    auto& result = ctx.class_references[name];
+    if (result == nullptr)
+    {
+        auto new_name = reinterpret_cast<char*>(ctx.alloc.alloc(name.size()));
+        for (size_t i = 0; i < name.size(); ++i)
+            new_name[i] = name[i] == '/' ? '.' : name[i];
+        result = ctx.alloc.alloc<ClassReferenceType>(string_view{ new_name, name.size() });
+    }
+
+    return result;
+}
+
+Type* Demangler::demangle_array_ref()
+{
+    auto subtype = demangle();
+    FCHECKNULL(subtype);
+    auto& result = ctx.array_references[subtype];
+
+    if (result == nullptr)
+        result = ctx.alloc.alloc<ArrayReferenceType>(subtype);
+
+    return result;
+}
+
+Type* Demangler::demangle()
+{
+    while (start < end)
+    {
+        auto ch = *start;
+        start++;
+        switch (ch)
+        {
+        case 'B':
+            return ctx.type_byte;
+        case 'S':
+            return ctx.type_short;
+        case 'I':
+            return ctx.type_int;
+        case 'J':
+            return ctx.type_long;
+        case 'F':
+            return ctx.type_float;
+        case 'D':
+            return ctx.type_double;
+        case 'Z':
+            return ctx.type_bool;
+        case 'C':
+            return ctx.type_char;
+        case 'L':
+            return demangle_class_ref();
+        case '[':
+            return demangle_array_ref();
+        default:
+            return nullptr;
+        }
+    }
+    return nullptr;
+}
+
+Type* Demangler::demangle_field(string_view in)
+{
+    start = in.data();
+    end   = in.data() + in.size();
+    return demangle();
+}
 
 // ---------------------------------------------------- AstCreator ----------------------------------------------------
 
@@ -303,6 +394,13 @@ struct AstCreator
     const vector<MethodInfo>& methods;
     const vector<AttributeInfo>& attributes;
     AstContext ctx;
+    Demangler demangler;
+
+    AstCreator(
+          const vector<ConstantData>& constant_data,
+          const vector<FieldInfo>& fields,
+          const vector<MethodInfo>& methods,
+          const vector<AttributeInfo>& attributes);
 
     bool create();
     Field* create_field(const FieldInfo& raw_field);
@@ -312,6 +410,15 @@ struct AstCreator
 
     const ConstantData* get_constant(uint16 index, ConstantKind expect);
 };
+
+AstCreator::AstCreator(
+      const vector<ConstantData>& constant_data,
+      const vector<FieldInfo>& fields,
+      const vector<MethodInfo>& methods,
+      const vector<AttributeInfo>& attributes)
+    : constant_data(constant_data), fields(fields), methods(methods), attributes(attributes), demangler(ctx)
+{
+}
 
 bool AstCreator::create()
 {
@@ -326,6 +433,7 @@ bool AstCreator::create()
     }
 
     clazz->fields = ctx.alloc.alloc_array<Field*>(fields.size());
+    count         = 0;
     for (auto& i : fields)
     {
         auto field = create_field(i);
@@ -363,7 +471,8 @@ Field* AstCreator::create_field(const FieldInfo& raw_field)
 
     FCHECKNULL(get_utf8(field->name, raw_field.name_index));
     string_view descriptor;
-    FCHECKNULL(get_utf8(descriptor, raw_field.name_index));
+    FCHECKNULL(get_utf8(descriptor, raw_field.descriptor_index));
+    field->type = demangler.demangle_field(descriptor);
 
     field->unknown_attributes = 0;
     for (auto& i : raw_field.attributes)

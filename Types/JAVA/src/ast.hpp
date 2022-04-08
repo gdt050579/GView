@@ -52,6 +52,43 @@ class BumpPtrAlloc
     string_view alloc(string_view x);
 };
 
+struct Type
+{
+};
+
+enum class BuiltinTypeKind : uint8
+{
+    Byte,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Bool,
+    Char
+};
+
+struct BuiltinType : Type
+{
+    BuiltinTypeKind kind;
+
+    BuiltinType(BuiltinTypeKind kind);
+};
+
+struct ArrayReferenceType : Type
+{
+    Type* subtype;
+
+    ArrayReferenceType(Type* subtype);
+};
+
+struct ClassReferenceType : Type
+{
+    string_view name;
+
+    ClassReferenceType(string_view name);
+};
+
 struct FieldAccessFlags
 {
     bool acc_public : 1;
@@ -69,6 +106,7 @@ struct Field
 {
     FieldAccessFlags access_flags;
     string_view name;
+    Type* type;
     uint32_t unknown_attributes;
 };
 
@@ -106,8 +144,20 @@ struct Class
 struct AstContext
 {
     BumpPtrAlloc alloc;
-
     vector<Class*> classes;
+    std::unordered_map<string_view, Type*> class_references;
+    std::unordered_map<Type*, Type*> array_references;
+
+    Type* type_byte;
+    Type* type_short;
+    Type* type_int;
+    Type* type_long;
+    Type* type_float;
+    Type* type_double;
+    Type* type_bool;
+    Type* type_char;
+
+    AstContext();
 };
 
 } // namespace GView::Java
