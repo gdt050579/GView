@@ -10,6 +10,7 @@ BuiltinType::BuiltinType(BuiltinTypeKind kind)
 
 AstContext::AstContext()
 {
+    type_void   = alloc.alloc<BuiltinType>(BuiltinTypeKind::Void);
     type_byte   = alloc.alloc<BuiltinType>(BuiltinTypeKind::Byte);
     type_short  = alloc.alloc<BuiltinType>(BuiltinTypeKind::Short);
     type_int    = alloc.alloc<BuiltinType>(BuiltinTypeKind::Int);
@@ -28,6 +29,12 @@ ClassReferenceType::ClassReferenceType(string_view name)
 ArrayReferenceType::ArrayReferenceType(Type* subtype)
 {
     this->subtype = subtype;
+}
+
+MethodType::MethodType(Type* return_type, ArrayRefMut<Type*> args)
+{
+    this->return_type = return_type;
+    this->args        = args;
 }
 
 } // namespace GView::Java

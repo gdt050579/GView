@@ -300,6 +300,7 @@ class Demangler
   public:
     Demangler(AstContext& ctx);
     Type* demangle_field(string_view in);
+    Type* demangle_method(string_view in);
 };
 
 Demangler::Demangler(AstContext& ctx) : ctx(ctx)
@@ -383,6 +384,39 @@ Type* Demangler::demangle_field(string_view in)
     start = in.data();
     end   = in.data() + in.size();
     return demangle();
+}
+
+Type* Demangler::demangle_method(string_view in)
+{
+    constexpr uint32 MAX_NUMBER_OF_ARGS = 16;
+
+    start = in.data();
+    end   = in.data() + in.size();
+    if (start == end || *start != '(')
+        return nullptr;
+    ++start;
+
+    auto args    = ctx.alloc.alloc_array<Type*>(MAX_NUMBER_OF_ARGS);
+    uint32 count = 0;
+    while (start < end && *start != ')')
+    {
+        if (count == MAX_NUMBER_OF_ARGS)
+            return nullptr;
+
+        auto t = demangle();
+        FCHECKNULL(t);
+        args[count++] = t;
+    }
+    ++start;
+
+    if (start == end)
+        return nullptr;
+
+    // should all of this be in demangle?
+    Type* return_type = *start == 'V' ? ctx.type_void : demangle();
+    FCHECKNULL(return_type);
+
+    return ctx.alloc.alloc<MethodType>(return_type, args);
 }
 
 // ---------------------------------------------------- AstCreator ----------------------------------------------------
@@ -473,6 +507,7 @@ Field* AstCreator::create_field(const FieldInfo& raw_field)
     string_view descriptor;
     FCHECKNULL(get_utf8(descriptor, raw_field.descriptor_index));
     field->type = demangler.demangle_field(descriptor);
+    FCHECKNULL(field->type);
 
     field->unknown_attributes = 0;
     for (auto& i : raw_field.attributes)
@@ -518,7 +553,10 @@ Method* AstCreator::create_method(const MethodInfo& raw_method)
     auto method          = ctx.alloc.alloc<Method>();
     method->access_flags = flags;
     FCHECKNULL(get_utf8(method->name, raw_method.name_index));
-    FCHECKNULL(get_utf8(method->name2, raw_method.descriptor_index));
+    string_view descriptor;
+    FCHECKNULL(get_utf8(descriptor, raw_method.descriptor_index));
+    method->type = demangler.demangle_method(descriptor);
+    FCHECKNULL(method->type);
 
     method->unknown_attributes = 0;
     for (auto& i : raw_method.attributes)

@@ -58,6 +58,7 @@ struct Type
 
 enum class BuiltinTypeKind : uint8
 {
+    Void,
     Byte,
     Short,
     Int,
@@ -87,6 +88,14 @@ struct ClassReferenceType : Type
     string_view name;
 
     ClassReferenceType(string_view name);
+};
+
+struct MethodType : Type
+{
+    Type* return_type;
+    ArrayRefMut<Type*> args;
+
+    MethodType(Type* return_type, ArrayRefMut<Type*> args);
 };
 
 struct FieldAccessFlags
@@ -128,9 +137,9 @@ struct MethodAccessFlags
 
 struct Method
 {
-    string_view name;
-    string_view name2;
     MethodAccessFlags access_flags;
+    string_view name;
+    Type* type;
     BufferView code;
     uint32_t unknown_attributes;
 };
@@ -148,6 +157,7 @@ struct AstContext
     std::unordered_map<string_view, Type*> class_references;
     std::unordered_map<Type*, Type*> array_references;
 
+    Type* type_void;
     Type* type_byte;
     Type* type_short;
     Type* type_int;
