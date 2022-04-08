@@ -415,7 +415,7 @@ namespace Hashes
         OpenSSLHash(OpenSSLHashKind kind);
         ~OpenSSLHash();
 
-        bool Update(const uint8* input, uint32 length);
+        bool Update(const void* input, uint32 length);
         bool Final();
         std::string GetHexValue();
         const uint8* Get() const;

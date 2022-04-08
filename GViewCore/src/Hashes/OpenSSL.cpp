@@ -46,7 +46,7 @@ OpenSSLHash::~OpenSSLHash()
     EVP_MD_CTX_free((EVP_MD_CTX*) handle);
 }
 
-bool OpenSSLHash::Update(const uint8* input, uint32 length)
+bool OpenSSLHash::Update(const void* input, uint32 length)
 {
     return EVP_DigestUpdate((EVP_MD_CTX*) handle, input, length);
 }
