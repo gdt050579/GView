@@ -556,7 +556,7 @@ struct dyld_info_command
     uint32 export_size;    /* size of lazy binding infs */
 };
 
-struct dylib
+struct dylib_mac
 {
     union lc_str name;            /* library's path name */
     uint32 timestamp;             /* library's build time stamp */
@@ -568,7 +568,7 @@ struct dylib_command
 {
     LoadCommandType cmd; /* LC_ID_DYLIB, LC_LOAD_{,WEAK_}DYLIB, LC_REEXPORT_DYLIB */
     uint32 cmdsize;      /* includes pathname string */
-    dylib dylib;         /* the library identification */
+    dylib_mac dylib;     /* the library identification */
 };
 
 struct entry_point_command
@@ -702,7 +702,7 @@ enum class N_DESC_BIT_TYPE
     ALT_ENTRY = 0x0200
 };
 
-enum class N_STAB_TYPE
+enum class N_STAB_TYPE : uint8
 {
     GSYM    = 0x20, // global symbol
     FNAME   = 0x22, // F77 function name
