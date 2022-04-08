@@ -332,8 +332,8 @@ static const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_
                                                                        GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_ZEROFILL),
                                                                        GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_VARIABLES),
                                                                        GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_VARIABLE_POINTERS),
-                                                                       GET_PAIR_FROM_ENUM(
-                                                                             SectionType::THREAD_LOCAL_INIT_FUNCTION_POINTERS) };
+                                                                       GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_INIT_FUNCTION_POINTERS),
+                                                                       GET_PAIR_FROM_ENUM(SectionType::S_INIT_FUNC_OFFSETS) };
 
 static const std::map<SectionAttributtes, std::string_view> SectionAttributtesNames{
     GET_PAIR_FROM_ENUM(SectionAttributtes::USR),
