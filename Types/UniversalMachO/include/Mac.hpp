@@ -556,7 +556,7 @@ struct dyld_info_command
     uint32 export_size;    /* size of lazy binding infs */
 };
 
-struct dylib
+struct dylib_mac
 {
     union lc_str name;            /* library's path name */
     uint32 timestamp;             /* library's build time stamp */
@@ -568,7 +568,7 @@ struct dylib_command
 {
     LoadCommandType cmd; /* LC_ID_DYLIB, LC_LOAD_{,WEAK_}DYLIB, LC_REEXPORT_DYLIB */
     uint32 cmdsize;      /* includes pathname string */
-    dylib dylib;         /* the library identification */
+    dylib_mac dylib;     /* the library identification */
 };
 
 struct entry_point_command
@@ -702,7 +702,7 @@ enum class N_DESC_BIT_TYPE
     ALT_ENTRY = 0x0200
 };
 
-enum class N_STAB_TYPE
+enum class N_STAB_TYPE : uint8
 {
     GSYM    = 0x20, // global symbol
     FNAME   = 0x22, // F77 function name
@@ -710,23 +710,23 @@ enum class N_STAB_TYPE
     STSYM   = 0x26, // data segment variable
     LCSYM   = 0x28, // bss segment variable
     MAIN    = 0x2a, // main function name
-    BNSYM   = 0x2e, /* begin nsect sym: 0,,n_sect,0,address */
+    BNSYM   = 0x2e, // begin nsect sym: 0,,n_sect,0,address
     PC      = 0x30, // global Pascal symbol
-    OPT     = 0x3c, /* emitted with gcc2_compiled and in gcc source */
+    OPT     = 0x3c, // emitted with gcc2_compiled and in gcc source
     RSYM    = 0x40, // register variable
     SLINE   = 0x44, // text segment line number
-    ENSYM   = 0x4e, /* end nsect sym: 0,,n_sect,0,address */
+    ENSYM   = 0x4e, // end nsect sym: 0,,n_sect,0,address
     DSLINE  = 0x46, // data segment line number
     BSLINE  = 0x48, // bss segment line number
     SSYM    = 0x60, // structure/union element
     SO      = 0x64, // main source file name
-    OSO     = 0x66, /* object file name: name,,0,0,st_mtime */
+    OSO     = 0x66, // object file name: name,,0,0,st_mtime
     LSYM    = 0x80, // stack variable
     BINCL   = 0x82, // include file beginning
     SOL     = 0x84, // included source file name
-    PARAMS  = 0x86, /* compiler parameters: name,,NO_SECT,0,0 */
-    VERSION = 0x88, /* compiler version: name,,NO_SECT,0,0 */
-    OLEVEL  = 0x8A, /* compiler -O level: name,,NO_SECT,0,0 */
+    PARAMS  = 0x86, // compiler parameters: name,,NO_SECT,0,0
+    VERSION = 0x88, // compiler version: name,,NO_SECT,0,0
+    OLEVEL  = 0x8A, // compiler -O level: name,,NO_SECT,0,0
     PSYM    = 0xa0, // parameter variable
     EINCL   = 0xa2, // include file end
     ENTRY   = 0xa4, // alternate entry point
@@ -734,7 +734,7 @@ enum class N_STAB_TYPE
     EXCL    = 0xc2, // deleted include file
     RBRAC   = 0xe0, // right bracket
     BCOMM   = 0xe2, // begin common
-    ECOMM   = 0xe4, // end common
+    ECOMM_  = 0xe4, // end common
     ECOML   = 0xe8, // end common (local name)
     LENG    = 0xfe  // length of preceding entry
 };

@@ -387,6 +387,44 @@ namespace Hashes
       public:
         inline static const uint32 ResultBytesLength = SHA512::ResultBytesLength - 16;
     };
+
+    enum class OpenSSLHashKind : uint8 {
+        Md4,
+        Md5,
+        Blake2s256,
+        Blake2b512,
+        Sha1,
+        Sha224,
+        Sha256,
+        Sha384,
+        Sha512,
+        Sha512_224,
+        Sha512_256,
+        Sha3_224,
+        Sha3_256,
+        Sha3_384,
+        Sha3_512,
+        Shake128,
+        Shake256
+    };
+
+    class CORE_EXPORT OpenSSLHash
+    {
+      public:
+        OpenSSLHash(OpenSSLHashKind kind);
+        ~OpenSSLHash();
+
+        bool Update(const void* input, uint32 length);
+        bool Final();
+        std::string GetHexValue();
+        const uint8* Get() const;
+        uint32 GetSize() const;
+
+      public:
+        void* handle;
+        uint8 hash[64];
+        uint32 size;
+    };
 } // namespace Hashes
 
 struct CORE_EXPORT Object
