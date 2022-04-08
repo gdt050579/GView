@@ -11,13 +11,10 @@ target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
 target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
 target_link_libraries(GViewCore PRIVATE LLVMDemangle)
 
-find_package(OpenSSL)
+find_package(OpenSSL REQUIRED)
 if(OPENSSL_FOUND)
     target_include_directories(GViewCore PRIVATE ${OPENSSL_INCLUDE_DIR})
     target_link_libraries(GViewCore PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
-    set(GVIEW_HAS_OPENSSL TRUE)
-    target_compile_definitions(GViewCore PUBLIC GVIEW_HAS_OPENSSL)
-    message(STATUS "Has OpenSSL")
 endif()
 
 

@@ -408,7 +408,6 @@ namespace Hashes
         Shake256
     };
 
-#ifdef GVIEW_HAS_OPENSSL
     class CORE_EXPORT OpenSSLHash
     {
       public:
@@ -426,7 +425,6 @@ namespace Hashes
         uint8 hash[64];
         uint32 size;
     };
-#endif
 } // namespace Hashes
 
 struct CORE_EXPORT Object
