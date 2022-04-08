@@ -667,7 +667,7 @@ bool MachOFile::SetCodeSignature()
                     const auto hashType = cd.hashType;
                     {
                         std::string cdHash;
-                        if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                        if (ComputeHash(blobBuffer, hashType, cdHash) == false)
                         {
                             throw "Unable to validate!";
                         }
