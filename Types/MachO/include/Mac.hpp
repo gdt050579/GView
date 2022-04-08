@@ -521,7 +521,8 @@ enum class SectionType : uint32
     THREAD_LOCAL_ZEROFILL               = 0x12, /* template of initial values for TLVs */
     THREAD_LOCAL_VARIABLES              = 0x13, /* TLV descriptors */
     THREAD_LOCAL_VARIABLE_POINTERS      = 0x14, /* pointers to TLV descriptors */
-    THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15  /* functions to call to initialize TLV values */
+    THREAD_LOCAL_INIT_FUNCTION_POINTERS = 0x15, /* functions to call to initialize TLV values */
+    S_INIT_FUNC_OFFSETS                 = 0x16  /* 32-bit offsets to initializers */
 };
 
 enum class SectionAttributtes : uint32
