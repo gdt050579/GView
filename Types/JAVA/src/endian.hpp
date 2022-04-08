@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #ifdef _MSC_VER
 #    include <stdlib.h>

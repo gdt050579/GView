@@ -1,10 +1,14 @@
 #include "global.hpp"
+#include "ast.hpp"
 
 namespace GView::Java
 {
 
-enum ConstantKind : uint8
+// -------------------------------------------------------- Raw --------------------------------------------------------
+
+enum class ConstantKind : uint8
 {
+    Nothing            = 0,
     Utf8               = 1,
     Integer            = 3,
     Float              = 4,
@@ -72,6 +76,17 @@ struct CONSTANT_Utf8_info
     }
 };
 
+struct CONSTANT_String_info
+{
+    uint16 string_index;
+
+    bool read(BufferReader& reader)
+    {
+        READB(string_index);
+        return true;
+    }
+};
+
 struct ConstantData
 {
     ConstantKind kind;
@@ -81,6 +96,7 @@ struct ConstantData
         CONSTANT_Class_info clazz;
         CONSTANT_NameAndType_info name_and_type;
         CONSTANT_Utf8_info utf8;
+        CONSTANT_String_info string;
     };
 };
 
@@ -88,6 +104,14 @@ struct AttributeInfo
 {
     uint16 attribute_name_index;
     BufferView info;
+};
+
+struct FieldInfo
+{
+    uint16 access_flags;
+    uint16 name_index;
+    uint16 descriptor_index;
+    vector<AttributeInfo> attributes;
 };
 
 struct MethodInfo
@@ -98,10 +122,13 @@ struct MethodInfo
     vector<AttributeInfo> attributes;
 };
 
+// ---------------------------------------------------- ClassParser ----------------------------------------------------
+
 struct ClassParser
 {
     BufferReader reader;
     vector<ConstantData> constant_data;
+    vector<FieldInfo> fields;
     vector<MethodInfo> methods;
     vector<AttributeInfo> attributes;
 
@@ -109,19 +136,17 @@ struct ClassParser
 
     bool parse();
     bool parse_constant_pool();
+    bool parse_field();
     bool parse_method();
+
+    bool parse_attributes(vector<AttributeInfo>& out);
     bool parse_attribute(AttributeInfo& out);
 };
 
 ClassParser::ClassParser(BufferReader reader) : reader(reader)
 {
     constant_data.reserve(64);
-}
-
-bool Java::parse_class(BufferView buffer)
-{
-    ClassParser parser{ { buffer.GetData(), buffer.GetLength() } };
-    return parser.parse();
+    constant_data.push_back({ ConstantKind::Nothing });
 }
 
 bool ClassParser::parse()
@@ -157,7 +182,7 @@ bool ClassParser::parse()
     READB(fields_count);
     for (uint16 i = 0; i < fields_count; ++i)
     {
-        unreachable;
+        FCHECK(parse_field());
     }
 
     uint16 methods_count;
@@ -167,6 +192,78 @@ bool ClassParser::parse()
         FCHECK(parse_method());
     }
 
+    return true;
+}
+
+static bool is_valid_constant_pool_tag(uint8 tag)
+{
+    return 1 <= tag && tag <= 18 && tag != 2 && tag != 13 && tag != 14 && tag != 17;
+}
+
+bool ClassParser::parse_constant_pool()
+{
+    uint8 tag;
+    READB(tag);
+
+    CHECK(is_valid_constant_pool_tag(tag), false, "bad constant pool tag");
+
+    ConstantData data;
+    data.kind = static_cast<ConstantKind>(tag);
+    switch (data.kind)
+    {
+    case ConstantKind::MethodRef:
+    case ConstantKind::FieldRef:
+    case ConstantKind::InterfaceMethodRef:
+        FCHECK(data.field_interface_method.read(reader));
+        break;
+    case ConstantKind::Class:
+        FCHECK(data.clazz.read(reader));
+        break;
+    case ConstantKind::NameAndType:
+        FCHECK(data.name_and_type.read(reader));
+        break;
+    case ConstantKind::Utf8:
+        FCHECK(data.utf8.read(reader));
+        break;
+    case ConstantKind::String:
+        FCHECK(data.string.read(reader));
+        break;
+    default:
+        unreachable;
+    }
+
+    constant_data.push_back(data);
+    return true;
+}
+
+bool ClassParser::parse_field()
+{
+    FieldInfo field;
+    READB(field.access_flags);
+    READB(field.name_index);
+    READB(field.descriptor_index);
+    FCHECK(parse_attributes(field.attributes));
+
+    fields.push_back(field);
+    return true;
+}
+
+bool ClassParser::parse_method()
+{
+    MethodInfo method;
+    READB(method.access_flags);
+    READB(method.name_index);
+    READB(method.descriptor_index);
+    uint16 attributes_count;
+    READB(attributes_count);
+    FCHECK(parse_attributes(method.attributes));
+
+    methods.push_back(method);
+    return true;
+}
+
+bool ClassParser::parse_attributes(vector<AttributeInfo>& out)
+{
     uint16 attributes_count;
     READB(attributes_count);
     for (uint16 i = 0; i < attributes_count; ++i)
@@ -179,56 +276,6 @@ bool ClassParser::parse()
     return true;
 }
 
-bool ClassParser::parse_constant_pool()
-{
-    uint8 tag;
-    READB(tag);
-
-    ConstantData data;
-    data.kind = static_cast<ConstantKind>(tag);
-    switch (tag)
-    {
-    case MethodRef:
-    case FieldRef:
-    case InterfaceMethodRef:
-        FCHECK(data.field_interface_method.read(reader));
-        break;
-    case Class:
-        FCHECK(data.clazz.read(reader));
-        break;
-    case NameAndType:
-        FCHECK(data.name_and_type.read(reader));
-        break;
-    case Utf8:
-        FCHECK(data.utf8.read(reader));
-        break;
-    default:
-        unreachable;
-    }
-
-    constant_data.push_back(data);
-    return true;
-}
-
-bool ClassParser::parse_method()
-{
-    MethodInfo method;
-    READB(method.access_flags);
-    READB(method.name_index);
-    READB(method.descriptor_index);
-    uint16 attributes_count;
-    READB(attributes_count);
-    for (uint16 i = 0; i < attributes_count; ++i)
-    {
-        AttributeInfo attribute;
-        FCHECK(parse_attribute(attribute));
-        method.attributes.push_back(attribute);
-    }
-
-    methods.push_back(method);
-    return true;
-}
-
 bool ClassParser::parse_attribute(AttributeInfo& out)
 {
     READB(out.attribute_name_index);
@@ -238,6 +285,171 @@ bool ClassParser::parse_attribute(AttributeInfo& out)
     SKIP(attribute_length);
 
     return true;
+}
+
+// ---------------------------------------------------- Demangler ----------------------------------------------------
+
+struct Demangler
+{
+    AstContext& ctx;
+};
+
+// ---------------------------------------------------- AstCreator ----------------------------------------------------
+
+struct AstCreator
+{
+    const vector<ConstantData>& constant_data;
+    const vector<FieldInfo>& fields;
+    const vector<MethodInfo>& methods;
+    const vector<AttributeInfo>& attributes;
+    AstContext ctx;
+
+    bool create();
+    Field* create_field(const FieldInfo& raw_field);
+    Method* create_method(const MethodInfo& raw_method);
+
+    bool get_utf8(string_view& out, uint16 index);
+
+    const ConstantData* get_constant(uint16 index, ConstantKind expect);
+};
+
+bool AstCreator::create()
+{
+    auto clazz     = ctx.alloc.alloc<Class>();
+    clazz->methods = ctx.alloc.alloc_array<Method*>(methods.size());
+    uint32 count   = 0;
+    for (auto& i : methods)
+    {
+        auto method = create_method(i);
+        FCHECK(method);
+        clazz->methods[count++] = method;
+    }
+
+    clazz->fields = ctx.alloc.alloc_array<Field*>(fields.size());
+    for (auto& i : fields)
+    {
+        auto field = create_field(i);
+        FCHECK(field);
+        clazz->fields[count++] = field;
+    }
+    return false;
+}
+
+Field* AstCreator::create_field(const FieldInfo& raw_field)
+{
+    constexpr uint32 ACC_PUBLIC    = 0x0001;
+    constexpr uint32 ACC_PRIVATE   = 0x0002;
+    constexpr uint32 ACC_PROTECTED = 0x0004;
+    constexpr uint32 ACC_STATIC    = 0x0008;
+    constexpr uint32 ACC_FINAL     = 0x0010;
+    constexpr uint32 ACC_VOLATILE  = 0x0040;
+    constexpr uint32 ACC_TRANSIENT = 0x0080;
+    constexpr uint32 ACC_SYNTHETIC = 0x1000;
+    constexpr uint32 ACC_ENUM      = 0x4000;
+
+    FieldAccessFlags flags;
+    flags.acc_public    = raw_field.access_flags & ACC_PUBLIC;
+    flags.acc_private   = raw_field.access_flags & ACC_PRIVATE;
+    flags.acc_protected = raw_field.access_flags & ACC_PROTECTED;
+    flags.acc_static    = raw_field.access_flags & ACC_STATIC;
+    flags.acc_final     = raw_field.access_flags & ACC_FINAL;
+    flags.acc_volatile  = raw_field.access_flags & ACC_VOLATILE;
+    flags.acc_transient = raw_field.access_flags & ACC_TRANSIENT;
+    flags.acc_synthetic = raw_field.access_flags & ACC_SYNTHETIC;
+    flags.acc_enum      = raw_field.access_flags & ACC_ENUM;
+
+    auto field          = ctx.alloc.alloc<Field>();
+    field->access_flags = flags;
+
+    FCHECKNULL(get_utf8(field->name, raw_field.name_index));
+    string_view descriptor;
+    FCHECKNULL(get_utf8(descriptor, raw_field.name_index));
+
+    field->unknown_attributes = 0;
+    for (auto& i : raw_field.attributes)
+    {
+        string_view name;
+        FCHECKNULL(get_utf8(name, i.attribute_name_index));
+
+        field->unknown_attributes++;
+    }
+
+    return field;
+}
+
+Method* AstCreator::create_method(const MethodInfo& raw_method)
+{
+    constexpr uint32 ACC_PUBLIC       = 0x0001;
+    constexpr uint32 ACC_PRIVATE      = 0x0002;
+    constexpr uint32 ACC_PROTECTED    = 0x0004;
+    constexpr uint32 ACC_STATIC       = 0x0008;
+    constexpr uint32 ACC_FINAL        = 0x0010;
+    constexpr uint32 ACC_SYNCHRONIZED = 0x0020;
+    constexpr uint32 ACC_BRIDGE       = 0x0040;
+    constexpr uint32 ACC_VARARGS      = 0x0080;
+    constexpr uint32 ACC_NATIVE       = 0x0100;
+    constexpr uint32 ACC_ABSTRACT     = 0x0400;
+    constexpr uint32 ACC_STRICT       = 0x0800;
+    constexpr uint32 ACC_SYNTHETIC    = 0x1000;
+
+    MethodAccessFlags flags;
+    flags.acc_public       = raw_method.access_flags & ACC_PUBLIC;
+    flags.acc_private      = raw_method.access_flags & ACC_PRIVATE;
+    flags.acc_protected    = raw_method.access_flags & ACC_PROTECTED;
+    flags.acc_static       = raw_method.access_flags & ACC_STATIC;
+    flags.acc_final        = raw_method.access_flags & ACC_FINAL;
+    flags.acc_synchronized = raw_method.access_flags & ACC_SYNCHRONIZED;
+    flags.acc_bridge       = raw_method.access_flags & ACC_BRIDGE;
+    flags.acc_varargs      = raw_method.access_flags & ACC_VARARGS;
+    flags.acc_native       = raw_method.access_flags & ACC_NATIVE;
+    flags.acc_abstract     = raw_method.access_flags & ACC_ABSTRACT;
+    flags.acc_strict       = raw_method.access_flags & ACC_STRICT;
+    flags.acc_synthetic    = raw_method.access_flags & ACC_SYNTHETIC;
+
+    auto method          = ctx.alloc.alloc<Method>();
+    method->access_flags = flags;
+    FCHECKNULL(get_utf8(method->name, raw_method.name_index));
+    FCHECKNULL(get_utf8(method->name2, raw_method.descriptor_index));
+
+    method->unknown_attributes = 0;
+    for (auto& i : raw_method.attributes)
+    {
+        string_view name;
+        FCHECKNULL(get_utf8(name, i.attribute_name_index));
+        if (name == "Code")
+            method->code = i.info;
+        else
+            method->unknown_attributes++;
+    }
+
+    return method;
+}
+
+bool AstCreator::get_utf8(string_view& out, uint16 index)
+{
+    auto data = get_constant(index, ConstantKind::Utf8);
+    FCHECK(data);
+    out = { data->utf8.bytes, data->utf8.length };
+    return true;
+}
+
+const ConstantData* AstCreator::get_constant(uint16 index, ConstantKind expect)
+{
+    CHECK(index < constant_data.size(), nullptr, "bad index %u", index);
+    auto& ret = constant_data[index];
+    CHECK(ret.kind == expect, nullptr, "expected kind %u, found %u", expect, ret.kind);
+    return &ret;
+}
+
+// ---------------------------------------------------- parse_class ----------------------------------------------------
+
+bool parse_class(BufferView buffer)
+{
+    ClassParser parser{ { buffer.GetData(), buffer.GetLength() } };
+    FCHECK(parser.parse());
+
+    AstCreator creator{ parser.constant_data, parser.fields, parser.methods, parser.attributes };
+    return creator.create();
 }
 
 } // namespace GView::Java

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cassert>
 #include <GView.hpp>
 #include "endian.hpp"
@@ -7,6 +9,64 @@ using namespace GView;
 
 namespace GView::Java
 {
+
+template <typename T>
+class ArrayRef
+{
+    const T* ptr;
+    size_t ptr_size;
+
+  public:
+    ArrayRef(const T* ptr, size_t ptr_size)
+    {
+        this->ptr      = ptr;
+        this->ptr_size = ptr_size;
+    }
+};
+
+template <typename T>
+class ArrayRefMut
+{
+    T* ptr;
+    size_t ptr_size;
+
+  public:
+    ArrayRefMut()
+    {
+        ptr      = nullptr;
+        ptr_size = 0;
+    }
+    ArrayRefMut(T* ptr, size_t ptr_size)
+    {
+        this->ptr      = ptr;
+        this->ptr_size = ptr_size;
+    }
+
+    ArrayRefMut(ArrayRefMut& other)
+    {
+        ptr      = other.ptr;
+        ptr_size = other.ptr_size;
+    }
+
+    ArrayRefMut& operator=(const ArrayRefMut& other)
+    {
+        ptr      = other.ptr;
+        ptr_size = other.ptr_size;
+        return *this;
+    }
+
+    T& operator[](size_t i)
+    {
+        assert(i < size());
+        return ptr[i];
+    }
+
+    size_t size() const
+    {
+        return ptr_size;
+    }
+};
+
 struct JavaViewer : public TypeInterface
 {
     string_view GetTypeName() override;
@@ -60,10 +120,10 @@ class BufferReader
     if (!reader.skip(x))                                                                                                                   \
     return false
 
-#define FCHECK(x) CHECK(x, false, #x)
+#define FCHECK(x)     CHECK(x, false, #x)
+#define FCHECKNULL(x) CHECK(x, nullptr, #x)
 
 #define unreachable                                                                                                                        \
     __debugbreak();                                                                                                                        \
     std::abort()
-
 } // namespace GView::Java

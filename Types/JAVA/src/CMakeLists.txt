@@ -1,4 +1,7 @@
 target_sources(JAVA PRIVATE
+	ast.hpp
+	ast.cpp
+	allocator.cpp
 	global.hpp
 	endian.hpp
 	buffer_reader.cpp
