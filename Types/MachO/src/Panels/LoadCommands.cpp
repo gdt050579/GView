@@ -18,7 +18,8 @@ LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::W
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           {
                 { "Index", TextAlignament::Right, 8 },
@@ -44,13 +45,13 @@ std::string_view LoadCommands::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::LoadCommands::GoToSelectedSection()
 {
-    auto lc = list->GetItemData<const MachOFile::LoadCommand>(list->GetCurrentItem());
+    auto lc = list->GetCurrentItem().GetData<const MachOFile::LoadCommand>();
     win->GetCurrentView()->GoTo(lc->offset);
 }
 
 void Panels::LoadCommands::SelectCurrentSection()
 {
-    auto lc = list->GetItemData<const MachOFile::LoadCommand>(list->GetCurrentItem());
+    auto lc = list->GetCurrentItem().GetData<const MachOFile::LoadCommand>();
     win->GetCurrentView()->Select(lc->offset, lc->value.cmdsize);
 }
 

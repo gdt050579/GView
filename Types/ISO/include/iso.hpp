@@ -64,7 +64,7 @@ namespace Panels
 
             const auto v    = nf.ToString(value, dec);
             const auto hexV = nf2.ToString(value, hex);
-            general->AddItem(name, ls.Format(format.data(), v.data(), hexV.data()));
+            general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
         }
 
         template <typename T>
@@ -80,7 +80,7 @@ namespace Panels
                 ls2.AddFormat("%.2x", value[i]);
             }
             const auto vHex = ls2.GetText();
-            general->AddItem(name, ls.Format(format.data(), std::string{ value, sizeof(value) }.c_str(), vHex));
+            general->AddItem({ name, ls.Format(format.data(), std::string{ value, sizeof(value) }.c_str(), vHex) });
         }
 
         void AddDateAndHexElement(std::string_view name, std::string_view format, const ECMA_119_dec_datetime& date)

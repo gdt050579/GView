@@ -7,7 +7,8 @@ using namespace AppCUI::Controls;
 Information::Information(Reference<MachOFile> _machO) : TabPage("Informa&Tion")
 {
     machO   = _machO;
-    general = CreateChildControl<ListView>(
+    general = Factory::ListView::Create(
+          this,
           "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 16 }, { "Value", TextAlignament::Left, 48 } }, ListViewFlags::None);
 
     Update();

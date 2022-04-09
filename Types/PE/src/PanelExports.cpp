@@ -11,7 +11,8 @@ Panels::Exports::Exports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "Name", TextAlignament::Left, 60 }, { "Ord", TextAlignament::Left, 5 }, { "RVA", TextAlignament::Left, 12 } },
           ListViewFlags::None);
@@ -41,7 +42,7 @@ bool Panels::Exports::OnEvent(Reference<Control> ctrl, Event evnt, int controlID
         return true;
     if ((evnt == Event::ListViewItemClicked) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
     {
-        auto addr = list->GetItemData(list->GetCurrentItem(), GView::Utils::INVALID_OFFSET);
+        auto addr = list->GetCurrentItem().GetData(GView::Utils::INVALID_OFFSET);
         if (addr != GView::Utils::INVALID_OFFSET)
             win->GetCurrentView()->GoTo(addr);
         return true;

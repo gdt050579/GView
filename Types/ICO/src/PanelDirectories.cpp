@@ -33,13 +33,13 @@ Panels::Directories::Directories(Reference<GView::Type::ICO::ICOFile> _ico, Refe
 }
 void Panels::Directories::GoToSelectedDirectory()
 {
-    auto d = list->GetItemData<ICO::DirectoryEntry>(list->GetCurrentItem());
+    auto d = list->GetCurrentItem().GetData<ICO::DirectoryEntry>();
     if (d.IsValid())
         win->GetCurrentView()->GoTo(d->ico.offset);
 }
 void Panels::Directories::SelectCurrentDirectory()
 {
-    auto d = list->GetItemData<ICO::DirectoryEntry>(list->GetCurrentItem());
+    auto d = list->GetCurrentItem().GetData<ICO::DirectoryEntry>();
     if (d.IsValid())
         win->GetCurrentView()->Select(d->ico.offset, d->ico.size);
 }

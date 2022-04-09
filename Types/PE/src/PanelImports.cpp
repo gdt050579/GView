@@ -9,12 +9,14 @@ Panels::Imports::Imports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "x:0,y:0,w:100%,h:10", { { "Name", TextAlignament::Left, 25 }, { "RVA", TextAlignament::Left, 12 } }, ListViewFlags::None);
 
-    dlls = this->CreateChildControl<ListView>("x:0,y:10,w:100%,h:10", { { "", TextAlignament::Left, 50 } }, ListViewFlags::HideColumns);
+    dlls = Factory::ListView::Create(this, "x:0,y:10,w:100%,h:10", { { "", TextAlignament::Left, 50 } }, ListViewFlags::HideColumns);
 
-    info = this->CreateChildControl<ListView>(
+    info = Factory::ListView::Create(
+          this,
           "x:0,y:20,w:100%,h:4", { { "", TextAlignament::Left, 12 }, { "", TextAlignament::Left, 25 } }, ListViewFlags::HideColumns);
 
 

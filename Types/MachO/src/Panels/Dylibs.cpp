@@ -18,7 +18,8 @@ Dylib::Dylib(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "Command", TextAlignament::Left, 16 },
             { "Size", TextAlignament::Right, 8 },
@@ -47,14 +48,14 @@ std::string_view Dylib::GetValue(NumericFormatter& n, uint64_t value)
 
 void Dylib::GoToSelectedSection()
 {
-    const auto di = list->GetCurrentItem().GetData<const MachOFile::Dylib>();
+    auto di = list->GetCurrentItem().GetData<MachOFile::Dylib>();
 
     win->GetCurrentView()->GoTo(di->offset);
 }
 
 void Dylib::SelectCurrentSection()
 {
-    const auto di = list->GetCurrentItem().GetData<const MachOFile::Dylib>();
+    auto di = list->GetCurrentItem().GetData<MachOFile::Dylib>();
     //auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
     win->GetCurrentView()->Select(di->offset, di->value.cmdsize);
 }

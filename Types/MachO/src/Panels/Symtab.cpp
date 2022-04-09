@@ -18,7 +18,8 @@ SymTab::SymTab(Reference<MachOFile> _machO, Reference<GView::View::WindowInterfa
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "Index", TextAlignament::Left, 8 },
             { "Name", TextAlignament::Left, 60 },
@@ -42,13 +43,15 @@ std::string_view SymTab::GetValue(NumericFormatter& n, uint64_t value)
 
 void SymTab::GoToSelectedSection()
 {
-    const auto offset = machO->dySymTab->sc.symoff + (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist)) * list->GetCurrentItem();
+    const auto offset =
+          machO->dySymTab->sc.symoff + (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist)) * list->GetCurrentItem().GetData(0);
     win->GetCurrentView()->GoTo(offset);
 }
 
 void SymTab::SelectCurrentSection()
 {
-    const auto offset = machO->dySymTab->sc.symoff + (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist)) * list->GetCurrentItem();
+    const auto offset =
+          machO->dySymTab->sc.symoff + (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist)) * list->GetCurrentItem().GetData(0);
     const auto size   = (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
     win->GetCurrentView()->Select(offset, size);
 }

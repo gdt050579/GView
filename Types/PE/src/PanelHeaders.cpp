@@ -11,7 +11,8 @@ Panels::Headers::Headers(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c", { { "Field", TextAlignament::Left, 16 }, { "Value", TextAlignament::Left, 60 } }, ListViewFlags::None);
 
 

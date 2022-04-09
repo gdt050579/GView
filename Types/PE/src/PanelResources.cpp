@@ -13,7 +13,8 @@ Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<G
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           {
                 { "&Type", TextAlignament::Left, 16 },
@@ -69,7 +70,7 @@ bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& comm
 }
 void Panels::Resources::SaveCurrentResource()
 {
-    auto r = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    auto r = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     LocalString<128> tmp;
     tmp.Format("resource_%08X_%X_%d.res", r->Start, r->Size, r->ID);
     auto res = AppCUI::Dialogs::FileDialog::ShowSaveFileWindow(tmp, "", "");
@@ -84,13 +85,13 @@ void Panels::Resources::SaveCurrentResource()
 }
 void Panels::Resources::GoToSelectedResource()
 {
-    auto sect = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->Start);
 }
 void Panels::Resources::SelectCurrentResource()
 {
-    auto sect = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->Start, sect->Size);
 }

@@ -7,7 +7,8 @@ namespace GView::Type::CSV::Panels
 Information::Information(Reference<GView::Type::CSV::CSVFile> csv) : TabPage("Informa&Tion")
 {
     this->csv = csv;
-    general   = this->CreateChildControl<ListView>(
+    general   = Factory::ListView::Create(
+          this,
           "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 12 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
 
     this->Update();

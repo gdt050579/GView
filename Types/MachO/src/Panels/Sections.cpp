@@ -18,7 +18,8 @@ Sections::Sections(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "Section name", TextAlignament::Left, 16 },
             { "Segment name", TextAlignament::Left, 16 },
@@ -53,13 +54,13 @@ std::string_view Sections::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::Sections::GoToSelectedSection()
 {
-    auto s = list->GetItemData<const MachOFile::Section>(list->GetCurrentItem());
+    auto s = list->GetCurrentItem().GetData<const MachOFile::Section>();
     win->GetCurrentView()->GoTo(s->offset != 0 ? s->offset : s->addr /* handling __bss section */);
 }
 
 void Panels::Sections::SelectCurrentSection()
 {
-    auto s = list->GetItemData<const MachOFile::Section>(list->GetCurrentItem());
+    auto s = list->GetCurrentItem().GetData<const MachOFile::Section>();
     win->GetCurrentView()->Select(s->offset != 0 ? s->offset : s->addr /* handling __bss section */, s->size);
 }
 

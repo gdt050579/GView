@@ -18,7 +18,8 @@ Objects::Objects(Reference<ISOFile> _iso, Reference<GView::View::WindowInterface
     win  = _win;
     Base = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "LEN-DR", TextAlignament::Right, 10 },
             { "Attr Len", TextAlignament::Right, 10 },
@@ -48,7 +49,7 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64 value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    auto record       = list->GetItemData<ECMA_119_DirectoryRecord>(list->GetCurrentItem());
+    auto record       = list->GetCurrentItem().GetData<ECMA_119_DirectoryRecord>();
     const auto offset = record->locationOfExtent.LSB * ISO::ECMA_119_SECTOR_SIZE;
 
     win->GetCurrentView()->GoTo(offset);
@@ -56,7 +57,7 @@ void Panels::Objects::GoToSelectedSection()
 
 void Panels::Objects::SelectCurrentSection()
 {
-    auto record       = list->GetItemData<ECMA_119_DirectoryRecord>(list->GetCurrentItem());
+    auto record       = list->GetCurrentItem().GetData<ECMA_119_DirectoryRecord>();
     const auto offset = record->locationOfExtent.LSB * ISO::ECMA_119_SECTOR_SIZE;
     const auto size   = record->dataLength.LSB;
 

@@ -18,7 +18,7 @@ Segments::Segments(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(this,
           "d:c",
           { { "Name", TextAlignament::Left, 14 },
             { "Type", TextAlignament::Left, 18 },
@@ -47,13 +47,13 @@ std::string_view Segments::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::Segments::GoToSelectedSection()
 {
-    auto s = list->GetItemData<const MachOFile::Segment>(list->GetCurrentItem());
+    auto s = list->GetCurrentItem().GetData<const MachOFile::Segment>();
     win->GetCurrentView()->GoTo(s->fileoff);
 }
 
 void Panels::Segments::SelectCurrentSection()
 {
-    auto s = list->GetItemData<const MachOFile::Segment>(list->GetCurrentItem());
+    auto s = list->GetCurrentItem().GetData<const MachOFile::Segment>();
     win->GetCurrentView()->Select(s->fileoff, s->filesize);
 }
 

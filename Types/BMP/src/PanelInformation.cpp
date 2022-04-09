@@ -6,12 +6,13 @@ using namespace AppCUI::Controls;
 Panels::Information::Information(Reference<GView::Type::BMP::BMPFile> _bmp) : TabPage("&Information")
 {
     bmp     = _bmp;
-    general = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    general->AddColumn("Field", TextAlignament::Left, 12);
-    general->AddColumn("Value", TextAlignament::Left, 100);
+    general = Factory::ListView::Create(
+          this,
+          "x:0,y:0,w:100%,h:10",
+          { { "Field", TextAlignament::Left, 12 }, { "Value", TextAlignament::Left, 100 } },
+          ListViewFlags::None);
 
-    issues = this->CreateChildControl<ListView>("x:0,y:21,w:100%,h:10", ListViewFlags::HideColumns);
-    issues->AddColumn("Info", TextAlignament::Left, 200);
+    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { { "Info", TextAlignament::Left, 200 } }, ListViewFlags::HideColumns);
 
     this->Update();
 }

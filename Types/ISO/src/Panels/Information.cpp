@@ -7,7 +7,7 @@ Panels::Information::Information(Reference<GView::Type::ISO::ISOFile> _iso) : Ta
 {
     iso     = _iso;
     general = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+          "x:0,y:0,w:100%,h:10", std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
 
     Update();
 }

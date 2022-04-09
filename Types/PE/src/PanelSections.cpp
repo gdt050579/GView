@@ -15,7 +15,8 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
     win  = _win;
     Base = 16;
 
-    list = this->CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "Name", TextAlignament::Left, 8 },
             { "FilePoz", TextAlignament::Right, 12 },
@@ -40,13 +41,13 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 }
 void Panels::Sections::GoToSelectedSection()
 {
-    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
 void Panels::Sections::SelectCurrentSection()
 {
-    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
 }

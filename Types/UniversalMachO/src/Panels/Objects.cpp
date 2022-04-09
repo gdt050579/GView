@@ -24,7 +24,8 @@ Objects::Objects(Reference<UniversalMachOFile> _machO, Reference<GView::View::Wi
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>(
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "CPU type", TextAlignament::Right, 25 },
             { "CPU subtype", TextAlignament::Right, 25 },
@@ -50,17 +51,15 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    const auto& arch = list->GetItemData<Identity<decltype(machO->archs)>::type::value_type>(list->GetCurrentItem())
-                             .
-                             operator Identity<decltype(machO->archs)>::type::value_type&();
+    const auto& arch = list->GetCurrentItem().GetData<Identity<decltype(machO->archs)>::type::value_type>().
+                       operator Identity<decltype(machO->archs)>::type::value_type&();
     win->GetCurrentView()->GoTo(arch.offset);
 }
 
 void Panels::Objects::SelectCurrentSection()
 {
-    const auto& arch = list->GetItemData<Identity<decltype(machO->archs)>::type::value_type>(list->GetCurrentItem())
-                             .
-                             operator Identity<decltype(machO->archs)>::type::value_type&();
+    const auto& arch = list->GetCurrentItem().GetData<Identity<decltype(machO->archs)>::type::value_type>().
+                       operator Identity<decltype(machO->archs)>::type::value_type&();
     win->GetCurrentView()->Select(arch.offset, arch.size);
 }
 
