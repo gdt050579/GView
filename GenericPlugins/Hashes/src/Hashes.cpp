@@ -34,18 +34,21 @@ HashesDialog::HashesDialog(Reference<GView::Object> object)
 {
     this->object = object;
 
-    hashesList = Factory::ListView::Create(this, "l:0,t:0,r:0,b:3");
-    hashesList->AddColumn("Type", TextAlignament::Left, 17);
-    hashesList->AddColumn("Value", TextAlignament::Left, 130);
+    hashesList = Factory::ListView::Create(
+          this, "l:0,t:0,r:0,b:3", { { "Type", TextAlignament::Left, 17 }, { "Value", TextAlignament::Left, 130 } });
+
     hashesList->SetVisible(false);
 
     close                              = Factory::Button::Create(this, "&Close", "d:b,w:20", CMD_BUTTON_CLOSE);
     close->Handlers()->OnButtonPressed = this;
     close->SetVisible(false);
 
-    options =
-          Factory::ListView::Create(this, "l:0,t:0,r:0,b:3", Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
-    options->AddColumn("", TextAlignament::Left, 30);
+    options = Factory::ListView::Create(
+          this,
+          "l:0,t:0,r:0,b:3",
+          { { "", TextAlignament::Left, 30 } },
+          Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
+
     Adler32        = options->AddItem(Adler32::GetName());
     CRC16          = options->AddItem(CRC16::GetName());
     CRC32_JAMCRC_0 = options->AddItem(CRC32::GetName(CRC32Type::JAMCRC_0));
@@ -96,7 +99,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
 
         for (const auto& [name, value] : outputs)
         {
-            hashesList->AddItem(name, value);
+            hashesList->AddItem({ name, value });
         }
 
         return;
@@ -112,43 +115,43 @@ void HashesDialog::SetCheckBoxesFromFlags()
         switch (static_cast<Hashes>(flags & static_cast<uint32>(hash)))
         {
         case Hashes::Adler32:
-            options->SetItemCheck(Adler32, true);
+            Adler32.SetCheck(true);
             break;
         case Hashes::CRC16:
-            options->SetItemCheck(CRC16, true);
+            CRC16.SetCheck(true);
             break;
         case Hashes::CRC32_JAMCRC_0:
-            options->SetItemCheck(CRC32_JAMCRC_0, true);
+            CRC32_JAMCRC_0.SetCheck(true);
             break;
         case Hashes::CRC32_JAMCRC:
-            options->SetItemCheck(CRC32_JAMCRC, true);
+            CRC32_JAMCRC.SetCheck(true);
             break;
         case Hashes::CRC64_ECMA_182:
-            options->SetItemCheck(CRC64_ECMA_182, true);
+            CRC64_ECMA_182.SetCheck(true);
             break;
         case Hashes::CRC64_WE:
-            options->SetItemCheck(CRC64_WE, true);
+            CRC64_WE.SetCheck(true);
             break;
         case Hashes::MD2:
-            options->SetItemCheck(MD2, true);
+            MD2.SetCheck(true);
             break;
         case Hashes::MD4:
-            options->SetItemCheck(MD4, true);
+            MD4.SetCheck(true);
             break;
         case Hashes::MD5:
-            options->SetItemCheck(MD5, true);
+            MD5.SetCheck(true);
             break;
         case Hashes::SHA1:
-            options->SetItemCheck(SHA1, true);
+            SHA1.SetCheck(true);
             break;
         case Hashes::SHA256:
-            options->SetItemCheck(SHA256, true);
+            SHA256.SetCheck(true);
             break;
         case Hashes::SHA384:
-            options->SetItemCheck(SHA384, true);
+            SHA384.SetCheck(true);
             break;
         case Hashes::SHA512:
-            options->SetItemCheck(SHA512, true);
+            SHA512.SetCheck(true);
             break;
         default:
             break;
@@ -160,7 +163,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
 {
     flags = static_cast<uint32>(Hashes::None);
 
-    if (options->IsItemChecked(Adler32))
+    if (Adler32.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::Adler32);
     }
@@ -169,7 +172,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::Adler32);
     }
 
-    if (options->IsItemChecked(CRC16))
+    if (CRC16.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::CRC16);
     }
@@ -178,7 +181,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::CRC16);
     }
 
-    if (options->IsItemChecked(CRC32_JAMCRC_0))
+    if (CRC32_JAMCRC_0.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::CRC32_JAMCRC_0);
     }
@@ -187,7 +190,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::CRC32_JAMCRC_0);
     }
 
-    if (options->IsItemChecked(CRC32_JAMCRC))
+    if (CRC32_JAMCRC.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::CRC32_JAMCRC);
     }
@@ -196,7 +199,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::CRC32_JAMCRC);
     }
 
-    if (options->IsItemChecked(CRC64_ECMA_182))
+    if (CRC64_ECMA_182.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::CRC64_ECMA_182);
     }
@@ -205,7 +208,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::CRC64_ECMA_182);
     }
 
-    if (options->IsItemChecked(CRC64_WE))
+    if (CRC64_WE.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::CRC64_WE);
     }
@@ -214,7 +217,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::CRC64_WE);
     }
 
-    if (options->IsItemChecked(MD2))
+    if (MD2.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::MD2);
     }
@@ -223,7 +226,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::MD2);
     }
 
-    if (options->IsItemChecked(MD4))
+    if (MD4.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::MD4);
     }
@@ -232,7 +235,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::MD4);
     }
 
-    if (options->IsItemChecked(MD5))
+    if (MD5.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::MD5);
     }
@@ -241,7 +244,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::MD5);
     }
 
-    if (options->IsItemChecked(SHA1))
+    if (SHA1.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::SHA1);
     }
@@ -250,7 +253,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::SHA1);
     }
 
-    if (options->IsItemChecked(SHA256))
+    if (SHA256.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::SHA256);
     }
@@ -259,7 +262,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::SHA256);
     }
 
-    if (options->IsItemChecked(SHA384))
+    if (SHA384.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::SHA384);
     }
@@ -268,7 +271,7 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::SHA384);
     }
 
-    if (options->IsItemChecked(SHA512))
+    if (SHA512.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::SHA512);
     }
@@ -364,19 +367,19 @@ void HashesDialog::SetSettingsFromFlags()
     auto allSettings    = Application::GetAppSettings();
     auto hashesSettings = allSettings->GetSection("Generic.Hashes");
 
-    hashesSettings[TYPES_ADLER32]        = options->IsItemChecked(Adler32);
-    hashesSettings[TYPES_CRC16]          = options->IsItemChecked(CRC16);
-    hashesSettings[TYPES_CRC32_JAMCRC_0] = options->IsItemChecked(CRC32_JAMCRC_0);
-    hashesSettings[TYPES_CRC32_JAMCRC]   = options->IsItemChecked(CRC32_JAMCRC);
-    hashesSettings[TYPES_CRC64_ECMA_182] = options->IsItemChecked(CRC64_ECMA_182);
-    hashesSettings[TYPES_CRC64_WE]       = options->IsItemChecked(CRC64_WE);
-    hashesSettings[TYPES_MD2]            = options->IsItemChecked(MD2);
-    hashesSettings[TYPES_MD4]            = options->IsItemChecked(MD4);
-    hashesSettings[TYPES_MD5]            = options->IsItemChecked(MD5);
-    hashesSettings[TYPES_SHA1]           = options->IsItemChecked(SHA1);
-    hashesSettings[TYPES_SHA256]         = options->IsItemChecked(SHA256);
-    hashesSettings[TYPES_SHA384]         = options->IsItemChecked(SHA384);
-    hashesSettings[TYPES_SHA512]         = options->IsItemChecked(SHA512);
+    hashesSettings[TYPES_ADLER32]        = Adler32.IsChecked();
+    hashesSettings[TYPES_CRC16]          = CRC16.IsChecked();
+    hashesSettings[TYPES_CRC32_JAMCRC_0] = CRC32_JAMCRC_0.IsChecked();
+    hashesSettings[TYPES_CRC32_JAMCRC]   = CRC32_JAMCRC.IsChecked();
+    hashesSettings[TYPES_CRC64_ECMA_182] = CRC64_ECMA_182.IsChecked();
+    hashesSettings[TYPES_CRC64_WE]       = CRC64_WE.IsChecked();
+    hashesSettings[TYPES_MD2]            = MD2.IsChecked();
+    hashesSettings[TYPES_MD4]            = MD4.IsChecked();
+    hashesSettings[TYPES_MD5]            = MD5.IsChecked();
+    hashesSettings[TYPES_SHA1]           = SHA1.IsChecked();
+    hashesSettings[TYPES_SHA256]         = SHA256.IsChecked();
+    hashesSettings[TYPES_SHA384]         = SHA384.IsChecked();
+    hashesSettings[TYPES_SHA512]         = SHA512.IsChecked();
 
     allSettings->Save(Application::GetAppSettingsFile());
 }

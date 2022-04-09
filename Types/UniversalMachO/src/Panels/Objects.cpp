@@ -24,14 +24,16 @@ Objects::Objects(Reference<UniversalMachOFile> _machO, Reference<GView::View::Wi
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("CPU type", TextAlignament::Right, 25);
-    list->AddColumn("CPU subtype", TextAlignament::Right, 25);
-    list->AddColumn("File type", TextAlignament::Left, 80);
-    list->AddColumn("Offset", TextAlignament::Right, 12);
-    list->AddColumn("Size", TextAlignament::Right, 12);
-    list->AddColumn("Align", TextAlignament::Right, 12);
-    list->AddColumn("Real Align", TextAlignament::Right, 12);
+    list = CreateChildControl<ListView>(
+          "d:c",
+          { { "CPU type", TextAlignament::Right, 25 },
+            { "CPU subtype", TextAlignament::Right, 25 },
+            { "File type", TextAlignament::Left, 80 },
+            { "Offset", TextAlignament::Right, 12 },
+            { "Size", TextAlignament::Right, 12 },
+            { "Align", TextAlignament::Right, 12 },
+            { "Real Align", TextAlignament::Right, 12 } },
+          ListViewFlags::None);
 
     Update();
 }
@@ -74,19 +76,18 @@ void Panels::Objects::Update()
         const auto& info = machO->archs[i].info;
 
         auto item = list->AddItem(tmp.Format("%s (%s)", info.name.c_str(), GetValue(n, machO->archs[i].cputype).data()));
-        list->SetItemText(item, 1, tmp.Format("%s (%s)", info.description.c_str(), GetValue(n, machO->archs[i].cpusubtype).data()));
+        item.SetText(1, tmp.Format("%s (%s)", info.description.c_str(), GetValue(n, machO->archs[i].cpusubtype).data()));
 
         const auto fileType             = machO->archs[i].filetype;
         const auto& fileTypeName        = MAC::FileTypeNames.at(fileType);
         const auto& fileTypeDescription = MAC::FileTypeDescriptions.at(fileType);
-        list->SetItemText(item, 2, tmp.Format("%s (0x%X) %s", fileTypeName.data(), fileType, fileTypeDescription.data()));
+        item.SetText(2, tmp.Format("%s (0x%X) %s", fileTypeName.data(), fileType, fileTypeDescription.data()));
+        item.SetText(3, GetValue(n, machO->archs[i].offset));
+        item.SetText(4, GetValue(n, machO->archs[i].size));
+        item.SetText(5, GetValue(n, machO->archs[i].align));
+        item.SetText(6, GetValue(n, 1ULL << machO->archs[i].align));
 
-        list->SetItemText(item, 3, GetValue(n, machO->archs[i].offset));
-        list->SetItemText(item, 4, GetValue(n, machO->archs[i].size));
-        list->SetItemText(item, 5, GetValue(n, machO->archs[i].align));
-        list->SetItemText(item, 6, GetValue(n, 1ULL << machO->archs[i].align));
-
-        list->SetItemData<Identity<decltype(machO->archs)>::type::value_type>(item, &machO->archs[i]);
+        item.SetData<Identity<decltype(machO->archs)>::type::value_type>(&machO->archs[i]);
     }
 }
 

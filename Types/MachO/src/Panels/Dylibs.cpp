@@ -18,21 +18,19 @@ Dylib::Dylib(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Command", TextAlignament::Left, 16);
-    list->AddColumn("Size", TextAlignament::Right, 8);
-    list->AddColumn("Name", TextAlignament::Left, 100);
+    list = CreateChildControl<ListView>(
+          "d:c",
+          { { "Command", TextAlignament::Left, 16 },
+            { "Size", TextAlignament::Right, 8 },
+            { "Name", TextAlignament::Left, 100 },
+            { "Name Offset", TextAlignament::Right, 13 },
+            { "Timestamp", TextAlignament::Left, 24 },
+            { "Current Version", TextAlignament::Right, 25 },
+            { "Compatibility Version", TextAlignament::Right, 25 } },
+          ListViewFlags::None);
+
     if (machO->is64)
-    {
-        list->AddColumn("Name Ptr", TextAlignament::Right, 13);
-    }
-    else
-    {
-        list->AddColumn("Name Offset", TextAlignament::Right, 13);
-    }
-    list->AddColumn("Timestamp", TextAlignament::Left, 24);
-    list->AddColumn("Current Version", TextAlignament::Right, 25);
-    list->AddColumn("Compatibility Version", TextAlignament::Right, 25);
+        list->GetColumn(3).SetText("Name Ptr");
 
     Update();
 }
@@ -49,13 +47,15 @@ std::string_view Dylib::GetValue(NumericFormatter& n, uint64_t value)
 
 void Dylib::GoToSelectedSection()
 {
-    auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
+    const auto di = list->GetCurrentItem().GetData<const MachOFile::Dylib>();
+
     win->GetCurrentView()->GoTo(di->offset);
 }
 
 void Dylib::SelectCurrentSection()
 {
-    auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
+    const auto di = list->GetCurrentItem().GetData<const MachOFile::Dylib>();
+    //auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
     win->GetCurrentView()->Select(di->offset, di->value.cmdsize);
 }
 
@@ -76,17 +76,16 @@ void Dylib::Update()
               GetValue(n, static_cast<uint32_t>(d.value.cmd)).data());
         auto item = list->AddItem(tmp);
 
-        list->SetItemData<MachOFile::Dylib>(item, const_cast<MachOFile::Dylib*>(&d));
+        item.SetData<MachOFile::Dylib>(const_cast<MachOFile::Dylib*>(&d));
 
-        list->SetItemText(item, 1, GetValue(n, d.value.cmdsize).data());
-        list->SetItemText(item, 2, d.name.c_str());
+        item.SetText(1, GetValue(n, d.value.cmdsize).data());
+        item.SetText(2, d.name.c_str());
 
-        list->SetItemText(item, 3, GetValue(n, d.value.dylib.name.offset).data());
+        item.SetText(3, GetValue(n, d.value.dylib.name.offset).data());
 
         const auto timestamp = (time_t) d.value.dylib.timestamp;
-        list->SetItemText(item, 4, tmp.Format("%s (%s)", ctime(&timestamp), GetValue(n, d.value.dylib.timestamp).data()));
-        list->SetItemText(
-              item,
+        item.SetText(4, tmp.Format("%s (%s)", ctime(&timestamp), GetValue(n, d.value.dylib.timestamp).data()));
+        item.SetText(
               5,
               tmp.Format(
                     "%u.%u.%u (%s)",
@@ -94,8 +93,7 @@ void Dylib::Update()
                     (d.value.dylib.current_version >> 8) & 0xff,
                     d.value.dylib.current_version & 0xff,
                     GetValue(n, d.value.dylib.current_version).data()));
-        list->SetItemText(
-              item,
+        item.SetText(
               6,
               tmp.Format(
                     "%u.%u.%u (%s)",

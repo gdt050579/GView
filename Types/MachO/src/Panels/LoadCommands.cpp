@@ -18,12 +18,16 @@ LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::W
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Index", TextAlignament::Right, 8);
-    list->AddColumn("Type", TextAlignament::Left, 30);
-    list->AddColumn("File Offset", TextAlignament::Right, 14);
-    list->AddColumn("Size", TextAlignament::Right, 14);
-    list->AddColumn("Description", TextAlignament::Left, 50);
+    list = CreateChildControl<ListView>(
+          "d:c",
+          {
+                { "Index", TextAlignament::Right, 8 },
+                { "Type", TextAlignament::Left, 30 },
+                { "File Offset", TextAlignament::Right, 14 },
+                { "Size", TextAlignament::Right, 14 },
+                { "Description", TextAlignament::Left, 50 },
+          },
+          ListViewFlags::None);
 
     Update();
 }
@@ -59,18 +63,15 @@ void Panels::LoadCommands::Update()
     uint32_t i = 0;
     for (const auto& lc : machO->loadCommands)
     {
-        const auto item = list->AddItem(ls.Format("#%lu", i));
-        list->SetItemData<MachOFile::LoadCommand>(item, const_cast<MachOFile::LoadCommand*>(&lc));
+        auto item = list->AddItem(ls.Format("#%lu", i));
+        item.SetData<MachOFile::LoadCommand>(const_cast<MachOFile::LoadCommand*>(&lc));
 
         const auto& lcName     = MAC::LoadCommandNames.at(lc.value.cmd);
         const auto& lcHexValue = GetValue(nf, static_cast<uint32_t>(lc.value.cmd));
-        list->SetItemText(item, 1, ls.Format("%s (%s)", lcName.data(), lcHexValue.data()));
-
-        list->SetItemText(item, 2, GetValue(nf, lc.offset));
-
-        list->SetItemText(item, 3, GetValue(nf, lc.value.cmdsize));
-
-        list->SetItemText(item, 4, MAC::LoadCommandDescriptions.at(lc.value.cmd));
+        item.SetText( 1, ls.Format("%s (%s)", lcName.data(), lcHexValue.data()));
+        item.SetText( 2, GetValue(nf, lc.offset));
+        item.SetText( 3, GetValue(nf, lc.value.cmdsize));
+        item.SetText( 4, MAC::LoadCommandDescriptions.at(lc.value.cmd));
 
         i++;
     }
