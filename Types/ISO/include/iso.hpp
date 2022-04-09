@@ -108,7 +108,7 @@ namespace Panels
                 ls2.AddFormat("%.2x", dateBuffer[i]);
             }
             const auto dateHex = ls2.GetText();
-            general->AddItem(name, ls3.Format(format.data(), ls.GetText(), dateHex));
+            general->AddItem({ name, ls3.Format(format.data(), ls.GetText(), dateHex) });
         }
 
       public:

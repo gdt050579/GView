@@ -20,7 +20,7 @@ void Information::UpdateBasicInfo()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Info"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Info"), ListViewItem::Type::Category);
 
     general->AddItem("File", "NOT IMPLEMENTED");
 
@@ -40,7 +40,7 @@ void Information::UpdateBasicInfo()
 
     const auto& fileTypeName = MAC::FileTypeNames.at(machO->header.filetype);
     auto ftHandle            = general->AddItem("File Type", ls.Format("%-14s (0x%X)", fileTypeName.data(), machO->header.filetype));
-    general->SetItemType(ftHandle, ListViewItemType::Emphasized_1);
+    general->SetItemType(ftHandle, ListViewItem::Type::Emphasized_1);
 
     general->AddItem("Load Commands", ls.Format("%-14s (0x%X)", nf.ToString(machO->header.ncmds, dec).data(), machO->header.ncmds));
 
@@ -60,7 +60,7 @@ void Information::UpdateBasicInfo()
         const auto flagDescription = MAC::MachHeaderFlagsDescriptions.at(flag).data();
 
         const auto fh = general->AddItem("", ls.Format("%-20s %-12s %s", flagName, hfls.GetText(), flagDescription));
-        general->SetItemType(fh, ListViewItemType::Emphasized_2);
+        general->SetItemType(fh, ListViewItem::Type::Emphasized_2);
     }
 
     if (machO->is64)
@@ -77,7 +77,7 @@ void Information::UpdateEntryPoint()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Entry Point"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Entry Point"), ListViewItem::Type::Category);
 
     const auto& lcName    = MAC::LoadCommandNames.at(machO->main->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->main->cmd), hex);
@@ -105,7 +105,7 @@ void Information::UpdateSourceVersion()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Source Version"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Source Version"), ListViewItem::Type::Category);
 
     const auto& lcName    = MAC::LoadCommandNames.at(machO->sourceVersion->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->sourceVersion->cmd), hex);
@@ -137,7 +137,7 @@ void Information::UpdateUUID()
     static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
     static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    general->SetItemType(general->AddItem("UUID"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("UUID"), ListViewItem::Type::Category);
 
     const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid->cmd), hex);
@@ -196,7 +196,7 @@ void Information::UpdateVersionMin()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Version Min"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Version Min"), ListViewItem::Type::Category);
 
     const auto& lcName    = MAC::LoadCommandNames.at(machO->versionMin->cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->versionMin->cmd), hex);

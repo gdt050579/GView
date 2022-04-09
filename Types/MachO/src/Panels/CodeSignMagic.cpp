@@ -7,9 +7,8 @@ using namespace AppCUI::Controls;
 CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO) : TabPage("CodeSign&Magic")
 {
     machO   = _machO;
-    general = CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    general->AddColumn("Key", TextAlignament::Left, 18);
-    general->AddColumn("Value", TextAlignament::Left, 48);
+    general = CreateChildControl<ListView>(
+          "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 18 }, { "Value", TextAlignament::Left, 48 } });
 
     Update();
 }
@@ -22,23 +21,23 @@ void CodeSignMagic::UpdateLinkeditDataCommand()
     NumericFormatter nf2;
     LocalString<1024> ls;
 
-    general->SetItemType(general->AddItem("Code Sign Magic"), ListViewItemType::Category);
+    general->AddItem("Code Sign Magic").SetType(ListViewItem::Type::Category);
 
     const auto& lcName    = MAC::LoadCommandNames.at(machO->codeSignature->ledc.cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->codeSignature->ledc.cmd), hex);
-    general->AddItem("Command", ls.Format("%-14s (%s)", lcName.data(), hexCommand.data()));
+    general->AddItem({ "Command", ls.Format("%-14s (%s)", lcName.data(), hexCommand.data()) });
 
     const auto cmdSize    = nf.ToString(machO->codeSignature->ledc.cmdsize, dec);
     const auto hexCmdSize = nf2.ToString(machO->codeSignature->ledc.cmdsize, hex);
-    general->AddItem("Cmd Size", ls.Format("%-14s (%s)", cmdSize.data(), hexCmdSize.data()));
+    general->AddItem({ "Cmd Size", ls.Format("%-14s (%s)", cmdSize.data(), hexCmdSize.data()) });
 
     const auto dataOffset    = nf.ToString(machO->codeSignature->ledc.dataoff, dec);
     const auto hexDataOffset = nf2.ToString(machO->codeSignature->ledc.dataoff, hex);
-    general->AddItem("Data Offset", ls.Format("%-14s (%s)", dataOffset.data(), hexDataOffset.data()));
+    general->AddItem({ "Data Offset", ls.Format("%-14s (%s)", dataOffset.data(), hexDataOffset.data()) });
 
     const auto dataSize    = nf.ToString(machO->codeSignature->ledc.datasize, dec);
     const auto hexDataSize = nf2.ToString(machO->codeSignature->ledc.datasize, hex);
-    general->AddItem("Data Size", ls.Format("%-14s (%s)", dataSize.data(), hexDataSize.data()));
+    general->AddItem({ "Data Size", ls.Format("%-14s (%s)", dataSize.data(), hexDataSize.data()) });
 }
 
 void CodeSignMagic::UpdateSuperBlob()
@@ -49,7 +48,7 @@ void CodeSignMagic::UpdateSuperBlob()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Super Blob"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Super Blob"), ListViewItem::Type::Category);
 
     const auto& magic   = MAC::CodeSignMagicNames.at(machO->codeSignature->superBlob.magic);
     const auto hexMagic = nf2.ToString(static_cast<uint32_t>(machO->codeSignature->superBlob.magic), hex);
@@ -73,7 +72,7 @@ void CodeSignMagic::UpdateSlots()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Slots"), ListViewItemType::Category);
+    general->SetItemType(general->AddItem("Slots"), ListViewItem::Type::Category);
 
     for (const auto& blob : machO->codeSignature->blobs)
     {
@@ -99,7 +98,7 @@ void CodeSignMagic::UpdateBlobs()
     for (const auto& blob : machO->codeSignature->blobs)
     {
         const auto& slot = MAC::CodeSignSlotNames.at(blob.type);
-        general->SetItemType(general->AddItem(slot.data()), ListViewItemType::Category);
+        general->SetItemType(general->AddItem(slot.data()), ListViewItem::Type::Category);
 
         switch (blob.type)
         {
@@ -204,7 +203,7 @@ void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
         const auto flagDescription = MAC::CodeSignFlagsDescriptions.at(flag).data();
 
         const auto fh = general->AddItem("", ls.Format("%-26s %-12s %s", flagName, hfls.GetText(), flagDescription));
-        general->SetItemType(fh, ListViewItemType::Emphasized_2);
+        general->SetItemType(fh, ListViewItem::Type::Emphasized_2);
     }
 
     const auto hashOffset    = nf.ToString(code.hashOffset, dec);
@@ -298,7 +297,7 @@ void CodeSignMagic::UpdateCodeDirectory(const MAC::CS_CodeDirectory& code)
             const auto flagDescription = MAC::CodeSignExecSegFlagsDescriptions.at(flag).data();
 
             const auto fh = general->AddItem("", ls.Format("%-26s %-12s %s", flagName, hfls.GetText(), flagDescription));
-            general->SetItemType(fh, ListViewItemType::Emphasized_2);
+            general->SetItemType(fh, ListViewItem::Type::Emphasized_2);
         }
     }
 

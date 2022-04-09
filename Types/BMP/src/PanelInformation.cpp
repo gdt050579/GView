@@ -24,11 +24,13 @@ void Panels::Information::UpdateGeneralInformation()
     general->AddItem("File");
     // general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
     // size
-    general->AddItem("Size", tempStr.Format("%s bytes", n.ToString(bmp->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
+    general->AddItem(
+          { "Size", tempStr.Format("%s bytes", n.ToString(bmp->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // Size
-    general->AddItem("Size", tempStr.Format("%u x %u", bmp->infoHeader.width,bmp->infoHeader.height));
+    general->AddItem({ "Size", tempStr.Format("%u x %u", bmp->infoHeader.width, bmp->infoHeader.height) });
     // Resolution
-    general->AddItem("Resolution", tempStr.Format("Vert:%u , Horiz:%u", bmp->infoHeader.horizontalResolution, bmp->infoHeader.verticalResolution));
+    general->AddItem(
+          { "Resolution", tempStr.Format("Vert:%u , Horiz:%u", bmp->infoHeader.horizontalResolution, bmp->infoHeader.verticalResolution) });
 }
 
 void Panels::Information::UpdateIssues()

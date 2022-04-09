@@ -6,9 +6,8 @@ using namespace AppCUI::Controls;
 Panels::Information::Information(Reference<GView::Type::ISO::ISOFile> _iso) : TabPage("Informa&tion")
 {
     iso     = _iso;
-    general = CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    general->AddColumn("Field", TextAlignament::Left, 24);
-    general->AddColumn("Value", TextAlignament::Left, 100);
+    general = CreateChildControl<ListView>(
+          "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
 
     Update();
 }
@@ -19,13 +18,13 @@ void Panels::Information::UpdateGeneralInformation()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->SetItemType(general->AddItem("Info"), ListViewItemType::Category);
+    general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
-    general->AddItem("File", "NOT IMPLEMENTED");
+    general->AddItem({ "File", "NOT IMPLEMENTED" });
 
     const auto fileSize    = nf.ToString(iso->file->GetSize(), dec);
     const auto hexfileSize = nf2.ToString(iso->file->GetSize(), hex);
-    general->AddItem("Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()));
+    general->AddItem({ "Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()) });
 }
 
 void Panels::Information::UpdateVolumeDescriptors()
@@ -70,7 +69,7 @@ void Panels::Information::UpdateVolumeDescriptors()
         break;
         case SectorType::SetTerminator:
         {
-            general->SetItemType(general->AddItem("Terminator Volume Descriptor"), ListViewItemType::Category);
+            general->AddItem("Terminator Volume Descriptor").SetType(ListViewItem::Type::Category);
             UpdateVolumeHeader(descriptor.header);
         }
         break;
@@ -82,7 +81,7 @@ void Panels::Information::UpdateVolumeDescriptors()
 
 void Panels::Information::UpdateBootRecord(const ECMA_119_BootRecord& br)
 {
-    general->SetItemType(general->AddItem("Boot Record"), ListViewItemType::Category);
+    general->AddItem("Boot Record").SetType(ListViewItem::Type::Category);
     UpdateVolumeHeader(br.vdh);
     AddNameAndHexElement("Boot System Identifier", "%-10s (%s)", br.bootSystemIdentifier);
     AddNameAndHexElement("Boot Identifier", "%-10s (%s)", br.bootIdentifier);
@@ -91,7 +90,7 @@ void Panels::Information::UpdateBootRecord(const ECMA_119_BootRecord& br)
 
 void Panels::Information::UpdatePrimaryVolumeDescriptor(const ECMA_119_PrimaryVolumeDescriptor& pvd)
 {
-    general->SetItemType(general->AddItem("Primary Volume Descriptor"), ListViewItemType::Category);
+    general->AddItem("Primary Volume Descriptor").SetType(ListViewItem::Type::Category);
 
     UpdateVolumeHeader(pvd.vdh);
     UpdateVolumeDescriptor(pvd.vdd);
@@ -99,12 +98,12 @@ void Panels::Information::UpdatePrimaryVolumeDescriptor(const ECMA_119_PrimaryVo
 
 void Panels::Information::UpdateVolumeDescriptor(const ECMA_119_VolumeDescriptorData& vdd)
 {
-    general->AddItem("Unused", "");
+    general->AddItem({ "Unused", "" });
     AddNameAndHexElement("System Identifier", "%-14s (%s)", vdd.systemIdentifier);
     AddNameAndHexElement("Volume Identifier", "%-14s (%s)", vdd.volumeIdentifier);
     general->AddItem("Unused Field");
     AddDecAndHexElement("Volume Space Size", "%-14s (%s)", vdd.volumeSpaceSize.LSB);
-    general->AddItem("Unused Field 2", "");
+    general->AddItem({ "Unused Field 2", "" });
     AddDecAndHexElement("Volume Set Size", "%-14s (%s)", vdd.volumeSetSize.LSB);
     AddDecAndHexElement("Volume Sequence Number", "%-14s (%s)", vdd.volumeSequenceNumber.LSB);
     AddDecAndHexElement("Logical Block Size", "%-14s (%s)", vdd.logicalBlockSize.LSB);
@@ -126,17 +125,17 @@ void Panels::Information::UpdateVolumeDescriptor(const ECMA_119_VolumeDescriptor
     AddDateAndHexElement("Volume Expiration Date And Time", "%-14s (%s)", vdd.volumeExpirationDateAndTime);
     AddDateAndHexElement("Volume Effective Date And Time", "%-14s (%s)", vdd.volumeEffectiveDateAndTime);
     AddDecAndHexElement("File Structure Version", "%-14s (%s)", vdd.fileStructureVersion);
-    general->AddItem("Unused2", "");
+    general->AddItem({ "Unused2", "" });
     AddNameAndHexElement("Application Used", "%-14s (%s)", vdd.applicationUsed);
     AddNameAndHexElement("Reserved", "%-14s (%s)", vdd.reserved);
 }
 
 void GView::Type::ISO::Panels::Information::UpdateVolumePartitionDescriptor(const ECMA_119_VolumePartitionDescriptor& vpd)
 {
-    general->SetItemType(general->AddItem("Primary Volume Descriptor"), ListViewItemType::Category);
+    general->AddItem("Primary Volume Descriptor").SetType(ListViewItem::Type::Category);
 
     UpdateVolumeHeader(vpd.vdh);
-    general->AddItem("Unused", "");
+    general->AddItem({ "Unused", "" });
     AddNameAndHexElement("System Identifier", "%-14s (%s)", vpd.systemIdentifier);
     AddNameAndHexElement("Volume Partition Identifier", "%-14s (%s)", vpd.volumePartitionIdentifier);
     AddDecAndHexElement("Volume Partition Location", "%-14s (%s)", vpd.volumePartitionLocation.LSB);
@@ -146,7 +145,7 @@ void GView::Type::ISO::Panels::Information::UpdateVolumePartitionDescriptor(cons
 
 void Panels::Information::UpdateSupplementaryVolumeDescriptor(const ECMA_119_SupplementaryVolumeDescriptor& svd)
 {
-    general->SetItemType(general->AddItem("Supplementary Volume Descriptor"), ListViewItemType::Category);
+    general->AddItem("Supplementary Volume Descriptor").SetType(ListViewItem::Type::Category);
 
     UpdateVolumeHeader(svd.vdh);
     UpdateVolumeDescriptor(svd.vdd);
@@ -161,16 +160,16 @@ void Panels::Information::UpdateVolumeHeader(const ECMA_119_VolumeDescriptorHead
 
     const auto& typeName = ISO::GetSectorTypeName(vdh.type);
     const auto hexType   = nf.ToString(static_cast<uint8>(vdh.type), hex);
-    general->AddItem("Sector Type", ls.Format("%-14s (%s)", typeName.data(), hexType.data()));
+    general->AddItem({ "Sector Type", ls.Format("%-14s (%s)", typeName.data(), hexType.data()) });
 
     const auto identifierHex = ls2.Format(
           "0x%.2x%.2x%.2x%.2x%.2x", vdh.identifier[0], vdh.identifier[1], vdh.identifier[2], vdh.identifier[3], vdh.identifier[4]);
     general->AddItem(
-          "Identifier", ls.Format("%-14s (%s)", std::string{ vdh.identifier, sizeof(vdh.identifier) }.c_str(), identifierHex.data()));
+          { "Identifier", ls.Format("%-14s (%s)", std::string{ vdh.identifier, sizeof(vdh.identifier) }.c_str(), identifierHex.data()) });
 
     const auto version    = nf.ToString(vdh.version, dec);
     const auto hexVersion = nf2.ToString(vdh.version, hex);
-    general->AddItem("Version", ls.Format("%-14s (%s)", version.data(), hexVersion.data()));
+    general->AddItem({ "Version", ls.Format("%-14s (%s)", version.data(), hexVersion.data()) });
 }
 
 void Panels::Information::UpdateIssues()

@@ -15,17 +15,19 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
     win  = _win;
     Base = 16;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 8);
-    list->AddColumn("FilePoz", TextAlignament::Right, 12);
-    list->AddColumn("FileSize", TextAlignament::Right, 12);
-    list->AddColumn("RVA", TextAlignament::Right, 12);
-    list->AddColumn("MemSize", TextAlignament::Right, 12);
-    list->AddColumn("PtrReloc", TextAlignament::Left, 10);
-    list->AddColumn("NrReloc", TextAlignament::Right, 10);
-    list->AddColumn("PtrLnNum", TextAlignament::Left, 10);
-    list->AddColumn("NrLnNum", TextAlignament::Right, 10);
-    list->AddColumn("Characteristics", TextAlignament::Left, 32);
+    list = this->CreateChildControl<ListView>(
+          "d:c",
+          { { "Name", TextAlignament::Left, 8 },
+            { "FilePoz", TextAlignament::Right, 12 },
+            { "FileSize", TextAlignament::Right, 12 },
+            { "RVA", TextAlignament::Right, 12 },
+            { "MemSize", TextAlignament::Right, 12 },
+            { "PtrReloc", TextAlignament::Left, 10 },
+            { "NrReloc", TextAlignament::Right, 10 },
+            { "PtrLnNum", TextAlignament::Left, 10 },
+            { "NrLnNum", TextAlignament::Right, 10 },
+            { "Characteristics", TextAlignament::Left, 32 } },
+          ListViewFlags::None);
 
     Update();
 }
