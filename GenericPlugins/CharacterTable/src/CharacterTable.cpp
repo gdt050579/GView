@@ -9,6 +9,7 @@ using namespace GView;
 using namespace GView::View;
 
 constexpr int CMD_BUTTON_CLOSE = 1;
+
 class CharacterTableExample : public Window, public Handlers::OnButtonPressedInterface
 {
   public:
@@ -36,13 +37,9 @@ extern "C"
         }
         return false;
     }
+
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect["command.CharacterTable"] = Input::Key::Ctrl | Input::Key::Alt | Input::Key::Shift | Input::Key::F1;
     }
-}
-
-int main()
-{
-    return 0;
 }

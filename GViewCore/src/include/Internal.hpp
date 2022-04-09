@@ -77,6 +77,7 @@ namespace Utils
         Zone();
         void Set(uint64 s, uint64 e, AppCUI::Graphics::ColorPair c, std::string_view txt);
     };
+
     class ZonesList
     {
         Zone* list;
@@ -92,6 +93,7 @@ namespace Utils
         const Zone* OffsetToZone(uint64 offset);
     };
 } // namespace Utils
+
 namespace Generic
 {
     constexpr uint32 MAX_PLUGINS_COMMANDS = 8;
@@ -105,6 +107,7 @@ namespace Generic
         } Commands[MAX_PLUGINS_COMMANDS];
         uint32 CommandsCount;
         bool (*fnRun)(const string_view command, Reference<GView::Object> currentObject);
+
       public:
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
@@ -112,6 +115,7 @@ namespace Generic
         void Run(uint32 commandIndex, Reference<GView::Object> currentObject);
     };
 }; // namespace Generic
+
 namespace Type
 {
     namespace DefaultTypePlugin
@@ -119,12 +123,14 @@ namespace Type
         bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
         TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
-    }                                               // namespace DefaultTypePlugin
+    } // namespace DefaultTypePlugin
+
     namespace FolderViewPlugin
     {
         TypeInterface* CreateInstance(const std::filesystem::path& path);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
-    }
+    } // namespace FolderViewPlugin
+
     constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
     class SimplePattern
     {
@@ -141,6 +147,7 @@ namespace Type
             return Count == 0;
         }
     };
+
     constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31; // must be less than 255 !!!
     class Plugin
     {
@@ -172,6 +179,7 @@ namespace Type
         }
     };
 } // namespace Type
+
 namespace App
 {
     namespace MenuCommands
@@ -195,6 +203,7 @@ namespace App
         constexpr int OPEN_PROCESS_TREE = 120003;
 
     }; // namespace MenuCommands
+
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
                      public AppCUI::Controls::Handlers::OnStartInterface
@@ -215,6 +224,7 @@ namespace App
         void ShowErrors();
         bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
         bool AddFolder(const std::filesystem::path& path);
+
       public:
         Instance();
         bool Init();
@@ -251,12 +261,14 @@ namespace App
         Reference<GView::Object> GetObject(uint32 index);
         Reference<GView::Object> GetCurrentObject();
     };
+
     class FileWindowProperties : public Window
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
+
     class FileWindow : public Window, public GView::View::WindowInterface
     {
         Reference<GView::App::Instance> gviewApp;
@@ -288,6 +300,7 @@ namespace App
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
+
     class ErrorDialog : public AppCUI::Controls::Window
     {
       public:
@@ -295,5 +308,4 @@ namespace App
         bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
     };
 } // namespace App
-
 } // namespace GView

@@ -81,10 +81,12 @@ add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
 add_subdirectory(Types/UniversalMachO)
 add_subdirectory(Types/MachO)
+add_subdirectory(Types/ISO)
 
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
+add_subdirectory(GenericPlugins/Hashes)
 
 if(MSVC)
   target_compile_options(GView PUBLIC "/ZI")

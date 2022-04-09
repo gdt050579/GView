@@ -153,7 +153,7 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
     auto obj = win->GetObject();
     CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
 
-    auto buf  = obj->cache.Get(0, 4096, false); // first 4k
+    auto buf  = obj->cache.Get(0, 0x8800, false);
     auto* plg = &this->defaultPlugin;
     // iterate from existing types
     for (auto& pType : this->typePlugins)
@@ -193,7 +193,7 @@ bool Instance::AddFolder(const std::filesystem::path& path)
     auto win  = std::make_unique<FileWindow>("Folder view", this);
     auto obj  = win->GetObject();
     obj->type = GView::Type::FolderViewPlugin::CreateInstance(path);
-  
+
     // validate type
     CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
 
