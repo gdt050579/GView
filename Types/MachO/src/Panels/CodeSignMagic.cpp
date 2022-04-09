@@ -21,7 +21,7 @@ void CodeSignMagic::UpdateLinkeditDataCommand()
     NumericFormatter nf2;
     LocalString<1024> ls;
 
-    general->AddItem({"Code Sign Magic").SetType(ListViewItem::Type::Category);
+    general->AddItem("Code Sign Magic").SetType(ListViewItem::Type::Category);
 
     const auto& lcName    = MAC::LoadCommandNames.at(machO->codeSignature->ledc.cmd);
     const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->codeSignature->ledc.cmd), hex);
@@ -48,7 +48,7 @@ void CodeSignMagic::UpdateSuperBlob()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->AddItem({"Super Blob").SetType( ListViewItem::Type::Category);
+    general->AddItem("Super Blob").SetType( ListViewItem::Type::Category);
 
     const auto& magic   = MAC::CodeSignMagicNames.at(machO->codeSignature->superBlob.magic);
     const auto hexMagic = nf2.ToString(static_cast<uint32_t>(machO->codeSignature->superBlob.magic), hex);
@@ -72,7 +72,7 @@ void CodeSignMagic::UpdateSlots()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->AddItem({"Slots").SetType( ListViewItem::Type::Category);
+    general->AddItem("Slots").SetType( ListViewItem::Type::Category);
 
     for (const auto& blob : machO->codeSignature->blobs)
     {

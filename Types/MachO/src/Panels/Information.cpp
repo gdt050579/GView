@@ -122,7 +122,7 @@ void Information::UpdateSourceVersion()
     const auto e          = machO->sourceVersion->version & 0x3ff;
     const auto version    = ls.Format("%llu.%llu.%llu.%llu.%llu", a, b, c, d, e);
     const auto versionHex = nf2.ToString(machO->sourceVersion->version, hex);
-    general->AddItem({"Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()));
+    general->AddItem({ "Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()) });
 }
 
 void Information::UpdateUUID()

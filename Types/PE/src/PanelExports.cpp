@@ -11,10 +11,10 @@ Panels::Exports::Exports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 60);
-    list->AddColumn("Ord", TextAlignament::Left, 5);
-    list->AddColumn("RVA", TextAlignament::Left, 12);
+    list = this->CreateChildControl<ListView>(
+          "d:c",
+          { { "Name", TextAlignament::Left, 60 }, { "Ord", TextAlignament::Left, 5 }, { "RVA", TextAlignament::Left, 12 } },
+          ListViewFlags::None);
 
     Update();
 }
@@ -26,8 +26,8 @@ void Panels::Exports::Update()
     list->DeleteAllItems();
     for (auto& exp : pe->exp)
     {
-        auto handle = list->AddItem(exp.Name, n.ToDec(exp.Ordinal), temp.Format("%u (0x%08X)", exp.RVA, exp.RVA));
-        list->SetItemData(handle, (uint64) pe->ConvertAddress(exp.RVA, AddressType::RVA, AddressType::FileOffset));
+        list->AddItem({ exp.Name, n.ToDec(exp.Ordinal), temp.Format("%u (0x%08X)", exp.RVA, exp.RVA) })
+              .SetData((uint64) pe->ConvertAddress(exp.RVA, AddressType::RVA, AddressType::FileOffset));
     }
 }
 bool Panels::Exports::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

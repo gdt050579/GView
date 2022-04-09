@@ -18,14 +18,15 @@ SymTab::SymTab(Reference<MachOFile> _machO, Reference<GView::View::WindowInterfa
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Index", TextAlignament::Left, 8);
-    list->AddColumn("Name", TextAlignament::Left, 60);
-    list->AddColumn("Type", TextAlignament::Right, 20);
-    list->AddColumn("Section", TextAlignament::Right, 30);
-    list->AddColumn("[Align|Ordinal|Reference] Desc", TextAlignament::Right, 60);
-    list->AddColumn("Value", TextAlignament::Right, 15);
-
+    list = CreateChildControl<ListView>(
+          "d:c",
+          { { "Index", TextAlignament::Left, 8 },
+            { "Name", TextAlignament::Left, 60 },
+            { "Type", TextAlignament::Right, 20 },
+            { "Section", TextAlignament::Right, 30 },
+            { "[Align|Ordinal|Reference] Desc", TextAlignament::Right, 60 },
+            { "Value", TextAlignament::Right, 15 } },
+          ListViewFlags::None);
     Update();
 }
 
@@ -64,11 +65,11 @@ void SymTab::Update()
     for (auto i = 0U; i < machO->dySymTab->sc.nsyms; i++)
     {
         auto item = list->AddItem(GetValue(n, i));
-        list->SetItemData<uint32_t>(item, &i);
+        item.SetData(i);
 
         const auto& nl = machO->dySymTab->objects[i];
 
-        list->SetItemText(item, 1, nl.symbolNameDemangled.c_str());
+        item.SetText(1, nl.symbolNameDemangled.c_str());
 
         std::string _1s;
         std::string _2s;
@@ -100,7 +101,7 @@ void SymTab::Update()
             _2s = "NONE";
         }
 
-        list->SetItemText(item, 2, tmp.Format("[%s | %s] (%s)", _2s.c_str(), _1s.c_str(), std::string(GetValue(n, nl.n_type)).c_str()));
+        item.SetText(2, tmp.Format("[%s | %s] (%s)", _2s.c_str(), _1s.c_str(), std::string(GetValue(n, nl.n_type)).c_str()));
 
         if (nl.n_sect == MAC::NO_SECT)
         {
@@ -128,7 +129,7 @@ void SymTab::Update()
             }
         }
 
-        list->SetItemText(item, 3, tmp.Format("[%s | %s] (%s)", _1s.c_str(), _2s.c_str(), GetValue(n, nl.n_sect).data()));
+        item.SetText(3, tmp.Format("[%s | %s] (%s)", _1s.c_str(), _2s.c_str(), GetValue(n, nl.n_sect).data()));
 
         const auto align = std::string(GetValue(n, MAC::GET_COMM_ALIGN(nl.n_desc)));
         std::string ordinal;
@@ -184,9 +185,8 @@ void SymTab::Update()
             throw "MAC::N_TYPE_BITS::INDR not implement!";
         }
 
-        list->SetItemText(
-              item, 4, tmp.Format("[%s | %s | %s] (%s)", align.c_str(), ordinal.c_str(), _1s.c_str(), GetValue(n, nl.n_desc).data()));
-        list->SetItemText(item, 5, GetValue(n, nl.n_value));
+        item.SetText(4, tmp.Format("[%s | %s | %s] (%s)", align.c_str(), ordinal.c_str(), _1s.c_str(), GetValue(n, nl.n_desc).data()));
+        item.SetText(5, GetValue(n, nl.n_value));
     }
 }
 

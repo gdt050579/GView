@@ -59,23 +59,23 @@ void Panels::Directories::Update()
             h = 256;
         auto item = list->AddItem(temp.Format("%d x %d", w, h));
         if (d.ico.colorPallette == 0)
-            list->SetItemText(item, 1, "None");
+            item.SetText( 1, "None");
         else
-            list->SetItemText(item, 1, temp.Format("%d", d.ico.colorPallette));
+            item.SetText( 1, temp.Format("%d", d.ico.colorPallette));
         if (ico->isIcoFormat)
         {
-            list->SetItemText(item, 2, temp.Format("%d", d.ico.colorPlanes));
-            list->SetItemText(item, 3, temp.Format("%d", d.ico.bitsPerPixels));
-            list->SetItemText(item, 4, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
-            list->SetItemText(item, 5, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
+            item.SetText( 2, temp.Format("%d", d.ico.colorPlanes));
+            item.SetText( 3, temp.Format("%d", d.ico.bitsPerPixels));
+            item.SetText( 4, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
+            item.SetText( 5, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
         }
         else
         {
-            list->SetItemText(item, 2, temp.Format("%d,%d", d.cursor.hotstopX, d.cursor.hotstopY));
-            list->SetItemText(item, 3, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
-            list->SetItemText(item, 4, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
+            item.SetText( 2, temp.Format("%d,%d", d.cursor.hotstopX, d.cursor.hotstopY));
+            item.SetText( 3, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
+            item.SetText( 4, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
         }
-        list->SetItemData<ICO::DirectoryEntry>(item, &d);
+        item.SetData<ICO::DirectoryEntry>(&d);
     }
 }
 

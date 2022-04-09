@@ -60,15 +60,15 @@ void Panels::Sections::Update()
     {
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
-        list->SetItemData<PE::ImageSectionHeader>(item, pe->sect + tr);
-        list->SetItemText(item, 1, GetValue(n, pe->sect[tr].PointerToRawData));
-        list->SetItemText(item, 2, GetValue(n, pe->sect[tr].SizeOfRawData));
-        list->SetItemText(item, 3, GetValue(n, pe->sect[tr].VirtualAddress));
-        list->SetItemText(item, 4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
-        list->SetItemText(item, 5, GetValue(n, pe->sect[tr].PointerToRelocations));
-        list->SetItemText(item, 6, GetValue(n, pe->sect[tr].NumberOfRelocations));
-        list->SetItemText(item, 7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
-        list->SetItemText(item, 8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
+        item.SetData<PE::ImageSectionHeader>(pe->sect + tr);
+        item.SetText(1, GetValue(n, pe->sect[tr].PointerToRawData));
+        item.SetText(2, GetValue(n, pe->sect[tr].SizeOfRawData));
+        item.SetText(3, GetValue(n, pe->sect[tr].VirtualAddress));
+        item.SetText(4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
+        item.SetText(5, GetValue(n, pe->sect[tr].PointerToRelocations));
+        item.SetText(6, GetValue(n, pe->sect[tr].NumberOfRelocations));
+        item.SetText(7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
+        item.SetText(8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
 
         // caracteristics
         const auto tmp = pe->sect[tr].Characteristics;
@@ -109,7 +109,7 @@ void Panels::Sections::Update()
         {
             temp.Add(" [+]");
         }
-        list->SetItemText(item, 9, temp);
+        item.SetText(9, temp);
     }
 }
 

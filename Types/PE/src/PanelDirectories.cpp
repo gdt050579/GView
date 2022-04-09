@@ -15,12 +15,14 @@ Panels::Directories::Directories(Reference<GView::Type::PE::PEFile> _pe, Referen
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    // columns
-    list->AddColumn("Name", TextAlignament::Left);
-    list->AddColumn("Sect", TextAlignament::Left, 12);
-    list->AddColumn("Address", TextAlignament::Left, 20);
-    list->AddColumn("Size", TextAlignament::Left, 20);
+    list = this->CreateChildControl<ListView>(
+          "d:c",
+          { { "Name", TextAlignament::Left, 10 },
+            { "Sect", TextAlignament::Left, 12 },
+            { "Address", TextAlignament::Left, 20 },
+            { "Size", TextAlignament::Left, 20 } },
+          ListViewFlags::None);
+
     // directories
     for (auto dirID = 0U; dirID < 15; dirID++)
     {
@@ -71,16 +73,16 @@ void Panels::Directories::Update()
         sz              = pe->dirs[tr].Size;
         if ((RVA == 0) && (sz == 0))
         {
-            list->SetItemText(item, 1, "");
-            list->SetItemText(item, 2, "");
-            list->SetItemText(item, 3, "");
-            list->SetItemType(item, ListViewItemType::GrayedOut);
+            item.SetText( 1, "");
+            item.SetText( 2, "");
+            item.SetText( 3, "");
+            list->SetItemType(item, ListViewItem::Type::GrayedOut);
             list->SetItemData(item, INVALID_DIRECTORY);
         }
         else
         {
             auto sectID = 0xFFFFFFFF;
-            list->SetItemType(item, ListViewItemType::Normal);
+            list->SetItemType(item, ListViewItem::Type::Normal);
             list->SetItemData(item, (uint64)tr);
             // search for a section that contains the directory
             for (auto gr = 0U; (gr < pe->nrSections) && (sectID == 0xFFFFFFFF); gr++)
@@ -91,7 +93,7 @@ void Panels::Directories::Update()
             // if no section was found
             if (sectID == 0xFFFFFFFF)
             {
-                list->SetItemText(item, 1, "<outside>");
+                item.SetText( 1, "<outside>");
             }
             else
             {
@@ -99,10 +101,10 @@ void Panels::Directories::Update()
                 pe->CopySectionName(sectID, sectName);
                 temp.Add(sectName);
                 temp.Add("]");
-                list->SetItemText(item, 1, temp);
+                item.SetText( 1, temp);
             }
-            list->SetItemText(item, 2, temp.Format("0x%X (%d)", RVA, RVA));
-            list->SetItemText(item, 3, temp.Format("0x%X (%d)", sz, sz));
+            item.SetText( 2, temp.Format("0x%X (%d)", RVA, RVA));
+            item.SetText( 3, temp.Format("0x%X (%d)", sz, sz));
         }
     }
 }

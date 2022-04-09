@@ -9,16 +9,14 @@ Panels::Imports::Imports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 25);
-    list->AddColumn("RVA", TextAlignament::Left, 12);
+    list = this->CreateChildControl<ListView>(
+          "x:0,y:0,w:100%,h:10", { { "Name", TextAlignament::Left, 25 }, { "RVA", TextAlignament::Left, 12 } }, ListViewFlags::None);
 
-    dlls = this->CreateChildControl<ListView>("x:0,y:10,w:100%,h:10", ListViewFlags::HideColumns);
-    dlls->AddColumn("", TextAlignament::Left, 50);
+    dlls = this->CreateChildControl<ListView>("x:0,y:10,w:100%,h:10", { { "", TextAlignament::Left, 50 } }, ListViewFlags::HideColumns);
 
-    info = this->CreateChildControl<ListView>("x:0,y:20,w:100%,h:4", ListViewFlags::HideColumns);
-    info->AddColumn("", TextAlignament::Left, 12);
-    info->AddColumn("", TextAlignament::Left, 25);
+    info = this->CreateChildControl<ListView>(
+          "x:0,y:20,w:100%,h:4", { { "", TextAlignament::Left, 12 }, { "", TextAlignament::Left, 25 } }, ListViewFlags::HideColumns);
+
 
     Update();
 }
@@ -33,11 +31,10 @@ void Panels::Imports::Update()
     {
         if (ifnc.dllIndex != lastDLLIndex)
         {
-            list->SetItemType(list->AddItem(pe->impDLL[ifnc.dllIndex].Name), ListViewItemType::Highlighted);
+            list->AddItem(pe->impDLL[ifnc.dllIndex].Name).SetType(ListViewItem::Type::Highlighted);
             lastDLLIndex = ifnc.dllIndex;
         }
-        auto item = list->AddItem(ifnc.Name, temp.Format("%u (0x%08X)", ifnc.RVA, ifnc.RVA));
-        list->SetItemXOffset(item, 2);
+        list->AddItem({ ifnc.Name, temp.Format("%u (0x%08X)", ifnc.RVA, ifnc.RVA) }).SetXOffset(2);
     }
 
     // dlls
@@ -49,8 +46,8 @@ void Panels::Imports::Update()
 
     // general infor
     info->DeleteAllItems();
-    info->AddItem("Nr of DLLs", temp.Format("%u", (uint32) pe->impDLL.size()));
-    info->AddItem("Nr of Functions", temp.Format("%u", (uint32) pe->impFunc.size()));
+    info->AddItem({ "Nr of DLLs", temp.Format("%u", (uint32) pe->impDLL.size()) });
+    info->AddItem({ "Nr of Functions", temp.Format("%u", (uint32) pe->impFunc.size()) });
 }
 void Panels::Imports::OnAfterResize(int newWidth, int newHeight)
 {

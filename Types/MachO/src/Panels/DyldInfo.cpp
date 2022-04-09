@@ -19,7 +19,7 @@ void DyldInfo::UpdateBasicInfo()
     NumericFormatter n;
 
     general->DeleteAllItems();
-    general->AddItem({"DYLD INFO").SetType(ListViewItem::Type::Category);
+    general->AddItem("DYLD INFO").SetType(ListViewItem::Type::Category);
 
     static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
     static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
