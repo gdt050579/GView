@@ -12,6 +12,16 @@ namespace View
 
         struct SettingsData
         {          
+            static constexpr uint32 MAX_COLUMNS = 32;
+            struct Column
+            {
+                FixSizeString<29> Name;
+                TextAlignament Align;
+                uint32 Width;
+            } columns[MAX_COLUMNS];
+            AppCUI::Graphics::Image icon;
+            uint32 columnsCount;
+            Reference<ListItemsInterface> listItemsInterface; 
             SettingsData();
         };
 

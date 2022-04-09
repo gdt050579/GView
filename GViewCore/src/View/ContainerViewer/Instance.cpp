@@ -12,10 +12,8 @@ constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
-    imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
-
-    this->obj               = _obj;
-    this->name              = _name;
+    this->obj  = _obj;
+    this->name = _name;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -33,8 +31,20 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 
+    // create some object
+    imgView = Factory::ImageView::Create(this, "x:0,y:0,w:16,h:8", ViewerFlags::HideScrollBar);
+    if ((this->settings->icon.GetWidth() == 16) && (this->settings->icon.GetHeight() == 16))
+        imgView->SetImage(this->settings->icon, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
+    this->propList = Factory::ListView::Create(this, "l:17,t:0,r:0,h:8", ListViewFlags::HideColumns);
+    this->propList->AddColumn("Field", TextAlignament::Left, 20);
+    this->propList->AddColumn("Value", TextAlignament::Left, 200);
+    this->items = Factory::Tree::Create(this, "l:0,t:10,r:0,b:0", TreeFlags::None, settings->columnsCount);
+    for (uint32 idx = 0; idx < settings->columnsCount; idx++)
+    {
+        const auto& col = settings->columns[idx];
+        this->items->AddColumnData(idx, col.Name, col.Align, col.Align, col.Width);
+    }
 }
-
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
@@ -50,7 +60,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
-
     }
     return false;
 }
@@ -89,7 +98,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
-
     }
     return false;
 }
@@ -111,7 +119,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-
 
     };
 }

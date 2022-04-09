@@ -4,6 +4,23 @@ using namespace GView;
 
 namespace GView::Type::FolderViewPlugin
 {
+
+constexpr string_view folderIcon = "................" // 1
+                                   "...WWW.........." // 2
+                                   "..WYYYW........." // 3
+                                   ".WYYYYYWWWWWWW.." // 4
+                                   ".WooooooooooooW." // 5
+                                   ".Wo..........oW." // 6
+                                   ".Wo..........oW." // 7
+                                   ".Wo..........oW." // 8
+                                   ".Wo..........oW." // 9
+                                   ".WooooooooooooW." // 10
+                                   "..WWWWWWWWWWWW.." // 11
+                                   "................" // 12
+                                   "................" // 13
+                                   "................" // 14
+                                   "................" // 15
+                                   "................";// 16
 class DefaultInformationPanel : public TabPage
 {
   public:
@@ -36,8 +53,13 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     // 1. info panel
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
 
-    // 2. views   
+    // 2. views
     View::ContainerViewer::Settings settings;
+    settings.SetIcon(folderIcon);
+    settings.AddColumn("&Name", TextAlignament::Left, 24);
+    settings.AddColumn("&Type", TextAlignament::Left, 16);
+    settings.AddColumn("&Size", TextAlignament::Right, 12);
+    settings.AddColumn("&Created", TextAlignament::Center, 12);
     win->CreateViewer("Container", settings);
     return true;
 }
