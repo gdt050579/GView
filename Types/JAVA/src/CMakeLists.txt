@@ -8,4 +8,5 @@ target_sources(JAVA PRIVATE
 	class_parser.cpp
 	java_viewer.cpp
 	main.cpp
+	raw_opcodes.cpp
 )

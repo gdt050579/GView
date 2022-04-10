@@ -13,7 +13,7 @@ extern "C"
 
         uint32 magic;
         memcpy(&magic, buf.GetData(), sizeof(magic));
-        return magic == 0xBEBAFECA; // todo: 0xCAFEBABE big
+        return magic == Endian::native_to_big(0xCAFEBABE);
     }
 
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
@@ -37,3 +37,7 @@ extern "C"
         sect["Priority"] = 1;
     }
 }
+
+// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-7.html
+// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html#jvms-6.5.getstatic
+// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.7

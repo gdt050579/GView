@@ -32,6 +32,11 @@ size_t BufferReader::available() const
     return ptr_end - ptr_current;
 }
 
+bool BufferReader::done() const
+{
+    return available() == 0;
+}
+
 const uint8* BufferReader::get() const
 {
     return ptr_current;

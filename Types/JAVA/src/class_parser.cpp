@@ -100,10 +100,36 @@ struct ConstantData
     };
 };
 
+struct ExceptionTable
+{
+    uint16 start_pc;
+    uint16 end_pc;
+    uint16 handler_pc;
+    uint16 catch_type;
+
+    bool read(BufferReader& reader)
+    {
+        READB(start_pc);
+        READB(end_pc);
+        READB(handler_pc);
+        READB(catch_type);
+        return true;
+    }
+};
+
 struct AttributeInfo
 {
     uint16 attribute_name_index;
     BufferView info;
+};
+
+struct CodeAttribute
+{
+    uint16 max_stack;
+    uint16 max_locals;
+    BufferView code;
+    vector<ExceptionTable> exception_table;
+    vector<AttributeInfo> attributes;
 };
 
 struct FieldInfo
@@ -141,6 +167,7 @@ struct ClassParser
 
     bool parse_attributes(vector<AttributeInfo>& out);
     bool parse_attribute(AttributeInfo& out);
+    bool parse_attribute_code(BufferView buffer, CodeAttribute& code);
 };
 
 ClassParser::ClassParser(BufferReader reader) : reader(reader)
@@ -268,7 +295,7 @@ bool ClassParser::parse_attributes(vector<AttributeInfo>& out)
     {
         AttributeInfo attribute;
         FCHECK(parse_attribute(attribute));
-        attributes.push_back(attribute);
+        out.push_back(attribute);
     }
 
     return true;
@@ -279,8 +306,32 @@ bool ClassParser::parse_attribute(AttributeInfo& out)
     READB(out.attribute_name_index);
     uint32 attribute_length;
     READB(attribute_length);
-    out.info = { reader.get(), attribute_length };
+    out.info = BufferView{ reader.get(), attribute_length };
     SKIP(attribute_length);
+
+    return true;
+}
+
+bool ClassParser::parse_attribute_code(BufferView buffer, CodeAttribute& code)
+{
+    reader = { buffer.GetData(), buffer.GetLength() };
+
+    READB(code.max_stack);
+    READB(code.max_locals);
+    uint32 code_length;
+    READB(code_length);
+    code.code = { reader.get(), code_length };
+    SKIP(code_length);
+    uint16 exception_table_length;
+    READB(exception_table_length);
+    for (uint32 i = 0; i < exception_table_length; ++i)
+    {
+        ExceptionTable exception;
+        FCHECK(exception.read(reader));
+        code.exception_table.push_back(exception);
+    }
+
+    FCHECK(parse_attributes(code.attributes));
 
     return true;
 }
@@ -423,6 +474,7 @@ Type* Demangler::demangle_method(string_view in)
 
 struct AstCreator
 {
+    ClassParser& class_parser;
     const vector<ConstantData>& constant_data;
     const vector<FieldInfo>& fields;
     const vector<MethodInfo>& methods;
@@ -430,27 +482,21 @@ struct AstCreator
     AstContext ctx;
     Demangler demangler;
 
-    AstCreator(
-          const vector<ConstantData>& constant_data,
-          const vector<FieldInfo>& fields,
-          const vector<MethodInfo>& methods,
-          const vector<AttributeInfo>& attributes);
+    AstCreator(ClassParser& class_parse);
 
     bool create();
     Field* create_field(const FieldInfo& raw_field);
     Method* create_method(const MethodInfo& raw_method);
+    bool create_code(BufferView buffer);
 
     bool get_utf8(string_view& out, uint16 index);
 
     const ConstantData* get_constant(uint16 index, ConstantKind expect);
 };
 
-AstCreator::AstCreator(
-      const vector<ConstantData>& constant_data,
-      const vector<FieldInfo>& fields,
-      const vector<MethodInfo>& methods,
-      const vector<AttributeInfo>& attributes)
-    : constant_data(constant_data), fields(fields), methods(methods), attributes(attributes), demangler(ctx)
+AstCreator::AstCreator(ClassParser& class_parser)
+    : class_parser(class_parser), constant_data(class_parser.constant_data), fields(class_parser.fields), methods(class_parser.methods),
+      attributes(class_parser.attributes), demangler(ctx)
 {
 }
 
@@ -474,7 +520,7 @@ bool AstCreator::create()
         FCHECK(field);
         clazz->fields[count++] = field;
     }
-    return false;
+    return true;
 }
 
 Field* AstCreator::create_field(const FieldInfo& raw_field)
@@ -563,13 +609,26 @@ Method* AstCreator::create_method(const MethodInfo& raw_method)
     {
         string_view name;
         FCHECKNULL(get_utf8(name, i.attribute_name_index));
+
         if (name == "Code")
-            method->code = i.info;
+        {
+            FCHECKNULL(create_code(i.info));
+        }
         else
             method->unknown_attributes++;
     }
 
     return method;
+}
+
+bool print_opcodes(BufferView buffer);
+
+bool AstCreator::create_code(BufferView buffer)
+{
+    CodeAttribute code;
+    FCHECK(class_parser.parse_attribute_code(buffer, code));
+    print_opcodes(code.code);
+    return true;
 }
 
 bool AstCreator::get_utf8(string_view& out, uint16 index)
@@ -595,7 +654,7 @@ bool parse_class(BufferView buffer)
     ClassParser parser{ { buffer.GetData(), buffer.GetLength() } };
     FCHECK(parser.parse());
 
-    AstCreator creator{ parser.constant_data, parser.fields, parser.methods, parser.attributes };
+    AstCreator creator{ parser };
     return creator.create();
 }
 

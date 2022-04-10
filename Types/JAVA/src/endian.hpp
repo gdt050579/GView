@@ -70,7 +70,7 @@ inline uint8_t native_to_big(uint8_t x)
 
 inline uint16_t native_to_big(uint16_t x)
 {
-#ifdef GVIEW_BIG_ENDIAN
+#ifdef GVIEW_LITTLE_ENDIAN
     return swap(x);
 #else
     return x;
@@ -79,7 +79,7 @@ inline uint16_t native_to_big(uint16_t x)
 
 inline uint32_t native_to_big(uint32_t x)
 {
-#ifdef GVIEW_BIG_ENDIAN
+#ifdef GVIEW_LITTLE_ENDIAN
     return swap(x);
 #else
     return x;
@@ -88,7 +88,7 @@ inline uint32_t native_to_big(uint32_t x)
 
 inline uint64_t native_to_big(uint64_t x)
 {
-#ifdef GVIEW_BIG_ENDIAN
+#ifdef GVIEW_LITTLE_ENDIAN
     return swap(x);
 #else
     return x;

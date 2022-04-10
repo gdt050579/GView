@@ -88,6 +88,7 @@ class BufferReader
     BufferReader(const uint8* ptr_start, size_t size);
 
     size_t available() const;
+    bool done() const;
     const uint8* get() const;
     bool read(void* buffer, size_t size);
     bool skip(size_t size);
@@ -126,4 +127,6 @@ class BufferReader
 #define unreachable                                                                                                                        \
     __debugbreak();                                                                                                                        \
     std::abort()
+
+#define unimplemented unreachable
 } // namespace GView::Java
