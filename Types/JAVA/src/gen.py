@@ -5,14 +5,22 @@ class Opcode:
         self.id = id
         self.name = name
         self._rel = False
+        self._implemented = True
         self.args = args
 
     def rel(self):
-        self._rel = not self._rel
+        self._rel = True
+        return self
+
+    def unimplemented(self):
+        self._implemented = False
         return self
 
     def is_relative(self):
         return self._rel
+
+    def is_implemented(self):
+        return self._implemented
 
 class Type:
     def __init__(self, t, is_wide=False):
@@ -248,6 +256,9 @@ OPCODES = [
     Opcode(168, "jsr", INT16),
     Opcode(169, "ret", UINT8),
 
+    Opcode(170, "tableswitch").unimplemented(),
+    Opcode(171, "lookupswitch").unimplemented(),
+
     Opcode(172, "ireturn"),
     Opcode(173, "lreturn"),
     Opcode(174, "freturn"),
@@ -257,14 +268,17 @@ OPCODES = [
 
     # References
     Opcode(178, "getstatic", UINT16),
+    Opcode(179, "putstatic", UINT16),
+    Opcode(180, "getfield", UINT16),
+    Opcode(181, "putfield", UINT16),
 
     Opcode(182, "invokevirtual", UINT16),
     Opcode(183, "invokespecial", UINT16),
     Opcode(184, "invokestatic", UINT16),
-    Opcode(185, "invokeinterface", UINT16, UINT8),
-    Opcode(186, "invokedynamic", UINT16, UINT8),
+    Opcode(185, "invokeinterface", UINT16, UINT8, UINT8),
+    Opcode(186, "invokedynamic", UINT16, UINT8, UINT8),
 
-    Opcode(187, "ne", UINT16),
+    Opcode(187, "new", UINT16),
     Opcode(188, "newarray", UINT8),
     Opcode(189, "anewarray", UINT16),
     Opcode(190, "arraylength"),
@@ -275,7 +289,7 @@ OPCODES = [
     Opcode(195, "monitorexit", UINT16),
 
     # Extended
-    Opcode(196, "wide"), # TODO: needs custom code
+    Opcode(196, "wide").unimplemented(), # TODO: needs custom code
     Opcode(197, "multianewarray", INT16, UINT8),
     Opcode(198, "ifnull", INT16).rel(),
     Opcode(199, "ifnonnull", INT16).rel(),
@@ -283,14 +297,17 @@ OPCODES = [
     Opcode(201, "jsr_w", INT32).rel(),
 ]
 
+for i in range(0, len(OPCODES)):
+    assert i == OPCODES[i].id, f"{i} -- {OPCODES[i].name}"
+
 output = '''
 #include "global.hpp"
 
 namespace GView::Java{
 static const char* names[256] = {
 '''
-for i in range(0, len(OPCODES)):
-    output += f'"{OPCODES[i].name}",'
+for i in OPCODES:
+    output += f'"{i.name}",'
 
 output += '''};
 bool get_opcode(BufferReader& reader, Opcode& out) {
@@ -304,24 +321,28 @@ bool get_opcode(BufferReader& reader, Opcode& out) {
     switch (opcode) {
 '''
 
-ARGS_NAMES = ["first", "second"]
-
+ARGS_NAMES = ["first", "second", "third"]
 for op in OPCODES:
     output += f'''case {op.id}: {{
     // {op.name}
     '''
+    if not op.is_implemented():
+        output += "unimplemented;"
+
     for i in range(0, len(op.args)):
         arg_name = ARGS_NAMES[i]
         arg = op.args[i]
-        output += f'''{arg.get_name()} {arg_name};
+        output += f'''\n
+        {arg.get_name()} {arg_name};
         READB({arg_name});
         '''
         if op.is_relative():
             output += f"{arg_name} += ({arg.get_name()}) offset;"
         unsigned = "unsigned" if arg.is_unsigned() else "signed"
-        output += f'''out.{arg_name} = {arg_name};
-        out.{arg_name}_exists = true;
-        out.{arg_name}_unsigned = {"true" if arg.is_unsigned() else "false"};'''
+        if i < 4:
+            output += f'''out.args[{i}].value = {arg_name};
+            out.args[{i}].exists = true;
+            out.args[{i}].is_unsigned = {"true" if arg.is_unsigned() else "false"};'''
     output += "break;}"
 
 

@@ -80,14 +80,15 @@ bool parse_class(BufferView buffer);
 
 struct Opcode
 {
+    struct Arg
+    {
+        bool exists;
+        bool is_unsigned;
+        uint32 value;
+    };
     const char* name;
     uint8 opcode;
-    bool first_exists;
-    bool first_unsigned;
-    bool second_exists;
-    bool second_unsigned;
-    uint32 first;
-    uint32 second;
+    Arg args[3];
 };
 
 class BufferReader

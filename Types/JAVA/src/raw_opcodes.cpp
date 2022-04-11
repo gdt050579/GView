@@ -3,203 +3,40 @@
 namespace GView::Java
 {
 static const char* names[256] = {
-    "nop",
-    "aconst_null",
-    "iconst_m1",
-    "iconst_0",
-    "iconst_1",
-    "iconst_2",
-    "iconst_3",
-    "iconst_4",
-    "iconst_5",
-    "lconst_0",
-    "lconst_1",
-    "fconst_0",
-    "fconst_1",
-    "fconst_2",
-    "dconst_0",
-    "dconst_1",
-    "bipush",
-    "sipush",
-    "ldc",
-    "ldc_w",
-    "ldc2_w",
-    "iload",
-    "lload",
-    "fload",
-    "dload",
-    "aload",
-    "iload_0",
-    "iload_1",
-    "iload_2",
-    "iload_3",
-    "lload_0",
-    "lload_1",
-    "lload_2",
-    "lload_3",
-    "fload_0",
-    "fload_1",
-    "fload_2",
-    "fload_3",
-    "dload_0",
-    "dload_1",
-    "dload_2",
-    "dload_3",
-    "aload_0",
-    "aload_1",
-    "aload_2",
-    "aload_3",
-    "iaload",
-    "laload",
-    "faload",
-    "daload",
-    "aaload",
-    "baload",
-    "caload",
-    "saload",
-    "istore",
-    "lstore",
-    "fstore",
-    "dstore",
-    "astore",
-    "istore_0",
-    "istore_1",
-    "istore_2",
-    "istore_3",
-    "lstore_0",
-    "lstore_1",
-    "lstore_2",
-    "lstore_3",
-    "fstore_0",
-    "fstore_1",
-    "fstore_2",
-    "fstore_3",
-    "dstore_0",
-    "dstore_1",
-    "dstore_2",
-    "dstore_3",
-    "astore_0",
-    "astore_1",
-    "astore_2",
-    "astore_3",
-    "iastore",
-    "lastore",
-    "fastore",
-    "dastore",
-    "aastore",
-    "bastore",
-    "castore",
-    "sastore",
-    "pop",
-    "pop2",
-    "dup",
-    "dup_x1",
-    "dup_x2",
-    "dup2",
-    "dup2_x1",
-    "dup2_x2",
-    "swap",
-    "iadd",
-    "ladd",
-    "fadd",
-    "dadd",
-    "isub",
-    "lsub",
-    "fsub",
-    "dsub",
-    "imul",
-    "lmul",
-    "fmul",
-    "dmul",
-    "idiv",
-    "ldiv",
-    "fdiv",
-    "ddiv",
-    "irem",
-    "lrem",
-    "frem",
-    "drem",
-    "ineg",
-    "lneg",
-    "fneg",
-    "dneg",
-    "ishl",
-    "lshl",
-    "ishr",
-    "lshr",
-    "iushr",
-    "lushr",
-    "iand",
-    "land",
-    "ior",
-    "lor",
-    "ixor",
-    "lxor",
-    "iinc",
-    "i2l",
-    "i2f",
-    "i2d",
-    "l2i",
-    "l2f",
-    "l2d",
-    "f2i",
-    "f2l",
-    "f2d",
-    "d2i",
-    "d2l",
-    "d2f",
-    "i2b",
-    "i2c",
-    "i2s",
-    "lcmp",
-    "fcmpl",
-    "fcmpg",
-    "dcmpl",
-    "dcmpg",
-    "ifeq",
-    "ifne",
-    "iflt",
-    "ifge",
-    "ifgt",
-    "ifle",
-    "if_icmpeq",
-    "if_icmpne",
-    "if_icmplt",
-    "if_icmpge",
-    "if_icmpgt",
-    "if_icmple",
-    "if_acmpeq",
-    "if_acmpne",
-    "goto",
-    "jsr",
-    "ret",
-    "ireturn",
-    "lreturn",
-    "freturn",
-    "dreturn",
-    "areturn",
-    "return",
-    "getstatic",
-    "invokevirtual",
-    "invokespecial",
-    "invokestatic",
-    "invokeinterface",
-    "invokedynamic",
-    "ne",
-    "newarray",
-    "anewarray",
-    "arraylength",
-    "athrow",
-    "checkcast",
-    "instanceof",
-    "monitorenter",
-    "monitorexit",
-    "wide",
-    "multianewarray",
-    "ifnull",
-    "ifnonnull",
-    "goto_w",
-    "jsr_w",
+    "nop",           "aconst_null", "iconst_m1",     "iconst_0",      "iconst_1",     "iconst_2",
+    "iconst_3",      "iconst_4",    "iconst_5",      "lconst_0",      "lconst_1",     "fconst_0",
+    "fconst_1",      "fconst_2",    "dconst_0",      "dconst_1",      "bipush",       "sipush",
+    "ldc",           "ldc_w",       "ldc2_w",        "iload",         "lload",        "fload",
+    "dload",         "aload",       "iload_0",       "iload_1",       "iload_2",      "iload_3",
+    "lload_0",       "lload_1",     "lload_2",       "lload_3",       "fload_0",      "fload_1",
+    "fload_2",       "fload_3",     "dload_0",       "dload_1",       "dload_2",      "dload_3",
+    "aload_0",       "aload_1",     "aload_2",       "aload_3",       "iaload",       "laload",
+    "faload",        "daload",      "aaload",        "baload",        "caload",       "saload",
+    "istore",        "lstore",      "fstore",        "dstore",        "astore",       "istore_0",
+    "istore_1",      "istore_2",    "istore_3",      "lstore_0",      "lstore_1",     "lstore_2",
+    "lstore_3",      "fstore_0",    "fstore_1",      "fstore_2",      "fstore_3",     "dstore_0",
+    "dstore_1",      "dstore_2",    "dstore_3",      "astore_0",      "astore_1",     "astore_2",
+    "astore_3",      "iastore",     "lastore",       "fastore",       "dastore",      "aastore",
+    "bastore",       "castore",     "sastore",       "pop",           "pop2",         "dup",
+    "dup_x1",        "dup_x2",      "dup2",          "dup2_x1",       "dup2_x2",      "swap",
+    "iadd",          "ladd",        "fadd",          "dadd",          "isub",         "lsub",
+    "fsub",          "dsub",        "imul",          "lmul",          "fmul",         "dmul",
+    "idiv",          "ldiv",        "fdiv",          "ddiv",          "irem",         "lrem",
+    "frem",          "drem",        "ineg",          "lneg",          "fneg",         "dneg",
+    "ishl",          "lshl",        "ishr",          "lshr",          "iushr",        "lushr",
+    "iand",          "land",        "ior",           "lor",           "ixor",         "lxor",
+    "iinc",          "i2l",         "i2f",           "i2d",           "l2i",          "l2f",
+    "l2d",           "f2i",         "f2l",           "f2d",           "d2i",          "d2l",
+    "d2f",           "i2b",         "i2c",           "i2s",           "lcmp",         "fcmpl",
+    "fcmpg",         "dcmpl",       "dcmpg",         "ifeq",          "ifne",         "iflt",
+    "ifge",          "ifgt",        "ifle",          "if_icmpeq",     "if_icmpne",    "if_icmplt",
+    "if_icmpge",     "if_icmpgt",   "if_icmple",     "if_acmpeq",     "if_acmpne",    "goto",
+    "jsr",           "ret",         "tableswitch",   "lookupswitch",  "ireturn",      "lreturn",
+    "freturn",       "dreturn",     "areturn",       "return",        "getstatic",    "putstatic",
+    "getfield",      "putfield",    "invokevirtual", "invokespecial", "invokestatic", "invokeinterface",
+    "invokedynamic", "new",         "newarray",      "anewarray",     "arraylength",  "athrow",
+    "checkcast",     "instanceof",  "monitorenter",  "monitorexit",   "wide",         "multianewarray",
+    "ifnull",        "ifnonnull",   "goto_w",        "jsr_w",
 };
 bool get_opcode(BufferReader& reader, Opcode& out)
 {
@@ -295,101 +132,111 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     case 16:
     {
         // bipush
+
         int8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 17:
     {
         // sipush
+
         int16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 18:
     {
         // ldc
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 19:
     {
         // ldc_w
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 20:
     {
         // ldc2_w
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 21:
     {
         // iload
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 22:
     {
         // lload
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 23:
     {
         // fload
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 24:
     {
         // dload
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 25:
     {
         // aload
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 26:
@@ -535,51 +382,56 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     case 54:
     {
         // istore
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 55:
     {
         // lstore
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 56:
     {
         // fstore
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 57:
     {
         // dstore
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 58:
     {
         // astore
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 59:
@@ -950,16 +802,18 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     case 132:
     {
         // iinc
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+
         int8 second;
         READB(second);
-        out.second          = second;
-        out.second_exists   = true;
-        out.second_unsigned = false;
+        out.args[1].value       = second;
+        out.args[1].exists      = true;
+        out.args[1].is_unsigned = false;
         break;
     }
     case 133:
@@ -1065,180 +919,209 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     case 153:
     {
         // ifeq
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 154:
     {
         // ifne
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 155:
     {
         // iflt
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 156:
     {
         // ifge
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 157:
     {
         // ifgt
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 158:
     {
         // ifle
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 159:
     {
         // if_icmpeq
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 160:
     {
         // if_icmpne
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 161:
     {
         // if_icmplt
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 162:
     {
         // if_icmpge
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 163:
     {
         // if_icmpgt
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 164:
     {
         // if_icmple
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 165:
     {
         // if_acmpeq
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 166:
     {
         // if_acmpne
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 167:
     {
         // goto
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 168:
     {
         // jsr
+
         int16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 169:
     {
         // ret
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+        break;
+    }
+    case 170:
+    {
+        // tableswitch
+        unimplemented;
+        break;
+    }
+    case 171:
+    {
+        // lookupswitch
+        unimplemented;
         break;
     }
     case 172:
@@ -1274,101 +1157,157 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     case 178:
     {
         // getstatic
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+        break;
+    }
+    case 179:
+    {
+        // putstatic
+
+        uint16 first;
+        READB(first);
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+        break;
+    }
+    case 180:
+    {
+        // getfield
+
+        uint16 first;
+        READB(first);
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+        break;
+    }
+    case 181:
+    {
+        // putfield
+
+        uint16 first;
+        READB(first);
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 182:
     {
         // invokevirtual
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 183:
     {
         // invokespecial
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 184:
     {
         // invokestatic
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 185:
     {
         // invokeinterface
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+
         uint8 second;
         READB(second);
-        out.second          = second;
-        out.second_exists   = true;
-        out.second_unsigned = true;
+        out.args[1].value       = second;
+        out.args[1].exists      = true;
+        out.args[1].is_unsigned = true;
+
+        uint8 third;
+        READB(third);
+        out.args[2].value       = third;
+        out.args[2].exists      = true;
+        out.args[2].is_unsigned = true;
         break;
     }
     case 186:
     {
         // invokedynamic
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
+
         uint8 second;
         READB(second);
-        out.second          = second;
-        out.second_exists   = true;
-        out.second_unsigned = true;
+        out.args[1].value       = second;
+        out.args[1].exists      = true;
+        out.args[1].is_unsigned = true;
+
+        uint8 third;
+        READB(third);
+        out.args[2].value       = third;
+        out.args[2].exists      = true;
+        out.args[2].is_unsigned = true;
         break;
     }
     case 187:
     {
-        // ne
+        // new
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 188:
     {
         // newarray
+
         uint8 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 189:
     {
         // anewarray
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 190:
@@ -1384,105 +1323,116 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     case 192:
     {
         // checkcast
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 193:
     {
         // instanceof
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 194:
     {
         // monitorenter
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 195:
     {
         // monitorexit
+
         uint16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = true;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = true;
         break;
     }
     case 196:
     {
         // wide
+        unimplemented;
         break;
     }
     case 197:
     {
         // multianewarray
+
         int16 first;
         READB(first);
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
+
         uint8 second;
         READB(second);
-        out.second          = second;
-        out.second_exists   = true;
-        out.second_unsigned = true;
+        out.args[1].value       = second;
+        out.args[1].exists      = true;
+        out.args[1].is_unsigned = true;
         break;
     }
     case 198:
     {
         // ifnull
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 199:
     {
         // ifnonnull
+
         int16 first;
         READB(first);
         first += (int16) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 200:
     {
         // goto_w
+
         int32 first;
         READB(first);
         first += (int32) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     case 201:
     {
         // jsr_w
+
         int32 first;
         READB(first);
         first += (int32) offset;
-        out.first          = first;
-        out.first_exists   = true;
-        out.first_unsigned = false;
+        out.args[0].value       = first;
+        out.args[0].exists      = true;
+        out.args[0].is_unsigned = false;
         break;
     }
     default:

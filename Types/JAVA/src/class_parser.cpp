@@ -707,13 +707,10 @@ bool AstCreator::create_code(BufferView buffer)
         FCHECK(get_opcode(reader, op));
 
         string.AddFormat("%zu. %s", offset, op.name);
-        if (op.first_exists)
+        for (auto& i : op.args)
         {
-            string.AddFormat(op.first_unsigned ? "%llu " : "%lld ", op.first);
-        }
-        if (op.second_exists)
-        {
-            string.AddFormat(op.second_unsigned ? "%llu " : "%lld ", op.second);
+            if (i.exists)
+                string.AddFormat(i.is_unsigned ? " %llu" : " %lld", i.value);
         }
         string.AddChar('\n');
     }
