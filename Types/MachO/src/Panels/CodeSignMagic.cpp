@@ -8,8 +8,7 @@ CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO) : TabPage("CodeSign&Ma
 {
     machO   = _machO;
     general = Factory::ListView::Create(
-          this,
-          "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 18 }, { "Value", TextAlignament::Left, 48 } },ListViewFlags::None);
+          this, "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 18 }, { "Value", TextAlignament::Left, 48 } }, ListViewFlags::None);
 
     Update();
 }
@@ -49,7 +48,7 @@ void CodeSignMagic::UpdateSuperBlob()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->AddItem("Super Blob").SetType( ListViewItem::Type::Category);
+    general->AddItem("Super Blob").SetType(ListViewItem::Type::Category);
 
     const auto& magic   = MAC::CodeSignMagicNames.at(machO->codeSignature->superBlob.magic);
     const auto hexMagic = nf2.ToString(static_cast<uint32_t>(machO->codeSignature->superBlob.magic), hex);
@@ -73,7 +72,7 @@ void CodeSignMagic::UpdateSlots()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    general->AddItem("Slots").SetType( ListViewItem::Type::Category);
+    general->AddItem("Slots").SetType(ListViewItem::Type::Category);
 
     for (const auto& blob : machO->codeSignature->blobs)
     {
@@ -99,7 +98,7 @@ void CodeSignMagic::UpdateBlobs()
     for (const auto& blob : machO->codeSignature->blobs)
     {
         const auto& slot = MAC::CodeSignSlotNames.at(blob.type);
-        general->AddItem(slot.data()).SetType( ListViewItem::Type::Category);
+        general->AddItem(slot.data()).SetType(ListViewItem::Type::Category);
 
         switch (blob.type)
         {
@@ -193,15 +192,15 @@ void CodeSignMagic::UpdateCodeDirectory(
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto identifierItem = general->AddItem("Identifier", ls.Format("%s", identifier.c_str()));
-    general->SetItemType(identifierItem, ListViewItemType::Emphasized_2);
+    auto identifierItem = general->AddItem({ "Identifier", ls.Format("%s", identifier.c_str()) });
+    identifierItem.SetType(ListViewItem::Type::Emphasized_2);
 
     const auto& magic   = MAC::CodeSignMagicNames.at(code.magic);
     const auto hexMagic = nf2.ToString(static_cast<uint32_t>(code.magic), hex);
     general->AddItem({ "Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()) });
 
-    const auto cdHashItem = general->AddItem("CD Hash", ls.Format("%s", cdHash.c_str()));
-    general->SetItemType(cdHashItem, ListViewItemType::Emphasized_2);
+    auto cdHashItem = general->AddItem({ "CD Hash", ls.Format("%s", cdHash.c_str()) });
+    cdHashItem.SetType(ListViewItem::Type::Emphasized_2);
 
     const auto length    = nf.ToString(code.length, dec);
     const auto hexLength = nf2.ToString(code.length, hex);
@@ -224,7 +223,8 @@ void CodeSignMagic::UpdateCodeDirectory(
         const auto flagName        = MAC::CodeSignFlagNames.at(flag).data();
         const auto flagDescription = MAC::CodeSignFlagsDescriptions.at(flag).data();
 
-        general->AddItem({ "", ls.Format("%-26s %-12s %s", flagName, hfls.GetText(), flagDescription) }).SetType(ListViewItem::Type::Emphasized_2);
+        general->AddItem({ "", ls.Format("%-26s %-12s %s", flagName, hfls.GetText(), flagDescription) })
+              .SetType(ListViewItem::Type::Emphasized_2);
     }
 
     const auto hashOffset    = nf.ToString(code.hashOffset, dec);
@@ -249,13 +249,13 @@ void CodeSignMagic::UpdateCodeDirectory(
         {
             if (found == computed)
             {
-                const auto hash = general->AddItem("", ls.Format("Slot #(%u) %s", i, found.c_str()));
-                general->SetItemType(hash, ListViewItemType::Emphasized_2);
+                auto hash = general->AddItem({ "", ls.Format("Slot #(%u) %s", i, found.c_str()) });
+                hash.SetType(ListViewItem::Type::Emphasized_2);
             }
             else
             {
-                const auto hash = general->AddItem("", ls.Format("Slot #(%u) %s (%s)", i, found.c_str(), computed.c_str()));
-                general->SetItemType(hash, ListViewItemType::ErrorInformation);
+                auto hash = general->AddItem({ "", ls.Format("Slot #(%u) %s (%s)", i, found.c_str(), computed.c_str()) });
+                hash.SetType(ListViewItem::Type::ErrorInformation);
             }
             i++;
         }

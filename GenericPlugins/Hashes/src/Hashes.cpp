@@ -49,8 +49,8 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
     computeForSelection = Factory::RadioBox::Create(this, "Compute for the &selection", "x:1,y:2,w:31", 1);
     computeForSelection->SetEnabled(false); /* TODO: when selection object will be passed */
 
-    options =
-          Factory::ListView::Create(this, "l:1,t:3,r:1,b:3", Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
+    options = Factory::ListView::Create(
+          this, "l:1,t:3,r:1,b:3", {}, Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
     options->AddColumn("", TextAlignament::Left, 30);
     Adler32        = options->AddItem(Adler32::GetName());
     CRC16          = options->AddItem(CRC16::GetName());
@@ -59,12 +59,12 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
     CRC64_ECMA_182 = options->AddItem(CRC64::GetName(CRC64Type::ECMA_182));
     CRC64_WE       = options->AddItem(CRC64::GetName(CRC64Type::WE));
     MD2            = options->AddItem(MD2::GetName());
-    MD4            = options->AddItem(MD4::GetName());
-    MD5            = options->AddItem(MD5::GetName());
-    SHA1           = options->AddItem(SHA1::GetName());
-    SHA256         = options->AddItem(SHA256::GetName());
-    SHA384         = options->AddItem(SHA384::GetName());
-    SHA512         = options->AddItem(SHA512::GetName());
+    MD4            = options->AddItem("MD4");
+    MD5            = options->AddItem("MD5");
+    SHA1           = options->AddItem("SHA1");
+    SHA256         = options->AddItem("SHA256");
+    SHA384         = options->AddItem("SHA384");
+    SHA512         = options->AddItem("SHA512");
 
     ok                              = Factory::Button::Create(this, "&Ok", "x:25%,y:100%,a:b,w:12", CMD_BUTTON_OK);
     ok->Handlers()->OnButtonPressed = this;
@@ -422,11 +422,12 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
     CRC64 crc64ECMA182{};
     CRC64 crc64WE{};
     MD2 md2{};
-    MD4 md4{};
-    MD5 md5{};
-    SHA1 sha1{};
-    SHA256 sha256{};
-    SHA512 sha512{};
+    OpenSSLHash md4(OpenSSLHashKind::Md4);
+    OpenSSLHash md5(OpenSSLHashKind::Md5);
+    OpenSSLHash sha1(OpenSSLHashKind::Sha1);
+    OpenSSLHash sha256(OpenSSLHashKind::Sha256);
+    OpenSSLHash sha384(OpenSSLHashKind::Sha384);
+    OpenSSLHash sha512(OpenSSLHashKind::Sha512);
 
     for (const auto& hash : hashList)
     {
@@ -454,20 +455,12 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             CHECK(md2.Init(), false, "");
             break;
         case Hashes::MD4:
-            CHECK(md4.Init(), false, "");
-            break;
         case Hashes::MD5:
-            CHECK(md5.Init(), false, "");
-            break;
         case Hashes::SHA1:
-            CHECK(sha1.Init(), false, "");
-            break;
         case Hashes::SHA256:
-            CHECK(sha256.Init(), false, "");
-            break;
         case Hashes::SHA384:
         case Hashes::SHA512:
-            CHECK(sha512.Init(), false, "");
+            /* openssl */
             break;
         default:
             break;
@@ -495,7 +488,6 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         const Buffer buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
         CHECK(buffer.IsValid(), false, "");
 
-        bool sha512UpdateCalled = false;
         for (const auto& hash : hashList)
         {
             switch (static_cast<Hashes>(hashFlags & static_cast<uint32>(hash)))
@@ -522,24 +514,22 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
                 CHECK(md2.Update(buffer), false, "");
                 break;
             case Hashes::MD4:
-                CHECK(md4.Update(buffer), false, "");
+                CHECK(md4.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             case Hashes::MD5:
-                CHECK(md5.Update(buffer), false, "");
+                CHECK(md5.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             case Hashes::SHA1:
-                CHECK(sha1.Update(buffer), false, "");
+                CHECK(sha1.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             case Hashes::SHA256:
-                CHECK(sha256.Update(buffer), false, "");
+                CHECK(sha256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             case Hashes::SHA384:
+                CHECK(sha384.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
             case Hashes::SHA512:
-                if (sha512UpdateCalled == false)
-                {
-                    sha512UpdateCalled = true;
-                    CHECK(sha512.Update(buffer), false, "");
-                }
+                CHECK(sha512.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             default:
                 break;
@@ -577,22 +567,28 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             outputs.emplace(std::pair{ MD2::GetName(), md2.GetHexValue() });
             break;
         case Hashes::MD4:
-            outputs.emplace(std::pair{ MD4::GetName(), md4.GetHexValue() });
+            md4.Final();
+            outputs.emplace(std::pair{ "MD4", md4.GetHexValue() });
             break;
         case Hashes::MD5:
-            outputs.emplace(std::pair{ MD5::GetName(), md5.GetHexValue() });
+            md5.Final();
+            outputs.emplace(std::pair{ "MD5", md5.GetHexValue() });
             break;
         case Hashes::SHA1:
-            outputs.emplace(std::pair{ SHA1::GetName(), sha1.GetHexValue() });
+            sha1.Final();
+            outputs.emplace(std::pair{ "SHA1", sha1.GetHexValue() });
             break;
         case Hashes::SHA256:
-            outputs.emplace(std::pair{ SHA256::GetName(), sha256.GetHexValue() });
+            sha256.Final();
+            outputs.emplace(std::pair{ "SHA256", sha256.GetHexValue() });
             break;
         case Hashes::SHA384:
-            outputs.emplace(std::pair{ SHA384::GetName(), ((SHA384*) &sha512)->GetHexValue() });
+            sha384.Final();
+            outputs.emplace(std::pair{ "SHA384", sha384.GetHexValue() });
             break;
         case Hashes::SHA512:
-            outputs.emplace(std::pair{ SHA512::GetName(), sha512.GetHexValue() });
+            sha512.Final();
+            outputs.emplace(std::pair{ "SHA512", sha512.GetHexValue() });
             break;
         default:
             break;

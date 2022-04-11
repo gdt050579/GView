@@ -749,45 +749,45 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
         throw "What to do?";
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA1:
     {
-        GView::Hashes::SHA1 sha1{};
-        CHECK(sha1.Init(), false, "");
-        CHECK(sha1.Update(buffer), false, "");
+        GView::Hashes::OpenSSLHash sha1(GView::Hashes::OpenSSLHashKind::Sha1);
+        CHECK(sha1.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha1.Final(), false, "");
         output = sha1.GetHexValue();
         output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
         return true;
     }
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA256:
     {
-        GView::Hashes::SHA256 sha256{};
-        CHECK(sha256.Init(), false, "");
-        CHECK(sha256.Update(buffer), false, "");
+        GView::Hashes::OpenSSLHash sha256(GView::Hashes::OpenSSLHashKind::Sha256);
+        CHECK(sha256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha256.Final(), false, "");
         output = sha256.GetHexValue();
         output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_SHA256_LEN) * 2ULL);
         return true;
     }
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA256_TRUNCATED:
     {
-        GView::Hashes::SHA256 sha256{};
-        CHECK(sha256.Init(), false, "");
-        CHECK(sha256.Update(buffer), false, "");
+        GView::Hashes::OpenSSLHash sha256(GView::Hashes::OpenSSLHashKind::Sha256);
+        CHECK(sha256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha256.Final(), false, "");
         output = sha256.GetHexValue();
         output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_SHA256_TRUNCATED_LEN) * 2ULL);
         return true;
     }
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA384:
     {
-        GView::Hashes::SHA384 sha384{};
-        CHECK(sha384.Init(), false, "");
-        CHECK(sha384.Update(buffer), false, "");
+        GView::Hashes::OpenSSLHash sha384(GView::Hashes::OpenSSLHashKind::Sha384);
+        CHECK(sha384.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha384.Final(), false, "");
         output = sha384.GetHexValue();
         output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
         return true;
     }
     case MAC::CodeSignMagic::CS_HASHTYPE_SHA512:
     {
-        GView::Hashes::SHA512 sha512{};
-        CHECK(sha512.Init(), false, "");
-        CHECK(sha512.Update(buffer), false, "");
+        GView::Hashes::OpenSSLHash sha512(GView::Hashes::OpenSSLHashKind::Sha512);
+        CHECK(sha512.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha512.Final(), false, "");
         output = sha512.GetHexValue();
         output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
         return true;
