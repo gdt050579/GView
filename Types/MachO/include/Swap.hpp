@@ -108,7 +108,7 @@ static void Swap(section& obj)
     SwapEndianInplace(obj.reserved2);
 }
 
-static void Swap(dylib& obj)
+static void Swap(dylib_mac& obj)
 {
     SwapEndianInplace(obj.name.ptr);
     SwapEndianInplace(obj.name.offset);

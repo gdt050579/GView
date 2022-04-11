@@ -15,17 +15,20 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
     win  = _win;
     Base = 16;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 8);
-    list->AddColumn("FilePoz", TextAlignament::Right, 12);
-    list->AddColumn("FileSize", TextAlignament::Right, 12);
-    list->AddColumn("RVA", TextAlignament::Right, 12);
-    list->AddColumn("MemSize", TextAlignament::Right, 12);
-    list->AddColumn("PtrReloc", TextAlignament::Left, 10);
-    list->AddColumn("NrReloc", TextAlignament::Right, 10);
-    list->AddColumn("PtrLnNum", TextAlignament::Left, 10);
-    list->AddColumn("NrLnNum", TextAlignament::Right, 10);
-    list->AddColumn("Characteristics", TextAlignament::Left, 32);
+    list = Factory::ListView::Create(
+          this,
+          "d:c",
+          { { "Name", TextAlignament::Left, 8 },
+            { "FilePoz", TextAlignament::Right, 12 },
+            { "FileSize", TextAlignament::Right, 12 },
+            { "RVA", TextAlignament::Right, 12 },
+            { "MemSize", TextAlignament::Right, 12 },
+            { "PtrReloc", TextAlignament::Left, 10 },
+            { "NrReloc", TextAlignament::Right, 10 },
+            { "PtrLnNum", TextAlignament::Left, 10 },
+            { "NrLnNum", TextAlignament::Right, 10 },
+            { "Characteristics", TextAlignament::Left, 32 } },
+          ListViewFlags::None);
 
     Update();
 }
@@ -38,13 +41,13 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 }
 void Panels::Sections::GoToSelectedSection()
 {
-    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
 void Panels::Sections::SelectCurrentSection()
 {
-    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
 }
@@ -58,15 +61,15 @@ void Panels::Sections::Update()
     {
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
-        list->SetItemData<PE::ImageSectionHeader>(item, pe->sect + tr);
-        list->SetItemText(item, 1, GetValue(n, pe->sect[tr].PointerToRawData));
-        list->SetItemText(item, 2, GetValue(n, pe->sect[tr].SizeOfRawData));
-        list->SetItemText(item, 3, GetValue(n, pe->sect[tr].VirtualAddress));
-        list->SetItemText(item, 4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
-        list->SetItemText(item, 5, GetValue(n, pe->sect[tr].PointerToRelocations));
-        list->SetItemText(item, 6, GetValue(n, pe->sect[tr].NumberOfRelocations));
-        list->SetItemText(item, 7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
-        list->SetItemText(item, 8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
+        item.SetData<PE::ImageSectionHeader>(pe->sect + tr);
+        item.SetText(1, GetValue(n, pe->sect[tr].PointerToRawData));
+        item.SetText(2, GetValue(n, pe->sect[tr].SizeOfRawData));
+        item.SetText(3, GetValue(n, pe->sect[tr].VirtualAddress));
+        item.SetText(4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
+        item.SetText(5, GetValue(n, pe->sect[tr].PointerToRelocations));
+        item.SetText(6, GetValue(n, pe->sect[tr].NumberOfRelocations));
+        item.SetText(7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
+        item.SetText(8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
 
         // caracteristics
         const auto tmp = pe->sect[tr].Characteristics;
@@ -107,7 +110,7 @@ void Panels::Sections::Update()
         {
             temp.Add(" [+]");
         }
-        list->SetItemText(item, 9, temp);
+        item.SetText(9, temp);
     }
 }
 

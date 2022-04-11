@@ -3,6 +3,7 @@
 #include "Mac.hpp"
 #include "NameMapping.hpp"
 #include <array>
+#include <cstring>
 
 namespace MAC
 {
@@ -49,8 +50,6 @@ void SwapEndianInplace(T& var)
 template <typename T>
 static const std::string BinaryToHexString(const T number, const size_t length)
 {
-    constexpr const char digits[] = "0123456789ABCDEF";
-
     std::string output;
     output.reserve(length * 3);
 
@@ -60,6 +59,7 @@ static const std::string BinaryToHexString(const T number, const size_t length)
           input + length,
           [&output](uint8_t byte)
           {
+              constexpr const char digits[] = "0123456789ABCDEF";
               output.push_back(digits[byte >> 4]);
               output.push_back(digits[byte & 0x0F]);
               output.push_back(' ');

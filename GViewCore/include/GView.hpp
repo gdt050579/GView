@@ -387,6 +387,44 @@ namespace Hashes
       public:
         inline static const uint32 ResultBytesLength = SHA512::ResultBytesLength - 16;
     };
+
+    enum class OpenSSLHashKind : uint8 {
+        Md4,
+        Md5,
+        Blake2s256,
+        Blake2b512,
+        Sha1,
+        Sha224,
+        Sha256,
+        Sha384,
+        Sha512,
+        Sha512_224,
+        Sha512_256,
+        Sha3_224,
+        Sha3_256,
+        Sha3_384,
+        Sha3_512,
+        Shake128,
+        Shake256
+    };
+
+    class CORE_EXPORT OpenSSLHash
+    {
+      public:
+        OpenSSLHash(OpenSSLHashKind kind);
+        ~OpenSSLHash();
+
+        bool Update(const void* input, uint32 length);
+        bool Final();
+        std::string GetHexValue();
+        const uint8* Get() const;
+        uint32 GetSize() const;
+
+      public:
+        void* handle;
+        uint8 hash[64];
+        uint32 size;
+    };
 } // namespace Hashes
 
 struct CORE_EXPORT Object
@@ -483,13 +521,24 @@ namespace View
 
     namespace ContainerViewer
     {
+        struct EXPORT Item
+        {
+            ConstString values[32];
+        };
+        struct EXPORT ListItemsInterface
+        {
+            virtual bool Start(ConstString path) = 0;
+            virtual bool GetNextItem(Item& item) = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
-            void SetIcon(string_view stringFormat16x16);
-            void AddProperty(string_view name, string_view value);
+            bool SetIcon(string_view imageStringFormat16x16);
+            bool AddProperty(string_view name, string_view value);
+            bool AddColumn(string_view name, TextAlignament align, uint32 width);
+            void SetListItemCallback(Reference<ListItemsInterface> callback);
         };
     }; // namespace ContainerViewer
 

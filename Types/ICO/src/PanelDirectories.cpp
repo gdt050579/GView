@@ -4,8 +4,8 @@ using namespace GView::Type::ICO;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr uint32 ICO_DIRS_GOTO            = 1;
-constexpr uint32 ICO_DIRS_SELECT          = 2;
+constexpr uint32 ICO_DIRS_GOTO   = 1;
+constexpr uint32 ICO_DIRS_SELECT = 2;
 
 Panels::Directories::Directories(Reference<GView::Type::ICO::ICOFile> _ico, Reference<GView::View::WindowInterface> _win)
     : TabPage("&Directories")
@@ -13,33 +13,30 @@ Panels::Directories::Directories(Reference<GView::Type::ICO::ICOFile> _ico, Refe
     ico = _ico;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
+    list = Factory::ListView::Create(
+          this, "d:c", { { "Image", TextAlignament::Left, 10 }, { "Pallette", TextAlignament::Right, 10 } }, ListViewFlags::None);
     // columns
-    list->AddColumn("Image", TextAlignament::Left);
-    list->AddColumn("Pallette", TextAlignament::Right, 10);
     if (ico->isIcoFormat)
     {
-        list->AddColumn("ColPln", TextAlignament::Right, 10);
-        list->AddColumn("Bit/Pxl", TextAlignament::Right, 10);
+        list->AddColumns({ { "ColPln", TextAlignament::Right, 10 }, { "Bit/Pxl", TextAlignament::Right, 10 } });
     }
     else
     {
         list->AddColumn("Hotspot", TextAlignament::Left, 10);
     }
-    list->AddColumn("Size", TextAlignament::Left, 10);
-    list->AddColumn("Offset", TextAlignament::Left, 10);
+    list->AddColumns({ { "Size", TextAlignament::Left, 10 }, { "Offset", TextAlignament::Left, 10 } });
 
     Update();
 }
 void Panels::Directories::GoToSelectedDirectory()
 {
-    auto d = list->GetItemData<ICO::DirectoryEntry>(list->GetCurrentItem());
+    auto d = list->GetCurrentItem().GetData<ICO::DirectoryEntry>();
     if (d.IsValid())
         win->GetCurrentView()->GoTo(d->ico.offset);
 }
 void Panels::Directories::SelectCurrentDirectory()
 {
-    auto d = list->GetItemData<ICO::DirectoryEntry>(list->GetCurrentItem());
+    auto d = list->GetCurrentItem().GetData<ICO::DirectoryEntry>();
     if (d.IsValid())
         win->GetCurrentView()->Select(d->ico.offset, d->ico.size);
 }
@@ -59,23 +56,23 @@ void Panels::Directories::Update()
             h = 256;
         auto item = list->AddItem(temp.Format("%d x %d", w, h));
         if (d.ico.colorPallette == 0)
-            list->SetItemText(item, 1, "None");
+            item.SetText(1, "None");
         else
-            list->SetItemText(item, 1, temp.Format("%d", d.ico.colorPallette));
+            item.SetText(1, temp.Format("%d", d.ico.colorPallette));
         if (ico->isIcoFormat)
         {
-            list->SetItemText(item, 2, temp.Format("%d", d.ico.colorPlanes));
-            list->SetItemText(item, 3, temp.Format("%d", d.ico.bitsPerPixels));
-            list->SetItemText(item, 4, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
-            list->SetItemText(item, 5, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
+            item.SetText(2, temp.Format("%d", d.ico.colorPlanes));
+            item.SetText(3, temp.Format("%d", d.ico.bitsPerPixels));
+            item.SetText(4, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
+            item.SetText(5, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
         }
         else
         {
-            list->SetItemText(item, 2, temp.Format("%d,%d", d.cursor.hotstopX, d.cursor.hotstopY));
-            list->SetItemText(item, 3, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
-            list->SetItemText(item, 4, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
+            item.SetText(2, temp.Format("%d,%d", d.cursor.hotstopX, d.cursor.hotstopY));
+            item.SetText(3, temp.Format("0x%X (%u)", d.ico.size, d.ico.size));
+            item.SetText(4, temp.Format("0x%X (%u)", d.ico.offset, d.ico.offset));
         }
-        list->SetItemData<ICO::DirectoryEntry>(item, &d);
+        item.SetData<ICO::DirectoryEntry>(&d);
     }
 }
 
