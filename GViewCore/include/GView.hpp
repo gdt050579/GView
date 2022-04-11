@@ -521,11 +521,11 @@ namespace View
 
     namespace ContainerViewer
     {
-        struct EXPORT Item
+        struct Item
         {
             ConstString values[32];
         };
-        struct EXPORT ListItemsInterface
+        struct CORE_EXPORT EnumerateInterface
         {
             virtual bool Start(ConstString path) = 0;
             virtual bool GetNextItem(Item& item) = 0;
@@ -538,7 +538,7 @@ namespace View
             bool SetIcon(string_view imageStringFormat16x16);
             bool AddProperty(string_view name, string_view value);
             bool AddColumn(string_view name, TextAlignament align, uint32 width);
-            void SetListItemCallback(Reference<ListItemsInterface> callback);
+            void SetListItemCallback(Reference<EnumerateInterface> callback);
         };
     }; // namespace ContainerViewer
 

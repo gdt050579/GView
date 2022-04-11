@@ -41,14 +41,12 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
           { { "Field", TextAlignament::Left, 20 }, { "Value", TextAlignament::Left, 200 } },
           ListViewFlags::HideColumns);
 
-    this->items = Factory::TreeView::Create(this, "l:0,t:10,r:0,b:0");
-    
-    //this->items = Factory::Tree::Create(this, "l:0,t:10,r:0,b:0", TreeFlags::None, settings->columnsCount);
-    //for (uint32 idx = 0; idx < settings->columnsCount; idx++)
-    //{
-    //    const auto& col = settings->columns[idx];
-    //    this->items->AddColumnData(idx, col.Name, col.Align, col.Align, col.Width);
-    //}
+    this->items = Factory::TreeView::Create(this, "l:0,t:10,r:0,b:0", {});
+    for (uint32 idx = 0; idx < settings->columnsCount; idx++)
+    {
+        const auto& col = settings->columns[idx];
+        this->items->AddColumn(col.Name, col.Align, col.Width);
+    }
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

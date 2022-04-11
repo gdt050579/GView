@@ -30,9 +30,9 @@ bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
     SD->columnsCount++;
     return true;
 }
-void Settings::SetListItemCallback(Reference<ListItemsInterface> callback)
+void Settings::SetListItemCallback(Reference<EnumerateInterface> callback)
 {
-    SD->listItemsInterface = callback;
+    SD->enumInterface = callback;
 }
 
 #undef SD

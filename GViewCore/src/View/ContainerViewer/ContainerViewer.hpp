@@ -21,7 +21,7 @@ namespace View
             } columns[MAX_COLUMNS];
             AppCUI::Graphics::Image icon;
             uint32 columnsCount;
-            Reference<ListItemsInterface> listItemsInterface; 
+            Reference<EnumerateInterface> enumInterface; 
             SettingsData();
         };
 
