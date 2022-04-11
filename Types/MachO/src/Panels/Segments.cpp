@@ -18,19 +18,20 @@ Segments::Segments(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     win   = _win;
     Base  = 16;
 
-    list = CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 14);
-    list->AddColumn("Type", TextAlignament::Left, 18);
-    list->AddColumn("Command Size", TextAlignament::Right, 14);
-    list->AddColumn("Memory Address", TextAlignament::Right, 18);
-    list->AddColumn("Memory Size", TextAlignament::Right, 14);
-    list->AddColumn("File Offset", TextAlignament::Right, 14);
-    list->AddColumn("File Size", TextAlignament::Right, 14);
-    list->AddColumn("Max VM Prot", TextAlignament::Right, 26);
-    list->AddColumn("Ini VM Prot", TextAlignament::Right, 26);
-    list->AddColumn("Sections count", TextAlignament::Right, 18);
-    list->AddColumn("Flags", TextAlignament::Right, 10);
-
+    list = Factory::ListView::Create(this,
+          "d:c",
+          { { "Name", TextAlignament::Left, 14 },
+            { "Type", TextAlignament::Left, 18 },
+            { "Command Size", TextAlignament::Right, 14 },
+            { "Memory Address", TextAlignament::Right, 18 },
+            { "Memory Size", TextAlignament::Right, 14 },
+            { "File Offset", TextAlignament::Right, 14 },
+            { "File Size", TextAlignament::Right, 14 },
+            { "Max VM Prot", TextAlignament::Right, 26 },
+            { "Ini VM Prot", TextAlignament::Right, 26 },
+            { "Sections count", TextAlignament::Right, 18 },
+            { "Flags", TextAlignament::Right, 10 } },
+          ListViewFlags::None);
     Update();
 }
 
@@ -46,13 +47,13 @@ std::string_view Segments::GetValue(NumericFormatter& n, uint64_t value)
 
 void Panels::Segments::GoToSelectedSection()
 {
-    auto s = list->GetItemData<const MachOFile::Segment>(list->GetCurrentItem());
+    auto s = list->GetCurrentItem().GetData<const MachOFile::Segment>();
     win->GetCurrentView()->GoTo(s->fileoff);
 }
 
 void Panels::Segments::SelectCurrentSection()
 {
-    auto s = list->GetItemData<const MachOFile::Segment>(list->GetCurrentItem());
+    auto s = list->GetCurrentItem().GetData<const MachOFile::Segment>();
     win->GetCurrentView()->Select(s->fileoff, s->filesize);
 }
 
@@ -67,29 +68,28 @@ void Panels::Segments::Update()
     {
         auto item = list->AddItem(s.segname); // name
 
-        list->SetItemData<MachOFile::Segment>(item, const_cast<MachOFile::Segment*>(&s));
+        item.SetData<MachOFile::Segment>(const_cast<MachOFile::Segment*>(&s));
 
-        list->SetItemText(
-              item,
+        item.SetText(
               1,
               temp.Format(
                     "%s (%s)", std::string(MAC::LoadCommandNames.at(s.cmd)).c_str(), GetValue(n, static_cast<uint32_t>(s.cmd)).data()));
-        list->SetItemText(item, 2, GetValue(n, s.cmdsize));
-        list->SetItemText(item, 3, GetValue(n, s.vmaddr));
-        list->SetItemText(item, 4, GetValue(n, s.vmsize));
-        list->SetItemText(item, 5, GetValue(n, s.fileoff));
-        list->SetItemText(item, 6, GetValue(n, s.filesize));
+        item.SetText(2, GetValue(n, s.cmdsize));
+        item.SetText(3, GetValue(n, s.vmaddr));
+        item.SetText(4, GetValue(n, s.vmsize));
+        item.SetText(5, GetValue(n, s.fileoff));
+        item.SetText(6, GetValue(n, s.filesize));
 
         const auto vmMaxProtectionNames = MAC::GetVMProtectionNamesFromFlags(s.maxprot);
         const auto vmMaxProtectionValue = std::string{ GetValue(n, s.maxprot) };
-        list->SetItemText(item, 7, temp.Format("%s (%s)", vmMaxProtectionNames.c_str(), vmMaxProtectionValue.c_str()));
+        item.SetText(7, temp.Format("%s (%s)", vmMaxProtectionNames.c_str(), vmMaxProtectionValue.c_str()));
         const auto vmInitProtectionNames = MAC::GetVMProtectionNamesFromFlags(s.initprot);
         const auto vmInitProtectionValue = std::string{ GetValue(n, s.maxprot) };
-        list->SetItemText(item, 8, temp.Format("%s (%s)", vmInitProtectionNames.c_str(), vmInitProtectionValue.c_str()));
-        list->SetItemText(item, 9, GetValue(n, s.nsects));
+        item.SetText(8, temp.Format("%s (%s)", vmInitProtectionNames.c_str(), vmInitProtectionValue.c_str()));
+        item.SetText(9, GetValue(n, s.nsects));
         const auto segmentsFlagsNames = MAC::GetSegmentCommandNamesFromFlags(s.flags);
         const auto segmentsFlagsValue = std::string{ GetValue(n, s.flags) };
-        list->SetItemText(item, 10, temp.Format("%s (%s)", segmentsFlagsNames.c_str(), segmentsFlagsValue.c_str()));
+        item.SetText(10, temp.Format("%s (%s)", segmentsFlagsNames.c_str(), segmentsFlagsValue.c_str()));
 
         i++;
     }

@@ -49,19 +49,19 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     Reference<Button> close;
 
     Reference<ListView> options;
-    ItemHandle Adler32;
-    ItemHandle CRC16;
-    ItemHandle CRC32_JAMCRC_0;
-    ItemHandle CRC32_JAMCRC;
-    ItemHandle CRC64_ECMA_182;
-    ItemHandle CRC64_WE;
-    ItemHandle MD2;
-    ItemHandle MD4;
-    ItemHandle MD5;
-    ItemHandle SHA1;
-    ItemHandle SHA256;
-    ItemHandle SHA384;
-    ItemHandle SHA512;
+    ListViewItem Adler32;
+    ListViewItem CRC16;
+    ListViewItem CRC32_JAMCRC_0;
+    ListViewItem CRC32_JAMCRC;
+    ListViewItem CRC64_ECMA_182;
+    ListViewItem CRC64_WE;
+    ListViewItem MD2;
+    ListViewItem MD4;
+    ListViewItem MD5;
+    ListViewItem SHA1;
+    ListViewItem SHA256;
+    ListViewItem SHA384;
+    ListViewItem SHA512;
 
     Reference<Button> cancel;
     Reference<Button> compute;

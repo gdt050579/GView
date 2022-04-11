@@ -3,91 +3,90 @@
 using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 
-
 Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
 {
     pe      = _pe;
-    general = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    general->AddColumn("Field", TextAlignament::Left, 12);
-    general->AddColumn("Value", TextAlignament::Left, 100);
+    general = Factory::ListView::Create(
+          this,
+          "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 12 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
 
-    issues = this->CreateChildControl<ListView>("x:0,y:21,w:100%,h:10", ListViewFlags::HideColumns);
-    issues->AddColumn("Info", TextAlignament::Left, 200);
+    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { { "Info", TextAlignament::Left, 200 } }, ListViewFlags::HideColumns);
+
 
     this->Update();
 }
 void Panels::Information::UpdateGeneralInformation()
 {
-    ItemHandle item;
+    ListViewItem item;
     LocalString<256> tempStr;
     NumericFormatter n;
 
     general->DeleteAllItems();
     item = general->AddItem("PE Info");
-    general->SetItemType(item, ListViewItemType::Category);
+    item.SetType(ListViewItem::Type::Category);
     general->AddItem("File");
-    //general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
-    // size
-    general->AddItem("Size", tempStr.Format("%s bytes",n.ToString(pe->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
+    // general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
+    //  size
+    general->AddItem(
+          { "Size", tempStr.Format("%s bytes", n.ToString(pe->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // computed
-    general->AddItem("Computed", tempStr.Format("%llu (0x%llX) bytes", pe->computedSize, pe->computedSize));
+    general->AddItem({ "Computed", tempStr.Format("%llu (0x%llX) bytes", pe->computedSize, pe->computedSize) });
     // cert
-    general->AddItem("Computed(Cert)", tempStr.Format("%llu (0x%llX) bytes", pe->computedWithCertificate, pe->computedWithCertificate));
+    general->AddItem({ "Computed(Cert)", tempStr.Format("%llu (0x%llX) bytes", pe->computedWithCertificate, pe->computedWithCertificate) });
     // memory
-    general->AddItem("Memory", tempStr.Format("%llu (0x%llX) bytes", pe->virtualComputedSize, pe->virtualComputedSize));
+    general->AddItem({ "Memory", tempStr.Format("%llu (0x%llX) bytes", pe->virtualComputedSize, pe->virtualComputedSize) });
 
     if (pe->computedSize < pe->file->GetSize()) // overlay
     {
         const auto sz = pe->file->GetSize() - pe->computedSize;
         item          = general->AddItem(
-              "Overlay", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->file->GetSize())));
-        general->SetItemXOffset(item, 2);
-        general->SetItemType(item, ListViewItemType::WarningInformation);
+              { "Overlay", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->file->GetSize())) });
+        item.SetXOffset(2);
+        item.SetType(ListViewItem::Type::WarningInformation);
     }
     if (pe->computedSize > pe->file->GetSize()) // Missing
     {
         const auto sz = pe->computedSize - pe->file->GetSize();
         item          = general->AddItem(
-              "Missing", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->file->GetSize())));
-        general->SetItemXOffset(item, 2);
-        general->SetItemType(item, ListViewItemType::ErrorInformation);
+              { "Missing", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->file->GetSize())) });
+        item.SetXOffset(2);
+        item.SetType(ListViewItem::Type::ErrorInformation);
     }
 
     // type
     if (pe->isMetroApp)
-        general->AddItem("Type", tempStr.Format("Metro APP (%s)", pe->GetSubsystem().data()));
+        general->AddItem({ "Type", tempStr.Format("Metro APP (%s)", pe->GetSubsystem().data()) });
     else if ((pe->nth32.FileHeader.Characteristics & __IMAGE_FILE_DLL) != 0)
-        general->AddItem("Type", tempStr.Format("DLL (%s)", pe->GetSubsystem().data()));
+        general->AddItem({ "Type", tempStr.Format("DLL (%s)", pe->GetSubsystem().data()) });
     else
-        general->AddItem("Type", tempStr.Format("EXE (%s)", pe->GetSubsystem().data()));
+        general->AddItem({ "Type", tempStr.Format("EXE (%s)", pe->GetSubsystem().data()) });
 
     // machine
-    general->AddItem("Machine", pe->GetMachine());
+    general->AddItem({ "Machine", pe->GetMachine() });
 
     // export Name
     if (pe->dllName)
     {
-        item = general->AddItem("ExportName", pe->dllName);
-        general->SetItemType(item, ListViewItemType::Emphasized_1);
+        general->AddItem({ "ExportName", pe->dllName }).SetType(ListViewItem::Type::Emphasized_1);
     }
     // pdb folder
     if (pe->pdbName)
     {
-        general->AddItem("PDB File", pe->pdbName);
+        general->AddItem({ "PDB File", pe->pdbName });
     }
 
     // verific si language-ul
-    for (const auto & r: pe->res)
+    for (const auto& r : pe->res)
     {
         if (r.Type == ResourceType::Version)
         {
-            general->AddItem("Language", PEFile::LanguageIDToName(r.Language));
+            general->AddItem({ "Language", PEFile::LanguageIDToName(r.Language) });
             break;
         }
     }
 
     // certificat
-    //if ((pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].Size > sizeof(WinCertificate)) &&
+    // if ((pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].Size > sizeof(WinCertificate)) &&
     //    (pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress > 0))
     //{
     //    WinCertificate cert;
@@ -120,13 +119,12 @@ void Panels::Information::UpdateGeneralInformation()
     //}
     if (pe->Ver.GetNrItems() > 0)
     {
-        auto item = general->AddItem("Version");
-        general->SetItemType(item, ListViewItemType::Category);
+        general->AddItem("Version").SetType(ListViewItem::Type::Category);
         // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
         for (int tr = 0; tr < pe->Ver.GetNrItems(); tr++)
         {
             auto itemID = general->AddItem(pe->Ver.GetKey(tr)->ToStringView());
-            general->SetItemText(itemID, 1, pe->Ver.GetValue(tr)->ToStringView());
+            itemID.SetText(1, pe->Ver.GetValue(tr)->ToStringView());
         }
     }
 }
@@ -142,13 +140,13 @@ void Panels::Information::RecomputePanelsPositions()
     int last = 0;
     int w    = this->GetWidth();
     int h    = this->GetHeight();
-    
+
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;
     if (this->issues->IsVisible())
         last = 1;
     // if (InfoPanelCtx.pnlIcon->IsVisible()) last = 3;
-    
+
     // resize
     if (last == 0)
     {
@@ -196,4 +194,3 @@ void Panels::Information::Update()
     UpdateIssues();
     RecomputePanelsPositions();
 }
-

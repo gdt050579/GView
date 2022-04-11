@@ -13,15 +13,20 @@ Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<G
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("&Type", TextAlignament::Left, 16);
-    list->AddColumn("&Name", TextAlignament::Left, 16);
-    list->AddColumn("&ID", TextAlignament::Left, 4);
-    list->AddColumn("&Extra infos", TextAlignament::Left, 20);
-    list->AddColumn("File &Ofs", TextAlignament::Right, 10);
-    list->AddColumn("&Size", TextAlignament::Right, 10);
-    list->AddColumn("&CodePage", TextAlignament::Left, 10);
-    list->AddColumn("&Language", TextAlignament::Left, 18);
+    list = Factory::ListView::Create(
+          this,
+          "d:c",
+          {
+                { "&Type", TextAlignament::Left, 16 },
+                { "&Name", TextAlignament::Left, 16 },
+                { "&ID", TextAlignament::Left, 4 },
+                { "&Extra infos", TextAlignament::Left, 20 },
+                { "File &Ofs", TextAlignament::Right, 10 },
+                { "&Size", TextAlignament::Right, 10 },
+                { "&CodePage", TextAlignament::Left, 10 },
+                { "&Language", TextAlignament::Left, 18 },
+          },
+          ListViewFlags::None);
 
     Update();
 }
@@ -36,24 +41,24 @@ void Panels::Resources::Update()
         auto nm = PEFile::ResourceIDToName(r.Type).data();
         if (!nm)
             nm = "Unknown";
-        auto handle = list->AddItem(temp.Format("%s (%d)", nm, r.Type), r.Name, n.ToDec(r.ID));
+        auto item = list->AddItem({ temp.Format("%s (%d)", nm, r.Type), r.Name, n.ToDec(r.ID) });
         switch (r.Type)
         {
         case ResourceType::Icon:
             if (pe->GetResourceImageInformation(r, temp))
-                list->SetItemText(handle, 3, temp);
+                item.SetText(3, temp);
             else
-                list->SetItemText(handle, 3, "?");
+                item.SetText(3, "?");
             break;
         default:
             // no specific extra informations to add
             break;
         }
-        list->SetItemText(handle, 4, n.ToDec(r.Start));
-        list->SetItemText(handle, 5, n.ToDec(r.Size));
-        list->SetItemText(handle, 6, n.ToDec(r.CodePage));
-        list->SetItemText(handle, 7, temp.Format("%s (%d)", PEFile::LanguageIDToName(r.Language).data(), r.Language));
-        list->SetItemData<PEFile::ResourceInformation>(handle, &r);
+        item.SetText(4, n.ToDec(r.Start));
+        item.SetText(5, n.ToDec(r.Size));
+        item.SetText(6, n.ToDec(r.CodePage));
+        item.SetText(7, temp.Format("%s (%d)", PEFile::LanguageIDToName(r.Language).data(), r.Language));
+        item.SetData<PEFile::ResourceInformation>(&r);
     }
 }
 bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -65,7 +70,7 @@ bool Panels::Resources::OnUpdateCommandBar(AppCUI::Application::CommandBar& comm
 }
 void Panels::Resources::SaveCurrentResource()
 {
-    auto r = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    auto r = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     LocalString<128> tmp;
     tmp.Format("resource_%08X_%X_%d.res", r->Start, r->Size, r->ID);
     auto res = AppCUI::Dialogs::FileDialog::ShowSaveFileWindow(tmp, "", "");
@@ -80,13 +85,13 @@ void Panels::Resources::SaveCurrentResource()
 }
 void Panels::Resources::GoToSelectedResource()
 {
-    auto sect = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->Start);
 }
 void Panels::Resources::SelectCurrentResource()
 {
-    auto sect = list->GetItemData<PEFile::ResourceInformation>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PEFile::ResourceInformation>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->Start, sect->Size);
 }

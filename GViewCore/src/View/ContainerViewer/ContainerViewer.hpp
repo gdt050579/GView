@@ -12,6 +12,16 @@ namespace View
 
         struct SettingsData
         {          
+            static constexpr uint32 MAX_COLUMNS = 32;
+            struct Column
+            {
+                FixSizeString<29> Name;
+                TextAlignament Align;
+                uint32 Width;
+            } columns[MAX_COLUMNS];
+            AppCUI::Graphics::Image icon;
+            uint32 columnsCount;
+            Reference<ListItemsInterface> listItemsInterface; 
             SettingsData();
         };
 
@@ -28,7 +38,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<AppCUI::Controls::ImageView> imgView;
             Reference<AppCUI::Controls::ListView> propList;
-            Reference<AppCUI::Controls::Tree> items;
+            Reference<AppCUI::Controls::TreeView> items;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
 
