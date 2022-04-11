@@ -204,6 +204,21 @@ OPCODES = [
     Opcode(132, "iinc", UINT8, INT8),
 
     # Conversions
+    Opcode(133, "i2l"),
+    Opcode(134, "i2f"),
+    Opcode(135, "i2d"),
+    Opcode(136, "l2i"),
+    Opcode(137, "l2f"),
+    Opcode(138, "l2d"),
+    Opcode(139, "f2i"),
+    Opcode(140, "f2l"),
+    Opcode(141, "f2d"),
+    Opcode(142, "d2i"),
+    Opcode(143, "d2l"),
+    Opcode(144, "d2f"),
+    Opcode(145, "i2b"),
+    Opcode(146, "i2c"),
+    Opcode(147, "i2s"),
 
     # Comparisons
     Opcode(148, "lcmp"),
@@ -248,14 +263,25 @@ OPCODES = [
     Opcode(183, "invokespecial", UINT16),
     Opcode(184, "invokestatic", UINT16),
     Opcode(185, "invokeinterface", UINT16, UINT8, UINT8),
-    Opcode(186, "invokedynamic", UINT16, UINT8, UINT8, UINT8),
+    Opcode(186, "invokedynamic", UINT16, UINT8),
 
     Opcode(187, "ne", UINT16),
     Opcode(188, "newarray", UINT8),
     Opcode(189, "anewarray", UINT16),
     Opcode(190, "arraylength"),
+    Opcode(191, "athrow"),
+    Opcode(192, "checkcast", UINT16),
+    Opcode(193, "instanceof", UINT16),
+    Opcode(194, "monitorenter", UINT16),
+    Opcode(195, "monitorexit", UINT16),
 
     # Extended
+    Opcode(196, "wide"),
+    Opcode(197, "multianewarray", INT16, UINT8),
+    Opcode(198, "ifnull", INT16).rel(),
+    Opcode(199, "ifnonnull", INT16).rel(),
+    Opcode(200, "goto_w", INT32).rel(),
+    Opcode(201, "jsr_w", INT32).rel(),
 
     # Reserved
 ]
