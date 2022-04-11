@@ -35,7 +35,7 @@ extern "C"
             auto& current = plugin->areas[i];
             auto color    = i % 2 == 0 ? ColorPair{ Color::Yellow, Color::DarkBlue } : ColorPair{ Color::Green, Color::DarkBlue };
 
-            bsettings.AddZone(current.start, current.end, color, current.name);
+            bsettings.AddZone(current.start, current.end-current.start, color, current.name);
         }
         FCHECK(win->CreateViewer("Buffer", bsettings));
 
