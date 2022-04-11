@@ -41,6 +41,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
           { { "Field", TextAlignament::Left, 20 }, { "Value", TextAlignament::Left, 200 } },
           ListViewFlags::HideColumns);
 
+    this->items = Factory::TreeView::Create(this, "l:0,t:10,r:0,b:0");
+    
     //this->items = Factory::Tree::Create(this, "l:0,t:10,r:0,b:0", TreeFlags::None, settings->columnsCount);
     //for (uint32 idx = 0; idx < settings->columnsCount; idx++)
     //{
