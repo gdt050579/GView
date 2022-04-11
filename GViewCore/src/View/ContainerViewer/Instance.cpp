@@ -35,9 +35,12 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     imgView = Factory::ImageView::Create(this, "x:0,y:0,w:16,h:8", ViewerFlags::HideScrollBar);
     if ((this->settings->icon.GetWidth() == 16) && (this->settings->icon.GetHeight() == 16))
         imgView->SetImage(this->settings->icon, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
-    this->propList = Factory::ListView::Create(this, "l:17,t:0,r:0,h:8", ListViewFlags::HideColumns);
-    this->propList->AddColumn("Field", TextAlignament::Left, 20);
-    this->propList->AddColumn("Value", TextAlignament::Left, 200);
+    this->propList = Factory::ListView::Create(
+          this,
+          "l:17,t:0,r:0,h:8",
+          { { "Field", TextAlignament::Left, 20 }, { "Value", TextAlignament::Left, 200 } },
+          ListViewFlags::HideColumns);
+
     this->items = Factory::Tree::Create(this, "l:0,t:10,r:0,b:0", TreeFlags::None, settings->columnsCount);
     for (uint32 idx = 0; idx < settings->columnsCount; idx++)
     {
