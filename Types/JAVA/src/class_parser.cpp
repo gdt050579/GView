@@ -256,7 +256,8 @@ bool ClassParser::parse()
     READB(interfaces_count);
     for (uint16 i = 0; i < interfaces_count; ++i)
     {
-        unreachable;
+        uint16 interface_id;
+        READB(interface_id);
     }
 
     uint16 fields_count;
@@ -324,7 +325,7 @@ bool ClassParser::parse_constant_pool()
         FCHECK(data.method_type.read(reader));
         break;
     default:
-        unreachable;
+        unimplemented;
     }
 
     constant_data.push_back(data);
