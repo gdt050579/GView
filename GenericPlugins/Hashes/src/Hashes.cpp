@@ -23,10 +23,21 @@ constexpr std::string_view TYPES_CRC64_WE       = "Types.CRC64_WE";
 constexpr std::string_view TYPES_MD2            = "Types.MD2";
 constexpr std::string_view TYPES_MD4            = "Types.MD4";
 constexpr std::string_view TYPES_MD5            = "Types.MD5";
+constexpr std::string_view TYPES_BLAKE2S256     = "Types.BLAKE2S256";
+constexpr std::string_view TYPES_BLAKE2B512     = "Types.BLAKE2B512";
 constexpr std::string_view TYPES_SHA1           = "Types.SHA1";
+constexpr std::string_view TYPES_SHA224         = "Types.SHA224";
 constexpr std::string_view TYPES_SHA256         = "Types.SHA256";
 constexpr std::string_view TYPES_SHA384         = "Types.SHA384";
 constexpr std::string_view TYPES_SHA512         = "Types.SHA512";
+constexpr std::string_view TYPES_SHA512_224     = "Types.SHA512_224";
+constexpr std::string_view TYPES_SHA512_256     = "Types.SHA512_256";
+constexpr std::string_view TYPES_SHA3_224       = "Types.SHA3_224";
+constexpr std::string_view TYPES_SHA3_256       = "Types.SHA3_256";
+constexpr std::string_view TYPES_SHA3_384       = "Types.SHA3_384";
+constexpr std::string_view TYPES_SHA3_512       = "Types.SHA3_512";
+constexpr std::string_view TYPES_SHAKE128       = "Types.SHAKE128";
+constexpr std::string_view TYPES_SHAKE256       = "Types.SHAKE256";
 
 const uint32 widthPicking = 70;
 const uint32 widthShowing = 160;
@@ -61,10 +72,21 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
     MD2            = options->AddItem(MD2::GetName());
     MD4            = options->AddItem("MD4");
     MD5            = options->AddItem("MD5");
+    BLAKE2S256     = options->AddItem("BLAKE2S256");
+    BLAKE2B512     = options->AddItem("BLAKE2B512");
     SHA1           = options->AddItem("SHA1");
+    SHA224         = options->AddItem("SHA224");
     SHA256         = options->AddItem("SHA256");
     SHA384         = options->AddItem("SHA384");
     SHA512         = options->AddItem("SHA512");
+    SHA512_224     = options->AddItem("SHA512_224");
+    SHA512_256     = options->AddItem("SHA512_256");
+    SHA3_224       = options->AddItem("SHA3_224");
+    SHA3_256       = options->AddItem("SHA3_256");
+    SHA3_384       = options->AddItem("SHA3_384");
+    SHA3_512       = options->AddItem("SHA3_512");
+    SHAKE128       = options->AddItem("SHAKE128");
+    SHAKE256       = options->AddItem("SHAKE256");
 
     ok                              = Factory::Button::Create(this, "&Ok", "x:25%,y:100%,a:b,w:12", CMD_BUTTON_OK);
     ok->Handlers()->OnButtonPressed = this;
@@ -101,8 +123,6 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
         cancel->SetVisible(false);
         computeForFile->SetVisible(false);
         computeForSelection->SetVisible(false);
-
-        hashesList->Resize(hashesList->GetWidth(), static_cast<uint32>(outputs.size() + 3ULL));
 
         hashesList->SetVisible(true);
         close->SetVisible(true);
@@ -167,8 +187,17 @@ void HashesDialog::SetCheckBoxesFromFlags()
         case Hashes::MD5:
             MD5.SetCheck(true);
             break;
+        case Hashes::BLAKE2S256:
+            BLAKE2S256.SetCheck(true);
+            break;
+        case Hashes::BLAKE2B512:
+            BLAKE2B512.SetCheck(true);
+            break;
         case Hashes::SHA1:
             SHA1.SetCheck(true);
+            break;
+        case Hashes::SHA224:
+            SHA224.SetCheck(true);
             break;
         case Hashes::SHA256:
             SHA256.SetCheck(true);
@@ -178,6 +207,30 @@ void HashesDialog::SetCheckBoxesFromFlags()
             break;
         case Hashes::SHA512:
             SHA512.SetCheck(true);
+            break;
+        case Hashes::SHA512_224:
+            SHA512_224.SetCheck(true);
+            break;
+        case Hashes::SHA512_256:
+            SHA512_256.SetCheck(true);
+            break;
+        case Hashes::SHA3_224:
+            SHA3_224.SetCheck(true);
+            break;
+        case Hashes::SHA3_256:
+            SHA3_256.SetCheck(true);
+            break;
+        case Hashes::SHA3_384:
+            SHA3_384.SetCheck(true);
+            break;
+        case Hashes::SHA3_512:
+            SHA3_512.SetCheck(true);
+            break;
+        case Hashes::SHAKE128:
+            SHAKE128.SetCheck(true);
+            break;
+        case Hashes::SHAKE256:
+            SHAKE256.SetCheck(true);
             break;
         default:
             break;
@@ -270,6 +323,24 @@ void HashesDialog::SetFlagsFromCheckBoxes()
         flags &= ~static_cast<uint32>(Hashes::MD5);
     }
 
+    if (BLAKE2S256.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::BLAKE2S256);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::BLAKE2S256);
+    }
+
+    if (BLAKE2B512.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::BLAKE2B512);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::BLAKE2B512);
+    }
+
     if (SHA1.IsChecked())
     {
         flags |= static_cast<uint32>(Hashes::SHA1);
@@ -277,6 +348,15 @@ void HashesDialog::SetFlagsFromCheckBoxes()
     else
     {
         flags &= ~static_cast<uint32>(Hashes::SHA1);
+    }
+
+    if (SHA224.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA224);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA224);
     }
 
     if (SHA256.IsChecked())
@@ -304,6 +384,78 @@ void HashesDialog::SetFlagsFromCheckBoxes()
     else
     {
         flags &= ~static_cast<uint32>(Hashes::SHA512);
+    }
+
+    if (SHA512_224.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA512_224);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA512_224);
+    }
+
+    if (SHA512_256.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA512_256);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA512_256);
+    }
+
+    if (SHA3_224.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA3_224);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA3_224);
+    }
+
+    if (SHA3_256.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA3_256);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA3_256);
+    }
+
+    if (SHA3_384.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA3_384);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA3_384);
+    }
+
+    if (SHA3_512.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHA3_512);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHA3_512);
+    }
+
+    if (SHAKE128.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHAKE128);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHAKE128);
+    }
+
+    if (SHAKE256.IsChecked())
+    {
+        flags |= static_cast<uint32>(Hashes::SHAKE256);
+    }
+    else
+    {
+        flags &= ~static_cast<uint32>(Hashes::SHAKE256);
     }
 }
 
@@ -368,9 +520,21 @@ void HashesDialog::SetFlagsFromSettings()
             {
                 flags |= static_cast<uint32>(Hashes::MD5);
             }
+            else if (name == TYPES_BLAKE2S256)
+            {
+                flags |= static_cast<uint32>(Hashes::BLAKE2S256);
+            }
+            else if (name == TYPES_BLAKE2B512)
+            {
+                flags |= static_cast<uint32>(Hashes::BLAKE2B512);
+            }
             else if (name == TYPES_SHA1)
             {
                 flags |= static_cast<uint32>(Hashes::SHA1);
+            }
+            else if (name == TYPES_SHA224)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA224);
             }
             else if (name == TYPES_SHA256)
             {
@@ -383,6 +547,38 @@ void HashesDialog::SetFlagsFromSettings()
             else if (name == TYPES_SHA512)
             {
                 flags |= static_cast<uint32>(Hashes::SHA512);
+            }
+            else if (name == TYPES_SHA512_224)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA512_224);
+            }
+            else if (name == TYPES_SHA512_256)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA512_256);
+            }
+            else if (name == TYPES_SHA3_224)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA3_224);
+            }
+            else if (name == TYPES_SHA3_256)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA3_256);
+            }
+            else if (name == TYPES_SHA3_384)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA3_384);
+            }
+            else if (name == TYPES_SHA3_512)
+            {
+                flags |= static_cast<uint32>(Hashes::SHA3_512);
+            }
+            else if (name == TYPES_SHAKE128)
+            {
+                flags |= static_cast<uint32>(Hashes::SHAKE128);
+            }
+            else if (name == TYPES_SHAKE256)
+            {
+                flags |= static_cast<uint32>(Hashes::SHAKE256);
             }
         }
     }
@@ -402,10 +598,21 @@ void HashesDialog::SetSettingsFromFlags()
     hashesSettings[TYPES_MD2]            = MD2.IsChecked();
     hashesSettings[TYPES_MD4]            = MD4.IsChecked();
     hashesSettings[TYPES_MD5]            = MD5.IsChecked();
+    hashesSettings[TYPES_BLAKE2S256]     = BLAKE2S256.IsChecked();
+    hashesSettings[TYPES_BLAKE2B512]     = BLAKE2B512.IsChecked();
     hashesSettings[TYPES_SHA1]           = SHA1.IsChecked();
+    hashesSettings[TYPES_SHA224]         = SHA224.IsChecked();
     hashesSettings[TYPES_SHA256]         = SHA256.IsChecked();
     hashesSettings[TYPES_SHA384]         = SHA384.IsChecked();
     hashesSettings[TYPES_SHA512]         = SHA512.IsChecked();
+    hashesSettings[TYPES_SHA512_224]     = SHA512_224.IsChecked();
+    hashesSettings[TYPES_SHA512_256]     = SHA512_256.IsChecked();
+    hashesSettings[TYPES_SHA3_224]       = SHA3_224.IsChecked();
+    hashesSettings[TYPES_SHA3_256]       = SHA3_256.IsChecked();
+    hashesSettings[TYPES_SHA3_384]       = SHA3_384.IsChecked();
+    hashesSettings[TYPES_SHA3_512]       = SHA3_512.IsChecked();
+    hashesSettings[TYPES_SHAKE128]       = SHAKE128.IsChecked();
+    hashesSettings[TYPES_SHAKE256]       = SHAKE256.IsChecked();
 
     allSettings->Save(Application::GetAppSettingsFile());
 }
@@ -424,10 +631,21 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
     MD2 md2{};
     OpenSSLHash md4(OpenSSLHashKind::Md4);
     OpenSSLHash md5(OpenSSLHashKind::Md5);
+    OpenSSLHash blake2s256(OpenSSLHashKind::Blake2s256);
+    OpenSSLHash blake2b512(OpenSSLHashKind::Blake2b512);
     OpenSSLHash sha1(OpenSSLHashKind::Sha1);
+    OpenSSLHash sha224(OpenSSLHashKind::Sha224);
     OpenSSLHash sha256(OpenSSLHashKind::Sha256);
     OpenSSLHash sha384(OpenSSLHashKind::Sha384);
     OpenSSLHash sha512(OpenSSLHashKind::Sha512);
+    OpenSSLHash sha512_224(OpenSSLHashKind::Sha512_224);
+    OpenSSLHash sha512_256(OpenSSLHashKind::Sha512_256);
+    OpenSSLHash sha3_224(OpenSSLHashKind::Sha3_224);
+    OpenSSLHash sha3_256(OpenSSLHashKind::Sha3_256);
+    OpenSSLHash sha3_384(OpenSSLHashKind::Sha3_384);
+    OpenSSLHash sha3_512(OpenSSLHashKind::Sha3_512);
+    OpenSSLHash shake128(OpenSSLHashKind::Shake128);
+    OpenSSLHash shake256(OpenSSLHashKind::Shake256);
 
     for (const auto& hash : hashList)
     {
@@ -456,10 +674,21 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             break;
         case Hashes::MD4:
         case Hashes::MD5:
+        case Hashes::BLAKE2S256:
+        case Hashes::BLAKE2B512:
         case Hashes::SHA1:
+        case Hashes::SHA224:
         case Hashes::SHA256:
         case Hashes::SHA384:
         case Hashes::SHA512:
+        case Hashes::SHA512_224:
+        case Hashes::SHA512_256:
+        case Hashes::SHA3_224:
+        case Hashes::SHA3_256:
+        case Hashes::SHA3_384:
+        case Hashes::SHA3_512:
+        case Hashes::SHAKE128:
+        case Hashes::SHAKE256:
             /* openssl */
             break;
         default:
@@ -519,8 +748,17 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             case Hashes::MD5:
                 CHECK(md5.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
+            case Hashes::BLAKE2S256:
+                CHECK(blake2s256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::BLAKE2B512:
+                CHECK(blake2b512.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
             case Hashes::SHA1:
                 CHECK(sha1.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA224:
+                CHECK(sha224.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             case Hashes::SHA256:
                 CHECK(sha256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
@@ -530,6 +768,30 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
                 break;
             case Hashes::SHA512:
                 CHECK(sha512.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA512_224:
+                CHECK(sha512_224.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA512_256:
+                CHECK(sha512_256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA3_224:
+                CHECK(sha3_224.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA3_256:
+                CHECK(sha3_256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA3_384:
+                CHECK(sha3_384.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHA3_512:
+                CHECK(sha3_512.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHAKE128:
+                CHECK(shake128.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+                break;
+            case Hashes::SHAKE256:
+                CHECK(shake256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             default:
                 break;
@@ -574,9 +836,21 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             md5.Final();
             outputs.emplace(std::pair{ "MD5", md5.GetHexValue() });
             break;
+        case Hashes::BLAKE2S256:
+            blake2s256.Final();
+            outputs.emplace(std::pair{ "BLAKE2S256", blake2s256.GetHexValue() });
+            break;
+        case Hashes::BLAKE2B512:
+            blake2b512.Final();
+            outputs.emplace(std::pair{ "BLAKE2B512", blake2b512.GetHexValue() });
+            break;
         case Hashes::SHA1:
             sha1.Final();
             outputs.emplace(std::pair{ "SHA1", sha1.GetHexValue() });
+            break;
+        case Hashes::SHA224:
+            sha224.Final();
+            outputs.emplace(std::pair{ "SHA224", sha224.GetHexValue() });
             break;
         case Hashes::SHA256:
             sha256.Final();
@@ -589,6 +863,38 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         case Hashes::SHA512:
             sha512.Final();
             outputs.emplace(std::pair{ "SHA512", sha512.GetHexValue() });
+            break;
+        case Hashes::SHA512_224:
+            sha512_224.Final();
+            outputs.emplace(std::pair{ "SHA512_224", sha512_224.GetHexValue() });
+            break;
+        case Hashes::SHA512_256:
+            sha512_256.Final();
+            outputs.emplace(std::pair{ "SHA512_256", sha512_256.GetHexValue() });
+            break;
+        case Hashes::SHA3_224:
+            sha3_224.Final();
+            outputs.emplace(std::pair{ "SHA3_224", sha3_224.GetHexValue() });
+            break;
+        case Hashes::SHA3_256:
+            sha3_256.Final();
+            outputs.emplace(std::pair{ "SHA3_256", sha3_256.GetHexValue() });
+            break;
+        case Hashes::SHA3_384:
+            sha3_384.Final();
+            outputs.emplace(std::pair{ "SHA3_384", sha3_384.GetHexValue() });
+            break;
+        case Hashes::SHA3_512:
+            sha3_384.Final();
+            outputs.emplace(std::pair{ "SHA3_512", sha3_512.GetHexValue() });
+            break;
+        case Hashes::SHAKE128:
+            shake128.Final();
+            outputs.emplace(std::pair{ "SHAKE128", shake128.GetHexValue() });
+            break;
+        case Hashes::SHAKE256:
+            shake256.Final();
+            outputs.emplace(std::pair{ "SHAKE256", shake256.GetHexValue() });
             break;
         default:
             break;
@@ -674,9 +980,20 @@ extern "C"
         sect[GView::GenericPlugins::Hashes::TYPES_MD2]            = true;
         sect[GView::GenericPlugins::Hashes::TYPES_MD4]            = true;
         sect[GView::GenericPlugins::Hashes::TYPES_MD5]            = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_BLAKE2S256]     = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_BLAKE2B512]     = true;
         sect[GView::GenericPlugins::Hashes::TYPES_SHA1]           = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA224]         = true;
         sect[GView::GenericPlugins::Hashes::TYPES_SHA256]         = true;
         sect[GView::GenericPlugins::Hashes::TYPES_SHA384]         = true;
         sect[GView::GenericPlugins::Hashes::TYPES_SHA512]         = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA512_224]     = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA512_256]     = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA3_224]       = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA3_256]       = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA3_384]       = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHA3_512]       = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHAKE128]       = true;
+        sect[GView::GenericPlugins::Hashes::TYPES_SHAKE256]       = true;
     }
 }
