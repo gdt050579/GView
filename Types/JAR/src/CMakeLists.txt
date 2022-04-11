@@ -1,12 +1,11 @@
-target_sources(JAVA PRIVATE
+target_sources(JAR PRIVATE
 	ast.hpp
 	ast.cpp
 	allocator.cpp
+	class_parser.cpp
 	global.hpp
 	endian.hpp
 	buffer_reader.cpp
-	class_parser.cpp
-	java_viewer.cpp
-	main.cpp
+	jar.cpp
 	raw_opcodes.cpp
 )

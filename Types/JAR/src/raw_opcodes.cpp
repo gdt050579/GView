@@ -2,7 +2,7 @@
 
 namespace GView::Java
 {
-static const char* names[256] = {
+static const char* NAMES[256] = {
     "nop",           "aconst_null", "iconst_m1",     "iconst_0",      "iconst_1",     "iconst_2",
     "iconst_3",      "iconst_4",    "iconst_5",      "lconst_0",      "lconst_1",     "fconst_0",
     "fconst_1",      "fconst_2",    "dconst_0",      "dconst_1",      "bipush",       "sipush",
@@ -38,16 +38,19 @@ static const char* names[256] = {
     "checkcast",     "instanceof",  "monitorenter",  "monitorexit",   "wide",         "multianewarray",
     "ifnull",        "ifnonnull",   "goto_w",        "jsr_w",
 };
+
+const char* Opcode::get_name() const
+{
+    return NAMES[opcode];
+}
+
 bool get_opcode(BufferReader& reader, Opcode& out)
 {
     out         = {};
     auto offset = reader.offset();
 
-    uint8 opcode;
-    READB(opcode);
-
-    out.name = names[opcode];
-    switch (opcode)
+    READB(out.opcode);
+    switch (out.opcode)
     {
     case 0:
     {

@@ -86,9 +86,10 @@ struct Opcode
         bool is_unsigned;
         uint32 value;
     };
-    const char* name;
     uint8 opcode;
     Arg args[3];
+
+    const char* get_name() const;
 };
 
 class BufferReader

@@ -304,21 +304,23 @@ output = '''
 #include "global.hpp"
 
 namespace GView::Java{
-static const char* names[256] = {
+static const char* NAMES[256] = {
 '''
 for i in OPCODES:
     output += f'"{i.name}",'
 
 output += '''};
+
+const char* Opcode::get_name() const {
+    return NAMES[opcode];
+}
+
 bool get_opcode(BufferReader& reader, Opcode& out) {
     out = {};
     auto offset = reader.offset();
 
-    uint8 opcode;
-    READB(opcode);
-
-    out.name = names[opcode];
-    switch (opcode) {
+    READB(out.opcode);
+    switch (out.opcode) {
 '''
 
 ARGS_NAMES = ["first", "second", "third"]

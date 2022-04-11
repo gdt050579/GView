@@ -39,6 +39,14 @@ extern "C"
     }
 }
 
+namespace GView::Java
+{
+string_view JavaViewer::GetTypeName()
+{
+    return "jar";
+}
+} // namespace GView::Java
+
 // https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-7.html
 // https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-6.html
 // https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-4.html

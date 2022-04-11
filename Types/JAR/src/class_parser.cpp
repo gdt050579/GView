@@ -707,7 +707,7 @@ bool AstCreator::create_code(BufferView buffer)
         Opcode op;
         FCHECK(get_opcode(reader, op));
 
-        string.AddFormat("%zu. %s", offset, op.name);
+        string.AddFormat("%zu. %s", offset, op.get_name());
         for (auto& i : op.args)
         {
             if (i.exists)
