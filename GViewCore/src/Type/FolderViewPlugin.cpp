@@ -26,9 +26,8 @@ class DefaultInformationPanel : public TabPage
   public:
     DefaultInformationPanel(Reference<Object> obj) : TabPage("&Information")
     {
-        auto lv = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-        lv->AddColumn("Field", TextAlignament::Left, 10);
-        lv->AddColumn("Value", TextAlignament::Left, 100);
+        Factory::ListView::Create(
+              this, "d:c", { { "Field", TextAlignament::Left, 10 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
     }
 };
 class FolderType : public TypeInterface
