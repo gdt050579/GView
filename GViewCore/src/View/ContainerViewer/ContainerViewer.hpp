@@ -38,7 +38,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<AppCUI::Controls::ImageView> imgView;
             Reference<AppCUI::Controls::ListView> propList;
-            Reference<AppCUI::Controls::Tree> items;
+            Reference<AppCUI::Controls::TreeView> items;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
 
