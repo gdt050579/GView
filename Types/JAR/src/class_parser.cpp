@@ -206,13 +206,14 @@ struct MethodInfo
 
 struct ClassParser
 {
+    JavaViewer& self;
     BufferReader reader;
     vector<ConstantData> constant_data;
     vector<FieldInfo> fields;
     vector<MethodInfo> methods;
     vector<AttributeInfo> attributes;
 
-    ClassParser(BufferReader reader);
+    ClassParser(JavaViewer& self, BufferReader reader);
 
     bool parse();
     bool parse_constant_pool();
@@ -224,7 +225,7 @@ struct ClassParser
     bool parse_attribute_code(BufferView buffer, CodeAttribute& code);
 };
 
-ClassParser::ClassParser(BufferReader reader) : reader(reader)
+ClassParser::ClassParser(JavaViewer& self, BufferReader reader) : self(self), reader(reader)
 {
     constant_data.reserve(64);
     constant_data.push_back({ ConstantKind::Nothing });
@@ -232,16 +233,20 @@ ClassParser::ClassParser(BufferReader reader) : reader(reader)
 
 bool ClassParser::parse()
 {
+    auto offset = reader.offset();
     SKIPTYPE(uint32); // magic
     SKIPTYPE(uint16); // minor version
     SKIPTYPE(uint16); // major version
     uint16 constant_pool_count;
     READB(constant_pool_count);
+    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "header" });
 
+    offset = reader.offset();
     for (uint16 i = 0; i < constant_pool_count - 1; ++i)
     {
         FCHECK(parse_constant_pool());
     }
+    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "const" });
 
     uint16 access_flags;
     READB(access_flags);
@@ -252,6 +257,8 @@ bool ClassParser::parse()
     uint16 super_class;
     READB(super_class);
 
+    offset = reader.offset();
+
     uint16 interfaces_count;
     READB(interfaces_count);
     for (uint16 i = 0; i < interfaces_count; ++i)
@@ -259,6 +266,9 @@ bool ClassParser::parse()
         uint16 interface_id;
         READB(interface_id);
     }
+    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "interfaces" });
+
+    offset = reader.offset();
 
     uint16 fields_count;
     READB(fields_count);
@@ -266,6 +276,9 @@ bool ClassParser::parse()
     {
         FCHECK(parse_field());
     }
+    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "fields" });
+
+    offset = reader.offset();
 
     uint16 methods_count;
     READB(methods_count);
@@ -273,6 +286,7 @@ bool ClassParser::parse()
     {
         FCHECK(parse_method());
     }
+    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "methods" });
 
     return true;
 }
@@ -738,12 +752,26 @@ const ConstantData* AstCreator::get_constant(uint16 index, ConstantKind expect)
 
 // ---------------------------------------------------- parse_class ----------------------------------------------------
 
-bool parse_class(BufferView buffer)
+bool parse_class(JavaViewer& self, BufferView buffer)
 {
-    ClassParser parser{ { buffer.GetData(), buffer.GetLength() } };
+    ClassParser parser{ self, { buffer.GetData(), buffer.GetLength() } };
     FCHECK(parser.parse());
 
     AstCreator creator{ parser };
+
+    /*for (auto& i : parser.constant_data)
+    {
+        LocalString<256> out;
+        switch (i.kind)
+        {
+        case ConstantKind::Utf8:
+        {
+            out.Add(i.utf8.bytes, i.utf8.length);
+            break;
+        }
+        }
+    }*/
+
     return creator.create();
 }
 

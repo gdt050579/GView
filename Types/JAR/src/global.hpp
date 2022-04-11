@@ -67,8 +67,23 @@ class ArrayRefMut
     }
 };
 
+struct ColoredArea
+{
+    uint32 start;
+    uint32 end;
+    const char* name;
+};
+
+struct ConstPanel
+{
+    LocalString<256> data;
+};
+
 struct JavaViewer : public TypeInterface
 {
+    vector<ColoredArea> areas;
+    vector<ConstPanel> const_panel;
+
     string_view GetTypeName() override;
 };
 
@@ -76,7 +91,7 @@ struct ClassFile
 {
 };
 
-bool parse_class(BufferView buffer);
+bool parse_class(JavaViewer& self, BufferView buffer);
 
 struct Opcode
 {

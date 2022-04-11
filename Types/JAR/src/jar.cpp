@@ -20,14 +20,31 @@ extern "C"
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
     {
         auto buffer = file->GetEntireFile();
-        if (!parse_class(buffer))
-            return nullptr;
-        return new JavaViewer;
+        auto plugin = new JavaViewer;
+        FCHECKNULL(parse_class(*plugin, buffer));
+        return plugin;
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        return false;
+        auto plugin = win->GetObject()->type->To<JavaViewer>();
+
+        BufferViewer::Settings bsettings;
+        for (uint32 i = 0; i < plugin->areas.size(); ++i)
+        {
+            auto& current = plugin->areas[i];
+            auto color    = i % 2 == 0 ? ColorPair{ Color::Yellow, Color::DarkBlue } : ColorPair{ Color::Green, Color::DarkBlue };
+
+            bsettings.AddZone(current.start, current.end, color, current.name);
+        }
+        FCHECK(win->CreateViewer("Buffer", bsettings));
+
+        TextViewer::Settings tsettings;
+        FCHECK(win->CreateViewer("Text", tsettings));
+
+        //GView::App::OpenFile("");
+
+        return true;
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
