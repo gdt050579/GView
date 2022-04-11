@@ -32,6 +32,11 @@ size_t BufferReader::available() const
     return ptr_end - ptr_current;
 }
 
+size_t BufferReader::offset() const
+{
+    return ptr_current - ptr_start;
+}
+
 bool BufferReader::done() const
 {
     return available() == 0;

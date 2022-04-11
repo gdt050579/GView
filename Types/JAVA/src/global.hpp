@@ -88,6 +88,7 @@ class BufferReader
     BufferReader(const uint8* ptr_start, size_t size);
 
     size_t available() const;
+    size_t offset() const;
     bool done() const;
     const uint8* get() const;
     bool read(void* buffer, size_t size);
@@ -100,6 +101,15 @@ class BufferReader
     }
 
     template <typename T>
+    bool read_little(T& x)
+    {
+        if (!read(&x, sizeof(x)))
+            return false;
+        x = Endian::little_to_native(x);
+        return true;
+    }
+
+    template <typename T>
     bool read_big(T& x)
     {
         if (!read(&x, sizeof(x)))
@@ -108,6 +118,10 @@ class BufferReader
         return true;
     }
 };
+
+#define READL(x)                                                                                                                           \
+    if (!reader.read_little(x))                                                                                                            \
+    return false
 
 #define READB(x)                                                                                                                           \
     if (!reader.read_big(x))                                                                                                               \

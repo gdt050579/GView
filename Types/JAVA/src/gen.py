@@ -4,7 +4,15 @@ class Opcode:
     def __init__(self, id, name, *args) -> None:
         self.id = id
         self.name = name
+        self._rel = False
         self.args = args
+
+    def rel(self):
+        self._rel = not self._rel
+        return self
+
+    def is_relative(self):
+        return self._rel
 
 class Type:
     def __init__(self, t, is_wide=False):
@@ -12,6 +20,9 @@ class Type:
 
     def get_name(self):
         return self.t
+
+    def is_unsigned(self):
+        return self.t.startswith("u")
         
 
 UINT8W = Type("uint8", True)
@@ -208,19 +219,19 @@ OPCODES = [
     Opcode(157, "ifgt", UINT16),
     Opcode(158, "ifle", UINT16),
 
-    Opcode(159, "if_icmpeq", UINT16),
-    Opcode(160, "if_icmpne", UINT16),
-    Opcode(161, "if_icmplt", UINT16),
-    Opcode(162, "if_icmpge", UINT16),
-    Opcode(163, "if_icmpgt", UINT16),
-    Opcode(164, "if_icmple", UINT16),
-    Opcode(165, "if_acmpeq", UINT16),
-    Opcode(166, "if_acmpne", UINT16),
+    Opcode(159, "if_icmpeq", INT16).rel(),
+    Opcode(160, "if_icmpne", INT16).rel(),
+    Opcode(161, "if_icmplt", INT16).rel(),
+    Opcode(162, "if_icmpge", INT16).rel(),
+    Opcode(163, "if_icmpgt", INT16).rel(),
+    Opcode(164, "if_icmple", INT16).rel(),
+    Opcode(165, "if_acmpeq", INT16).rel(),
+    Opcode(166, "if_acmpne", INT16).rel(),
 
     # Control
 
-    Opcode(167, "goto", UINT16),
-    Opcode(168, "jsr", UINT16),
+    Opcode(167, "goto", INT16).rel(),
+    Opcode(168, "jsr", INT16),
     Opcode(169, "ret", UINT8),
 
     Opcode(172, "ireturn"),
@@ -255,12 +266,15 @@ def get_type(type):
             return "uint8"
 
 output = '''
+#include <iostream>
 #include "global.hpp"
 
 namespace GView::Java{
 bool print_opcodes(BufferView buffer) {
     BufferReader reader(buffer.GetData(), buffer.GetLength());
     while (!reader.done()) {
+        auto offset = reader.offset();
+
         uint8 opcode;
         READB(opcode);
 
@@ -269,13 +283,17 @@ bool print_opcodes(BufferView buffer) {
 
 for op in OPCODES:
     output += f"case {op.id}: {{"
+    cout = f'''std::cout << offset << ". " << "{op.name}"'''
     for i in range(0, len(op.args)):
         arg = op.args[i]
         output += f'''{arg.get_name()} arg_{i};
         READB(arg_{i});
         '''
-    output += f'''printf("{op.name}\\n");'''
-    output += "break;}"
+        if op.is_relative():
+            output += f"arg_{i} += ({arg.get_name()}) offset;"
+        unsigned = "unsigned" if arg.is_unsigned() else "signed"
+        cout += f"<<' ' << ({unsigned} long long) arg_{i}"
+    output += cout + "<<'\\n';break;}"
 
 
 output += "default: unimplemented;return false;}}"

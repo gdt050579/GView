@@ -8,6 +8,7 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const string_view& extension)
     {
+        AppCUI::Log::ToStdErr();
         if (buf.GetLength() < sizeof(uint32))
             return false;
 

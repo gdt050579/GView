@@ -87,16 +87,70 @@ struct CONSTANT_String_info
     }
 };
 
+struct CONSTANT_InvokeDynamic_info
+{
+    uint16 bootstrap_method_attr_index;
+    uint16 name_and_type_index;
+
+    bool read(BufferReader& reader)
+    {
+        READB(bootstrap_method_attr_index);
+        READB(name_and_type_index);
+        return true;
+    }
+};
+
+struct CONSTANT_Double_info
+{
+    double value;
+
+    bool read(BufferReader& reader)
+    {
+        uint64 v;
+        READB(v);
+        value = *reinterpret_cast<double*>(&v);
+        return true;
+    }
+};
+
+struct CONSTANT_MethodHandle_info
+{
+    uint8 reference_kind;
+    uint16 reference_index;
+
+    bool read(BufferReader& reader)
+    {
+        READB(reference_kind);
+        READB(reference_index);
+        return true;
+    }
+};
+
+struct CONSTANT_MethodType_info
+{
+    uint16 descriptor_index;
+
+    bool read(BufferReader& reader)
+    {
+        READB(descriptor_index);
+        return true;
+    }
+};
+
 struct ConstantData
 {
     ConstantKind kind;
     union
     {
-        CONSTANT_Field_Interface_Methodref_info field_interface_method;
         CONSTANT_Class_info clazz;
         CONSTANT_NameAndType_info name_and_type;
-        CONSTANT_Utf8_info utf8;
+        CONSTANT_InvokeDynamic_info invoke_dynamic;
+        CONSTANT_Field_Interface_Methodref_info field_interface_method;
+        CONSTANT_MethodHandle_info method_handle;
+        CONSTANT_MethodType_info method_type;
         CONSTANT_String_info string;
+        CONSTANT_Utf8_info utf8;
+        CONSTANT_Double_info double_;
     };
 };
 
@@ -235,7 +289,8 @@ bool ClassParser::parse_constant_pool()
     CHECK(is_valid_constant_pool_tag(tag), false, "bad constant pool tag");
 
     ConstantData data;
-    data.kind = static_cast<ConstantKind>(tag);
+    data.kind         = static_cast<ConstantKind>(tag);
+    bool double_entry = false;
     switch (data.kind)
     {
     case ConstantKind::MethodRef:
@@ -255,11 +310,26 @@ bool ClassParser::parse_constant_pool()
     case ConstantKind::String:
         FCHECK(data.string.read(reader));
         break;
+    case ConstantKind::InvokeDynamic:
+        FCHECK(data.invoke_dynamic.read(reader));
+        break;
+    case ConstantKind::Double:
+        FCHECK(data.double_.read(reader));
+        double_entry = true;
+        break;
+    case ConstantKind::MethodHandle:
+        FCHECK(data.method_handle.read(reader));
+        break;
+    case ConstantKind::MethodType:
+        FCHECK(data.method_type.read(reader));
+        break;
     default:
         unreachable;
     }
 
     constant_data.push_back(data);
+    if (double_entry)
+        constant_data.push_back(data);
     return true;
 }
 
@@ -628,6 +698,7 @@ bool AstCreator::create_code(BufferView buffer)
     CodeAttribute code;
     FCHECK(class_parser.parse_attribute_code(buffer, code));
     print_opcodes(code.code);
+    printf("\n\n\n");
     return true;
 }
 

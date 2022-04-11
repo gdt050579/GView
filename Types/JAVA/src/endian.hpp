@@ -137,6 +137,43 @@ SWAP_SIGNED(big_to_native, 16);
 SWAP_SIGNED(big_to_native, 32);
 SWAP_SIGNED(big_to_native, 64);
 
+inline uint8_t little_to_native(uint8_t x)
+{
+    return x;
+}
+
+inline uint16_t little_to_native(uint16_t x)
+{
+#ifdef GVIEW_BIG_ENDIAN
+    return swap(x);
+#else
+    return x;
+#endif
+}
+
+inline uint32_t little_to_native(uint32_t x)
+{
+#ifdef GVIEW_BIG_ENDIAN
+    return swap(x);
+#else
+    return x;
+#endif
+}
+
+inline uint64_t little_to_native(uint64_t x)
+{
+#ifdef GVIEW_BIG_ENDIAN
+    return swap(x);
+#else
+    return x;
+#endif
+}
+
+SWAP_SIGNED(little_to_native, 8);
+SWAP_SIGNED(little_to_native, 16);
+SWAP_SIGNED(little_to_native, 32);
+SWAP_SIGNED(little_to_native, 64);
+
 #undef SWAP_SIGNED
 
 } // namespace GView::Java::Endian
