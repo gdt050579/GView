@@ -119,6 +119,18 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
             MAC::CS_GenericBlob blob;
             std::string data;
         } entitlements;
+
+        struct
+        {
+            uint64 offset;
+            uint64 size;
+
+            bool errorHumanReadable = false;
+            std::string humanReadable;
+
+            bool errorPEMs = false;
+            std::vector<std::string> PEMs;
+        } signature;
     };
 
   public:
@@ -321,7 +333,13 @@ namespace Panels
     {
       private:
         Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
         Reference<AppCUI::Controls::ListView> general;
+
+        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
+        ListViewItem cmsSize;       // MAC CMS signature/digital signature
+        ListViewItem humanReadable; // MAC CMS signature/digital signature
+        ListViewItem PEMs;          // MAC CMS signature/digital signature
 
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
         inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
@@ -338,14 +356,20 @@ namespace Panels
 
         void RecomputePanelsPositions();
 
+        void GoToSelectedOffset();
+        void SelectArea();
+        void MoreInfo();
+
       public:
-        CodeSignMagic(Reference<MachOFile> machO);
+        CodeSignMagic(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             RecomputePanelsPositions();
         }
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
 } // namespace GView::Type::MachO

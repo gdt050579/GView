@@ -291,6 +291,12 @@ namespace Hashes
     };
 } // namespace Hashes
 
+namespace DigitalSignature
+{
+    CORE_EXPORT bool BufferToHumanReadable(const Buffer& buffer, std::string& ouput);
+    CORE_EXPORT bool BufferToPEMCerts(const Buffer& buffer, std::vector<std::string>& output);
+} // namespace DigitalSignature
+
 struct CORE_EXPORT Object
 {
     Utils::FileCache cache;

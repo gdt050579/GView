@@ -4,9 +4,17 @@ namespace GView::Type::MachO::Panels
 {
 using namespace AppCUI::Controls;
 
-CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO) : TabPage("CodeSign&Magic")
+enum class Action : int32
+{
+    GoTo     = 1,
+    Select   = 2,
+    MoreInfo = 3
+};
+
+CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSign&Magic")
 {
     machO   = _machO;
+    win     = _win;
     general = Factory::ListView::Create(
           this, "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 18 }, { "Value", TextAlignament::Left, 48 } }, ListViewFlags::None);
 
@@ -140,9 +148,9 @@ void CodeSignMagic::UpdateBlobs()
             const auto hexMagic = nf2.ToString(static_cast<uint32_t>(b.magic), hex);
             general->AddItem({ "Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()) });
 
-            const auto length    = nf.ToString(blob.offset, dec);
-            const auto hexLength = nf2.ToString(blob.offset, hex);
-            general->AddItem({ "Offset", ls.Format("%-26s (%s)", length.data(), hexLength.data()) });
+            const auto offset    = nf.ToString(blob.offset, dec);
+            const auto hexOffset = nf2.ToString(blob.offset, hex);
+            general->AddItem({ "Offset", ls.Format("%-26s (%s)", offset.data(), hexOffset.data()) });
 
             const auto& data       = machO->codeSignature->entitlements.data;
             const auto dataSize    = nf.ToString(static_cast<uint64>(data.size()), dec);
@@ -174,6 +182,42 @@ void CodeSignMagic::UpdateBlobs()
                   machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
                   machO->codeSignature->acdSlotsHashes[alternateDirectoryCount]);
             alternateDirectoryCount++;
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
+        {
+            const auto offset    = nf.ToString(machO->codeSignature->signature.offset, dec);
+            const auto hexOffset = nf2.ToString(machO->codeSignature->signature.offset, hex);
+            cmsOffset            = general->AddItem({ "Offset", ls.Format("%-26s (%s)", offset.data(), hexOffset.data()) });
+            cmsOffset.SetData(machO->codeSignature->signature.offset);
+
+            const auto size    = nf.ToString(machO->codeSignature->signature.size, dec);
+            const auto hexSize = nf2.ToString(machO->codeSignature->signature.size, hex);
+            cmsSize            = general->AddItem({ "Length", ls.Format("%-26s (%s)", size.data(), hexSize.data()) });
+            cmsSize.SetData(machO->codeSignature->signature.size);
+
+            if (machO->codeSignature->signature.errorHumanReadable)
+            {
+                humanReadable = general->AddItem({ "Human Readable", machO->codeSignature->signature.humanReadable.c_str() });
+                humanReadable.SetType(ListViewItem::Type::ErrorInformation);
+            }
+            else
+            {
+                humanReadable = general->AddItem({ "Human Readable", "Signature parsed - press ENTER for details!" });
+                humanReadable.SetType(ListViewItem::Type::Emphasized_2);
+            }
+
+            if (machO->codeSignature->signature.errorPEMs)
+            {
+                PEMs = general->AddItem({ "PEMs", machO->codeSignature->signature.PEMs.at(0).c_str() });
+                PEMs.SetType(ListViewItem::Type::ErrorInformation);
+            }
+            else
+            {
+                PEMs = general->AddItem(
+                      { "PEMs", ls.Format("(%d) PEMs parsed - press ENTER for details!", machO->codeSignature->signature.PEMs.size()) });
+                PEMs.SetType(ListViewItem::Type::Emphasized_2);
+            }
         }
         break;
         default:
@@ -358,6 +402,74 @@ void CodeSignMagic::RecomputePanelsPositions()
     general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
 }
 
+void CodeSignMagic::GoToSelectedOffset()
+{
+    CHECKRET(cmsOffset.IsValid(), "");
+    CHECKRET(cmsOffset.IsCurrent(), "");
+
+    win->GetCurrentView()->GoTo(cmsOffset.GetData(0));
+}
+
+void CodeSignMagic::SelectArea()
+{
+    CHECKRET(cmsOffset.IsValid(), "");
+    CHECKRET(cmsOffset.IsCurrent(), "");
+
+    win->GetCurrentView()->Select(cmsOffset.GetData(0), cmsSize.GetData(0));
+}
+
+void CodeSignMagic::MoreInfo()
+{
+    class Dialog : public Window
+    {
+        Reference<GView::Object> object;
+        Reference<TextArea> text = Factory::TextArea::Create(
+              this,
+              "Digital Signature",
+              "d:c,w:68,h:50",
+              TextAreaFlags::Border | TextAreaFlags::ScrollBars | TextAreaFlags::Readonly | TextAreaFlags::DisableAutoSelectOnFocus);
+
+      public:
+        Dialog(Reference<GView::Object> _object)
+            : Window("PEM Certificates", "d:c,w:80,h:55", WindowFlags::ProcessReturn | WindowFlags::Sizeable)
+        {
+            object = _object;
+        }
+
+        bool SetText(ConstString _text)
+        {
+            text->SetText(_text);
+        }
+
+        void SetWidth(uint32 width)
+        {
+            this->Resize(width, this->GetHeight());
+            text->Resize(width - 10, text->GetHeight());
+        }
+    } dialog(nullptr);
+
+    if (humanReadable.IsValid() && humanReadable.IsCurrent())
+    {
+        dialog.SetText(machO->codeSignature->signature.humanReadable.c_str());
+        dialog.Show();
+    }
+
+    if (PEMs.IsValid() && PEMs.IsCurrent())
+    {
+        std::string input;
+
+        for (const auto& pem : machO->codeSignature->signature.PEMs)
+        {
+            input += pem;
+            input += "\n";
+        }
+
+        dialog.SetWidth(100);
+        dialog.SetText(input.c_str());
+        dialog.Show();
+    }
+}
+
 void CodeSignMagic::Update()
 {
     general->DeleteAllItems();
@@ -367,5 +479,43 @@ void CodeSignMagic::Update()
     UpdateSlots();
     UpdateBlobs();
     RecomputePanelsPositions();
+}
+
+bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    commandBar.SetCommand(AppCUI::Input::Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
+    commandBar.SetCommand(AppCUI::Input::Key::F9, "Select", static_cast<int32_t>(Action::Select));
+    commandBar.SetCommand(AppCUI::Input::Key::Ctrl | AppCUI::Input::Key::Enter, "More Info", static_cast<int32_t>(Action::MoreInfo));
+
+    return true;
+}
+
+bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
+{
+    CHECK(TabPage::OnEvent(ctrl, evnt, controlID) == false, true, "");
+
+    if (evnt == Event::ListViewItemClicked)
+    {
+        GoToSelectedOffset();
+        return true;
+    }
+
+    if (evnt == Event::Command)
+    {
+        switch (static_cast<Action>(controlID))
+        {
+        case Action::GoTo:
+            GoToSelectedOffset();
+            return true;
+        case Action::Select:
+            SelectArea();
+            return true;
+        case Action::MoreInfo:
+            MoreInfo();
+            return true;
+        }
+    }
+
+    return false;
 }
 } // namespace GView::Type::MachO::Panels
