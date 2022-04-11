@@ -39,6 +39,6 @@ extern "C"
     }
 }
 
-// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-7.html
-// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-6.html#jvms-6.5.getstatic
-// https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.7
+// https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-7.html
+// https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-6.html
+// https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-4.html

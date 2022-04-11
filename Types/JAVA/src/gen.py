@@ -244,7 +244,6 @@ OPCODES = [
     Opcode(166, "if_acmpne", INT16).rel(),
 
     # Control
-
     Opcode(167, "goto", INT16).rel(),
     Opcode(168, "jsr", INT16),
     Opcode(169, "ret", UINT8),
@@ -262,7 +261,7 @@ OPCODES = [
     Opcode(182, "invokevirtual", UINT16),
     Opcode(183, "invokespecial", UINT16),
     Opcode(184, "invokestatic", UINT16),
-    Opcode(185, "invokeinterface", UINT16, UINT8, UINT8),
+    Opcode(185, "invokeinterface", UINT16, UINT8),
     Opcode(186, "invokedynamic", UINT16, UINT8),
 
     Opcode(187, "ne", UINT16),
@@ -276,53 +275,57 @@ OPCODES = [
     Opcode(195, "monitorexit", UINT16),
 
     # Extended
-    Opcode(196, "wide"),
+    Opcode(196, "wide"), # TODO: needs custom code
     Opcode(197, "multianewarray", INT16, UINT8),
     Opcode(198, "ifnull", INT16).rel(),
     Opcode(199, "ifnonnull", INT16).rel(),
     Opcode(200, "goto_w", INT32).rel(),
     Opcode(201, "jsr_w", INT32).rel(),
-
-    # Reserved
 ]
 
-def get_type(type):
-    match type:
-        case UINT8:
-            return "uint8"
-
 output = '''
-#include <iostream>
 #include "global.hpp"
 
 namespace GView::Java{
-bool print_opcodes(BufferView buffer) {
-    BufferReader reader(buffer.GetData(), buffer.GetLength());
-    while (!reader.done()) {
-        auto offset = reader.offset();
+static const char* names[256] = {
+'''
+for i in range(0, len(OPCODES)):
+    output += f'"{OPCODES[i].name}",'
 
-        uint8 opcode;
-        READB(opcode);
+output += '''};
+bool get_opcode(BufferReader& reader, Opcode& out) {
+    out = {};
+    auto offset = reader.offset();
 
-        switch (opcode) {
+    uint8 opcode;
+    READB(opcode);
+
+    out.name = names[opcode];
+    switch (opcode) {
 '''
 
+ARGS_NAMES = ["first", "second"]
+
 for op in OPCODES:
-    output += f"case {op.id}: {{"
-    cout = f'''std::cout << offset << ". " << "{op.name}"'''
+    output += f'''case {op.id}: {{
+    // {op.name}
+    '''
     for i in range(0, len(op.args)):
+        arg_name = ARGS_NAMES[i]
         arg = op.args[i]
-        output += f'''{arg.get_name()} arg_{i};
-        READB(arg_{i});
+        output += f'''{arg.get_name()} {arg_name};
+        READB({arg_name});
         '''
         if op.is_relative():
-            output += f"arg_{i} += ({arg.get_name()}) offset;"
+            output += f"{arg_name} += ({arg.get_name()}) offset;"
         unsigned = "unsigned" if arg.is_unsigned() else "signed"
-        cout += f"<<' ' << ({unsigned} long long) arg_{i}"
-    output += cout + "<<'\\n';break;}"
+        output += f'''out.{arg_name} = {arg_name};
+        out.{arg_name}_exists = true;
+        out.{arg_name}_unsigned = {"true" if arg.is_unsigned() else "false"};'''
+    output += "break;}"
 
 
-output += "default: unimplemented;return false;}}"
+output += "default:return false;}"
 output += '''return true;}}'''
 
 file_name = "raw_opcodes.cpp"

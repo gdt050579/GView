@@ -78,6 +78,18 @@ struct ClassFile
 
 bool parse_class(BufferView buffer);
 
+struct Opcode
+{
+    const char* name;
+    uint8 opcode;
+    bool first_exists;
+    bool first_unsigned;
+    bool second_exists;
+    bool second_unsigned;
+    uint32 first;
+    uint32 second;
+};
+
 class BufferReader
 {
     const uint8* ptr_start;
@@ -89,6 +101,7 @@ class BufferReader
 
     size_t available() const;
     size_t offset() const;
+    bool has_more() const;
     bool done() const;
     const uint8* get() const;
     bool read(void* buffer, size_t size);

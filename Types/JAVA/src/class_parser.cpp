@@ -691,14 +691,34 @@ Method* AstCreator::create_method(const MethodInfo& raw_method)
     return method;
 }
 
-bool print_opcodes(BufferView buffer);
+bool get_opcode(BufferReader& reader, Opcode& out);
 
 bool AstCreator::create_code(BufferView buffer)
 {
     CodeAttribute code;
     FCHECK(class_parser.parse_attribute_code(buffer, code));
-    print_opcodes(code.code);
-    printf("\n\n\n");
+    BufferReader reader(code.code.GetData(), code.code.GetLength());
+
+    LocalString<4096> string;
+    while (reader.has_more())
+    {
+        auto offset = reader.offset();
+        Opcode op;
+        FCHECK(get_opcode(reader, op));
+
+        string.AddFormat("%zu. %s", offset, op.name);
+        if (op.first_exists)
+        {
+            string.AddFormat(op.first_unsigned ? "%llu " : "%lld ", op.first);
+        }
+        if (op.second_exists)
+        {
+            string.AddFormat(op.second_unsigned ? "%llu " : "%lld ", op.second);
+        }
+        string.AddChar('\n');
+    }
+
+    printf("%.*s\n\n\n", string.Len(), string.GetText());
     return true;
 }
 

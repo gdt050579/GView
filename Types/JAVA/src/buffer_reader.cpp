@@ -37,6 +37,11 @@ size_t BufferReader::offset() const
     return ptr_current - ptr_start;
 }
 
+bool BufferReader::has_more() const
+{
+    return available() > 0;
+}
+
 bool BufferReader::done() const
 {
     return available() == 0;
