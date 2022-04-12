@@ -388,7 +388,8 @@ namespace Hashes
         inline static const uint32 ResultBytesLength = SHA512::ResultBytesLength - 16;
     };
 
-    enum class OpenSSLHashKind : uint8 {
+    enum class OpenSSLHashKind : uint8
+    {
         Md4,
         Md5,
         Blake2s256,
@@ -523,7 +524,7 @@ namespace View
     {
         struct CORE_EXPORT EnumerateInterface
         {
-            virtual bool Start(ConstString path) = 0;
+            virtual bool Start(AppCUI::Controls::TreeViewItem parent)      = 0;
             virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) = 0;
         };
         struct CORE_EXPORT Settings

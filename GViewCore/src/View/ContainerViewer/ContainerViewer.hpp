@@ -15,7 +15,7 @@ namespace View
             static constexpr uint32 MAX_COLUMNS = 32;
             struct Column
             {
-                FixSizeString<29> Name;
+                FixSizeUnicode<29> Name;
                 TextAlignament Align;
                 uint32 Width;
             } columns[MAX_COLUMNS];
@@ -41,10 +41,11 @@ namespace View
             Reference<AppCUI::Controls::TreeView> items;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
+            TreeViewItem root;
 
             static Config config;
 
-
+            void PopulateItem(TreeViewItem item);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 

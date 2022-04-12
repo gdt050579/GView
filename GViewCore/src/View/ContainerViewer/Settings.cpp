@@ -23,9 +23,18 @@ bool Settings::AddProperty(string_view name, string_view value)
 }
 void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns)
 {
+    LocalUnicodeStringBuilder<64> temp;
     for (const auto& col: columns)
     {
-        SD->columns[SD->columnsCount].Name  = col.name;
+        if (temp.Set(col.name))
+        {
+            SD->columns[SD->columnsCount].Name = temp.ToStringView();
+        }
+        else
+        {
+            SD->columns[SD->columnsCount].Name = u"?";
+        }
+        
         SD->columns[SD->columnsCount].Align = col.align;
         SD->columns[SD->columnsCount].Width = col.width;
         SD->columnsCount++;
