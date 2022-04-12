@@ -35,33 +35,21 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
 {
   public:
     std::filesystem::path root;
+    std::filesystem::path temp;
     std::filesystem::directory_iterator dirIT;
 
     string_view GetTypeName() override
     {
         return "Folder";
     }
-    void BuildPath(TreeViewItem item, std::filesystem::path &path)
-    {
-        if (item.IsValid())
-        {
-            BuildPath(item.GetParent(), path);
-            auto text = item.GetText();
-            
-            //path /= item.GetText();
-        }
-        else
-        {
-            path = root;
-        }
-    }
-    virtual bool Start(TreeViewItem parent) override;
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
 };
-bool FolderType::Start(TreeViewItem parent)
+bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem parent)
 {
-    std::filesystem::path path;
-    BuildPath(parent, path);
+    std::filesystem::path path = root;
+    path /= relativePath;
     dirIT = std::filesystem::directory_iterator(path);
     return dirIT->exists();
 }

@@ -8,6 +8,7 @@ using namespace AppCUI::Input;
 SettingsData::SettingsData()
 {
     this->columnsCount = 0;
+    this->pathSeparator = '/';
 }
 Settings::Settings()
 {
