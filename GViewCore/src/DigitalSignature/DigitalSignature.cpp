@@ -143,11 +143,29 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
         }
     }
 
+    //WrapperBIO bio(BIO_new(BIO_s_mem()));
+    //CMS_ContentInfo_print_ctx(bio.memory, cms, 4, nullptr);
+    //BUF_MEM* bptr = NULL;
+    //BIO_get_mem_ptr(bio.memory, &bptr);
+    //BIO_set_close(bio.memory, BIO_NOCLOSE);
+    //std::string a;
+    //a.append(bptr->data, bptr->length);
+
     STACK_OF(X509)* certs = CMS_get1_certs(cms);
     for (int i = 0; i < sk_X509_num(certs); i++)
     {
         const auto cert = sk_X509_value(certs, i);
-        auto& sigCert   = output.certificates.emplace_back();
+
+        //WrapperBIO bio(BIO_new(BIO_s_mem()));
+        //X509_print(bio.memory, cert);
+        //BUF_MEM* bptr = NULL;
+        //BIO_get_mem_ptr(bio.memory, &bptr);
+        //BIO_set_close(bio.memory, BIO_NOCLOSE);
+        //
+        //std::string a;
+        //a.append(bptr->data, bptr->length);
+
+        auto& sigCert = output.certificates.emplace_back();
 
         sigCert.version = X509_get_version(cert);
 
@@ -212,30 +230,45 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
                 continue;
             }
 
-            attribute.contentType.resize(128);
-            OBJ_obj2txt((char*) attribute.contentType.c_str(), 128, obj, 1);
+            attribute.name = OBJ_nid2ln(OBJ_obj2nid(obj));
+
+            auto objLen = OBJ_obj2txt(nullptr, -1, obj, 1) + 1;
+            attribute.contentType.resize(objLen);
+            OBJ_obj2txt((char*) attribute.contentType.c_str(), objLen, obj, 1);
+            attribute.contentType.resize(objLen - 1);
 
             ASN1_TYPE* av = X509_ATTRIBUTE_get0_type(attr, 0);
             if (av == nullptr)
             {
                 continue;
             }
+            auto& asnType = attribute.types.emplace_back((ASN1TYPE) av->type);
 
-            if (attribute.contentType == "1.2.840.113549.1.9.3") // V_ASN1_OBJECT
+            if (asnType == ASN1TYPE::OBJECT)
             {
                 attribute.contentTypeData = OBJ_nid2ln(OBJ_obj2nid(av->value.object));
+
+                //const auto nid = OBJ_obj2nid(av->value.object);
+                //if (nid == NID_pkcs7_data)
+                //{
+                //    Buffer b( (char*&)av->value.ptr, 2000 );
+                //    std::string o;
+                //    PKCS7ToHumanReadable(b, o);
+                //    av->value.object;
+                //}
             }
-            else if (attribute.contentType == "1.2.840.113549.1.9.4") // V_ASN1_OCTET_STRING
+            else if (asnType == ASN1TYPE::OCTET_STRING)
             {
                 LocalString<64> ls;
                 for (int m = 0; m < av->value.octet_string->length; m++)
                 {
-                    ls.Add("%02x", (uint8_t) av->value.octet_string->data[m]);
+                    ls.AddFormat("%02X", (uint8_t) av->value.octet_string->data[m]);
                 }
 
                 attribute.contentTypeData = ls.GetText();
+                attribute.CDHashes.emplace_back().append(ls.GetText());
             }
-            else if (attribute.contentType == "1.2.840.113549.1.9.5") // V_ASN1_UTCTIME
+            else if (asnType == ASN1TYPE::UTCTIME)
             {
                 WrapperBIO bio(BIO_new(BIO_s_mem()));
                 ASN1_UTCTIME_print(bio.memory, av->value.utctime);
@@ -245,8 +278,9 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
 
                 attribute.contentTypeData.append(bptr->data, bptr->length);
             }
-            else if (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
+            else if (asnType == ASN1TYPE::SEQUENCE) // TODO: should call recursive stuff
             {
+                attribute.types.clear();
                 for (int32 m = 0; m < attribute.count; m++)
                 {
                     av = X509_ATTRIBUTE_get0_type(attr, m);
@@ -254,8 +288,9 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
                     {
                         WrapperBIO in(BIO_new(BIO_s_mem()));
 
-                        ASN1_STRING* s = av->value.sequence;
-                        ASN1_parse_dump(in.memory, s->data, s->length, 2, 0);
+                        ASN1_STRING* sequence = av->value.sequence;
+                        attribute.types.emplace_back((ASN1TYPE) av->type);
+                        ASN1_parse_dump(in.memory, sequence->data, sequence->length, 2, 0);
                         BUF_MEM* buf = nullptr;
                         BIO_get_mem_ptr(in.memory, &buf);
                         BIO_set_close(in.memory, BIO_NOCLOSE);
@@ -274,13 +309,9 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
                     }
                 }
             }
-            else if (attribute.contentType == "1.2.840.113635.100.9.1") // V_ASN1_OCTET_STRING
-            {
-                attribute.CDHashes.emplace_back().append((const char*) av->value.octet_string->data, av->value.octet_string->length);
-            }
             else // unknown
             {
-                attribute.contentTypeData = OBJ_nid2ln(OBJ_obj2nid(obj));
+                throw "Unknown hash!";
             }
         }
     }

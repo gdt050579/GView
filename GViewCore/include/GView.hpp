@@ -293,6 +293,38 @@ namespace Hashes
 
 namespace DigitalSignature
 {
+    enum class ASN1TYPE
+    {
+        EOC               = 0,
+        BOOLEAN           = 1,
+        INTEGER           = 2,
+        BIT_STRING        = 3,
+        OCTET_STRING      = 4,
+        NULL_ASN          = 5,
+        OBJECT            = 6,
+        OBJECT_DESCRIPTOR = 7,
+        EXTERNAL          = 8,
+        REAL              = 9,
+        ENUMERATED        = 10,
+        UTF8STRING        = 12,
+        SEQUENCE          = 16,
+        SET               = 17,
+        NUMERICSTRING     = 18,
+        PRINTABLESTRING   = 19,
+        T61STRING         = 20,
+        TELETEXSTRING     = 20,
+        VIDEOTEXSTRING    = 21,
+        IA5STRING         = 22,
+        UTCTIME           = 23,
+        GENERALIZEDTIME   = 24,
+        GRAPHICSTRING     = 25,
+        ISO64STRING       = 26,
+        VISIBLESTRING     = 26,
+        GENERALSTRING     = 27,
+        UNIVERSALSTRING   = 28,
+        BMPSTRING         = 30
+    };
+
     struct CORE_EXPORT Certificate
     {
         int32 version;
@@ -310,6 +342,8 @@ namespace DigitalSignature
 
     struct CORE_EXPORT SignerAttributes
     {
+        std::string name;
+        std::vector<ASN1TYPE> types; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
         std::string contentType;
         std::string contentTypeData;
         int32 count;

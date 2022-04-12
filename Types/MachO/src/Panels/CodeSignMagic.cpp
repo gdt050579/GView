@@ -244,7 +244,41 @@ void CodeSignMagic::UpdateCodeDirectory(
     general->AddItem({ "Magic", ls.Format("%-26s (%s)", magic.data(), hexMagic.data()) });
 
     auto cdHashItem = general->AddItem({ "CD Hash", ls.Format("%s", cdHash.c_str()) });
-    cdHashItem.SetType(ListViewItem::Type::Emphasized_2);
+
+    bool validHash = false;
+    auto& signers  = machO->codeSignature->signature.sig.signers;
+    for (const auto& signer : signers)
+    {
+        for (const auto& attribute : signer.attributes)
+        {
+            for (const auto& hash : attribute.CDHashes)
+            {
+                if (cdHash == hash)
+                {
+                    validHash = true;
+                    break;
+                }
+            }
+
+            if (validHash)
+            {
+                break;
+            }
+        }
+
+        if (validHash)
+        {
+            break;
+        }
+    }
+    if (validHash)
+    {
+        cdHashItem.SetType(ListViewItem::Type::Emphasized_2);
+    }
+    else
+    {
+        cdHashItem.SetType(ListViewItem::Type::ErrorInformation);
+    }
 
     const auto length    = nf.ToString(code.length, dec);
     const auto hexLength = nf2.ToString(code.length, hex);
@@ -426,12 +460,12 @@ void CodeSignMagic::MoreInfo()
         Reference<TextArea> text = Factory::TextArea::Create(
               this,
               "Digital Signature",
-              "d:c,w:68,h:50",
+              "d:c",
               TextAreaFlags::Border | TextAreaFlags::ScrollBars | TextAreaFlags::Readonly | TextAreaFlags::DisableAutoSelectOnFocus);
 
       public:
-        Dialog(Reference<GView::Object> _object)
-            : Window("PEM Certificates", "d:c,w:80,h:55", WindowFlags::ProcessReturn | WindowFlags::Sizeable)
+        Dialog(Reference<GView::Object> _object, std::string_view name, std::string_view layout)
+            : Window(name, layout, WindowFlags::ProcessReturn | WindowFlags::Sizeable)
         {
             object = _object;
         }
@@ -446,10 +480,13 @@ void CodeSignMagic::MoreInfo()
             this->Resize(width, this->GetHeight());
             text->Resize(width - 10, text->GetHeight());
         }
-    } dialog(nullptr);
+    };
 
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
     {
+        LocalString<128> ls;
+        ls.Format("d:c,w:150,h:%d", this->GetHeight());
+        Dialog dialog(nullptr, "PKSC7 human readable", ls.GetText());
         dialog.SetText(machO->codeSignature->signature.humanReadable.c_str());
         dialog.Show();
     }
@@ -464,7 +501,9 @@ void CodeSignMagic::MoreInfo()
             input += "\n";
         }
 
-        dialog.SetWidth(100);
+        LocalString<128> ls;
+        ls.Format("d:c,w:70,h:%d", this->GetHeight());
+        Dialog dialog(nullptr, "PEM Certificates", ls.GetText());
         dialog.SetText(input.c_str());
         dialog.Show();
     }
