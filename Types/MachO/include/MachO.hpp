@@ -130,6 +130,9 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
 
             bool errorPEMs = false;
             std::vector<std::string> PEMs;
+
+            bool errorSig = false;
+            DigitalSignature::Signature sig;
         } signature;
     };
 

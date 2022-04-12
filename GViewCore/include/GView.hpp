@@ -293,8 +293,52 @@ namespace Hashes
 
 namespace DigitalSignature
 {
-    CORE_EXPORT bool BufferToHumanReadable(const Buffer& buffer, std::string& ouput);
-    CORE_EXPORT bool BufferToPEMCerts(const Buffer& buffer, std::vector<std::string>& output);
+    struct CORE_EXPORT Certificate
+    {
+        int32 version;
+        std::string serialNumber;
+        std::string signatureAlgorithm;
+        std::string publicKeyAlgorithm;
+        std::string validityNotBefore;
+        std::string validityNotAfter;
+        std::string issuer;
+        std::string subject;
+        int32 verify;
+
+        std::string errorVerify;
+    };
+
+    struct CORE_EXPORT SignerAttributes
+    {
+        std::string contentType;
+        std::string contentTypeData;
+        int32 count;
+
+        std::vector<std::string> CDHashes; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
+    };
+
+    struct CORE_EXPORT Signer
+    {
+        int32 count;
+        std::vector<SignerAttributes> attributes;
+    };
+
+    struct CORE_EXPORT Signature
+    {
+        int32 isDetached;
+        std::string sn;
+        Buffer snContent;
+
+        std::vector<Certificate> certificates;
+        std::vector<Signer> signers;
+
+        std::string errorMessage;
+        bool error = true;
+    };
+
+    CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, std::string& ouput);
+    CORE_EXPORT bool PKCS7ToPEMCerts(const Buffer& buffer, std::vector<std::string>& output);
+    CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, Signature& output);
 } // namespace DigitalSignature
 
 struct CORE_EXPORT Object
