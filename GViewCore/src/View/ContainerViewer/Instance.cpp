@@ -47,6 +47,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         const auto& col = settings->columns[idx];
         this->items->AddColumn(col.Name, col.Align, col.Width);
     }
+    this->items->AddItem()
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

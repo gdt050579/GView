@@ -521,14 +521,10 @@ namespace View
 
     namespace ContainerViewer
     {
-        struct Item
-        {
-            ConstString values[32];
-        };
         struct CORE_EXPORT EnumerateInterface
         {
             virtual bool Start(ConstString path) = 0;
-            virtual bool GetNextItem(Item& item) = 0;
+            virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) = 0;
         };
         struct CORE_EXPORT Settings
         {
@@ -537,8 +533,9 @@ namespace View
             Settings();
             bool SetIcon(string_view imageStringFormat16x16);
             bool AddProperty(string_view name, string_view value);
-            bool AddColumn(string_view name, TextAlignament align, uint32 width);
-            void SetListItemCallback(Reference<EnumerateInterface> callback);
+            void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
+            void SetEnumarateCallback(Reference<EnumerateInterface> callback);
+            void SetItems(std::initializer_list<std::initializer_list<ConstString>> items);
         };
     }; // namespace ContainerViewer
 

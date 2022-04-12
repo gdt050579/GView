@@ -21,16 +21,26 @@ bool Settings::AddProperty(string_view name, string_view value)
 {
     NOT_IMPLEMENTED(false);
 }
-bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
+void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns)
 {
-    CHECK(SD->columnsCount < SettingsData::MAX_COLUMNS, false, "");
-    SD->columns[SD->columnsCount].Name = name;
-    SD->columns[SD->columnsCount].Align = align;
-    SD->columns[SD->columnsCount].Width = std::max<>(4U,width);
-    SD->columnsCount++;
-    return true;
+    for (const auto& col: columns)
+    {
+        SD->columns[SD->columnsCount].Name  = col.name;
+        SD->columns[SD->columnsCount].Align = col.align;
+        SD->columns[SD->columnsCount].Width = col.width;
+        SD->columnsCount++;
+    }
 }
-void Settings::SetListItemCallback(Reference<EnumerateInterface> callback)
+//bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
+//{
+//    CHECK(SD->columnsCount < SettingsData::MAX_COLUMNS, false, "");
+//    SD->columns[SD->columnsCount].Name  = name;
+//    SD->columns[SD->columnsCount].Align = align;
+//    SD->columns[SD->columnsCount].Width = std::max<>(4U, width);
+//    SD->columnsCount++;
+//    return true;
+//}
+void Settings::SetEnumarateCallback(Reference<EnumerateInterface> callback)
 {
     SD->enumInterface = callback;
 }
