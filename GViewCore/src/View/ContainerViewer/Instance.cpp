@@ -31,6 +31,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 
+    this->currentPath.Resize(256);
+    this->currentPath.Clear();
+
     // create some object
     imgView = Factory::ImageView::Create(this, "x:0,y:0,w:16,h:8", ViewerFlags::HideScrollBar);
     if ((this->settings->icon.GetWidth() == 16) && (this->settings->icon.GetHeight() == 16))
@@ -41,7 +44,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
           { { "Field", TextAlignament::Left, 20 }, { "Value", TextAlignament::Left, 200 } },
           ListViewFlags::HideColumns);
 
-    this->items = Factory::TreeView::Create(this, "l:0,t:10,r:0,b:0", {});
+    this->items = Factory::TreeView::Create(this, "l:0,t:10,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren);
+    this->items->Handlers()->OnTreeItemToggle = this;
     for (uint32 idx = 0; idx < settings->columnsCount; idx++)
     {
         const auto& col = settings->columns[idx];
@@ -50,17 +54,44 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (settings->enumInterface)
     {
         this->root = this->items->AddItem("/", true);
-        PopulateItem(this->root);
+        this->root.Unfold();
     }
+    this->items->Sort(0, true);
+}
+void Instance::BuildPath(TreeViewItem item)
+{
+    if (item == this->root)
+        return;
+    if (item.IsValid())
+    {
+        BuildPath(item.GetParent());
+        if (this->currentPath.Len() > 0)
+        {
+            this->currentPath.AddChar(this->settings->pathSeparator);
+        }
+        this->currentPath.Add(item.GetText(0));
+    }
+}
+void Instance::UpdatePathForItem(TreeViewItem item)
+{
+    this->currentPath.Clear();
+    BuildPath(item);
 }
 void Instance::PopulateItem(TreeViewItem item)
 {
-    if (this->settings->enumInterface->Start(item))
+    UpdatePathForItem(item);
+    if (this->settings->enumInterface->BeginIteration(this->currentPath, item))
     {
         while (this->settings->enumInterface->PopulateItem(item.AddChild("")))
         {
         } 
     }
+    this->items->Sort();
+}
+void Instance::OnTreeItemToggle(TreeViewItem& item)
+{
+    if (!item.IsFolded())
+        PopulateItem(item);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

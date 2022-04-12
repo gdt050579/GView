@@ -22,6 +22,7 @@ namespace View
             AppCUI::Graphics::Image icon;
             uint32 columnsCount;
             Reference<EnumerateInterface> enumInterface; 
+            char16 pathSeparator;
             SettingsData();
         };
 
@@ -33,7 +34,7 @@ namespace View
             void Initialize();
         };
 
-        class Instance : public View::ViewControl
+        class Instance : public View::ViewControl, public Controls::Handlers::OnTreeItemToggleInterface
         {
             Pointer<SettingsData> settings;
             Reference<AppCUI::Controls::ImageView> imgView;
@@ -42,9 +43,11 @@ namespace View
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             TreeViewItem root;
+            UnicodeStringBuilder currentPath;
 
             static Config config;
-
+            void BuildPath(TreeViewItem item);
+            void UpdatePathForItem(TreeViewItem item);
             void PopulateItem(TreeViewItem item);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -60,6 +63,8 @@ namespace View
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
+            // tree item toggle
+            virtual void OnTreeItemToggle(TreeViewItem& item) override;
 
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;

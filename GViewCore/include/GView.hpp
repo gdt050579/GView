@@ -471,8 +471,8 @@ namespace View
     {
         struct CORE_EXPORT EnumerateInterface
         {
-            virtual bool Start(AppCUI::Controls::TreeViewItem parent)      = 0;
-            virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) = 0;
+            virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) = 0;
+            virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item)                               = 0;
         };
         struct CORE_EXPORT Settings
         {
