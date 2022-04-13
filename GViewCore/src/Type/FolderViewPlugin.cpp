@@ -58,9 +58,10 @@ bool FolderType::PopulateItem(TreeViewItem item)
     item.SetText(dirIT->path().filename().u8string());
     if (dirIT->is_directory())
     {
-        item.SetType(TreeViewItem::Type::Highlighted);
+        item.SetType(TreeViewItem::Type::Category);
         item.SetExpandable(true);
         item.SetText(1, "<FOLDER>");
+        item.SetPriority(1);
     }
     else
     {
@@ -69,6 +70,7 @@ bool FolderType::PopulateItem(TreeViewItem item)
         NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
         NumericFormatter nf;
         item.SetText(1, nf.ToString((uint64)dirIT->file_size(),fmt));
+        item.SetPriority(0);
     }
     dirIT++;
 
