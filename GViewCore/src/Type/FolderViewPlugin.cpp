@@ -10,12 +10,12 @@ constexpr string_view folderIcon = "................"  // 1
                                    "...WWW.........."  // 2
                                    "..WYYYW........."  // 3
                                    ".WYYYYYWWWWWWW.."  // 4
-                                   ".WooooooooooooW."  // 5
-                                   ".Wo..........oW."  // 6
-                                   ".Wo..........oW."  // 7
-                                   ".Wo..........oW."  // 8
-                                   ".Wo..........oW."  // 9
-                                   ".WooooooooooooW."  // 10
+                                   ".Wy0y0y0y0y0yoW."  // 5
+                                   ".W0y0y0y0y0y0yW."  // 6
+                                   ".Wy0y0y0y0y0y0W."  // 7
+                                   ".W0y0y0y0y0y0yW."  // 8
+                                   ".Wy0y0y0y0y0y0W."  // 9
+                                   ".WyyyyyyyyyyyyW."  // 10
                                    "..WWWWWWWWWWWW.."  // 11
                                    "................"  // 12
                                    "................"  // 13
