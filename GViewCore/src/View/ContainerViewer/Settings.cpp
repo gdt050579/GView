@@ -18,6 +18,15 @@ bool Settings::SetIcon(string_view stringFormat16x16)
 {
     return SD->icon.Create(16, 16, stringFormat16x16);
 }
+bool Settings::SetPathSeparator(char16 separator)
+{
+    if (separator > 0)
+    {
+        SD->pathSeparator = separator;
+        return true;
+    }
+    return false;
+}
 bool Settings::AddProperty(string_view name, string_view value)
 {
     NOT_IMPLEMENTED(false);
