@@ -6,22 +6,22 @@ using namespace GView;
 namespace GView::Type::FolderViewPlugin
 {
 
-constexpr string_view folderIcon = "................" // 1
-                                   "...WWW.........." // 2
-                                   "..WYYYW........." // 3
-                                   ".WYYYYYWWWWWWW.." // 4
-                                   ".WooooooooooooW." // 5
-                                   ".Wo..........oW." // 6
-                                   ".Wo..........oW." // 7
-                                   ".Wo..........oW." // 8
-                                   ".Wo..........oW." // 9
-                                   ".WooooooooooooW." // 10
-                                   "..WWWWWWWWWWWW.." // 11
-                                   "................" // 12
-                                   "................" // 13
-                                   "................" // 14
-                                   "................" // 15
-                                   "................";// 16
+constexpr string_view folderIcon = "................"  // 1
+                                   "...WWW.........."  // 2
+                                   "..WYYYW........."  // 3
+                                   ".WYYYYYWWWWWWW.."  // 4
+                                   ".WooooooooooooW."  // 5
+                                   ".Wo..........oW."  // 6
+                                   ".Wo..........oW."  // 7
+                                   ".Wo..........oW."  // 8
+                                   ".Wo..........oW."  // 9
+                                   ".WooooooooooooW."  // 10
+                                   "..WWWWWWWWWWWW.."  // 11
+                                   "................"  // 12
+                                   "................"  // 13
+                                   "................"  // 14
+                                   "................"  // 15
+                                   "................"; // 16
 class DefaultInformationPanel : public TabPage
 {
   public:
@@ -60,14 +60,18 @@ bool FolderType::PopulateItem(TreeViewItem item)
     {
         item.SetType(TreeViewItem::Type::Highlighted);
         item.SetExpandable(true);
+        item.SetText(1, "<FOLDER>");
     }
     else
     {
         item.SetType(TreeViewItem::Type::Normal);
         item.SetExpandable(false);
+        NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
+        NumericFormatter nf;
+        item.SetText(1, nf.ToString((uint64)dirIT->file_size(),fmt));
     }
     dirIT++;
-    
+
     return dirIT != std::filesystem::directory_iterator();
 }
 TypeInterface* CreateInstance(const std::filesystem::path& path)
@@ -84,10 +88,8 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     // 2. views
     View::ContainerViewer::Settings settings;
     settings.SetIcon(folderIcon);
-    settings.SetColumns({ { "&Name", TextAlignament::Left, 24 },
-                          { "&Type", TextAlignament::Left, 16 },
-                          { "&Size", TextAlignament::Right, 12 },
-                          { "&Created", TextAlignament::Center, 12 } });
+    settings.SetColumns(
+          { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 12 } });
     settings.SetEnumarateCallback((FolderType*) win->GetObject()->type);
     win->CreateViewer("FolderView", settings);
     return true;
