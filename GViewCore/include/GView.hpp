@@ -535,6 +535,10 @@ namespace View
             virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) = 0;
             virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item)                               = 0;
         };
+        struct CORE_EXPORT ActionInterface
+        {
+            virtual void OnContaineItemAction(std::u16string_view path, AppCUI::Controls::TreeViewItem item) = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
@@ -545,6 +549,7 @@ namespace View
             bool AddProperty(string_view name, string_view value);
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
             void SetEnumarateCallback(Reference<EnumerateInterface> callback);
+            void SetActionCallback(Reference<ActionInterface> callback);
             void SetItems(std::initializer_list<std::initializer_list<ConstString>> items);
         };
     }; // namespace ContainerViewer
