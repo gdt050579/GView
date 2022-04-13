@@ -147,7 +147,7 @@ bool Instance::Init()
     dsk->Handlers()->OnStart = this;
     return true;
 }
-bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
+bool Instance::Add(std::unique_ptr<AppCUI::OS::DataObject> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
 {
     auto win = std::make_unique<FileWindow>(name, this);
     auto obj = win->GetObject();

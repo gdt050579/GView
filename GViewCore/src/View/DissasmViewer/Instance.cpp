@@ -88,7 +88,7 @@ std::string_view Instance::GetName()
     return "DissasmView";
 }
 
-bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+bool Instance::ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)
 {
     NOT_IMPLEMENTED(false);
 }
