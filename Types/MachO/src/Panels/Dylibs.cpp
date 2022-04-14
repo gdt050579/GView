@@ -56,7 +56,7 @@ void Dylib::GoToSelectedSection()
 void Dylib::SelectCurrentSection()
 {
     auto di = list->GetCurrentItem().GetData<MachOFile::Dylib>();
-    //auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
+    // auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
     win->GetCurrentView()->Select(di->offset, di->value.cmdsize);
 }
 
@@ -118,7 +118,7 @@ bool Dylib::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
     CHECK(TabPage::OnEvent(ctrl, evnt, controlID) == false, true, "");
 
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedSection();
         return true;

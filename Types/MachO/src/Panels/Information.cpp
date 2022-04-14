@@ -20,7 +20,7 @@ void Information::UpdateBasicInfo()
 
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
-    general->AddItem({ "File", object->GetName()});
+    general->AddItem({ "File", object->GetName() });
 
     const auto fileSize    = nf.ToString(machO->obj->GetData().GetSize(), dec);
     const auto hexfileSize = nf2.ToString(machO->obj->GetData().GetSize(), hex);

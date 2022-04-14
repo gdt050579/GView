@@ -114,7 +114,7 @@ bool Panels::Resources::OnEvent(Reference<Control> ctrl, Event evnt, int control
             return true;
         }
     }
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedResource();
         return true;

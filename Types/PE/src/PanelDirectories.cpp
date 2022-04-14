@@ -121,7 +121,7 @@ bool Panels::Directories::OnEvent(Reference<Control> ctrl, Event evnt, int contr
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedDirectory();
         return true;

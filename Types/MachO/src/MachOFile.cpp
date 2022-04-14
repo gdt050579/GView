@@ -583,7 +583,7 @@ bool MachOFile::SetCodeSignature()
                     CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
                     Swap(codeSignature->codeDirectory);
 
-                    const auto blobBuffer                  = file->CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
+                    const auto blobBuffer                  = obj->GetData().CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
                     codeSignature->codeDirectoryIdentifier = (char*) blobBuffer.GetData() + codeSignature->codeDirectory.identOffset;
 
                     const auto hashType = codeSignature->codeDirectory.hashType;
@@ -601,7 +601,7 @@ bool MachOFile::SetCodeSignature()
                     {
                         const auto size       = std::min<>(remaining, pageSize);
                         const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
-                        const auto bufferToValidate = file->CopyToBuffer(processed, size);
+                        const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
 
                         std::string hashComputed;
                         if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
@@ -659,14 +659,14 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
                 {
                     MAC::CS_GenericBlob gblob{};
-                    CHECK(file->Copy<MAC::CS_GenericBlob>(csOffset, gblob), false, "");
+                    CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, gblob), false, "");
                     Swap(gblob);
 
                     codeSignature->signature.offset = csOffset + sizeof(gblob);
                     codeSignature->signature.size   = gblob.length - sizeof(gblob);
 
-                    const auto blobBuffer =
-                          file->CopyToBuffer(codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
+                    const auto blobBuffer = obj->GetData().CopyToBuffer(
+                          codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
                     codeSignature->signature.errorHumanReadable =
                           !GView::DigitalSignature::PKCS7ToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
                     codeSignature->signature.errorPEMs =
@@ -682,7 +682,7 @@ bool MachOFile::SetCodeSignature()
                     Swap(cd);
                     codeSignature->alternateDirectories.emplace_back(cd);
 
-                    const auto blobBuffer = file->CopyToBuffer(csOffset, cd.length);
+                    const auto blobBuffer = obj->GetData().CopyToBuffer(csOffset, cd.length);
                     codeSignature->alternateDirectoriesIdentifiers.emplace_back((char*) blobBuffer.GetData() + cd.identOffset);
 
                     const auto hashType = cd.hashType;
@@ -704,7 +704,7 @@ bool MachOFile::SetCodeSignature()
                     {
                         const auto size             = std::min<>(remaining, pageSize);
                         const auto hashOffset       = cd.hashOffset + cd.hashSize * slot;
-                        const auto bufferToValidate = file->CopyToBuffer(processed, size);
+                        const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
 
                         std::string hashComputed;
                         if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
