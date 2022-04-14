@@ -23,10 +23,10 @@ void Panels::Information::UpdateGeneralInformation()
 
     general->DeleteAllItems();
     general->AddItem("File");
-    // general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
+    // general->SetItemText(poz++, 1, (char*) pe->obj->GetData().GetFileName(true));
     // size
     general->AddItem(
-          { "Size", tempStr.Format("%s bytes", n.ToString(bmp->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+          { "Size", tempStr.Format("%s bytes", n.ToString(bmp->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // Size
     general->AddItem({ "Size", tempStr.Format("%u x %u", bmp->infoHeader.width, bmp->infoHeader.height) });
     // Resolution

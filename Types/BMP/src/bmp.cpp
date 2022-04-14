@@ -38,7 +38,7 @@ extern "C"
     {
         GView::View::ImageViewer::Settings settings;
         settings.SetLoadImageCallback(bmp.ToBase<View::ImageViewer::LoadImageInterface>());
-        settings.AddImage(0, bmp->file->GetSize());
+        settings.AddImage(0, bmp->obj->GetData().GetSize());
         win->CreateViewer("ImageView", settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
