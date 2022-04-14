@@ -51,6 +51,8 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
     std::filesystem::path path = root;
     path /= relativePath;
     dirIT = std::filesystem::directory_iterator(path);
+    if (dirIT == std::filesystem::directory_iterator())
+        return false; // empty directory
     return dirIT->exists();
 }
 bool FolderType::PopulateItem(TreeViewItem item)
