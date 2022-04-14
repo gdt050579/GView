@@ -2,7 +2,7 @@
 
 using namespace GView::Type::CSV;
 
-CSVFile::CSVFile(Reference<GView::Utils::DataCache> fileCache) : file(fileCache), panelsMask(0)
+CSVFile::CSVFile() : panelsMask(0)
 {
     this->panelsMask |= (1ULL << (unsigned char) Panels::IDs::Information);
 }
@@ -23,7 +23,7 @@ std::string_view CSVFile::CSVFile::GetTypeName()
 
 bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 {
-    this->obj = obj;
+    this->obj = obj; //GDT: this is already set up
 
     if (this->obj->GetName().ends_with(u".tsv"))
     {

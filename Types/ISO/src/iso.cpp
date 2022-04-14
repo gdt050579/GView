@@ -42,9 +42,9 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ISO::ISOFile(file);
+        return new ISO::ISOFile();
     }
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
@@ -123,7 +123,7 @@ extern "C"
             }
 
             ISO::ECMA_119_PrimaryVolumeDescriptor pvd{};
-            CHECKBK(iso->file->Copy<ISO::ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), "");
+            CHECKBK(iso->obj->GetData().Copy<ISO::ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), "");
             const auto blockSize   = pvd.vdd.logicalBlockSize.LSB;
             const auto ptrLocation = pvd.vdd.locationOfTypeLPathTable * blockSize;
             const auto ptrSize     = pvd.vdd.pathTableSize.LSB;

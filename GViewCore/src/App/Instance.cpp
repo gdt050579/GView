@@ -170,7 +170,7 @@ bool Instance::Add(
         }
     }
     // create an instance of that object type
-    auto contentType = plg->CreateInstance(&cache);
+    auto contentType = plg->CreateInstance();
     CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
     auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this);

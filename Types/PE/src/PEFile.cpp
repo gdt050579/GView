@@ -232,7 +232,7 @@ uint32_t SectionALIGN(uint32_t value, uint32_t alignValue)
     return ((value / alignValue) + 1) * alignValue;
 }
 
-PEFile::PEFile(Reference<GView::Utils::DataCache> fileCache)
+PEFile::PEFile()
 {
     uint32_t tr;
     // creez vectorii pt. exporturi / importuri
@@ -241,8 +241,6 @@ PEFile::PEFile(Reference<GView::Utils::DataCache> fileCache)
     debugData.reserve(16);
     impDLL.reserve(64);
     impFunc.reserve(128);
-
-    file = fileCache;
 
     peCols.colMZ      = ColorPair{ Color::Olive, Color::Transparent };
     peCols.colPE      = ColorPair{ Color::Magenta, Color::Transparent };
@@ -261,7 +259,7 @@ PEFile::PEFile(Reference<GView::Utils::DataCache> fileCache)
 
 std::string_view PEFile::ReadString(uint32_t RVA, uint32 maxSize)
 {
-    auto buf = file->Get(RVAtoFilePointer(RVA), maxSize, false);
+    auto buf = obj->GetData().Get(RVAtoFilePointer(RVA), maxSize, false);
     if (buf.Empty())
         return std::string_view{};
     auto p = buf.begin();
@@ -276,10 +274,10 @@ bool PEFile::ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSi
     uint16_t sz, tr;
     uint8_t val;
     uint64_t addr = FileAddress;
-    if ((file->Copy<uint16_t>(addr, sz) == false) || (sz > 256))
+    if ((obj->GetData().Copy<uint16_t>(addr, sz) == false) || (sz > 256))
         return false;
 
-    for (tr = 0, addr += 2; (tr < sz) && (tr < maxSize - 1) && (file->Copy<uint8_t>(addr, val)) && (val != 0); tr++, addr += 2)
+    for (tr = 0, addr += 2; (tr < sz) && (tr < maxSize - 1) && (obj->GetData().Copy<uint8_t>(addr, val)) && (val != 0); tr++, addr += 2)
         text[tr] = val;
     text[tr] = 0;
 
@@ -521,7 +519,7 @@ bool PEFile::BuildExport()
         errList.AddError("Invalid RVA for Export directory (0x%X)", (uint32_t) RVA);
         return false;
     }
-    if (file->Copy<ImageExportDirectory>(faddr, exportDir) == false)
+    if (obj->GetData().Copy<ImageExportDirectory>(faddr, exportDir) == false)
     {
         errList.AddError("Unable to read full Export Directory structure from RVA (0x%X)", (uint32_t) RVA);
         return false;
@@ -581,17 +579,17 @@ bool PEFile::BuildExport()
     }
     for (uint32_t tr = 0; tr < exportDir.NumberOfNames; tr++, naddr += 4, oaddr += 2)
     {
-        if (file->Copy<uint32_t>(naddr, RVA) == false)
+        if (obj->GetData().Copy<uint32_t>(naddr, RVA) == false)
         {
             errList.AddError("Unable to read export function name");
             return false;
         }
-        if (file->Copy<uint16_t>(oaddr, export_ordinal) == false)
+        if (obj->GetData().Copy<uint16_t>(oaddr, export_ordinal) == false)
         {
             errList.AddError("Unable to read export function ordinal");
             return false;
         }
-        if (file->Copy<uint32_t>(faddr + ((uint64_t) export_ordinal) * 4, export_RVA) == false)
+        if (obj->GetData().Copy<uint32_t>(faddr + ((uint64_t) export_ordinal) * 4, export_RVA) == false)
         {
             errList.AddError("Unable to read export function address");
             return false;
@@ -621,7 +619,7 @@ bool PEFile::BuildExport()
         {
             if (ordinals[tr] == false)
             {
-                if (file->Copy<uint32_t>(faddr + ((uint64_t) tr) * 4, export_RVA) == false)
+                if (obj->GetData().Copy<uint32_t>(faddr + ((uint64_t) tr) * 4, export_RVA) == false)
                 {
                     errList.AddError("Unable to read export function ordinal ID");
                     return false;
@@ -662,7 +660,7 @@ bool PEFile::BuildTLS()
 
     if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
         return false;
-    if (file->Copy<ImageTLSDirectory32>(faddr, tlsDir) == false)
+    if (obj->GetData().Copy<ImageTLSDirectory32>(faddr, tlsDir) == false)
         return false;
     hasTLS = true;
     return true;
@@ -676,15 +674,15 @@ void PEFile::BuildVersionInfo()
     {
         if (ri.Type != ResourceType::Version)
             continue;
-        if (ri.Start >= file->GetSize())
+        if (ri.Start >= obj->GetData().GetSize())
             break;
         szRead = (uint32_t) ri.Size;
         if (szRead > MAX_VERSION_BUFFER)
             szRead = MAX_VERSION_BUFFER;
-        if (ri.Start + szRead >= file->GetSize())
-            szRead = (uint32_t) (file->GetSize() - ri.Start);
+        if (ri.Start + szRead >= obj->GetData().GetSize())
+            szRead = (uint32_t) (obj->GetData().GetSize() - ri.Start);
 
-        auto buf = file->Get(ri.Start, szRead, false);
+        auto buf = obj->GetData().Get(ri.Start, szRead, false);
 
         if (buf.Empty())
         {
@@ -768,7 +766,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
 {
     DIBInfoHeader dibHeader;
     r.Image.type = ImageType::Unknwown;
-    auto buf     = this->file->Get(r.Start, sizeof(dibHeader), true);
+    auto buf     = this->obj->GetData().Get(r.Start, sizeof(dibHeader), true);
     if (buf.Empty())
     {
         errList.AddWarning("Unable to read ICON header (%u bytes) from %llu offset", (uint32) (sizeof(dibHeader), r.Start));
@@ -868,7 +866,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
 
     fileAddress = relAddress + startRes;
 
-    if (file->Copy<ImageResourceDataEntry>(fileAddress, resDE) == false)
+    if (obj->GetData().Copy<ImageResourceDataEntry>(fileAddress, resDE) == false)
     {
         errList.AddWarning("Unable to read Resource Data Entry from (0x%X)", (uint32_t) fileAddress);
         return false;
@@ -914,7 +912,7 @@ bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uin
         errList.AddError("Resource depth is too big (>3)");
         return false;
     }
-    if (file->Copy<ImageResourceDirectory>(fileAddress, resDir) == false)
+    if (obj->GetData().Copy<ImageResourceDirectory>(fileAddress, resDir) == false)
     {
         errList.AddWarning("Unable to read Resource Structure from (0x%X)", (uint32_t) fileAddress);
         return false;
@@ -940,7 +938,7 @@ bool PEFile::ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uin
     fileAddress += sizeof(ImageResourceDirectory);
     for (tr = 0; tr < nrEnt; tr++, fileAddress += sizeof(ImageResourceDirectoryEntry))
     {
-        if (file->Copy<ImageResourceDirectoryEntry>(fileAddress, dirEnt) == false)
+        if (obj->GetData().Copy<ImageResourceDirectoryEntry>(fileAddress, dirEnt) == false)
         {
             errList.AddWarning("Unable to read Resource Directory Entry from (0x%X)", (uint32_t) fileAddress);
             return false;
@@ -1017,7 +1015,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
 
     if (hdr64)
     {
-        while ((file->Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
+        while ((obj->GetData().Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
         {
             if ((rvaFName64.u1.AddressOfData & __IMAGE_ORDINAL_FLAG64) != 0) // imported by ordinal
             {
@@ -1044,7 +1042,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
     }
     else
     {
-        while ((file->Copy<ImageThunkData32>(addr, rvaFName32)) && (rvaFName32.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
+        while ((obj->GetData().Copy<ImageThunkData32>(addr, rvaFName32)) && (rvaFName32.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
         {
             if ((rvaFName32.u1.AddressOfData & __IMAGE_ORDINAL_FLAG32) != 0) // avem functie importata prin ordinal:
             {
@@ -1098,7 +1096,7 @@ bool PEFile::BuildImport()
     // citesc numele de DLL-uri , unul cate unu
 
     nrDLLs = 0;
-    while ((result = file->Copy<ImageImportDescriptor>(addr, impD)) == true)
+    while ((result = obj->GetData().Copy<ImageImportDescriptor>(addr, impD)) == true)
     {
         if (impD.Name == 0)
             break;
@@ -1154,7 +1152,7 @@ bool PEFile::BuildDebugData()
     }
     for (tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory))
     {
-        if (file->Copy<ImageDebugDirectory>(faddr, imgd) == false)
+        if (obj->GetData().Copy<ImageDebugDirectory>(faddr, imgd) == false)
         {
             errList.AddError("Unable to read Debug structure from (0x%X)", (uint32_t) faddr);
             return false;
@@ -1166,7 +1164,7 @@ bool PEFile::BuildDebugData()
             else
                 bufSize = imgd.SizeOfData;
 
-            auto buf = file->Get(imgd.PointerToRawData, bufSize, false);
+            auto buf = obj->GetData().Get(imgd.PointerToRawData, bufSize, false);
             if (buf.GetLength() >= 5) // at least the first 32 bytes
             {
                 const char* nm = nullptr;
@@ -1257,7 +1255,7 @@ bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& i
 bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
 {
     CHECK(res.Type == ResourceType::Icon, false, "Expecting a valid ICON resource !");
-    auto buf = this->file->CopyToBuffer(res.Start, res.Size);
+    auto buf = this->obj->GetData().CopyToBuffer(res.Start, res.Size);
     CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu", res.Size, res.Start);
     if (buf.IsValid())
     {
@@ -1294,9 +1292,9 @@ bool PEFile::Update()
     errList.Clear();
     isMetroApp       = false;
     this->panelsMask = 0;
-    if (!file->Copy<ImageDOSHeader>(0, dos))
+    if (!obj->GetData().Copy<ImageDOSHeader>(0, dos))
         return false;
-    if (!file->Copy<ImageNTHeaders32>(dos.e_lfanew, nth32))
+    if (!obj->GetData().Copy<ImageNTHeaders32>(dos.e_lfanew, nth32))
         return false;
     switch (nth32.OptionalHeader.Magic)
     {
@@ -1306,7 +1304,7 @@ bool PEFile::Update()
         rvaEntryPoint = nth32.OptionalHeader.AddressOfEntryPoint;
         break;
     case __IMAGE_NT_OPTIONAL_HDR64_MAGIC:
-        if (!file->Copy<ImageNTHeaders64>(dos.e_lfanew, nth64))
+        if (!obj->GetData().Copy<ImageNTHeaders64>(dos.e_lfanew, nth64))
             return false;
         dirs  = &nth64.OptionalHeader.DataDirectory[0];
         hdr64 = true;
@@ -1341,12 +1339,12 @@ bool PEFile::Update()
     else
         imageBase = nth32.OptionalHeader.ImageBase;
 
-    /*file->ResetBookmarks();
+    /*obj->GetData().ResetBookmarks();
      */
     // b.AddZone(poz, poz + nrSections * sizeof(ImageSectionHeader) - 1, peCols.colSectDef, "SectDef");
     for (tr = 0; tr < nrSections; tr++, poz += sizeof(ImageSectionHeader))
     {
-        if (!file->Copy<ImageSectionHeader>(poz, sect[tr]))
+        if (!obj->GetData().Copy<ImageSectionHeader>(poz, sect[tr]))
         {
             memset(&sect[tr], 0, sizeof(ImageSectionHeader));
         }
@@ -1356,11 +1354,11 @@ bool PEFile::Update()
             virtualComputedSize = sect[tr].VirtualAddress + sect[tr].Misc.VirtualSize;
         // if ((tr < 9) && (sect[tr].PointerToRawData != 0))
         //    FileInfo->Bookmarks.SetBookmark(tr + 1, sect[tr].PointerToRawData);
-        /*if (file->IsOnDisk())
+        /*if (obj->GetData().IsOnDisk())
         {
-          if ((tr<9) && (sect[tr].PointerToRawData != 0)) file->SetBookmark(tr + 1, sect[tr].PointerToRawData);
+          if ((tr<9) && (sect[tr].PointerToRawData != 0)) obj->GetData().SetBookmark(tr + 1, sect[tr].PointerToRawData);
         } else {
-          if ((tr<9) && (sect[tr].VirtualAddress != 0)) file->SetBookmark(tr + 1, sect[tr].VirtualAddress);
+          if ((tr<9) && (sect[tr].VirtualAddress != 0)) obj->GetData().SetBookmark(tr + 1, sect[tr].VirtualAddress);
         }*/
     }
     for (tr = 0; tr < nrSections; tr++)
@@ -1387,13 +1385,13 @@ bool PEFile::Update()
     computedSize = sect[nrSections - 1].PointerToRawData + sect[nrSections - 1].SizeOfRawData;
     if (sect[nrSections - 1].SizeOfRawData == 0)
     {
-        computedSize = file->GetSize();
+        computedSize = obj->GetData().GetSize();
         errList.AddWarning("File is using LastSection.SizeOfRawData = 0 trick");
     }
 
-    // if (computedSize < file->GetSize())
+    // if (computedSize < obj->GetData().GetSize())
     //{
-    //    // file->SetBookmark(0, computedSize);
+    //    // obj->GetData().SetBookmark(0, computedSize);
     //    //FileInfo->Bookmarks.SetBookmark(0, computedSize);
     //}
 
@@ -1411,12 +1409,12 @@ bool PEFile::Update()
         }
     }
 
-    if (computedSize > file->GetSize())
+    if (computedSize > obj->GetData().GetSize())
     {
         errList.AddError(
               "File is truncated. Missing %d bytes (%3d%%)",
-              (int) (computedSize - file->GetSize()),
-              (int) ((computedSize - file->GetSize()) * 100) / computedSize);
+              (int) (computedSize - obj->GetData().GetSize()),
+              (int) ((computedSize - obj->GetData().GetSize()) * 100) / computedSize);
     }
 
     tmp = sect[nrSections - 1].VirtualAddress + sect[nrSections - 1].Misc.VirtualSize;
@@ -1451,13 +1449,13 @@ bool PEFile::Update()
     {
         // FileInfo->CursorPos = filePoz;
         // FileInfo->Bookmarks.SetBookmark(0, filePoz);
-        if (filePoz >= file->GetSize())
+        if (filePoz >= obj->GetData().GetSize())
         {
             errList.AddError("Entry Point is outside the file RVA=(0x%x)", rvaEntryPoint);
         }
         else
         {
-            auto buf = file->Get(filePoz, 16, false);
+            auto buf = obj->GetData().Get(filePoz, 16, false);
             if (buf.Empty())
             {
                 errList.AddError("Unable to read data from Entry Point RVA=(0x%x)", rvaEntryPoint);
@@ -1477,7 +1475,7 @@ bool PEFile::Update()
     else
     {
         errList.AddError("Invalid Entry Point RVA (0x%x)", rvaEntryPoint);
-        if (rvaEntryPoint < file->GetSize())
+        if (rvaEntryPoint < obj->GetData().GetSize())
         {
             errList.AddWarning("Entry Point is a File Address");
         }
@@ -1509,7 +1507,7 @@ bool PEFile::Update()
         dr = &dirs[tr];
         if ((dr->VirtualAddress > 0) && (dr->Size > 0))
         {
-            if (dr->Size > file->GetSize())
+            if (dr->Size > obj->GetData().GetSize())
             {
                 errList.AddWarning("Directory '%s' (#%d) has an invalid Size (0x%08X)", peDirsNames[tr].data(), tr, dr->Size);
             }
@@ -1522,7 +1520,7 @@ bool PEFile::Update()
             }
             else
             {
-                if (filePoz + dr->Size > file->GetSize())
+                if (filePoz + dr->Size > obj->GetData().GetSize())
                 {
                     errList.AddWarning(
                           "Directory '%s' (#%d) extends outside the file (to: 0x%08X)",

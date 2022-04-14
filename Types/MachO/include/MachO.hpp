@@ -137,7 +137,6 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     };
 
   public:
-    Reference<GView::Utils::DataCache> file;
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;

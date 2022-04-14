@@ -649,7 +649,6 @@ namespace Type
             };
 
           public:
-            Reference<GView::Utils::DataCache> file;
             // PE informations
             ImageDOSHeader dos;
             union
@@ -691,7 +690,7 @@ namespace Type
             bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
 
           public:
-            PEFile(Reference<GView::Utils::DataCache> file);
+            PEFile();
             virtual ~PEFile()
             {
             }

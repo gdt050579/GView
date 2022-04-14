@@ -4,9 +4,8 @@
 
 using namespace GView::Type::ISO;
 
-ISOFile::ISOFile(Reference<GView::Utils::DataCache> fileCache)
+ISOFile::ISOFile()
 {
-    file = fileCache;
 }
 
 bool ISOFile::Update()
@@ -16,7 +15,7 @@ bool ISOFile::Update()
         MyVolumeDescriptorHeader vdh{};
         do
         {
-            CHECK(file->Copy<ECMA_119_VolumeDescriptorHeader>(offset, vdh.header), false, "");
+            CHECK(obj->GetData().Copy<ECMA_119_VolumeDescriptorHeader>(offset, vdh.header), false, "");
             vdh.offsetInFile = offset;
             headers.emplace_back(vdh);
             offset += ECMA_119_SECTOR_SIZE;
@@ -31,15 +30,15 @@ bool ISOFile::Update()
         }
 
         ECMA_119_PrimaryVolumeDescriptor pvd{};
-        CHECK(file->Copy<ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), false, "");
+        CHECK(obj->GetData().Copy<ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), false, "");
 
         const auto ptrLocation = pvd.vdd.locationOfTypeLPathTable * pvd.vdd.logicalBlockSize.LSB;
         ECMA_119_PathTableRecord ptr{};
-        file->Copy<ECMA_119_PathTableRecord>(ptrLocation, ptr);
+        obj->GetData().Copy<ECMA_119_PathTableRecord>(ptrLocation, ptr);
 
         /* you can also parse ECMA_119_PathTableRecords
 
-        const auto buffer = file->CopyToBuffer(ptrLocation, pvd.vdd.pathTableSize.LSB);
+        const auto buffer = obj->GetData().CopyToBuffer(ptrLocation, pvd.vdd.pathTableSize.LSB);
         auto ptrStart     = buffer.GetData();
 
         ECMA_119_PathTableRecord* ddr = &ptr;
@@ -70,7 +69,7 @@ bool ISOFile::Update()
             ECMA_119_DirectoryRecord dr{};
             do
             {
-                CHECK(file->Copy<ECMA_119_DirectoryRecord>(offset, dr), false, "");
+                CHECK(obj->GetData().Copy<ECMA_119_DirectoryRecord>(offset, dr), false, "");
 
                 if (i > 1) // skip '.' & '..'
                 {

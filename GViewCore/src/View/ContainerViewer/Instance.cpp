@@ -89,7 +89,7 @@ void Instance::PopulateItem(TreeViewItem item)
     }
     this->items->Sort();
 }
-void Instance::OnTreeItemToggle(TreeViewItem& item)
+void Instance::OnTreeItemToggle(Reference<TreeView>, TreeViewItem& item)
 {
     if (!item.IsFolded())
         PopulateItem(item);

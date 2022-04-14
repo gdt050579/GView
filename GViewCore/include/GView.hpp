@@ -25,11 +25,14 @@ using namespace AppCUI;
 
 namespace GView
 {
+class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface
 {
+    Object* obj;
+
     virtual std::string_view GetTypeName() = 0;
     virtual ~TypeInterface(){};
-
+    
     template <typename T>
     Reference<T> To()
     {
@@ -406,6 +409,8 @@ class CORE_EXPORT Object
     Object(Type objType, Utils::DataCache&& dataCache, TypeInterface* contType, ConstString objName, ConstString objFilePath, uint32 pid)
         : cache(std::move(dataCache)), objectType(objType), name(objName), filePath(objFilePath), PID(pid), contentType(contType)
     {
+        if (contentType)
+            contentType->obj = this;
     }
     inline Utils::DataCache& GetData()
     {

@@ -22,10 +22,10 @@ void Panels::Information::UpdateGeneralInformation()
 
     general->DeleteAllItems();
     general->AddItem("File");
-    // general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
+    // general->SetItemText(poz++, 1, (char*) pe->obj->GetData().GetFileName(true));
     //  size
     general->AddItem(
-          { "Size", tempStr.Format("%s bytes", n.ToString(ico->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+          { "Size", tempStr.Format("%s bytes", n.ToString(ico->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // type
     if (ico->isIcoFormat)
         general->AddItem({ "Type", "ICON" });

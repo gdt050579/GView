@@ -22,8 +22,8 @@ void Information::UpdateBasicInfo()
 
     general->AddItem({ "File", object->GetName()});
 
-    const auto fileSize    = nf.ToString(machO->file->GetSize(), dec);
-    const auto hexfileSize = nf2.ToString(machO->file->GetSize(), hex);
+    const auto fileSize    = nf.ToString(machO->obj->GetData().GetSize(), dec);
+    const auto hexfileSize = nf2.ToString(machO->obj->GetData().GetSize(), hex);
     general->AddItem({ "Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()) });
 
     const auto& info = MAC::GetArchInfoFromCPUTypeAndSubtype(machO->header.cputype, machO->header.cpusubtype);

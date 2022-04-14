@@ -23,7 +23,7 @@ void Information::UpdateGeneralInformation()
     general->AddItem("Fat Binary Info").SetType(ListViewItem::Type::Category);
     general->AddItem({ "File", "NOT IMPLEMENTED" });
     general->AddItem(
-          { "Size", tempStr.Format("%s bytes", n.ToString(machO->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+          { "Size", tempStr.Format("%s bytes", n.ToString(machO->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     general->AddItem({ "Arch", machO->is64 ? "x64" : "x86" });
     general->AddItem(
           { "Objects",
