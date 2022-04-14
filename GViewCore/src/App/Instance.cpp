@@ -147,13 +147,18 @@ bool Instance::Init()
     dsk->Handlers()->OnStart = this;
     return true;
 }
-bool Instance::Add(std::unique_ptr<AppCUI::OS::DataObject> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
+bool Instance::Add(
+      GView::Object::Type objType,
+      std::unique_ptr<AppCUI::OS::DataObject> data,
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      uint32 PID,
+      std::string_view ext)
 {
-    auto win = std::make_unique<FileWindow>(name, this);
-    auto obj = win->GetObject();
-    CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
+    GView::Utils::DataCache cache;
+    CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
-    auto buf  = obj->cache.Get(0, 0x8800, false);
+    auto buf  = cache.Get(0, 0x8800, false);
     auto* plg = &this->defaultPlugin;
     // iterate from existing types
     for (auto& pType : this->typePlugins)
@@ -164,54 +169,45 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::DataObject> file, const AppCUI::U
             break;
         }
     }
+    // create an instance of that object type
+    auto contentType = plg->CreateInstance(&cache);
+    CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
-    // create an instance of that type
-    obj->type = plg->CreateInstance(Reference<GView::Utils::DataCache>(&obj->cache));
-
-    // validate type
-    CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
+    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this);
 
     // instantiate window
     while (true)
     {
         CHECKBK(plg->PopulateWindow(win.get()), "Fail to populate file window !");
         win->Start(); // starts the window and set focus
-        // set window TAG (based on type)
-        win->SetTag(obj->type->GetTypeName(), "");
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
     }
     // error case
-    delete obj->type;
-    obj->type = nullptr;
     return false;
 }
 bool Instance::AddFolder(const std::filesystem::path& path)
 {
-    auto win  = std::make_unique<FileWindow>("Folder view", this);
-    auto obj  = win->GetObject();
-    obj->type = GView::Type::FolderViewPlugin::CreateInstance(path);
+    auto contentType = GView::Type::FolderViewPlugin::CreateInstance(path);
+    CHECK(contentType, false, "`CreateInstance` returned a null pointer to a type object !");
 
-    // validate type
-    CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
+    GView::Utils::DataCache cache;
+    auto win = std::make_unique<FileWindow>(
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this);
 
     // instantiate window
     while (true)
     {
         GView::Type::FolderViewPlugin::PopulateWindow(win.get());
         win->Start(); // starts the window and set focus
-        // set window TAG (based on type)
-        win->SetTag("FOLDER", "");
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
     }
     // error case
-    delete obj->type;
-    obj->type = nullptr;
     return false;
 }
 void Instance::ShowErrors()
@@ -236,7 +232,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
             errList.AddError("Fail to open file: %s", path.u8string().c_str());
             RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
         }
-        return Add(std::move(f), path.u16string(), path.extension().string());
+        return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
     }
 }
 void Instance::OpenFile()

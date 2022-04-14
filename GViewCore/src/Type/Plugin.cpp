@@ -184,9 +184,9 @@ bool Plugin::PopulateWindow(Reference<GView::View::WindowInterface> win) const
     CHECK(this->Loaded, false, "Plugin was no loaded. Have you call `Validate` first ?");
     return this->fnPopulateWindow(win);
 }
-TypeInterface* Plugin::CreateInstance(Reference<GView::Utils::DataCache> fileCache) const
+TypeInterface* Plugin::CreateInstance(Reference<GView::Utils::DataCache> dataCache) const
 {
     CHECK(!this->Invalid, nullptr, "Invalid plugin (not loaded properly or no valid exports)");
     CHECK(this->Loaded, nullptr, "Plugin was no loaded. Have you call `Validate` first ?");
-    return this->fnCreateInstance(fileCache);
+    return this->fnCreateInstance(dataCache);
 }

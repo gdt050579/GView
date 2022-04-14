@@ -73,6 +73,7 @@ namespace Utils
 
       public:
         DataCache();
+        DataCache(DataCache&& obj);
         ~DataCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 cacheSize);
@@ -428,25 +429,30 @@ namespace Hashes
     };
 } // namespace Hashes
 
-/*
-* Object can be:
-*   - a file
-*   - a folder
-*   - a process
-*   - a memory buffer
-*/
 class CORE_EXPORT Object
 {
+  public:
+    enum class Type : uint32
+    {
+        File,
+        Folder,
+        MemoryBuffer,
+        Process
+    };
+
+  private:
     Utils::DataCache cache;
     TypeInterface* contentType;
     AppCUI::Utils::UnicodeStringBuilder name;
     AppCUI::Utils::UnicodeStringBuilder filePath;
-
-    Object() : contentType(nullptr)
-    {
-    }
+    uint32 PID;
+    Type objectType;
 
   public:
+    Object(Type objType, Utils::DataCache&& dataCache, TypeInterface* contType, ConstString objName, ConstString objFilePath, uint32 pid)
+        : cache(std::move(dataCache)), objectType(objType), name(objName), filePath(objFilePath), PID(pid), contentType(contType)
+    {
+    }
     inline Utils::DataCache& GetData()
     {
         return cache;
@@ -468,6 +474,14 @@ class CORE_EXPORT Object
     {
         return (T*) contentType;
     }
+    inline uint32 GetPID() const
+    {
+        return PID;
+    }
+    inline Type GetObjectType() const
+    {
+        return objectType;
+    }
 };
 
 namespace View
@@ -484,7 +498,7 @@ namespace View
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
-        virtual bool ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)             = 0;
+        virtual bool ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)        = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
 

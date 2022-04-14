@@ -37,9 +37,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 void Instance::RecomputeLineIndexes()
 {
     // first --> simple estimation
-    auto buf        = this->obj->cache.Get(0, 4096, false);
-    auto sz         = this->obj->cache.GetSize();
-    auto csz        = this->obj->cache.GetCacheSize();
+    auto buf        = this->obj->GetData().Get(0, 4096, false);
+    auto sz         = this->obj->GetData().GetSize();
+    auto csz        = this->obj->GetData().GetCacheSize();
     auto crlf_count = (uint64) 1;
 
     for (auto ch : buf)
@@ -57,7 +57,7 @@ void Instance::RecomputeLineIndexes()
     uint8 last    = 0;
     while (offset < sz)
     {
-        buf = this->obj->cache.Get(offset, csz, false);
+        buf = this->obj->GetData().Get(offset, csz, false);
         if (buf.Empty())
             return;
         // process the buffer
@@ -110,7 +110,7 @@ bool Instance::GetLineInfo(uint32 lineNo, uint64& offset, uint32& size)
     offset = ofs;
     if (lineNo + 1 == this->lineIndex.Len())
     {
-        size = (uint32) (this->obj->cache.GetSize() - offset);
+        size = (uint32) (this->obj->GetData().GetSize() - offset);
     }
     else
     {
@@ -129,7 +129,7 @@ void Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gr
     
 
     if (GetLineInfo(lineNo, ofs, sz))
-        buf = this->obj->cache.Get(ofs, sz, false);
+        buf = this->obj->GetData().Get(ofs, sz, false);
     renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
     renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
 

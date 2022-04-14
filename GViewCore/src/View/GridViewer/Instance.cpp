@@ -161,7 +161,7 @@ void Instance::PopulateGrid()
         std::vector<AppCUI::Utils::ConstString> headerCS;
         for (const auto& [start, end] : header)
         {
-            const auto token = obj->cache.Get(start, static_cast<uint32>(end - start), false);
+            const auto token = obj->GetData().Get(start, static_cast<uint32>(end - start), false);
             headerCS.push_back(token);
         }
         std::advance(it, 1);
@@ -185,7 +185,7 @@ void Instance::PopulateGrid()
         for (auto itRow = row.begin(); itRow != row.end(); itRow++)
         {
             const auto j     = row.size() - std::abs(std::distance(row.end(), itRow));
-            const auto token = obj->cache.Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
+            const auto token = obj->GetData().Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
             const ConstString value{ token };
             grid->UpdateCell(static_cast<uint32>(j), static_cast<uint32>(i - settings->firstRowAsHeader), value);
         }
@@ -200,8 +200,8 @@ void GView::View::GridViewer::Instance::ProcessContent()
     std::map<uint64, std::pair<uint64, uint64>> lines;
     std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
 
-    const auto oSize = obj->cache.GetSize();
-    const auto cSize = obj->cache.GetCacheSize();
+    const auto oSize = obj->GetData().GetSize();
+    const auto cSize = obj->GetData().GetCacheSize();
 
     auto oSizeProcessed = 0ULL;
     auto lineStart      = 0ULL;
@@ -209,7 +209,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
 
     do
     {
-        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         const auto nPos = data.find_first_of('\n', 0);

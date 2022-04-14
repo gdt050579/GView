@@ -14,6 +14,23 @@ DataCache::DataCache()
     this->fileSize   = 0;
     this->currentPos = 0;
 }
+DataCache::DataCache(DataCache&& obj)
+{
+    fileObj        = obj.fileObj;
+    fileSize       = obj.fileSize;
+    start          = obj.start;
+    end            = obj.end;
+    currentPos     = obj.currentPos;
+    cache          = obj.cache;
+    cacheSize      = obj.cacheSize;
+    obj.fileObj    = nullptr;
+    obj.fileSize   = 0;
+    obj.start      = 0;
+    obj.end        = 0;
+    obj.currentPos = 0;
+    obj.cache      = nullptr;
+    obj.cacheSize  = 0;
+}
 DataCache::~DataCache()
 {
     if (this->fileObj)
