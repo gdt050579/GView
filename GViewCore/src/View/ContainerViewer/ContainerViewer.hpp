@@ -65,7 +65,7 @@ namespace View
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // tree item toggle
-            virtual void OnTreeItemToggle(TreeViewItem& item) override;
+            virtual void OnTreeItemToggle(Reference<TreeView>, TreeViewItem& item) override;
 
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;
