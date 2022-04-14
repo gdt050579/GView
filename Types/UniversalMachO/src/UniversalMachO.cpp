@@ -35,9 +35,9 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new UniversalMachOFile(file);
+        return new UniversalMachOFile();
     }
 
     void CreateBufferView(Reference<WindowInterface> win, Reference<UniversalMachOFile> macho)

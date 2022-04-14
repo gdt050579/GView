@@ -2,17 +2,16 @@
 
 namespace GView::Type::UniversalMachO
 {
-UniversalMachOFile::UniversalMachOFile(Reference<GView::Utils::DataCache> file)
+UniversalMachOFile::UniversalMachOFile()
     : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
-    this->file = file;
 }
 
 bool UniversalMachOFile::Update()
 {
     uint64_t offset = 0;
 
-    CHECK(file->Copy<MAC::fat_header>(offset, header), false, "");
+    CHECK(obj->GetData().Copy<MAC::fat_header>(offset, header), false, "");
     offset += sizeof(MAC::fat_header);
 
     is64                = header.magic == MAC::FAT_MAGIC_64 || header.magic == MAC::FAT_CIGAM_64;
@@ -32,7 +31,7 @@ bool UniversalMachOFile::Update()
         if (is64)
         {
             MAC::fat_arch64 fa64;
-            CHECK(file->Copy<MAC::fat_arch64>(offset, fa64), false, "");
+            CHECK(obj->GetData().Copy<MAC::fat_arch64>(offset, fa64), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(fa64);
@@ -49,7 +48,7 @@ bool UniversalMachOFile::Update()
         else
         {
             MAC::fat_arch fa;
-            CHECK(file->Copy<MAC::fat_arch>(offset, fa), false, "");
+            CHECK(obj->GetData().Copy<MAC::fat_arch>(offset, fa), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(fa);
@@ -64,7 +63,7 @@ bool UniversalMachOFile::Update()
         }
 
         MAC::mach_header mh{};
-        CHECK(file->Copy<MAC::mach_header>(arch.offset, mh), false, "");
+        CHECK(obj->GetData().Copy<MAC::mach_header>(arch.offset, mh), false, "");
         if (mh.magic == MAC::MH_CIGAM || mh.magic == MAC::MH_CIGAM_64)
         {
             Swap(mh);
