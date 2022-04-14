@@ -23,7 +23,7 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
     {
         return new ICO::ICOFile(file);
     }

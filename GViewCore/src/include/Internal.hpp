@@ -121,7 +121,7 @@ namespace Type
     namespace DefaultTypePlugin
     {
         bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
-        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
+        TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace DefaultTypePlugin
 
@@ -161,7 +161,7 @@ namespace Type
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
-        TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
+        TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::DataCache> fileCache);
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
         bool LoadPlugin();
@@ -172,7 +172,7 @@ namespace Type
         void Init();
         bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
-        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
+        TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> fileCache) const;
         inline bool operator<(const Plugin& plugin) const
         {
             return Priority > plugin.Priority;

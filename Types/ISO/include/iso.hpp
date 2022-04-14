@@ -8,7 +8,7 @@ namespace GView::Type::ISO
 class ISOFile : public TypeInterface
 {
   public:
-    Reference<GView::Utils::FileCache> file;
+    Reference<GView::Utils::DataCache> file;
 
     struct MyVolumeDescriptorHeader
     {
@@ -20,7 +20,7 @@ class ISOFile : public TypeInterface
     std::vector<ECMA_119_DirectoryRecord> records;
 
   public:
-    ISOFile(Reference<GView::Utils::FileCache> file);
+    ISOFile(Reference<GView::Utils::DataCache> file);
     virtual ~ISOFile()
     {
     }

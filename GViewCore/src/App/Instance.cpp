@@ -166,7 +166,7 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::DataObject> file, const AppCUI::U
     }
 
     // create an instance of that type
-    obj->type = plg->CreateInstance(Reference<GView::Utils::FileCache>(&obj->cache));
+    obj->type = plg->CreateInstance(Reference<GView::Utils::DataCache>(&obj->cache));
 
     // validate type
     CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");

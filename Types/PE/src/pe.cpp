@@ -23,7 +23,7 @@ extern "C"
             return false;
         return nth32->Signature == PE::Constants::IMAGE_NT_SIGNATURE;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
     {
         return new PE::PEFile(file);
     }

@@ -22,7 +22,7 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<DataCache> file)
     {
         return new MachOFile(file);
     }

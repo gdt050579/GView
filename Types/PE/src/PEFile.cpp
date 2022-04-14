@@ -232,7 +232,7 @@ uint32_t SectionALIGN(uint32_t value, uint32_t alignValue)
     return ((value / alignValue) + 1) * alignValue;
 }
 
-PEFile::PEFile(Reference<GView::Utils::FileCache> fileCache)
+PEFile::PEFile(Reference<GView::Utils::DataCache> fileCache)
 {
     uint32_t tr;
     // creez vectorii pt. exporturi / importuri

@@ -36,7 +36,7 @@ extern "C"
         return false;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
     {
         return new CSV::CSVFile(file);
     }

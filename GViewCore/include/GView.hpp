@@ -62,7 +62,7 @@ namespace Utils
 
         void PopulateListView(AppCUI::Utils::Reference<AppCUI::Controls::ListView> listView) const;
     };
-    class CORE_EXPORT FileCache
+    class CORE_EXPORT DataCache
     {
         AppCUI::OS::DataObject* fileObj;
         uint64 fileSize, start, end, currentPos;
@@ -72,8 +72,8 @@ namespace Utils
         bool CopyObject(void* buffer, uint64 offset, uint32 requestedSize);
 
       public:
-        FileCache();
-        ~FileCache();
+        DataCache();
+        ~DataCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 cacheSize);
         BufferView Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead);
@@ -437,7 +437,7 @@ namespace Hashes
 */
 struct CORE_EXPORT Object
 {
-    Utils::FileCache cache;
+    Utils::DataCache cache;
     TypeInterface* type;
     AppCUI::Utils::UnicodeStringBuilder name;
     AppCUI::Utils::UnicodeStringBuilder filePath;
@@ -550,7 +550,6 @@ namespace View
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
             void SetEnumarateCallback(Reference<EnumerateInterface> callback);
             void SetActionCallback(Reference<ActionInterface> callback);
-            void SetItems(std::initializer_list<std::initializer_list<ConstString>> items);
         };
     }; // namespace ContainerViewer
 

@@ -4,7 +4,7 @@ using namespace GView::Utils;
 
 constexpr uint32 MAX_CACHE_SIZE = 0x1000000U; // 16 M
 
-FileCache::FileCache()
+DataCache::DataCache()
 {
     this->fileObj    = nullptr;
     this->cache      = nullptr;
@@ -14,7 +14,7 @@ FileCache::FileCache()
     this->fileSize   = 0;
     this->currentPos = 0;
 }
-FileCache::~FileCache()
+DataCache::~DataCache()
 {
     if (this->fileObj)
     {
@@ -27,7 +27,7 @@ FileCache::~FileCache()
     this->cache = nullptr;
 }
 
-bool FileCache::Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 _cacheSize)
+bool DataCache::Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 _cacheSize)
 {
     CHECK(this->cacheSize == 0, false, "Cache object already initialized !");
     this->fileObj = file.release(); // take ownership of the pointer
@@ -46,7 +46,7 @@ bool FileCache::Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 _cache
 
     return true;
 }
-BufferView FileCache::Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead)
+BufferView DataCache::Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead)
 {
     CHECK(this->fileObj, BufferView(), "File was not properly initialized !");
     CHECK(requestedSize > 0, BufferView(), "'requestedSize' has to be bigger than 0 ");
@@ -124,7 +124,7 @@ BufferView FileCache::Get(uint64 offset, uint32 requestedSize, bool failIfReques
     this->currentPos = this->end;
     return BufferView(&this->cache[offset - this->start], (uint32) (this->end - offset));
 }
-bool FileCache::CopyObject(void* buffer, uint64 offset, uint32 requestedSize)
+bool DataCache::CopyObject(void* buffer, uint64 offset, uint32 requestedSize)
 {
     CHECK(buffer, false, "Expecting a valid pointer for a buffer !");
     auto b = Get(offset, requestedSize, true);
@@ -132,7 +132,7 @@ bool FileCache::CopyObject(void* buffer, uint64 offset, uint32 requestedSize)
     memcpy(buffer, b.GetData(), b.GetLength());
     return true;
 }
-Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead)
+Buffer DataCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead)
 {
     // sanity checks
     CHECK(requestedSize > 0, Buffer(), "Invalid requested size (should be bigger than 0)");
@@ -179,7 +179,7 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
     }
     return b;
 }
-bool FileCache::WriteTo(Reference<AppCUI::OS::DataObject> output, uint64 offset, uint32 size)
+bool DataCache::WriteTo(Reference<AppCUI::OS::DataObject> output, uint64 offset, uint32 size)
 {
     CHECK(output->SetSize(size), false, "");
     CHECK(output->SetCurrentPos(0), false, "");
