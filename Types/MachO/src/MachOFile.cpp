@@ -4,7 +4,6 @@ namespace GView::Type::MachO
 {
 MachOFile::MachOFile(Reference<GView::Utils::DataCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
-    this->file = file;
 }
 
 bool MachOFile::Update()
@@ -87,7 +86,7 @@ uint64_t MachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslation
 bool MachOFile::SetArchitectureAndEndianess(uint64_t& offset)
 {
     uint32_t magic = 0;
-    CHECK(file->Copy<uint32_t>(offset, magic), false, "");
+    CHECK(obj->GetData().Copy<uint32_t>(offset, magic), false, "");
 
     is64                = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
     shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64;
@@ -97,7 +96,7 @@ bool MachOFile::SetArchitectureAndEndianess(uint64_t& offset)
 
 bool MachOFile::SetHeader(uint64_t& offset)
 {
-    CHECK(file->Copy<MAC::mach_header>(offset, header), false, "");
+    CHECK(obj->GetData().Copy<MAC::mach_header>(offset, header), false, "");
     offset += sizeof(header);
     if (is64 == false)
     {
@@ -119,7 +118,7 @@ bool MachOFile::SetLoadCommands(uint64_t& offset)
     for (decltype(header.ncmds) i = 0; i < header.ncmds; i++)
     {
         MAC::load_command lc{};
-        CHECK(file->Copy<MAC::load_command>(offset, lc), false, "");
+        CHECK(obj->GetData().Copy<MAC::load_command>(offset, lc), false, "");
         if (shouldSwapEndianess)
         {
             Swap(lc);
@@ -140,7 +139,7 @@ bool MachOFile::SetSegmentsAndTheirSections()
         if (lc.value.cmd == MAC::LoadCommandType::SEGMENT)
         {
             MAC::segment_command sc{};
-            CHECK(file->Copy<decltype(sc)>(lc.offset, sc), false, "");
+            CHECK(obj->GetData().Copy<decltype(sc)>(lc.offset, sc), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(sc);
@@ -162,7 +161,7 @@ bool MachOFile::SetSegmentsAndTheirSections()
             for (auto i = 0U; i < sc.nsects; i++)
             {
                 MAC::section section{};
-                CHECK(file->Copy<decltype(section)>(offset, section), false, "");
+                CHECK(obj->GetData().Copy<decltype(section)>(offset, section), false, "");
                 if (shouldSwapEndianess)
                 {
                     Swap(section);
@@ -189,7 +188,7 @@ bool MachOFile::SetSegmentsAndTheirSections()
         else if (lc.value.cmd == MAC::LoadCommandType::SEGMENT_64)
         {
             MAC::segment_command_64 sc{};
-            CHECK(file->Copy<MAC::segment_command_64>(lc.offset, sc), false, "");
+            CHECK(obj->GetData().Copy<MAC::segment_command_64>(lc.offset, sc), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(sc);
@@ -211,7 +210,7 @@ bool MachOFile::SetSegmentsAndTheirSections()
             for (auto i = 0U; i < sc.nsects; i++)
             {
                 MAC::section_64 section{};
-                CHECK(file->Copy<decltype(section)>(offset, section), false, "");
+                CHECK(obj->GetData().Copy<decltype(section)>(offset, section), false, "");
                 if (shouldSwapEndianess)
                 {
                     Swap(section);
@@ -257,7 +256,7 @@ bool MachOFile::SetDyldInfo()
             }
 
             dyldInfo.emplace(MAC::dyld_info_command{});
-            CHECK(file->Copy<MAC::dyld_info_command>(lc.offset, *dyldInfo), false, "");
+            CHECK(obj->GetData().Copy<MAC::dyld_info_command>(lc.offset, *dyldInfo), false, "");
 
             if (shouldSwapEndianess)
             {
@@ -277,7 +276,7 @@ bool MachOFile::SetIdDylibs()
             lc.value.cmd == MAC::LoadCommandType::LOAD_WEAK_DYLIB || lc.value.cmd == MAC::LoadCommandType::REEXPORT_DYLIB ||
             lc.value.cmd == MAC::LoadCommandType::LAZY_LOAD_DYLIB || lc.value.cmd == MAC::LoadCommandType::LOAD_UPWARD_DYLIB)
         {
-            auto buffer = file->CopyToBuffer(lc.offset, lc.value.cmdsize);
+            auto buffer = obj->GetData().CopyToBuffer(lc.offset, lc.value.cmdsize);
             auto ptr    = buffer.GetData();
 
             Dylib d{};
@@ -328,7 +327,7 @@ bool MachOFile::SetMain()
             }
 
             main.emplace(MAC::entry_point_command{});
-            CHECK(file->Copy<MAC::entry_point_command>(lc.offset, *main), false, "");
+            CHECK(obj->GetData().Copy<MAC::entry_point_command>(lc.offset, *main), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(*main);
@@ -345,7 +344,7 @@ bool MachOFile::SetMain()
 
             main->cmd     = lc.value.cmd;
             main->cmdsize = lc.value.cmdsize;
-            auto cmd      = file->CopyToBuffer(lc.offset, main->cmdsize);
+            auto cmd      = obj->GetData().CopyToBuffer(lc.offset, main->cmdsize);
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {
@@ -389,16 +388,16 @@ bool MachOFile::SetSymbols()
             }
 
             dySymTab.emplace(DySymTab{});
-            CHECK(file->Copy<MAC::symtab_command>(lc.offset, dySymTab->sc), false, "");
+            CHECK(obj->GetData().Copy<MAC::symtab_command>(lc.offset, dySymTab->sc), false, "");
 
             if (shouldSwapEndianess)
             {
                 Swap(dySymTab->sc);
             }
 
-            const auto stringTable       = file->CopyToBuffer(dySymTab->sc.stroff, dySymTab->sc.strsize);
+            const auto stringTable       = obj->GetData().CopyToBuffer(dySymTab->sc.stroff, dySymTab->sc.strsize);
             const auto symbolTableOffset = dySymTab->sc.nsyms * (is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
-            const auto symbolTable       = file->CopyToBuffer(dySymTab->sc.symoff, static_cast<uint32>(symbolTableOffset));
+            const auto symbolTable       = obj->GetData().CopyToBuffer(dySymTab->sc.symoff, static_cast<uint32>(symbolTableOffset));
 
             for (auto i = 0U; i < dySymTab->sc.nsyms; i++)
             {
@@ -461,7 +460,7 @@ bool MachOFile::SetSourceVersion()
             }
 
             sourceVersion.emplace(MAC::source_version_command{});
-            CHECK(file->Copy<MAC::source_version_command>(lc.offset, *sourceVersion), false, "");
+            CHECK(obj->GetData().Copy<MAC::source_version_command>(lc.offset, *sourceVersion), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(*sourceVersion);
@@ -484,7 +483,7 @@ bool MachOFile::SetUUID()
             }
 
             uuid.emplace(MAC::uuid_command{});
-            CHECK(file->Copy<MAC::uuid_command>(lc.offset, *uuid), false, "");
+            CHECK(obj->GetData().Copy<MAC::uuid_command>(lc.offset, *uuid), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(*uuid);
@@ -511,7 +510,7 @@ bool MachOFile::SetLinkEditData()
         case MAC::LoadCommandType::DYLD_CHAINED_FIXUPS:
         {
             MAC::linkedit_data_command ledc{};
-            CHECK(file->Copy<MAC::linkedit_data_command>(lc.offset, ledc), false, "");
+            CHECK(obj->GetData().Copy<MAC::linkedit_data_command>(lc.offset, ledc), false, "");
 
             if (shouldSwapEndianess)
             {
@@ -537,13 +536,13 @@ bool MachOFile::SetCodeSignature()
         {
             codeSignature.emplace(CodeSignature{});
 
-            CHECK(file->Copy<MAC::linkedit_data_command>(lc.offset, codeSignature->ledc), false, "");
+            CHECK(obj->GetData().Copy<MAC::linkedit_data_command>(lc.offset, codeSignature->ledc), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(codeSignature->ledc);
             }
 
-            CHECK(file->Copy<MAC::CS_SuperBlob>(codeSignature->ledc.dataoff, codeSignature->superBlob), false, "");
+            CHECK(obj->GetData().Copy<MAC::CS_SuperBlob>(codeSignature->ledc.dataoff, codeSignature->superBlob), false, "");
 
             // All fields are big endian (in case PPC ever makes a comeback)
             Swap(codeSignature->superBlob);
@@ -554,7 +553,7 @@ bool MachOFile::SetCodeSignature()
             {
                 MAC::CS_BlobIndex blob{};
 
-                CHECK(file->Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
+                CHECK(obj->GetData().Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
                 Swap(blob);
 
                 codeSignature->blobs.emplace_back(blob);
@@ -570,7 +569,7 @@ bool MachOFile::SetCodeSignature()
                 {
                 case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
                 {
-                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
+                    CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
                     Swap(codeSignature->codeDirectory);
                 }
                 break;
@@ -578,10 +577,10 @@ bool MachOFile::SetCodeSignature()
                     break;
                 case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
                 {
-                    CHECK(file->Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature->requirements.blob), false, "");
+                    CHECK(obj->GetData().Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature->requirements.blob), false, "");
                     Swap(codeSignature->requirements.blob);
 
-                    codeSignature->requirements.data = file->CopyToBuffer(
+                    codeSignature->requirements.data = obj->GetData().CopyToBuffer(
                           csOffset + sizeof(MAC::CS_RequirementsBlob),
                           codeSignature->requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
 
@@ -598,10 +597,10 @@ bool MachOFile::SetCodeSignature()
                     break;
                 case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
                 {
-                    CHECK(file->Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
+                    CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
                     Swap(codeSignature->entitlements.blob);
                     codeSignature->entitlements.data =
-                          file->CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
+                          obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
                 }
                 break;
 
@@ -614,7 +613,7 @@ bool MachOFile::SetCodeSignature()
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
                 {
                     MAC::CS_CodeDirectory cd{};
-                    CHECK(file->Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
+                    CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
                     Swap(cd);
                     codeSignature->alternateDirectories.emplace_back(cd);
                 }
@@ -654,7 +653,7 @@ bool MachOFile::SetVersionMin()
             }
 
             versionMin.emplace(MAC::version_min_command{});
-            CHECK(file->Copy<MAC::version_min_command>(lc.offset, *versionMin), false, "");
+            CHECK(obj->GetData().Copy<MAC::version_min_command>(lc.offset, *versionMin), false, "");
             if (shouldSwapEndianess)
             {
                 Swap(*versionMin);
