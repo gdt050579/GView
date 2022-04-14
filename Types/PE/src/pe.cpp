@@ -103,7 +103,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
+        auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
         CreateBufferView(win, pe);

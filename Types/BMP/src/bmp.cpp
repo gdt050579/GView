@@ -43,7 +43,7 @@ extern "C"
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto bmp = win->GetObject()->type->To<BMP::BMPFile>();
+        auto bmp = win->GetObject()->GetContentType<BMP::BMPFile>();
         bmp->Update();
 
         // add viewer

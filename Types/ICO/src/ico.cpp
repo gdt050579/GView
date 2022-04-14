@@ -60,7 +60,7 @@ extern "C"
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto ico = win->GetObject()->type->To<ICO::ICOFile>();
+        auto ico = win->GetObject()->GetContentType<ICO::ICOFile>();
         ico->Update();
 
         // add viewer

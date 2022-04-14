@@ -81,7 +81,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto mach = reinterpret_cast<MachO::MachOFile*>(win->GetObject()->type);
+        auto mach = win->GetObject()->GetContentType<MachO::MachOFile>();
         mach->Update();
 
         CreateBufferView(win, mach);

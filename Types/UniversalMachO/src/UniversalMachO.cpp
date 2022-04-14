@@ -71,7 +71,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        auto mach = reinterpret_cast<UniversalMachOFile*>(win->GetObject()->type);
+        auto mach = win->GetObject()->GetContentType<UniversalMachOFile>();
         mach->Update();
 
         CreateBufferView(win, mach);

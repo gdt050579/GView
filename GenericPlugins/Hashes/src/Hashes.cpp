@@ -386,7 +386,7 @@ void HashesDialog::SetSettingsFromFlags()
 
 static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hashFlags, Reference<GView::Object> object)
 {
-    const auto objectSize = object->cache.GetSize();
+    const auto objectSize = object->GetData().GetSize();
     ProgressStatus::Init("Computing...", objectSize);
 
     Adler32 adler32{};
@@ -448,9 +448,9 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         }
     }
 
-    const auto block = object->cache.GetCacheSize();
+    const auto block = object->GetData().GetCacheSize();
     auto offset      = 0ULL;
-    auto left        = object->cache.GetSize();
+    auto left        = object->GetData().GetSize();
     LocalString<512> ls;
 
     const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
@@ -466,7 +466,7 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         const auto sizeToRead = (left >= block ? block : left);
         left -= (left >= block ? block : left);
 
-        const Buffer buffer = object->cache.CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
+        const Buffer buffer = object->GetData().CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
         CHECK(buffer.IsValid(), false, "");
 
         bool sha512UpdateCalled = false;

@@ -139,7 +139,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto iso = win->GetObject()->type->To<ISO::ISOFile>();
+        auto iso = win->GetObject()->GetContentType<ISO::ISOFile>();
         iso->Update();
 
         // add views

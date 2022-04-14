@@ -43,7 +43,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto csv = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
+        auto csv = win->GetObject()->GetContentType<CSV::CSVFile>();
         csv->Update(win->GetObject());
 
         GView::View::GridViewer::Settings gridSettings;

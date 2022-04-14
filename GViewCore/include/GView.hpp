@@ -435,15 +435,38 @@ namespace Hashes
 *   - a process
 *   - a memory buffer
 */
-struct CORE_EXPORT Object
+class CORE_EXPORT Object
 {
     Utils::DataCache cache;
-    TypeInterface* type;
+    TypeInterface* contentType;
     AppCUI::Utils::UnicodeStringBuilder name;
     AppCUI::Utils::UnicodeStringBuilder filePath;
 
-    Object() : type(nullptr)
+    Object() : contentType(nullptr)
     {
+    }
+
+  public:
+    inline Utils::DataCache& GetData()
+    {
+        return cache;
+    }
+    inline u16string_view GetName() const
+    {
+        return name.ToStringView();
+    }
+    inline u16string_view GetPath() const
+    {
+        return filePath.ToStringView();
+    }
+    inline Reference<TypeInterface> GetContentType() const
+    {
+        return contentType;
+    }
+    template <typename T>
+    inline Reference<T> GetContentType() const
+    {
+        return (T*) contentType;
     }
 };
 
