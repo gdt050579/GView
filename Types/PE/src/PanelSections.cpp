@@ -130,7 +130,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedSection();
         return true;
