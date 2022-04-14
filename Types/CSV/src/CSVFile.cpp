@@ -23,7 +23,7 @@ std::string_view CSVFile::CSVFile::GetTypeName()
 
 bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 {
-    this->obj = obj;
+    this->obj = obj; //GDT: this is already set up
 
     if (this->obj->GetName().ends_with(u".tsv"))
     {
