@@ -669,10 +669,8 @@ bool MachOFile::SetCodeSignature()
                           codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
                     codeSignature->signature.errorHumanReadable =
                           !GView::DigitalSignature::PKCS7ToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
-                    codeSignature->signature.errorPEMs =
-                          !GView::DigitalSignature::PKCS7ToPEMCerts(blobBuffer, codeSignature->signature.PEMs);
-                    codeSignature->signature.errorSig =
-                          !GView::DigitalSignature::PKCS7ToStructure(blobBuffer, codeSignature->signature.sig);
+                    codeSignature->signature.errorPEMs = !GView::DigitalSignature::CMSToPEMCerts(blobBuffer, codeSignature->signature.PEMs);
+                    codeSignature->signature.errorSig  = !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:

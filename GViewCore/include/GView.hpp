@@ -32,7 +32,7 @@ struct CORE_EXPORT TypeInterface
 
     virtual std::string_view GetTypeName() = 0;
     virtual ~TypeInterface(){};
-    
+
     template <typename T>
     Reference<T> To()
     {
@@ -340,8 +340,10 @@ namespace DigitalSignature
         std::string issuer;
         std::string subject;
         int32 verify;
-
         std::string errorVerify;
+
+        int32 signerVerify; //  compares the certificate cert against the signer identifier si
+        std::string errorSignerVerify;
     };
 
     struct CORE_EXPORT SignerAttributes
@@ -375,17 +377,17 @@ namespace DigitalSignature
     };
 
     CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, std::string& ouput);
-    CORE_EXPORT bool PKCS7ToPEMCerts(const Buffer& buffer, std::vector<std::string>& output);
-    CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, Signature& output);
+    CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, std::vector<std::string>& output);
+    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
 } // namespace DigitalSignature
 
 /*
-* Object can be:
-*   - a file
-*   - a folder
-*   - a process
-*   - a memory buffer
-*/
+ * Object can be:
+ *   - a file
+ *   - a folder
+ *   - a process
+ *   - a memory buffer
+ */
 class CORE_EXPORT Object
 {
   public:

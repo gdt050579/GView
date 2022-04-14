@@ -20,6 +20,19 @@ struct WrapperBIO
     }
 };
 
+struct WrapperCMS_ContentInfo
+{
+    CMS_ContentInfo* data = nullptr;
+
+    ~WrapperCMS_ContentInfo()
+    {
+        if (data != nullptr)
+        {
+            CMS_ContentInfo_free(data);
+        }
+    }
+};
+
 const std::string ASN1TIMEtoString(const ASN1_TIME* time)
 {
     WrapperBIO out(BIO_new(BIO_s_mem()));
@@ -39,17 +52,47 @@ bool PKCS7ToHumanReadable(const Buffer& buffer, std::string& output)
     auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
 
     ERR_clear_error();
-    PKCS7* pkcs7 = d2i_PKCS7(nullptr, &data, buffer.GetLength());
+    PKCS7* pkcs7 = d2i_PKCS7(nullptr, &data, (int32) buffer.GetLength());
     auto error   = ERR_get_error();
     output       = ERR_error_string(error, nullptr);
     CHECK(pkcs7 != nullptr, false, output.c_str());
 
     WrapperBIO out(BIO_new(BIO_s_mem()));
+    error = ERR_get_error();
+    if (error != 0)
+    {
+        output = ERR_error_string(error, nullptr);
+    }
+    CHECK(out.memory != nullptr, false, output.c_str());
 
     ERR_clear_error();
-    const auto ctxCode = PKCS7_print_ctx(out.memory, pkcs7, 4, nullptr);
+    ASN1_PCTX* pctx = ASN1_PCTX_new();
+    error           = ERR_get_error();
+    if (error != 0)
+    {
+        output = ERR_error_string(error, nullptr);
+    }
+    CHECK(pctx != nullptr, false, output.c_str());
+
+    /* TODO: do we actually need these?
+    // ASN1_PCTX_set_flags(
+    //       pctx,
+    //       ASN1_PCTX_FLAGS_SHOW_ABSENT | ASN1_PCTX_FLAGS_SHOW_SEQUENCE | ASN1_PCTX_FLAGS_SHOW_SSOF | ASN1_PCTX_FLAGS_SHOW_TYPE |
+    //             ASN1_PCTX_FLAGS_SHOW_FIELD_STRUCT_NAME);
+    // ASN1_PCTX_set_str_flags(pctx, ASN1_STRFLGS_RFC2253 | ASN1_STRFLGS_DUMP_ALL);
+    // const auto ctxCode = ASN1_item_print(out.memory, (ASN1_VALUE*)pkcs7, 4, ASN1_ITEM_rptr(PKCS7), nullptr);
+    */
+    ASN1_PCTX_set_flags(pctx, ASN1_PCTX_FLAGS_SHOW_ABSENT);
+    ASN1_PCTX_set_str_flags(pctx, 0);
+    ASN1_PCTX_set_oid_flags(pctx, 0);
+    ASN1_PCTX_set_cert_flags(pctx, 0);
+
+    const auto ctxCode = PKCS7_print_ctx(out.memory, pkcs7, 4, pctx);
     error              = ERR_get_error();
-    output             = ERR_error_string(error, nullptr);
+    if (error != 0)
+    {
+        output = ERR_error_string(error, nullptr);
+    }
     CHECK(ctxCode == 1, false, output.c_str());
 
     BUF_MEM* buf{};
@@ -59,7 +102,7 @@ bool PKCS7ToHumanReadable(const Buffer& buffer, std::string& output)
     return true;
 }
 
-bool PKCS7ToPEMCerts(const Buffer& buffer, std::vector<std::string>& output)
+bool CMSToPEMCerts(const Buffer& buffer, std::vector<std::string>& output)
 {
     CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
     output.clear();
@@ -69,15 +112,15 @@ bool PKCS7ToPEMCerts(const Buffer& buffer, std::vector<std::string>& output)
     WrapperBIO in(BIO_new(BIO_s_mem()));
     auto error = ERR_get_error();
     first      = ERR_error_string(error, nullptr);
-    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), buffer.GetLength()) == buffer.GetLength(), false, "");
+    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
 
     ERR_clear_error();
-    CMS_ContentInfo* cms = d2i_CMS_bio(in.memory, NULL);
-    error                = ERR_get_error();
-    first                = ERR_error_string(error, nullptr);
+    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, NULL));
+    error = ERR_get_error();
+    first = ERR_error_string(error, nullptr);
 
     ERR_clear_error();
-    STACK_OF(X509)* certs = CMS_get1_certs(cms);
+    STACK_OF(X509)* certs = CMS_get1_certs(cms.data);
     error                 = ERR_get_error();
     first                 = ERR_error_string(error, nullptr);
 
@@ -99,7 +142,7 @@ bool PKCS7ToPEMCerts(const Buffer& buffer, std::vector<std::string>& output)
     return true;
 }
 
-bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
+bool CMSToStructure(const Buffer& buffer, Signature& output)
 {
     CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
     auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
@@ -111,24 +154,25 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
     {
         output.errorMessage = ERR_error_string(error, nullptr);
     }
-    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), buffer.GetLength()) == buffer.GetLength(), false, output.errorMessage.c_str());
+    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(),
+          false,
+          output.errorMessage.c_str());
 
     ERR_clear_error();
-    CMS_ContentInfo* cms = d2i_CMS_bio(in.memory, nullptr);
-    error                = ERR_get_error();
+    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, nullptr));
+    error = ERR_get_error();
     if (error != 0)
     {
         output.errorMessage = ERR_error_string(error, nullptr);
     }
-    CHECK(cms, false, output.errorMessage.c_str());
+    CHECK(cms.data, false, output.errorMessage.c_str());
 
-    output.isDetached = CMS_is_detached(cms);
+    output.isDetached = CMS_is_detached(cms.data);
 
-    const ASN1_OBJECT* obj = CMS_get0_type(cms);
+    const ASN1_OBJECT* obj = CMS_get0_type(cms.data);
     output.sn              = OBJ_nid2ln(OBJ_obj2nid(obj));
-
     ERR_clear_error();
-    ASN1_OCTET_STRING** pos = CMS_get0_content(cms);
+    ASN1_OCTET_STRING** pos = CMS_get0_content(cms.data);
     error                   = ERR_get_error();
     if (error != 0)
     {
@@ -143,27 +187,19 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
         }
     }
 
-    //WrapperBIO bio(BIO_new(BIO_s_mem()));
-    //CMS_ContentInfo_print_ctx(bio.memory, cms, 4, nullptr);
-    //BUF_MEM* bptr = NULL;
-    //BIO_get_mem_ptr(bio.memory, &bptr);
-    //BIO_set_close(bio.memory, BIO_NOCLOSE);
-    //std::string a;
-    //a.append(bptr->data, bptr->length);
-
-    STACK_OF(X509)* certs = CMS_get1_certs(cms);
+    STACK_OF(X509)* certs = CMS_get1_certs(cms.data);
     for (int i = 0; i < sk_X509_num(certs); i++)
     {
         const auto cert = sk_X509_value(certs, i);
 
-        //WrapperBIO bio(BIO_new(BIO_s_mem()));
-        //X509_print(bio.memory, cert);
-        //BUF_MEM* bptr = NULL;
-        //BIO_get_mem_ptr(bio.memory, &bptr);
-        //BIO_set_close(bio.memory, BIO_NOCLOSE);
+        // WrapperBIO bio(BIO_new(BIO_s_mem()));
+        // X509_print(bio.memory, cert);
+        // BUF_MEM* bptr = NULL;
+        // BIO_get_mem_ptr(bio.memory, &bptr);
+        // BIO_set_close(bio.memory, BIO_NOCLOSE);
         //
-        //std::string a;
-        //a.append(bptr->data, bptr->length);
+        // std::string a;
+        // a.append(bptr->data, bptr->length);
 
         auto& sigCert = output.certificates.emplace_back();
 
@@ -189,6 +225,7 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
         sigCert.subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
 
         EVP_PKEY* pkey = X509_get_pubkey(cert);
+        ERR_clear_error();
         sigCert.verify = X509_verify(cert, pkey);
         if (sigCert.verify != 1)
         {
@@ -199,13 +236,35 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
             }
         }
         EVP_PKEY_free(pkey);
+
+        STACK_OF(CMS_SignerInfo)* siStack = CMS_get0_SignerInfos(cms.data);
+        for (int32 i = 0; i < sk_CMS_SignerInfo_num(siStack); i++)
+        {
+            CMS_SignerInfo* si = sk_CMS_SignerInfo_value(siStack, i);
+            ERR_clear_error();
+            sigCert.signerVerify = CMS_SignerInfo_cert_cmp(si, cert);
+            if (sigCert.signerVerify != 0)
+            {
+                error = ERR_get_error();
+                if (error != 0)
+                {
+                    sigCert.errorSignerVerify = ERR_error_string(error, nullptr);
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
     }
 
-    STACK_OF(CMS_SignerInfo)* sis = CMS_get0_SignerInfos(cms);
+    STACK_OF(CMS_SignerInfo)* sis = CMS_get0_SignerInfos(cms.data);
     for (int i = 0; i < sk_CMS_SignerInfo_num(sis); i++)
     {
         CMS_SignerInfo* si = sk_CMS_SignerInfo_value(sis, i);
-        auto& signer       = output.signers.emplace_back();
+        const auto sig     = CMS_SignerInfo_get0_signature(si);
+
+        auto& signer = output.signers.emplace_back();
 
         signer.count = CMS_signed_get_attr_count(si);
         for (int j = 0; j < signer.count; j++)
@@ -247,15 +306,6 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
             if (asnType == ASN1TYPE::OBJECT)
             {
                 attribute.contentTypeData = OBJ_nid2ln(OBJ_obj2nid(av->value.object));
-
-                //const auto nid = OBJ_obj2nid(av->value.object);
-                //if (nid == NID_pkcs7_data)
-                //{
-                //    Buffer b( (char*&)av->value.ptr, 2000 );
-                //    std::string o;
-                //    PKCS7ToHumanReadable(b, o);
-                //    av->value.object;
-                //}
             }
             else if (asnType == ASN1TYPE::OCTET_STRING)
             {
@@ -278,7 +328,7 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
 
                 attribute.contentTypeData.append(bptr->data, bptr->length);
             }
-            else if (asnType == ASN1TYPE::SEQUENCE) // TODO: should call recursive stuff
+            else if (asnType == ASN1TYPE::SEQUENCE)
             {
                 attribute.types.clear();
                 for (int32 m = 0; m < attribute.count; m++)
@@ -309,7 +359,7 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
                     }
                 }
             }
-            else // unknown
+            else
             {
                 throw "Unknown hash!";
             }
@@ -320,5 +370,4 @@ bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
 
     return true;
 }
-
 } // namespace GView::DigitalSignature
