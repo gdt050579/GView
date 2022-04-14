@@ -31,7 +31,7 @@ bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& exte
 {
     return true; // always match everything
 }
-TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> fileCache)
+TypeInterface* CreateInstance()
 {
     return new DefaultType();
 }

@@ -232,7 +232,7 @@ uint32_t SectionALIGN(uint32_t value, uint32_t alignValue)
     return ((value / alignValue) + 1) * alignValue;
 }
 
-PEFile::PEFile(Reference<GView::Utils::DataCache> fileCache)
+PEFile::PEFile()
 {
     uint32_t tr;
     // creez vectorii pt. exporturi / importuri
@@ -241,8 +241,6 @@ PEFile::PEFile(Reference<GView::Utils::DataCache> fileCache)
     debugData.reserve(16);
     impDLL.reserve(64);
     impFunc.reserve(128);
-
-    file = fileCache;
 
     peCols.colMZ      = ColorPair{ Color::Olive, Color::Transparent };
     peCols.colPE      = ColorPair{ Color::Magenta, Color::Transparent };

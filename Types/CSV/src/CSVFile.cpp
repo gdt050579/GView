@@ -2,7 +2,7 @@
 
 using namespace GView::Type::CSV;
 
-CSVFile::CSVFile(Reference<GView::Utils::DataCache> fileCache) : file(fileCache), panelsMask(0)
+CSVFile::CSVFile() : panelsMask(0)
 {
     this->panelsMask |= (1ULL << (unsigned char) Panels::IDs::Information);
 }

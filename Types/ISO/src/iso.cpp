@@ -42,9 +42,9 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ISO::ISOFile(file);
+        return new ISO::ISOFile();
     }
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)

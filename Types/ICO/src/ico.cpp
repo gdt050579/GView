@@ -23,9 +23,9 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ICO::ICOFile(file);
+        return new ICO::ICOFile();
     }
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
     {

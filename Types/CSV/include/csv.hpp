@@ -31,7 +31,7 @@ namespace Type
             Reference<GView::Utils::DataCache> file;
 
           public:
-            CSVFile(Reference<GView::Utils::DataCache> fileCache);
+            CSVFile();
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;

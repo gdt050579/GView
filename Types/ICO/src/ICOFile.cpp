@@ -4,9 +4,8 @@ using namespace GView::Type::ICO;
 
 constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
 
-ICOFile::ICOFile(Reference<GView::Utils::DataCache> fileCache)
+ICOFile::ICOFile()
 {
-    file        = fileCache;
     isIcoFormat = false;
     dirs.reserve(64);
 }

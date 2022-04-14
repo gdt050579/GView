@@ -46,7 +46,7 @@ namespace Type
             
 
           public:
-            BMPFile(Reference<GView::Utils::DataCache> file);
+            BMPFile();
             virtual ~BMPFile()
             {
             }

@@ -4,9 +4,8 @@ using namespace GView::Type::BMP;
 
 constexpr uint32 IMAGE_PNG_MAGIC = 0x474E5089;
 
-BMPFile::BMPFile(Reference<GView::Utils::DataCache> fileCache)
+BMPFile::BMPFile()
 {
-    file = fileCache;
 }
 
 bool BMPFile::Update()

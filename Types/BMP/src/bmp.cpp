@@ -21,9 +21,9 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new BMP::BMPFile(file);
+        return new BMP::BMPFile();
     }
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<BMP::BMPFile> bmp)
     {

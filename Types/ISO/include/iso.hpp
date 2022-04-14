@@ -20,7 +20,7 @@ class ISOFile : public TypeInterface
     std::vector<ECMA_119_DirectoryRecord> records;
 
   public:
-    ISOFile(Reference<GView::Utils::DataCache> file);
+    ISOFile();
     virtual ~ISOFile()
     {
     }
