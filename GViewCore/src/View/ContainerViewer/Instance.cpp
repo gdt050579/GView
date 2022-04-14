@@ -46,7 +46,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     this->items = Factory::TreeView::Create(
           this, "l:0,t:10,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
-    this->items->Handlers()->OnItemToggle = this;
+    this->items->Handlers()->OnItemToggle  = this;
+    this->items->Handlers()->OnItemPressed = this;
     for (uint32 idx = 0; idx < settings->columnsCount; idx++)
     {
         const auto& col = settings->columns[idx];
@@ -94,6 +95,14 @@ void Instance::OnTreeItemToggle(Reference<TreeView>, TreeViewItem& item)
 {
     if (!item.IsFolded())
         PopulateItem(item);
+}
+void Instance::OnTreeItemPressed(Reference<TreeView>, TreeViewItem& item)
+{
+    if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
+    {
+        UpdatePathForItem(item);
+        this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
+    }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

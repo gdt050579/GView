@@ -63,9 +63,9 @@ void Settings::SetEnumarateCallback(Reference<EnumerateInterface> callback)
 {
     SD->enumInterface = callback;
 }
-void Settings::SetActionCallback(Reference<ActionInterface> callback)
+void Settings::SetOpenItemCallback(Reference<OpenItemInterface> callback)
 {
-    SD->actionInterface = callback;
+    SD->openItemInterface = callback;
 }
 
 #undef SD

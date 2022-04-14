@@ -533,9 +533,9 @@ namespace View
             virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) = 0;
             virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item)                               = 0;
         };
-        struct CORE_EXPORT ActionInterface
+        struct CORE_EXPORT OpenItemInterface
         {
-            virtual void OnContaineItemAction(std::u16string_view path, AppCUI::Controls::TreeViewItem item) = 0;
+            virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) = 0;
         };
         struct CORE_EXPORT Settings
         {
@@ -547,7 +547,7 @@ namespace View
             bool AddProperty(string_view name, string_view value);
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
             void SetEnumarateCallback(Reference<EnumerateInterface> callback);
-            void SetActionCallback(Reference<ActionInterface> callback);
+            void SetOpenItemCallback(Reference<OpenItemInterface> callback);
         };
     }; // namespace ContainerViewer
 
@@ -666,7 +666,7 @@ namespace App
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const char*);
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path);
     void CORE_EXPORT OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();

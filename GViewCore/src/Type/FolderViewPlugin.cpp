@@ -31,7 +31,7 @@ class DefaultInformationPanel : public TabPage
               this, "d:c", { { "Field", TextAlignament::Left, 10 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
     }
 };
-class FolderType : public TypeInterface, public View::ContainerViewer::EnumerateInterface
+class FolderType : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
     std::filesystem::path root;
@@ -45,6 +45,7 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 };
 bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem parent)
 {
@@ -78,6 +79,12 @@ bool FolderType::PopulateItem(TreeViewItem item)
 
     return dirIT != std::filesystem::directory_iterator();
 }
+void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem item)
+{
+    std::filesystem::path path = root;
+    path /= relativePath;
+    GView::App::OpenFile(path);
+}
 TypeInterface* CreateInstance(const std::filesystem::path& path)
 {
     auto* ft = new FolderType();
@@ -95,6 +102,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     settings.SetColumns(
           { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 12 } });
     settings.SetEnumarateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
+    settings.SetOpenItemCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::OpenItemInterface>());
     win->CreateViewer("FolderView", settings);
     return true;
 }
