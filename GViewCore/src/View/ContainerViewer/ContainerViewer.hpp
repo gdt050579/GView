@@ -22,7 +22,7 @@ namespace View
             AppCUI::Graphics::Image icon;
             uint32 columnsCount;
             Reference<EnumerateInterface> enumInterface; 
-            Reference<ActionInterface> actionInterface; 
+            Reference<OpenItemInterface> openItemInterface; 
             char16 pathSeparator;
             SettingsData();
         };
@@ -35,7 +35,9 @@ namespace View
             void Initialize();
         };
 
-        class Instance : public View::ViewControl, public Controls::Handlers::OnTreeItemToggleInterface
+        class Instance : public View::ViewControl,
+                         public Controls::Handlers::OnTreeItemToggleInterface,
+                         public Controls::Handlers::OnTreeItemPressedInterface
         {
             Pointer<SettingsData> settings;
             Reference<AppCUI::Controls::ImageView> imgView;
@@ -66,6 +68,7 @@ namespace View
 
             // tree item toggle
             virtual void OnTreeItemToggle(Reference<TreeView>, TreeViewItem& item) override;
+            virtual void OnTreeItemPressed(Reference<TreeView>, TreeViewItem& item) override;
 
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;

@@ -97,7 +97,7 @@ bool GView::App::ResetConfiguration()
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
-void GView::App::OpenFile(const char* path)
+void GView::App::OpenFile(const std::filesystem::path& path)
 {
     if (gviewAppInstance)
         gviewAppInstance->AddFileWindow(path);
