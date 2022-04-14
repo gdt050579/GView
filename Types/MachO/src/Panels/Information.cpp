@@ -4,12 +4,10 @@ namespace GView::Type::MachO::Panels
 {
 using namespace AppCUI::Controls;
 
-Information::Information(Reference<MachOFile> _machO) : TabPage("Informa&Tion")
+Information::Information(Reference<Object> _object, Reference<MachOFile> _machO) : TabPage("Informa&Tion"), object(_object), machO(_machO)
 {
-    machO   = _machO;
     general = Factory::ListView::Create(
-          this,
-          "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 16 }, { "Value", TextAlignament::Left, 48 } }, ListViewFlags::None);
+          this, "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 16 }, { "Value", TextAlignament::Left, 48 } }, ListViewFlags::None);
 
     Update();
 }
@@ -22,7 +20,7 @@ void Information::UpdateBasicInfo()
 
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
-    general->AddItem({ "File", "NOT IMPLEMENTED" });
+    general->AddItem({ "File", object->GetName()});
 
     const auto fileSize    = nf.ToString(machO->file->GetSize(), dec);
     const auto hexfileSize = nf2.ToString(machO->file->GetSize(), hex);
@@ -128,111 +126,111 @@ void Information::UpdateSourceVersion()
 
 void Information::UpdateUUID()
 {
-        CHECKRET(machO->uuid.has_value(), "");
+    CHECKRET(machO->uuid.has_value(), "");
 
-        LocalString<1024> ls;
-        LocalString<1024> ls2;
-        NumericFormatter nf;
-        NumericFormatter nf2;
+    LocalString<1024> ls;
+    LocalString<1024> ls2;
+    NumericFormatter nf;
+    NumericFormatter nf2;
 
-        static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-        static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+    static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+    static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-        general->AddItem("UUID").SetType(ListViewItem::Type::Category);
+    general->AddItem("UUID").SetType(ListViewItem::Type::Category);
 
-        const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid->cmd);
-        const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid->cmd), hex);
-        general->AddItem({ "Command", ls.Format("%-35s (%s)", lcName.data(), hexCommand.data()) });
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->uuid->cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->uuid->cmd), hex);
+    general->AddItem({ "Command", ls.Format("%-35s (%s)", lcName.data(), hexCommand.data()) });
 
-        const auto cmdSize    = nf.ToString(machO->uuid->cmdsize, dec);
-        const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->uuid->cmdsize), hex);
-        general->AddItem({ "Cmd Size", ls.Format("%-35s (%s)", cmdSize.data(), hexCmdSize.data()) });
+    const auto cmdSize    = nf.ToString(machO->uuid->cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(static_cast<uint32_t>(machO->uuid->cmdsize), hex);
+    general->AddItem({ "Cmd Size", ls.Format("%-35s (%s)", cmdSize.data(), hexCmdSize.data()) });
 
-        const auto& uuid         = machO->uuid->uuid;
-        const auto uuidFormmated = ls.Format(
-              "%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x",
-              uuid[0],
-              uuid[1],
-              uuid[2],
-              uuid[3],
-              uuid[4],
-              uuid[5],
-              uuid[6],
-              uuid[7],
-              uuid[8],
-              uuid[9],
-              uuid[10],
-              uuid[11],
-              uuid[12],
-              uuid[13],
-              uuid[14],
-              uuid[15]);
-        const auto uuidHex = ls2.Format(
-              "0x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x",
-              uuid[0],
-              uuid[1],
-              uuid[2],
-              uuid[3],
-              uuid[4],
-              uuid[5],
-              uuid[6],
-              uuid[7],
-              uuid[8],
-              uuid[9],
-              uuid[10],
-              uuid[11],
-              uuid[12],
-              uuid[13],
-              uuid[14],
-              uuid[15]);
-        general->AddItem({ "UUID", ls.Format("%-35s (%s)", uuidFormmated.data(), uuidHex.data()) });
+    const auto& uuid         = machO->uuid->uuid;
+    const auto uuidFormmated = ls.Format(
+          "%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x-%.2x%.2x%.2x%.2x",
+          uuid[0],
+          uuid[1],
+          uuid[2],
+          uuid[3],
+          uuid[4],
+          uuid[5],
+          uuid[6],
+          uuid[7],
+          uuid[8],
+          uuid[9],
+          uuid[10],
+          uuid[11],
+          uuid[12],
+          uuid[13],
+          uuid[14],
+          uuid[15]);
+    const auto uuidHex = ls2.Format(
+          "0x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x",
+          uuid[0],
+          uuid[1],
+          uuid[2],
+          uuid[3],
+          uuid[4],
+          uuid[5],
+          uuid[6],
+          uuid[7],
+          uuid[8],
+          uuid[9],
+          uuid[10],
+          uuid[11],
+          uuid[12],
+          uuid[13],
+          uuid[14],
+          uuid[15]);
+    general->AddItem({ "UUID", ls.Format("%-35s (%s)", uuidFormmated.data(), uuidHex.data()) });
 }
 
 void Information::UpdateVersionMin()
 {
-        CHECKRET(machO->versionMin.has_value(), "");
+    CHECKRET(machO->versionMin.has_value(), "");
 
-        LocalString<1024> ls;
-        LocalString<1024> ls2;
-        NumericFormatter nf;
-        NumericFormatter nf2;
+    LocalString<1024> ls;
+    LocalString<1024> ls2;
+    NumericFormatter nf;
+    NumericFormatter nf2;
 
-        general->AddItem("Version Min").SetType(ListViewItem::Type::Category);
+    general->AddItem("Version Min").SetType(ListViewItem::Type::Category);
 
-        const auto& lcName    = MAC::LoadCommandNames.at(machO->versionMin->cmd);
-        const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->versionMin->cmd), hex);
-        general->AddItem({ "Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()) });
+    const auto& lcName    = MAC::LoadCommandNames.at(machO->versionMin->cmd);
+    const auto hexCommand = nf.ToString(static_cast<uint32_t>(machO->versionMin->cmd), hex);
+    general->AddItem({ "Command", ls.Format("%-22s (%s)", lcName.data(), hexCommand.data()) });
 
-        const auto cmdSize    = nf.ToString(machO->versionMin->cmdsize, dec);
-        const auto hexCmdSize = nf2.ToString(machO->versionMin->cmdsize, hex);
-        general->AddItem({ "Cmd Size", ls.Format("%-22s (%s)", cmdSize.data(), hexCmdSize.data()) });
+    const auto cmdSize    = nf.ToString(machO->versionMin->cmdsize, dec);
+    const auto hexCmdSize = nf2.ToString(machO->versionMin->cmdsize, hex);
+    general->AddItem({ "Cmd Size", ls.Format("%-22s (%s)", cmdSize.data(), hexCmdSize.data()) });
 
-        const auto version = ls.Format(
-              "%u.%u.%u", machO->versionMin->version >> 16, (machO->versionMin->version >> 8) & 0xff, machO->versionMin->version & 0xff);
-        const auto versionHex = nf2.ToString(machO->versionMin->version, hex);
-        general->AddItem({ "Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()) });
+    const auto version = ls.Format(
+          "%u.%u.%u", machO->versionMin->version >> 16, (machO->versionMin->version >> 8) & 0xff, machO->versionMin->version & 0xff);
+    const auto versionHex = nf2.ToString(machO->versionMin->version, hex);
+    general->AddItem({ "Version", ls.Format("%-22s (%s)", version.data(), versionHex.data()) });
 
-        const auto sdk =
-              ls.Format("%u.%u.%u", machO->versionMin->sdk >> 16, (machO->versionMin->sdk >> 8) & 0xff, machO->versionMin->sdk & 0xff);
-        const auto sdkHex = nf2.ToString(machO->versionMin->sdk, hex);
-        general->AddItem({ "SDK", ls.Format("%-22s (%s)", sdk.data(), sdkHex.data()) });
+    const auto sdk =
+          ls.Format("%u.%u.%u", machO->versionMin->sdk >> 16, (machO->versionMin->sdk >> 8) & 0xff, machO->versionMin->sdk & 0xff);
+    const auto sdkHex = nf2.ToString(machO->versionMin->sdk, hex);
+    general->AddItem({ "SDK", ls.Format("%-22s (%s)", sdk.data(), sdkHex.data()) });
 }
 
 void Information::RecomputePanelsPositions()
 {
-        CHECKRET(general.IsValid(), "");
-        general->Resize(GetWidth(), general->GetItemsCount() + 3);
+    CHECKRET(general.IsValid(), "");
+    general->Resize(GetWidth(), general->GetItemsCount() + 3);
 }
 
 void Information::Update()
 {
-        general->DeleteAllItems();
+    general->DeleteAllItems();
 
-        UpdateBasicInfo();
-        UpdateEntryPoint();
-        UpdateSourceVersion();
-        UpdateUUID();
-        UpdateVersionMin();
-        RecomputePanelsPositions();
+    UpdateBasicInfo();
+    UpdateEntryPoint();
+    UpdateSourceVersion();
+    UpdateUUID();
+    UpdateVersionMin();
+    RecomputePanelsPositions();
 }
 } // namespace GView::Type::MachO::Panels

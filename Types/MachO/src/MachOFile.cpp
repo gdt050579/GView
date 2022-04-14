@@ -763,6 +763,7 @@ bool MachOFile::SetVersionMin()
 
     return true;
 }
+
 bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const
 {
     switch (static_cast<MAC::CodeSignMagic>(hashType))

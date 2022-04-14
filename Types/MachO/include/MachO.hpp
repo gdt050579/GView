@@ -196,6 +196,7 @@ namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
+        Reference<Object> object;
         Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
@@ -210,7 +211,7 @@ namespace Panels
         void RecomputePanelsPositions();
 
       public:
-        Information(Reference<MachOFile> machO);
+        Information(Reference<Object> _object, Reference<MachOFile> _machO);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override

@@ -40,7 +40,7 @@ bool Panels::Exports::OnEvent(Reference<Control> ctrl, Event evnt, int controlID
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if ((evnt == Event::ListViewItemPressed) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
+    if ((evnt == Event::ListViewItemClicked) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
     {
         auto addr = list->GetCurrentItem().GetData(GView::Utils::INVALID_OFFSET);
         if (addr != GView::Utils::INVALID_OFFSET)
