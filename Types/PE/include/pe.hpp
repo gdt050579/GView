@@ -649,7 +649,6 @@ namespace Type
             };
 
           public:
-            Reference<GView::Utils::DataCache> file;
             // PE informations
             ImageDOSHeader dos;
             union

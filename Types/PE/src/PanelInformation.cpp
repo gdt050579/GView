@@ -25,10 +25,11 @@ void Panels::Information::UpdateGeneralInformation()
     item = general->AddItem("PE Info");
     item.SetType(ListViewItem::Type::Category);
     general->AddItem("File");
-    // general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
+    // general->SetItemText(poz++, 1, (char*) pe->obj->GetData().GetFileName(true));
     //  size
     general->AddItem(
-          { "Size", tempStr.Format("%s bytes", n.ToString(pe->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+          { "Size",
+            tempStr.Format("%s bytes", n.ToString(pe->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // computed
     general->AddItem({ "Computed", tempStr.Format("%llu (0x%llX) bytes", pe->computedSize, pe->computedSize) });
     // cert
@@ -36,19 +37,19 @@ void Panels::Information::UpdateGeneralInformation()
     // memory
     general->AddItem({ "Memory", tempStr.Format("%llu (0x%llX) bytes", pe->virtualComputedSize, pe->virtualComputedSize) });
 
-    if (pe->computedSize < pe->file->GetSize()) // overlay
+    if (pe->computedSize < pe->obj->GetData().GetSize()) // overlay
     {
-        const auto sz = pe->file->GetSize() - pe->computedSize;
+        const auto sz = pe->obj->GetData().GetSize() - pe->computedSize;
         item          = general->AddItem(
-              { "Overlay", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->file->GetSize())) });
+              { "Overlay", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
         item.SetXOffset(2);
         item.SetType(ListViewItem::Type::WarningInformation);
     }
-    if (pe->computedSize > pe->file->GetSize()) // Missing
+    if (pe->computedSize > pe->obj->GetData().GetSize()) // Missing
     {
-        const auto sz = pe->computedSize - pe->file->GetSize();
+        const auto sz = pe->computedSize - pe->obj->GetData().GetSize();
         item          = general->AddItem(
-              { "Missing", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->file->GetSize())) });
+              { "Missing", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
         item.SetXOffset(2);
         item.SetType(ListViewItem::Type::ErrorInformation);
     }
@@ -90,7 +91,7 @@ void Panels::Information::UpdateGeneralInformation()
     //    (pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress > 0))
     //{
     //    WinCertificate cert;
-    //    if (pe->file->CopyToBuffer(pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress, sizeof(cert), &cert))
+    //    if (pe->obj->GetData().CopyToBuffer(pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress, sizeof(cert), &cert))
     //    {
     //        switch (cert.wCertificateType)
     //        {
