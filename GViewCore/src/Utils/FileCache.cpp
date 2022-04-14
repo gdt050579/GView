@@ -27,7 +27,7 @@ FileCache::~FileCache()
     this->cache = nullptr;
 }
 
-bool FileCache::Init(std::unique_ptr<AppCUI::OS::IFile> file, uint32 _cacheSize)
+bool FileCache::Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 _cacheSize)
 {
     CHECK(this->cacheSize == 0, false, "Cache object already initialized !");
     this->fileObj = file.release(); // take ownership of the pointer
@@ -179,7 +179,7 @@ Buffer FileCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
     }
     return b;
 }
-bool FileCache::WriteTo(Reference<AppCUI::OS::IFile> output, uint64 offset, uint32 size)
+bool FileCache::WriteTo(Reference<AppCUI::OS::DataObject> output, uint64 offset, uint32 size)
 {
     CHECK(output->SetSize(size), false, "");
     CHECK(output->SetCurrentPos(0), false, "");

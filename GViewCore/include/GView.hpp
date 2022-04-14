@@ -64,7 +64,7 @@ namespace Utils
     };
     class CORE_EXPORT FileCache
     {
-        AppCUI::OS::IFile* fileObj;
+        AppCUI::OS::DataObject* fileObj;
         uint64 fileSize, start, end, currentPos;
         uint8* cache;
         uint32 cacheSize;
@@ -75,7 +75,7 @@ namespace Utils
         FileCache();
         ~FileCache();
 
-        bool Init(std::unique_ptr<AppCUI::OS::IFile> file, uint32 cacheSize);
+        bool Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 cacheSize);
         BufferView Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead);
         inline BufferView GetEntireFile()
         {
@@ -117,7 +117,7 @@ namespace Utils
             return CopyObject(&object, offset, sizeof(T));
         }
 
-        bool WriteTo(Reference<AppCUI::OS::IFile> output, uint64 offset, uint32 size);
+        bool WriteTo(Reference<AppCUI::OS::DataObject> output, uint64 offset, uint32 size);
     };
 
     enum class DemangleKind : uint8
@@ -375,11 +375,19 @@ namespace DigitalSignature
     CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, Signature& output);
 } // namespace DigitalSignature
 
+/*
+* Object can be:
+*   - a file
+*   - a folder
+*   - a process
+*   - a memory buffer
+*/
 struct CORE_EXPORT Object
 {
     Utils::FileCache cache;
     TypeInterface* type;
     AppCUI::Utils::UnicodeStringBuilder name;
+    AppCUI::Utils::UnicodeStringBuilder filePath;
 
     Object() : type(nullptr)
     {
@@ -400,7 +408,7 @@ namespace View
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
-        virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)             = 0;
+        virtual bool ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)             = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
 

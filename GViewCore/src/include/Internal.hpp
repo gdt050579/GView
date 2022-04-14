@@ -222,7 +222,7 @@ namespace App
         bool LoadSettings();
         void OpenFile();
         void ShowErrors();
-        bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
+        bool Add(std::unique_ptr<AppCUI::OS::DataObject> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
         bool AddFolder(const std::filesystem::path& path);
 
       public:
