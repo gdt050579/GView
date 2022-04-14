@@ -8,7 +8,6 @@ namespace GView::Type::ISO
 class ISOFile : public TypeInterface
 {
   public:
-    Reference<GView::Utils::DataCache> file;
 
     struct MyVolumeDescriptorHeader
     {

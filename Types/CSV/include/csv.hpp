@@ -27,8 +27,8 @@ namespace Type
             uint64_t panelsMask{ 0 };
 
           public:
-            Reference<GView::Object> obj;
-            Reference<GView::Utils::DataCache> file;
+            Reference<GView::Object> obj; // should not be here
+
 
           public:
             CSVFile();

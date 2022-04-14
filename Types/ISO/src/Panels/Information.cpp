@@ -22,8 +22,8 @@ void Panels::Information::UpdateGeneralInformation()
 
     general->AddItem({ "File", "NOT IMPLEMENTED" });
 
-    const auto fileSize    = nf.ToString(iso->file->GetSize(), dec);
-    const auto hexfileSize = nf2.ToString(iso->file->GetSize(), hex);
+    const auto fileSize    = nf.ToString(iso->obj->GetData().GetSize(), dec);
+    const auto hexfileSize = nf2.ToString(iso->obj->GetData().GetSize(), hex);
     general->AddItem({ "Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()) });
 }
 
@@ -42,28 +42,28 @@ void Panels::Information::UpdateVolumeDescriptors()
         case SectorType::BootRecord:
         {
             ECMA_119_BootRecord br{};
-            iso->file->Copy<ECMA_119_BootRecord>(descriptor.offsetInFile, br);
+            iso->obj->GetData().Copy<ECMA_119_BootRecord>(descriptor.offsetInFile, br);
             UpdateBootRecord(br);
         }
         break;
         case SectorType::Primary:
         {
             ECMA_119_PrimaryVolumeDescriptor pvd{};
-            iso->file->Copy<ECMA_119_PrimaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
+            iso->obj->GetData().Copy<ECMA_119_PrimaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
             UpdatePrimaryVolumeDescriptor(pvd);
         }
         break;
         case SectorType::Supplementary:
         {
             ECMA_119_SupplementaryVolumeDescriptor svd{};
-            iso->file->Copy<ECMA_119_SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
+            iso->obj->GetData().Copy<ECMA_119_SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
             UpdateSupplementaryVolumeDescriptor(svd);
         }
         break;
         case SectorType::Partition:
         {
             ECMA_119_VolumePartitionDescriptor vpd{};
-            iso->file->Copy<ECMA_119_VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
+            iso->obj->GetData().Copy<ECMA_119_VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
             UpdateVolumePartitionDescriptor(vpd);
         }
         break;
