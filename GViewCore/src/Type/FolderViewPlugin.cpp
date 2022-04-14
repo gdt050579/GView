@@ -51,6 +51,7 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
     std::filesystem::path path = root;
     path /= relativePath;
     dirIT = std::filesystem::directory_iterator(path);
+    CHECK(dirIT != std::filesystem::directory_iterator(), false, "");
     return dirIT->exists();
 }
 bool FolderType::PopulateItem(TreeViewItem item)
@@ -69,7 +70,7 @@ bool FolderType::PopulateItem(TreeViewItem item)
         item.SetExpandable(false);
         NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
         NumericFormatter nf;
-        item.SetText(1, nf.ToString((uint64)dirIT->file_size(),fmt));
+        item.SetText(1, nf.ToString((uint64) dirIT->file_size(), fmt));
         item.SetPriority(0);
     }
     dirIT++;
