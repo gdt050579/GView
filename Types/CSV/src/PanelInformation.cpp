@@ -31,7 +31,7 @@ void Information::UpdateGeneralInformation()
 
     LocalString<256> ls;
     NumericFormatter nf;
-    general->AddItem({ "Filename", csv->obj->name });
+    general->AddItem({ "Filename", csv->obj->GetName() });
     general->AddItem({ "Size", ls.Format("%s bytes", nf.ToString(csv->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
 }
 

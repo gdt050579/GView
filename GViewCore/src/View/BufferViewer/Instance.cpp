@@ -117,7 +117,7 @@ void Instance::UpdateCurrentSelection()
             if ((end - start) < 254)
             {
                 this->CurrentSelection.size = ((uint32) (end - start)) + 1;
-                auto b                      = obj->cache.Get(start, this->CurrentSelection.size, true);
+                auto b                      = obj->GetData().Get(start, this->CurrentSelection.size, true);
                 if (b.IsValid())
                 {
                     memcpy(this->CurrentSelection.buffer, b.begin(), b.GetLength());
@@ -132,10 +132,10 @@ void Instance::UpdateCurrentSelection()
 }
 void Instance::MoveTo(uint64 offset, bool select)
 {
-    if (this->obj->cache.GetSize() == 0)
+    if (this->obj->GetData().GetSize() == 0)
         return;
-    if (offset > (obj->cache.GetSize() - 1))
-        offset = obj->cache.GetSize() - 1;
+    if (offset > (obj->GetData().GetSize() - 1))
+        offset = obj->GetData().GetSize() - 1;
 
     if (offset == this->Cursor.currentPos)
     {
@@ -178,10 +178,10 @@ void Instance::MoveTo(uint64 offset, bool select)
 }
 void Instance::MoveScrollTo(uint64 offset)
 {
-    if (this->obj->cache.GetSize() == 0)
+    if (this->obj->GetData().GetSize() == 0)
         return;
-    if (offset > (obj->cache.GetSize() - 1))
-        offset = obj->cache.GetSize() - 1;
+    if (offset > (obj->GetData().GetSize() - 1))
+        offset = obj->GetData().GetSize() - 1;
     auto old               = this->Cursor.startView;
     this->Cursor.startView = offset;
     if (this->Cursor.startView > old)
@@ -212,16 +212,16 @@ void Instance::SkipCurentCaracter(bool selected)
     uint64 tr, fileSize;
     uint32 gr;
 
-    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 1, true);
+    auto buf = this->obj->GetData().Get(this->Cursor.currentPos, 1, true);
 
     if (!buf.IsValid())
         return;
     auto toSkip = *buf.GetData();
 
-    fileSize = this->obj->cache.GetSize();
+    fileSize = this->obj->GetData().GetSize();
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->obj->cache.Get(tr, 256, false);
+        auto buf = this->obj->GetData().Get(tr, 256, false);
         if (!buf.IsValid())
             break;
         for (gr = 0; gr < buf.GetLength(); gr++, tr++)
@@ -279,11 +279,11 @@ void Instance::MoveTillEndBlock(bool selected)
     uint32 lastValue = 0xFFFFFFFF;
     uint32 count     = 0;
 
-    fileSize = this->obj->cache.GetSize();
+    fileSize = this->obj->GetData().GetSize();
 
     for (tr = this->Cursor.currentPos; tr < fileSize;)
     {
-        auto buf = this->obj->cache.Get(tr, 4096, false);
+        auto buf = this->obj->GetData().Get(tr, 4096, false);
         if (!buf.IsValid())
             break;
         auto* s = buf.begin();
@@ -326,7 +326,7 @@ void Instance::MoveToZone(bool startOfZone, bool select)
 
 void Instance::ShowGoToDialog()
 {
-    GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->cache.GetSize());
+    GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
@@ -342,7 +342,7 @@ void Instance::ResetStringInfo()
 }
 void Instance::UpdateStringInfo(uint64 offset)
 {
-    auto buf = this->obj->cache.Get(offset, 1024, false);
+    auto buf = this->obj->GetData().Get(offset, 1024, false);
     if (!buf.IsValid())
     {
         ResetStringInfo();
@@ -480,7 +480,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
         if ((offset >= this->CurrentSelection.start) && (offset < this->CurrentSelection.end))
             return Cfg.Selection.SimilarText;
 
-        auto b = this->obj->cache.Get(offset, this->CurrentSelection.size, true);
+        auto b = this->obj->GetData().Get(offset, this->CurrentSelection.size, true);
         if (b.IsValid())
         {
             if (b[0] == this->CurrentSelection.buffer[0])
@@ -499,7 +499,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     {
         if ((offset >= bufColor.start) && (offset <= bufColor.end))
             return bufColor.color;
-        if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->cache.Get(offset, 16, false), bufColor))
+        if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->GetData().Get(offset, 16, false), bufColor))
             return bufColor.color;
         // no color provided for the specific buffer --> check strings and zones
     }
@@ -614,7 +614,7 @@ void Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         this->chars.Resize(dli.offsetAndNameSize + dli.textSize + dli.numbersSize);
         dli.recomputeOffsets = false;
     }
-    auto buf          = this->obj->cache.Get(dli.offset, dli.textSize, false);
+    auto buf          = this->obj->GetData().Get(dli.offset, dli.textSize, false);
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
     dli.chNameAndSize = this->chars.GetBuffer();
@@ -784,7 +784,7 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
-                    dli.chText->Code = codePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
+                    dli.chText->Code = codePage[obj->GetData().GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
             }
             else
             {
@@ -968,7 +968,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
                 if (dli.offset > StringInfo.middle)
                     dli.chText->Code = ' ';
                 else
-                    dli.chText->Code = codePage[obj->cache.GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
+                    dli.chText->Code = codePage[obj->GetData().GetFromCache(((dli.offset - StringInfo.start) << 1) + StringInfo.start)];
             }
             else
             {
@@ -1018,7 +1018,7 @@ void Instance::Paint(Renderer& renderer)
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
-        if (dli.offset >= this->obj->cache.GetSize())
+        if (dli.offset >= this->obj->GetData().GetSize())
             break;
         PrepareDrawLineInfo(dli);
         WriteLineAddress(dli);
@@ -1211,7 +1211,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveTo(0, select);
         return true;
     case Key::Ctrl | Key::End:
-        MoveTo(this->obj->cache.GetSize(), select);
+        MoveTo(this->obj->GetData().GetSize(), select);
         return true;
     case Key::Ctrl | Key::PageUp:
         MoveToZone(true, select);
@@ -1359,12 +1359,12 @@ bool Instance::GoTo(uint64 offset)
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
-    if (offset >= this->obj->cache.GetSize())
+    if (offset >= this->obj->GetData().GetSize())
         return false;
     auto end = offset + size;
     if ((end < offset) || (end < size))
         return false;
-    if (end > this->obj->cache.GetSize())
+    if (end > this->obj->GetData().GetSize())
         return false;
     this->selection.SetSelection(0, offset, end);
     return true;
@@ -1379,7 +1379,7 @@ bool Instance::ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem i
     uint64 end;
     const auto idx = reinterpret_cast<uint64>(item);
     CHECK(this->selection.GetSelection(static_cast<uint32>(idx), start, end), false, "");
-    CHECK(this->obj->cache.WriteTo(output, start, (end - start) + 1), false, "");
+    CHECK(this->obj->GetData().WriteTo(output, start, (end - start) + 1), false, "");
     return true;
 }
 //======================================================================[Cursor information]==================
@@ -1413,10 +1413,10 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
         r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     // percentage
 
-    if (this->obj->cache.GetSize() > 0)
+    if (this->obj->GetData().GetSize() > 0)
     {
         LocalString<32> tmp;
-        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->cache.GetSize());
+        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->GetData().GetSize());
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
@@ -1639,7 +1639,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->CursorColors.Highlighted = Cfg.Text.Inactive;
     }
     r.Clear();
-    auto buf = this->obj->cache.Get(this->Cursor.currentPos, 8, false);
+    auto buf = this->obj->GetData().Get(this->Cursor.currentPos, 8, false);
     switch (height)
     {
     case 0:
@@ -1741,7 +1741,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
     if (mpInfo.location == MouseLocation::OnView)
     {
         mpInfo.bufferOffset += Cursor.startView;
-        if (mpInfo.bufferOffset >= this->obj->cache.GetSize())
+        if (mpInfo.bufferOffset >= this->obj->GetData().GetSize())
             mpInfo.location = MouseLocation::Outside;
     }
 }
@@ -2037,7 +2037,7 @@ void Instance::SetCustomPropertyValue(uint32 propertyID)
         (propID == PropertyID::Selection_4))
     {
         const auto idx = propertyID - (uint32) (PropertyID::Selection_1);
-        SelectionEditor dlg(&this->selection, idx, this->settings.get(), this->obj->cache.GetSize());
+        SelectionEditor dlg(&this->selection, idx, this->settings.get(), this->obj->GetData().GetSize());
         dlg.Show();
     }
 }

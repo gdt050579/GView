@@ -30,8 +30,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> _gviewApp)
-    : Window(name, "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp)
+FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp)
+    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj))
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -39,7 +39,7 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     vertical   = horizontal->CreateChildControl<Splitter>("d:c", SplitterFlags::Vertical | SplitterFlags::AutoCollapsePanel2);
     horizontal->SetPanel2Bounderies(1); // minim size (1 line)
     horizontal->SetSecondPanelSize(1);
-    vertical->SetDefaultPanelSize(64); // default panel upon extension
+    vertical->SetDefaultPanelSize(64);   // default panel upon extension
     horizontal->SetDefaultPanelSize(10); // default h-splitter size upon extension
 
     // create tabs
@@ -66,14 +66,13 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     this->defaultVerticalPanelsSize   = 8;
     this->defaultHorizontalPanelsSize = 40;
 
-    UnicodeStringBuilder usb{ name };
-    const auto path     = std::filesystem::path(usb.ToStringView());
-    const auto filename = path.filename().u16string();
-    this->obj.name.Set(filename);
+    // set the name
+    this->SetText(obj->GetName());
+    this->SetTag(obj->GetContentType()->GetTypeName(), "");
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
-    return Reference<GView::Object>(&this->obj);
+    return Reference<GView::Object>(this->obj.get());
 }
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
@@ -94,32 +93,33 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::TextViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+    return this->view
+          ->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
@@ -165,7 +165,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
-            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL,true);
+            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
             horizontalPanels->SetFocus();
             return true;
         }

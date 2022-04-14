@@ -23,7 +23,7 @@ extern "C"
             return false;
         return nth32->Signature == PE::Constants::IMAGE_NT_SIGNATURE;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
     {
         return new PE::PEFile(file);
     }
@@ -103,7 +103,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
+        auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
         CreateBufferView(win, pe);

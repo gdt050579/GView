@@ -42,7 +42,7 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
     {
         return new ISO::ISOFile(file);
     }
@@ -139,7 +139,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto iso = win->GetObject()->type->To<ISO::ISOFile>();
+        auto iso = win->GetObject()->GetContentType<ISO::ISOFile>();
         iso->Update();
 
         // add views

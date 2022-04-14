@@ -35,7 +35,7 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<DataCache> file)
     {
         return new UniversalMachOFile(file);
     }
@@ -71,7 +71,7 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        auto mach = reinterpret_cast<UniversalMachOFile*>(win->GetObject()->type);
+        auto mach = win->GetObject()->GetContentType<UniversalMachOFile>();
         mach->Update();
 
         CreateBufferView(win, mach);

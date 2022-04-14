@@ -31,7 +31,7 @@ bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& exte
 {
     return true; // always match everything
 }
-TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache)
+TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> fileCache)
 {
     return new DefaultType();
 }
@@ -43,7 +43,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
 
     // 2. views
-    auto b   = win->GetObject()->cache.Get(0, 4096, false);
+    auto b   = win->GetObject()->GetData().Get(0, 4096, false);
     auto z   = 0U;
     auto asc = 0U;
 

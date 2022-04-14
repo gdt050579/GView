@@ -62,7 +62,7 @@ namespace Utils
 
         void PopulateListView(AppCUI::Utils::Reference<AppCUI::Controls::ListView> listView) const;
     };
-    class CORE_EXPORT FileCache
+    class CORE_EXPORT DataCache
     {
         AppCUI::OS::DataObject* fileObj;
         uint64 fileSize, start, end, currentPos;
@@ -72,8 +72,9 @@ namespace Utils
         bool CopyObject(void* buffer, uint64 offset, uint32 requestedSize);
 
       public:
-        FileCache();
-        ~FileCache();
+        DataCache();
+        DataCache(DataCache&& obj);
+        ~DataCache();
 
         bool Init(std::unique_ptr<AppCUI::OS::DataObject> file, uint32 cacheSize);
         BufferView Get(uint64 offset, uint32 requestedSize, bool failIfRequestedSizeCanNotBeRead);
@@ -382,15 +383,58 @@ namespace DigitalSignature
 *   - a process
 *   - a memory buffer
 */
-struct CORE_EXPORT Object
+class CORE_EXPORT Object
 {
-    Utils::FileCache cache;
-    TypeInterface* type;
+  public:
+    enum class Type : uint32
+    {
+        File,
+        Folder,
+        MemoryBuffer,
+        Process
+    };
+
+  private:
+    Utils::DataCache cache;
+    TypeInterface* contentType;
     AppCUI::Utils::UnicodeStringBuilder name;
     AppCUI::Utils::UnicodeStringBuilder filePath;
+    uint32 PID;
+    Type objectType;
 
-    Object() : type(nullptr)
+  public:
+    Object(Type objType, Utils::DataCache&& dataCache, TypeInterface* contType, ConstString objName, ConstString objFilePath, uint32 pid)
+        : cache(std::move(dataCache)), objectType(objType), name(objName), filePath(objFilePath), PID(pid), contentType(contType)
     {
+    }
+    inline Utils::DataCache& GetData()
+    {
+        return cache;
+    }
+    inline u16string_view GetName() const
+    {
+        return name.ToStringView();
+    }
+    inline u16string_view GetPath() const
+    {
+        return filePath.ToStringView();
+    }
+    inline Reference<TypeInterface> GetContentType() const
+    {
+        return contentType;
+    }
+    template <typename T>
+    inline Reference<T> GetContentType() const
+    {
+        return (T*) contentType;
+    }
+    inline uint32 GetPID() const
+    {
+        return PID;
+    }
+    inline Type GetObjectType() const
+    {
+        return objectType;
     }
 };
 
@@ -408,7 +452,7 @@ namespace View
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
-        virtual bool ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)             = 0;
+        virtual bool ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)        = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
 
@@ -482,16 +526,21 @@ namespace View
             virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) = 0;
             virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item)                               = 0;
         };
+        struct CORE_EXPORT ActionInterface
+        {
+            virtual void OnContaineItemAction(std::u16string_view path, AppCUI::Controls::TreeViewItem item) = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
             bool SetIcon(string_view imageStringFormat16x16);
+            bool SetPathSeparator(char16 separator);
             bool AddProperty(string_view name, string_view value);
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
             void SetEnumarateCallback(Reference<EnumerateInterface> callback);
-            void SetItems(std::initializer_list<std::initializer_list<ConstString>> items);
+            void SetActionCallback(Reference<ActionInterface> callback);
         };
     }; // namespace ContainerViewer
 

@@ -26,7 +26,7 @@ class UniversalMachOFile : public TypeInterface, public GView::View::BufferViewe
     } colors;
 
   public:
-    Reference<GView::Utils::FileCache> file;
+    Reference<GView::Utils::DataCache> file;
     MAC::fat_header header;
     std::vector<MAC::Arch> archs;
     bool shouldSwapEndianess;
@@ -46,7 +46,7 @@ class UniversalMachOFile : public TypeInterface, public GView::View::BufferViewe
     }
 
   public:
-    UniversalMachOFile(Reference<GView::Utils::FileCache> file);
+    UniversalMachOFile(Reference<GView::Utils::DataCache> file);
     virtual ~UniversalMachOFile(){};
 
     bool Update();

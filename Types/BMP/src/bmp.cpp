@@ -21,7 +21,7 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> file)
     {
         return new BMP::BMPFile(file);
     }
@@ -43,7 +43,7 @@ extern "C"
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto bmp = win->GetObject()->type->To<BMP::BMPFile>();
+        auto bmp = win->GetObject()->GetContentType<BMP::BMPFile>();
         bmp->Update();
 
         // add viewer

@@ -51,7 +51,8 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
     std::filesystem::path path = root;
     path /= relativePath;
     dirIT = std::filesystem::directory_iterator(path);
-    CHECK(dirIT != std::filesystem::directory_iterator(), false, "");
+    if (dirIT == std::filesystem::directory_iterator())
+        return false; // empty directory
     return dirIT->exists();
 }
 bool FolderType::PopulateItem(TreeViewItem item)
@@ -93,7 +94,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     settings.SetIcon(folderIcon);
     settings.SetColumns(
           { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 12 } });
-    settings.SetEnumarateCallback((FolderType*) win->GetObject()->type);
+    settings.SetEnumarateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
     win->CreateViewer("FolderView", settings);
     return true;
 }

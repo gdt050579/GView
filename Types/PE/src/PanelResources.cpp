@@ -76,7 +76,7 @@ void Panels::Resources::SaveCurrentResource()
     auto res = AppCUI::Dialogs::FileDialog::ShowSaveFileWindow(tmp, "", "");
     if (res.has_value())
     {
-        auto buf = this->win->GetObject()->cache.CopyToBuffer(r->Start, r->Size);
+        auto buf = this->win->GetObject()->GetData().CopyToBuffer(r->Start, r->Size);
         if (AppCUI::OS::File::WriteContent(res.value(), BufferView{ buf }) == false)
         {
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");
@@ -114,7 +114,7 @@ bool Panels::Resources::OnEvent(Reference<Control> ctrl, Event evnt, int control
             return true;
         }
     }
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedResource();
         return true;

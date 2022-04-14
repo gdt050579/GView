@@ -137,7 +137,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     };
 
   public:
-    Reference<GView::Utils::FileCache> file;
+    Reference<GView::Utils::DataCache> file;
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
@@ -167,7 +167,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     }
 
   public:
-    MachOFile(Reference<GView::Utils::FileCache> file);
+    MachOFile(Reference<GView::Utils::DataCache> file);
     virtual ~MachOFile(){};
 
     bool Update();

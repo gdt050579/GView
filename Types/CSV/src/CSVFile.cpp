@@ -2,7 +2,7 @@
 
 using namespace GView::Type::CSV;
 
-CSVFile::CSVFile(Reference<GView::Utils::FileCache> fileCache) : file(fileCache), panelsMask(0)
+CSVFile::CSVFile(Reference<GView::Utils::DataCache> fileCache) : file(fileCache), panelsMask(0)
 {
     this->panelsMask |= (1ULL << (unsigned char) Panels::IDs::Information);
 }
@@ -24,13 +24,12 @@ std::string_view CSVFile::CSVFile::GetTypeName()
 bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
 {
     this->obj = obj;
-    std::string name{ this->obj->name };
 
-    if (name.ends_with(".tsv"))
+    if (this->obj->GetName().ends_with(u".tsv"))
     {
         separator[0] = '\t';
     }
-    else if (name.ends_with(".csv"))
+    else if (this->obj->GetName().ends_with(u".csv"))
     {
         separator[0] = ',';
     }
@@ -51,15 +50,15 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
 {
     const auto color = ColorPair{ Color::Gray, Color::Transparent };
 
-    const auto oSize = obj->cache.GetSize();
-    const auto cSize = obj->cache.GetCacheSize();
+    const auto oSize = obj->GetData().GetSize();
+    const auto cSize = obj->GetData().GetCacheSize();
 
     auto oSizeProcessed = 0ULL;
     auto currentLine    = 0ULL;
 
     do
     {
-        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         const auto nPos = data.find_first_of('\n', 0);

@@ -2,7 +2,7 @@
 
 namespace GView::Type::UniversalMachO
 {
-UniversalMachOFile::UniversalMachOFile(Reference<GView::Utils::FileCache> file)
+UniversalMachOFile::UniversalMachOFile(Reference<GView::Utils::DataCache> file)
     : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
     this->file = file;

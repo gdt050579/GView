@@ -28,10 +28,10 @@ namespace Type
 
           public:
             Reference<GView::Object> obj;
-            Reference<GView::Utils::FileCache> file;
+            Reference<GView::Utils::DataCache> file;
 
           public:
-            CSVFile(Reference<GView::Utils::FileCache> fileCache);
+            CSVFile(Reference<GView::Utils::DataCache> fileCache);
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;

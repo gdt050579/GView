@@ -18,6 +18,15 @@ bool Settings::SetIcon(string_view stringFormat16x16)
 {
     return SD->icon.Create(16, 16, stringFormat16x16);
 }
+bool Settings::SetPathSeparator(char16 separator)
+{
+    if (separator > 0)
+    {
+        SD->pathSeparator = separator;
+        return true;
+    }
+    return false;
+}
 bool Settings::AddProperty(string_view name, string_view value)
 {
     NOT_IMPLEMENTED(false);
@@ -53,6 +62,10 @@ void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder>
 void Settings::SetEnumarateCallback(Reference<EnumerateInterface> callback)
 {
     SD->enumInterface = callback;
+}
+void Settings::SetActionCallback(Reference<ActionInterface> callback)
+{
+    SD->actionInterface = callback;
 }
 
 #undef SD

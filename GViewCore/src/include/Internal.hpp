@@ -121,7 +121,7 @@ namespace Type
     namespace DefaultTypePlugin
     {
         bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
-        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
+        TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> fileCache);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace DefaultTypePlugin
 
@@ -161,7 +161,7 @@ namespace Type
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
-        TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
+        TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::DataCache> fileCache);
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
         bool LoadPlugin();
@@ -172,7 +172,7 @@ namespace Type
         void Init();
         bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
-        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
+        TypeInterface* CreateInstance(Reference<GView::Utils::DataCache> fileCache) const;
         inline bool operator<(const Plugin& plugin) const
         {
             return Priority > plugin.Priority;
@@ -222,7 +222,13 @@ namespace App
         bool LoadSettings();
         void OpenFile();
         void ShowErrors();
-        bool Add(std::unique_ptr<AppCUI::OS::DataObject> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
+        bool Add(
+              GView::Object::Type objType,
+              std::unique_ptr<AppCUI::OS::DataObject> data,
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint32 PID,
+              std::string_view ext);
         bool AddFolder(const std::filesystem::path& path);
 
       public:
@@ -275,14 +281,14 @@ namespace App
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
         ItemHandle cursorInfoHandle;
-        GView::Object obj;
+        std::unique_ptr<GView::Object> obj;
         unsigned int defaultCursorViewSize;
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
 
       public:
-        FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> gviewApp);
+        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);
 
         void Start();
 

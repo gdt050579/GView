@@ -22,6 +22,7 @@ namespace View
             AppCUI::Graphics::Image icon;
             uint32 columnsCount;
             Reference<EnumerateInterface> enumInterface; 
+            Reference<ActionInterface> actionInterface; 
             char16 pathSeparator;
             SettingsData();
         };

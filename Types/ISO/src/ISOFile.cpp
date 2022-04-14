@@ -4,7 +4,7 @@
 
 using namespace GView::Type::ISO;
 
-ISOFile::ISOFile(Reference<GView::Utils::FileCache> fileCache)
+ISOFile::ISOFile(Reference<GView::Utils::DataCache> fileCache)
 {
     file = fileCache;
 }
