@@ -88,7 +88,7 @@ extern "C"
 
         if (mach->HasPanel(MachO::Panels::IDs::Information))
         {
-            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Information(mach)), true);
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::Information(win->GetObject(), mach)), true);
         }
 
         if (mach->HasPanel(MachO::Panels::IDs::LoadCommands))
@@ -123,7 +123,7 @@ extern "C"
 
         if (mach->HasPanel(MachO::Panels::IDs::CodeSign))
         {
-            win->AddPanel(Pointer<TabPage>(new MachO::Panels::CodeSignMagic(mach)), true);
+            win->AddPanel(Pointer<TabPage>(new MachO::Panels::CodeSignMagic(mach, win)), true);
         }
 
         return true;

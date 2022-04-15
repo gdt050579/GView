@@ -4,11 +4,5 @@ target_sources(GViewCore PRIVATE
         CRC32.cpp
         CRC64.cpp
         MD2.cpp
-        MD4.cpp
-        MD5.cpp
-        SHA1.cpp
-        SHA256.cpp
-        SHA384.cpp
-        SHA512.cpp
         OpenSSL.cpp
 )

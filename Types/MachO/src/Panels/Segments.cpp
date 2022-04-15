@@ -18,7 +18,8 @@ Segments::Segments(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     win   = _win;
     Base  = 16;
 
-    list = Factory::ListView::Create(this,
+    list = Factory::ListView::Create(
+          this,
           "d:c",
           { { "Name", TextAlignament::Left, 14 },
             { "Type", TextAlignament::Left, 18 },

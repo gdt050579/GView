@@ -55,7 +55,13 @@ bool CRC32::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool CRC32::Update(Buffer buffer)
+bool CRC32::Update(const Buffer& buffer)
+{
+    CHECK(buffer.IsValid(), false, "");
+    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+}
+
+bool CRC32::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
@@ -81,10 +87,9 @@ std::string_view CRC32::GetName(CRC32Type type)
     return "CRC32 (JAMCRC(0))";
 }
 
-const std::string CRC32::GetHexValue()
+const std::string_view CRC32::GetHexValue()
 {
-    LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x%.8X", value);
-    return std::string{ ls };
+    hexDigest.Format("%.8X", value);
+    return hexDigest;
 }
 } // namespace GView::Hashes

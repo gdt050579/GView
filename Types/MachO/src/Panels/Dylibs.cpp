@@ -56,7 +56,7 @@ void Dylib::GoToSelectedSection()
 void Dylib::SelectCurrentSection()
 {
     auto di = list->GetCurrentItem().GetData<MachOFile::Dylib>();
-    //auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
+    // auto di = list->GetItemData<const MachOFile::Dylib>(list->GetCurrentItem());
     win->GetCurrentView()->Select(di->offset, di->value.cmdsize);
 }
 

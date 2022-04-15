@@ -102,7 +102,13 @@ bool MD2::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool MD2::Update(Buffer buffer)
+bool MD2::Update(const Buffer& buffer)
+{
+    CHECK(buffer.IsValid(), false, "");
+    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+}
+
+bool MD2::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
@@ -120,15 +126,14 @@ std::string_view MD2::GetName()
 {
     return "MD2";
 }
-const std::string MD2::GetHexValue()
+
+const std::string_view MD2::GetHexValue()
 {
     Final();
-    LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x");
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
-        ls.AddFormat("%.2X", x[i]);
+        hexDigest.AddFormat("%.2X", x[i]);
     }
-    return std::string{ ls };
+    return hexDigest;
 }
 } // namespace GView::Hashes

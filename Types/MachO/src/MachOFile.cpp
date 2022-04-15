@@ -1,5 +1,13 @@
 #include "MachO.hpp"
 
+//#include <time.h>
+//#include <openssl/pem.h>
+//#include <openssl/cms.h>
+//#include <openssl/err.h>
+//#include <openssl/pkcs12.h>
+//#include <openssl/conf.h>
+//#include <openssl/asn1.h>
+
 namespace GView::Type::MachO
 {
 MachOFile::MachOFile(Reference<GView::Utils::DataCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
@@ -11,29 +19,17 @@ bool MachOFile::Update()
     uint64_t offset = 0;
 
     SetArchitectureAndEndianess(offset);
-
     SetHeader(offset);
-
     SetLoadCommands(offset);
-
     SetSegmentsAndTheirSections();
-
     SetDyldInfo();
-
     SetIdDylibs();
-
     SetMain();
-
     SetSymbols();
-
     SetSourceVersion();
-
     SetUUID();
-
     SetLinkEditData();
-
     SetCodeSignature();
-
     SetVersionMin();
 
     panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
@@ -348,23 +344,39 @@ bool MachOFile::SetMain()
 
             if (header.cputype == MAC::CPU_TYPE_I386)
             {
-                const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->eip;
+                const auto registers = reinterpret_cast<MAC::i386_thread_state_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->eip;
             }
             else if (header.cputype == MAC::CPU_TYPE_X86_64)
             {
-                const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->rip;
+                const auto registers = reinterpret_cast<MAC::x86_thread_state64_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->rip;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC)
             {
-                const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->srr0;
+                const auto registers = reinterpret_cast<MAC::ppc_thread_state_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->srr0;
             }
             else if (header.cputype == MAC::CPU_TYPE_POWERPC64)
             {
-                const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>((((char*) cmd.GetData()) + 16));
-                main->entryoff       = registers->srr0;
+                const auto registers = reinterpret_cast<MAC::ppc_thread_state64_t*>(cmd.GetData() + 16);
+                if (shouldSwapEndianess)
+                {
+                    Swap(*registers);
+                }
+                main->entryoff = registers->srr0;
             }
             else
             {
@@ -563,14 +575,53 @@ bool MachOFile::SetCodeSignature()
 
             for (const auto& blob : codeSignature->blobs)
             {
-                const auto csOffset = codeSignature->ledc.dataoff + blob.offset;
-
+                const auto csOffset = static_cast<uint64>(codeSignature->ledc.dataoff) + blob.offset;
                 switch (blob.type)
                 {
                 case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
                 {
                     CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
                     Swap(codeSignature->codeDirectory);
+
+                    const auto blobBuffer                  = obj->GetData().CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
+                    codeSignature->codeDirectoryIdentifier = (char*) blobBuffer.GetData() + codeSignature->codeDirectory.identOffset;
+
+                    const auto hashType = codeSignature->codeDirectory.hashType;
+                    {
+                        if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+                    }
+
+                    auto pageSize  = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
+                    auto remaining = codeSignature->codeDirectory.codeLimit;
+                    auto processed = 0ULL;
+                    for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
+                    {
+                        const auto size       = std::min<>(remaining, pageSize);
+                        const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
+                        const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
+
+                        std::string hashComputed;
+                        if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+
+                        const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                        LocalString<128> ls;
+                        for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++)
+                        {
+                            ls.AddFormat("%.2X", hash[i]);
+                        }
+                        std::string hashFound{ ls };
+
+                        codeSignature->cdSlotsHashes.emplace_back(std::pair<std::string, std::string>{ hashFound, hashComputed });
+
+                        processed += size;
+                        remaining -= size;
+                    }
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
@@ -603,37 +654,84 @@ bool MachOFile::SetCodeSignature()
                           obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
                 }
                 break;
-
                 case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
                     break;
-
                 case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
-                    break;
+                {
+                    MAC::CS_GenericBlob gblob{};
+                    CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, gblob), false, "");
+                    Swap(gblob);
 
+                    codeSignature->signature.offset = csOffset + sizeof(gblob);
+                    codeSignature->signature.size   = gblob.length - sizeof(gblob);
+
+                    const auto blobBuffer = obj->GetData().CopyToBuffer(
+                          codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
+                    codeSignature->signature.errorHumanReadable =
+                          !GView::DigitalSignature::CMSToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
+                    codeSignature->signature.errorPEMs = !GView::DigitalSignature::CMSToPEMCerts(
+                          blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
+                    codeSignature->signature.errorSig = !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
+                }
+                break;
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
                 {
                     MAC::CS_CodeDirectory cd{};
                     CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
                     Swap(cd);
                     codeSignature->alternateDirectories.emplace_back(cd);
+
+                    const auto blobBuffer = obj->GetData().CopyToBuffer(csOffset, cd.length);
+                    codeSignature->alternateDirectoriesIdentifiers.emplace_back((char*) blobBuffer.GetData() + cd.identOffset);
+
+                    const auto hashType = cd.hashType;
+                    {
+                        std::string cdHash;
+                        if (ComputeHash(blobBuffer, hashType, cdHash) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+                        codeSignature->acdHashes.emplace_back(cdHash);
+                    }
+
+                    std::vector<std::pair<std::string, std::string>> cdSlotsHashes;
+
+                    auto pageSize  = cd.pageSize ? (1U << cd.pageSize) : 0U;
+                    auto remaining = cd.codeLimit;
+                    auto processed = 0ULL;
+                    for (auto slot = 0U; slot < cd.nCodeSlots; slot++)
+                    {
+                        const auto size             = std::min<>(remaining, pageSize);
+                        const auto hashOffset       = cd.hashOffset + cd.hashSize * slot;
+                        const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
+
+                        std::string hashComputed;
+                        if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
+                        {
+                            throw "Unable to validate!";
+                        }
+
+                        const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                        LocalString<128> ls;
+                        for (auto i = 0U; i < cd.hashSize; i++)
+                        {
+                            ls.AddFormat("%.2X", hash[i]);
+                        }
+                        std::string hashFound{ ls };
+
+                        cdSlotsHashes.emplace_back(std::pair<std::string, std::string>{ hashFound, hashComputed });
+
+                        processed += size;
+                        remaining -= size;
+                    }
+
+                    codeSignature->acdSlotsHashes.emplace_back(cdSlotsHashes);
                 }
                 break;
                 default:
                     throw "Slot type not supported!";
                 }
             }
-
-            // auto pageSize  = codeDirectory->pageSize ? (1U << codeDirectory->pageSize) : 0U;
-            // auto remaining = codeDirectory->codeLimit;
-            // auto processed = 0ULL;
-            // for (auto slot = 0U; slot < codeDirectory->nCodeSlots; slot++)
-            // {
-            //     const auto size = std::min<>(remaining, pageSize);
-            //     CHECK(ValidateSlot(b.GetData() + processed, size, slot, codeDirectory), false, "Failed validating slot [%u]!", slot);
-            //
-            //     processed += size;
-            //     remaining -= size;
-            // }
         }
     }
 
@@ -662,5 +760,63 @@ bool MachOFile::SetVersionMin()
     }
 
     return true;
+}
+
+bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const
+{
+    switch (static_cast<MAC::CodeSignMagic>(hashType))
+    {
+    case MAC::CodeSignMagic::CS_HASHTYPE_NO_HASH:
+        throw "What to do?";
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA1:
+    {
+        GView::Hashes::OpenSSLHash sha1(GView::Hashes::OpenSSLHashKind::Sha1);
+        CHECK(sha1.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha1.Final(), false, "");
+        output = sha1.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA256:
+    {
+        GView::Hashes::OpenSSLHash sha256(GView::Hashes::OpenSSLHashKind::Sha256);
+        CHECK(sha256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha256.Final(), false, "");
+        output = sha256.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_SHA256_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA256_TRUNCATED:
+    {
+        GView::Hashes::OpenSSLHash sha256(GView::Hashes::OpenSSLHashKind::Sha256);
+        CHECK(sha256.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha256.Final(), false, "");
+        output = sha256.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_SHA256_TRUNCATED_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA384:
+    {
+        GView::Hashes::OpenSSLHash sha384(GView::Hashes::OpenSSLHashKind::Sha384);
+        CHECK(sha384.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha384.Final(), false, "");
+        output = sha384.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    case MAC::CodeSignMagic::CS_HASHTYPE_SHA512:
+    {
+        GView::Hashes::OpenSSLHash sha512(GView::Hashes::OpenSSLHashKind::Sha512);
+        CHECK(sha512.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
+        CHECK(sha512.Final(), false, "");
+        output = sha512.GetHexValue();
+        output.resize(static_cast<uint64>(MAC::CodeSignMagic::CS_CDHASH_LEN) * 2ULL);
+        return true;
+    }
+    default:
+        throw "What to do?";
+    }
+
+    return false;
 }
 } // namespace GView::Type::MachO

@@ -32,7 +32,7 @@ struct CORE_EXPORT TypeInterface
 
     virtual std::string_view GetTypeName() = 0;
     virtual ~TypeInterface(){};
-    
+
     template <typename T>
     Reference<T> To()
     {
@@ -145,13 +145,16 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint32& hash);
         static std::string_view GetName();
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(a) + sizeof(b);
@@ -163,13 +166,16 @@ namespace Hashes
         uint32 value;
         bool init;
 
+        LocalString<256> hexDigest;
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint16& hash);
         static std::string_view GetName();
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
@@ -189,13 +195,16 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       public:
         bool Init(CRC32Type type);
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint32& hash);
         static std::string_view GetName(CRC32Type type);
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
@@ -215,16 +224,19 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       private:
         bool Final();
 
       public:
         bool Init(CRC64Type type);
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint64& hash);
         static std::string_view GetName(CRC64Type type);
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
@@ -240,156 +252,22 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       private:
         bool Final();
 
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
+        bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint8 hash[16]);
         static std::string_view GetName();
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
-    };
-
-    class CORE_EXPORT MD4
-    {
-      private:
-        uint32 state[4];
-        uint32 curlen;
-        uint8 buf[64];
-        uint64 length;
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
-        bool Final(uint8 hash[16]);
-        static std::string_view GetName();
-        const std::string GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(state);
-    };
-
-    class CORE_EXPORT MD5
-    {
-      private:
-        uint32 state[4];
-        uint32 curlen;
-        uint8 buf[64];
-        uint64 length;
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
-        bool Final(uint8 hash[16]);
-        static std::string_view GetName();
-        const std::string GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(state);
-    };
-
-    class CORE_EXPORT SHA1
-    {
-      private:
-        uint64 length;
-        uint32 state[5];
-        uint32 curlen;
-        uint8 buf[64];
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
-        bool Final(uint8 hash[20]);
-        static std::string_view GetName();
-        const std::string GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(state);
-    };
-
-    class CORE_EXPORT SHA256
-    {
-      private:
-        uint64 length;
-        uint32 state[8];
-        uint32 curlen;
-        uint8 buf[64];
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
-        bool Final(uint8 hash[32]);
-        static std::string_view GetName();
-        const std::string GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(state);
-    };
-
-    class CORE_EXPORT SHA512
-    {
-      protected:
-        uint64 length;
-        uint64 state[8];
-        uint32 curlen;
-        uint8 buf[128];
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(Buffer buffer);
-        bool Final(uint8 hash[64]);
-        static std::string_view GetName();
-        const std::string GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(state);
-    };
-
-    class CORE_EXPORT SHA384 : public SHA512
-    {
-      public:
-        bool Init();
-        bool Final(uint8 hash[48]);
-        static std::string_view GetName();
-        const std::string GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = SHA512::ResultBytesLength - 16;
     };
 
     enum class OpenSSLHashKind : uint8
@@ -421,7 +299,7 @@ namespace Hashes
 
         bool Update(const void* input, uint32 length);
         bool Final();
-        std::string GetHexValue();
+        std::string_view GetHexValue();
         const uint8* Get() const;
         uint32 GetSize() const;
 
@@ -429,9 +307,109 @@ namespace Hashes
         void* handle;
         uint8 hash[64];
         uint32 size;
+        LocalString<256> hexDigest;
     };
 } // namespace Hashes
 
+namespace DigitalSignature
+{
+    enum class ASN1TYPE
+    {
+        EOC               = 0,
+        BOOLEAN           = 1,
+        INTEGER           = 2,
+        BIT_STRING        = 3,
+        OCTET_STRING      = 4,
+        NULL_ASN          = 5,
+        OBJECT            = 6,
+        OBJECT_DESCRIPTOR = 7,
+        EXTERNAL          = 8,
+        REAL              = 9,
+        ENUMERATED        = 10,
+        UTF8STRING        = 12,
+        SEQUENCE          = 16,
+        SET               = 17,
+        NUMERICSTRING     = 18,
+        PRINTABLESTRING   = 19,
+        T61STRING         = 20,
+        TELETEXSTRING     = 20,
+        VIDEOTEXSTRING    = 21,
+        IA5STRING         = 22,
+        UTCTIME           = 23,
+        GENERALIZEDTIME   = 24,
+        GRAPHICSTRING     = 25,
+        ISO64STRING       = 26,
+        VISIBLESTRING     = 26,
+        GENERALSTRING     = 27,
+        UNIVERSALSTRING   = 28,
+        BMPSTRING         = 30
+    };
+
+    struct CORE_EXPORT Certificate
+    {
+        int32 version;
+        String serialNumber;
+        String signatureAlgorithm;
+        String publicKeyAlgorithm;
+        String validityNotBefore;
+        String validityNotAfter;
+        String issuer;
+        String subject;
+        int32 verify;
+        String errorVerify;
+
+        int32 signerVerify; //  compares the certificate cert against the signer identifier si
+        String errorSignerVerify;
+    };
+
+    constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
+
+    struct CORE_EXPORT SignerAttributes
+    {
+        String name;
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
+                                               // V_ASN1_SEQUENCE
+        String contentType;
+        String contentTypeData;
+        int32 count;
+
+        String CDHashes[MAX_SIZE_IN_CONTAINER]; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
+    };
+
+    struct CORE_EXPORT Signer
+    {
+        int32 count;
+        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER];
+        uint32 attributesCount;
+    };
+
+    struct CORE_EXPORT Signature
+    {
+        int32 isDetached;
+        String sn;
+        Buffer snContent;
+
+        Certificate certificates[MAX_SIZE_IN_CONTAINER];
+        uint32 certificatesCount = 0;
+        Signer signers[MAX_SIZE_IN_CONTAINER];
+        uint32 signersCount = 0;
+
+        String errorMessage;
+        bool error = true;
+    };
+
+    CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
+    CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
+    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
+} // namespace DigitalSignature
+
+/*
+ * Object can be:
+ *   - a file
+ *   - a folder
+ *   - a process
+ *   - a memory buffer
+ */
 class CORE_EXPORT Object
 {
   public:
