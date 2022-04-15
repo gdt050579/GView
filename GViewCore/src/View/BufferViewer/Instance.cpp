@@ -100,7 +100,13 @@ void Instance::OpenCurrentSelection()
     {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        GView::App::OpenItem((ExtractItem) (size_t) (res), this, (end - start) + 1, temp);
+        auto buf = this->obj->GetData().CopyToBuffer(start, end - start);
+        if (buf.IsValid()==false)
+        {
+            Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
+            return;
+        }
+        GView::App::OpenBuffer(buf, temp);
     }
 }
 void Instance::UpdateCurrentSelection()
@@ -1372,15 +1378,6 @@ bool Instance::Select(uint64 offset, uint64 size)
 std::string_view Instance::GetName()
 {
     return this->name;
-}
-bool Instance::ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)
-{
-    uint64 start;
-    uint64 end;
-    const auto idx = reinterpret_cast<uint64>(item);
-    CHECK(this->selection.GetSelection(static_cast<uint32>(idx), start, end), false, "");
-    CHECK(this->obj->GetData().WriteTo(output, start, (end - start) + 1), false, "");
-    return true;
 }
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)

@@ -88,11 +88,6 @@ std::string_view Instance::GetName()
     return "DissasmView";
 }
 
-bool Instance::ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)
-{
-    NOT_IMPLEMENTED(false);
-}
-
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height)
 {
     renderer.WriteSingleLineText(0, 0, "Cursor data", DefaultColorPair);
