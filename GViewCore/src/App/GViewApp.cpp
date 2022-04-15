@@ -102,18 +102,12 @@ void GView::App::OpenFile(const std::filesystem::path& path)
     if (gviewAppInstance)
         gviewAppInstance->AddFileWindow(path);
 }
-void GView::App::OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name)
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name,string_view typeExtension)
 {
-    // simple form --> just write it to a file and open it
-    AppCUI::OS::File f;
-    if (!f.Create(name, true))
-        return;
-    if (view->ExtractTo(&f, item, size) == false)
-        return;
-    f.Close();
-    // API to OpenFile has to be changed (remove that cont char* path)
-    OpenFile(name.data());
+    if (gviewAppInstance)
+        gviewAppInstance->AddBufferWindow(buf, name, typeExtension);
 }
+
 Reference<GView::Object> GView::App::GetObject(uint32 index)
 {
     CHECK(gviewAppInstance, nullptr, "GView was not initialized !");

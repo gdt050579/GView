@@ -105,10 +105,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
     }
 }
 
-bool Instance::ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)
-{
-    NOT_IMPLEMENTED(false);
-}
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

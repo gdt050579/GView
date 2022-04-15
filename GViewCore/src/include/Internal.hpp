@@ -235,6 +235,7 @@ namespace App
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
+        bool AddBufferWindow(BufferView buf, const ConstString & name, string_view typeExtension);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters

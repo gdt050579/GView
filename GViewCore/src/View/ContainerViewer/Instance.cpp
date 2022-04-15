@@ -133,10 +133,6 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-bool Instance::ExtractTo(Reference<AppCUI::OS::DataObject> output, ExtractItem item, uint64 size)
-{
-    NOT_IMPLEMENTED(false);
-}
 //======================================================================[Cursor information]==================
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
