@@ -87,6 +87,12 @@ bool CRC64::Update(const Buffer& buffer)
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
 }
 
+bool CRC64::Update(const BufferView& buffer)
+{
+    CHECK(buffer.IsValid(), false, "");
+    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+}
+
 bool CRC64::Final(uint64& hash)
 {
     CHECK(Final(), false, "");
@@ -103,11 +109,10 @@ std::string_view CRC64::GetName(CRC64Type type)
     return "CRC64 (WE)";
 }
 
-const std::string CRC64::GetHexValue()
+const std::string_view CRC64::GetHexValue()
 {
     Final();
-    LocalString<ResultBytesLength * 2> ls;
-    ls.Format("%.16llX", value);
-    return std::string{ ls };
+    hexDigest.Format("%.16llX", value);
+    return hexDigest;
 }
 } // namespace GView::Hashes

@@ -60,18 +60,17 @@ bool OpenSSLHash::Final()
     return EVP_DigestFinal_ex((EVP_MD_CTX*) handle, hash, &size);
 }
 
-std::string OpenSSLHash::GetHexValue()
+std::string_view OpenSSLHash::GetHexValue()
 {
     if (!Final())
     {
         return {};
     }
-    LocalString<256> ls;
     for (auto i = 0U; i < size; i++)
     {
-        ls.AddFormat("%.2X", hash[i]);
+        hexDigest.AddFormat("%.2X", hash[i]);
     }
-    return std::string{ ls };
+    return hexDigest;
 }
 
 const uint8* OpenSSLHash::Get() const

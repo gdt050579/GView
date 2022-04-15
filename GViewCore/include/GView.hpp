@@ -145,13 +145,16 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint32& hash);
         static std::string_view GetName();
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(a) + sizeof(b);
@@ -163,13 +166,16 @@ namespace Hashes
         uint32 value;
         bool init;
 
+        LocalString<256> hexDigest;
+
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint16& hash);
         static std::string_view GetName();
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
@@ -189,13 +195,16 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       public:
         bool Init(CRC32Type type);
         bool Update(const unsigned char* input, uint32 length);
         bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint32& hash);
         static std::string_view GetName(CRC32Type type);
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
@@ -215,6 +224,8 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       private:
         bool Final();
 
@@ -222,9 +233,10 @@ namespace Hashes
         bool Init(CRC64Type type);
         bool Update(const unsigned char* input, uint32 length);
         bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint64& hash);
         static std::string_view GetName(CRC64Type type);
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
@@ -240,6 +252,8 @@ namespace Hashes
 
         bool init;
 
+        LocalString<256> hexDigest;
+
       private:
         bool Final();
 
@@ -247,9 +261,10 @@ namespace Hashes
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
         bool Update(const Buffer& buffer);
+        bool Update(const BufferView& buffer);
         bool Final(uint8 hash[16]);
         static std::string_view GetName();
-        const std::string GetHexValue();
+        const std::string_view GetHexValue();
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
@@ -284,7 +299,7 @@ namespace Hashes
 
         bool Update(const void* input, uint32 length);
         bool Final();
-        std::string GetHexValue();
+        std::string_view GetHexValue();
         const uint8* Get() const;
         uint32 GetSize() const;
 
@@ -292,6 +307,7 @@ namespace Hashes
         void* handle;
         uint8 hash[64];
         uint32 size;
+        LocalString<256> hexDigest;
     };
 } // namespace Hashes
 
@@ -351,7 +367,8 @@ namespace DigitalSignature
     struct CORE_EXPORT SignerAttributes
     {
         String name;
-        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
+                                               // V_ASN1_SEQUENCE
         String contentType;
         String contentTypeData;
         int32 count;
