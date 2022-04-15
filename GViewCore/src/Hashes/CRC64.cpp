@@ -112,7 +112,9 @@ std::string_view CRC64::GetName(CRC64Type type)
 const std::string_view CRC64::GetHexValue()
 {
     Final();
-    hexDigest.Format("%.16llX", value);
-    return hexDigest;
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("%.16llX", value);
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

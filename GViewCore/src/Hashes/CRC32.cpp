@@ -89,7 +89,9 @@ std::string_view CRC32::GetName(CRC32Type type)
 
 const std::string_view CRC32::GetHexValue()
 {
-    hexDigest.Format("%.8X", value);
-    return hexDigest;
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("%.8X", value);
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

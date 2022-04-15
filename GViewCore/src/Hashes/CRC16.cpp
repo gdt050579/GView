@@ -67,9 +67,12 @@ std::string_view CRC16::GetName()
 {
     return "CRC16 (CCITT)";
 }
+
 const std::string_view CRC16::GetHexValue()
 {
-    hexDigest.Format("%.8X", value);
-    return hexDigest;
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("%.8X", value);
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

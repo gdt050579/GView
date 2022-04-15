@@ -104,7 +104,9 @@ std::string_view Adler32::GetName()
 
 const std::string_view Adler32::GetHexValue()
 {
-    hexDigest.Format("%.8X", static_cast<uint32>((static_cast<uint32>(b) << 16) + (static_cast<uint32>(a))));
-    return hexDigest;
+    LocalString<ResultBytesLength * 2> ls;
+    ls.Format("%.8X", static_cast<uint32>((static_cast<uint32>(b) << 16) + (static_cast<uint32>(a))));
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes
