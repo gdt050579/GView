@@ -166,7 +166,7 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
     count = static_cast<uint32>(sk_X509_num(certs.data));
     if (count >= MAX_SIZE_IN_CONTAINER)
     {
-        throw "Unable to parse this number of certificates!";
+        throw std::runtime_error("Unable to parse this number of certificates!");
     }
     for (uint32 i = 0; i < count; i++)
     {
@@ -239,7 +239,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
     output.certificatesCount = sk_X509_num(certs.data);
     if (output.certificatesCount >= MAX_SIZE_IN_CONTAINER)
     {
-        throw "Unable to parse this number of certificates!";
+        throw std::runtime_error("Unable to parse this number of certificates!");
     }
     for (auto i = 0U; i < output.certificatesCount; i++)
     {
@@ -324,7 +324,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
     output.signersCount           = sk_CMS_SignerInfo_num(sis);
     if (output.signersCount >= MAX_SIZE_IN_CONTAINER)
     {
-        throw "Unable to parse this number of signers!";
+        throw std::runtime_error("Unable to parse this number of signers!");
     }
     for (int32 i = 0; i < sk_CMS_SignerInfo_num(sis); i++)
     {
@@ -334,7 +334,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         signer.count = CMS_signed_get_attr_count(si);
         if (signer.count >= MAX_SIZE_IN_CONTAINER)
         {
-            throw "Unable to parse this number of signers!";
+            throw std::runtime_error("Unable to parse this number of signers!");
         }
         for (int32 j = 0; j < signer.count; j++)
         {
@@ -354,7 +354,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
 
             if (attribute.count >= MAX_SIZE_IN_CONTAINER)
             {
-                throw "Unable to parse this number of attributes!";
+                throw std::runtime_error("Unable to parse this number of attributes!");
             }
 
             ASN1_OBJECT* obj = X509_ATTRIBUTE_get0_object(attr); // no need to free (pointer from CMS structure)
@@ -444,7 +444,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
             }
             else
             {
-                throw "Unknown hash!";
+                throw std::runtime_error("Unknown hash!");
             }
         }
     }
