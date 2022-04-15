@@ -711,6 +711,7 @@ namespace App
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path);
+    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name);
     void CORE_EXPORT OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();

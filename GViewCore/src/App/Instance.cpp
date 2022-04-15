@@ -235,6 +235,16 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
         return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
     }
 }
+bool Instance::AddBufferWindow(BufferView buf, const ConstString& name)
+{
+    auto f = std::make_unique<AppCUI::OS::MemoryFile>();
+    if (f->Create(buf.GetData(), buf.GetLength())==false)
+    {
+        errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
+        RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
+    }
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, "", 0, "");
+}
 void Instance::OpenFile()
 {
     auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", ".");

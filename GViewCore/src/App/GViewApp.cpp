@@ -102,6 +102,11 @@ void GView::App::OpenFile(const std::filesystem::path& path)
     if (gviewAppInstance)
         gviewAppInstance->AddFileWindow(path);
 }
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name)
+{
+    if (gviewAppInstance)
+        gviewAppInstance->AddBufferWindow(buf, name);
+}
 void GView::App::OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name)
 {
     // simple form --> just write it to a file and open it
