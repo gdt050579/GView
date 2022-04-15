@@ -13,10 +13,7 @@ struct WrapperBIO
 
     ~WrapperBIO()
     {
-        if (memory != nullptr)
-        {
-            BIO_free(memory);
-        }
+        BIO_free(memory);
     }
 };
 
@@ -26,10 +23,7 @@ struct WrapperCMS_ContentInfo
 
     ~WrapperCMS_ContentInfo()
     {
-        if (data != nullptr)
-        {
-            CMS_ContentInfo_free(data);
-        }
+        CMS_ContentInfo_free(data);
     }
 };
 
@@ -39,10 +33,7 @@ struct WrapperASN1_PCTX
 
     ~WrapperASN1_PCTX()
     {
-        if (data != nullptr)
-        {
-            ASN1_PCTX_free(data);
-        }
+        ASN1_PCTX_free(data);
     }
 };
 
@@ -52,10 +43,7 @@ struct WrapperSTACK_OF_X509
 
     ~WrapperSTACK_OF_X509()
     {
-        if (data != nullptr)
-        {
-            sk_X509_pop_free(data, X509_free);
-        }
+        sk_X509_pop_free(data, X509_free);
     }
 };
 
@@ -65,10 +53,7 @@ struct WrapperBIGNUM
 
     ~WrapperBIGNUM()
     {
-        if (data != nullptr)
-        {
-            BN_free(data);
-        }
+        BN_free(data);
     }
 };
 
@@ -78,10 +63,7 @@ struct WrapperEVP_PKEY
 
     ~WrapperEVP_PKEY()
     {
-        if (data != nullptr)
-        {
-            EVP_PKEY_free(data);
-        }
+        EVP_PKEY_free(data);
     }
 };
 
@@ -91,14 +73,11 @@ struct WrapperBUF_MEM
 
     ~WrapperBUF_MEM()
     {
-        if (data != nullptr)
-        {
-            BUF_MEM_free(data);
-        }
+        BUF_MEM_free(data);
     }
 };
 
-static bool ASN1TIMEtoString(const ASN1_TIME* time, String& output)
+inline static bool ASN1TIMEtoString(const ASN1_TIME* time, String& output)
 {
     WrapperBIO out(BIO_new(BIO_s_mem()));
     CHECK(out.memory, false, "");
@@ -108,11 +87,11 @@ static bool ASN1TIMEtoString(const ASN1_TIME* time, String& output)
     BIO_get_mem_ptr(out.memory, &buf);
     CHECK(buf, false, "");
 
-    CHECK(output.Set(buf->data, buf->length), false, "");
+    CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
     return true;
 };
 
-static void GetError(uint32& errorCode, String& output)
+inline static void GetError(uint32& errorCode, String& output)
 {
     errorCode = ERR_get_error();
     output.Set(ERR_error_string(errorCode, nullptr));
@@ -158,7 +137,7 @@ bool CMSToHumanReadable(const Buffer& buffer, String& output)
     ERR_clear_error();
     BIO_get_mem_ptr(out.memory, &buf);
     GetError(error, output);
-    CHECK(output.Set(buf->data, buf->length), false, "");
+    CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
 
     return true;
 }
@@ -189,7 +168,7 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
     {
         throw "Unable to parse this number of certificates!";
     }
-    for (int32 i = 0; i < count; i++)
+    for (uint32 i = 0; i < count; i++)
     {
         auto& current = output[i];
 
@@ -213,7 +192,7 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
         BIO_get_mem_ptr(bioCert.memory, &buf);
         GetError(error, current);
         CHECK(buf != nullptr, false, "");
-        current.Set(buf->data, buf->length);
+        current.Set(buf->data, (uint32) buf->length);
     }
 
     return true;
@@ -426,7 +405,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                 BIO_get_mem_ptr(bio.memory, &bptr);
                 BIO_set_close(bio.memory, BIO_NOCLOSE);
 
-                attribute.contentTypeData.Set(bptr->data, bptr->length);
+                attribute.contentTypeData.Set(bptr->data, (uint32) bptr->length);
             }
             else if (asnType == ASN1TYPE::SEQUENCE)
             {
@@ -446,7 +425,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                         BUF_MEM* buf = nullptr;
                         BIO_get_mem_ptr(in.memory, &buf);
                         BIO_set_close(in.memory, BIO_NOCLOSE);
-                        attribute.contentTypeData.Set(buf->data, buf->length);
+                        attribute.contentTypeData.Set(buf->data, (uint32) buf->length);
 
                         auto& hash                             = attribute.CDHashes[m];
                         constexpr std::string_view startMarker = "[HEX DUMP]:";
@@ -457,7 +436,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                                 std::string_view subString{ attribute.contentTypeData.GetText(), attribute.contentTypeData.Len() };
                                 subString = { subString.data() + subString.find(startMarker) + startMarker.length(), subString.find('\n') };
 
-                                hash.Set(subString.data(), subString.length());
+                                hash.Set(subString.data(), (uint32) subString.length());
                             }
                         }
                     }
