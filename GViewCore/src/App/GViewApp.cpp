@@ -102,10 +102,10 @@ void GView::App::OpenFile(const std::filesystem::path& path)
     if (gviewAppInstance)
         gviewAppInstance->AddFileWindow(path);
 }
-void GView::App::OpenBuffer(BufferView buf, const ConstString& name)
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name,string_view typeExtension)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name);
+        gviewAppInstance->AddBufferWindow(buf, name, typeExtension);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)
