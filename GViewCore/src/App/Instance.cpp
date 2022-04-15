@@ -238,7 +238,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
 bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension)
 {
     auto f = std::make_unique<AppCUI::OS::MemoryFile>();
-    if (f->Create(buf.GetData(), buf.GetLength())==false)
+    if (f->Create(buf.GetData(), buf.GetLength()) == false)
     {
         errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
         RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());

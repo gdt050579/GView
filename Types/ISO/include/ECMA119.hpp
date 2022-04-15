@@ -354,7 +354,7 @@ struct ECMA_119_DirectoryRecord
     uint32 volumeSequenceNumber;
     uint8 lengthOfFileIdentifier;
     char fileIdentifier[0x255];
-    /* here is paadded to len of DR */
+    /* here is padded to len of DR */
 };
 #pragma pack(pop)
 } // namespace GView::Type::ISO

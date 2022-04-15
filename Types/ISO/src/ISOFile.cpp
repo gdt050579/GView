@@ -109,7 +109,8 @@ bool ISOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
     }
     else
     {
-        currentOffset = parent.GetData(0) * pvd.vdd.logicalBlockSize.LSB;
+        auto data     = parent.GetData<ECMA_119_DirectoryRecord>();
+        currentOffset = (uint64) data->locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
         CHECK(currentOffset != pvd.vdd.logicalBlockSize.LSB, false, "");
     }
 
@@ -135,31 +136,44 @@ bool ISOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 bool ISOFile::PopulateItem(TreeViewItem item)
 {
     NumericFormatter nf;
-    NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
+    const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
+    const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
     const auto& currentObject = objects[currentItemIndex];
     item.SetText(std::string_view{ currentObject.fileIdentifier, currentObject.lengthOfFileIdentifier });
 
     if (currentObject.fileFlags & ECMA_119_FileFlags::Directory)
     {
-        item.SetType(TreeViewItem::Type::Category);
-        item.SetExpandable(true);
-        item.SetText(1, "<FOLDER>");
-        item.SetPriority(1);
+        item.SetType(
+              (currentObject.fileFlags & ECMA_119_FileFlags::Existence) ? TreeViewItem::Type::ErrorInformation
+                                                                        : TreeViewItem::Type::Category);
     }
     else
     {
-        item.SetType(TreeViewItem::Type::Normal);
-        item.SetExpandable(false);
-        item.SetText(1, nf.ToString((uint64) currentObject.dataLength.LSB, fmt));
-        item.SetPriority(0);
+        item.SetType(
+              (currentObject.fileFlags & ECMA_119_FileFlags::Existence) ? TreeViewItem::Type::ErrorInformation
+                                                                        : TreeViewItem::Type::Normal);
     }
 
-    item.SetText(2, RecordingDateAndTimeToString(currentObject.recordingDateAndTime));
-    item.SetText(3, nf.ToString((uint64) currentObject.dataLength.LSB, fmt));
-    item.SetText(4, nf.ToString((uint64) currentObject.fileFlags, fmt));
+    item.SetPriority(currentObject.fileFlags & ECMA_119_FileFlags::Directory);
+    item.SetExpandable(currentObject.fileFlags & ECMA_119_FileFlags::Directory);
 
-    item.SetData(currentObject.locationOfExtent.LSB);
+    item.SetText(1, nf.ToString((uint64) currentObject.dataLength.LSB, dec));
+    item.SetText(2, RecordingDateAndTimeToString(currentObject.recordingDateAndTime));
+    item.SetText(3, nf.ToString((uint64) currentObject.locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB, hex));
+    item.SetText(4, GetECMA_119_FileFlags(currentObject.fileFlags));
+
+    const auto key = DRCRC64(currentObject);
+    auto it        = itemsCache.find(key);
+    if (it == itemsCache.end())
+    {
+        auto res = itemsCache.emplace(std::pair{ key, currentObject });
+        item.SetData<ECMA_119_DirectoryRecord>(&res.first->second);
+    }
+    else
+    {
+        item.SetData<ECMA_119_DirectoryRecord>(&it->second);
+    }
 
     currentItemIndex++;
 
@@ -168,5 +182,13 @@ bool ISOFile::PopulateItem(TreeViewItem item)
 
 void ISOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
-    printf("");
+    CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
+
+    auto data         = item.GetData<ECMA_119_DirectoryRecord>();
+    const auto offset = (uint64) data->locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
+    const auto length = (uint32) data->dataLength.LSB;
+    const auto name   = std::string_view{ data->fileIdentifier, data->lengthOfFileIdentifier };
+
+    const auto buffer = obj->GetData().CopyToBuffer(offset, length);
+    GView::App::OpenBuffer(buffer, name);
 }

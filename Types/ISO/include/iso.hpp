@@ -4,10 +4,11 @@
 #include "ECMA119.hpp"
 
 #include <queue>
+#include <set>
 
 namespace GView::Type::ISO
 {
-inline const std::string RecordingDateAndTimeToString(const unsigned char data[7])
+inline static const std::string RecordingDateAndTimeToString(const unsigned char data[7])
 {
     const auto gmt         = data[6];
     const uint8 gmtHours   = gmt / 4;
@@ -17,6 +18,23 @@ inline const std::string RecordingDateAndTimeToString(const unsigned char data[7
     ls.Format("%.4d-%.2d-%.2d %.2d:%.2d:%.2d %.2d:%.2d", 1900 + data[0], data[1], data[2], data[3], data[4], data[5], gmtHours, gmtMinutes);
     return ls.GetText();
 }
+
+inline static const auto DRCRC64(const ECMA_119_DirectoryRecord& dr)
+{
+    constexpr auto sizeDelta = sizeof(ECMA_119_DirectoryRecord) -
+                               sizeof(ECMA_119_DirectoryRecord::fileIdentifier) / sizeof(ECMA_119_DirectoryRecord::fileIdentifier[0]);
+
+    const auto sizeTotal = sizeDelta + dr.lengthOfFileIdentifier;
+
+    Hashes::CRC64 crc64{};
+    crc64.Init(Hashes::CRC64Type::ECMA_182);
+    crc64.Update(BufferView{ &dr, sizeTotal });
+
+    uint64 hash;
+    crc64.Final(hash);
+
+    return hash;
+};
 
 class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
@@ -33,6 +51,9 @@ class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     ECMA_119_PrimaryVolumeDescriptor pvd{};
     ECMA_119_DirectoryRecord root{};
     std::vector<ECMA_119_DirectoryRecord> objects;
+
+    std::map<uint64, ECMA_119_DirectoryRecord> itemsCache;
+
     uint32 currentItemIndex;
 
   public:
