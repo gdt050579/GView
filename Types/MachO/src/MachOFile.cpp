@@ -668,9 +668,10 @@ bool MachOFile::SetCodeSignature()
                     const auto blobBuffer = obj->GetData().CopyToBuffer(
                           codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
                     codeSignature->signature.errorHumanReadable =
-                          !GView::DigitalSignature::PKCS7ToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
-                    codeSignature->signature.errorPEMs = !GView::DigitalSignature::CMSToPEMCerts(blobBuffer, codeSignature->signature.PEMs);
-                    codeSignature->signature.errorSig  = !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
+                          !GView::DigitalSignature::CMSToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
+                    codeSignature->signature.errorPEMs = !GView::DigitalSignature::CMSToPEMCerts(
+                          blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
+                    codeSignature->signature.errorSig = !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:

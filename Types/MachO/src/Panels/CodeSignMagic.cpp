@@ -186,38 +186,24 @@ void CodeSignMagic::UpdateBlobs()
         break;
         case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
         {
-            const auto offset    = nf.ToString(machO->codeSignature->signature.offset, dec);
-            const auto hexOffset = nf2.ToString(machO->codeSignature->signature.offset, hex);
+            const auto& signature = machO->codeSignature->signature;
+
+            const auto offset    = nf.ToString(signature.offset, dec);
+            const auto hexOffset = nf2.ToString(signature.offset, hex);
             cmsOffset            = general->AddItem({ "Offset", ls.Format("%-26s (%s)", offset.data(), hexOffset.data()) });
-            cmsOffset.SetData(machO->codeSignature->signature.offset);
+            cmsOffset.SetData(signature.offset);
 
-            const auto size    = nf.ToString(machO->codeSignature->signature.size, dec);
-            const auto hexSize = nf2.ToString(machO->codeSignature->signature.size, hex);
+            const auto size    = nf.ToString(signature.size, dec);
+            const auto hexSize = nf2.ToString(signature.size, hex);
             cmsSize            = general->AddItem({ "Length", ls.Format("%-26s (%s)", size.data(), hexSize.data()) });
-            cmsSize.SetData(machO->codeSignature->signature.size);
+            cmsSize.SetData(signature.size);
 
-            if (machO->codeSignature->signature.errorHumanReadable)
-            {
-                humanReadable = general->AddItem({ "Human Readable", machO->codeSignature->signature.humanReadable.c_str() });
-                humanReadable.SetType(ListViewItem::Type::ErrorInformation);
-            }
-            else
-            {
-                humanReadable = general->AddItem({ "Human Readable", "Signature parsed - press ENTER for details!" });
-                humanReadable.SetType(ListViewItem::Type::Emphasized_2);
-            }
+            humanReadable =
+                  general->AddItem({ "Human Readable", "Signature parsed - press ENTER for details!", signature.humanReadable.GetText() });
+            humanReadable.SetType(signature.errorHumanReadable ? ListViewItem::Type::ErrorInformation : ListViewItem::Type::Emphasized_2);
 
-            if (machO->codeSignature->signature.errorPEMs)
-            {
-                PEMs = general->AddItem({ "PEMs", machO->codeSignature->signature.PEMs.at(0).c_str() });
-                PEMs.SetType(ListViewItem::Type::ErrorInformation);
-            }
-            else
-            {
-                PEMs = general->AddItem(
-                      { "PEMs", ls.Format("(%d) PEMs parsed - press ENTER for details!", machO->codeSignature->signature.PEMs.size()) });
-                PEMs.SetType(ListViewItem::Type::Emphasized_2);
-            }
+            PEMs = general->AddItem({ "PEMs", ls.Format("(%d) PEMs parsed - press ENTER for details!", signature.PEMsCount) });
+            PEMs.SetType(signature.errorPEMs ? ListViewItem::Type::ErrorInformation : ListViewItem::Type::Emphasized_2);
         }
         break;
         default:
@@ -253,7 +239,7 @@ void CodeSignMagic::UpdateCodeDirectory(
         {
             for (const auto& hash : attribute.CDHashes)
             {
-                if (cdHash == hash)
+                if (hash.GetText() != nullptr && cdHash == hash.GetText())
                 {
                     validHash = true;
                     break;
@@ -486,8 +472,8 @@ void CodeSignMagic::MoreInfo()
     {
         LocalString<128> ls;
         ls.Format("d:c,w:150,h:%d", this->GetHeight());
-        Dialog dialog(nullptr, "PKSC7 human readable", ls.GetText());
-        dialog.SetText(machO->codeSignature->signature.humanReadable.c_str());
+        Dialog dialog(nullptr, "CMS human readable", ls.GetText());
+        dialog.SetText(machO->codeSignature->signature.humanReadable.GetText());
         dialog.Show();
     }
 
@@ -495,8 +481,9 @@ void CodeSignMagic::MoreInfo()
     {
         std::string input;
 
-        for (const auto& pem : machO->codeSignature->signature.PEMs)
+        for (uint32 i = 0U; i < machO->codeSignature->signature.PEMsCount; i++)
         {
+            const auto& pem = machO->codeSignature->signature.PEMs[i];
             input += pem;
             input += "\n";
         }

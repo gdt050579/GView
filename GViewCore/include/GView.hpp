@@ -332,52 +332,57 @@ namespace DigitalSignature
     struct CORE_EXPORT Certificate
     {
         int32 version;
-        std::string serialNumber;
-        std::string signatureAlgorithm;
-        std::string publicKeyAlgorithm;
-        std::string validityNotBefore;
-        std::string validityNotAfter;
-        std::string issuer;
-        std::string subject;
+        String serialNumber;
+        String signatureAlgorithm;
+        String publicKeyAlgorithm;
+        String validityNotBefore;
+        String validityNotAfter;
+        String issuer;
+        String subject;
         int32 verify;
-        std::string errorVerify;
+        String errorVerify;
 
         int32 signerVerify; //  compares the certificate cert against the signer identifier si
-        std::string errorSignerVerify;
+        String errorSignerVerify;
     };
+
+    constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
 
     struct CORE_EXPORT SignerAttributes
     {
-        std::string name;
-        std::vector<ASN1TYPE> types; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
-        std::string contentType;
-        std::string contentTypeData;
+        String name;
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
+        String contentType;
+        String contentTypeData;
         int32 count;
 
-        std::vector<std::string> CDHashes; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
+        String CDHashes[MAX_SIZE_IN_CONTAINER]; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
     };
 
     struct CORE_EXPORT Signer
     {
         int32 count;
-        std::vector<SignerAttributes> attributes;
+        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER];
+        uint32 attributesCount;
     };
 
     struct CORE_EXPORT Signature
     {
         int32 isDetached;
-        std::string sn;
+        String sn;
         Buffer snContent;
 
-        std::vector<Certificate> certificates;
-        std::vector<Signer> signers;
+        Certificate certificates[MAX_SIZE_IN_CONTAINER];
+        uint32 certificatesCount = 0;
+        Signer signers[MAX_SIZE_IN_CONTAINER];
+        uint32 signersCount = 0;
 
-        std::string errorMessage;
+        String errorMessage;
         bool error = true;
     };
 
-    CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, std::string& ouput);
-    CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, std::vector<std::string>& output);
+    CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
+    CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
     CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
 } // namespace DigitalSignature
 

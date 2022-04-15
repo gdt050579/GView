@@ -126,10 +126,11 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
             uint64 size;
 
             bool errorHumanReadable = false;
-            std::string humanReadable;
+            String humanReadable;
 
             bool errorPEMs = false;
-            std::vector<std::string> PEMs;
+            String PEMs[DigitalSignature::MAX_SIZE_IN_CONTAINER];
+            uint32 PEMsCount = 0;
 
             bool errorSig = false;
             DigitalSignature::Signature sig;
