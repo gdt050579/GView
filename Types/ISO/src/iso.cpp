@@ -137,6 +137,25 @@ extern "C"
         win->CreateViewer("BufferView", settings);
     }
 
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
+    {
+        ContainerViewer::Settings settings;
+
+        //  settings.SetIcon(folderIcon);
+        settings.SetColumns({
+              { "&Name", TextAlignament::Left, 80 },
+              { "&Size", TextAlignament::Right, 20 },
+              { "&Created", TextAlignament::Right, 20 },
+              { "&OffsetInFile", TextAlignament::Right, 20 },
+              { "&Flags", TextAlignament::Right, 20 },
+        });
+
+        settings.SetEnumerateCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+        win->CreateViewer("ContainerViewer", settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto iso = win->GetObject()->GetContentType<ISO::ISOFile>();
@@ -144,6 +163,7 @@ extern "C"
 
         // add views
         CreateBufferView(win, iso);
+        CreateContainerView(win, iso);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(iso)), true);

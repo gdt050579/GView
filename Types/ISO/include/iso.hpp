@@ -3,12 +3,24 @@
 #include "Common.hpp"
 #include "ECMA119.hpp"
 
+#include <queue>
+
 namespace GView::Type::ISO
 {
-class ISOFile : public TypeInterface
+inline const std::string RecordingDateAndTimeToString(const unsigned char data[7])
+{
+    const auto gmt         = data[6];
+    const uint8 gmtHours   = gmt / 4;
+    const uint8 gmtMinutes = std::abs((gmt % 4) * 15);
+
+    LocalString<16> ls;
+    ls.Format("%.4d-%.2d-%.2d %.2d:%.2d:%.2d %.2d:%.2d", 1900 + data[0], data[1], data[2], data[3], data[4], data[5], gmtHours, gmtMinutes);
+    return ls.GetText();
+}
+
+class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
-
     struct MyVolumeDescriptorHeader
     {
         ECMA_119_VolumeDescriptorHeader header;
@@ -17,6 +29,11 @@ class ISOFile : public TypeInterface
 
     std::vector<MyVolumeDescriptorHeader> headers;
     std::vector<ECMA_119_DirectoryRecord> records;
+
+    ECMA_119_PrimaryVolumeDescriptor pvd{};
+    ECMA_119_DirectoryRecord root{};
+    std::vector<ECMA_119_DirectoryRecord> objects;
+    uint32 currentItemIndex;
 
   public:
     ISOFile();
@@ -30,6 +47,10 @@ class ISOFile : public TypeInterface
     {
         return "ISO";
     }
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 };
 
 namespace Panels
