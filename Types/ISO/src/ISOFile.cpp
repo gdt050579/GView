@@ -1,5 +1,8 @@
 #include "iso.hpp"
 
+#include <queue>
+#include <map>
+
 using namespace GView::Type::ISO;
 
 ISOFile::ISOFile()

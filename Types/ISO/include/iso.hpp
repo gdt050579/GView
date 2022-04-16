@@ -3,39 +3,8 @@
 #include "Common.hpp"
 #include "ECMA119.hpp"
 
-#include <queue>
-#include <set>
-
 namespace GView::Type::ISO
 {
-inline static const std::string RecordingDateAndTimeToString(const unsigned char data[7])
-{
-    const auto gmt         = data[6];
-    const uint8 gmtHours   = gmt / 4;
-    const uint8 gmtMinutes = std::abs((gmt % 4) * 15);
-
-    LocalString<16> ls;
-    ls.Format("%.4d-%.2d-%.2d %.2d:%.2d:%.2d %.2d:%.2d", 1900 + data[0], data[1], data[2], data[3], data[4], data[5], gmtHours, gmtMinutes);
-    return ls.GetText();
-}
-
-inline static const auto DRCRC64(const ECMA_119_DirectoryRecord& dr)
-{
-    constexpr auto sizeDelta = sizeof(ECMA_119_DirectoryRecord) -
-                               sizeof(ECMA_119_DirectoryRecord::fileIdentifier) / sizeof(ECMA_119_DirectoryRecord::fileIdentifier[0]);
-
-    const auto sizeTotal = sizeDelta + dr.lengthOfFileIdentifier;
-
-    Hashes::CRC64 crc64{};
-    crc64.Init(Hashes::CRC64Type::ECMA_182);
-    crc64.Update(BufferView{ &dr, sizeTotal });
-
-    uint64 hash;
-    crc64.Final(hash);
-
-    return hash;
-};
-
 class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
@@ -78,6 +47,7 @@ namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
+        Reference<Object> object;
         Reference<GView::Type::ISO::ISOFile> iso;
         Reference<AppCUI::Controls::ListView> general;
         Reference<AppCUI::Controls::ListView> issues;
@@ -153,7 +123,7 @@ namespace Panels
         }
 
       public:
-        Information(Reference<GView::Type::ISO::ISOFile> iso);
+        Information(Reference<Object> _object, Reference<GView::Type::ISO::ISOFile> _iso);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
