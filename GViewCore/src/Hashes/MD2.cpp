@@ -130,10 +130,13 @@ std::string_view MD2::GetName()
 const std::string_view MD2::GetHexValue()
 {
     Final();
+    LocalString<ResultBytesLength * 2> ls;
     for (auto i = 0U; i < ResultBytesLength; i++)
     {
-        hexDigest.AddFormat("%.2X", x[i]);
+        ls.AddFormat("%.2X", x[i]);
     }
-    return hexDigest;
+
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

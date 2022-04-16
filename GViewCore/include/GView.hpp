@@ -145,8 +145,6 @@ namespace Hashes
 
         bool init;
 
-        LocalString<256> hexDigest;
-
       public:
         bool Init();
         bool Update(const unsigned char* input, uint32 length);
@@ -158,6 +156,9 @@ namespace Hashes
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(a) + sizeof(b);
+
+      private:
+        char hexDigest[ResultBytesLength * 2];
     };
 
     class CORE_EXPORT CRC16
@@ -165,8 +166,6 @@ namespace Hashes
       private:
         uint32 value;
         bool init;
-
-        LocalString<256> hexDigest;
 
       public:
         bool Init();
@@ -179,6 +178,9 @@ namespace Hashes
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
+
+      private:
+        char hexDigest[ResultBytesLength * 2];
     };
 
     enum class CRC32Type : uint32
@@ -195,8 +197,6 @@ namespace Hashes
 
         bool init;
 
-        LocalString<256> hexDigest;
-
       public:
         bool Init(CRC32Type type);
         bool Update(const unsigned char* input, uint32 length);
@@ -208,6 +208,9 @@ namespace Hashes
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
+
+      private:
+        char hexDigest[ResultBytesLength * 2];
     };
 
     enum class CRC64Type : uint64
@@ -224,8 +227,6 @@ namespace Hashes
 
         bool init;
 
-        LocalString<256> hexDigest;
-
       private:
         bool Final();
 
@@ -240,6 +241,9 @@ namespace Hashes
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(value);
+
+      private:
+        char hexDigest[ResultBytesLength * 2];
     };
 
     class CORE_EXPORT MD2
@@ -251,8 +255,6 @@ namespace Hashes
         uint32 size;
 
         bool init;
-
-        LocalString<256> hexDigest;
 
       private:
         bool Final();
@@ -268,6 +270,9 @@ namespace Hashes
 
       public:
         inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
+
+      private:
+        char hexDigest[ResultBytesLength * 2];
     };
 
     enum class OpenSSLHashKind : uint8
@@ -303,11 +308,13 @@ namespace Hashes
         const uint8* Get() const;
         uint32 GetSize() const;
 
-      public:
+      private:
         void* handle;
         uint8 hash[64];
         uint32 size;
-        LocalString<256> hexDigest;
+
+      private:
+        char hexDigest[(sizeof(hash) / sizeof(hash[0])) * 2];
     };
 } // namespace Hashes
 
@@ -567,7 +574,7 @@ namespace View
             bool SetPathSeparator(char16 separator);
             bool AddProperty(string_view name, string_view value);
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
-            void SetEnumarateCallback(Reference<EnumerateInterface> callback);
+            void SetEnumerateCallback(Reference<EnumerateInterface> callback);
             void SetOpenItemCallback(Reference<OpenItemInterface> callback);
         };
     }; // namespace ContainerViewer

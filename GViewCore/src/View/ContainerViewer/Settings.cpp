@@ -59,7 +59,7 @@ void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder>
 //    SD->columnsCount++;
 //    return true;
 //}
-void Settings::SetEnumarateCallback(Reference<EnumerateInterface> callback)
+void Settings::SetEnumerateCallback(Reference<EnumerateInterface> callback)
 {
     SD->enumInterface = callback;
 }

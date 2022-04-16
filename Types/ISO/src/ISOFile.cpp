@@ -1,6 +1,7 @@
 #include "iso.hpp"
 
 #include <queue>
+#include <map>
 
 using namespace GView::Type::ISO;
 
@@ -29,7 +30,6 @@ bool ISOFile::Update()
             continue;
         }
 
-        ECMA_119_PrimaryVolumeDescriptor pvd{};
         CHECK(obj->GetData().Copy<ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), false, "");
 
         const auto ptrLocation = pvd.vdd.locationOfTypeLPathTable * pvd.vdd.logicalBlockSize.LSB;
@@ -52,7 +52,7 @@ bool ISOFile::Update()
          */
 
         const auto blockSize = pvd.vdd.logicalBlockSize.LSB;
-        const auto root      = *reinterpret_cast<ECMA_119_DirectoryRecord*>(&pvd.vdd.directoryEntryForTheRootDirectory);
+        root                 = *reinterpret_cast<ECMA_119_DirectoryRecord*>(&pvd.vdd.directoryEntryForTheRootDirectory);
         auto fileEntryOffset = root.locationOfExtent.LSB * blockSize;
         auto block           = 0;
         CHECK(fileEntryOffset == ptr.locationOfExtent * blockSize, false, "");
@@ -97,4 +97,101 @@ bool ISOFile::Update()
     }
 
     return true;
+}
+
+bool ISOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+{
+    objects.clear();
+    currentItemIndex = 0;
+    ECMA_119_DirectoryRecord current{};
+
+    int64 currentOffset;
+    if (parent.GetParent().GetHandle() == InvalidItemHandle)
+    {
+        currentOffset = (int64) root.locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
+    }
+    else
+    {
+        auto data     = parent.GetData<ECMA_119_DirectoryRecord>();
+        currentOffset = (uint64) data->locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
+        CHECK(currentOffset != pvd.vdd.logicalBlockSize.LSB, false, "");
+    }
+
+    auto i = 0ULL;
+    do
+    {
+        CHECK(obj->GetData().Copy<ECMA_119_DirectoryRecord>(currentOffset, current), false, "");
+
+        if (i > 1 && current.lengthOfDirectoryRecord != 0) // skip '.' & '..'
+        {
+            objects.emplace_back(current);
+        }
+
+        currentOffset += current.lengthOfDirectoryRecord;
+
+        i++;
+
+    } while (current.lengthOfDirectoryRecord != 0);
+
+    return objects.size() > 0;
+}
+
+bool ISOFile::PopulateItem(TreeViewItem item)
+{
+    NumericFormatter nf;
+    const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
+    const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+    const auto& currentObject = objects[currentItemIndex];
+    item.SetText(std::string_view{ currentObject.fileIdentifier, currentObject.lengthOfFileIdentifier });
+
+    if (currentObject.fileFlags & ECMA_119_FileFlags::Directory)
+    {
+        item.SetType(
+              (currentObject.fileFlags & ECMA_119_FileFlags::Existence) ? TreeViewItem::Type::ErrorInformation
+                                                                        : TreeViewItem::Type::Category);
+    }
+    else
+    {
+        item.SetType(
+              (currentObject.fileFlags & ECMA_119_FileFlags::Existence) ? TreeViewItem::Type::ErrorInformation
+                                                                        : TreeViewItem::Type::Normal);
+    }
+
+    item.SetPriority(currentObject.fileFlags & ECMA_119_FileFlags::Directory);
+    item.SetExpandable(currentObject.fileFlags & ECMA_119_FileFlags::Directory);
+
+    item.SetText(1, nf.ToString((uint64) currentObject.dataLength.LSB, dec));
+    item.SetText(2, RecordingDateAndTimeToString(currentObject.recordingDateAndTime));
+    item.SetText(3, nf.ToString((uint64) currentObject.locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB, hex));
+    item.SetText(4, GetECMA_119_FileFlags(currentObject.fileFlags));
+
+    const auto key = DRCRC64(currentObject);
+    const auto it  = itemsCache.find(key);
+    if (it == itemsCache.end())
+    {
+        auto res = itemsCache.emplace(std::pair{ key, currentObject });
+        item.SetData<ECMA_119_DirectoryRecord>(&res.first->second);
+    }
+    else
+    {
+        item.SetData<ECMA_119_DirectoryRecord>(&it->second);
+    }
+
+    currentItemIndex++;
+
+    return currentItemIndex != objects.size();
+}
+
+void ISOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
+{
+    CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
+
+    auto data         = item.GetData<ECMA_119_DirectoryRecord>();
+    const auto offset = (uint64) data->locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
+    const auto length = (uint32) data->dataLength.LSB;
+    const auto name   = std::string_view{ data->fileIdentifier, data->lengthOfFileIdentifier };
+
+    const auto buffer = obj->GetData().CopyToBuffer(offset, length);
+    GView::App::OpenBuffer(buffer, name);
 }

@@ -66,11 +66,15 @@ std::string_view OpenSSLHash::GetHexValue()
     {
         return {};
     }
+
+    LocalString<(sizeof(hash) / sizeof(hash[0])) * 2> ls;
     for (auto i = 0U; i < size; i++)
     {
-        hexDigest.AddFormat("%.2X", hash[i]);
+        ls.AddFormat("%.2X", hash[i]);
     }
-    return hexDigest;
+    memcpy(hexDigest, ls.GetText(), size * 2ULL);
+
+    return { hexDigest, size * 2 };
 }
 
 const uint8* OpenSSLHash::Get() const
