@@ -42,7 +42,13 @@ bool CRC16::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool CRC16::Update(Buffer buffer)
+bool CRC16::Update(const Buffer& buffer)
+{
+    CHECK(buffer.IsValid(), false, "");
+    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+}
+
+bool CRC16::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
@@ -61,10 +67,12 @@ std::string_view CRC16::GetName()
 {
     return "CRC16 (CCITT)";
 }
-const std::string CRC16::GetHexValue()
+
+const std::string_view CRC16::GetHexValue()
 {
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x%.8X", value);
-    return std::string{ ls };
+    ls.Format("%.8X", value);
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

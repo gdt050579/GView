@@ -314,39 +314,4 @@ static const std::vector<CodeSignExecSegFlags> GetCodeSignExecSegFlagsData(uint6
 
     return output;
 }
-
-static inline const CS_CodeDirectory* FindCodeDirectory(const CS_SuperBlob* embedded)
-{
-    CHECK(embedded != nullptr, nullptr, "");
-    CHECK(static_cast<CodeSignMagic>(embedded->magic) /* TODO: endianess? */ == CodeSignMagic::CSMAGIC_EMBEDDED_SIGNATURE, nullptr, "");
-
-    // const CS_BlobIndex* limit = &embedded->index[embedded->count /* TODO: endianess? */];
-    // for (const CS_BlobIndex* blob = embedded->index; blob < limit; ++blob)
-    //{
-    //     if (/* TODO: endianess? */ static_cast<CodeSignMagic>(blob->type) == CodeSignMagic::CSMAGIC_CODEDIRECTORY)
-    //     {
-    //         auto base = (const unsigned char*) embedded;
-    //         auto cd   = (const CS_CodeDirectory*) (base + /* TODO: endianess? */ blob->offset);
-    //         if (/* TODO: endianess? */ static_cast<CodeSignMagic>(cd->magic) == CodeSignMagic::CSMAGIC_CODEDIRECTORY)
-    //         {
-    //             return cd;
-    //         }
-    //         break;
-    //     }
-    // }
-
-    // not found
-    return nullptr;
-}
-
-static bool ValidateSlot(const void* data, size_t length, size_t slot, const CS_CodeDirectory* codeDirectory)
-{
-    uint8_t digest[CC_SHA1_DIGEST_LENGTH + 1] = {
-        0,
-    };
-    // CC_SHA1(data, (CC_LONG) length, digest);
-    // return (memcmp(digest, (void*) ((char*) codeDirectory + ntohl(codeDirectory->hashOffset) + 20 * slot), 20) == 0);
-
-    return true;
-}
 } // namespace MAC

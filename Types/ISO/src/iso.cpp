@@ -22,6 +22,23 @@ static const std::map<std::string_view, ISO::Identifier> identifiers
 };
 // clang-format on
 
+constexpr string_view ISO_ICON = "................"  // 1
+                                 "................"  // 2
+                                 "................"  // 3
+                                 "................"  // 4
+                                 "WW.WWWWW.WWWWWWW"  // 5
+                                 "WW.WWWWW.WWWWWWW"  // 6
+                                 "WW.WW....WW...WW"  // 7
+                                 "WW.WWWWW.WW...WW"  // 8
+                                 "WW....WW.WW...WW"  // 9
+                                 "WW.WWWWW.WWWWWWW"  // 10
+                                 "WW.WWWWW.WWWWWWW"  // 11
+                                 "................"  // 12
+                                 "................"  // 13
+                                 "................"  // 14
+                                 "................"  // 15
+                                 "................"; // 16
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
@@ -137,16 +154,36 @@ extern "C"
         win->CreateViewer("BufferView", settings);
     }
 
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
+    {
+        ContainerViewer::Settings settings;
+
+        settings.SetIcon(ISO_ICON);
+        settings.SetColumns({
+              { "&Name", TextAlignament::Left, 80 },
+              { "&Size", TextAlignament::Right, 20 },
+              { "&Created", TextAlignament::Right, 25 },
+              { "&OffsetInFile", TextAlignament::Right, 20 },
+              { "&Flags", TextAlignament::Right, 25 },
+        });
+
+        settings.SetEnumerateCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+        win->CreateViewer("ContainerViewer", settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto iso = win->GetObject()->GetContentType<ISO::ISOFile>();
         iso->Update();
 
         // add views
+        CreateContainerView(win, iso);
         CreateBufferView(win, iso);
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(iso)), true);
+        win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(win->GetObject(), iso)), true);
         win->AddPanel(Pointer<TabPage>(new ISO::Panels::Objects(iso, win)), false);
 
         return true;

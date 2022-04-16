@@ -3,11 +3,14 @@
 using namespace GView::Type::ISO;
 using namespace AppCUI::Controls;
 
-Panels::Information::Information(Reference<GView::Type::ISO::ISOFile> _iso) : TabPage("Informa&tion")
+Panels::Information::Information(Reference<Object> _object, Reference<GView::Type::ISO::ISOFile> _iso) : TabPage("Informa&tion")
 {
     iso     = _iso;
+    object  = _object;
     general = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:10", std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+          "x:0,y:0,w:100%,h:10",
+          std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } },
+          ListViewFlags::None);
 
     Update();
 }
@@ -20,7 +23,7 @@ void Panels::Information::UpdateGeneralInformation()
 
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
-    general->AddItem({ "File", "NOT IMPLEMENTED" });
+    general->AddItem({ "File", object->GetName() });
 
     const auto fileSize    = nf.ToString(iso->obj->GetData().GetSize(), dec);
     const auto hexfileSize = nf2.ToString(iso->obj->GetData().GetSize(), hex);

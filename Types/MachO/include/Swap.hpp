@@ -211,13 +211,26 @@ static void Swap(CS_CodeDirectory& obj)
     SwapEndianInplace(obj.platform);
     SwapEndianInplace(obj.pageSize);
     SwapEndianInplace(obj.spare2);
-    SwapEndianInplace(obj.scatterOffset);
-    SwapEndianInplace(obj.teamOffset);
-    SwapEndianInplace(obj.spare3);
-    SwapEndianInplace(obj.codeLimit64);
-    SwapEndianInplace(obj.execSegBase);
-    SwapEndianInplace(obj.execSegLimit);
-    SwapEndianInplace(obj.execSegFlags);
+
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSSCATTER))
+    {
+        SwapEndianInplace(obj.scatterOffset);
+    }
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSTEAMID))
+    {
+        SwapEndianInplace(obj.teamOffset);
+    }
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSCODELIMIT64))
+    {
+        SwapEndianInplace(obj.spare3);
+        SwapEndianInplace(obj.codeLimit64);
+    }
+    if (obj.version >= static_cast<uint32>(CodeSignMagic::CS_SUPPORTSEXECSEG))
+    {
+        SwapEndianInplace(obj.execSegBase);
+        SwapEndianInplace(obj.execSegLimit);
+        SwapEndianInplace(obj.execSegFlags);
+    }
 }
 
 static void Swap(CS_RequirementsBlob& obj)
@@ -255,5 +268,76 @@ static void Swap(dyld_info_command& obj)
     SwapEndianInplace(obj.lazy_bind_size);
     SwapEndianInplace(obj.export_off);
     SwapEndianInplace(obj.export_size);
+}
+
+static void Swap(i386_thread_state_t& obj)
+{
+    SwapEndianInplace(obj.eax);
+    SwapEndianInplace(obj.ebx);
+    SwapEndianInplace(obj.ecx);
+    SwapEndianInplace(obj.edx);
+    SwapEndianInplace(obj.edi);
+    SwapEndianInplace(obj.esi);
+    SwapEndianInplace(obj.ebp);
+    SwapEndianInplace(obj.esp);
+    SwapEndianInplace(obj.ss);
+    SwapEndianInplace(obj.eflags);
+    SwapEndianInplace(obj.eip);
+    SwapEndianInplace(obj.cs);
+    SwapEndianInplace(obj.ds);
+    SwapEndianInplace(obj.es);
+    SwapEndianInplace(obj.fs);
+    SwapEndianInplace(obj.gs);
+}
+
+static void Swap(x86_thread_state64_t& obj)
+{
+    SwapEndianInplace(obj.rax);
+    SwapEndianInplace(obj.rbx);
+    SwapEndianInplace(obj.rcx);
+    SwapEndianInplace(obj.rdx);
+    SwapEndianInplace(obj.rdi);
+    SwapEndianInplace(obj.rsi);
+    SwapEndianInplace(obj.rbp);
+    SwapEndianInplace(obj.rsp);
+    SwapEndianInplace(obj.r8);
+    SwapEndianInplace(obj.r9);
+    SwapEndianInplace(obj.r10);
+    SwapEndianInplace(obj.r11);
+    SwapEndianInplace(obj.r12);
+    SwapEndianInplace(obj.r13);
+    SwapEndianInplace(obj.r14);
+    SwapEndianInplace(obj.r15);
+    SwapEndianInplace(obj.rip);
+    SwapEndianInplace(obj.rflags);
+    SwapEndianInplace(obj.cs);
+    SwapEndianInplace(obj.fs);
+    SwapEndianInplace(obj.gs);
+}
+
+static void Swap(ppc_thread_state_t& obj)
+{
+    SwapEndianInplace(obj.srr0);
+    SwapEndianInplace(obj.srr1);
+    SwapEndianInplace(obj.r);
+    SwapEndianInplace(obj.cr);
+    SwapEndianInplace(obj.xer);
+    SwapEndianInplace(obj.lr);
+    SwapEndianInplace(obj.ctr);
+    SwapEndianInplace(obj.mq);
+    SwapEndianInplace(obj.vrsave);
+}
+
+static void Swap(ppc_thread_state64_t& obj)
+{
+    SwapEndianInplace(obj.srr0);
+    SwapEndianInplace(obj.srr1);
+    SwapEndianInplace(obj.r);
+    SwapEndianInplace(obj.cr);
+    SwapEndianInplace(obj.xer);
+    SwapEndianInplace(obj.lr);
+    SwapEndianInplace(obj.ctr);
+    /*SwapEndianInplace(obj.mq); // only on 601 */
+    SwapEndianInplace(obj.vrsave);
 }
 } // namespace MAC

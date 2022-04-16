@@ -78,24 +78,7 @@ void Panels::Objects::Update()
         item.SetText(1, tmp.Format("%s", GetValue(n, record.extendedAttributeRecordLength).data()));
         item.SetText(2, tmp.Format("%s", GetValue(n, record.locationOfExtent.LSB).data()));
         item.SetText(3, tmp.Format("%s", GetValue(n, record.dataLength.LSB).data()));
-
-        const auto gmt         = record.recordingDateAndTime[6];
-        const uint8 gmtHours   = gmt / 4;
-        const uint8 gmtMinutes = std::abs((gmt % 4) * 15);
-
-        item.SetText(
-              4,
-              tmp.Format(
-                    "%.4d-%.2d-%.2d %.2d:%.2d:%.2d %.2d:%.2d",
-                    1900 + record.recordingDateAndTime[0],
-                    record.recordingDateAndTime[1],
-                    record.recordingDateAndTime[2],
-                    record.recordingDateAndTime[3],
-                    record.recordingDateAndTime[4],
-                    record.recordingDateAndTime[5],
-                    gmtHours,
-                    gmtMinutes));
-
+        item.SetText(4, RecordingDateAndTimeToString(record.recordingDateAndTime).c_str());
         item.SetText(5, tmp.Format("[%s] %s", GetECMA_119_FileFlags(record.fileFlags).c_str(), GetValue(n, record.fileFlags).data()));
         item.SetText(6, tmp.Format("%s", GetValue(n, record.fileUnitSize).data()));
         item.SetText(7, tmp.Format("%s", GetValue(n, record.interleaveGapSize).data()));

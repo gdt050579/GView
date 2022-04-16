@@ -5,10 +5,9 @@
 
 namespace GView::Type::ISO
 {
-class ISOFile : public TypeInterface
+class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
-
     struct MyVolumeDescriptorHeader
     {
         ECMA_119_VolumeDescriptorHeader header;
@@ -17,6 +16,14 @@ class ISOFile : public TypeInterface
 
     std::vector<MyVolumeDescriptorHeader> headers;
     std::vector<ECMA_119_DirectoryRecord> records;
+
+    ECMA_119_PrimaryVolumeDescriptor pvd{};
+    ECMA_119_DirectoryRecord root{};
+    std::vector<ECMA_119_DirectoryRecord> objects;
+
+    std::map<uint64, ECMA_119_DirectoryRecord> itemsCache;
+
+    uint32 currentItemIndex;
 
   public:
     ISOFile();
@@ -30,12 +37,17 @@ class ISOFile : public TypeInterface
     {
         return "ISO";
     }
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 };
 
 namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
+        Reference<Object> object;
         Reference<GView::Type::ISO::ISOFile> iso;
         Reference<AppCUI::Controls::ListView> general;
         Reference<AppCUI::Controls::ListView> issues;
@@ -111,7 +123,7 @@ namespace Panels
         }
 
       public:
-        Information(Reference<GView::Type::ISO::ISOFile> iso);
+        Information(Reference<Object> _object, Reference<GView::Type::ISO::ISOFile> _iso);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override

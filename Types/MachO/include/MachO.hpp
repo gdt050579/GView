@@ -100,7 +100,13 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
         MAC::CS_SuperBlob superBlob;
         std::vector<MAC::CS_BlobIndex> blobs;
         MAC::CS_CodeDirectory codeDirectory;
+        std::string codeDirectoryIdentifier;
+        std::string cdHash;
+        std::vector<std::pair<std::string, std::string>> cdSlotsHashes; // per normal slots
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
+        std::vector<std::string> alternateDirectoriesIdentifiers;
+        std::vector<std::string> acdHashes;
+        std::vector<std::vector<std::pair<std::string, std::string>>> acdSlotsHashes; // per normal slots
 
         struct
         {
@@ -113,6 +119,22 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
             MAC::CS_GenericBlob blob;
             std::string data;
         } entitlements;
+
+        struct
+        {
+            uint64 offset;
+            uint64 size;
+
+            bool errorHumanReadable = false;
+            String humanReadable;
+
+            bool errorPEMs = false;
+            String PEMs[DigitalSignature::MAX_SIZE_IN_CONTAINER];
+            uint32 PEMsCount = 0;
+
+            bool errorSig = false;
+            DigitalSignature::Signature sig;
+        } signature;
     };
 
   public:
@@ -165,12 +187,16 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetLinkEditData();
     bool SetCodeSignature();
     bool SetVersionMin();
+
+  private:
+    bool ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const;
 };
 
 namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
+        Reference<Object> object;
         Reference<MachOFile> machO;
         Reference<AppCUI::Controls::ListView> general;
 
@@ -185,7 +211,7 @@ namespace Panels
         void RecomputePanelsPositions();
 
       public:
-        Information(Reference<MachOFile> machO);
+        Information(Reference<Object> _object, Reference<MachOFile> _machO);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
@@ -311,7 +337,13 @@ namespace Panels
     {
       private:
         Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
         Reference<AppCUI::Controls::ListView> general;
+
+        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
+        ListViewItem cmsSize;       // MAC CMS signature/digital signature
+        ListViewItem humanReadable; // MAC CMS signature/digital signature
+        ListViewItem PEMs;          // MAC CMS signature/digital signature
 
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
         inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
@@ -320,18 +352,28 @@ namespace Panels
         void UpdateSuperBlob();
         void UpdateSlots();
         void UpdateBlobs();
-        void UpdateCodeDirectory(const MAC::CS_CodeDirectory& code);
+        void UpdateCodeDirectory(
+              const MAC::CS_CodeDirectory& code,
+              const std::string& identifier,
+              const std::string& cdHash,
+              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
 
         void RecomputePanelsPositions();
 
+        void GoToSelectedOffset();
+        void SelectArea();
+        void MoreInfo();
+
       public:
-        CodeSignMagic(Reference<MachOFile> machO);
+        CodeSignMagic(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             RecomputePanelsPositions();
         }
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
 } // namespace GView::Type::MachO
