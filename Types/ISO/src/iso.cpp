@@ -179,8 +179,8 @@ extern "C"
         iso->Update();
 
         // add views
-        CreateBufferView(win, iso);
         CreateContainerView(win, iso);
+        CreateBufferView(win, iso);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(iso)), true);

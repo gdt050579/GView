@@ -164,7 +164,7 @@ bool ISOFile::PopulateItem(TreeViewItem item)
     item.SetText(4, GetECMA_119_FileFlags(currentObject.fileFlags));
 
     const auto key = DRCRC64(currentObject);
-    auto it        = itemsCache.find(key);
+    const auto it  = itemsCache.find(key);
     if (it == itemsCache.end())
     {
         auto res = itemsCache.emplace(std::pair{ key, currentObject });
