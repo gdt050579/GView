@@ -37,7 +37,8 @@ namespace View
 
         class Instance : public View::ViewControl,
                          public Controls::Handlers::OnTreeItemToggleInterface,
-                         public Controls::Handlers::OnTreeItemPressedInterface
+                         public Controls::Handlers::OnTreeItemPressedInterface,
+                         public Controls::Handlers::OnCurrentTreeItemChangedInterface
         {
             Pointer<SettingsData> settings;
             Reference<AppCUI::Controls::ImageView> imgView;
@@ -68,6 +69,7 @@ namespace View
             // tree item toggle
             virtual void OnTreeItemToggle(Reference<TreeView>, TreeViewItem& item) override;
             virtual void OnTreeItemPressed(Reference<TreeView>, TreeViewItem& item) override;
+            virtual void OnCurrentTreeItemChanged(Reference<TreeView>, TreeViewItem& item) override;
 
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;

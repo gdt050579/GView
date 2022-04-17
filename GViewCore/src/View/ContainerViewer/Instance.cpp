@@ -46,8 +46,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     this->items = Factory::TreeView::Create(
           this, "l:0,t:10,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
-    this->items->Handlers()->OnItemToggle  = this;
-    this->items->Handlers()->OnItemPressed = this;
+    this->items->Handlers()->OnItemToggle         = this;
+    this->items->Handlers()->OnItemPressed        = this;
+    this->items->Handlers()->OnCurrentItemChanged = this;
     for (uint32 idx = 0; idx < settings->columnsCount; idx++)
     {
         const auto& col = settings->columns[idx];
@@ -60,6 +61,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     }
     this->items->Sort(0, true);
     this->items->SetFocus();
+    UpdatePathForItem(this->items->GetCurrentItem());
 }
 void Instance::BuildPath(TreeViewItem item)
 {
@@ -104,6 +106,10 @@ void Instance::OnTreeItemPressed(Reference<TreeView>, TreeViewItem& item)
         this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
     }
 }
+void Instance::OnCurrentTreeItemChanged(Reference<TreeView>, TreeViewItem& item)
+{
+    UpdatePathForItem(item);
+}
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     return false;
@@ -137,7 +143,7 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
-    this->WriteCursorInfo(r, 0, 0, 16, "temp", "temp");
+    this->WriteCusorInfoLine(r, 0, 0, "Path: ", this->currentPath);
 }
 
 //======================================================================[PROPERTY]============================

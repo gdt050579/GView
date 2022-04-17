@@ -19,3 +19,16 @@ int ViewControl::WriteCursorInfo(
     }
     return x + width + 1;
 }
+void ViewControl::WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value)
+{
+    if (this->HasFocus())
+    {
+        renderer.WriteSingleLineText(x, y, key, Cfg.Text.Highlighted);
+        renderer.WriteSingleLineText(x + (int) key.size(), y, value, Cfg.Text.Normal);
+    }
+    else
+    {
+        renderer.WriteSingleLineText(x, y, key, Cfg.Text.Inactive);
+        renderer.WriteSingleLineText(x + (int) key.size(), y, value, Cfg.Text.Inactive);
+    }
+}
