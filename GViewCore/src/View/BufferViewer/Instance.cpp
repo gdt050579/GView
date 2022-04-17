@@ -100,7 +100,7 @@ void Instance::OpenCurrentSelection()
     {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        auto buf = this->obj->GetData().CopyToBuffer(start, end - start);
+        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32)(end - start));
         if (buf.IsValid()==false)
         {
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");

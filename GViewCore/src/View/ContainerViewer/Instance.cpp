@@ -45,7 +45,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
           ListViewFlags::HideColumns);
 
     this->items = Factory::TreeView::Create(
-          this, "l:0,t:10,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
+          this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
     this->items->Handlers()->OnItemToggle         = this;
     this->items->Handlers()->OnItemPressed        = this;
     this->items->Handlers()->OnCurrentItemChanged = this;
@@ -93,12 +93,12 @@ void Instance::PopulateItem(TreeViewItem item)
     }
     this->items->Sort();
 }
-void Instance::OnTreeItemToggle(Reference<TreeView>, TreeViewItem& item)
+void Instance::OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item)
 {
     if (!item.IsFolded())
         PopulateItem(item);
 }
-void Instance::OnTreeItemPressed(Reference<TreeView>, TreeViewItem& item)
+void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
 {
     if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
     {
@@ -106,7 +106,7 @@ void Instance::OnTreeItemPressed(Reference<TreeView>, TreeViewItem& item)
         this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
     }
 }
-void Instance::OnCurrentTreeItemChanged(Reference<TreeView>, TreeViewItem& item)
+void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& item)
 {
     UpdatePathForItem(item);
 }
