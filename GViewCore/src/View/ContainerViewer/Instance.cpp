@@ -85,10 +85,16 @@ void Instance::UpdatePathForItem(TreeViewItem item)
 void Instance::PopulateItem(TreeViewItem item)
 {
     UpdatePathForItem(item);
+    AppCUI::Graphics::ProgressStatus::Init("Reading folder");
+    uint32 count = 0;
+    LocalString<128> temp;
     if (this->settings->enumInterface->BeginIteration(this->currentPath, item))
     {
         while (this->settings->enumInterface->PopulateItem(item.AddChild("")))
         {
+            count++;            
+            if (AppCUI::Graphics::ProgressStatus::Update(count, temp.Format("Items: %u",count)))
+                break;
         }
     }
     this->items->Sort();
