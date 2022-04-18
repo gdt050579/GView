@@ -49,31 +49,51 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
 };
 bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem parent)
 {
-    std::filesystem::path path = root;
-    path /= relativePath;
-    dirIT = std::filesystem::directory_iterator(path);
-    if (dirIT == std::filesystem::directory_iterator())
-        return false; // empty directory
-    return dirIT->exists();
+    try
+    {
+        std::filesystem::path path = root;
+        path /= relativePath;
+        dirIT = std::filesystem::directory_iterator(path);
+        if (dirIT == std::filesystem::directory_iterator())
+            return false; // empty directory
+        return dirIT->exists();
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 bool FolderType::PopulateItem(TreeViewItem item)
 {
-    item.SetText(dirIT->path().filename().u8string());
-    if (dirIT->is_directory())
+    bool nameWasSet = false;
+    try
     {
-        item.SetType(TreeViewItem::Type::Category);
-        item.SetExpandable(true);
-        item.SetText(1, "<FOLDER>");
-        item.SetPriority(1);
+        item.SetText(dirIT->path().filename().u8string());
+        nameWasSet = true;
+        if (dirIT->is_directory())
+        {
+            item.SetType(TreeViewItem::Type::Category);
+            item.SetExpandable(true);
+            item.SetText(1, "<FOLDER>");
+            item.SetPriority(1);
+        }
+        else
+        {
+            item.SetType(TreeViewItem::Type::Normal);
+            item.SetExpandable(false);
+            NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
+            NumericFormatter nf;
+            item.SetText(1, nf.ToString((uint64) dirIT->file_size(), fmt));
+            item.SetPriority(0);
+        }
     }
-    else
+    catch (...)
     {
-        item.SetType(TreeViewItem::Type::Normal);
         item.SetExpandable(false);
-        NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
-        NumericFormatter nf;
-        item.SetText(1, nf.ToString((uint64) dirIT->file_size(), fmt));
-        item.SetPriority(0);
+        item.SetType(TreeViewItem::Type::ErrorInformation);
+        item.SetText(1, "<ERROR>");
+        if (!nameWasSet)
+            item.SetText("Fail to read name");
     }
     dirIT++;
 
