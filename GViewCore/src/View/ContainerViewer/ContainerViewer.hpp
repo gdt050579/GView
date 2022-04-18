@@ -48,11 +48,12 @@ namespace View
             FixSizeString<29> name;
             TreeViewItem root;
             UnicodeStringBuilder currentPath;
+            uint32 tempCountRecursiveItems;
 
             static Config config;
             void BuildPath(TreeViewItem item);
             void UpdatePathForItem(TreeViewItem item);
-            void PopulateItem(TreeViewItem item);
+            bool PopulateItem(TreeViewItem item);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -67,7 +68,7 @@ namespace View
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // tree item toggle
-            virtual void OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item) override;
+            virtual bool OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item, bool recursiveCall) override;
             virtual void OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item) override;
             virtual void OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& item) override;
 
