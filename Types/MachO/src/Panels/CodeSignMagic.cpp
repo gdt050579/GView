@@ -458,7 +458,7 @@ void CodeSignMagic::MoreInfo()
 
         bool SetText(ConstString _text)
         {
-            text->SetText(_text);
+            return text->SetText(_text);
         }
 
         void SetWidth(uint32 width)
