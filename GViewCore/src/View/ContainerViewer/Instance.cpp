@@ -12,8 +12,9 @@ constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
-    this->obj  = _obj;
-    this->name = _name;
+    this->obj                     = _obj;
+    this->name                    = _name;
+    this->tempCountRecursiveItems = 0;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -57,6 +58,14 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         const auto& col = settings->columns[idx];
         this->items->AddColumn(col.Name, col.Align, col.Width);
     }
+    for (uint32 idx=0;idx<settings->propertiesCount;idx++)
+    {
+        auto item = this->propList->AddItem(settings->properties[idx].key);
+        item.SetText(1, settings->properties[idx].value);
+        item.SetType(settings->properties[idx].itemType);
+        settings->properties[idx].key.Destroy();
+        settings->properties[idx].value.Destroy();
+    }
     if (settings->enumInterface)
     {
         this->root = this->items->AddItem("/", true);
@@ -85,27 +94,34 @@ void Instance::UpdatePathForItem(TreeViewItem item)
     this->currentPath.Clear();
     BuildPath(item);
 }
-void Instance::PopulateItem(TreeViewItem item)
+bool Instance::PopulateItem(TreeViewItem item)
 {
     UpdatePathForItem(item);
-    AppCUI::Graphics::ProgressStatus::Init("Reading folder");
-    uint32 count = 0;
+
     LocalString<128> temp;
     if (this->settings->enumInterface->BeginIteration(this->currentPath, item))
     {
         while (this->settings->enumInterface->PopulateItem(item.AddChild("")))
         {
-            count++;            
-            if (AppCUI::Graphics::ProgressStatus::Update(count, temp.Format("Items: %u",count)))
-                break;
+            tempCountRecursiveItems++;
+            if (AppCUI::Graphics::ProgressStatus::Update(tempCountRecursiveItems, temp.Format("Items: %u", tempCountRecursiveItems)))
+                return false;
         }
     }
-    this->items->Sort();
+    return true;
 }
-void Instance::OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item)
+bool Instance::OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item, bool recursiveCall)
 {
+    if (!recursiveCall)
+    {
+        AppCUI::Graphics::ProgressStatus::Init("Reading folder");
+        tempCountRecursiveItems = 0;
+    }
     if (!item.IsFolded())
-        PopulateItem(item);
+    {
+        return PopulateItem(item);
+    }
+    return true;
 }
 void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
 {

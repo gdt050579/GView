@@ -49,32 +49,56 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
 };
 bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem parent)
 {
-    std::filesystem::path path = root;
-    path /= relativePath;
-    dirIT = std::filesystem::directory_iterator(path);
-    if (dirIT == std::filesystem::directory_iterator())
-        return false; // empty directory
-    return dirIT->exists();
+    try
+    {
+        std::filesystem::path path = root;
+        path /= relativePath;
+        dirIT = std::filesystem::directory_iterator(path);
+        if (dirIT == std::filesystem::directory_iterator())
+            return false; // empty directory
+        return dirIT->exists();
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 bool FolderType::PopulateItem(TreeViewItem item)
 {
-    item.SetText(dirIT->path().filename().u8string());
-    if (dirIT->is_directory())
+    AppCUI::OS::DateTime dt;
+    bool nameWasSet = false;
+    try
     {
-        item.SetType(TreeViewItem::Type::Category);
-        item.SetExpandable(true);
-        item.SetText(1, "<FOLDER>");
-        item.SetPriority(1);
+        item.SetText(dirIT->path().filename().u8string());
+        dt.CreateFrom(*dirIT);
+        item.SetText(2, dt.GetStringRepresentation());
+        nameWasSet = true;
+        if (dirIT->is_directory())
+        {
+            item.SetType(TreeViewItem::Type::Category);
+            item.SetExpandable(true);
+            item.SetText(1, "<FOLDER>");
+            item.SetPriority(1);
+        }
+        else
+        {
+            item.SetType(TreeViewItem::Type::Normal);
+            item.SetExpandable(false);
+            NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
+            NumericFormatter nf;
+            item.SetText(1, nf.ToString((uint64) dirIT->file_size(), fmt));
+            item.SetPriority(0);
+        }
     }
-    else
+    catch (...)
     {
-        item.SetType(TreeViewItem::Type::Normal);
         item.SetExpandable(false);
-        NumericFormat fmt(NumericFormatFlags::None, 10, 3, ',');
-        NumericFormatter nf;
-        item.SetText(1, nf.ToString((uint64) dirIT->file_size(), fmt));
-        item.SetPriority(0);
+        item.SetType(TreeViewItem::Type::ErrorInformation);
+        item.SetText(1, "<ERROR>");
+        if (!nameWasSet)
+            item.SetText("Fail to read name");
     }
+
     dirIT++;
 
     return dirIT != std::filesystem::directory_iterator();
@@ -96,11 +120,13 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     // at least one view and one information panel
     // 1. info panel
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
+    auto ft = win->GetObject()->GetContentType<FolderType>();
     // 2. views
     View::ContainerViewer::Settings settings;
     settings.SetIcon(folderIcon);
     settings.SetColumns(
-          { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 12 } });
+          { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 21 } });
+    settings.AddProperty("Path", ft->root.u16string());
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::OpenItemInterface>());
     win->CreateViewer("FolderView", settings);
