@@ -120,11 +120,13 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     // at least one view and one information panel
     // 1. info panel
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
+    auto ft = win->GetObject()->GetContentType<FolderType>();
     // 2. views
     View::ContainerViewer::Settings settings;
     settings.SetIcon(folderIcon);
     settings.SetColumns(
           { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 21 } });
+    settings.AddProperty("Path", ft->root.u16string());
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::OpenItemInterface>());
     win->CreateViewer("FolderView", settings);

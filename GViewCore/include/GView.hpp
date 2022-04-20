@@ -572,10 +572,10 @@ namespace View
             Settings();
             bool SetIcon(string_view imageStringFormat16x16);
             bool SetPathSeparator(char16 separator);
-            bool AddProperty(string_view name, string_view value);
+            bool AddProperty(string_view name, const ConstString& value, ListViewItem::Type itemType = ListViewItem::Type::Normal);
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
-            void SetOpenItemCallback(Reference<OpenItemInterface> callback);
+            void SetOpenItemCallback(Reference<OpenItemInterface> callback);           
         };
     }; // namespace ContainerViewer
 

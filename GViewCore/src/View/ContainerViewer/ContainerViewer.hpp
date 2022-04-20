@@ -11,18 +11,26 @@ namespace View
         using namespace AppCUI;
 
         struct SettingsData
-        {          
-            static constexpr uint32 MAX_COLUMNS = 32;
-            struct Column
+        {
+            static constexpr uint32 MAX_COLUMNS    = 32;
+            static constexpr uint32 MAX_PROPERTIES = 32;
+            struct
             {
                 FixSizeUnicode<29> Name;
                 TextAlignament Align;
                 uint32 Width;
             } columns[MAX_COLUMNS];
-            AppCUI::Graphics::Image icon;
             uint32 columnsCount;
-            Reference<EnumerateInterface> enumInterface; 
-            Reference<OpenItemInterface> openItemInterface; 
+            struct
+            {
+                AppCUI::Utils::String key;
+                AppCUI::Utils::UnicodeStringBuilder value;
+                ListViewItem::Type itemType;
+            } properties[MAX_PROPERTIES];
+            uint32 propertiesCount;
+            AppCUI::Graphics::Image icon;
+            Reference<EnumerateInterface> enumInterface;
+            Reference<OpenItemInterface> openItemInterface;
             char16 pathSeparator;
             SettingsData();
         };
@@ -54,6 +62,7 @@ namespace View
             void BuildPath(TreeViewItem item);
             void UpdatePathForItem(TreeViewItem item);
             bool PopulateItem(TreeViewItem item);
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -80,7 +89,7 @@ namespace View
             const vector<Property> GetPropertiesList() override;
         };
 
-    } // namespace ImageViewer
+    } // namespace ContainerViewer
 } // namespace View
 
 }; // namespace GView

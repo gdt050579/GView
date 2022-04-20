@@ -7,8 +7,9 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
-    this->columnsCount = 0;
-    this->pathSeparator = '/';
+    this->columnsCount    = 0;
+    this->propertiesCount = 0;
+    this->pathSeparator   = '/';
 }
 Settings::Settings()
 {
@@ -27,14 +28,19 @@ bool Settings::SetPathSeparator(char16 separator)
     }
     return false;
 }
-bool Settings::AddProperty(string_view name, string_view value)
+bool Settings::AddProperty(string_view name, const ConstString& value, ListViewItem::Type itemType)
 {
-    NOT_IMPLEMENTED(false);
+    CHECK(SD->propertiesCount < SettingsData::MAX_PROPERTIES, false, "");
+    CHECK(SD->properties[SD->propertiesCount].key.Set(name), false, "");
+    CHECK(SD->properties[SD->propertiesCount].value.Set(value), false, "");
+    SD->properties[SD->propertiesCount].itemType = itemType;
+    SD->propertiesCount++;
+    return true;
 }
 void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns)
 {
     LocalUnicodeStringBuilder<64> temp;
-    for (const auto& col: columns)
+    for (const auto& col : columns)
     {
         if (temp.Set(col.name))
         {
@@ -44,21 +50,21 @@ void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder>
         {
             SD->columns[SD->columnsCount].Name = u"?";
         }
-        
+
         SD->columns[SD->columnsCount].Align = col.align;
         SD->columns[SD->columnsCount].Width = col.width;
         SD->columnsCount++;
     }
 }
-//bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
+// bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
 //{
-//    CHECK(SD->columnsCount < SettingsData::MAX_COLUMNS, false, "");
-//    SD->columns[SD->columnsCount].Name  = name;
-//    SD->columns[SD->columnsCount].Align = align;
-//    SD->columns[SD->columnsCount].Width = std::max<>(4U, width);
-//    SD->columnsCount++;
-//    return true;
-//}
+//     CHECK(SD->columnsCount < SettingsData::MAX_COLUMNS, false, "");
+//     SD->columns[SD->columnsCount].Name  = name;
+//     SD->columns[SD->columnsCount].Align = align;
+//     SD->columns[SD->columnsCount].Width = std::max<>(4U, width);
+//     SD->columnsCount++;
+//     return true;
+// }
 void Settings::SetEnumerateCallback(Reference<EnumerateInterface> callback)
 {
     SD->enumInterface = callback;
