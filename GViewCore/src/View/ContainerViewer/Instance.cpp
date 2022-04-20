@@ -46,10 +46,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
           ListViewFlags::HideColumns);
 
     this->items = Factory::TreeView::Create(
-          this,
-          "l:0,t:8,r:0,b:0",
-          {},
-          TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable | TreeViewFlags::Sortable);
+          this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
     this->items->Handlers()->OnItemToggle         = this;
     this->items->Handlers()->OnItemPressed        = this;
     this->items->Handlers()->OnCurrentItemChanged = this;
@@ -58,7 +55,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         const auto& col = settings->columns[idx];
         this->items->AddColumn(col.Name, col.Align, col.Width);
     }
-    for (uint32 idx=0;idx<settings->propertiesCount;idx++)
+    for (uint32 idx = 0; idx < settings->propertiesCount; idx++)
     {
         auto item = this->propList->AddItem(settings->properties[idx].key);
         item.SetText(1, settings->properties[idx].value);
@@ -125,7 +122,7 @@ bool Instance::OnTreeViewItemToggle(Reference<TreeView>, TreeViewItem& item, boo
 }
 void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
 {
-    if (this->settings->openItemInterface)
+    if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
     {
         UpdatePathForItem(item);
         this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
