@@ -65,10 +65,13 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
 }
 bool FolderType::PopulateItem(TreeViewItem item)
 {
+    AppCUI::OS::DateTime dt;
     bool nameWasSet = false;
     try
     {
         item.SetText(dirIT->path().filename().u8string());
+        dt.CreateFrom(*dirIT);
+        item.SetText(2, dt.GetStringRepresentation());
         nameWasSet = true;
         if (dirIT->is_directory())
         {
@@ -95,6 +98,7 @@ bool FolderType::PopulateItem(TreeViewItem item)
         if (!nameWasSet)
             item.SetText("Fail to read name");
     }
+
     dirIT++;
 
     return dirIT != std::filesystem::directory_iterator();
@@ -120,7 +124,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     View::ContainerViewer::Settings settings;
     settings.SetIcon(folderIcon);
     settings.SetColumns(
-          { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 12 } });
+          { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 21 } });
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::OpenItemInterface>());
     win->CreateViewer("FolderView", settings);
