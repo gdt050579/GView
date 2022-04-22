@@ -2,8 +2,8 @@
 
 #include <cassert>
 #include <GView.hpp>
-#include "endian.hpp"
 
+using namespace AppCUI;
 using namespace AppCUI::Utils;
 using namespace GView;
 
@@ -135,7 +135,7 @@ class BufferReader
     {
         if (!read(&x, sizeof(x)))
             return false;
-        x = Endian::little_to_native(x);
+        x = Endian::LittleToNative(x);
         return true;
     }
 
@@ -144,7 +144,7 @@ class BufferReader
     {
         if (!read(&x, sizeof(x)))
             return false;
-        x = Endian::big_to_native(x);
+        x = Endian::BigToNative(x);
         return true;
     }
 };

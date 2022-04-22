@@ -569,7 +569,7 @@ struct AstCreator
 
     AstCreator(ClassParser& class_parse);
 
-    bool create();
+    Class* create();
     Field* create_field(const FieldInfo& raw_field);
     Method* create_method(const MethodInfo& raw_method);
     bool create_code(BufferView buffer);
@@ -585,7 +585,7 @@ AstCreator::AstCreator(ClassParser& class_parser)
 {
 }
 
-bool AstCreator::create()
+Class* AstCreator::create()
 {
     auto clazz     = ctx.alloc.alloc<Class>();
     clazz->methods = ctx.alloc.alloc_array<Method*>(methods.size());
@@ -593,7 +593,7 @@ bool AstCreator::create()
     for (auto& i : methods)
     {
         auto method = create_method(i);
-        FCHECK(method);
+        FCHECKNULL(method);
         clazz->methods[count++] = method;
     }
 
@@ -602,10 +602,10 @@ bool AstCreator::create()
     for (auto& i : fields)
     {
         auto field = create_field(i);
-        FCHECK(field);
+        FCHECKNULL(field);
         clazz->fields[count++] = field;
     }
-    return true;
+    return clazz;
 }
 
 Field* AstCreator::create_field(const FieldInfo& raw_field)
@@ -750,6 +750,20 @@ const ConstantData* AstCreator::get_constant(uint16 index, ConstantKind expect)
     return &ret;
 }
 
+// ---------------------------------------------------- AstPrinter ----------------------------------------------------
+
+struct AstPrinter
+{
+    std::string output;
+
+    void print(const Class* clazz);
+};
+
+void AstPrinter::print(const Class* clazz)
+{
+    
+}
+
 // ---------------------------------------------------- parse_class ----------------------------------------------------
 
 bool parse_class(JavaViewer& self, BufferView buffer)
@@ -759,20 +773,10 @@ bool parse_class(JavaViewer& self, BufferView buffer)
 
     AstCreator creator{ parser };
 
-    /*for (auto& i : parser.constant_data)
-    {
-        LocalString<256> out;
-        switch (i.kind)
-        {
-        case ConstantKind::Utf8:
-        {
-            out.Add(i.utf8.bytes, i.utf8.length);
-            break;
-        }
-        }
-    }*/
+    auto clazz = creator.create();
+    FCHECK(clazz);
 
-    return creator.create();
+    return true;
 }
 
 } // namespace GView::Java

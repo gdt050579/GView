@@ -14,7 +14,7 @@ extern "C"
 
         uint32 magic;
         memcpy(&magic, buf.GetData(), sizeof(magic));
-        return magic == Endian::native_to_big(0xCAFEBABE);
+        return magic == Endian::NativeToBig(0xCAFEBABE);
     }
 
     PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
@@ -35,14 +35,11 @@ extern "C"
             auto& current = plugin->areas[i];
             auto color    = i % 2 == 0 ? ColorPair{ Color::Yellow, Color::DarkBlue } : ColorPair{ Color::Green, Color::DarkBlue };
 
-            bsettings.AddZone(current.start, current.end, color, current.name);
+            bsettings.AddZone(current.start, current.end - current.start, color, current.name);
         }
         FCHECK(win->CreateViewer("Buffer", bsettings));
 
-        TextViewer::Settings tsettings;
-        FCHECK(win->CreateViewer("Text", tsettings));
-
-        //GView::App::OpenFile("");
+        // GView::App::OpenFile("");
 
         return true;
     }

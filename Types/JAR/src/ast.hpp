@@ -146,6 +146,7 @@ struct Method
 
 struct Class
 {
+    string_view name;
     ArrayRefMut<Field*> fields;
     ArrayRefMut<Method*> methods;
 };
