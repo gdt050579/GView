@@ -37,7 +37,7 @@ class PrefetchFile : public TypeInterface
 {
   public:
     Header header{};
-    std::variant<FileInformation_17, FileInformation_23> fileInformation{};
+    std::variant<FileInformation_17, FileInformation_23, FileInformation_26> fileInformation{};
     Buffer bufferSectionAEntries;
     Buffer bufferSectionBEntries;
     Buffer bufferSectionC;
@@ -53,6 +53,7 @@ class PrefetchFile : public TypeInterface
     std::map<uint32, VolumeEntry> volumeEntries;
 
     int64 hashComputed = 0;
+    std::string filename;
     std::string exePath;
 
   public:
@@ -71,6 +72,18 @@ class PrefetchFile : public TypeInterface
     {
         return "Prefetch";
     }
+
+  private:
+    bool SetFilename();
+    bool ComputeHashForMainExecutable(uint32 filenameOffset, uint32 filenameSize);
+    bool AddVolumeEntry(
+          uint32 sectionDOffset,
+          uint32 devicePathOffset,
+          uint32 devicePathLength,
+          uint32 fileReferencesOffset,
+          uint32 fileReferencesSize,
+          uint32 directoryStringsOffset,
+          uint32 i);
 };
 
 namespace Panels
@@ -90,6 +103,7 @@ namespace Panels
         void UpdateFileInformation();
         void UpdateFileInformation_17();
         void UpdateFileInformation_23();
+        void UpdateFileInformation_26();
         void UpdateIssues();
         void RecomputePanelsPositions();
 

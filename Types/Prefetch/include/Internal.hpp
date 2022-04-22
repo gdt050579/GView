@@ -412,6 +412,66 @@ static int64 SSCA_VISTA_HASH(BufferView bv)
  */
 
 /* clang-format off
+ * The file information - version 26 is 224 bytes of size and consists of:
+ * Field  Offset Length	    Type	 Notes
+ *        0x0054 4	        DWORD	 The offset to section A. The offset is relative from the start of the file.
+ *        0x0058 4	        DWORD	 The number of entries in section A.
+ *        0x005C 4	        DWORD	 The offset to section B. The offset is relative from the start of the file.
+ *        0x0060 4	        DWORD	 The number of entries in section B.
+ *        0x0064 4	        DWORD	 The offset to section C. The offset is relative from the start of the file.
+ *        0x0068 4	        DWORD	 Length of section C.
+ *        0x006C 4	        DWORD	 Offset to section D. The offset is relative from the start of the file.
+ *        0x0070 4	        DWORD	 The number of entries in section D.
+ *        0x0074 4	        DWORD	 Length of section D.
+ *        0x0078 8	        ?	     Unknown
+ *        0x0080 8	        FILETIME Latest execution time (or run time) of executable (FILETIME)
+ *        0x0088 7 x 8 = 56	FILETIME Older (most recent) latest execution time (or run time) of executable (FILETIME)
+ *        0x00C0 16	        ?	     Unknown
+ *        0x00D0 4	        DWORD	 Execution counter (or run count)
+ *        0x00D4 4	        ?	     Unknown
+ *        0x00D8 4	        ?	     Unknown
+ *        0x00DC 88	        ?	     Unknown
+ * clang-format on
+ */
+
+#pragma pack(push, 4)
+struct FileInformation_26
+{
+    struct SectionA
+    {
+        uint32 offset;
+        uint32 entries;
+    } sectionA;
+    struct SectionB
+    {
+        uint32 offset;
+        uint32 entries;
+    } sectionB;
+    struct SectionC
+    {
+        uint32 offset;
+        uint32 length;
+    } sectionC;
+    struct SectionD
+    {
+        uint32 offset;
+        uint32 entries;
+        uint32 size;
+    } sectionD;
+    uint64 unknown0;
+    uint64 latestExecutionTime;
+    uint64 olderExecutionTime[8];
+    uint64 unknown[2];
+    uint32 executionCount;
+    uint32 unknown2;
+    uint32 unknown3;
+    uint8 unknown4[80];
+};
+#pragma pack(pop)
+
+static_assert(sizeof(FileInformation_26) == 224);
+
+/* clang-format off
  * --------------------------------------------------------------- 26 END --------------------------------------------------------------------------------------
  * clang-format on
  */
