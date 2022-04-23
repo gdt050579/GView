@@ -54,63 +54,59 @@ void VolumeDirectories::SelectCurrentSection()
 
 void VolumeDirectories::Update_17()
 {
-    LocalString<1024> ls;
-    NumericFormatter nf;
-
     auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
 
     for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
     {
-        auto entry      = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_17>(sizeof(VolumeInformationEntry_17) * i);
-        auto& dirBuffer = prefetch->volumeEntries.at(i).directories;
-
-        auto offset  = 0U;
-        auto entries = 0U;
-        while (entries < entry->directoryStringsEntries)
-        {
-            auto item = list->AddItem({ ls.Format("%s", GetValue(nf, i).data()) });
-
-            auto dse = (DirectoryStringEntry*) (dirBuffer.GetData() + offset);
-
-            item.SetText(1, ls.Format("%s", GetValue(nf, dse->size).data()));
-            item.SetText(2, ls.Format("%-20S", dse->path));
-
-            item.SetData<DirectoryStringEntry>(dse);
-
-            offset += sizeof(DirectoryStringEntry::size) + (dse->size + 1ULL) * sizeof(char16_t);
-            entries++;
-        }
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_17>(sizeof(VolumeInformationEntry_17) * i);
+        AddItem(i, entry->directoryStringsEntries);
     }
 }
 
 void VolumeDirectories::Update_23()
 {
-    LocalString<1024> ls;
-    NumericFormatter nf;
-
     auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
 
     for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
     {
-        auto entry      = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
-        auto& dirBuffer = prefetch->volumeEntries.at(i).directories;
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
+        AddItem(i, entry->directoryStringsEntries);
+    }
+}
 
-        auto offset  = 0U;
-        auto entries = 0U;
-        while (entries < entry->directoryStringsEntries)
-        {
-            auto item = list->AddItem({ ls.Format("%s", GetValue(nf, i).data()) });
+void VolumeDirectories::Update_26()
+{
+    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
 
-            auto dse = (DirectoryStringEntry*) (dirBuffer.GetData() + offset);
+    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    {
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
+        AddItem(i, entry->directoryStringsEntries);
+    }
+}
 
-            item.SetText(1, ls.Format("%s", GetValue(nf, dse->size).data()));
-            item.SetText(2, ls.Format("%-20S", dse->path));
+void VolumeDirectories::AddItem(uint32 index, uint32 directoryStringsEntries)
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
 
-            item.SetData<DirectoryStringEntry>(dse);
+    auto& dirBuffer = prefetch->volumeEntries.at(index).directories;
 
-            offset += sizeof(DirectoryStringEntry::size) + (dse->size + 1ULL) * sizeof(char16_t);
-            entries++;
-        }
+    auto offset  = 0U;
+    auto entries = 0U;
+    while (entries < directoryStringsEntries)
+    {
+        auto item = list->AddItem({ ls.Format("%s", GetValue(nf, index).data()) });
+
+        auto dse = (DirectoryStringEntry*) (dirBuffer.GetData() + offset);
+
+        item.SetText(1, ls.Format("%s", GetValue(nf, dse->size).data()));
+        item.SetText(2, ls.Format("%-20S", dse->path));
+
+        item.SetData<DirectoryStringEntry>(dse);
+
+        offset += sizeof(DirectoryStringEntry::size) + (dse->size + 1ULL) * sizeof(char16_t);
+        entries++;
     }
 }
 
@@ -127,6 +123,8 @@ void VolumeDirectories::Update()
         Update_23();
         break;
     case Magic::WIN_8:
+        Update_26();
+        break;
     case Magic::WIN_10:
     default:
         break;

@@ -306,7 +306,7 @@ struct FileInformation_23
 static_assert(sizeof(FileInformation_23) == 156);
 
 /* clang-format off
- * The file metrics entry records – version 23 is 32 bytes in size and consists of:
+ * The file metrics entry records - version 23 is 32 bytes in size and consists of:
  * Field Offset	Length	Type  Notes
  *       0	    4	    DWORD Start time in ms
  *       4	    4	    DWORD Duration in ms
@@ -318,7 +318,7 @@ static_assert(sizeof(FileInformation_23) == 156);
  * clang-format on
  */
 
-struct FileMetricsEntryRecord_23
+struct FileMetricsEntryRecord_23_26
 {
     uint32 startTime;
     uint32 duration;
@@ -329,7 +329,7 @@ struct FileMetricsEntryRecord_23
     uint64 ntfsFileReference;
 };
 
-static_assert(sizeof(FileMetricsEntryRecord_23) == 32);
+static_assert(sizeof(FileMetricsEntryRecord_23_26) == 32);
 
 /* clang-format off
  * Volume information - version 23/26

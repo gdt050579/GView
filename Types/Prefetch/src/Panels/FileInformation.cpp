@@ -13,7 +13,7 @@ enum class Action : int32
 };
 
 FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win)
-    : TabPage("Section&AEntries")
+    : TabPage("&ASection")
 {
     prefetch = _prefetch;
     win      = _win;
@@ -22,7 +22,6 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
     switch (prefetch->header.version)
     {
     case Magic::WIN_XP_2003:
-    {
         list = Factory::ListView::Create(
               this,
               "d:c",
@@ -33,10 +32,10 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
                 { "Unknown", TextAlignament::Right, 10 },
                 { "Path", TextAlignament::Right, 140 } },
               ListViewFlags::None);
-    }
-    break;
+
+        break;
     case Magic::WIN_VISTA_7:
-    {
+    case Magic::WIN_8:
         list = Factory::ListView::Create(
               this,
               "d:c",
@@ -50,11 +49,9 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
                 { "Path", TextAlignament::Right, 100 } },
               ListViewFlags::None);
         break;
-    case Magic::WIN_8:
     case Magic::WIN_10:
     default:
         break;
-    }
     }
 
     Update();
@@ -118,14 +115,25 @@ void FileInformationEntry::Update_17()
 
 void FileInformationEntry::Update_23()
 {
+    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
+    Update_23_26(fileInformation.sectionA.entries);
+}
+
+void FileInformationEntry::Update_26()
+{
+    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
+    Update_23_26(fileInformation.sectionA.entries);
+}
+
+void FileInformationEntry::Update_23_26(uint32 sectionAEntries)
+{
     LocalString<128> tmp;
     NumericFormatter n;
 
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    for (auto i = 0U; i < sectionAEntries; i++)
     {
-        auto entry = prefetch->bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23>(sizeof(FileMetricsEntryRecord_23) * i);
+        const auto offset = sizeof(FileMetricsEntryRecord_23_26) * i;
+        auto entry        = prefetch->bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26>(offset);
 
         auto item = list->AddItem({ tmp.Format("%s", GetValue(n, entry->startTime).data()) });
         item.SetText(1, tmp.Format("%s", GetValue(n, entry->duration).data()));
@@ -144,8 +152,8 @@ void FileInformationEntry::Update_23()
 
         item.SetText(7, filename.c_str());
 
-        item.SetData<FileMetricsEntryRecord_23>(
-              (FileMetricsEntryRecord_23*) (prefetch->bufferSectionAEntries.GetData() + sizeof(FileMetricsEntryRecord_23) * i));
+        item.SetData<FileMetricsEntryRecord_23_26>(
+              (FileMetricsEntryRecord_23_26*) (prefetch->bufferSectionAEntries.GetData() + sizeof(FileMetricsEntryRecord_23_26) * i));
 
         if (prefetch->exePath.compare(filename) == 0)
         {
@@ -171,6 +179,8 @@ void FileInformationEntry::Update()
         Update_23();
         break;
     case Magic::WIN_8:
+        Update_26();
+        break;
     case Magic::WIN_10:
     default:
         break;

@@ -12,7 +12,7 @@ enum class Action : int32
     ChangeBase = 4
 };
 
-TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win) : TabPage("Section&BEntries")
+TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win) : TabPage("&BSection")
 {
     prefetch = _prefetch;
     win      = _win;
@@ -73,6 +73,17 @@ void TraceChains::Update_23()
     }
 }
 
+void TraceChains::Update_26()
+{
+    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
+
+    for (auto i = 0U; i < fileInformation.sectionB.entries; i++)
+    {
+        auto entry = prefetch->bufferSectionBEntries.GetObject<TraceChainEntry_17_23_26>(sizeof(TraceChainEntry_17_23_26) * i);
+        AddItem_17_23_26(entry, i);
+    }
+}
+
 void TraceChains::AddItem_17_23_26(const TraceChainEntry_17_23_26& tc, uint32 i)
 {
     LocalString<128> tmp;
@@ -101,6 +112,7 @@ void TraceChains::Update()
         Update_23();
         break;
     case Magic::WIN_8:
+        Update_26();
         break;
     case Magic::WIN_10:
     default:

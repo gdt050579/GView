@@ -51,19 +51,17 @@ void VolumeFiles::SelectCurrentSection()
     win->GetCurrentView()->Select(0, 0);
 }
 
-void VolumeFiles::Update_23()
+void VolumeFiles::Update_17()
 {
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
+    auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
 
     for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
     {
-        auto entry        = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
         auto& filesBuffer = prefetch->volumeEntries.at(i).files;
-
-        auto frs = (FileReferences_23_26_30*) filesBuffer.GetData();
+        auto frs          = (FileReferences_17*) filesBuffer.GetData();
 
         for (uint32 j = 0; j < frs->numberOfFileReferences; j++)
         {
@@ -79,19 +77,27 @@ void VolumeFiles::Update_23()
     }
 }
 
-void VolumeFiles::Update_17()
+void VolumeFiles::Update_23()
+{
+    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
+    Update_23_26_30(fileInformation.sectionD.entries);
+}
+
+void VolumeFiles::Update_26()
+{
+    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
+    Update_23_26_30(fileInformation.sectionD.entries);
+}
+
+void VolumeFiles::Update_23_26_30(uint32 sectionDEntries)
 {
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < sectionDEntries; i++)
     {
-        auto entry        = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_17>(sizeof(VolumeInformationEntry_17) * i);
         auto& filesBuffer = prefetch->volumeEntries.at(i).files;
-
-        auto frs = (FileReferences_17*) filesBuffer.GetData();
+        auto frs          = (FileReferences_23_26_30*) filesBuffer.GetData();
 
         for (uint32 j = 0; j < frs->numberOfFileReferences; j++)
         {
@@ -120,6 +126,8 @@ void VolumeFiles::Update()
         Update_23();
         break;
     case Magic::WIN_8:
+        Update_26();
+        break;
     case Magic::WIN_10:
     default:
         break;

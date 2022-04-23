@@ -338,12 +338,20 @@ void Information::UpdateFileInformation_26()
 
     for (uint32 i = 0; i < sizeof(fileInformation.olderExecutionTime) / sizeof(fileInformation.olderExecutionTime[0]); i++)
     {
-        dt.CreateFromFileTime(fileInformation.olderExecutionTime[i]);
         const auto olderExecutionTimeHex = nf2.ToString(fileInformation.olderExecutionTime[i], hex);
-        general
-              ->AddItem({ ls.Format("#%u Older Execution Time", i),
-                          ls.Format("%-20s (%s)", dt.GetStringRepresentation().data(), olderExecutionTimeHex.data()) })
-              .SetType(ListViewItem::Type::Emphasized_1);
+        if (dt.CreateFromFileTime(fileInformation.olderExecutionTime[i]))
+        {
+            general
+                  ->AddItem({ ls.Format("#%u Older Execution Time", i),
+                              ls2.Format("%-20s (%s)", dt.GetStringRepresentation().data(), olderExecutionTimeHex.data()) })
+                  .SetType(ListViewItem::Type::Emphasized_1);
+        }
+        else
+        {
+            general
+                  ->AddItem({ ls.Format("#%u Older Execution Time", i), ls2.Format("%-20s (%s)", "Invalid", olderExecutionTimeHex.data()) })
+                  .SetType(ListViewItem::Type::WarningInformation);
+        }
     }
 
     const auto unknownPart1    = nf.ToString(fileInformation.unknown[0], dec);

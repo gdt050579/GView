@@ -12,8 +12,7 @@ enum class Action : int32
     ChangeBase = 4
 };
 
-VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win)
-    : TabPage("Section&DEntries")
+VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win) : TabPage("&DSection")
 {
     prefetch = _prefetch;
     win      = _win;
@@ -38,6 +37,7 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               },
               ListViewFlags::None);
     case Magic::WIN_VISTA_7:
+    case Magic::WIN_8:
         list = Factory::ListView::Create(
               this,
               "d:c",
@@ -58,7 +58,6 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               },
               ListViewFlags::None);
         break;
-    case Magic::WIN_8:
     case Magic::WIN_10:
     default:
         break;
@@ -119,12 +118,22 @@ void VolumeInformation::Update_17()
 
 void VolumeInformation::Update_23()
 {
+    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
+    Update_23_26(fileInformation.sectionD.entries);
+}
+
+void VolumeInformation::Update_26()
+{
+    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
+    Update_23_26(fileInformation.sectionD.entries);
+}
+
+void VolumeInformation::Update_23_26(uint32 sectionDEntries)
+{
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < sectionDEntries; i++)
     {
         auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
 
@@ -166,6 +175,8 @@ void VolumeInformation::Update()
         Update_23();
         break;
     case Magic::WIN_8:
+        Update_26();
+        break;
     case Magic::WIN_10:
     default:
         break;

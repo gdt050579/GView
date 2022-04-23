@@ -84,6 +84,14 @@ class PrefetchFile : public TypeInterface
           uint32 fileReferencesSize,
           uint32 directoryStringsOffset,
           uint32 i);
+    bool SetEntries(
+          uint32 sectionAOffset,
+          uint32 sectionASize,
+          uint32 sectionBOffset,
+          uint32 sectionBSize,
+          uint32 sectionCOffset,
+          uint32 sectionCSize,
+          uint32 sectionDOffset);
 };
 
 namespace Panels
@@ -106,34 +114,6 @@ namespace Panels
         void UpdateFileInformation_26();
         void UpdateIssues();
         void RecomputePanelsPositions();
-
-        template <typename T>
-        void AddDecAndHexElement(std::string_view name, std::string_view format, T value)
-        {
-            LocalString<1024> ls;
-            NumericFormatter nf;
-            NumericFormatter nf2;
-
-            const auto v    = nf.ToString(value, dec);
-            const auto hexV = nf2.ToString(value, hex);
-            general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
-        }
-
-        template <typename T>
-        void AddNameAndHexElement(std::string_view name, std::string_view format, const T& value)
-        {
-            LocalString<1024> ls;
-            LocalString<1024> ls2;
-
-            constexpr auto size = sizeof(value) / sizeof(value[0]);
-            ls2.Format("0x");
-            for (auto i = 0ULL; i < size; i++)
-            {
-                ls2.AddFormat("%.2x", value[i]);
-            }
-            const auto vHex = ls2.GetText();
-            general->AddItem({ name, ls.Format(format.data(), std::string{ value, sizeof(value) }.c_str(), vHex) });
-        }
 
       public:
         Information(Reference<Object> _object, Reference<GView::Type::Prefetch::PrefetchFile> _prefetch);
@@ -162,6 +142,8 @@ namespace Panels
         void Update();
         void Update_17();
         void Update_23();
+        void Update_26();
+        void Update_23_26(uint32 sectionAEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
@@ -209,6 +191,8 @@ namespace Panels
         void Update();
         void Update_17();
         void Update_23();
+        void Update_26();
+        void Update_23_26(uint32 sectionDEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
@@ -233,6 +217,8 @@ namespace Panels
         void Update();
         void Update_17();
         void Update_23();
+        void Update_26();
+        void AddItem(uint32 index, uint32 directoryStringsEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
@@ -257,6 +243,8 @@ namespace Panels
         void Update();
         void Update_17();
         void Update_23();
+        void Update_26();
+        void Update_23_26_30(uint32 sectionDEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
