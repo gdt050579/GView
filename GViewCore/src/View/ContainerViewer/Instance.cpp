@@ -55,7 +55,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         const auto& col = settings->columns[idx];
         this->items->AddColumn(col.Name, col.Align, col.Width);
     }
-    for (uint32 idx=0;idx<settings->propertiesCount;idx++)
+    for (uint32 idx = 0; idx < settings->propertiesCount; idx++)
     {
         auto item = this->propList->AddItem(settings->properties[idx].key);
         item.SetText(1, settings->properties[idx].value);
