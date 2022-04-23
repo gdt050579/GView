@@ -46,7 +46,10 @@ class CharacterStream
         this->xPos               = this->nextPos;
         this->charRelativeOffset = this->nextCharRelativeOffset++;
         if (this->ch == '\t')
+        {
+            this->ch      = ' '; // tab will be showd as a space
             this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+        }
         else
             this->nextPos++;
         return true;
@@ -233,7 +236,7 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
     while (idx < idxEnd)
     {
         auto start = *idx;
-        auto end   = idx < idxEnd ? idx[1] : (uint32) buf.GetLength();
+        auto end   = (idx+1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
         CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
         auto c     = this->chars;
         auto lastC = this->chars + 1;
@@ -253,6 +256,7 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
             {
                 lastC->Code  = ' ';
                 lastC->Color = Cfg.Text.Normal;
+                lastC++;
             }
             c->Code = cs.GetCharacter();
             c->Color = Cfg.Text.Normal;
