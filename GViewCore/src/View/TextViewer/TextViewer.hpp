@@ -31,8 +31,7 @@ namespace View
             
             struct
             {
-                AppCUI::Input::Key ZoomIn;
-                AppCUI::Input::Key ZoomOut;
+                AppCUI::Input::Key WordWrap;
             } Keys;
             bool Loaded;
 

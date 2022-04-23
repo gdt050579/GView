@@ -5,10 +5,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
-constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
-constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
-constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+constexpr int32 CMD_ID_WORD_WRAP    = 0xBF00;
 
 class CharacterStream
 {
@@ -52,6 +49,12 @@ class CharacterStream
         }
         else
             this->nextPos++;
+        if ((this->ch == '\n') || (this->ch == '\r'))
+        {
+            this->pos = this->end; // advance to end of line
+            return false;
+        }
+
         return true;
     }
     inline uint32 GetXOffset() const
@@ -222,9 +225,8 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
 {
     BufferView buf;
     NumericFormatter n;
+    bool firstLine = true;
 
-    renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
-    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
     ComputeSubLineIndexes(lineNo, buf);
 
     // write text
@@ -236,7 +238,7 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
     while (idx < idxEnd)
     {
         auto start = *idx;
-        auto end   = (idx+1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
+        auto end   = (idx + 1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
         CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
         auto c     = this->chars;
         auto lastC = this->chars + 1;
@@ -258,10 +260,18 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
                 lastC->Color = Cfg.Text.Normal;
                 lastC++;
             }
-            c->Code = cs.GetCharacter();
+            c->Code  = cs.GetCharacter();
             c->Color = Cfg.Text.Normal;
             lastC    = c + 1;
         }
+        if (firstLine)
+        {
+            renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
+            firstLine = false;
+        }
+        else
+            renderer.FillHorizontalLine(0, y, this->lineNumberWidth, ' ', DefaultColorPair);
+        renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
         renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), Cfg.Text.Normal);
         y++;
         idx++;
@@ -276,9 +286,9 @@ void Instance::Paint(Graphics::Renderer& renderer)
         w = 0;
     else
         w = w - (this->lineNumberWidth + 2);
-    auto y = 0;
+    auto y      = 0;
     auto lineNo = 0U;
-    while (y<h)
+    while (y < h)
     {
         y = DrawLine(0, y, lineNo, w, renderer);
         lineNo++;
@@ -286,13 +296,11 @@ void Instance::Paint(Graphics::Renderer& renderer)
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    // commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
-    // commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
-    // if (this->settings->imgList.size() > 1)
-    //{
-    //     commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
-    //     commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
-    // }
+    if (this->settings->wordWrap)
+        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:ON", CMD_ID_WORD_WRAP);
+    else
+        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:OF", CMD_ID_WORD_WRAP);
+
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
@@ -317,6 +325,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
+    case CMD_ID_WORD_WRAP:
+        this->settings->wordWrap = !this->settings->wordWrap;
+        return true;
     }
     return false;
 }
