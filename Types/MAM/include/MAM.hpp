@@ -48,6 +48,8 @@ namespace Panels
         {
             RecomputePanelsPositions();
         }
+        bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
     };
 }; // namespace Panels
 } // namespace GView::Type::MAM

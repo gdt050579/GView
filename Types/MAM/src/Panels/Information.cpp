@@ -1,9 +1,13 @@
 #include "MAM.hpp"
 
 using namespace GView::Type::MAM;
+using namespace GView::Type::MAM::Panels;
+using namespace AppCUI::Controls;
 using namespace AppCUI::Controls;
 
-Panels::Information::Information(Reference<Object> _object, Reference<GView::Type::MAM::MAMFile> _mam) : TabPage("Informa&tion")
+constexpr auto CMD_ID_DECOMPRESS = 1U;
+
+Information::Information(Reference<Object> _object, Reference<GView::Type::MAM::MAMFile> _mam) : TabPage("Informa&tion")
 {
     mam     = _mam;
     object  = _object;
@@ -15,7 +19,7 @@ Panels::Information::Information(Reference<Object> _object, Reference<GView::Typ
     Update();
 }
 
-void Panels::Information::UpdateGeneralInformation()
+void Information::UpdateGeneralInformation()
 {
     LocalString<1024> ls;
     NumericFormatter nf;
@@ -44,11 +48,11 @@ void Panels::Information::UpdateGeneralInformation()
     general->AddItem({ "Compressed Size", ls.Format("%-14s (%s)", compressedSize.data(), hexCompressedSize.data()) });
 }
 
-void Panels::Information::UpdateIssues()
+void Information::UpdateIssues()
 {
 }
 
-void Panels::Information::RecomputePanelsPositions()
+void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
@@ -62,7 +66,42 @@ void Panels::Information::RecomputePanelsPositions()
     //}
 }
 
-void Panels::Information::Update()
+bool Information::OnUpdateCommandBar(Application::CommandBar& commandBar)
+{
+    commandBar.SetCommand(AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10, "Decompress", CMD_ID_DECOMPRESS);
+    return true;
+}
+
+bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
+{
+    if (evnt == Event::Command)
+    {
+        switch (controlID)
+        {
+        case CMD_ID_DECOMPRESS:
+        {
+            Buffer uncompressed;
+            uncompressed.Resize(mam->uncompressedSize);
+
+            const auto entireFile = mam->obj->GetData().GetEntireFile();
+            CHECK(entireFile.IsValid(), false, "");
+
+            const BufferView compressed = { entireFile.GetData() + 8, entireFile.GetLength() - 8 };
+            CHECK(compressed.IsValid(), false, "");
+
+            CHECK(Decompress(compressed, uncompressed), false, "");
+
+            GView::App::OpenBuffer(uncompressed, mam->obj->GetName());
+
+            return true;
+        }
+        }
+    }
+
+    return false;
+}
+
+void Information::Update()
 {
     general->DeleteAllItems();
 
