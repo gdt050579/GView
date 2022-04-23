@@ -11,15 +11,18 @@ namespace View
         using namespace AppCUI;
 
         constexpr uint32 MAX_CHARACTERS_PER_LINE = 1024;
-
-        struct ImageInfo
+        enum class Encoding
         {
-            uint64 start, end;
+            Ascii,
+            UTF8,
+            Unicode16LE,
+            Unicode16BE
         };
         struct SettingsData
         {
-            vector<ImageInfo> imgList;            
-            Reference<LoadImageInterface> loadImageCallback;
+            uint32 tabSize;
+            bool wordWrap;    
+            Encoding encoding;
             SettingsData();
         };
 
@@ -37,22 +40,24 @@ namespace View
             void Initialize();
         };
 
+
         class Instance : public View::ViewControl
         {
             Array32 lineIndex;
+            Array32 subLineIndex;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
-            uint32 tabSize;
 
             static Config config;
 
             void RecomputeLineIndexes();
 
             bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
-            void DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer);
+            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf);
+            int DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
