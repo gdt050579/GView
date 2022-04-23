@@ -5,7 +5,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_WORD_WRAP    = 0xBF00;
+constexpr int32 CMD_ID_WORD_WRAP = 0xBF00;
 
 class CharacterStream
 {
@@ -221,11 +221,24 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf)
     }
     return true;
 }
-int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer)
+int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer, ControlState state)
 {
     BufferView buf;
     NumericFormatter n;
-    bool firstLine = true;
+    ColorPair textColor;
+    bool firstLine    = true;
+    auto lineNoColor  = Cfg.LineMarker.GetColor(state);
+    auto lineSepColor = Cfg.Lines.GetColor(state);
+
+    switch (state)
+    {
+    case ControlState::Focused:
+        textColor = Cfg.Text.Normal;
+        break;
+    default:
+        textColor = Cfg.Text.Inactive;
+        break;
+    }
 
     ComputeSubLineIndexes(lineNo, buf);
 
@@ -257,22 +270,22 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
             while (lastC < c)
             {
                 lastC->Code  = ' ';
-                lastC->Color = Cfg.Text.Normal;
+                lastC->Color = textColor;
                 lastC++;
             }
             c->Code  = cs.GetCharacter();
-            c->Color = Cfg.Text.Normal;
+            c->Color = textColor;
             lastC    = c + 1;
         }
+        renderer.FillHorizontalLine(0, y, this->lineNumberWidth-1, ' ', lineNoColor);
         if (firstLine)
         {
-            renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
+            renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), lineNoColor, TextAlignament::Right);
             firstLine = false;
         }
-        else
-            renderer.FillHorizontalLine(0, y, this->lineNumberWidth, ' ', DefaultColorPair);
-        renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
-        renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), Cfg.Text.Normal);
+
+        renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, lineSepColor);
+        renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
         y++;
         idx++;
     }
@@ -286,11 +299,14 @@ void Instance::Paint(Graphics::Renderer& renderer)
         w = 0;
     else
         w = w - (this->lineNumberWidth + 2);
-    auto y      = 0;
-    auto lineNo = 0U;
+    auto y           = 0;
+    auto lineNo      = 0U;
+    const auto focus = this->HasFocus();
+
     while (y < h)
     {
-        y = DrawLine(0, y, lineNo, w, renderer);
+        auto state = focus ? ControlState::Focused : ControlState::Normal;
+        y          = DrawLine(0, y, lineNo, w, renderer, state);
         lineNo++;
     }
 }

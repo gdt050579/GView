@@ -56,7 +56,7 @@ namespace View
 
             bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
             bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf);
-            int DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer);
+            int DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer, ControlState state);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
