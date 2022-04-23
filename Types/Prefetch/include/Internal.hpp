@@ -129,15 +129,15 @@ struct FileMetricsEntryRecord_17
 };
 
 /* clang-format off
-     * This section contains an array with 12 byte (version 17, 23 and 26) entry records.
-     * Field Offset	Length	Type	Notes
-     *       0	    4		        Next array entry index. Contains the next trace chain array entry index in the chain, where the first entry index starts with 0, or -1 (0xffffffff) for the end-of-chain.
-     *       4	    4		        Total block load count. Number of blocks loaded (or fetched). The block size 512k (512 x 1024) bytes.
-     *       8	    1		        Unknown
-     *       9	    1		        Sample duration in ms?
-     *       10    	2	        	Unknown
-     * clang-format on
-    */
+ * This section contains an array with 12 byte (version 17, 23 and 26) entry records.
+ * Field Offset	Length	Type Notes
+ *       0	    4		     Next array entry index. Contains the next trace chain array entry index in the chain, where the first entry index starts with 0, or -1 (0xffffffff) for the end-of-chain.
+ *       4	    4		     Total block load count. Number of blocks loaded (or fetched). The block size 512k (512 x 1024) bytes.
+ *       8	    1		     Unknown
+ *       9	    1		     Sample duration in ms?
+ *       10    	2	        Unknown
+ * clang-format on
+ */
 
 struct TraceChainEntry_17_23_26
 {
@@ -318,7 +318,7 @@ static_assert(sizeof(FileInformation_23) == 156);
  * clang-format on
  */
 
-struct FileMetricsEntryRecord_23_26
+struct FileMetricsEntryRecord_23_26_30
 {
     uint32 startTime;
     uint32 duration;
@@ -329,7 +329,7 @@ struct FileMetricsEntryRecord_23_26
     uint64 ntfsFileReference;
 };
 
-static_assert(sizeof(FileMetricsEntryRecord_23_26) == 32);
+static_assert(sizeof(FileMetricsEntryRecord_23_26_30) == 32);
 
 /* clang-format off
  * Volume information - version 23/26
@@ -473,6 +473,169 @@ static_assert(sizeof(FileInformation_26) == 224);
 
 /* clang-format off
  * --------------------------------------------------------------- 26 END --------------------------------------------------------------------------------------
+ * clang-format on
+ */
+
+/* clang - format off
+ * --------------------------------------------------------------- 30 START
+ * ------------------------------------------------------------------------------------- clang - format on
+ */
+
+/* clang-format off
+ * The file information - version 30 is 216 bytes of size and consists of:
+ * Field  Offset Length	    Type	 Notes
+ *        0x0054 4	        DWORD	 The offset to section A. The offset is relative from the start of the file.
+ *        0x0058 4	        DWORD	 The number of entries in section A.
+ *        0x005C 4	        DWORD	 The offset to section B. The offset is relative from the start of the file.
+ *        0x0060 4	        DWORD	 The number of entries in section B.
+ *        0x0064 4	        DWORD	 The offset to section C. The offset is relative from the start of the file.
+ *        0x0068 4	        DWORD	 Length of section C.
+ *        0x006C 4	        DWORD	 Offset to section D. The offset is relative from the start of the file.
+ *        0x0070 4	        DWORD	 The number of entries in section D.
+ *        0x0074 4	        DWORD	 Length of section D.
+ *        0x0078 8	        ?	     Unknown
+ *        0x0080 8	        FILETIME Latest execution time (or run time) of executable (FILETIME)
+ *        0x0088 7 x 8 = 56	FILETIME Older (most recent) latest execution time (or run time) of executable (FILETIME)
+ *        0x00C0 8	        ?	     Unknown
+ *        0x00C8 4	        DWORD	 Execution counter (or run count)
+ *        0x00D0 4	        ?	     Unknown
+ *        0x00D4 4	        ?	     Unknown
+ *        0x00D8 88	        ?	     Unknown
+ * clang-format on
+ */
+
+#pragma pack(push, 4)
+struct FileInformation_30
+{
+    struct SectionA
+    {
+        uint32 offset;
+        uint32 entries;
+    } sectionA;
+    struct SectionB
+    {
+        uint32 offset;
+        uint32 entries;
+    } sectionB;
+    struct SectionC
+    {
+        uint32 offset;
+        uint32 length;
+    } sectionC;
+    struct SectionD
+    {
+        uint32 offset;
+        uint32 entries;
+        uint32 size;
+    } sectionD;
+    uint64 unknown0;
+    uint64 latestExecutionTime;
+    uint64 olderExecutionTime[8];
+    uint64 unknown1;
+    uint32 executionCount;
+    uint32 unknown2;
+    uint32 unknown3;
+    uint8 unknown4[80];
+};
+#pragma pack(pop)
+
+static_assert(sizeof(FileInformation_30) == 216);
+
+/* clang-format off
+ * The trace chain array entry - version 30 is 8 bytes in size and consists of:.
+ * Field Offset	Length	Type Notes
+ *       0	    4		     Next array entry index. Contains the next trace chain array entry index in the chain, where the first entry index starts with 0, or -1 (0xffffffff) for the end-of-chain.
+ *       4	    1		     Unknown. Seen: 0x02, 0x03, 0x04, 0x08, 0x0a
+ *       5	    1		     Unknown (Sample duration in ms?). Seen: 1
+ *       6	    2		     Unknown. Seen: 0x0001, 0xffff, etc.
+ * clang-format on
+ */
+
+struct TraceChainEntry_30
+{
+    uint32 nextEntryIndex;
+    uint8 unknown0;
+    uint8 unknown1;
+    uint16 unknown2;
+};
+
+static int64 SSCA_2008_HASH(BufferView bv)
+{
+    CHECK(bv.IsValid(), 0, "");
+    int64 hash_value = 314159;
+
+    uint64 i = 0;
+    while (i + 8 < bv.GetLength())
+    {
+        auto character_value = bv.GetData()[i + 1] * 37;
+        character_value += bv.GetData()[i + 2];
+        character_value *= 37;
+        character_value += bv.GetData()[i + 3];
+        character_value *= 37;
+        character_value += bv.GetData()[i + 4];
+        character_value *= 37;
+        character_value += bv.GetData()[i + 5];
+        character_value *= 37;
+        character_value += bv.GetData()[i + 6];
+        character_value *= 37;
+        character_value += bv.GetData()[i] * 442596621;
+        character_value += bv.GetData()[i + 7];
+
+        hash_value = ((character_value - (hash_value * 803794207)) % 0x100000000);
+
+        i += 8;
+    }
+
+    while (i < bv.GetLength())
+    {
+        hash_value = (((37 * hash_value) + bv.GetData()[i]) % 0x100000000);
+
+        i += 1;
+    }
+
+    return hash_value;
+}
+
+/* clang-format off
+ * The volume information entry - version 30 is 96 bytes in size and consists of:
+ * Field	Offset	Length	Type	 Notes
+ * VI1	    +0x0000	4	    DWORD	 Offset to volume device path (Unicode, terminated by U+0000). The offset is relative from the start of the volume information
+ * VI2	    +0x0004	4	    DWORD	 Length of volume device path (nr of characters, including terminating U+0000)
+ * VI3	    +0x0008	8	    FILETIME Volume creation time.
+ * VI4	    +0x0010	4	    DWORD	 Volume serial number of volume indicated by volume string
+ * VI5	    +0x0014	4	    DWORD	 File references offset
+ * VI6	    +0x0018	4	    DWORD	 File references data size
+ * VI7	    +0x001C	4	    DWORD	 Directory strings offset
+ * VI8	    +0x0020	4	    DWORD	 Number of directory strings
+ * VI9	    +0x0024	4	    ?	     Unknown
+ * VI10	    +0x0028	24	    ?	     Unknown
+ * VI11	    +0x0040	4	    ?	     Unknown
+ * VI12	    +0x0040	24	    ?	     Unknown
+ * VI13	    +0x0058	4	    ?	     Unknown
+ * clang-format on
+ */
+
+struct VolumeInformationEntry_30
+{
+    uint32 devicePathOffset;
+    uint32 devicePathLength;
+    uint64 creationTime;
+    uint32 serialNumber;
+    uint32 fileReferencesOffset;
+    uint32 fileReferencesSize;
+    uint32 directoryStringsOffset;
+    uint32 directoryStringsEntries;
+    uint32 VI9;
+    uint8 unknown[24];
+    uint32 unknown0;
+    uint8 unknown1[24];
+    uint32 unknown2;
+};
+
+static_assert(sizeof(VolumeInformationEntry_30) == 96);
+
+/* clang-format off
+ * --------------------------------------------------------------- 30 END --------------------------------------------------------------------------------------
  * clang-format on
  */
 

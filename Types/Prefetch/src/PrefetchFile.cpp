@@ -46,14 +46,8 @@ bool PrefetchFile::Update_17()
 
         if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
         {
-            hashComputed = SSCA_XP_HASH({ (bufferSectionC.GetData() + entry->filenameOffset), exePath.size() * sizeof(char16_t) });
             break;
         }
-    }
-
-    if (hashComputed == 0)
-    {
-        exePath = "";
     }
 
     this->fileInformation = fileInformation;
@@ -68,7 +62,7 @@ bool PrefetchFile::Update_23()
 
     CHECK(SetEntries(
                 fileInformation.sectionA.offset,
-                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26),
+                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
                 fileInformation.sectionB.offset,
                 fileInformation.sectionB.entries * sizeof(TraceChainEntry_17_23_26),
                 fileInformation.sectionC.offset,
@@ -97,18 +91,12 @@ bool PrefetchFile::Update_23()
 
     for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
     {
-        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26>(sizeof(FileMetricsEntryRecord_23_26) * i);
+        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
 
         if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
         {
-            hashComputed = SSCA_VISTA_HASH({ (bufferSectionC.GetData() + entry->filenameOffset), exePath.size() * sizeof(char16_t) });
             break;
         }
-    }
-
-    if (hashComputed == 0)
-    {
-        exePath = "";
     }
 
     this->fileInformation = fileInformation;
@@ -123,7 +111,7 @@ bool PrefetchFile::Update_26()
 
     CHECK(SetEntries(
                 fileInformation.sectionA.offset,
-                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26),
+                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
                 fileInformation.sectionB.offset,
                 fileInformation.sectionB.entries * sizeof(TraceChainEntry_17_23_26),
                 fileInformation.sectionC.offset,
@@ -152,18 +140,12 @@ bool PrefetchFile::Update_26()
 
     for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
     {
-        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26>(sizeof(FileMetricsEntryRecord_23_26) * i);
+        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
 
         if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
         {
-            hashComputed = SSCA_VISTA_HASH({ (bufferSectionC.GetData() + entry->filenameOffset), exePath.size() * sizeof(char16_t) });
             break;
         }
-    }
-
-    if (hashComputed == 0)
-    {
-        exePath = "";
     }
 
     this->fileInformation = fileInformation;
@@ -173,7 +155,51 @@ bool PrefetchFile::Update_26()
 
 bool PrefetchFile::Update_30()
 {
-    throw std::runtime_error("Not implemented!");
+    FileInformation_30 fileInformation{};
+    CHECK(obj->GetData().Copy<FileInformation_30>(sizeof(header), fileInformation), false, "");
+
+    CHECK(SetEntries(
+                fileInformation.sectionA.offset,
+                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
+                fileInformation.sectionB.offset,
+                fileInformation.sectionB.entries * sizeof(TraceChainEntry_30),
+                fileInformation.sectionC.offset,
+                fileInformation.sectionC.length,
+                fileInformation.sectionD.offset),
+          false,
+          "");
+
+    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    {
+        auto entry = bufferSectionD.GetObject<VolumeInformationEntry_23_26>(i * sizeof(VolumeInformationEntry_23_26));
+
+        CHECK(AddVolumeEntry(
+                    fileInformation.sectionD.offset,
+                    entry->devicePathOffset,
+                    entry->devicePathLength,
+                    entry->fileReferencesOffset,
+                    entry->fileReferencesSize,
+                    entry->directoryStringsOffset,
+                    i),
+              false,
+              "");
+    }
+
+    CHECK(SetFilename(), false, "");
+
+    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    {
+        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
+
+        if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+        {
+            break;
+        }
+    }
+
+    this->fileInformation = fileInformation;
+
+    return true;
 }
 
 bool PrefetchFile::SetFilename()
@@ -203,6 +229,20 @@ bool PrefetchFile::ComputeHashForMainExecutable(uint32 filenameOffset, uint32 fi
         const auto sepPos = exePath.find_last_of('\\');
         const auto fPos   = exePath.find_first_of(filename, sepPos);
         found             = fPos != std::string::npos;
+    }
+
+    if (found)
+    {
+        if (header.version != Magic::WIN_10)
+        {
+            xpHash    = SSCA_XP_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
+            vistaHash = SSCA_VISTA_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
+            hash2008  = SSCA_2008_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
+        }
+    }
+    else
+    {
+        exePath.clear();
     }
 
     return found;

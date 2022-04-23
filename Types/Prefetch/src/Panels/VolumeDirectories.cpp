@@ -85,6 +85,17 @@ void VolumeDirectories::Update_26()
     }
 }
 
+void VolumeDirectories::Update_30()
+{
+    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
+
+    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    {
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_30>(sizeof(VolumeInformationEntry_30) * i);
+        AddItem(i, entry->directoryStringsEntries);
+    }
+}
+
 void VolumeDirectories::AddItem(uint32 index, uint32 directoryStringsEntries)
 {
     LocalString<1024> ls;
@@ -126,6 +137,8 @@ void VolumeDirectories::Update()
         Update_26();
         break;
     case Magic::WIN_10:
+        Update_30();
+        break;
     default:
         break;
     }

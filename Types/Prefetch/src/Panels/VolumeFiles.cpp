@@ -89,6 +89,12 @@ void VolumeFiles::Update_26()
     Update_23_26_30(fileInformation.sectionD.entries);
 }
 
+void VolumeFiles::Update_30()
+{
+    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
+    Update_23_26_30(fileInformation.sectionD.entries);
+}
+
 void VolumeFiles::Update_23_26_30(uint32 sectionDEntries)
 {
     LocalString<1024> ls;
@@ -129,6 +135,8 @@ void VolumeFiles::Update()
         Update_26();
         break;
     case Magic::WIN_10:
+        Update_30();
+        break;
     default:
         break;
     }

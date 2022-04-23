@@ -36,8 +36,10 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
                     { "VI9", TextAlignament::Right, 10 },
               },
               ListViewFlags::None);
+        break;
     case Magic::WIN_VISTA_7:
     case Magic::WIN_8:
+    case Magic::WIN_10:
         list = Factory::ListView::Create(
               this,
               "d:c",
@@ -58,7 +60,6 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               },
               ListViewFlags::None);
         break;
-    case Magic::WIN_10:
     default:
         break;
     }
@@ -128,6 +129,40 @@ void VolumeInformation::Update_26()
     Update_23_26(fileInformation.sectionD.entries);
 }
 
+void VolumeInformation::Update_30()
+{
+    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
+
+    LocalString<1024> ls;
+    NumericFormatter nf;
+
+    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    {
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
+
+        auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
+        item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
+
+        AppCUI::OS::DateTime dt;
+        dt.CreateFromFileTime(entry->creationTime);
+        item.SetText(2, ls.Format("%-20s", dt.GetStringRepresentation().data()));
+
+        item.SetText(3, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
+        item.SetText(4, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
+        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
+        item.SetText(6, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
+        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
+        item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
+        item.SetText(9, "Unknown array (24 bytes)");
+        item.SetText(10, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
+        item.SetText(11, "Unknown array (24 bytes)");
+        item.SetText(12, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
+
+        item.SetData<VolumeInformationEntry_30>(
+              (VolumeInformationEntry_30*) (prefetch->bufferSectionAEntries.GetData() + sizeof(VolumeInformationEntry_30) * i));
+    }
+}
+
 void VolumeInformation::Update_23_26(uint32 sectionDEntries)
 {
     LocalString<1024> ls;
@@ -178,6 +213,8 @@ void VolumeInformation::Update()
         Update_26();
         break;
     case Magic::WIN_10:
+        Update_30();
+        break;
     default:
         break;
     }

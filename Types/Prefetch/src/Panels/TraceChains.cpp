@@ -18,15 +18,34 @@ TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::Vie
     win      = _win;
     base     = 16;
 
-    list = Factory::ListView::Create(
-          this,
-          "d:c",
-          { { "Next Entry Index", TextAlignament::Right, 14 },
-            { "Blocks Fetched", TextAlignament::Right, 10 },
-            { "Unknown", TextAlignament::Right, 18 },
-            { "Duration", TextAlignament::Right, 10 },
-            { "Unknown2", TextAlignament::Right, 18 } },
-          ListViewFlags::None);
+    switch (prefetch->header.version)
+    {
+    case Magic::WIN_XP_2003:
+    case Magic::WIN_VISTA_7:
+    case Magic::WIN_8:
+        list = Factory::ListView::Create(
+              this,
+              "d:c",
+              { { "Next Entry Index", TextAlignament::Right, 14 },
+                { "Blocks Fetched", TextAlignament::Right, 10 },
+                { "Unknown", TextAlignament::Right, 18 },
+                { "Duration", TextAlignament::Right, 10 },
+                { "Unknown2", TextAlignament::Right, 18 } },
+              ListViewFlags::None);
+        break;
+    case Magic::WIN_10:
+        list = Factory::ListView::Create(
+              this,
+              "d:c",
+              { { "Next Entry Index", TextAlignament::Right, 14 },
+                { "Unknown0", TextAlignament::Right, 18 },
+                { "Unknown1", TextAlignament::Right, 18 },
+                { "Unknown2", TextAlignament::Right, 18 } },
+              ListViewFlags::None);
+        break;
+    default:
+        break;
+    }
 
     Update();
 }
@@ -84,6 +103,27 @@ void TraceChains::Update_26()
     }
 }
 
+void TraceChains::Update_30()
+{
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
+
+    for (auto i = 0U; i < fileInformation.sectionB.entries; i++)
+    {
+        auto entry = prefetch->bufferSectionBEntries.GetObject<TraceChainEntry_30>(sizeof(TraceChainEntry_30) * i);
+
+        auto item = list->AddItem({ tmp.Format("%s", GetValue(n, entry->nextEntryIndex).data()) });
+        item.SetText(1, tmp.Format("%s", GetValue(n, entry->unknown0).data()));
+        item.SetText(2, tmp.Format("%s", GetValue(n, entry->unknown1).data()));
+        item.SetText(3, tmp.Format("%s", GetValue(n, entry->unknown2).data()));
+
+        item.SetData<TraceChainEntry_30>(
+              (TraceChainEntry_30*) (prefetch->bufferSectionBEntries.GetData() + sizeof(TraceChainEntry_30) * i));
+    }
+}
+
 void TraceChains::AddItem_17_23_26(const TraceChainEntry_17_23_26& tc, uint32 i)
 {
     LocalString<128> tmp;
@@ -115,6 +155,7 @@ void TraceChains::Update()
         Update_26();
         break;
     case Magic::WIN_10:
+        Update_30();
     default:
         break;
     }

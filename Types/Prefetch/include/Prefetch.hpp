@@ -37,7 +37,7 @@ class PrefetchFile : public TypeInterface
 {
   public:
     Header header{};
-    std::variant<FileInformation_17, FileInformation_23, FileInformation_26> fileInformation{};
+    std::variant<FileInformation_17, FileInformation_23, FileInformation_26, FileInformation_30> fileInformation{};
     Buffer bufferSectionAEntries;
     Buffer bufferSectionBEntries;
     Buffer bufferSectionC;
@@ -52,7 +52,9 @@ class PrefetchFile : public TypeInterface
 
     std::map<uint32, VolumeEntry> volumeEntries;
 
-    int64 hashComputed = 0;
+    int64 xpHash    = 0;
+    int64 vistaHash = 0;
+    int64 hash2008  = 0;
     std::string filename;
     std::string exePath;
 
@@ -112,6 +114,7 @@ namespace Panels
         void UpdateFileInformation_17();
         void UpdateFileInformation_23();
         void UpdateFileInformation_26();
+        void UpdateFileInformation_30();
         void UpdateIssues();
         void RecomputePanelsPositions();
 
@@ -143,7 +146,8 @@ namespace Panels
         void Update_17();
         void Update_23();
         void Update_26();
-        void Update_23_26(uint32 sectionAEntries);
+        void Update_30();
+        void Update_23_26_30(uint32 sectionAEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
@@ -166,6 +170,7 @@ namespace Panels
         void Update_17();
         void Update_23();
         void Update_26();
+        void Update_30();
         void AddItem_17_23_26(const TraceChainEntry_17_23_26& tc, uint32 i);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
@@ -192,6 +197,7 @@ namespace Panels
         void Update_17();
         void Update_23();
         void Update_26();
+        void Update_30();
         void Update_23_26(uint32 sectionDEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
@@ -218,6 +224,7 @@ namespace Panels
         void Update_17();
         void Update_23();
         void Update_26();
+        void Update_30();
         void AddItem(uint32 index, uint32 directoryStringsEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
@@ -244,6 +251,7 @@ namespace Panels
         void Update_17();
         void Update_23();
         void Update_26();
+        void Update_30();
         void Update_23_26_30(uint32 sectionDEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;

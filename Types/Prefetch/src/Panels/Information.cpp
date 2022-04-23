@@ -73,12 +73,15 @@ void Information::UpdateHeader()
     general->AddItem({ "Executable", ls.Format("%s", filename.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
     general->AddItem({ "Executable Path", ls.Format("%s", prefetch->exePath.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 
-    const auto hash    = nf.ToString(prefetch->header.H6, dec);
-    const auto hashHex = nf2.ToString(prefetch->header.H6, hex);
-    auto hashItem      = general->AddItem({ "Hash", ls.Format("%-20s (%s)", hash.data(), hashHex.data()) });
+    ListViewItem hashItem{};
+    {
+        const auto hash    = nf.ToString(prefetch->header.H6, dec);
+        const auto hashHex = nf2.ToString(prefetch->header.H6, hex);
+        hashItem           = general->AddItem({ "Hash", ls.Format("%-20s (%s)", hash.data(), hashHex.data()) });
+    }
 
     // hash validation
-    if (prefetch->hashComputed != 0)
+    if (prefetch->exePath != "")
     {
         const auto pos  = object->GetName().find_last_of('-');
         const auto pos2 = object->GetName().find_last_of('.');
@@ -92,20 +95,35 @@ void Information::UpdateHeader()
                 lsub.ToString(hashFromName);
             }
 
-            const auto hashHex = ls.Format("%08X", prefetch->header.H6);
+            const auto headerHashHex = ls.Format("%08X", prefetch->header.H6);
 
-            if (hashFromName.compare(hashHex) == 0)
+            if (hashFromName.compare(headerHashHex) == 0)
             {
-                const auto computedHashHex = ls.Format("%08X", prefetch->hashComputed);
-                if (hashFromName.compare(computedHashHex) == 0)
+                if (prefetch->header.version != Prefetch::Magic::WIN_10)
                 {
-                    hashItem.SetType(ListViewItem::Type::Emphasized_2);
+                    const auto computedXpHashHex    = ls.Format("%08X", prefetch->xpHash);
+                    const auto computedVistaHashHex = ls.Format("%08X", prefetch->vistaHash);
+                    const auto computedHash2008Hex  = ls.Format("%08X", prefetch->hash2008);
+                    if (hashFromName.compare(computedXpHashHex) == 0 || hashFromName.compare(computedVistaHashHex) == 0 ||
+                        hashFromName.compare(computedHash2008Hex) == 0)
+                    {
+                        hashItem.SetType(ListViewItem::Type::Emphasized_2);
+                    }
+                    else
+                    {
+                        LocalString<64> ls2;
+                        issues->AddItem(
+                              { ls2.Format("Hash validation failed when compared to computed XP hash (0x%s)!", computedXpHashHex.data()) });
+                        issues->AddItem({ ls2.Format(
+                              "Hash validation failed when compared to computed VISTA hash (0x%s)!", computedVistaHashHex.data()) });
+                        issues->AddItem({ ls2.Format(
+                              "Hash validation failed when compared to computed 2008 hash (0x%s)!", computedHash2008Hex.data()) });
+                        hashItem.SetType(ListViewItem::Type::ErrorInformation);
+                    }
                 }
                 else
                 {
-                    LocalString<64> ls2;
-                    issues->AddItem(
-                          { ls2.Format("Hash validation failed when compared to computed hash (0x%s)!", computedHashHex.data()) });
+                    issues->AddItem("Unable to validate path hash for Windows 10 prefetch files!");
                     hashItem.SetType(ListViewItem::Type::ErrorInformation);
                 }
             }
@@ -377,6 +395,101 @@ void Information::UpdateFileInformation_26()
     general->AddItem({ "Unknown array (80 bytes)" });
 }
 
+void Information::UpdateFileInformation_30()
+{
+    LocalString<1024> ls;
+    LocalString<1024> ls2;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
+
+    general->AddItem("File Information").SetType(ListViewItem::Type::Category);
+    const auto sectionAOffset    = nf.ToString(fileInformation.sectionA.offset, dec);
+    const auto sectionAOffsetHex = nf2.ToString(fileInformation.sectionA.offset, hex);
+    general->AddItem({ "Section A Offset", ls.Format("%-20s (%s)", sectionAOffset.data(), sectionAOffsetHex.data()) });
+
+    const auto sectionAEntries    = nf.ToString(fileInformation.sectionA.entries, dec);
+    const auto sectionAEntriesHex = nf2.ToString(fileInformation.sectionA.entries, hex);
+    general->AddItem({ "Section A Entries", ls.Format("%-20s (%s)", sectionAEntries.data(), sectionAEntriesHex.data()) });
+
+    const auto sectionBOffset    = nf.ToString(fileInformation.sectionB.offset, dec);
+    const auto sectionBOffsetHex = nf2.ToString(fileInformation.sectionB.offset, hex);
+    general->AddItem({ "Section B Offset", ls.Format("%-20s (%s)", sectionBOffset.data(), sectionBOffsetHex.data()) });
+
+    const auto sectionBEntries    = nf.ToString(fileInformation.sectionB.entries, dec);
+    const auto sectionBEntriesHex = nf2.ToString(fileInformation.sectionB.entries, hex);
+    general->AddItem({ "Section B Entries", ls.Format("%-20s (%s)", sectionBEntries.data(), sectionBEntriesHex.data()) });
+
+    const auto sectionCOffset    = nf.ToString(fileInformation.sectionC.offset, dec);
+    const auto sectionCOffsetHex = nf2.ToString(fileInformation.sectionC.offset, hex);
+    general->AddItem({ "Section C Offset", ls.Format("%-20s (%s)", sectionCOffset.data(), sectionCOffsetHex.data()) });
+
+    const auto sectionCLength    = nf.ToString(fileInformation.sectionC.length, dec);
+    const auto sectionCLengthHex = nf2.ToString(fileInformation.sectionC.length, hex);
+    general->AddItem({ "Section C Length", ls.Format("%-20s (%s)", sectionCLength.data(), sectionCLengthHex.data()) });
+
+    const auto sectionDOffset    = nf.ToString(fileInformation.sectionD.offset, dec);
+    const auto sectionDOffsetHex = nf2.ToString(fileInformation.sectionD.offset, hex);
+    general->AddItem({ "Section D Offset", ls.Format("%-20s (%s)", sectionDOffset.data(), sectionDOffsetHex.data()) });
+
+    const auto sectionDEntries    = nf.ToString(fileInformation.sectionD.entries, dec);
+    const auto sectionDEntriesHex = nf2.ToString(fileInformation.sectionD.entries, hex);
+    general->AddItem({ "Section D Entries", ls.Format("%-20s (%s)", sectionDEntries.data(), sectionDEntriesHex.data()) });
+
+    const auto sectionDSize    = nf.ToString(fileInformation.sectionD.size, dec);
+    const auto sectionDSizeHex = nf2.ToString(fileInformation.sectionD.size, hex);
+    general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
+
+    const auto unknown0    = nf.ToString(fileInformation.unknown0, dec);
+    const auto unknown0Hex = nf2.ToString(fileInformation.unknown0, hex);
+    general->AddItem({ "Unknown 0", ls.Format("%-20s (%s)", unknown0.data(), unknown0Hex.data()) });
+
+    DateTime dt;
+    dt.CreateFromFileTime(fileInformation.latestExecutionTime);
+    const auto latestExecutionTimeHex = nf2.ToString(fileInformation.latestExecutionTime, hex);
+    general
+          ->AddItem(
+                { "Latest Execution Time", ls.Format("%-20s (%s)", dt.GetStringRepresentation().data(), latestExecutionTimeHex.data()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+
+    for (uint32 i = 0; i < sizeof(fileInformation.olderExecutionTime) / sizeof(fileInformation.olderExecutionTime[0]); i++)
+    {
+        const auto olderExecutionTimeHex = nf2.ToString(fileInformation.olderExecutionTime[i], hex);
+        if (dt.CreateFromFileTime(fileInformation.olderExecutionTime[i]))
+        {
+            general
+                  ->AddItem({ ls.Format("#%u Older Execution Time", i),
+                              ls2.Format("%-20s (%s)", dt.GetStringRepresentation().data(), olderExecutionTimeHex.data()) })
+                  .SetType(ListViewItem::Type::Emphasized_1);
+        }
+        else
+        {
+            general
+                  ->AddItem({ ls.Format("#%u Older Execution Time", i), ls2.Format("%-20s (%s)", "Invalid", olderExecutionTimeHex.data()) })
+                  .SetType(ListViewItem::Type::WarningInformation);
+        }
+    }
+
+    const auto unknownPart1    = nf.ToString(fileInformation.unknown1, dec);
+    const auto unknownPart1Hex = nf2.ToString(fileInformation.unknown1, hex);
+    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknownPart1.data(), unknownPart1Hex.data()) });
+
+    const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
+    const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
+    general->AddItem({ "Execution Count", ls.Format("%-20s (%s)", executionCount.data(), executionCountHex.data()) });
+
+    const auto unknown2    = nf.ToString(fileInformation.unknown2, dec);
+    const auto unknown2Hex = nf2.ToString(fileInformation.unknown2, hex);
+    general->AddItem({ "Unknown 2", ls.Format("%-20s (%s)", unknown2.data(), unknown2Hex.data()) });
+
+    const auto unknown3    = nf.ToString(fileInformation.unknown3, dec);
+    const auto unknown3Hex = nf2.ToString(fileInformation.unknown3, hex);
+    general->AddItem({ "Unknown 3", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
+
+    general->AddItem({ "Unknown array (80 bytes)" });
+}
+
 void Information::UpdateFileInformation()
 {
     switch (prefetch->header.version)
@@ -391,6 +504,8 @@ void Information::UpdateFileInformation()
         UpdateFileInformation_26();
         break;
     case Magic::WIN_10:
+        UpdateFileInformation_30();
+        break;
     default:
         break;
     }
@@ -398,56 +513,20 @@ void Information::UpdateFileInformation()
 
 void Information::RecomputePanelsPositions()
 {
-    int py   = 0;
-    int last = 0;
-    int w    = this->GetWidth();
-    int h    = this->GetHeight();
+    int py = 0;
+    int w  = this->GetWidth();
+    int h  = this->GetHeight();
 
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;
-    if (this->issues->IsVisible())
-        last = 1;
-    // if (InfoPanelCtx.pnlIcon->IsVisible()) last = 3;
 
-    // resize
-    if (last == 0)
-    {
-        this->general->Resize(w, h - py);
-    }
-    else
-    {
-        if (this->general->GetItemsCount() > 15)
-        {
-            this->general->Resize(w, 18);
-            py += 18;
-        }
-        else
-        {
-            this->general->Resize(w, this->general->GetItemsCount() + 3);
-            py += (this->general->GetItemsCount() + 3);
-        }
-    }
+    py += (this->general->GetItemsCount() + 3);
+    this->general->Resize(w, py);
 
     if (this->issues->IsVisible())
     {
         this->issues->MoveTo(0, py);
-        if (last == 1)
-        {
-            this->issues->Resize(w, h - py);
-        }
-        else
-        {
-            if (this->issues->GetItemsCount() > 6)
-            {
-                this->issues->Resize(w, 8);
-                py += 8;
-            }
-            else
-            {
-                this->issues->Resize(w, this->issues->GetItemsCount() + 2);
-                py += (this->issues->GetItemsCount() + 2);
-            }
-        }
+        this->issues->Resize(w, h - py);
     }
 }
 
