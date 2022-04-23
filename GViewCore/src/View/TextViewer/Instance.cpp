@@ -10,6 +10,72 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
+class CharacterStream
+{
+    char16 ch;
+    const uint8* pos;
+    const uint8* end;
+    uint32 xPos, nextPos;
+    uint32 charRelativeOffset, nextCharRelativeOffset;
+    Reference<SettingsData> settings;
+
+  public:
+    CharacterStream(BufferView buf, Reference<SettingsData> _settings)
+    {
+        this->pos                    = buf.begin();
+        this->end                    = buf.end();
+        this->xPos                   = 0;
+        this->nextPos                = 0;
+        this->charRelativeOffset     = 0;
+        this->nextCharRelativeOffset = 0;
+        this->settings               = _settings;
+    }
+    bool Next()
+    {
+        if (this->pos >= this->end)
+            return false;
+        switch (this->settings->encoding)
+        {
+        case Encoding::Ascii:
+            this->ch = *this->pos;
+            this->pos++;
+            break;
+        default:
+            return false;
+        }
+        this->xPos               = this->nextPos;
+        this->charRelativeOffset = this->nextCharRelativeOffset++;
+        if (this->ch == '\t')
+        {
+            this->ch      = ' '; // tab will be showd as a space
+            this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+        }
+        else
+            this->nextPos++;
+        return true;
+    }
+    inline uint32 GetXOffset() const
+    {
+        return this->xPos;
+    }
+    inline uint32 GetNextXOffset() const
+    {
+        return this->nextPos;
+    }
+    inline uint32 GetRelativeOffset() const
+    {
+        return this->charRelativeOffset;
+    }
+    inline void ResetXOffset(uint32 value = 0)
+    {
+        this->xPos = this->nextPos = value;
+    }
+    inline char16 GetCharacter() const
+    {
+        return this->ch;
+    }
+};
+
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
     this->obj  = _obj;
@@ -32,8 +98,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 
     this->lineNumberWidth = 0;
-    this->tabSize         = 4;
+    this->subLineIndex.Create(256); // alocate 256 entries
 }
+
 void Instance::RecomputeLineIndexes()
 {
     // first --> simple estimation
@@ -120,66 +187,86 @@ bool Instance::GetLineInfo(uint32 lineNo, uint64& offset, uint32& size)
     }
     return true;
 }
-void Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer)
+bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf)
 {
-    uint64 ofs;
-    uint32 sz;
-    BufferView buf;
-    NumericFormatter n;
-    
+    uint64 offset;
+    uint32 size;
+    uint32 w = this->GetWidth();
 
-    if (GetLineInfo(lineNo, ofs, sz))
-        buf = this->obj->GetData().Get(ofs, sz, false);
-    renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
-    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
+    this->subLineIndex.Clear();
+    CHECK(GetLineInfo(lineNo, offset, size), false, "");
+    CHECK(this->subLineIndex.Push(0), false, "");
 
-    // parse buf until the first visible character
-    uint32 xPoz = 0;
-    auto p      = buf.begin();
-    auto e      = buf.end();
-
-    // compute relative position
-    for (; (xPoz < xScroll) && (p < e); p++)
+    if ((this->lineNumberWidth + 1) >= w)
+        w = 1;
+    else
+        w -= (this->lineNumberWidth + 1);
+    buf = this->obj->GetData().Get(offset, size, false);
+    CharacterStream cs(buf, this->settings.ToReference());
+    // process
+    if (this->settings->wordWrap)
     {
-        if ((*p) == '\t')
+        while (cs.Next())
         {
-            xPoz += this->tabSize - (xPoz % this->tabSize);
-        }
-        else
-        {
-            xPoz++;
-        }
-    }
-    xPoz -= xScroll;
-
-    // write chars over the chars buffer
-    auto c     = this->chars;
-    auto c_end = c + MAX_CHARACTERS_PER_LINE;
-    auto x     = 0U;
-    while ((x < width) && (c < c_end) && (p < e))
-    {
-        if (((*p) == '\n') || ((*p) == '\r'))
-            break;
-
-        if ((*p) == '\t')
-        {
-            auto dif = this->tabSize - (x % this->tabSize);
-            x += dif;
-            for (; (dif > 0) && (c < c_end); dif--,c++)
+            if (cs.GetXOffset() >= w)
             {
-                c->Code = ' ';                
+                // move to next line
+                this->subLineIndex.Push(cs.GetRelativeOffset());
+                cs.ResetXOffset();
             }
         }
-        else
-        {
-            c->Code = *p;
-            c++;
-            x++;
-        }
-        p++;
     }
+    return true;
+}
+int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer)
+{
+    BufferView buf;
+    NumericFormatter n;
 
-    renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (c - chars)), Cfg.Text.Normal);
+    renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
+    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
+    ComputeSubLineIndexes(lineNo, buf);
+
+    // write text
+    auto idx    = this->subLineIndex.GetUInt32Array();
+    auto idxEnd = idx + this->subLineIndex.Len();
+    auto cBuf   = buf.begin();
+
+    // draw each sub-line
+    while (idx < idxEnd)
+    {
+        auto start = *idx;
+        auto end   = (idx+1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
+        CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
+        auto c     = this->chars;
+        auto lastC = this->chars + 1;
+        auto c_end = c + MAX_CHARACTERS_PER_LINE;
+        // skip left part
+        if (xScroll > 0)
+        {
+            while ((cs.Next()) && (cs.GetNextXOffset() < xScroll))
+            {
+            }
+        }
+        while ((cs.Next()) && (lastC < c_end))
+        {
+            auto c = this->chars + cs.GetXOffset();
+            // fill in the spaces
+            while (lastC < c)
+            {
+                lastC->Code  = ' ';
+                lastC->Color = Cfg.Text.Normal;
+                lastC++;
+            }
+            c->Code = cs.GetCharacter();
+            c->Color = Cfg.Text.Normal;
+            lastC    = c + 1;
+        }
+        renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), Cfg.Text.Normal);
+        y++;
+        idx++;
+    }
+    return y;
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
@@ -189,20 +276,23 @@ void Instance::Paint(Graphics::Renderer& renderer)
         w = 0;
     else
         w = w - (this->lineNumberWidth + 2);
-    for (auto y = 0; y < h; y++)
+    auto y = 0;
+    auto lineNo = 0U;
+    while (y<h)
     {
-        DrawLine(0, y, (uint32) y, w, renderer);
+        y = DrawLine(0, y, lineNo, w, renderer);
+        lineNo++;
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
-    commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
-    if (this->settings->imgList.size() > 1)
-    {
-        commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
-        commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
-    }
+    // commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
+    // commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
+    // if (this->settings->imgList.size() > 1)
+    //{
+    //     commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
+    //     commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
+    // }
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)

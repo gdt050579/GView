@@ -5,8 +5,9 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
-    this->imgList.reserve(8);
-    this->loadImageCallback.Reset();
+    this->tabSize  = 4;
+    this->wordWrap = true;
+    this->encoding = TextViewer::Encoding::Ascii;
 }
 Settings::Settings()
 {
@@ -14,15 +15,8 @@ Settings::Settings()
 }
 void Settings::SetLoadImageCallback(Reference<LoadImageInterface> cbk)
 {
-    if (cbk != nullptr)
-        ((SettingsData*) (this->data))->loadImageCallback = cbk;
+
 }
 void Settings::AddImage(uint64 offset, uint64 size)
 {
-    if ((size > 0) && (offset != GView::Utils::INVALID_OFFSET))
-    {
-        auto& elem = ((SettingsData*) (this->data))->imgList.emplace_back();
-        elem.start = offset;
-        elem.end   = offset + size;
-    }
 }
