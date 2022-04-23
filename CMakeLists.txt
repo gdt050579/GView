@@ -83,7 +83,7 @@ add_subdirectory(Types/UniversalMachO)
 add_subdirectory(Types/MachO)
 add_subdirectory(Types/ISO)
 add_subdirectory(Types/PREFETCH)
-
+add_subdirectory(Types/MAM)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
