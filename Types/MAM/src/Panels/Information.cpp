@@ -83,13 +83,15 @@ bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
             Buffer uncompressed;
             uncompressed.Resize(mam->uncompressedSize);
 
-            const auto entireFile = mam->obj->GetData().GetEntireFile();
+
+
+            const auto entireFile = mam->obj->GetData().GetEntireFile(); // fix this!
             CHECK(entireFile.IsValid(), false, "");
 
             const BufferView compressed = { entireFile.GetData() + 8, entireFile.GetLength() - 8 };
             CHECK(compressed.IsValid(), false, "");
 
-            CHECK(Decompress(compressed, uncompressed), false, "");
+            CHECK(GView::Compression::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
 
             GView::App::OpenBuffer(uncompressed, mam->obj->GetName());
 

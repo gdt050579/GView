@@ -410,6 +410,17 @@ namespace DigitalSignature
     CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
 } // namespace DigitalSignature
 
+namespace Compression
+{
+    namespace LZXPRESS
+    {
+        namespace Huffman
+        {
+            CORE_EXPORT bool Decompress(const BufferView& compressed, Buffer& uncompressed);
+        }
+    } // namespace LZXPRESS
+} // namespace Compression
+
 /*
  * Object can be:
  *   - a file
@@ -575,7 +586,7 @@ namespace View
             bool AddProperty(string_view name, const ConstString& value, ListViewItem::Type itemType = ListViewItem::Type::Normal);
             void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
-            void SetOpenItemCallback(Reference<OpenItemInterface> callback);           
+            void SetOpenItemCallback(Reference<OpenItemInterface> callback);
         };
     }; // namespace ContainerViewer
 

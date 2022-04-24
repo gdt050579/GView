@@ -38,6 +38,7 @@ extern "C"
     ColorPair sectionB{ Color::DarkRed, Color::DarkBlue };
     ColorPair sectionC{ Color::DarkGreen, Color::DarkBlue };
     ColorPair sectionD{ Color::DarkRed, Color::DarkBlue };
+    ColorPair exe{ Color::Red, Color::DarkBlue };
 
     void CreateBufferView_17(
           Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
@@ -139,6 +140,7 @@ extern "C"
                   "Section B");
 
             settings.AddZone(fileInformation.sectionC.offset, fileInformation.sectionC.length, sectionC, "Section C");
+            settings.AddZone(fileInformation.executablePathOffset, fileInformation.executablePathSize, exe, "EXECUTABLE");
             settings.AddZone(fileInformation.sectionD.offset, fileInformation.sectionD.size, sectionD, "Section D");
         }
     }

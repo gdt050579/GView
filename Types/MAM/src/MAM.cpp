@@ -10,65 +10,6 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-#ifdef BUILD_FOR_WINDOWS
-#    include <Windows.h>
-#    include <VersionHelpers.h>
-#    undef GetObject
-#endif
-
-namespace GView::Type::MAM
-{
-bool Decompress(const BufferView& compressed, Buffer& decompressed)
-{
-#ifdef BUILD_FOR_WINDOWS
-    CHECK(IsWindows8OrGreater(), false, "Cannot perform decompression on systems older than Windows 8. ");
-
-    const auto rtlDecompressBufferEx = (DWORD(WINAPI*)(USHORT, PUCHAR, ULONG, PUCHAR, ULONG, PULONG, PVOID))(
-          GetProcAddress(GetModuleHandle(TEXT("ntdll.dll")), "RtlDecompressBufferEx"));
-    CHECK(rtlDecompressBufferEx != nullptr, false, "");
-
-    const auto rtlGetCompressionWorkSpaceSize =
-          (DWORD(WINAPI*)(USHORT, PULONG, PULONG))(GetProcAddress(GetModuleHandle(TEXT("ntdll.dll")), "RtlGetCompressionWorkSpaceSize"));
-    CHECK(rtlGetCompressionWorkSpaceSize != nullptr, false, "");
-
-    CHECK(compressed.IsValid(), false, "");
-    CHECK(decompressed.GetLength() > 8, false, "");
-
-    ULONG workspaceSize, unkSize;
-    auto err = rtlGetCompressionWorkSpaceSize(
-          COMPRESSION_FORMAT_XPRESS_HUFF | COMPRESSION_ENGINE_STANDARD,
-          &workspaceSize,
-          &unkSize // Cannot be nullptr, or else we get an access violation error
-    );
-    CHECK(err == 0, false, "Error code: 0x%08X", err);
-
-    std::unique_ptr<BYTE[]> workspaceBuffer(new BYTE[workspaceSize]);
-    CHECK(workspaceBuffer, false, "");
-
-    ULONG finalUncompressedSize;
-
-    err = rtlDecompressBufferEx(
-          COMPRESSION_FORMAT_XPRESS_HUFF,
-          (BYTE*) decompressed.GetData(),
-          (ULONG) decompressed.GetLength(),
-          (BYTE*) compressed.GetData(),
-          (ULONG) compressed.GetLength(),
-          &finalUncompressedSize,
-          (void*) workspaceBuffer.get());
-
-    CHECK(err == (uint32) CompressionStatus::Success, false, "Error code: 0x%08X", err);
-    CHECK(finalUncompressedSize == decompressed.GetLength(), false, "");
-#else
-#    ifdef __OS_MACHO__
-    // TODO
-#    else
-    // TODO
-#    endif
-#endif
-    return true;
-}
-} // namespace GView::Type::MAM
-
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)

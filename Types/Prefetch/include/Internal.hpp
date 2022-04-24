@@ -528,13 +528,15 @@ struct FileInformation_30
         uint32 entries;
         uint32 size;
     } sectionD;
-    uint64 unknown0;
+    uint32 unknown;
+    uint32 unknown0;
     uint64 latestExecutionTime;
     uint64 olderExecutionTime[8];
-    uint64 unknown1;
-    uint32 executionCount;
+    uint32 unknown1;
     uint32 unknown2;
-    uint32 unknown3;
+    uint32 executionCount;
+    uint32 executablePathOffset;
+    uint32 executablePathSize;
     uint8 unknown4[80];
 };
 #pragma pack(pop)

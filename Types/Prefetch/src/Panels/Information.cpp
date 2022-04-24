@@ -99,7 +99,7 @@ void Information::UpdateHeader()
 
             if (hashFromName.compare(headerHashHex) == 0)
             {
-                if (prefetch->header.version != Prefetch::Magic::WIN_10)
+                if (prefetch->header.version != Prefetch::Magic::WIN_10 || prefetch->xpHash != 0)
                 {
                     const auto computedXpHashHex    = ls.Format("%08X", prefetch->xpHash);
                     const auto computedVistaHashHex = ls.Format("%08X", prefetch->vistaHash);
@@ -441,6 +441,10 @@ void Information::UpdateFileInformation_30()
     const auto sectionDSizeHex = nf2.ToString(fileInformation.sectionD.size, hex);
     general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
 
+    const auto unknown    = nf.ToString(fileInformation.unknown, dec);
+    const auto unknownHex = nf2.ToString(fileInformation.unknown, hex);
+    general->AddItem({ "Unknown", ls.Format("%-20s (%s)", unknown.data(), unknownHex.data()) });
+
     const auto unknown0    = nf.ToString(fileInformation.unknown0, dec);
     const auto unknown0Hex = nf2.ToString(fileInformation.unknown0, hex);
     general->AddItem({ "Unknown 0", ls.Format("%-20s (%s)", unknown0.data(), unknown0Hex.data()) });
@@ -471,21 +475,25 @@ void Information::UpdateFileInformation_30()
         }
     }
 
-    const auto unknownPart1    = nf.ToString(fileInformation.unknown1, dec);
-    const auto unknownPart1Hex = nf2.ToString(fileInformation.unknown1, hex);
-    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknownPart1.data(), unknownPart1Hex.data()) });
-
-    const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
-    const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
-    general->AddItem({ "Execution Count", ls.Format("%-20s (%s)", executionCount.data(), executionCountHex.data()) });
+    const auto unknown1    = nf.ToString(fileInformation.unknown1, dec);
+    const auto unknown1Hex = nf2.ToString(fileInformation.unknown1, hex);
+    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknown1.data(), unknown1Hex.data()) });
 
     const auto unknown2    = nf.ToString(fileInformation.unknown2, dec);
     const auto unknown2Hex = nf2.ToString(fileInformation.unknown2, hex);
     general->AddItem({ "Unknown 2", ls.Format("%-20s (%s)", unknown2.data(), unknown2Hex.data()) });
 
-    const auto unknown3    = nf.ToString(fileInformation.unknown3, dec);
-    const auto unknown3Hex = nf2.ToString(fileInformation.unknown3, hex);
-    general->AddItem({ "Unknown 3", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
+    const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
+    const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
+    general->AddItem({ "Execution Count", ls.Format("%-20s (%s)", executionCount.data(), executionCountHex.data()) });
+
+    const auto executablePathOffset    = nf.ToString(fileInformation.executablePathOffset, dec);
+    const auto executablePathOffsetHex = nf2.ToString(fileInformation.executablePathOffset, hex);
+    general->AddItem({ "Executable Path Offset", ls.Format("%-20s (%s)", executablePathOffset.data(), executablePathOffsetHex.data()) });
+
+    const auto executablePathSize    = nf.ToString(fileInformation.executablePathSize, dec);
+    const auto executablePathSizeHex = nf2.ToString(fileInformation.executablePathSize, hex);
+    general->AddItem({ "Executable Path Size", ls.Format("%-20s (%s)", executablePathSize.data(), executablePathSizeHex.data()) });
 
     general->AddItem({ "Unknown array (80 bytes)" });
 }

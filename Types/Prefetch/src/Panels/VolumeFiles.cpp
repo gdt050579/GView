@@ -103,7 +103,14 @@ void VolumeFiles::Update_23_26_30(uint32 sectionDEntries)
     for (auto i = 0U; i < sectionDEntries; i++)
     {
         auto& filesBuffer = prefetch->volumeEntries.at(i).files;
-        auto frs          = (FileReferences_23_26_30*) filesBuffer.GetData();
+
+        if (filesBuffer.IsValid() == false)
+        {
+            // TODO: global issues!
+            continue;
+        }
+
+        auto frs = (FileReferences_23_26_30*) filesBuffer.GetData();
 
         for (uint32 j = 0; j < frs->numberOfFileReferences; j++)
         {

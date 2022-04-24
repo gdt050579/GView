@@ -113,7 +113,7 @@ void VolumeDirectories::AddItem(uint32 index, uint32 directoryStringsEntries)
 
         item.SetText(1, ls.Format("%s", GetValue(nf, dse->size).data()));
         item.SetText(2, ls.Format("%-20S", dse->path));
-
+        
         item.SetData<DirectoryStringEntry>(dse);
 
         offset += sizeof(DirectoryStringEntry::size) + (dse->size + 1ULL) * sizeof(char16_t);

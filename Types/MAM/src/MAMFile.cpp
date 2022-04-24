@@ -1,8 +1,5 @@
 #include "MAM.hpp"
 
-#include <queue>
-#include <map>
-
 using namespace GView::Type::MAM;
 
 MAMFile::MAMFile()

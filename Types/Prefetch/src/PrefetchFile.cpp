@@ -1,4 +1,4 @@
-#include "prefetch.hpp"
+﻿#include "prefetch.hpp"
 
 using namespace GView::Type::Prefetch;
 
@@ -158,20 +158,23 @@ bool PrefetchFile::Update_30()
     FileInformation_30 fileInformation{};
     CHECK(obj->GetData().Copy<FileInformation_30>(sizeof(header), fileInformation), false, "");
 
+    const auto end  = fileInformation.sectionC.offset + fileInformation.sectionC.length;
+    const auto diff = fileInformation.sectionD.offset - end;
+
     CHECK(SetEntries(
                 fileInformation.sectionA.offset,
                 fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
                 fileInformation.sectionB.offset,
                 fileInformation.sectionB.entries * sizeof(TraceChainEntry_30),
                 fileInformation.sectionC.offset,
-                fileInformation.sectionC.length,
+                diff < 0 ? fileInformation.sectionC.length : fileInformation.sectionC.length + diff,
                 fileInformation.sectionD.offset),
           false,
           "");
 
     for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
     {
-        auto entry = bufferSectionD.GetObject<VolumeInformationEntry_23_26>(i * sizeof(VolumeInformationEntry_23_26));
+        auto entry = bufferSectionD.GetObject<VolumeInformationEntry_30>(i * sizeof(VolumeInformationEntry_30));
 
         CHECK(AddVolumeEntry(
                     fileInformation.sectionD.offset,
@@ -187,13 +190,29 @@ bool PrefetchFile::Update_30()
 
     CHECK(SetFilename(), false, "");
 
-    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    if (header.version == Magic::WIN_10)
     {
-        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
-
-        if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+        if (diff > 0)
         {
-            break;
+            std::u16string_view sv{ (char16*) (bufferSectionC.GetData() + bufferSectionC.GetLength() - diff), diff };
+            auto pos = sv.find_first_of(char16{ 0 });
+            if (pos == std::string::npos)
+            {
+                pos = diff;
+            }
+            ComputeHashForMainExecutable(bufferSectionC.GetLength() - diff, pos);
+        }
+    }
+    else
+    {
+        for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+        {
+            auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
+
+            if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+            {
+                break;
+            }
         }
     }
 
@@ -233,16 +252,9 @@ bool PrefetchFile::ComputeHashForMainExecutable(uint32 filenameOffset, uint32 fi
 
     if (found)
     {
-        if (header.version != Magic::WIN_10)
-        {
-            xpHash    = SSCA_XP_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
-            vistaHash = SSCA_VISTA_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
-            hash2008  = SSCA_2008_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
-        }
-    }
-    else
-    {
-        exePath.clear();
+        xpHash    = SSCA_XP_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
+        vistaHash = SSCA_VISTA_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
+        hash2008  = SSCA_2008_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
     }
 
     return found;
@@ -262,9 +274,9 @@ bool PrefetchFile::AddVolumeEntry(
     const auto nOffset = sectionDOffset + devicePathOffset;
     {
         const auto b = obj->GetData().CopyToBuffer(
-              nOffset, static_cast<uint32>(std::min<>(devicePathLength * sizeof(char16_t*), obj->GetData().GetSize() - nOffset)));
+              nOffset, static_cast<uint32>(std::min<>(devicePathLength * sizeof(char16*), obj->GetData().GetSize() - nOffset - 4)));
         ConstString cs{ u16string_view{ (char16_t*) b.GetData(), b.GetLength() } };
-        LocalUnicodeStringBuilder<sizeof(header.executableName) / sizeof(header.executableName[0])> lsub;
+        LocalUnicodeStringBuilder<1024> lsub;
         CHECK(lsub.Set(cs), false, "");
         lsub.ToString(ve.name);
     }

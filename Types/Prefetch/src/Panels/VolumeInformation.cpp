@@ -138,7 +138,7 @@ void VolumeInformation::Update_30()
 
     for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
     {
-        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_30>(sizeof(VolumeInformationEntry_30) * i);
 
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
