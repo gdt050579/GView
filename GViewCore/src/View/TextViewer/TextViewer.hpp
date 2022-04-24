@@ -11,6 +11,7 @@ namespace View
         using namespace AppCUI;
 
         constexpr uint32 MAX_CHARACTERS_PER_LINE = 1024;
+        constexpr uint32 MAX_LINES_TO_VIEW       = 256;
         enum class Encoding
         {
             Ascii,
@@ -21,14 +22,13 @@ namespace View
         struct SettingsData
         {
             uint32 tabSize;
-            bool wordWrap;    
+            bool wordWrap;
             Encoding encoding;
             SettingsData();
         };
 
         struct Config
         {
-            
             struct
             {
                 AppCUI::Input::Key WordWrap;
@@ -38,7 +38,6 @@ namespace View
             static void Update(IniSection sect);
             void Initialize();
         };
-
 
         class Instance : public View::ViewControl
         {
@@ -50,13 +49,32 @@ namespace View
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
 
+            struct
+            {
+                uint64 pos;
+                uint32 lineNo;
+                uint32 subLineNo;
+            } Cursor;
+            struct
+            {
+                uint64 pos;
+                uint32 bufferSize;
+                uint32 lineNo;
+                uint32 xStart;
+            } ViewData[MAX_LINES_TO_VIEW];
+            uint32 ViewDataCount;
+
             static Config config;
 
             void RecomputeLineIndexes();
 
             bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
-            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf);
-            int DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer, ControlState state);
+            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64 &startOffset);
+            void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
+            void MoveTo(uint64 pos);
+
+            void UpdateViewBounderies();
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -72,7 +90,6 @@ namespace View
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
-
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;
             bool SetPropertyValue(uint32 id, const PropertyValue& value, String& error) override;
@@ -81,7 +98,7 @@ namespace View
             const vector<Property> GetPropertiesList() override;
         };
 
-    } // namespace ImageViewer
+    } // namespace TextViewer
 } // namespace View
 
 }; // namespace GView

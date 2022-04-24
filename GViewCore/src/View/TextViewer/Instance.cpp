@@ -1,4 +1,5 @@
 #include "TextViewer.hpp"
+#include <algorithm>
 
 using namespace GView::View::TextViewer;
 using namespace AppCUI::Input;
@@ -10,6 +11,7 @@ constexpr int32 CMD_ID_WORD_WRAP = 0xBF00;
 class CharacterStream
 {
     char16 ch;
+    const uint8* start;
     const uint8* pos;
     const uint8* end;
     uint32 xPos, nextPos;
@@ -20,6 +22,7 @@ class CharacterStream
     CharacterStream(BufferView buf, Reference<SettingsData> _settings)
     {
         this->pos                    = buf.begin();
+        this->start                  = this->pos;
         this->end                    = buf.end();
         this->xPos                   = 0;
         this->nextPos                = 0;
@@ -77,6 +80,10 @@ class CharacterStream
     {
         return this->ch;
     }
+    inline uint32 GetCurrentBufferPos() const
+    {
+        return (uint32) (this->pos - this->start);
+    }
 };
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
@@ -101,7 +108,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 
     this->lineNumberWidth = 0;
+    this->ViewDataCount   = 0;
     this->subLineIndex.Create(256); // alocate 256 entries
+    this->UpdateViewBounderies();
 }
 
 void Instance::RecomputeLineIndexes()
@@ -190,21 +199,21 @@ bool Instance::GetLineInfo(uint32 lineNo, uint64& offset, uint32& size)
     }
     return true;
 }
-bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf)
+bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset)
 {
-    uint64 offset;
     uint32 size;
-    uint32 w = this->GetWidth();
+    uint32 w    = this->GetWidth();
+    startOffset = 0;
 
     this->subLineIndex.Clear();
-    CHECK(GetLineInfo(lineNo, offset, size), false, "");
+    CHECK(GetLineInfo(lineNo, startOffset, size), false, "");
     CHECK(this->subLineIndex.Push(0), false, "");
 
     if ((this->lineNumberWidth + 1) >= w)
         w = 1;
     else
         w -= (this->lineNumberWidth + 1);
-    buf = this->obj->GetData().Get(offset, size, false);
+    buf = this->obj->GetData().Get(startOffset, size, false);
     CharacterStream cs(buf, this->settings.ToReference());
     // process
     if (this->settings->wordWrap)
@@ -221,12 +230,76 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf)
     }
     return true;
 }
-int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer, ControlState state)
+void Instance::MoveTo(uint64 pos)
+{
+    const auto ptr = this->lineIndex.GetUInt32Array();
+    auto idx       = std::upper_bound(ptr, ptr + this->lineIndex.Len(), (uint32) pos) - ptr;
+    if (idx > 0)
+        idx--;
+}
+void Instance::UpdateViewBounderies()
+{
+    BufferView buf;
+    auto h   = this->GetHeight();
+    uint32 w = this->GetWidth();
+    if (w <= (this->lineNumberWidth + 2))
+        w = 0;
+    else
+        w = w - (this->lineNumberWidth + 2);
+    uint64 lineStartOffset = 0;
+    auto y                 = 0;
+    auto lineNo            = 0U;
+    auto vd                = this->ViewData;
+    this->ViewDataCount    = 0;
+    auto xScroll           = 0U; // temporary -> should be a class data member
+    auto xMaxPos           = xScroll + w;
+
+    while (y < h)
+    {
+        ComputeSubLineIndexes(lineNo, buf, lineStartOffset);
+
+        // write text
+        auto idx    = this->subLineIndex.GetUInt32Array();
+        auto idxEnd = idx + this->subLineIndex.Len();
+        auto cBuf   = buf.begin();
+
+        // parse each sub-line
+        while ((idx < idxEnd) && (y < h))
+        {
+            auto start = *idx;
+            auto end   = (idx + 1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
+            CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
+
+            // skip left part
+            if (xScroll > 0)
+            {
+                while ((cs.Next()) && (cs.GetNextXOffset() < xScroll))
+                {
+                }
+            }
+            auto cptr  = cs.GetCurrentBufferPos();
+            vd->lineNo = lineNo;
+            vd->pos    = lineStartOffset + start + cptr;
+            vd->xStart = cs.GetNextXOffset() - xScroll;
+            while ((cs.Next()) && (cs.GetXOffset() < xMaxPos))
+            {
+            }
+            vd->bufferSize = (uint32) (cs.GetCurrentBufferPos() - cptr);
+
+            y++;
+            idx++;
+            vd++;
+            this->ViewDataCount++;
+        }
+        lineNo++;
+    }
+}
+void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState state, bool showLineNumber)
 {
     BufferView buf;
     NumericFormatter n;
     ColorPair textColor;
-    bool firstLine    = true;
+
     auto lineNoColor  = Cfg.LineMarker.GetColor(state);
     auto lineSepColor = Cfg.Lines.GetColor(state);
 
@@ -239,75 +312,47 @@ int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Gra
         textColor = Cfg.Text.Inactive;
         break;
     }
-
-    ComputeSubLineIndexes(lineNo, buf);
-
-    // write text
-    auto idx    = this->subLineIndex.GetUInt32Array();
-    auto idxEnd = idx + this->subLineIndex.Len();
-    auto cBuf   = buf.begin();
-
-    // draw each sub-line
-    while (idx < idxEnd)
+    const auto vd = this->ViewData + y;
+    CharacterStream cs(this->obj->GetData().Get(vd->pos, vd->bufferSize, false), this->settings.ToReference());
+    auto c     = this->chars;
+    auto lastC = this->chars + 1;
+    auto c_end = c + MAX_CHARACTERS_PER_LINE;
+    while ((cs.Next()) && (lastC < c_end))
     {
-        auto start = *idx;
-        auto end   = (idx + 1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
-        CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
-        auto c     = this->chars;
-        auto lastC = this->chars + 1;
-        auto c_end = c + MAX_CHARACTERS_PER_LINE;
-        // skip left part
-        if (xScroll > 0)
+        auto c = this->chars + cs.GetXOffset();
+        // fill in the spaces
+        while (lastC < c)
         {
-            while ((cs.Next()) && (cs.GetNextXOffset() < xScroll))
-            {
-            }
+            lastC->Code  = ' ';
+            lastC->Color = textColor;
+            lastC++;
         }
-        while ((cs.Next()) && (lastC < c_end))
-        {
-            auto c = this->chars + cs.GetXOffset();
-            // fill in the spaces
-            while (lastC < c)
-            {
-                lastC->Code  = ' ';
-                lastC->Color = textColor;
-                lastC++;
-            }
-            c->Code  = cs.GetCharacter();
-            c->Color = textColor;
-            lastC    = c + 1;
-        }
-        renderer.FillHorizontalLine(0, y, this->lineNumberWidth-1, ' ', lineNoColor);
-        if (firstLine)
-        {
-            renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), lineNoColor, TextAlignament::Right);
-            firstLine = false;
-        }
-
-        renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, lineSepColor);
-        renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
-        y++;
-        idx++;
+        c->Code  = cs.GetCharacter();
+        c->Color = textColor;
+        lastC    = c + 1;
     }
-    return y;
+    renderer.FillHorizontalLine(0, y, this->lineNumberWidth - 1, ' ', lineNoColor);
+    if (showLineNumber)
+        renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(vd->lineNo+1), lineNoColor, TextAlignament::Right);
+    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, lineSepColor);
+    renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
-    auto h   = this->GetHeight();
-    uint32 w = this->GetWidth();
-    if (w <= (this->lineNumberWidth + 2))
-        w = 0;
-    else
-        w = w - (this->lineNumberWidth + 2);
-    auto y           = 0;
-    auto lineNo      = 0U;
+    auto idx         = 0;
+    auto lineNo      = 0xFFFFFFFFU;
     const auto focus = this->HasFocus();
 
-    while (y < h)
+    if (this->ViewDataCount == 0)
+        UpdateViewBounderies();
+
+    while (idx < this->ViewDataCount)
     {
-        auto state = focus ? ControlState::Focused : ControlState::Normal;
-        y          = DrawLine(0, y, lineNo, w, renderer, state);
-        lineNo++;
+        auto state         = focus ? ControlState::Focused : ControlState::Normal;
+        const auto cLineNo = this->ViewData[idx].lineNo;
+        DrawLine(idx, renderer, state, cLineNo != lineNo);
+        lineNo = cLineNo;
+        idx++;
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
