@@ -531,13 +531,17 @@ struct FileInformation_30
     uint32 unknown;
     uint32 unknown0;
     uint64 latestExecutionTime;
-    uint64 olderExecutionTime[8];
-    uint32 unknown1;
-    uint32 unknown2;
+    uint64 olderExecutionTime[7];
+    uint16 unknown11;
+    uint32 unknown22;
     uint32 executionCount;
+    uint32 unknown1;
+    uint32 executionCount2; // when there's a 4 bytes difference betwen FileInformation & Section A this is used
     uint32 executablePathOffset;
     uint32 executablePathSize;
-    uint8 unknown4[80];
+    uint32 unknown3;
+    uint32 unknown4;
+    uint8 unknown5[72];
 };
 #pragma pack(pop)
 

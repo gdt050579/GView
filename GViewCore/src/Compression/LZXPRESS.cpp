@@ -1,12 +1,21 @@
 #include "Internal.hpp"
 
+// https://github.com/libyal/libfwnt/blob/main/documentation/Compression%20methods.asciidoc
+// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/a8b7cb0a-92a6-4187-a23b-5e14273b96f8
+
 namespace GView::Compression::LZXPRESS::Huffman
 {
-constexpr uint32 MAX_BITS_COUNT = 32U;
-constexpr uint32 CHUNK_SIZE     = 0x10000;
+constexpr uint32 MAX_BITS_COUNT     = 32U;
+constexpr uint32 UINT32_BITS_COUNT  = 32U;
+constexpr uint32 UINT16_BITS_COUNT  = 16U;
+constexpr uint32 CHUNK_SIZE         = 0x10000;
+constexpr uint32 MAXIMUM_CODE_SIZE  = 15U;
+constexpr uint32 SYMBOLS_ARRAY_SIZE = 512U;
+constexpr uint32 SYMBOL_MAX_SIZE    = 256U;
 
 struct Stream
 {
+  private:
     const uint8* stream;
     size_t size;
     size_t offset;
@@ -14,6 +23,7 @@ struct Stream
     uint32 bits;
     uint8 bitsCount;
 
+  public:
     bool Initialize(const uint8* _stream, size_t _size)
     {
         CHECK(_stream != nullptr, false, "");
@@ -25,31 +35,45 @@ struct Stream
         return true;
     }
 
-    bool Read(uint8 bitsToRead)
+    inline void PushUInt16()
     {
-        CHECK(bitsToRead != 0, false, "");
-        CHECK(bitsToRead <= MAX_BITS_COUNT, false, "");
+        bits <<= UINT16_BITS_COUNT;
+        bitsCount += UINT16_BITS_COUNT;
 
-        while (bitsCount < bitsToRead)
+        if (size >= sizeof(uint16) || offset <= (size - sizeof(uint16)))
         {
-            if ((size < 2) || (offset > (size - 2)))
-            {
-                bits <<= 16;
-                bitsCount += 16;
-            }
-            else
-            {
-                bits <<= 8;
-                bits |= stream[offset + 1];
-                bits <<= 8;
-                bits |= stream[offset];
-                bitsCount += 16;
-
-                offset += 2;
-            }
+            *((uint16*) &bits) = *((uint16*) (stream + offset));
+            offset += sizeof(uint16);
         }
+    }
 
-        return true;
+    inline void Next()
+    {
+        if (bitsCount < UINT16_BITS_COUNT)
+        {
+            PushUInt16();
+        }
+    }
+
+    inline void PushUInt32()
+    {
+        PushUInt16();
+        PushUInt16();
+    }
+
+    inline uint32 GetBits() const
+    {
+        return bits;
+    }
+
+    inline uint8 GetBitsCount() const
+    {
+        return bitsCount;
+    }
+
+    inline void ResetBits()
+    {
+        bitsCount = 0;
     }
 
     bool GetValue(uint8 bitsToRead, uint32& value)
@@ -84,6 +108,27 @@ struct Stream
 
         return true;
     }
+
+    template <typename V>
+    inline bool Read(V& value)
+    {
+        CHECK(offset <= size - sizeof(V), false, "");
+
+        value = *(V*) (stream + offset);
+        offset += sizeof(V);
+
+        return true;
+    }
+
+    inline size_t GetSize() const
+    {
+        return size;
+    }
+
+    inline size_t GetOffset() const
+    {
+        return offset;
+    }
 };
 
 struct HuffmanTree
@@ -103,7 +148,7 @@ struct HuffmanTree
         CHECK(symbols.get() != nullptr, false, "");
         memset(symbols.get(), 0, size);
 
-        size = sizeof(int) * (_maximumCodeSize + 1);
+        size = sizeof(int32) * (_maximumCodeSize + 1ULL);
 
         codeSizeCounts.reset(new int32[size]);
         CHECK(codeSizeCounts.get() != nullptr, false, "");
@@ -122,12 +167,12 @@ struct HuffmanTree
         size_t size = sizeof(int32) * (maximumCodeSize + 1ULL);
         memset(codeSizeCounts.get(), 0, size);
 
-        for (int32 symbol = 0; symbol < _codeSizesCount; symbol++)
+        for (int32 i = 0; i < _codeSizesCount; i++)
         {
-            const uint8 code_size = codeSizes[symbol];
-            CHECK(code_size <= maximumCodeSize, false, "");
+            const uint8 size = codeSizes[i];
+            CHECK(size <= maximumCodeSize, false, "");
 
-            codeSizeCounts.get()[code_size] += 1;
+            codeSizeCounts.get()[size] += 1;
         }
 
         CHECK(codeSizeCounts.get()[0] != _codeSizesCount, true, "");
@@ -172,20 +217,19 @@ struct HuffmanTree
 
     bool GetSymbol(Stream& stream, uint32& symbol)
     {
-        while (stream.bitsCount < maximumCodeSize)
+        while (stream.GetBitsCount() < maximumCodeSize)
         {
             CHECK(stream.Read(maximumCodeSize), false, "");
         }
 
-        const uint8 bitsCount = maximumCodeSize < stream.bitsCount ? maximumCodeSize : stream.bitsCount;
+        const uint8 bitsCount = maximumCodeSize < stream.GetBitsCount() ? maximumCodeSize : stream.GetBitsCount();
 
-        uint32 value        = 0;
-        int32 codeSizeCount = 0;
-        int32 code          = 0;
-        int32 initialCode   = 0;
-        int32 initialIndex  = 0;
-        symbol              = 0;
-        bool result         = false;
+        uint32 value       = 0;
+        int32 code         = 0;
+        int32 initialCode  = 0;
+        int32 initialIndex = 0;
+        symbol             = 0;
+        bool result        = false;
         for (uint8 i = 1; i <= bitsCount; i++)
         {
             CHECK(stream.GetValue(1, value), false, "");
@@ -193,7 +237,7 @@ struct HuffmanTree
             code <<= 1;
             code |= (int32) value;
 
-            codeSizeCount = codeSizeCounts.get()[i];
+            const int32 codeSizeCount = codeSizeCounts.get()[i];
 
             if ((code - codeSizeCount) < initialCode)
             {
@@ -214,28 +258,25 @@ struct HuffmanTree
 
 bool Update(Stream& stream, Buffer& uncompressed, size_t& uncompressedDataOffset)
 {
-    CHECK((stream.size - stream.offset) >= 260, false, "");
+    CHECK((stream.GetSize() - stream.GetOffset()) >= 260, false, "");
     CHECK(uncompressed.GetLength() <= (size_t) INT32_MAX, false, "");
     CHECK(uncompressedDataOffset < uncompressed.GetLength(), false, "");
 
-    constexpr auto ARRAY_SIZE = 512U;
-
-    uint32 symbol = 0;
-    uint8 codeSizes[ARRAY_SIZE]{ 0 };
-    while (symbol < ARRAY_SIZE)
+    uint32 i = 0;
+    uint8 codeSizes[SYMBOLS_ARRAY_SIZE]{ 0 };
+    while (i < SYMBOLS_ARRAY_SIZE)
     {
-        uint8 value         = stream.stream[stream.offset];
-        codeSizes[symbol++] = value & 0x0f;
-        value >>= 4;
-        codeSizes[symbol++] = value & 0x0f;
-        stream.offset += 1;
+        uint8 value;
+        CHECK(stream.Read<decltype(value)>(value), false, "");
+        codeSizes[i++] = value & 0x0f;
+        codeSizes[i++] = (value & 0xf0) >> 4;
     }
 
     HuffmanTree tree{};
-    CHECK(tree.Initialize(ARRAY_SIZE, 15), false, "");
-    CHECK(tree.Build(codeSizes, ARRAY_SIZE), false, "");
+    CHECK(tree.Initialize(SYMBOLS_ARRAY_SIZE, MAXIMUM_CODE_SIZE), false, "");
+    CHECK(tree.Build(codeSizes, SYMBOLS_ARRAY_SIZE), false, "");
 
-    CHECK(stream.Read(MAX_BITS_COUNT), false, "");
+    stream.PushUInt32();
 
     size_t nextChunk = uncompressedDataOffset + CHUNK_SIZE;
     if (nextChunk > uncompressed.GetLength())
@@ -243,34 +284,28 @@ bool Update(Stream& stream, Buffer& uncompressed, size_t& uncompressedDataOffset
         nextChunk = uncompressed.GetLength();
     }
 
-    while ((stream.offset < stream.size) || (stream.bitsCount > 0))
+    while ((stream.GetOffset() < stream.GetSize()) || (stream.GetBitsCount() > 0))
     {
-        if (uncompressedDataOffset >= nextChunk)
-        {
-            stream.bitsCount = 0;
-            break;
-        }
+        CHECKBK(uncompressedDataOffset < nextChunk, "");
 
+        uint32 symbol = 0;
         CHECK(tree.GetSymbol(stream, symbol), false, "");
 
-        if (symbol < 256)
+        if (symbol < SYMBOL_MAX_SIZE)
         {
             uncompressed.GetData()[uncompressedDataOffset++] = (uint8) symbol;
         }
 
-        if (stream.bitsCount < 16)
-        {
-            CHECK(stream.Read(16), false, "");
-        }
+        stream.Next();
 
-        if (stream.bits == 0 && uncompressedDataOffset >= uncompressed.GetLength())
+        if (stream.GetBits() == 0 && uncompressedDataOffset >= uncompressed.GetLength())
         {
             break;
         }
 
-        if (symbol >= 256)
+        if (symbol >= SYMBOL_MAX_SIZE)
         {
-            symbol -= 256;
+            symbol -= SYMBOL_MAX_SIZE;
             uint32 compressionSize = symbol & 0x000f;
             symbol >>= 4;
 
@@ -283,21 +318,19 @@ bool Update(Stream& stream, Buffer& uncompressed, size_t& uncompressedDataOffset
 
             if (compressionSize == 15)
             {
-                CHECK(stream.offset <= (stream.size - 1), false, "");
-                compressionSize = stream.stream[stream.offset] + 15;
-                stream.offset += 1;
+                uint8 val8;
+                CHECK(stream.Read<decltype(val8)>(val8), false, "");
+                compressionSize += val8;
 
                 if (compressionSize == 270)
                 {
-                    CHECK(stream.offset <= (stream.size - 2), false, "");
-                    compressionSize = *(uint16*) &(stream.stream[stream.offset]);
-                    stream.offset += 2;
+                    uint16 val16;
+                    CHECK(stream.Read<decltype(val16)>(val16), false, "");
+                    compressionSize = val16;
 
                     if (compressionSize == 0)
                     {
-                        CHECK(stream.offset <= (stream.size - 4), false, "");
-                        compressionSize = *(uint32*) &(stream.stream[stream.offset]);
-                        stream.offset += 4;
+                        CHECK(stream.Read<decltype(compressionSize)>(compressionSize), false, "");
                     }
                 }
             }
@@ -308,16 +341,12 @@ bool Update(Stream& stream, Buffer& uncompressed, size_t& uncompressedDataOffset
 
             compressionOffset = (uint32) (uncompressedDataOffset - compressionOffset);
 
-            while (compressionSize > 0)
-            {
-                uncompressed.GetData()[uncompressedDataOffset++] = uncompressed.GetData()[compressionOffset++];
-                compressionSize--;
-            }
+            memcpy(uncompressed.GetData() + uncompressedDataOffset, uncompressed.GetData() + compressionOffset, compressionSize);
+            uncompressedDataOffset += compressionSize;
+            compressionOffset += compressionSize;
+            compressionSize = 0;
 
-            if (stream.bitsCount < 16)
-            {
-                CHECK(stream.Read(16), false, "");
-            }
+            stream.Next();
         }
     }
 
@@ -330,8 +359,9 @@ bool Decompress(const BufferView& compressed, Buffer& uncompressed)
     CHECK(stream.Initialize(compressed.GetData(), compressed.GetLength()), false, "");
 
     size_t offset = 0;
-    while (stream.offset < stream.size && offset < uncompressed.GetLength())
+    while (stream.GetOffset() < stream.GetSize() && offset < uncompressed.GetLength())
     {
+        stream.ResetBits();
         CHECK(Update(stream, uncompressed, offset), false, "");
     }
     CHECK(uncompressed.GetLength() == offset, false, "");

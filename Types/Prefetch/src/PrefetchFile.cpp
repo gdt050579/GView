@@ -200,10 +200,12 @@ bool PrefetchFile::Update_30()
             {
                 pos = diff;
             }
-            ComputeHashForMainExecutable(bufferSectionC.GetLength() - diff, pos);
+            ComputeHashForMainExecutable(bufferSectionC.GetLength() - diff, (uint32) pos);
+            hasExePathSeparated = true;
         }
     }
-    else
+
+    if (hasExePathSeparated == false)
     {
         for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
         {
@@ -274,8 +276,8 @@ bool PrefetchFile::AddVolumeEntry(
     const auto nOffset = sectionDOffset + devicePathOffset;
     {
         const auto b = obj->GetData().CopyToBuffer(
-              nOffset, static_cast<uint32>(std::min<>(devicePathLength * sizeof(char16*), obj->GetData().GetSize() - nOffset - 4)));
-        ConstString cs{ u16string_view{ (char16_t*) b.GetData(), b.GetLength() } };
+              nOffset, static_cast<uint32>(std::min<>(devicePathLength * sizeof(char16), obj->GetData().GetSize() - nOffset - 4)));
+        ConstString cs{ u16string_view{ (char16*) b.GetData(), b.GetLength() } };
         LocalUnicodeStringBuilder<1024> lsub;
         CHECK(lsub.Set(cs), false, "");
         lsub.ToString(ve.name);

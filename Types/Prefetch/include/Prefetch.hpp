@@ -57,6 +57,7 @@ class PrefetchFile : public TypeInterface
     int64 hash2008  = 0;
     std::string filename;
     std::string exePath;
+    bool hasExePathSeparated = false;
 
   public:
     PrefetchFile();

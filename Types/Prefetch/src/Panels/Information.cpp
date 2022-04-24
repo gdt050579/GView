@@ -58,7 +58,7 @@ void Information::UpdateHeader()
     }
     else
     {
-        issues->AddItem({ "Filesize validation failed!" });
+        issues->AddItem({ "Filesize validation failed!" }).SetType(ListViewItem::Type::ErrorInformation);
         filesizeItem.SetType(ListViewItem::Type::ErrorInformation);
     }
 
@@ -112,18 +112,25 @@ void Information::UpdateHeader()
                     else
                     {
                         LocalString<64> ls2;
-                        issues->AddItem(
-                              { ls2.Format("Hash validation failed when compared to computed XP hash (0x%s)!", computedXpHashHex.data()) });
-                        issues->AddItem({ ls2.Format(
-                              "Hash validation failed when compared to computed VISTA hash (0x%s)!", computedVistaHashHex.data()) });
-                        issues->AddItem({ ls2.Format(
-                              "Hash validation failed when compared to computed 2008 hash (0x%s)!", computedHash2008Hex.data()) });
+                        issues
+                              ->AddItem({ ls2.Format(
+                                    "Hash validation failed when compared to computed XP hash (0x%s)!", computedXpHashHex.data()) })
+                              .SetType(ListViewItem::Type::ErrorInformation);
+                        issues
+                              ->AddItem({ ls2.Format(
+                                    "Hash validation failed when compared to computed VISTA hash (0x%s)!", computedVistaHashHex.data()) })
+                              .SetType(ListViewItem::Type::ErrorInformation);
+                        issues
+                              ->AddItem({ ls2.Format(
+                                    "Hash validation failed when compared to computed 2008 hash (0x%s)!", computedHash2008Hex.data()) })
+                              .SetType(ListViewItem::Type::ErrorInformation);
                         hashItem.SetType(ListViewItem::Type::ErrorInformation);
                     }
                 }
                 else
                 {
-                    issues->AddItem("Unable to validate path hash for Windows 10 prefetch files!");
+                    issues->AddItem("Unable to validate path hash for Windows 10 prefetch files!")
+                          .SetType(ListViewItem::Type::ErrorInformation);
                     hashItem.SetType(ListViewItem::Type::ErrorInformation);
                 }
             }
@@ -135,13 +142,13 @@ void Information::UpdateHeader()
         }
         else
         {
-            issues->AddItem({ "Hash validation failed when comparing to filename." });
+            issues->AddItem({ "Hash validation failed when comparing to filename." }).SetType(ListViewItem::Type::ErrorInformation);
             hashItem.SetType(ListViewItem::Type::ErrorInformation);
         }
     }
     else
     {
-        issues->AddItem({ "Hash validation failed - computed hash not found!" });
+        issues->AddItem({ "Hash validation failed - computed hash not found!" }).SetType(ListViewItem::Type::ErrorInformation);
         hashItem.SetType(ListViewItem::Type::ErrorInformation);
     }
 
@@ -475,17 +482,25 @@ void Information::UpdateFileInformation_30()
         }
     }
 
-    const auto unknown1    = nf.ToString(fileInformation.unknown1, dec);
-    const auto unknown1Hex = nf2.ToString(fileInformation.unknown1, hex);
-    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknown1.data(), unknown1Hex.data()) });
+    const auto unknown11    = nf.ToString(fileInformation.unknown11, dec);
+    const auto unknown11Hex = nf2.ToString(fileInformation.unknown11, hex);
+    general->AddItem({ "Unknown 11", ls.Format("%-20s (%s)", unknown11.data(), unknown11Hex.data()) });
 
-    const auto unknown2    = nf.ToString(fileInformation.unknown2, dec);
-    const auto unknown2Hex = nf2.ToString(fileInformation.unknown2, hex);
-    general->AddItem({ "Unknown 2", ls.Format("%-20s (%s)", unknown2.data(), unknown2Hex.data()) });
+    const auto unknown22    = nf.ToString(fileInformation.unknown22, dec);
+    const auto unknown22Hex = nf2.ToString(fileInformation.unknown22, hex);
+    general->AddItem({ "Unknown 22", ls.Format("%-20s (%s)", unknown22.data(), unknown22Hex.data()) });
 
     const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
     const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
     general->AddItem({ "Execution Count", ls.Format("%-20s (%s)", executionCount.data(), executionCountHex.data()) });
+
+    const auto unknown1    = nf.ToString(fileInformation.unknown1, dec);
+    const auto unknown1Hex = nf2.ToString(fileInformation.unknown1, hex);
+    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknown1.data(), unknown1Hex.data()) });
+
+    const auto executionCount2    = nf.ToString(fileInformation.executionCount2, dec);
+    const auto executionCount2Hex = nf2.ToString(fileInformation.executionCount2, hex);
+    general->AddItem({ "Execution Count 2", ls.Format("%-20s (%s)", executionCount2.data(), executionCount2Hex.data()) });
 
     const auto executablePathOffset    = nf.ToString(fileInformation.executablePathOffset, dec);
     const auto executablePathOffsetHex = nf2.ToString(fileInformation.executablePathOffset, hex);
@@ -495,7 +510,28 @@ void Information::UpdateFileInformation_30()
     const auto executablePathSizeHex = nf2.ToString(fileInformation.executablePathSize, hex);
     general->AddItem({ "Executable Path Size", ls.Format("%-20s (%s)", executablePathSize.data(), executablePathSizeHex.data()) });
 
-    general->AddItem({ "Unknown array (80 bytes)" });
+    const auto unknown3    = nf.ToString(fileInformation.unknown3, dec);
+    const auto unknown3Hex = nf2.ToString(fileInformation.unknown3, hex);
+    general->AddItem({ "Unknown 3", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
+
+    const auto unknown4    = nf.ToString(fileInformation.unknown4, dec);
+    const auto unknown4Hex = nf2.ToString(fileInformation.unknown4, hex);
+    general->AddItem({ "Unknown 4", ls.Format("%-20s (%s)", unknown4.data(), unknown4Hex.data()) });
+
+    general->AddItem({ "Unknown array (72 bytes)" });
+
+    // win10 file information v30 validation (execution count)
+    const auto endFileInformationOffset = sizeof(prefetch->header) + sizeof(fileInformation);
+    const auto startSectionAOffset      = fileInformation.sectionA.offset;
+    if (startSectionAOffset > endFileInformationOffset + 1)
+    {
+        issues->AddItem({ "Execution count is probably bad. Use execution count 2!" }).SetType(ListViewItem::Type::WarningInformation);
+    }
+
+    if (prefetch->hasExePathSeparated == false)
+    {
+        issues->AddItem({ "Fields: Executable Path & Offset are invalid!" }).SetType(ListViewItem::Type::WarningInformation);
+    }
 }
 
 void Information::UpdateFileInformation()

@@ -83,13 +83,20 @@ bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
             Buffer uncompressed;
             uncompressed.Resize(mam->uncompressedSize);
 
+            const auto chunk = mam->obj->GetData().GetCacheSize();
+            auto pos         = 8ULL;
+            const auto size  = mam->obj->GetData().GetSize() - 8;
 
+            Buffer compressed;
+            compressed.Resize(size);
 
-            const auto entireFile = mam->obj->GetData().GetEntireFile(); // fix this!
-            CHECK(entireFile.IsValid(), false, "");
-
-            const BufferView compressed = { entireFile.GetData() + 8, entireFile.GetLength() - 8 };
-            CHECK(compressed.IsValid(), false, "");
+            while (pos < mam->obj->GetData().GetSize())
+            {
+                auto toRead    = std::min<>((uint64) chunk, mam->obj->GetData().GetSize() - pos);
+                const Buffer b = mam->obj->GetData().CopyToBuffer(pos, chunk, false);
+                memcpy(compressed.GetData() + pos - 8ULL, b.GetData(), toRead);
+                pos += toRead;
+            }
 
             CHECK(GView::Compression::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
 

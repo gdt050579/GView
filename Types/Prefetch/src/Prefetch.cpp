@@ -33,7 +33,7 @@ extern "C"
     }
 
     ColorPair header{ Color::DarkGreen, Color::DarkBlue };
-    ColorPair fileInformation{ Color::DarkRed, Color::DarkBlue };
+    ColorPair fileInformationColor{ Color::DarkRed, Color::DarkBlue };
     ColorPair sectionA{ Color::DarkGreen, Color::DarkBlue };
     ColorPair sectionB{ Color::DarkRed, Color::DarkBlue };
     ColorPair sectionC{ Color::DarkGreen, Color::DarkBlue };
@@ -44,7 +44,7 @@ extern "C"
           Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
     {
         settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_17), fileInformation, "FileInformation(17)");
+        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_17), fileInformationColor, "FileInformation(17)");
 
         Prefetch::FileInformation_17 fileInformation{};
         if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_17>(sizeof(Prefetch::Header), fileInformation))
@@ -70,7 +70,7 @@ extern "C"
           Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
     {
         settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_23), fileInformation, "FileInformation(23)");
+        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_23), fileInformationColor, "FileInformation(23)");
 
         Prefetch::FileInformation_23 fileInformation{};
         if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_23>(sizeof(Prefetch::Header), fileInformation))
@@ -96,7 +96,7 @@ extern "C"
           Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
     {
         settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_26), fileInformation, "FileInformation(26)");
+        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_26), fileInformationColor, "FileInformation(26)");
 
         Prefetch::FileInformation_26 fileInformation{};
         if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_26>(sizeof(Prefetch::Header), fileInformation))
@@ -122,11 +122,16 @@ extern "C"
           Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
     {
         settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_30), fileInformation, "FileInformation(26)");
 
         Prefetch::FileInformation_30 fileInformation{};
         if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_30>(sizeof(Prefetch::Header), fileInformation))
         {
+            settings.AddZone(
+                  sizeof(Prefetch::Header),
+                  fileInformation.sectionA.offset - sizeof(Prefetch::Header),
+                  fileInformationColor,
+                  "FileInformation(30)");
+
             settings.AddZone(
                   fileInformation.sectionA.offset,
                   fileInformation.sectionA.entries * sizeof(Prefetch::FileMetricsEntryRecord_23_26_30),
