@@ -107,10 +107,56 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 
-    this->lineNumberWidth = 0;
-    this->ViewDataCount   = 0;
+    this->lineNumberWidth  = 0;
+    this->ViewDataCount    = 0;
+    this->Cursor.lineNo    = 0;
+    this->Cursor.charIndex = 0;
     this->subLineIndex.Create(256); // alocate 256 entries
     this->UpdateViewBounderies();
+}
+
+inline bool IsTextCharacter(uint8 value)
+{
+    return ((value >= ' ') && (value < 127)) || (value == '\n') || (value == '\r') || (value == '\t');
+}
+void GetTextType(BufferView buf, bool checkBOM)
+{
+    if (checkBOM)
+    {
+        if (buf.GetLength() >= 3)
+        {
+            if ((buf[0] == 0xEF) && (buf[1] == 0xBB) && (buf[2] == 0xBF))
+            {
+                // format is UTF-8
+            }
+        }
+        if (buf.GetLength() >= 2)
+        {
+            if ((buf[0] == 0xFE) && (buf[1] == 0xFF))
+            {
+                // format is UTF-16 (BE)
+            }
+            if ((buf[0] == 0xFF) && (buf[1] == 0xFE))
+            {
+                // format is UTF-16 (LE)
+            }
+        }
+    }
+    size_t sz = buf.GetLength();
+    // if NO BOOM is present - analuze the data and find the type
+    // 1. check for Unicode LE/BE
+    auto countU16LE = 0U;
+    auto countU16BE = 0U;
+    auto szUTF16    = sz - (sz & 1); // odd value
+    for (size_t idx = 0; idx < szUTF16; idx += 2)
+    {
+        if ((IsTextCharacter(buf[idx])) && (buf[idx + 1] == 0))
+            countU16LE++;
+        if ((buf[idx] == 0) && (IsTextCharacter(buf[idx + 1])))
+            countU16BE++;
+    }
+    // 2. check for UTF-8
+    
 }
 
 void Instance::RecomputeLineIndexes()
@@ -127,9 +173,8 @@ void Instance::RecomputeLineIndexes()
 
     auto estimated_count = ((crlf_count * sz) / buf.GetLength()) + 16;
 
-    this->lineIndex.Clear();
-    if (this->lineIndex.Reserve((uint32) estimated_count) == false)
-        return;
+    this->lines.clear();
+    this->lines.reserve(estimated_count);
 
     uint64 offset = 0;
     uint64 start  = 0;
@@ -165,7 +210,7 @@ void Instance::RecomputeLineIndexes()
     }
     if (start < sz)
         this->lineIndex.Push((uint32) start);
-    auto linesCount = this->lineIndex.Len() + 1;
+    auto linesCount = this->lines.size() + 1;
     if (linesCount < 10)
         this->lineNumberWidth = 2;
     else if (linesCount < 100)
@@ -230,12 +275,18 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     }
     return true;
 }
-void Instance::MoveTo(uint64 pos)
+void Instance::MoveTo(uint32 lineNo, uint32 charInde)
 {
-    const auto ptr = this->lineIndex.GetUInt32Array();
-    auto idx       = std::upper_bound(ptr, ptr + this->lineIndex.Len(), (uint32) pos) - ptr;
-    if (idx > 0)
-        idx--;
+    // const auto ptr = this->lineIndex.GetUInt32Array();
+    // auto idx       = std::upper_bound(ptr, ptr + this->lineIndex.Len(), (uint32) pos) - ptr;
+    // if (idx > 0)
+    //     idx--;
+}
+void Instance::MoveLeft()
+{
+}
+void Instance::MoveRight()
+{
 }
 void Instance::UpdateViewBounderies()
 {
@@ -302,6 +353,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
 
     auto lineNoColor  = Cfg.LineMarker.GetColor(state);
     auto lineSepColor = Cfg.Lines.GetColor(state);
+    bool focused      = state == ControlState::Focused;
 
     switch (state)
     {
@@ -329,11 +381,13 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         }
         c->Code  = cs.GetCharacter();
         c->Color = textColor;
-        lastC    = c + 1;
+        if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetRelativeOffset() == Cursor.charIndex))
+            c->Color = Cfg.Cursor.Normal;
+        lastC = c + 1;
     }
     renderer.FillHorizontalLine(0, y, this->lineNumberWidth - 1, ' ', lineNoColor);
     if (showLineNumber)
-        renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(vd->lineNo+1), lineNoColor, TextAlignament::Right);
+        renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(vd->lineNo + 1), lineNoColor, TextAlignament::Right);
     renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, lineSepColor);
     renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
 }
@@ -360,7 +414,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if (this->settings->wordWrap)
         commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:ON", CMD_ID_WORD_WRAP);
     else
-        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:OF", CMD_ID_WORD_WRAP);
+        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:OFF", CMD_ID_WORD_WRAP);
 
     return false;
 }
@@ -368,6 +422,12 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     switch (keyCode)
     {
+    case Key::Left:
+        MoveLeft();
+        return true;
+    case Key::Right:
+        MoveRight();
+        return true;
     case Key::PageUp:
         return true;
     case Key::PageDown:
@@ -388,6 +448,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     {
     case CMD_ID_WORD_WRAP:
         this->settings->wordWrap = !this->settings->wordWrap;
+        UpdateViewBounderies();
         return true;
     }
     return false;

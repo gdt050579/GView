@@ -38,10 +38,15 @@ namespace View
             static void Update(IniSection sect);
             void Initialize();
         };
-
+        struct LineInfo
+        {
+            uint64 offset;
+            uint32 charsCount;
+            uint32 size;
+        };
         class Instance : public View::ViewControl
         {
-            Array32 lineIndex;
+            std::vector<LineInfo> lines;
             Array32 subLineIndex;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
@@ -53,7 +58,7 @@ namespace View
             {
                 uint64 pos;
                 uint32 lineNo;
-                uint32 subLineNo;
+                uint32 charIndex;
             } Cursor;
             struct
             {
@@ -65,13 +70,16 @@ namespace View
             uint32 ViewDataCount;
 
             static Config config;
-
+            
             void RecomputeLineIndexes();
 
             bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
             bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64 &startOffset);
             void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
-            void MoveTo(uint64 pos);
+            void MoveTo(uint32 lineNo, uint32 charIndex);
+
+            void MoveLeft();
+            void MoveRight();
 
             void UpdateViewBounderies();
 

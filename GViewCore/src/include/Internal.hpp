@@ -92,6 +92,38 @@ namespace Utils
         bool Reserve(unsigned int count);
         const Zone* OffsetToZone(uint64 offset);
     };
+
+    namespace StringEncoding
+    {
+        class ExpandedCharacter
+        {
+            char16 unicodeValue;
+            uint16 length;
+
+          public:
+            ExpandedCharacter() : unicodeValue(0), length(0)
+            {
+            }
+            inline operator char16() const
+            {
+                return unicodeValue;
+            }
+            inline char16 GetChar() const
+            {
+                return unicodeValue;
+            }
+            inline uint32 Length() const
+            {
+                return length;
+            }
+            inline bool IsValid() const
+            {
+                return length > 0;
+            }
+            bool FromUTF8Buffer(const char8* p, const char8* end);
+        };
+
+    };
 } // namespace Utils
 
 namespace Generic
