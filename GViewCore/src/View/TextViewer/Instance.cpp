@@ -115,49 +115,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->UpdateViewBounderies();
 }
 
-inline bool IsTextCharacter(uint8 value)
-{
-    return ((value >= ' ') && (value < 127)) || (value == '\n') || (value == '\r') || (value == '\t');
-}
-void GetTextType(BufferView buf, bool checkBOM)
-{
-    if (checkBOM)
-    {
-        if (buf.GetLength() >= 3)
-        {
-            if ((buf[0] == 0xEF) && (buf[1] == 0xBB) && (buf[2] == 0xBF))
-            {
-                // format is UTF-8
-            }
-        }
-        if (buf.GetLength() >= 2)
-        {
-            if ((buf[0] == 0xFE) && (buf[1] == 0xFF))
-            {
-                // format is UTF-16 (BE)
-            }
-            if ((buf[0] == 0xFF) && (buf[1] == 0xFE))
-            {
-                // format is UTF-16 (LE)
-            }
-        }
-    }
-    size_t sz = buf.GetLength();
-    // if NO BOOM is present - analuze the data and find the type
-    // 1. check for Unicode LE/BE
-    auto countU16LE = 0U;
-    auto countU16BE = 0U;
-    auto szUTF16    = sz - (sz & 1); // odd value
-    for (size_t idx = 0; idx < szUTF16; idx += 2)
-    {
-        if ((IsTextCharacter(buf[idx])) && (buf[idx + 1] == 0))
-            countU16LE++;
-        if ((buf[idx] == 0) && (IsTextCharacter(buf[idx + 1])))
-            countU16BE++;
-    }
-    // 2. check for UTF-8
-    
-}
+
 
 void Instance::RecomputeLineIndexes()
 {

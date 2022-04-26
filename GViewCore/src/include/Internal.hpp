@@ -95,6 +95,14 @@ namespace Utils
 
     namespace StringEncoding
     {
+        enum class Encoding : uint8
+        {
+            Binary,
+            Ascii,
+            UTF8,
+            Unicode16LE,
+            Unicode16BE
+        };
         class ExpandedCharacter
         {
             char16 unicodeValue;
@@ -120,10 +128,60 @@ namespace Utils
             {
                 return length > 0;
             }
-            bool FromUTF8Buffer(const char8* p, const char8* end);
+            bool FromUTF8Buffer(const uint8* start, const uint8* end);
+            inline bool FromEncoding(Encoding e, const uint8* start, const uint8* end)
+            {
+                if (start >= end)
+                {
+                    unicodeValue = 0;
+                    length       = 0;
+                    return false;
+                }
+                switch (e)
+                {
+                case Encoding::Ascii:
+                case Encoding::Binary:
+                    unicodeValue = *start;
+                    length       = 1;
+                    return true;
+                case Encoding::Unicode16LE:
+                    if (start + 1 < end)
+                    {
+                        length       = 2;
+                        unicodeValue = *(const char16*) start;
+                        return true;
+                    }
+                    length       = 0;
+                    unicodeValue = 0;
+                    return false;
+                case Encoding::Unicode16BE:
+                    if (start + 1 < end)
+                    {
+                        length       = 2;
+                        unicodeValue = ((uint16) (*start) << 8) | (start[1]);
+                        return true;
+                    }
+                    length       = 0;
+                    unicodeValue = 0;
+                    return false;
+                case Encoding::UTF8:
+                    if ((*start) < 0x80)
+                    {
+                        unicodeValue = *start;
+                        length       = 1;
+                        return true;
+                    }
+                    return FromUTF8Buffer(start, end);
+                default:
+                    unicodeValue = 0;
+                    length       = 0;
+                    return false;
+                }
+            }
         };
 
-    };
+        Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
+    }; // namespace StringEncoding
 } // namespace Utils
 
 namespace Generic
@@ -267,7 +325,7 @@ namespace App
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
-        bool AddBufferWindow(BufferView buf, const ConstString & name, string_view typeExtension);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
