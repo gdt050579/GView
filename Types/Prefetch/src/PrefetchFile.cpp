@@ -8,26 +8,11 @@ PrefetchFile::PrefetchFile()
 
 bool PrefetchFile::Update_17()
 {
-    FileInformation_17 fileInformation{};
-    CHECK(obj->GetData().Copy<FileInformation_17>(sizeof(header), fileInformation), false, "");
-
-    CHECK(SetEntries(
-                fileInformation.sectionA.offset,
-                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_17),
-                fileInformation.sectionB.offset,
-                fileInformation.sectionB.entries * sizeof(TraceChainEntry_17_23_26),
-                fileInformation.sectionC.offset,
-                fileInformation.sectionC.length,
-                fileInformation.sectionD.offset),
-          false,
-          "");
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < area.sectionD.entries; i++)
     {
         auto entry = bufferSectionD.GetObject<VolumeInformationEntry_17>(sizeof(VolumeInformationEntry_17) * i);
 
         CHECK(AddVolumeEntry(
-                    fileInformation.sectionD.offset,
                     entry->devicePathOffset,
                     entry->devicePathLength,
                     entry->fileReferencesOffset,
@@ -38,18 +23,19 @@ bool PrefetchFile::Update_17()
               "");
     }
 
-    CHECK(SetFilename(), false, "");
-
-    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    for (auto i = 0U; i < area.sectionA.entries; i++)
     {
-        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_17>(sizeof(FileMetricsEntryRecord_17) * i);
+        auto entry = bufferSectionA.GetObject<FileMetricsEntryRecord_17>(sizeof(FileMetricsEntryRecord_17) * i);
 
-        if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+        const std::u16string_view sv{ (char16*) (bufferSectionC.GetData() + entry->filenameOffset), entry->filenameSize };
+        if (ComputeHashForMainExecutable(sv))
         {
             break;
         }
     }
 
+    FileInformation_17 fileInformation{};
+    CHECK(obj->GetData().Copy<FileInformation_17>(sizeof(header), fileInformation), false, "");
     this->fileInformation = fileInformation;
 
     return true;
@@ -57,26 +43,11 @@ bool PrefetchFile::Update_17()
 
 bool PrefetchFile::Update_23()
 {
-    FileInformation_23 fileInformation{};
-    CHECK(obj->GetData().Copy<FileInformation_23>(sizeof(header), fileInformation), false, "");
-
-    CHECK(SetEntries(
-                fileInformation.sectionA.offset,
-                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
-                fileInformation.sectionB.offset,
-                fileInformation.sectionB.entries * sizeof(TraceChainEntry_17_23_26),
-                fileInformation.sectionC.offset,
-                fileInformation.sectionC.length,
-                fileInformation.sectionD.offset),
-          false,
-          "");
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < area.sectionD.entries; i++)
     {
         auto entry = bufferSectionD.GetObject<VolumeInformationEntry_23_26>(i * sizeof(VolumeInformationEntry_23_26));
 
         CHECK(AddVolumeEntry(
-                    fileInformation.sectionD.offset,
                     entry->devicePathOffset,
                     entry->devicePathLength,
                     entry->fileReferencesOffset,
@@ -87,18 +58,19 @@ bool PrefetchFile::Update_23()
               "");
     }
 
-    CHECK(SetFilename(), false, "");
-
-    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    for (auto i = 0U; i < area.sectionA.entries; i++)
     {
-        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
+        auto entry = bufferSectionA.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
 
-        if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+        const std::u16string_view sv{ (char16*) (bufferSectionC.GetData() + entry->filenameOffset), entry->filenameSize };
+        if (ComputeHashForMainExecutable(sv))
         {
             break;
         }
     }
 
+    FileInformation_23 fileInformation{};
+    CHECK(obj->GetData().Copy<FileInformation_23>(sizeof(header), fileInformation), false, "");
     this->fileInformation = fileInformation;
 
     return true;
@@ -106,26 +78,11 @@ bool PrefetchFile::Update_23()
 
 bool PrefetchFile::Update_26()
 {
-    FileInformation_26 fileInformation{};
-    CHECK(obj->GetData().Copy<FileInformation_26>(sizeof(header), fileInformation), false, "");
-
-    CHECK(SetEntries(
-                fileInformation.sectionA.offset,
-                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
-                fileInformation.sectionB.offset,
-                fileInformation.sectionB.entries * sizeof(TraceChainEntry_17_23_26),
-                fileInformation.sectionC.offset,
-                fileInformation.sectionC.length,
-                fileInformation.sectionD.offset),
-          false,
-          "");
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < area.sectionD.entries; i++)
     {
         auto entry = bufferSectionD.GetObject<VolumeInformationEntry_23_26>(i * sizeof(VolumeInformationEntry_23_26));
 
         CHECK(AddVolumeEntry(
-                    fileInformation.sectionD.offset,
                     entry->devicePathOffset,
                     entry->devicePathLength,
                     entry->fileReferencesOffset,
@@ -136,18 +93,19 @@ bool PrefetchFile::Update_26()
               "");
     }
 
-    CHECK(SetFilename(), false, "");
-
-    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    for (auto i = 0U; i < area.sectionA.entries; i++)
     {
-        auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
+        auto entry = bufferSectionA.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
 
-        if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+        const std::u16string_view sv{ (char16*) (bufferSectionC.GetData() + entry->filenameOffset), entry->filenameSize };
+        if (ComputeHashForMainExecutable(sv))
         {
             break;
         }
     }
 
+    FileInformation_26 fileInformation{};
+    CHECK(obj->GetData().Copy<FileInformation_26>(sizeof(header), fileInformation), false, "");
     this->fileInformation = fileInformation;
 
     return true;
@@ -155,29 +113,11 @@ bool PrefetchFile::Update_26()
 
 bool PrefetchFile::Update_30()
 {
-    FileInformation_30 fileInformation{};
-    CHECK(obj->GetData().Copy<FileInformation_30>(sizeof(header), fileInformation), false, "");
-
-    const auto end  = fileInformation.sectionC.offset + fileInformation.sectionC.length;
-    const auto diff = fileInformation.sectionD.offset - end;
-
-    CHECK(SetEntries(
-                fileInformation.sectionA.offset,
-                fileInformation.sectionA.entries * sizeof(FileMetricsEntryRecord_23_26_30),
-                fileInformation.sectionB.offset,
-                fileInformation.sectionB.entries * sizeof(TraceChainEntry_30),
-                fileInformation.sectionC.offset,
-                diff < 0 ? fileInformation.sectionC.length : fileInformation.sectionC.length + diff,
-                fileInformation.sectionD.offset),
-          false,
-          "");
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < area.sectionD.entries; i++)
     {
         auto entry = bufferSectionD.GetObject<VolumeInformationEntry_30>(i * sizeof(VolumeInformationEntry_30));
 
         CHECK(AddVolumeEntry(
-                    fileInformation.sectionD.offset,
                     entry->devicePathOffset,
                     entry->devicePathLength,
                     entry->fileReferencesOffset,
@@ -188,37 +128,51 @@ bool PrefetchFile::Update_30()
               "");
     }
 
-    CHECK(SetFilename(), false, "");
-
     if (header.version == Magic::WIN_10)
     {
-        if (diff > 0)
+        const auto fiSize = area.sectionA.offset - sizeof(header);
+        if (fiSize == 220)
         {
-            std::u16string_view sv{ (char16*) (bufferSectionC.GetData() + bufferSectionC.GetLength() - diff), diff };
-            auto pos = sv.find_first_of(char16{ 0 });
-            if (pos == std::string::npos)
-            {
-                pos = diff;
-            }
-            ComputeHashForMainExecutable(bufferSectionC.GetLength() - diff, (uint32) pos);
-            hasExePathSeparated = true;
+            win10Version = Win10Version::V1;
+
+            FileInformation_30v1 fileInformation{};
+            CHECK(obj->GetData().Copy<FileInformation_30v1>(sizeof(header), fileInformation), false, "");
+            this->fileInformation = fileInformation;
+        }
+        else if (fiSize == 212)
+        {
+            win10Version = Win10Version::V2;
+
+            FileInformation_30v2 fi{};
+            CHECK(obj->GetData().Copy<FileInformation_30v2>(sizeof(header), fi), false, "");
+            this->fileInformation = fi;
+
+            executablePath = obj->GetData().CopyToBuffer(fi.executablePathOffset, fi.executablePathSize * sizeof(char16));
+        }
+        else
+        {
+            throw std::runtime_error("Unknown Windows 10 File Information Version!");
         }
     }
 
-    if (hasExePathSeparated == false)
+    if (win10Version == Win10Version::V1)
     {
-        for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+        for (auto i = 0U; i < area.sectionA.entries; i++)
         {
-            auto entry = bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
+            auto entry = bufferSectionA.GetObject<FileMetricsEntryRecord_23_26_30>(sizeof(FileMetricsEntryRecord_23_26_30) * i);
 
-            if (ComputeHashForMainExecutable(entry->filenameOffset, entry->filenameSize))
+            const std::u16string_view sv{ (char16*) (bufferSectionC.GetData() + entry->filenameOffset), entry->filenameSize };
+            if (ComputeHashForMainExecutable(sv))
             {
                 break;
             }
         }
     }
-
-    this->fileInformation = fileInformation;
+    else
+    {
+        const std::u16string_view sv{ (char16*) executablePath.GetData(), executablePath.GetLength() / sizeof(char16) };
+        ComputeHashForMainExecutable(sv);
+    }
 
     return true;
 }
@@ -236,12 +190,13 @@ bool PrefetchFile::SetFilename()
     return true;
 }
 
-bool PrefetchFile::ComputeHashForMainExecutable(uint32 filenameOffset, uint32 filenameSize)
+bool PrefetchFile::ComputeHashForMainExecutable(std::u16string_view path)
 {
-    ConstString cs(std::u16string_view{ (char16_t*) (bufferSectionC.GetData() + filenameOffset), filenameSize });
+    ConstString cs(path);
     LocalUnicodeStringBuilder<512> lusb;
     CHECK(lusb.Set(cs), false, "");
     lusb.ToString(exePath);
+    exePath.resize(strlen(exePath.c_str()));
 
     bool found = exePath.ends_with(filename);
     if (found == false && exePath.ends_with(".EXE") &&
@@ -254,16 +209,15 @@ bool PrefetchFile::ComputeHashForMainExecutable(uint32 filenameOffset, uint32 fi
 
     if (found)
     {
-        xpHash    = SSCA_XP_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
-        vistaHash = SSCA_VISTA_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
-        hash2008  = SSCA_2008_HASH({ (bufferSectionC.GetData() + filenameOffset), exePath.size() * sizeof(char16) });
+        xpHash    = SSCA_XP_HASH({ path.data(), exePath.size() * sizeof(char16) });
+        vistaHash = SSCA_VISTA_HASH({ path.data(), exePath.size() * sizeof(char16) });
+        hash2008  = SSCA_2008_HASH({ path.data(), exePath.size() * sizeof(char16) });
     }
 
     return found;
 }
 
 bool PrefetchFile::AddVolumeEntry(
-      uint32 sectionDOffset,
       uint32 devicePathOffset,
       uint32 devicePathLength,
       uint32 fileReferencesOffset,
@@ -273,20 +227,20 @@ bool PrefetchFile::AddVolumeEntry(
 {
     VolumeEntry ve;
 
-    const auto nOffset = sectionDOffset + devicePathOffset;
+    const auto nOffset = area.sectionD.offset + devicePathOffset;
     {
-        const auto b = obj->GetData().CopyToBuffer(
+        const auto buffer = obj->GetData().CopyToBuffer(
               nOffset, static_cast<uint32>(std::min<>(devicePathLength * sizeof(char16), obj->GetData().GetSize() - nOffset - 4)));
-        ConstString cs{ u16string_view{ (char16*) b.GetData(), b.GetLength() } };
+        ConstString cs{ u16string_view{ (char16*) buffer.GetData(), buffer.GetLength() } };
         LocalUnicodeStringBuilder<1024> lsub;
         CHECK(lsub.Set(cs), false, "");
         lsub.ToString(ve.name);
     }
 
-    const auto fOffset = sectionDOffset + fileReferencesOffset;
+    const auto fOffset = area.sectionD.offset + fileReferencesOffset;
     ve.files           = obj->GetData().CopyToBuffer(fOffset, fileReferencesSize);
 
-    const auto dOffset = sectionDOffset + directoryStringsOffset;
+    const auto dOffset = area.sectionD.offset + directoryStringsOffset;
     ve.directories     = obj->GetData().CopyToBuffer(dOffset, static_cast<uint32>(obj->GetData().GetSize() - dOffset)); // lazy
 
     volumeEntries.emplace(std::pair<uint32, VolumeEntry>{ i, ve });
@@ -294,19 +248,29 @@ bool PrefetchFile::AddVolumeEntry(
     return true;
 }
 
-bool PrefetchFile::SetEntries(
-      uint32 sectionAOffset,
-      uint32 sectionASize,
-      uint32 sectionBOffset,
-      uint32 sectionBSize,
-      uint32 sectionCOffset,
-      uint32 sectionCSize,
-      uint32 sectionDOffset)
+bool PrefetchFile::SetEntries(uint32 sectionASize, uint32 sectionBSize, uint32 sectionCSize)
 {
-    bufferSectionAEntries = obj->GetData().CopyToBuffer(sectionAOffset, sectionASize);
-    bufferSectionBEntries = obj->GetData().CopyToBuffer(sectionBOffset, sectionBSize);
-    bufferSectionC        = obj->GetData().CopyToBuffer(sectionCOffset, sectionCSize);
-    bufferSectionD        = obj->GetData().CopyToBuffer(sectionDOffset, obj->GetData().GetSize() - sectionDOffset);
+    bufferSectionA = obj->GetData().CopyToBuffer(area.sectionA.offset, sectionASize);
+    bufferSectionB = obj->GetData().CopyToBuffer(area.sectionB.offset, sectionBSize);
+    bufferSectionC = obj->GetData().CopyToBuffer(area.sectionC.offset, sectionCSize);
+    bufferSectionD = obj->GetData().CopyToBuffer(area.sectionD.offset, (uint32) obj->GetData().GetSize() - area.sectionD.offset);
+
+    return true;
+}
+
+bool PrefetchFile::UpdateSectionArea()
+{
+    const auto end  = area.sectionC.offset + area.sectionC.length;
+    const auto diff = area.sectionD.offset - end;
+
+    CHECK(SetEntries(
+                area.sectionA.entries * (uint32) FileMetricsSizes.at(header.version),
+                area.sectionB.entries * (uint32) TraceChainEntrySizes.at(header.version),
+                (uint32) (diff < 0 ? area.sectionC.length : area.sectionC.length + diff)),
+          false,
+          "");
+
+    CHECK(SetFilename(), false, "");
 
     return true;
 }
@@ -314,6 +278,8 @@ bool PrefetchFile::SetEntries(
 bool PrefetchFile::Update()
 {
     CHECK(obj->GetData().Copy<Header>(0, header), false, "");
+    CHECK(obj->GetData().Copy<SectionArea>(sizeof(header), area), false, "");
+    CHECK(UpdateSectionArea(), false, "");
 
     switch (header.version)
     {

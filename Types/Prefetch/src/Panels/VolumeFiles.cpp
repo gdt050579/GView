@@ -56,9 +56,7 @@ void VolumeFiles::Update_17()
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionD.entries; i++)
     {
         auto& filesBuffer = prefetch->volumeEntries.at(i).files;
         auto frs          = (FileReferences_17*) filesBuffer.GetData();
@@ -77,40 +75,15 @@ void VolumeFiles::Update_17()
     }
 }
 
-void VolumeFiles::Update_23()
-{
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
-    Update_23_26_30(fileInformation.sectionD.entries);
-}
-
-void VolumeFiles::Update_26()
-{
-    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
-    Update_23_26_30(fileInformation.sectionD.entries);
-}
-
-void VolumeFiles::Update_30()
-{
-    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
-    Update_23_26_30(fileInformation.sectionD.entries);
-}
-
-void VolumeFiles::Update_23_26_30(uint32 sectionDEntries)
+void VolumeFiles::Update_23_26_30()
 {
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    for (auto i = 0U; i < sectionDEntries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionD.entries; i++)
     {
         auto& filesBuffer = prefetch->volumeEntries.at(i).files;
-
-        if (filesBuffer.IsValid() == false)
-        {
-            // TODO: global issues!
-            continue;
-        }
-
-        auto frs = (FileReferences_23_26_30*) filesBuffer.GetData();
+        auto frs          = (FileReferences_23_26_30*) filesBuffer.GetData();
 
         for (uint32 j = 0; j < frs->numberOfFileReferences; j++)
         {
@@ -136,13 +109,9 @@ void VolumeFiles::Update()
         Update_17();
         break;
     case Magic::WIN_VISTA_7:
-        Update_23();
-        break;
     case Magic::WIN_8:
-        Update_26();
-        break;
     case Magic::WIN_10:
-        Update_30();
+        Update_23_26_30();
         break;
     default:
         break;

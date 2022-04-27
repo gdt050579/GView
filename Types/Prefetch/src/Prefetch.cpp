@@ -33,143 +33,37 @@ extern "C"
     }
 
     ColorPair header{ Color::DarkGreen, Color::DarkBlue };
-    ColorPair fileInformationColor{ Color::DarkRed, Color::DarkBlue };
+    ColorPair fileInformation{ Color::DarkRed, Color::DarkBlue };
     ColorPair sectionA{ Color::DarkGreen, Color::DarkBlue };
     ColorPair sectionB{ Color::DarkRed, Color::DarkBlue };
     ColorPair sectionC{ Color::DarkGreen, Color::DarkBlue };
     ColorPair sectionD{ Color::DarkRed, Color::DarkBlue };
     ColorPair exe{ Color::Red, Color::DarkBlue };
 
-    void CreateBufferView_17(
-          Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
-    {
-        settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_17), fileInformationColor, "FileInformation(17)");
-
-        Prefetch::FileInformation_17 fileInformation{};
-        if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_17>(sizeof(Prefetch::Header), fileInformation))
-        {
-            settings.AddZone(
-                  fileInformation.sectionA.offset,
-                  fileInformation.sectionA.entries * sizeof(Prefetch::FileMetricsEntryRecord_17),
-                  sectionA,
-                  "Section A");
-
-            settings.AddZone(
-                  fileInformation.sectionB.offset,
-                  fileInformation.sectionB.entries * sizeof(Prefetch::TraceChainEntry_17_23_26),
-                  sectionB,
-                  "Section B");
-
-            settings.AddZone(fileInformation.sectionC.offset, fileInformation.sectionC.length, sectionC, "Section C");
-            settings.AddZone(fileInformation.sectionD.offset, fileInformation.sectionD.size, sectionD, "Section D");
-        }
-    }
-
-    void CreateBufferView_23(
-          Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
-    {
-        settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_23), fileInformationColor, "FileInformation(23)");
-
-        Prefetch::FileInformation_23 fileInformation{};
-        if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_23>(sizeof(Prefetch::Header), fileInformation))
-        {
-            settings.AddZone(
-                  fileInformation.sectionA.offset,
-                  fileInformation.sectionA.entries * sizeof(Prefetch::FileMetricsEntryRecord_23_26_30),
-                  sectionA,
-                  "Section A");
-
-            settings.AddZone(
-                  fileInformation.sectionB.offset,
-                  fileInformation.sectionB.entries * sizeof(Prefetch::TraceChainEntry_17_23_26),
-                  sectionB,
-                  "Section B");
-
-            settings.AddZone(fileInformation.sectionC.offset, fileInformation.sectionC.length, sectionC, "Section C");
-            settings.AddZone(fileInformation.sectionD.offset, fileInformation.sectionD.size, sectionD, "Section D");
-        }
-    }
-
-    void CreateBufferView_26(
-          Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
-    {
-        settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-        settings.AddZone(sizeof(Prefetch::Header), sizeof(Prefetch::FileInformation_26), fileInformationColor, "FileInformation(26)");
-
-        Prefetch::FileInformation_26 fileInformation{};
-        if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_26>(sizeof(Prefetch::Header), fileInformation))
-        {
-            settings.AddZone(
-                  fileInformation.sectionA.offset,
-                  fileInformation.sectionA.entries * sizeof(Prefetch::FileMetricsEntryRecord_23_26_30),
-                  sectionA,
-                  "Section A");
-
-            settings.AddZone(
-                  fileInformation.sectionB.offset,
-                  fileInformation.sectionB.entries * sizeof(Prefetch::TraceChainEntry_17_23_26),
-                  sectionB,
-                  "Section B");
-
-            settings.AddZone(fileInformation.sectionC.offset, fileInformation.sectionC.length, sectionC, "Section C");
-            settings.AddZone(fileInformation.sectionD.offset, fileInformation.sectionD.size, sectionD, "Section D");
-        }
-    }
-
-    void CreateBufferView_30(
-          Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch, BufferViewer::Settings& settings)
-    {
-        settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
-
-        Prefetch::FileInformation_30 fileInformation{};
-        if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_30>(sizeof(Prefetch::Header), fileInformation))
-        {
-            settings.AddZone(
-                  sizeof(Prefetch::Header),
-                  fileInformation.sectionA.offset - sizeof(Prefetch::Header),
-                  fileInformationColor,
-                  "FileInformation(30)");
-
-            settings.AddZone(
-                  fileInformation.sectionA.offset,
-                  fileInformation.sectionA.entries * sizeof(Prefetch::FileMetricsEntryRecord_23_26_30),
-                  sectionA,
-                  "Section A");
-
-            settings.AddZone(
-                  fileInformation.sectionB.offset,
-                  fileInformation.sectionB.entries * sizeof(Prefetch::TraceChainEntry_30),
-                  sectionB,
-                  "Section B");
-
-            settings.AddZone(fileInformation.sectionC.offset, fileInformation.sectionC.length, sectionC, "Section C");
-            settings.AddZone(fileInformation.executablePathOffset, fileInformation.executablePathSize, exe, "EXECUTABLE");
-            settings.AddZone(fileInformation.sectionD.offset, fileInformation.sectionD.size, sectionD, "Section D");
-        }
-    }
-
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<Prefetch::PrefetchFile> prefetch)
     {
         BufferViewer::Settings settings;
 
-        switch (prefetch->header.version)
+        const auto& magic = prefetch->header.version;
+        const auto& area  = prefetch->area;
+
+        settings.AddZone(0, sizeof(Prefetch::Header), header, "Header");
+        settings.AddZone(sizeof(Prefetch::Header), Prefetch::FileInformationSizes.at(magic), fileInformation, "FileInformation");
+        settings.AddZone(area.sectionA.offset, area.sectionA.entries * Prefetch::FileMetricsSizes.at(magic), sectionA, "Section A");
+        settings.AddZone(area.sectionB.offset, area.sectionB.entries * Prefetch::TraceChainEntrySizes.at(magic), sectionB, "Section B");
+        settings.AddZone(area.sectionC.offset, area.sectionC.length, sectionC, "Section C");
+        settings.AddZone(area.sectionD.offset, area.sectionD.size, sectionD, "Section D");
+
+        if (magic == Prefetch::Magic::WIN_10)
         {
-        case Prefetch::Magic::WIN_XP_2003:
-            CreateBufferView_17(win, prefetch, settings);
-            break;
-        case Prefetch::Magic::WIN_VISTA_7:
-            CreateBufferView_23(win, prefetch, settings);
-            break;
-        case Prefetch::Magic::WIN_8:
-            CreateBufferView_26(win, prefetch, settings);
-            break;
-        case Prefetch::Magic::WIN_10:
-            CreateBufferView_30(win, prefetch, settings);
-            break;
-        default:
-            break;
+            if (prefetch->win10Version == Prefetch::Win10Version::V2)
+            {
+                Prefetch::FileInformation_30v2 fi{};
+                if (win->GetObject()->GetData().Copy<Prefetch::FileInformation_30v2>(sizeof(Prefetch::Header), fi))
+                {
+                    settings.AddZone(fi.executablePathOffset, fi.executablePathSize, exe, "EXECUTABLE");
+                }
+            }
         }
 
         win->CreateViewer("BufferView", settings);

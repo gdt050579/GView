@@ -37,10 +37,12 @@ class PrefetchFile : public TypeInterface
 {
   public:
     Header header{};
-    std::variant<FileInformation_17, FileInformation_23, FileInformation_26, FileInformation_30> fileInformation{};
-    Buffer bufferSectionAEntries;
-    Buffer bufferSectionBEntries;
+    SectionArea area{};
+    std::variant<FileInformation_17, FileInformation_23, FileInformation_30v1, FileInformation_30v2> fileInformation{};
+    Buffer bufferSectionA;
+    Buffer bufferSectionB;
     Buffer bufferSectionC;
+    Buffer executablePath; // Windows 10 V2
     Buffer bufferSectionD;
 
     struct VolumeEntry
@@ -57,7 +59,7 @@ class PrefetchFile : public TypeInterface
     int64 hash2008  = 0;
     std::string filename;
     std::string exePath;
-    bool hasExePathSeparated = false;
+    Win10Version win10Version = Win10Version::None;
 
   public:
     PrefetchFile();
@@ -66,6 +68,7 @@ class PrefetchFile : public TypeInterface
     }
 
     bool Update();
+    bool UpdateSectionArea();
     bool Update_17();
     bool Update_23();
     bool Update_26();
@@ -78,23 +81,15 @@ class PrefetchFile : public TypeInterface
 
   private:
     bool SetFilename();
-    bool ComputeHashForMainExecutable(uint32 filenameOffset, uint32 filenameSize);
+    bool ComputeHashForMainExecutable(std::u16string_view path);
     bool AddVolumeEntry(
-          uint32 sectionDOffset,
           uint32 devicePathOffset,
           uint32 devicePathLength,
           uint32 fileReferencesOffset,
           uint32 fileReferencesSize,
           uint32 directoryStringsOffset,
           uint32 i);
-    bool SetEntries(
-          uint32 sectionAOffset,
-          uint32 sectionASize,
-          uint32 sectionBOffset,
-          uint32 sectionBSize,
-          uint32 sectionCOffset,
-          uint32 sectionCSize,
-          uint32 sectionDOffset);
+    bool SetEntries(uint32 sectionASize, uint32 sectionBSize, uint32 sectionCSize);
 };
 
 namespace Panels
@@ -111,11 +106,13 @@ namespace Panels
 
         void UpdateGeneralInformation();
         void UpdateHeader();
+        void UpdateSectionArea();
         void UpdateFileInformation();
         void UpdateFileInformation_17();
         void UpdateFileInformation_23();
         void UpdateFileInformation_26();
-        void UpdateFileInformation_30();
+        void UpdateFileInformation_30v1();
+        void UpdateFileInformation_30v2();
         void UpdateIssues();
         void RecomputePanelsPositions();
 
@@ -145,10 +142,7 @@ namespace Panels
 
         void Update();
         void Update_17();
-        void Update_23();
-        void Update_26();
-        void Update_30();
-        void Update_23_26_30(uint32 sectionAEntries);
+        void Update_23_26_30();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
@@ -168,9 +162,7 @@ namespace Panels
         TraceChains(Reference<PrefetchFile> prefetch, Reference<GView::View::WindowInterface> win);
 
         void Update();
-        void Update_17();
-        void Update_23();
-        void Update_26();
+        void Update_17_23_26();
         void Update_30();
         void AddItem_17_23_26(const TraceChainEntry_17_23_26& tc, uint32 i);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
@@ -196,10 +188,8 @@ namespace Panels
 
         void Update();
         void Update_17();
-        void Update_23();
-        void Update_26();
+        void Update_23_26();
         void Update_30();
-        void Update_23_26(uint32 sectionDEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
@@ -223,8 +213,7 @@ namespace Panels
 
         void Update();
         void Update_17();
-        void Update_23();
-        void Update_26();
+        void Update_23_26();
         void Update_30();
         void AddItem(uint32 index, uint32 directoryStringsEntries);
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
@@ -250,10 +239,7 @@ namespace Panels
 
         void Update();
         void Update_17();
-        void Update_23();
-        void Update_26();
-        void Update_30();
-        void Update_23_26_30(uint32 sectionDEntries);
+        void Update_23_26_30();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };

@@ -92,9 +92,7 @@ void VolumeInformation::Update_17()
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionD.entries; i++)
     {
         auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_17>(sizeof(VolumeInformationEntry_17) * i);
 
@@ -113,62 +111,16 @@ void VolumeInformation::Update_17()
         item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
 
         item.SetData<VolumeInformationEntry_17>(
-              (VolumeInformationEntry_17*) (prefetch->bufferSectionAEntries.GetData() + sizeof(VolumeInformationEntry_17) * i));
+              (VolumeInformationEntry_17*) (prefetch->bufferSectionA.GetData() + sizeof(VolumeInformationEntry_17) * i));
     }
 }
 
-void VolumeInformation::Update_23()
-{
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
-    Update_23_26(fileInformation.sectionD.entries);
-}
-
-void VolumeInformation::Update_26()
-{
-    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
-    Update_23_26(fileInformation.sectionD.entries);
-}
-
-void VolumeInformation::Update_30()
-{
-    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
-
-    LocalString<1024> ls;
-    NumericFormatter nf;
-
-    for (auto i = 0U; i < fileInformation.sectionD.entries; i++)
-    {
-        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_30>(sizeof(VolumeInformationEntry_30) * i);
-
-        auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
-        item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
-
-        AppCUI::OS::DateTime dt;
-        dt.CreateFromFileTime(entry->creationTime);
-        item.SetText(2, ls.Format("%-20s", dt.GetStringRepresentation().data()));
-
-        item.SetText(3, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
-        item.SetText(4, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
-        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
-        item.SetText(6, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
-        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
-        item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
-        item.SetText(9, "Unknown array (24 bytes)");
-        item.SetText(10, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
-        item.SetText(11, "Unknown array (24 bytes)");
-        item.SetText(12, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
-
-        item.SetData<VolumeInformationEntry_30>(
-              (VolumeInformationEntry_30*) (prefetch->bufferSectionAEntries.GetData() + sizeof(VolumeInformationEntry_30) * i));
-    }
-}
-
-void VolumeInformation::Update_23_26(uint32 sectionDEntries)
+void VolumeInformation::Update_23_26()
 {
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    for (auto i = 0U; i < sectionDEntries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionD.entries; i++)
     {
         auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_23_26>(sizeof(VolumeInformationEntry_23_26) * i);
 
@@ -191,7 +143,39 @@ void VolumeInformation::Update_23_26(uint32 sectionDEntries)
         item.SetText(12, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
 
         item.SetData<VolumeInformationEntry_23_26>(
-              (VolumeInformationEntry_23_26*) (prefetch->bufferSectionAEntries.GetData() + sizeof(VolumeInformationEntry_23_26) * i));
+              (VolumeInformationEntry_23_26*) (prefetch->bufferSectionA.GetData() + sizeof(VolumeInformationEntry_23_26) * i));
+    }
+}
+
+void VolumeInformation::Update_30()
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+
+    for (auto i = 0U; i < prefetch->area.sectionD.entries; i++)
+    {
+        auto entry = prefetch->bufferSectionD.GetObject<VolumeInformationEntry_30>(sizeof(VolumeInformationEntry_30) * i);
+
+        auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
+        item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
+
+        AppCUI::OS::DateTime dt;
+        dt.CreateFromFileTime(entry->creationTime);
+        item.SetText(2, ls.Format("%-20s", dt.GetStringRepresentation().data()));
+
+        item.SetText(3, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
+        item.SetText(4, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
+        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
+        item.SetText(6, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
+        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
+        item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
+        item.SetText(9, "Unknown array (24 bytes)");
+        item.SetText(10, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
+        item.SetText(11, "Unknown array (24 bytes)");
+        item.SetText(12, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
+
+        item.SetData<VolumeInformationEntry_30>(
+              (VolumeInformationEntry_30*) (prefetch->bufferSectionA.GetData() + sizeof(VolumeInformationEntry_30) * i));
     }
 }
 
@@ -207,10 +191,8 @@ void VolumeInformation::Update()
         Update_17();
         break;
     case Magic::WIN_VISTA_7:
-        Update_23();
-        break;
     case Magic::WIN_8:
-        Update_26();
+        Update_23_26();
         break;
     case Magic::WIN_10:
         Update_30();

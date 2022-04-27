@@ -82,11 +82,9 @@ void FileInformationEntry::Update_17()
     LocalString<128> tmp;
     NumericFormatter n;
 
-    auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionA.entries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionA.entries; i++)
     {
-        auto entry = prefetch->bufferSectionAEntries.GetObject<FileMetricsEntryRecord_17>(sizeof(FileMetricsEntryRecord_17) * i);
+        auto entry = prefetch->bufferSectionA.GetObject<FileMetricsEntryRecord_17>(sizeof(FileMetricsEntryRecord_17) * i);
 
         auto item = list->AddItem({ tmp.Format("%s", GetValue(n, entry->startTime).data()) });
         item.SetText(1, tmp.Format("%s", GetValue(n, entry->duration).data()));
@@ -104,7 +102,7 @@ void FileInformationEntry::Update_17()
         item.SetText(5, filename.c_str());
 
         item.SetData<FileMetricsEntryRecord_17>(
-              (FileMetricsEntryRecord_17*) (prefetch->bufferSectionAEntries.GetData() + sizeof(FileMetricsEntryRecord_17) * i));
+              (FileMetricsEntryRecord_17*) (prefetch->bufferSectionA.GetData() + sizeof(FileMetricsEntryRecord_17) * i));
 
         if (prefetch->exePath.compare(filename) == 0)
         {
@@ -113,33 +111,15 @@ void FileInformationEntry::Update_17()
     }
 }
 
-void FileInformationEntry::Update_23()
-{
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
-    Update_23_26_30(fileInformation.sectionA.entries);
-}
-
-void FileInformationEntry::Update_26()
-{
-    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
-    Update_23_26_30(fileInformation.sectionA.entries);
-}
-
-void FileInformationEntry::Update_30()
-{
-    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
-    Update_23_26_30(fileInformation.sectionA.entries);
-}
-
-void FileInformationEntry::Update_23_26_30(uint32 sectionAEntries)
+void FileInformationEntry::Update_23_26_30()
 {
     LocalString<128> tmp;
     NumericFormatter n;
 
-    for (auto i = 0U; i < sectionAEntries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionA.entries; i++)
     {
-        const auto offset = sizeof(FileMetricsEntryRecord_23_26_30) * i;
-        auto entry        = prefetch->bufferSectionAEntries.GetObject<FileMetricsEntryRecord_23_26_30>(offset);
+        const auto offset = (uint32) sizeof(FileMetricsEntryRecord_23_26_30) * i;
+        auto entry        = prefetch->bufferSectionA.GetObject<FileMetricsEntryRecord_23_26_30>(offset);
 
         auto item = list->AddItem({ tmp.Format("%s", GetValue(n, entry->startTime).data()) });
         item.SetText(1, tmp.Format("%s", GetValue(n, entry->duration).data()));
@@ -159,7 +139,7 @@ void FileInformationEntry::Update_23_26_30(uint32 sectionAEntries)
         item.SetText(7, filename.c_str());
 
         item.SetData<FileMetricsEntryRecord_23_26_30>(
-              (FileMetricsEntryRecord_23_26_30*) (prefetch->bufferSectionAEntries.GetData() + sizeof(FileMetricsEntryRecord_23_26_30) * i));
+              (FileMetricsEntryRecord_23_26_30*) (prefetch->bufferSectionA.GetData() + sizeof(FileMetricsEntryRecord_23_26_30) * i));
 
         if (prefetch->exePath.compare(filename) == 0)
         {
@@ -172,7 +152,7 @@ void FileInformationEntry::Update()
 {
     list->DeleteAllItems();
 
-    CHECKRET(prefetch->bufferSectionAEntries.IsValid(), "");
+    CHECKRET(prefetch->bufferSectionA.IsValid(), "");
 
     // TODO: global issues in prefetch!
 
@@ -182,13 +162,10 @@ void FileInformationEntry::Update()
         Update_17();
         break;
     case Magic::WIN_VISTA_7:
-        Update_23();
-        break;
     case Magic::WIN_8:
-        Update_26();
-        break;
     case Magic::WIN_10:
-        Update_30();
+        Update_23_26_30();
+        break;
     default:
         break;
     }

@@ -49,6 +49,35 @@ struct Header
     uint32 H7;
 };
 
+static_assert(sizeof(Header) == 84);
+
+#pragma pack(push, 4)
+struct SectionArea
+{
+    struct SectionA
+    {
+        uint32 offset;
+        uint32 entries;
+    } sectionA;
+    struct SectionB
+    {
+        uint32 offset;
+        uint32 entries;
+    } sectionB;
+    struct SectionC
+    {
+        uint32 offset;
+        uint32 length;
+    } sectionC;
+    struct SectionD
+    {
+        uint32 offset;
+        uint32 entries;
+        uint32 size;
+    } sectionD;
+};
+#pragma pack(pop)
+
 /* clang-format off
  * --------------------------------------------------------------- 17 START -------------------------------------------------------------------------------------
  * clang-format on
@@ -77,31 +106,11 @@ struct Header
 #pragma pack(push, 4)
 struct FileInformation_17
 {
-    struct SectionA
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionA; // 8
-    struct SectionB
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionB; // 16
-    struct SectionC
-    {
-        uint32 offset;
-        uint32 length;
-    } sectionC; // 24
-    struct SectionD
-    {
-        uint32 offset;
-        uint32 entries;
-        uint32 size;
-    } sectionD;                 // 36
-    uint64 latestExecutionTime; // 44
-    uint64 unknown[2];          // 60
-    uint32 executionCount;      // 64
-    uint32 unknown2;            // 68
+    SectionArea area;
+    uint64 latestExecutionTime;
+    uint64 unknown[2];
+    uint32 executionCount;
+    uint32 unknown2;
 };
 #pragma pack(pop)
 
@@ -128,6 +137,8 @@ struct FileMetricsEntryRecord_17
     uint32 unknown;
 };
 
+static_assert(sizeof(FileMetricsEntryRecord_17) == 20);
+
 /* clang-format off
  * This section contains an array with 12 byte (version 17, 23 and 26) entry records.
  * Field Offset	Length	Type Notes
@@ -147,6 +158,8 @@ struct TraceChainEntry_17_23_26
     uint8 duration;
     uint16 unknown2;
 };
+
+static_assert(sizeof(TraceChainEntry_17_23_26) == 12);
 
 /* clang-format off
  * The volume information – version 17 is 40 bytes in size and consists of:
@@ -273,33 +286,13 @@ static int64 SSCA_XP_HASH(BufferView bv)
 #pragma pack(push, 4)
 struct FileInformation_23
 {
-    struct SectionA
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionA;
-    struct SectionB
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionB;
-    struct SectionC
-    {
-        uint32 offset;
-        uint32 length;
-    } sectionC;
-    struct SectionD
-    {
-        uint32 offset;
-        uint32 entries;
-        uint32 size;
-    } sectionD;
+    SectionArea area;
     uint64 unknown0;
     uint64 latestExecutionTime;
-    uint64 unknown[2];
+    uint64 unknown1[2];
     uint32 executionCount;
     uint32 unknown2;
-    uint8 unknown4[80];
+    uint8 unknown3[80];
 };
 #pragma pack(pop)
 
@@ -318,6 +311,7 @@ static_assert(sizeof(FileInformation_23) == 156);
  * clang-format on
  */
 
+#pragma pack(push, 4)
 struct FileMetricsEntryRecord_23_26_30
 {
     uint32 startTime;
@@ -328,6 +322,7 @@ struct FileMetricsEntryRecord_23_26_30
     uint32 unknown;
     uint64 ntfsFileReference;
 };
+#pragma pack(pop)
 
 static_assert(sizeof(FileMetricsEntryRecord_23_26_30) == 32);
 
@@ -437,35 +432,16 @@ static int64 SSCA_VISTA_HASH(BufferView bv)
 #pragma pack(push, 4)
 struct FileInformation_26
 {
-    struct SectionA
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionA;
-    struct SectionB
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionB;
-    struct SectionC
-    {
-        uint32 offset;
-        uint32 length;
-    } sectionC;
-    struct SectionD
-    {
-        uint32 offset;
-        uint32 entries;
-        uint32 size;
-    } sectionD;
+    SectionArea area;
     uint64 unknown0;
     uint64 latestExecutionTime;
-    uint64 olderExecutionTime[8];
-    uint64 unknown[2];
+    uint64 olderExecutionTime[7];
+    uint64 unknown1;
+    uint64 unknown2;
     uint32 executionCount;
-    uint32 unknown2;
-    uint32 unknown3;
-    uint8 unknown4[80];
+    uint64 unknown3;
+    uint64 unknown4;
+    uint8 unknown5[80];
 };
 #pragma pack(pop)
 
@@ -481,8 +457,11 @@ static_assert(sizeof(FileInformation_26) == 224);
  * ------------------------------------------------------------------------------------- clang - format on
  */
 
+typedef FileInformation_26 FileInformation_30v1;
+static_assert(sizeof(FileInformation_30v1) == 224);
+
 /* clang-format off
- * The file information - version 30 is 216 bytes of size and consists of:
+ * The file information - version 30 is 224 bytes of size and consists of:
  * Field  Offset Length	    Type	 Notes
  *        0x0054 4	        DWORD	 The offset to section A. The offset is relative from the start of the file.
  *        0x0058 4	        DWORD	 The number of entries in section A.
@@ -505,47 +484,23 @@ static_assert(sizeof(FileInformation_26) == 224);
  */
 
 #pragma pack(push, 4)
-struct FileInformation_30
+struct FileInformation_30v2
 {
-    struct SectionA
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionA;
-    struct SectionB
-    {
-        uint32 offset;
-        uint32 entries;
-    } sectionB;
-    struct SectionC
-    {
-        uint32 offset;
-        uint32 length;
-    } sectionC;
-    struct SectionD
-    {
-        uint32 offset;
-        uint32 entries;
-        uint32 size;
-    } sectionD;
-    uint32 unknown;
-    uint32 unknown0;
+    SectionArea area;
+    uint64 unknown0;
     uint64 latestExecutionTime;
     uint64 olderExecutionTime[7];
-    uint16 unknown11;
-    uint32 unknown22;
+    uint64 unknown1;
     uint32 executionCount;
-    uint32 unknown1;
-    uint32 executionCount2; // when there's a 4 bytes difference betwen FileInformation & Section A this is used
+    uint32 unknown2;
+    uint32 unknown3;
     uint32 executablePathOffset;
     uint32 executablePathSize;
-    uint32 unknown3;
-    uint32 unknown4;
-    uint8 unknown5[72];
+    uint8 unknown4[76];
 };
 #pragma pack(pop)
 
-static_assert(sizeof(FileInformation_30) == 216);
+static_assert(sizeof(FileInformation_30v2) == 212);
 
 /* clang-format off
  * The trace chain array entry - version 30 is 8 bytes in size and consists of:.
@@ -564,6 +519,8 @@ struct TraceChainEntry_30
     uint8 unknown1;
     uint16 unknown2;
 };
+
+static_assert(sizeof(TraceChainEntry_30) == 8);
 
 static int64 SSCA_2008_HASH(BufferView bv)
 {
@@ -640,9 +597,37 @@ struct VolumeInformationEntry_30
 
 static_assert(sizeof(VolumeInformationEntry_30) == 96);
 
+enum class Win10Version : uint32
+{
+    None = 0xFFFFFFFF,
+    V1   = 0,
+    V2   = 1
+};
+
 /* clang-format off
  * --------------------------------------------------------------- 30 END --------------------------------------------------------------------------------------
  * clang-format on
  */
+
+const std::map<Magic, uint64> FileInformationSizes{
+    { Magic::WIN_XP_2003, sizeof(FileInformation_17) },
+    { Magic::WIN_VISTA_7, sizeof(FileInformation_23) },
+    { Magic::WIN_8, sizeof(FileInformation_26) },
+    { Magic::WIN_10, sizeof(FileInformation_30v2) },
+};
+
+const std::map<Magic, uint64> FileMetricsSizes{
+    { Magic::WIN_XP_2003, sizeof(FileMetricsEntryRecord_17) },
+    { Magic::WIN_VISTA_7, sizeof(FileMetricsEntryRecord_23_26_30) },
+    { Magic::WIN_8, sizeof(FileMetricsEntryRecord_23_26_30) },
+    { Magic::WIN_10, sizeof(FileMetricsEntryRecord_23_26_30) },
+};
+
+const std::map<Magic, uint64> TraceChainEntrySizes{
+    { Magic::WIN_XP_2003, sizeof(TraceChainEntry_17_23_26) },
+    { Magic::WIN_VISTA_7, sizeof(TraceChainEntry_17_23_26) },
+    { Magic::WIN_8, sizeof(TraceChainEntry_17_23_26) },
+    { Magic::WIN_10, sizeof(TraceChainEntry_30) },
+};
 
 } // namespace GView::Type::Prefetch
