@@ -45,7 +45,7 @@ struct Header
     uint32 H3;
     uint32 fileSize;
     uint8 executableName[60];
-    uint32 H6;
+    uint32 hash;
     uint32 H7;
 };
 
