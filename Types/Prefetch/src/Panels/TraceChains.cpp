@@ -70,35 +70,11 @@ void TraceChains::SelectCurrentSection()
     win->GetCurrentView()->Select(0, 0);
 }
 
-void TraceChains::Update_17()
+void TraceChains::Update_17_23_26()
 {
-    auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionB.entries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionB.entries; i++)
     {
-        auto entry = prefetch->bufferSectionBEntries.GetObject<TraceChainEntry_17_23_26>(sizeof(TraceChainEntry_17_23_26) * i);
-        AddItem_17_23_26(entry, i);
-    }
-}
-
-void TraceChains::Update_23()
-{
-    auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionB.entries; i++)
-    {
-        auto entry = prefetch->bufferSectionBEntries.GetObject<TraceChainEntry_17_23_26>(sizeof(TraceChainEntry_17_23_26) * i);
-        AddItem_17_23_26(entry, i);
-    }
-}
-
-void TraceChains::Update_26()
-{
-    auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionB.entries; i++)
-    {
-        auto entry = prefetch->bufferSectionBEntries.GetObject<TraceChainEntry_17_23_26>(sizeof(TraceChainEntry_17_23_26) * i);
+        auto entry = prefetch->bufferSectionB.GetObject<TraceChainEntry_17_23_26>(sizeof(TraceChainEntry_17_23_26) * i);
         AddItem_17_23_26(entry, i);
     }
 }
@@ -108,11 +84,9 @@ void TraceChains::Update_30()
     LocalString<128> tmp;
     NumericFormatter n;
 
-    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
-
-    for (auto i = 0U; i < fileInformation.sectionB.entries; i++)
+    for (auto i = 0U; i < prefetch->area.sectionB.entries; i++)
     {
-        auto entry = prefetch->bufferSectionBEntries.GetObject<TraceChainEntry_30>(sizeof(TraceChainEntry_30) * i);
+        auto entry = prefetch->bufferSectionB.GetObject<TraceChainEntry_30>(sizeof(TraceChainEntry_30) * i);
 
         auto item = list->AddItem({ tmp.Format("%s", GetValue(n, entry->nextEntryIndex).data()) });
         item.SetText(1, tmp.Format("%s", GetValue(n, entry->unknown0).data()));
@@ -120,7 +94,7 @@ void TraceChains::Update_30()
         item.SetText(3, tmp.Format("%s", GetValue(n, entry->unknown2).data()));
 
         item.SetData<TraceChainEntry_30>(
-              (TraceChainEntry_30*) (prefetch->bufferSectionBEntries.GetData() + sizeof(TraceChainEntry_30) * i));
+              (TraceChainEntry_30*) (prefetch->bufferSectionB.GetData() + sizeof(TraceChainEntry_30) * i));
     }
 }
 
@@ -136,7 +110,7 @@ void TraceChains::AddItem_17_23_26(const TraceChainEntry_17_23_26& tc, uint32 i)
     item.SetText(4, tmp.Format("%s", GetValue(n, tc.unknown2).data()));
 
     item.SetData<TraceChainEntry_17_23_26>(
-          (TraceChainEntry_17_23_26*) (prefetch->bufferSectionAEntries.GetData() + sizeof(TraceChainEntry_17_23_26) * i));
+          (TraceChainEntry_17_23_26*) (prefetch->bufferSectionA.GetData() + sizeof(TraceChainEntry_17_23_26) * i));
 }
 
 void TraceChains::Update()
@@ -146,13 +120,9 @@ void TraceChains::Update()
     switch (prefetch->header.version)
     {
     case Magic::WIN_XP_2003:
-        Update_17();
-        break;
     case Magic::WIN_VISTA_7:
-        Update_23();
-        break;
     case Magic::WIN_8:
-        Update_26();
+        Update_17_23_26();
         break;
     case Magic::WIN_10:
         Update_30();

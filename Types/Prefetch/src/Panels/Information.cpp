@@ -101,9 +101,9 @@ void Information::UpdateHeader()
             {
                 if (prefetch->header.version != Prefetch::Magic::WIN_10 || prefetch->xpHash != 0)
                 {
-                    const auto computedXpHashHex    = ls.Format("%08X", prefetch->xpHash);
-                    const auto computedVistaHashHex = ls.Format("%08X", prefetch->vistaHash);
-                    const auto computedHash2008Hex  = ls.Format("%08X", prefetch->hash2008);
+                    const auto computedXpHashHex    = std::string{ ls.Format("%08X", prefetch->xpHash) };
+                    const auto computedVistaHashHex = std::string{ ls.Format("%08X", prefetch->vistaHash) };
+                    const auto computedHash2008Hex  = std::string{ ls.Format("%08X", prefetch->hash2008) };
                     if (hashFromName.compare(computedXpHashHex) == 0 || hashFromName.compare(computedVistaHashHex) == 0 ||
                         hashFromName.compare(computedHash2008Hex) == 0)
                     {
@@ -155,6 +155,57 @@ void Information::UpdateHeader()
     const auto h7    = nf.ToString(prefetch->header.H7, dec);
     const auto h7Hex = nf2.ToString(prefetch->header.H7, hex);
     general->AddItem({ "H7", ls.Format("%-20s (%s)", h7.data(), h7Hex.data()) });
+
+    const auto fileInformationSize    = nf.ToString(prefetch->area.sectionA.offset - sizeof(prefetch->header), dec);
+    const auto fileInformationSizeHex = nf2.ToString(prefetch->area.sectionA.offset - sizeof(prefetch->header), hex);
+    general->AddItem({ "File Information Size", ls.Format("%-20s (%s)", fileInformationSize.data(), fileInformationSizeHex.data()) })
+          .SetType(ListViewItem::Type::Highlighted);
+}
+
+void Information::UpdateSectionArea()
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    auto& area = prefetch->area;
+
+    general->AddItem("File Information").SetType(ListViewItem::Type::Category);
+    const auto sectionAOffset    = nf.ToString(area.sectionA.offset, dec);
+    const auto sectionAOffsetHex = nf2.ToString(area.sectionA.offset, hex);
+    general->AddItem({ "Section A Offset", ls.Format("%-20s (%s)", sectionAOffset.data(), sectionAOffsetHex.data()) });
+
+    const auto sectionAEntries    = nf.ToString(area.sectionA.entries, dec);
+    const auto sectionAEntriesHex = nf2.ToString(area.sectionA.entries, hex);
+    general->AddItem({ "Section A Entries", ls.Format("%-20s (%s)", sectionAEntries.data(), sectionAEntriesHex.data()) });
+
+    const auto sectionBOffset    = nf.ToString(area.sectionB.offset, dec);
+    const auto sectionBOffsetHex = nf2.ToString(area.sectionB.offset, hex);
+    general->AddItem({ "Section B Offset", ls.Format("%-20s (%s)", sectionBOffset.data(), sectionBOffsetHex.data()) });
+
+    const auto sectionBEntries    = nf.ToString(area.sectionB.entries, dec);
+    const auto sectionBEntriesHex = nf2.ToString(area.sectionB.entries, hex);
+    general->AddItem({ "Section B Entries", ls.Format("%-20s (%s)", sectionBEntries.data(), sectionBEntriesHex.data()) });
+
+    const auto sectionCOffset    = nf.ToString(area.sectionC.offset, dec);
+    const auto sectionCOffsetHex = nf2.ToString(area.sectionC.offset, hex);
+    general->AddItem({ "Section C Offset", ls.Format("%-20s (%s)", sectionCOffset.data(), sectionCOffsetHex.data()) });
+
+    const auto sectionCLength    = nf.ToString(area.sectionC.length, dec);
+    const auto sectionCLengthHex = nf2.ToString(area.sectionC.length, hex);
+    general->AddItem({ "Section C Length", ls.Format("%-20s (%s)", sectionCLength.data(), sectionCLengthHex.data()) });
+
+    const auto sectionDOffset    = nf.ToString(area.sectionD.offset, dec);
+    const auto sectionDOffsetHex = nf2.ToString(area.sectionD.offset, hex);
+    general->AddItem({ "Section D Offset", ls.Format("%-20s (%s)", sectionDOffset.data(), sectionDOffsetHex.data()) });
+
+    const auto sectionDEntries    = nf.ToString(area.sectionD.entries, dec);
+    const auto sectionDEntriesHex = nf2.ToString(area.sectionD.entries, hex);
+    general->AddItem({ "Section D Entries", ls.Format("%-20s (%s)", sectionDEntries.data(), sectionDEntriesHex.data()) });
+
+    const auto sectionDSize    = nf.ToString(area.sectionD.size, dec);
+    const auto sectionDSizeHex = nf2.ToString(area.sectionD.size, hex);
+    general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
 }
 
 void Information::UpdateFileInformation_17()
@@ -164,43 +215,6 @@ void Information::UpdateFileInformation_17()
     NumericFormatter nf2;
 
     auto& fileInformation = std::get<FileInformation_17>(prefetch->fileInformation);
-
-    general->AddItem("File Information").SetType(ListViewItem::Type::Category);
-    const auto sectionAOffset    = nf.ToString(fileInformation.sectionA.offset, dec);
-    const auto sectionAOffsetHex = nf2.ToString(fileInformation.sectionA.offset, hex);
-    general->AddItem({ "Section A Offset", ls.Format("%-20s (%s)", sectionAOffset.data(), sectionAOffsetHex.data()) });
-
-    const auto sectionAEntries    = nf.ToString(fileInformation.sectionA.entries, dec);
-    const auto sectionAEntriesHex = nf2.ToString(fileInformation.sectionA.entries, hex);
-    general->AddItem({ "Section A Entries", ls.Format("%-20s (%s)", sectionAEntries.data(), sectionAEntriesHex.data()) });
-
-    const auto sectionBOffset    = nf.ToString(fileInformation.sectionB.offset, dec);
-    const auto sectionBOffsetHex = nf2.ToString(fileInformation.sectionB.offset, hex);
-    general->AddItem({ "Section B Offset", ls.Format("%-20s (%s)", sectionBOffset.data(), sectionBOffsetHex.data()) });
-
-    const auto sectionBEntries    = nf.ToString(fileInformation.sectionB.entries, dec);
-    const auto sectionBEntriesHex = nf2.ToString(fileInformation.sectionB.entries, hex);
-    general->AddItem({ "Section B Entries", ls.Format("%-20s (%s)", sectionBEntries.data(), sectionBEntriesHex.data()) });
-
-    const auto sectionCOffset    = nf.ToString(fileInformation.sectionC.offset, dec);
-    const auto sectionCOffsetHex = nf2.ToString(fileInformation.sectionC.offset, hex);
-    general->AddItem({ "Section C Offset", ls.Format("%-20s (%s)", sectionCOffset.data(), sectionCOffsetHex.data()) });
-
-    const auto sectionCLength    = nf.ToString(fileInformation.sectionC.length, dec);
-    const auto sectionCLengthHex = nf2.ToString(fileInformation.sectionC.length, hex);
-    general->AddItem({ "Section C Length", ls.Format("%-20s (%s)", sectionCLength.data(), sectionCLengthHex.data()) });
-
-    const auto sectionDOffset    = nf.ToString(fileInformation.sectionD.offset, dec);
-    const auto sectionDOffsetHex = nf2.ToString(fileInformation.sectionD.offset, hex);
-    general->AddItem({ "Section D Offset", ls.Format("%-20s (%s)", sectionDOffset.data(), sectionDOffsetHex.data()) });
-
-    const auto sectionDEntries    = nf.ToString(fileInformation.sectionD.entries, dec);
-    const auto sectionDEntriesHex = nf2.ToString(fileInformation.sectionD.entries, hex);
-    general->AddItem({ "Section D Entries", ls.Format("%-20s (%s)", sectionDEntries.data(), sectionDEntriesHex.data()) });
-
-    const auto sectionDSize    = nf.ToString(fileInformation.sectionD.size, dec);
-    const auto sectionDSizeHex = nf2.ToString(fileInformation.sectionD.size, hex);
-    general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
 
     DateTime dt;
     dt.CreateFromFileTime(fileInformation.latestExecutionTime);
@@ -235,46 +249,9 @@ void Information::UpdateFileInformation_23()
 
     auto& fileInformation = std::get<FileInformation_23>(prefetch->fileInformation);
 
-    general->AddItem("File Information").SetType(ListViewItem::Type::Category);
-    const auto sectionAOffset    = nf.ToString(fileInformation.sectionA.offset, dec);
-    const auto sectionAOffsetHex = nf2.ToString(fileInformation.sectionA.offset, hex);
-    general->AddItem({ "Section A Offset", ls.Format("%-20s (%s)", sectionAOffset.data(), sectionAOffsetHex.data()) });
-
-    const auto sectionAEntries    = nf.ToString(fileInformation.sectionA.entries, dec);
-    const auto sectionAEntriesHex = nf2.ToString(fileInformation.sectionA.entries, hex);
-    general->AddItem({ "Section A Entries", ls.Format("%-20s (%s)", sectionAEntries.data(), sectionAEntriesHex.data()) });
-
-    const auto sectionBOffset    = nf.ToString(fileInformation.sectionB.offset, dec);
-    const auto sectionBOffsetHex = nf2.ToString(fileInformation.sectionB.offset, hex);
-    general->AddItem({ "Section B Offset", ls.Format("%-20s (%s)", sectionBOffset.data(), sectionBOffsetHex.data()) });
-
-    const auto sectionBEntries    = nf.ToString(fileInformation.sectionB.entries, dec);
-    const auto sectionBEntriesHex = nf2.ToString(fileInformation.sectionB.entries, hex);
-    general->AddItem({ "Section B Entries", ls.Format("%-20s (%s)", sectionBEntries.data(), sectionBEntriesHex.data()) });
-
-    const auto sectionCOffset    = nf.ToString(fileInformation.sectionC.offset, dec);
-    const auto sectionCOffsetHex = nf2.ToString(fileInformation.sectionC.offset, hex);
-    general->AddItem({ "Section C Offset", ls.Format("%-20s (%s)", sectionCOffset.data(), sectionCOffsetHex.data()) });
-
-    const auto sectionCLength    = nf.ToString(fileInformation.sectionC.length, dec);
-    const auto sectionCLengthHex = nf2.ToString(fileInformation.sectionC.length, hex);
-    general->AddItem({ "Section C Length", ls.Format("%-20s (%s)", sectionCLength.data(), sectionCLengthHex.data()) });
-
-    const auto sectionDOffset    = nf.ToString(fileInformation.sectionD.offset, dec);
-    const auto sectionDOffsetHex = nf2.ToString(fileInformation.sectionD.offset, hex);
-    general->AddItem({ "Section D Offset", ls.Format("%-20s (%s)", sectionDOffset.data(), sectionDOffsetHex.data()) });
-
-    const auto sectionDEntries    = nf.ToString(fileInformation.sectionD.entries, dec);
-    const auto sectionDEntriesHex = nf2.ToString(fileInformation.sectionD.entries, hex);
-    general->AddItem({ "Section D Entries", ls.Format("%-20s (%s)", sectionDEntries.data(), sectionDEntriesHex.data()) });
-
-    const auto sectionDSize    = nf.ToString(fileInformation.sectionD.size, dec);
-    const auto sectionDSizeHex = nf2.ToString(fileInformation.sectionD.size, hex);
-    general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
-
-    const auto unknown0    = nf.ToString(fileInformation.unknown[0], dec);
-    const auto unknown0Hex = nf2.ToString(fileInformation.unknown[0], hex);
-    general->AddItem({ "Unknown Part 1", ls.Format("%-20s (%s)", unknown0.data(), unknown0Hex.data()) });
+    const auto unknown0    = nf.ToString(fileInformation.unknown0, dec);
+    const auto unknown0Hex = nf2.ToString(fileInformation.unknown0, hex);
+    general->AddItem({ "Unknown 0", ls.Format("%-20s (%s)", unknown0.data(), unknown0Hex.data()) });
 
     DateTime dt;
     dt.CreateFromFileTime(fileInformation.latestExecutionTime);
@@ -284,13 +261,13 @@ void Information::UpdateFileInformation_23()
                 { "Latest Execution Time", ls.Format("%-20s (%s)", dt.GetStringRepresentation().data(), latestExecutionTimeHex.data()) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
-    const auto unknownPart1    = nf.ToString(fileInformation.unknown[0], dec);
-    const auto unknownPart1Hex = nf2.ToString(fileInformation.unknown[0], hex);
-    general->AddItem({ "Unknown Part 1", ls.Format("%-20s (%s)", unknownPart1.data(), unknownPart1Hex.data()) });
+    const auto unknown10    = nf.ToString(fileInformation.unknown1[0], dec);
+    const auto unknown10Hex = nf2.ToString(fileInformation.unknown1[0], hex);
+    general->AddItem({ "Unknown 10", ls.Format("%-20s (%s)", unknown10.data(), unknown10Hex.data()) });
 
-    const auto unknownPart2    = nf.ToString(fileInformation.unknown[1], dec);
-    const auto unknownPart2Hex = nf2.ToString(fileInformation.unknown[1], hex);
-    general->AddItem({ "Unknown Part 2", ls.Format("%-20s (%s)", unknownPart2.data(), unknownPart2Hex.data()) });
+    const auto unknown11    = nf.ToString(fileInformation.unknown1[1], dec);
+    const auto unknown11Hex = nf2.ToString(fileInformation.unknown1[1], hex);
+    general->AddItem({ "Unknown 11", ls.Format("%-20s (%s)", unknown11.data(), unknown11Hex.data()) });
 
     const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
     const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
@@ -300,7 +277,12 @@ void Information::UpdateFileInformation_23()
     const auto unknown2Hex = nf2.ToString(fileInformation.unknown2, hex);
     general->AddItem({ "Unknown 2", ls.Format("%-20s (%s)", unknown2.data(), unknown2Hex.data()) });
 
-    general->AddItem({ "Unknown array (80 bytes)" });
+    ls.Format("");
+    for (uint32 i = 0; i < sizeof(fileInformation.unknown3) / sizeof(fileInformation.unknown3[0]); i++)
+    {
+        ls.AddFormat("%02X", fileInformation.unknown3[i]);
+    }
+    general->AddItem({ "Unknown 3 (80 bytes)", ls.GetText() });
 }
 
 void Information::UpdateFileInformation_26()
@@ -312,46 +294,9 @@ void Information::UpdateFileInformation_26()
 
     auto& fileInformation = std::get<FileInformation_26>(prefetch->fileInformation);
 
-    general->AddItem("File Information").SetType(ListViewItem::Type::Category);
-    const auto sectionAOffset    = nf.ToString(fileInformation.sectionA.offset, dec);
-    const auto sectionAOffsetHex = nf2.ToString(fileInformation.sectionA.offset, hex);
-    general->AddItem({ "Section A Offset", ls.Format("%-20s (%s)", sectionAOffset.data(), sectionAOffsetHex.data()) });
-
-    const auto sectionAEntries    = nf.ToString(fileInformation.sectionA.entries, dec);
-    const auto sectionAEntriesHex = nf2.ToString(fileInformation.sectionA.entries, hex);
-    general->AddItem({ "Section A Entries", ls.Format("%-20s (%s)", sectionAEntries.data(), sectionAEntriesHex.data()) });
-
-    const auto sectionBOffset    = nf.ToString(fileInformation.sectionB.offset, dec);
-    const auto sectionBOffsetHex = nf2.ToString(fileInformation.sectionB.offset, hex);
-    general->AddItem({ "Section B Offset", ls.Format("%-20s (%s)", sectionBOffset.data(), sectionBOffsetHex.data()) });
-
-    const auto sectionBEntries    = nf.ToString(fileInformation.sectionB.entries, dec);
-    const auto sectionBEntriesHex = nf2.ToString(fileInformation.sectionB.entries, hex);
-    general->AddItem({ "Section B Entries", ls.Format("%-20s (%s)", sectionBEntries.data(), sectionBEntriesHex.data()) });
-
-    const auto sectionCOffset    = nf.ToString(fileInformation.sectionC.offset, dec);
-    const auto sectionCOffsetHex = nf2.ToString(fileInformation.sectionC.offset, hex);
-    general->AddItem({ "Section C Offset", ls.Format("%-20s (%s)", sectionCOffset.data(), sectionCOffsetHex.data()) });
-
-    const auto sectionCLength    = nf.ToString(fileInformation.sectionC.length, dec);
-    const auto sectionCLengthHex = nf2.ToString(fileInformation.sectionC.length, hex);
-    general->AddItem({ "Section C Length", ls.Format("%-20s (%s)", sectionCLength.data(), sectionCLengthHex.data()) });
-
-    const auto sectionDOffset    = nf.ToString(fileInformation.sectionD.offset, dec);
-    const auto sectionDOffsetHex = nf2.ToString(fileInformation.sectionD.offset, hex);
-    general->AddItem({ "Section D Offset", ls.Format("%-20s (%s)", sectionDOffset.data(), sectionDOffsetHex.data()) });
-
-    const auto sectionDEntries    = nf.ToString(fileInformation.sectionD.entries, dec);
-    const auto sectionDEntriesHex = nf2.ToString(fileInformation.sectionD.entries, hex);
-    general->AddItem({ "Section D Entries", ls.Format("%-20s (%s)", sectionDEntries.data(), sectionDEntriesHex.data()) });
-
-    const auto sectionDSize    = nf.ToString(fileInformation.sectionD.size, dec);
-    const auto sectionDSizeHex = nf2.ToString(fileInformation.sectionD.size, hex);
-    general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
-
-    const auto unknown0    = nf.ToString(fileInformation.unknown[0], dec);
-    const auto unknown0Hex = nf2.ToString(fileInformation.unknown[0], hex);
-    general->AddItem({ "Unknown Part 1", ls.Format("%-20s (%s)", unknown0.data(), unknown0Hex.data()) });
+    const auto unknown    = nf.ToString(fileInformation.unknown0, dec);
+    const auto unknownHex = nf2.ToString(fileInformation.unknown0, hex);
+    general->AddItem({ "Unknown", ls.Format("%-20s (%s)", unknown.data(), unknownHex.data()) });
 
     DateTime dt;
     dt.CreateFromFileTime(fileInformation.latestExecutionTime);
@@ -379,13 +324,81 @@ void Information::UpdateFileInformation_26()
         }
     }
 
-    const auto unknownPart1    = nf.ToString(fileInformation.unknown[0], dec);
-    const auto unknownPart1Hex = nf2.ToString(fileInformation.unknown[0], hex);
-    general->AddItem({ "Unknown Part 1", ls.Format("%-20s (%s)", unknownPart1.data(), unknownPart1Hex.data()) });
+    const auto unknown1    = nf.ToString(fileInformation.unknown1, dec);
+    const auto unknown1Hex = nf2.ToString(fileInformation.unknown1, hex);
+    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknown1.data(), unknown1Hex.data()) });
 
-    const auto unknownPart2    = nf.ToString(fileInformation.unknown[1], dec);
-    const auto unknownPart2Hex = nf2.ToString(fileInformation.unknown[1], hex);
-    general->AddItem({ "Unknown Part 2", ls.Format("%-20s (%s)", unknownPart2.data(), unknownPart2Hex.data()) });
+    const auto unknown2    = nf.ToString(fileInformation.unknown2, dec);
+    const auto unknown2Hex = nf2.ToString(fileInformation.unknown2, hex);
+    general->AddItem({ "Unknown 2", ls.Format("%-20s (%s)", unknown2.data(), unknown2Hex.data()) });
+
+    const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
+    const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
+    general->AddItem({ "Execution Count", ls.Format("%-20s (%s)", executionCount.data(), executionCountHex.data()) });
+
+    const auto unknown3    = nf.ToString(fileInformation.unknown3, dec);
+    const auto unknown3Hex = nf2.ToString(fileInformation.unknown3, hex);
+    general->AddItem({ "Unknown 3", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
+
+    const auto unknown4    = nf.ToString(fileInformation.unknown4, dec);
+    const auto unknown4Hex = nf2.ToString(fileInformation.unknown4, hex);
+    general->AddItem({ "Unknown 4", ls.Format("%-20s (%s)", unknown4.data(), unknown4Hex.data()) });
+
+    ls.Format("");
+    for (uint32 i = 0; i < sizeof(fileInformation.unknown5) / sizeof(fileInformation.unknown5[0]); i++)
+    {
+        ls.AddFormat("%02X", fileInformation.unknown5[i]);
+    }
+    general->AddItem({ "Unknown 5 (80 bytes)", ls.GetText() });
+}
+
+void Information::UpdateFileInformation_30v1()
+{
+    UpdateFileInformation_26();
+}
+
+void Information::UpdateFileInformation_30v2()
+{
+    LocalString<1024> ls;
+    LocalString<1024> ls2;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    auto& fileInformation = std::get<FileInformation_30v2>(prefetch->fileInformation);
+
+    const auto unknown    = nf.ToString(fileInformation.unknown0, dec);
+    const auto unknownHex = nf2.ToString(fileInformation.unknown0, hex);
+    general->AddItem({ "Unknown", ls.Format("%-20s (%s)", unknown.data(), unknownHex.data()) });
+
+    DateTime dt;
+    dt.CreateFromFileTime(fileInformation.latestExecutionTime);
+    const auto latestExecutionTimeHex = nf2.ToString(fileInformation.latestExecutionTime, hex);
+    general
+          ->AddItem(
+                { "Latest Execution Time", ls.Format("%-20s (%s)", dt.GetStringRepresentation().data(), latestExecutionTimeHex.data()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+
+    for (uint32 i = 0; i < sizeof(fileInformation.olderExecutionTime) / sizeof(fileInformation.olderExecutionTime[0]); i++)
+    {
+        const auto olderExecutionTimeHex = nf2.ToString(fileInformation.olderExecutionTime[i], hex);
+        if (dt.CreateFromFileTime(fileInformation.olderExecutionTime[i]))
+        {
+            general
+                  ->AddItem({ ls.Format("#%u Older Execution Time", i),
+                              ls2.Format("%-20s (%s)", dt.GetStringRepresentation().data(), olderExecutionTimeHex.data()) })
+                  .SetType(ListViewItem::Type::Emphasized_1);
+        }
+        else
+        {
+            general
+                  ->AddItem({ ls.Format("#%u Older Execution Time", i), ls2.Format("%-20s (%s)", "Invalid", olderExecutionTimeHex.data()) })
+                  .SetType(ListViewItem::Type::WarningInformation);
+        }
+    }
+
+    const auto unknown1    = nf.ToString(fileInformation.unknown1, dec);
+    const auto unknown1Hex = nf2.ToString(fileInformation.unknown1, hex);
+    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknown1.data(), unknown1Hex.data()) });
 
     const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
     const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
@@ -397,110 +410,7 @@ void Information::UpdateFileInformation_26()
 
     const auto unknown3    = nf.ToString(fileInformation.unknown3, dec);
     const auto unknown3Hex = nf2.ToString(fileInformation.unknown3, hex);
-    general->AddItem({ "Unknown 2", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
-
-    general->AddItem({ "Unknown array (80 bytes)" });
-}
-
-void Information::UpdateFileInformation_30()
-{
-    LocalString<1024> ls;
-    LocalString<1024> ls2;
-    NumericFormatter nf;
-    NumericFormatter nf2;
-
-    auto& fileInformation = std::get<FileInformation_30>(prefetch->fileInformation);
-
-    general->AddItem("File Information").SetType(ListViewItem::Type::Category);
-    const auto sectionAOffset    = nf.ToString(fileInformation.sectionA.offset, dec);
-    const auto sectionAOffsetHex = nf2.ToString(fileInformation.sectionA.offset, hex);
-    general->AddItem({ "Section A Offset", ls.Format("%-20s (%s)", sectionAOffset.data(), sectionAOffsetHex.data()) });
-
-    const auto sectionAEntries    = nf.ToString(fileInformation.sectionA.entries, dec);
-    const auto sectionAEntriesHex = nf2.ToString(fileInformation.sectionA.entries, hex);
-    general->AddItem({ "Section A Entries", ls.Format("%-20s (%s)", sectionAEntries.data(), sectionAEntriesHex.data()) });
-
-    const auto sectionBOffset    = nf.ToString(fileInformation.sectionB.offset, dec);
-    const auto sectionBOffsetHex = nf2.ToString(fileInformation.sectionB.offset, hex);
-    general->AddItem({ "Section B Offset", ls.Format("%-20s (%s)", sectionBOffset.data(), sectionBOffsetHex.data()) });
-
-    const auto sectionBEntries    = nf.ToString(fileInformation.sectionB.entries, dec);
-    const auto sectionBEntriesHex = nf2.ToString(fileInformation.sectionB.entries, hex);
-    general->AddItem({ "Section B Entries", ls.Format("%-20s (%s)", sectionBEntries.data(), sectionBEntriesHex.data()) });
-
-    const auto sectionCOffset    = nf.ToString(fileInformation.sectionC.offset, dec);
-    const auto sectionCOffsetHex = nf2.ToString(fileInformation.sectionC.offset, hex);
-    general->AddItem({ "Section C Offset", ls.Format("%-20s (%s)", sectionCOffset.data(), sectionCOffsetHex.data()) });
-
-    const auto sectionCLength    = nf.ToString(fileInformation.sectionC.length, dec);
-    const auto sectionCLengthHex = nf2.ToString(fileInformation.sectionC.length, hex);
-    general->AddItem({ "Section C Length", ls.Format("%-20s (%s)", sectionCLength.data(), sectionCLengthHex.data()) });
-
-    const auto sectionDOffset    = nf.ToString(fileInformation.sectionD.offset, dec);
-    const auto sectionDOffsetHex = nf2.ToString(fileInformation.sectionD.offset, hex);
-    general->AddItem({ "Section D Offset", ls.Format("%-20s (%s)", sectionDOffset.data(), sectionDOffsetHex.data()) });
-
-    const auto sectionDEntries    = nf.ToString(fileInformation.sectionD.entries, dec);
-    const auto sectionDEntriesHex = nf2.ToString(fileInformation.sectionD.entries, hex);
-    general->AddItem({ "Section D Entries", ls.Format("%-20s (%s)", sectionDEntries.data(), sectionDEntriesHex.data()) });
-
-    const auto sectionDSize    = nf.ToString(fileInformation.sectionD.size, dec);
-    const auto sectionDSizeHex = nf2.ToString(fileInformation.sectionD.size, hex);
-    general->AddItem({ "Section D Size", ls.Format("%-20s (%s)", sectionDSize.data(), sectionDSizeHex.data()) });
-
-    const auto unknown    = nf.ToString(fileInformation.unknown, dec);
-    const auto unknownHex = nf2.ToString(fileInformation.unknown, hex);
-    general->AddItem({ "Unknown", ls.Format("%-20s (%s)", unknown.data(), unknownHex.data()) });
-
-    const auto unknown0    = nf.ToString(fileInformation.unknown0, dec);
-    const auto unknown0Hex = nf2.ToString(fileInformation.unknown0, hex);
-    general->AddItem({ "Unknown 0", ls.Format("%-20s (%s)", unknown0.data(), unknown0Hex.data()) });
-
-    DateTime dt;
-    dt.CreateFromFileTime(fileInformation.latestExecutionTime);
-    const auto latestExecutionTimeHex = nf2.ToString(fileInformation.latestExecutionTime, hex);
-    general
-          ->AddItem(
-                { "Latest Execution Time", ls.Format("%-20s (%s)", dt.GetStringRepresentation().data(), latestExecutionTimeHex.data()) })
-          .SetType(ListViewItem::Type::Emphasized_1);
-
-    for (uint32 i = 0; i < sizeof(fileInformation.olderExecutionTime) / sizeof(fileInformation.olderExecutionTime[0]); i++)
-    {
-        const auto olderExecutionTimeHex = nf2.ToString(fileInformation.olderExecutionTime[i], hex);
-        if (dt.CreateFromFileTime(fileInformation.olderExecutionTime[i]))
-        {
-            general
-                  ->AddItem({ ls.Format("#%u Older Execution Time", i),
-                              ls2.Format("%-20s (%s)", dt.GetStringRepresentation().data(), olderExecutionTimeHex.data()) })
-                  .SetType(ListViewItem::Type::Emphasized_1);
-        }
-        else
-        {
-            general
-                  ->AddItem({ ls.Format("#%u Older Execution Time", i), ls2.Format("%-20s (%s)", "Invalid", olderExecutionTimeHex.data()) })
-                  .SetType(ListViewItem::Type::WarningInformation);
-        }
-    }
-
-    const auto unknown11    = nf.ToString(fileInformation.unknown11, dec);
-    const auto unknown11Hex = nf2.ToString(fileInformation.unknown11, hex);
-    general->AddItem({ "Unknown 11", ls.Format("%-20s (%s)", unknown11.data(), unknown11Hex.data()) });
-
-    const auto unknown22    = nf.ToString(fileInformation.unknown22, dec);
-    const auto unknown22Hex = nf2.ToString(fileInformation.unknown22, hex);
-    general->AddItem({ "Unknown 22", ls.Format("%-20s (%s)", unknown22.data(), unknown22Hex.data()) });
-
-    const auto executionCount    = nf.ToString(fileInformation.executionCount, dec);
-    const auto executionCountHex = nf2.ToString(fileInformation.executionCount, hex);
-    general->AddItem({ "Execution Count", ls.Format("%-20s (%s)", executionCount.data(), executionCountHex.data()) });
-
-    const auto unknown1    = nf.ToString(fileInformation.unknown1, dec);
-    const auto unknown1Hex = nf2.ToString(fileInformation.unknown1, hex);
-    general->AddItem({ "Unknown 1", ls.Format("%-20s (%s)", unknown1.data(), unknown1Hex.data()) });
-
-    const auto executionCount2    = nf.ToString(fileInformation.executionCount2, dec);
-    const auto executionCount2Hex = nf2.ToString(fileInformation.executionCount2, hex);
-    general->AddItem({ "Execution Count 2", ls.Format("%-20s (%s)", executionCount2.data(), executionCount2Hex.data()) });
+    general->AddItem({ "Unknown 3", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
 
     const auto executablePathOffset    = nf.ToString(fileInformation.executablePathOffset, dec);
     const auto executablePathOffsetHex = nf2.ToString(fileInformation.executablePathOffset, hex);
@@ -510,32 +420,18 @@ void Information::UpdateFileInformation_30()
     const auto executablePathSizeHex = nf2.ToString(fileInformation.executablePathSize, hex);
     general->AddItem({ "Executable Path Size", ls.Format("%-20s (%s)", executablePathSize.data(), executablePathSizeHex.data()) });
 
-    const auto unknown3    = nf.ToString(fileInformation.unknown3, dec);
-    const auto unknown3Hex = nf2.ToString(fileInformation.unknown3, hex);
-    general->AddItem({ "Unknown 3", ls.Format("%-20s (%s)", unknown3.data(), unknown3Hex.data()) });
-
-    const auto unknown4    = nf.ToString(fileInformation.unknown4, dec);
-    const auto unknown4Hex = nf2.ToString(fileInformation.unknown4, hex);
-    general->AddItem({ "Unknown 4", ls.Format("%-20s (%s)", unknown4.data(), unknown4Hex.data()) });
-
-    general->AddItem({ "Unknown array (72 bytes)" });
-
-    // win10 file information v30 validation (execution count)
-    const auto endFileInformationOffset = sizeof(prefetch->header) + sizeof(fileInformation);
-    const auto startSectionAOffset      = fileInformation.sectionA.offset;
-    if (startSectionAOffset > endFileInformationOffset + 1)
+    ls.Format("");
+    for (uint32 i = 0; i < sizeof(fileInformation.unknown4) / sizeof(fileInformation.unknown4[0]); i++)
     {
-        issues->AddItem({ "Execution count is probably bad. Use execution count 2!" }).SetType(ListViewItem::Type::WarningInformation);
+        ls.AddFormat("%02X", fileInformation.unknown4[i]);
     }
-
-    if (prefetch->hasExePathSeparated == false)
-    {
-        issues->AddItem({ "Fields: Executable Path & Offset are invalid!" }).SetType(ListViewItem::Type::WarningInformation);
-    }
+    general->AddItem({ "Unknown 4 (76 bytes)", ls.GetText() });
 }
 
 void Information::UpdateFileInformation()
 {
+    UpdateSectionArea();
+
     switch (prefetch->header.version)
     {
     case Magic::WIN_XP_2003:
@@ -548,7 +444,14 @@ void Information::UpdateFileInformation()
         UpdateFileInformation_26();
         break;
     case Magic::WIN_10:
-        UpdateFileInformation_30();
+        if (prefetch->win10Version == Prefetch::Win10Version::V1)
+        {
+            UpdateFileInformation_30v1();
+        }
+        else if (prefetch->win10Version == Prefetch::Win10Version::V2)
+        {
+            UpdateFileInformation_30v2();
+        }
         break;
     default:
         break;
