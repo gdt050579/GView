@@ -3,6 +3,12 @@
 // https://github.com/libyal/libfwnt/blob/main/documentation/Compression%20methods.asciidoc
 // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/a8b7cb0a-92a6-4187-a23b-5e14273b96f8
 
+#ifdef BUILD_FOR_WINDOWS
+#    include <Windows.h>
+#    include <VersionHelpers.h>
+#    undef GetObject
+#endif
+
 namespace GView::Compression::LZXPRESS::Huffman
 {
 constexpr uint32 MAX_BITS_COUNT     = 32U;
@@ -353,19 +359,83 @@ bool Update(Stream& stream, Buffer& uncompressed, size_t& uncompressedDataOffset
     return true;
 }
 
-bool Decompress(const BufferView& compressed, Buffer& uncompressed)
+bool Decompress_FallBack(const BufferView& compressed, Buffer& decompressed)
 {
     Stream stream{};
     CHECK(stream.Initialize(compressed.GetData(), compressed.GetLength()), false, "");
 
     size_t offset = 0;
-    while (stream.GetOffset() < stream.GetSize() && offset < uncompressed.GetLength())
+    while (stream.GetOffset() < stream.GetSize() && offset < decompressed.GetLength())
     {
         stream.ResetBits();
-        CHECK(Update(stream, uncompressed, offset), false, "");
+        CHECK(Update(stream, decompressed, offset), false, "");
     }
-    CHECK(uncompressed.GetLength() == offset, false, "");
+    CHECK(decompressed.GetLength() == offset, false, "");
 
     return true;
+}
+
+bool Decompress(const BufferView& compressed, Buffer& decompressed)
+{
+#if defined(BUILD_FOR_WINDOWS)
+    enum class CompressionStatus : uint32
+    {
+        Success                = 0x00000000,
+        InvalidParameter       = 0xC000000D,
+        UnsupportedCompression = 0xC000025F,
+        BadCompressionBuffer   = 0xC0000242
+    };
+
+    if (IsWindows8OrGreater() == false)
+    {
+        LOG_ERROR("Cannot perform decompression on systems older than Windows 8.");
+        return Decompress_FallBack(compressed, decompressed);
+    }
+
+    const auto moduleHandle = GetModuleHandleA("ntdll.dll");
+    CHECK(moduleHandle != NULL, false, "Error code: %X", GetLastError());
+
+    const auto rtlDecompressBufferEx =
+          (DWORD(WINAPI*)(USHORT, PUCHAR, ULONG, PUCHAR, ULONG, PULONG, PVOID))(GetProcAddress(moduleHandle, "RtlDecompressBufferEx"));
+    CHECK(rtlDecompressBufferEx != nullptr, false, "");
+
+    const auto rtlGetCompressionWorkSpaceSize =
+          (DWORD(WINAPI*)(USHORT, PULONG, PULONG))(GetProcAddress(moduleHandle, "RtlGetCompressionWorkSpaceSize"));
+    CHECK(rtlGetCompressionWorkSpaceSize != nullptr, false, "");
+
+    CHECK(compressed.IsValid(), false, "");
+    CHECK(decompressed.GetLength() > 8, false, "");
+
+    ULONG workspaceSize, unkSize;
+    auto err = rtlGetCompressionWorkSpaceSize(
+          COMPRESSION_FORMAT_XPRESS_HUFF | COMPRESSION_ENGINE_STANDARD,
+          &workspaceSize,
+          &unkSize // Cannot be nullptr, or else we get an access violation error
+    );
+    CHECK(err == 0, false, "Error code: 0x%08X", err);
+
+    std::unique_ptr<BYTE[]> workspaceBuffer(new BYTE[workspaceSize]);
+    CHECK(workspaceBuffer, false, "");
+
+    ULONG finalUncompressedSize;
+
+    err = rtlDecompressBufferEx(
+          COMPRESSION_FORMAT_XPRESS_HUFF,
+          (BYTE*) decompressed.GetData(),
+          (ULONG) decompressed.GetLength(),
+          (BYTE*) compressed.GetData(),
+          (ULONG) compressed.GetLength(),
+          &finalUncompressedSize,
+          (void*) workspaceBuffer.get());
+
+    CHECK(err == (uint32) CompressionStatus::Success, false, "Error code: 0x%08X", err);
+    CHECK(finalUncompressedSize == decompressed.GetLength(), false, "");
+
+    return true;
+
+#elif defined(BUILD_FOR_OSX) || defined(BUILD_FOR_UNIX)
+    return Decompress_FallBack(compressed, decompressed);
+#endif
+    return false;
 }
 } // namespace GView::Compression::LZXPRESS::Huffman
