@@ -9,21 +9,16 @@ namespace View
     namespace TextViewer
     {
         using namespace AppCUI;
+        using namespace GView::Utils;
 
         constexpr uint32 MAX_CHARACTERS_PER_LINE = 1024;
         constexpr uint32 MAX_LINES_TO_VIEW       = 256;
-        enum class Encoding
-        {
-            Ascii,
-            UTF8,
-            Unicode16LE,
-            Unicode16BE
-        };
+
         struct SettingsData
         {
             uint32 tabSize;
+            CharacterEncoding::Encoding encoding;
             bool wordWrap;
-            Encoding encoding;
             SettingsData();
         };
 
@@ -43,6 +38,12 @@ namespace View
             uint64 offset;
             uint32 charsCount;
             uint32 size;
+            LineInfo()
+            {
+            }
+            LineInfo(uint64 _offset, uint32 _charsCount, uint32 _size) : offset(_offset), charsCount(_charsCount), size(_size)
+            {
+            }
         };
         class Instance : public View::ViewControl
         {
@@ -53,6 +54,8 @@ namespace View
             FixSizeString<29> name;
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
+            uint32 sizeOfBOM;
+
 
             struct
             {
@@ -71,9 +74,10 @@ namespace View
 
             static Config config;
             
+            
             void RecomputeLineIndexes();
 
-            bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
+            bool GetLineInfo(uint32 lineNo, LineInfo& li);
             bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64 &startOffset);
             void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
             void MoveTo(uint32 lineNo, uint32 charIndex);

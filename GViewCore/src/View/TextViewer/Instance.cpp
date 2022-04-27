@@ -17,6 +17,7 @@ class CharacterStream
     uint32 xPos, nextPos;
     uint32 charRelativeOffset, nextCharRelativeOffset;
     Reference<SettingsData> settings;
+    CharacterEncoding::ExpandedCharacter ec;
 
   public:
     CharacterStream(BufferView buf, Reference<SettingsData> _settings)
@@ -33,31 +34,24 @@ class CharacterStream
     bool Next()
     {
         if (this->pos >= this->end)
-            return false;
-        switch (this->settings->encoding)
+            return false; // stop getting the next character
+        if (this->ec.FromEncoding(this->settings->encoding, this->pos, this->end))
         {
-        case Encoding::Ascii:
-            this->ch = *this->pos;
-            this->pos++;
-            break;
-        default:
-            return false;
-        }
-        this->xPos               = this->nextPos;
-        this->charRelativeOffset = this->nextCharRelativeOffset++;
-        if (this->ch == '\t')
-        {
-            this->ch      = ' '; // tab will be showd as a space
-            this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+            this->ch = this->ec.GetChar();
+            this->pos += this->ec.Length();
+            this->xPos               = this->nextPos;
+            this->charRelativeOffset = this->nextCharRelativeOffset++;
+            if (this->ch == '\t')
+            {
+                this->ch      = ' '; // tab will be showd as a space
+                this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+            }
+            else
+                this->nextPos++;
         }
         else
-            this->nextPos++;
-        if ((this->ch == '\n') || (this->ch == '\r'))
         {
-            this->pos = this->end; // advance to end of line
-            return false;
         }
-
         return true;
     }
     inline uint32 GetXOffset() const
@@ -112,17 +106,17 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->Cursor.lineNo    = 0;
     this->Cursor.charIndex = 0;
     this->subLineIndex.Create(256); // alocate 256 entries
+
+    this->settings->encoding = CharacterEncoding::AnalyzeBufferForEncoding(this->obj->GetData().Get(0, 4096, false), true, this->sizeOfBOM);
     this->UpdateViewBounderies();
 }
-
-
 
 void Instance::RecomputeLineIndexes()
 {
     // first --> simple estimation
     auto buf        = this->obj->GetData().Get(0, 4096, false);
     auto sz         = this->obj->GetData().GetSize();
-    auto csz        = this->obj->GetData().GetCacheSize();
+    auto csz        = this->obj->GetData().GetCacheSize() & 0xFFFFFFF0; // make sure that csz is odd
     auto crlf_count = (uint64) 1;
 
     for (auto ch : buf)
@@ -134,40 +128,90 @@ void Instance::RecomputeLineIndexes()
     this->lines.clear();
     this->lines.reserve(estimated_count);
 
-    uint64 offset = 0;
-    uint64 start  = 0;
-    uint8 last    = 0;
+    uint64 offset    = this->sizeOfBOM;
+    uint64 start     = this->sizeOfBOM;
+    uint32 charCount = 0;
+    char16 lastChar  = 0;
+
+    CharacterEncoding::ExpandedCharacter ch;
+
     while (offset < sz)
     {
         buf = this->obj->GetData().Get(offset, csz, false);
         if (buf.Empty())
             return;
         // process the buffer
-        auto* p = buf.begin();
-        for (; p < buf.end(); p++)
+        auto* p       = buf.begin();
+        auto* e       = buf.end();
+        auto* loopEnd = buf.end();
+        if (((offset + buf.GetLength()) < sz) && (buf.GetLength() > 16))
         {
-            if (((*p) == '\n') || ((*p) == '\r'))
+            // if this is a partial part of the file and it has more then 16 bytes, deduct 8 bytes to make sure that any possible conversion will be made
+            loopEnd -= 8;
+        }
+        while (p < loopEnd)
+        {
+            if (ch.FromEncoding(this->settings->encoding, p, e))
             {
-                if (((last == '\n') || (last == '\r')) && (last != (*p)))
+                p += ch.Length();
+                auto chr = ch.GetChar();
+                if (((chr == '\n') && (lastChar != '\r')) || ((chr == '\r') && (lastChar != '\n')))
                 {
-                    // either \n\r or \r\n
-                    start++; // skip current character
-                    last = 0;
+                    // end of the current line
+                    lines.emplace_back(start, charCount, (uint32) (offset - start));
+                    offset += ch.Length();
+                    start     = offset;
+                    charCount = 0;
+                    lastChar  = chr;
                     continue;
                 }
-                this->lineIndex.Push((uint32) start);
-                start = offset + (p - buf.begin()) + 1; // next pos
-                last  = *p;
+
+                // combined CRLF or LFCR
+                if (((chr == '\n') && (lastChar == '\r')) || ((chr == '\r') && (lastChar == '\n')))
+                {
+                    // just advanced one extra char (no new line found)
+                    offset += ch.Length();
+                    start     = offset;
+                    charCount = 0;
+                    lastChar  = 0; // important as the CRLF or LFCR has ended
+                    continue;
+                }
+
+                // other character
+                lastChar = 0; // don't care
+                charCount++;
+                offset += ch.Length();
+                if (charCount > 2000)
+                {
+                    // limit line to 2000 characters
+                    lines.emplace_back(start, charCount, (uint32) (offset - start));
+                    start     = offset;
+                    charCount = 0;
+                }
             }
             else
             {
-                last = 0;
+                // need to treat conversion error
+                // consider one character (binary format)
+                charCount++;
+                offset++;
+                p++;
+                if (charCount > 2000)
+                {
+                    // limit line to 2000 characters
+                    lines.emplace_back(start, charCount, (uint32) (offset - start));
+                    start     = offset;
+                    charCount = 0;
+                }
             }
         }
-        offset += buf.GetLength();
+        if (charCount > 0)
+        {
+            // last line
+            lines.emplace_back(start, charCount, (uint32) (offset - start));
+        }
     }
-    if (start < sz)
-        this->lineIndex.Push((uint32) start);
+
     auto linesCount = this->lines.size() + 1;
     if (linesCount < 10)
         this->lineNumberWidth = 2;
@@ -184,39 +228,29 @@ void Instance::RecomputeLineIndexes()
     else
         this->lineNumberWidth = 8;
 }
-bool Instance::GetLineInfo(uint32 lineNo, uint64& offset, uint32& size)
+bool Instance::GetLineInfo(uint32 lineNo, LineInfo& li)
 {
-    uint32 ofs, next;
-    if (this->lineIndex.Get(lineNo, ofs) == false)
+    if (lineNo >= this->lines.size())
         return false;
-    offset = ofs;
-    if (lineNo + 1 == this->lineIndex.Len())
-    {
-        size = (uint32) (this->obj->GetData().GetSize() - offset);
-    }
-    else
-    {
-        if (this->lineIndex.Get(lineNo + 1, next) == false)
-            return false;
-        size = next - ofs;
-    }
+    li = this->lines[lineNo];
     return true;
 }
 bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset)
 {
-    uint32 size;
+    LineInfo li;
     uint32 w    = this->GetWidth();
     startOffset = 0;
 
     this->subLineIndex.Clear();
-    CHECK(GetLineInfo(lineNo, startOffset, size), false, "");
+    CHECK(GetLineInfo(lineNo, li), false, "");
+    startOffset = li.offset;
     CHECK(this->subLineIndex.Push(0), false, "");
 
     if ((this->lineNumberWidth + 1) >= w)
         w = 1;
     else
         w -= (this->lineNumberWidth + 1);
-    buf = this->obj->GetData().Get(startOffset, size, false);
+    buf = this->obj->GetData().Get(li.offset, li.size, false);
     CharacterStream cs(buf, this->settings.ToReference());
     // process
     if (this->settings->wordWrap)

@@ -1,6 +1,6 @@
 #include "Internal.hpp"
 
-namespace GView::Utils::StringEncoding
+namespace GView::Utils::CharacterEncoding
 {
 bool ExpandedCharacter::FromUTF8Buffer(const uint8* p, const uint8* end)
 {
@@ -81,7 +81,7 @@ Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOML
             if ((buf[idx] == 0) && (IsTextCharacter(buf[idx + 1])))
                 countU16BE++;
         }
-        szUTF16 >= 2; // half the number of characters
+        szUTF16 >>= 2; // half the number of characters
         if (szUTF16 > 4)
         {
             // at least 4 unicode characters

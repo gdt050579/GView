@@ -93,7 +93,7 @@ namespace Utils
         const Zone* OffsetToZone(uint64 offset);
     };
 
-    namespace StringEncoding
+    namespace CharacterEncoding
     {
         enum class Encoding : uint8
         {
