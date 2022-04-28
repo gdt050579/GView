@@ -8,6 +8,8 @@ class LNKFile : public TypeInterface
 {
   public:
     Header header;
+    LinkTargetIDList linkTargetIDList;
+    Buffer linkTargetIDListBuffer;
 
     LNKFile();
     virtual ~LNKFile()

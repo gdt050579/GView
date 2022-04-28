@@ -441,4 +441,29 @@ struct Header
 
 static_assert(sizeof(Header) == 76);
 
+struct ShellItem
+{
+    uint16 size;
+    uint8 type;
+    uint8 data[0];
+};
+
+struct ItemID
+{
+    uint16 ItemIDSize;
+    uint8 data[0];
+};
+
+struct IDList
+{
+    // ItemID ItemIDList;
+    uint16 TerminalID;
+};
+
+struct LinkTargetIDList
+{
+    uint16 IDListSize;
+    // uint8 IDList[0];
+};
+
 } // namespace GView::Type::LNK

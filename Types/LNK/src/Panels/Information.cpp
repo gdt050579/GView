@@ -140,6 +140,15 @@ void Information::UpdateGeneralInformation()
     const auto unknown2    = nf.ToString(lnk->header.unknown2, dec);
     const auto unknown2Hex = nf2.ToString(lnk->header.unknown2, hex);
     general->AddItem({ "Unknown2", ls.Format("%-20s (%s)", unknown2.data(), unknown2Hex.data()) });
+
+    if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
+    {
+        general->AddItem("LinkTargetIDList").SetType(ListViewItem::Type::Category);
+
+        const auto idListSize    = nf.ToString(lnk->linkTargetIDList.IDListSize, dec);
+        const auto idListSizeHex = nf2.ToString(lnk->linkTargetIDList.IDListSize, hex);
+        general->AddItem({ "ID List Size", ls.Format("%-20s (%s)", idListSize.data(), idListSizeHex.data()) });
+    }
 }
 
 void Information::UpdateIssues()

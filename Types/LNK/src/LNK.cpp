@@ -33,6 +33,15 @@ extern "C"
 
         settings.AddZone(0, sizeof(LNK::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
 
+        if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
+        {
+            settings.AddZone(
+                  sizeof(LNK::Header),
+                  sizeof(lnk->linkTargetIDList.IDListSize) + lnk->linkTargetIDList.IDListSize,
+                  ColorPair{ Color::DarkGreen, Color::DarkBlue },
+                  "LinkTargetIDList");
+        }
+
         win->CreateViewer("BufferView", settings);
     }
 
