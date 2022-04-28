@@ -76,7 +76,7 @@ bool Instance::LoadSettings()
 {
     auto ini = AppCUI::Application::GetAppSettings();
     CHECK(ini, false, "");
-
+    CHECK(ini->GetSectionsCount() > 0, false, "");
     // check plugins
     for (auto section : *ini)
     {
