@@ -7,7 +7,7 @@ SettingsData::SettingsData()
 {
     this->tabSize  = 4;
     this->wordWrap = true;
-    this->encoding = TextViewer::Encoding::Ascii;
+    this->encoding = CharacterEncoding::Encoding::Binary;
 }
 Settings::Settings()
 {

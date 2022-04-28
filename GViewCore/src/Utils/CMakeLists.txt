@@ -4,6 +4,7 @@ target_sources(GViewCore PRIVATE
     ErrorList.cpp
     DataCache.cpp
     Selection.cpp
+    CharacterEncoding.cpp
     Zone.cpp
     ZonesList.cpp)
 

@@ -9,55 +9,84 @@ namespace View
     namespace TextViewer
     {
         using namespace AppCUI;
+        using namespace GView::Utils;
 
         constexpr uint32 MAX_CHARACTERS_PER_LINE = 1024;
-        enum class Encoding
-        {
-            Ascii,
-            UTF8,
-            Unicode16LE,
-            Unicode16BE
-        };
+        constexpr uint32 MAX_LINES_TO_VIEW       = 256;
+
         struct SettingsData
         {
             uint32 tabSize;
-            bool wordWrap;    
-            Encoding encoding;
+            CharacterEncoding::Encoding encoding;
+            bool wordWrap;
             SettingsData();
         };
 
         struct Config
         {
-            
             struct
             {
-                AppCUI::Input::Key ZoomIn;
-                AppCUI::Input::Key ZoomOut;
+                AppCUI::Input::Key WordWrap;
             } Keys;
             bool Loaded;
 
             static void Update(IniSection sect);
             void Initialize();
         };
-
-
+        struct LineInfo
+        {
+            uint64 offset;
+            uint32 charsCount;
+            uint32 size;
+            LineInfo()
+            {
+            }
+            LineInfo(uint64 _offset, uint32 _charsCount, uint32 _size) : offset(_offset), charsCount(_charsCount), size(_size)
+            {
+            }
+        };
         class Instance : public View::ViewControl
         {
-            Array32 lineIndex;
+            std::vector<LineInfo> lines;
             Array32 subLineIndex;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
+            uint32 sizeOfBOM;
+
+
+            struct
+            {
+                uint64 pos;
+                uint32 lineNo;
+                uint32 charIndex;
+            } Cursor;
+            struct
+            {
+                uint64 pos;
+                uint32 bufferSize;
+                uint32 lineNo;
+                uint32 xStart;
+            } ViewData[MAX_LINES_TO_VIEW];
+            uint32 ViewDataCount;
 
             static Config config;
-
+            
+            
             void RecomputeLineIndexes();
 
-            bool GetLineInfo(uint32 lineNo, uint64& offset, uint32& size);
-            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf);
-            int DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer);
+            bool GetLineInfo(uint32 lineNo, LineInfo& li);
+            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64 &startOffset);
+            void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
+            void MoveTo(uint32 lineNo, uint32 charIndex);
+
+            void MoveLeft();
+            void MoveRight();
+
+            void UpdateViewBounderies();
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -73,7 +102,6 @@ namespace View
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
-
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;
             bool SetPropertyValue(uint32 id, const PropertyValue& value, String& error) override;
@@ -82,7 +110,7 @@ namespace View
             const vector<Property> GetPropertiesList() override;
         };
 
-    } // namespace ImageViewer
+    } // namespace TextViewer
 } // namespace View
 
 }; // namespace GView

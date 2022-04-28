@@ -1,28 +1,29 @@
 #include "TextViewer.hpp"
+#include <algorithm>
 
 using namespace GView::View::TextViewer;
 using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_ZOOMIN     = 0xBF00;
-constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
-constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
-constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
+constexpr int32 CMD_ID_WORD_WRAP = 0xBF00;
 
 class CharacterStream
 {
     char16 ch;
+    const uint8* start;
     const uint8* pos;
     const uint8* end;
     uint32 xPos, nextPos;
     uint32 charRelativeOffset, nextCharRelativeOffset;
     Reference<SettingsData> settings;
+    CharacterEncoding::ExpandedCharacter ec;
 
   public:
     CharacterStream(BufferView buf, Reference<SettingsData> _settings)
     {
         this->pos                    = buf.begin();
+        this->start                  = this->pos;
         this->end                    = buf.end();
         this->xPos                   = 0;
         this->nextPos                = 0;
@@ -33,25 +34,24 @@ class CharacterStream
     bool Next()
     {
         if (this->pos >= this->end)
-            return false;
-        switch (this->settings->encoding)
+            return false; // stop getting the next character
+        if (this->ec.FromEncoding(this->settings->encoding, this->pos, this->end))
         {
-        case Encoding::Ascii:
-            this->ch = *this->pos;
-            this->pos++;
-            break;
-        default:
-            return false;
-        }
-        this->xPos               = this->nextPos;
-        this->charRelativeOffset = this->nextCharRelativeOffset++;
-        if (this->ch == '\t')
-        {
-            this->ch      = ' '; // tab will be showd as a space
-            this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+            this->ch = this->ec.GetChar();
+            this->pos += this->ec.Length();
+            this->xPos               = this->nextPos;
+            this->charRelativeOffset = this->nextCharRelativeOffset++;
+            if (this->ch == '\t')
+            {
+                this->ch      = ' '; // tab will be showd as a space
+                this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+            }
+            else
+                this->nextPos++;
         }
         else
-            this->nextPos++;
+        {
+        }
         return true;
     }
     inline uint32 GetXOffset() const
@@ -73,6 +73,10 @@ class CharacterStream
     inline char16 GetCharacter() const
     {
         return this->ch;
+    }
+    inline uint32 GetCurrentBufferPos() const
+    {
+        return (uint32) (this->pos - this->start);
     }
 };
 
@@ -97,8 +101,14 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 
-    this->lineNumberWidth = 0;
+    this->lineNumberWidth  = 0;
+    this->ViewDataCount    = 0;
+    this->Cursor.lineNo    = 0;
+    this->Cursor.charIndex = 0;
     this->subLineIndex.Create(256); // alocate 256 entries
+
+    this->settings->encoding = CharacterEncoding::AnalyzeBufferForEncoding(this->obj->GetData().Get(0, 4096, false), true, this->sizeOfBOM);
+    this->UpdateViewBounderies();
 }
 
 void Instance::RecomputeLineIndexes()
@@ -106,7 +116,7 @@ void Instance::RecomputeLineIndexes()
     // first --> simple estimation
     auto buf        = this->obj->GetData().Get(0, 4096, false);
     auto sz         = this->obj->GetData().GetSize();
-    auto csz        = this->obj->GetData().GetCacheSize();
+    auto csz        = this->obj->GetData().GetCacheSize() & 0xFFFFFFF0; // make sure that csz is odd
     auto crlf_count = (uint64) 1;
 
     for (auto ch : buf)
@@ -115,45 +125,94 @@ void Instance::RecomputeLineIndexes()
 
     auto estimated_count = ((crlf_count * sz) / buf.GetLength()) + 16;
 
-    this->lineIndex.Clear();
-    if (this->lineIndex.Reserve((uint32) estimated_count) == false)
-        return;
+    this->lines.clear();
+    this->lines.reserve(estimated_count);
 
-    uint64 offset = 0;
-    uint64 start  = 0;
-    uint8 last    = 0;
+    uint64 offset    = this->sizeOfBOM;
+    uint64 start     = this->sizeOfBOM;
+    uint32 charCount = 0;
+    char16 lastChar  = 0;
+
+    CharacterEncoding::ExpandedCharacter ch;
+
     while (offset < sz)
     {
         buf = this->obj->GetData().Get(offset, csz, false);
         if (buf.Empty())
             return;
         // process the buffer
-        auto* p = buf.begin();
-        for (; p < buf.end(); p++)
+        auto* p       = buf.begin();
+        auto* e       = buf.end();
+        auto* loopEnd = buf.end();
+        if (((offset + buf.GetLength()) < sz) && (buf.GetLength() > 16))
         {
-            if (((*p) == '\n') || ((*p) == '\r'))
+            // if this is a partial part of the file and it has more then 16 bytes, deduct 8 bytes to make sure that any possible conversion will be made
+            loopEnd -= 8;
+        }
+        while (p < loopEnd)
+        {
+            if (ch.FromEncoding(this->settings->encoding, p, e))
             {
-                if (((last == '\n') || (last == '\r')) && (last != (*p)))
+                p += ch.Length();
+                auto chr = ch.GetChar();
+                if (((chr == '\n') && (lastChar != '\r')) || ((chr == '\r') && (lastChar != '\n')))
                 {
-                    // either \n\r or \r\n
-                    start++; // skip current character
-                    last = 0;
+                    // end of the current line
+                    lines.emplace_back(start, charCount, (uint32) (offset - start));
+                    offset += ch.Length();
+                    start     = offset;
+                    charCount = 0;
+                    lastChar  = chr;
                     continue;
                 }
-                this->lineIndex.Push((uint32) start);
-                start = offset + (p - buf.begin()) + 1; // next pos
-                last  = *p;
+
+                // combined CRLF or LFCR
+                if (((chr == '\n') && (lastChar == '\r')) || ((chr == '\r') && (lastChar == '\n')))
+                {
+                    // just advanced one extra char (no new line found)
+                    offset += ch.Length();
+                    start     = offset;
+                    charCount = 0;
+                    lastChar  = 0; // important as the CRLF or LFCR has ended
+                    continue;
+                }
+
+                // other character
+                lastChar = 0; // don't care
+                charCount++;
+                offset += ch.Length();
+                if (charCount > 2000)
+                {
+                    // limit line to 2000 characters
+                    lines.emplace_back(start, charCount, (uint32) (offset - start));
+                    start     = offset;
+                    charCount = 0;
+                }
             }
             else
             {
-                last = 0;
+                // need to treat conversion error
+                // consider one character (binary format)
+                charCount++;
+                offset++;
+                p++;
+                if (charCount > 2000)
+                {
+                    // limit line to 2000 characters
+                    lines.emplace_back(start, charCount, (uint32) (offset - start));
+                    start     = offset;
+                    charCount = 0;
+                }
             }
         }
-        offset += buf.GetLength();
+        if (charCount > 0)
+        {
+            // last line
+            lines.emplace_back(start, charCount, (uint32) (offset - start));
+        }
     }
-    if (start < sz)
-        this->lineIndex.Push((uint32) start);
-    auto linesCount = this->lineIndex.Len() + 1;
+
+    auto linesCount = this->lines.size() + 1;
     if (linesCount < 10)
         this->lineNumberWidth = 2;
     else if (linesCount < 100)
@@ -169,39 +228,29 @@ void Instance::RecomputeLineIndexes()
     else
         this->lineNumberWidth = 8;
 }
-bool Instance::GetLineInfo(uint32 lineNo, uint64& offset, uint32& size)
+bool Instance::GetLineInfo(uint32 lineNo, LineInfo& li)
 {
-    uint32 ofs, next;
-    if (this->lineIndex.Get(lineNo, ofs) == false)
+    if (lineNo >= this->lines.size())
         return false;
-    offset = ofs;
-    if (lineNo + 1 == this->lineIndex.Len())
-    {
-        size = (uint32) (this->obj->GetData().GetSize() - offset);
-    }
-    else
-    {
-        if (this->lineIndex.Get(lineNo + 1, next) == false)
-            return false;
-        size = next - ofs;
-    }
+    li = this->lines[lineNo];
     return true;
 }
-bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf)
+bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset)
 {
-    uint64 offset;
-    uint32 size;
-    uint32 w = this->GetWidth();
+    LineInfo li;
+    uint32 w    = this->GetWidth();
+    startOffset = 0;
 
     this->subLineIndex.Clear();
-    CHECK(GetLineInfo(lineNo, offset, size), false, "");
+    CHECK(GetLineInfo(lineNo, li), false, "");
+    startOffset = li.offset;
     CHECK(this->subLineIndex.Push(0), false, "");
 
     if ((this->lineNumberWidth + 1) >= w)
         w = 1;
     else
         w -= (this->lineNumberWidth + 1);
-    buf = this->obj->GetData().Get(offset, size, false);
+    buf = this->obj->GetData().Get(li.offset, li.size, false);
     CharacterStream cs(buf, this->settings.ToReference());
     // process
     if (this->settings->wordWrap)
@@ -218,87 +267,159 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf)
     }
     return true;
 }
-int Instance::DrawLine(uint32 xScroll, int32 y, uint32 lineNo, uint32 width, Graphics::Renderer& renderer)
+void Instance::MoveTo(uint32 lineNo, uint32 charInde)
+{
+    // const auto ptr = this->lineIndex.GetUInt32Array();
+    // auto idx       = std::upper_bound(ptr, ptr + this->lineIndex.Len(), (uint32) pos) - ptr;
+    // if (idx > 0)
+    //     idx--;
+}
+void Instance::MoveLeft()
+{
+}
+void Instance::MoveRight()
+{
+}
+void Instance::UpdateViewBounderies()
 {
     BufferView buf;
-    NumericFormatter n;
-
-    renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(lineNo + 1), DefaultColorPair, TextAlignament::Right);
-    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, DefaultColorPair);
-    ComputeSubLineIndexes(lineNo, buf);
-
-    // write text
-    auto idx    = this->subLineIndex.GetUInt32Array();
-    auto idxEnd = idx + this->subLineIndex.Len();
-    auto cBuf   = buf.begin();
-
-    // draw each sub-line
-    while (idx < idxEnd)
-    {
-        auto start = *idx;
-        auto end   = (idx+1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
-        CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
-        auto c     = this->chars;
-        auto lastC = this->chars + 1;
-        auto c_end = c + MAX_CHARACTERS_PER_LINE;
-        // skip left part
-        if (xScroll > 0)
-        {
-            while ((cs.Next()) && (cs.GetNextXOffset() < xScroll))
-            {
-            }
-        }
-        while ((cs.Next()) && (lastC < c_end))
-        {
-            auto c = this->chars + cs.GetXOffset();
-            // fill in the spaces
-            while (lastC < c)
-            {
-                lastC->Code  = ' ';
-                lastC->Color = Cfg.Text.Normal;
-                lastC++;
-            }
-            c->Code = cs.GetCharacter();
-            c->Color = Cfg.Text.Normal;
-            lastC    = c + 1;
-        }
-        renderer.WriteSingleLineText(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), Cfg.Text.Normal);
-        y++;
-        idx++;
-    }
-    return y;
-}
-void Instance::Paint(Graphics::Renderer& renderer)
-{
     auto h   = this->GetHeight();
     uint32 w = this->GetWidth();
     if (w <= (this->lineNumberWidth + 2))
         w = 0;
     else
         w = w - (this->lineNumberWidth + 2);
-    auto y = 0;
-    auto lineNo = 0U;
-    while (y<h)
+    uint64 lineStartOffset = 0;
+    auto y                 = 0;
+    auto lineNo            = 0U;
+    auto vd                = this->ViewData;
+    this->ViewDataCount    = 0;
+    auto xScroll           = 0U; // temporary -> should be a class data member
+    auto xMaxPos           = xScroll + w;
+
+    while (y < h)
     {
-        y = DrawLine(0, y, lineNo, w, renderer);
+        ComputeSubLineIndexes(lineNo, buf, lineStartOffset);
+
+        // write text
+        auto idx    = this->subLineIndex.GetUInt32Array();
+        auto idxEnd = idx + this->subLineIndex.Len();
+        auto cBuf   = buf.begin();
+
+        // parse each sub-line
+        while ((idx < idxEnd) && (y < h))
+        {
+            auto start = *idx;
+            auto end   = (idx + 1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
+            CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
+
+            // skip left part
+            if (xScroll > 0)
+            {
+                while ((cs.Next()) && (cs.GetNextXOffset() < xScroll))
+                {
+                }
+            }
+            auto cptr  = cs.GetCurrentBufferPos();
+            vd->lineNo = lineNo;
+            vd->pos    = lineStartOffset + start + cptr;
+            vd->xStart = cs.GetNextXOffset() - xScroll;
+            while ((cs.Next()) && (cs.GetXOffset() < xMaxPos))
+            {
+            }
+            vd->bufferSize = (uint32) (cs.GetCurrentBufferPos() - cptr);
+
+            y++;
+            idx++;
+            vd++;
+            this->ViewDataCount++;
+        }
         lineNo++;
+    }
+}
+void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState state, bool showLineNumber)
+{
+    BufferView buf;
+    NumericFormatter n;
+    ColorPair textColor;
+
+    auto lineNoColor  = Cfg.LineMarker.GetColor(state);
+    auto lineSepColor = Cfg.Lines.GetColor(state);
+    bool focused      = state == ControlState::Focused;
+
+    switch (state)
+    {
+    case ControlState::Focused:
+        textColor = Cfg.Text.Normal;
+        break;
+    default:
+        textColor = Cfg.Text.Inactive;
+        break;
+    }
+    const auto vd = this->ViewData + y;
+    CharacterStream cs(this->obj->GetData().Get(vd->pos, vd->bufferSize, false), this->settings.ToReference());
+    auto c     = this->chars;
+    auto lastC = this->chars + 1;
+    auto c_end = c + MAX_CHARACTERS_PER_LINE;
+    while ((cs.Next()) && (lastC < c_end))
+    {
+        auto c = this->chars + cs.GetXOffset();
+        // fill in the spaces
+        while (lastC < c)
+        {
+            lastC->Code  = ' ';
+            lastC->Color = textColor;
+            lastC++;
+        }
+        c->Code  = cs.GetCharacter();
+        c->Color = textColor;
+        if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetRelativeOffset() == Cursor.charIndex))
+            c->Color = Cfg.Cursor.Normal;
+        lastC = c + 1;
+    }
+    renderer.FillHorizontalLine(0, y, this->lineNumberWidth - 1, ' ', lineNoColor);
+    if (showLineNumber)
+        renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(vd->lineNo + 1), lineNoColor, TextAlignament::Right);
+    renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, lineSepColor);
+    renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
+}
+void Instance::Paint(Graphics::Renderer& renderer)
+{
+    auto idx         = 0;
+    auto lineNo      = 0xFFFFFFFFU;
+    const auto focus = this->HasFocus();
+
+    if (this->ViewDataCount == 0)
+        UpdateViewBounderies();
+
+    while (idx < this->ViewDataCount)
+    {
+        auto state         = focus ? ControlState::Focused : ControlState::Normal;
+        const auto cLineNo = this->ViewData[idx].lineNo;
+        DrawLine(idx, renderer, state, cLineNo != lineNo);
+        lineNo = cLineNo;
+        idx++;
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    // commandBar.SetCommand(config.Keys.ZoomIn, "ZoomIN", CMD_ID_ZOOMIN);
-    // commandBar.SetCommand(config.Keys.ZoomOut, "ZoomOUT", CMD_ID_ZOOMOUT);
-    // if (this->settings->imgList.size() > 1)
-    //{
-    //     commandBar.SetCommand(Key::PageUp, "PrevImage", CMD_ID_PREV_IMAGE);
-    //     commandBar.SetCommand(Key::PageDown, "NextImage", CMD_ID_NEXT_IMAGE);
-    // }
+    if (this->settings->wordWrap)
+        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:ON", CMD_ID_WORD_WRAP);
+    else
+        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:OFF", CMD_ID_WORD_WRAP);
+
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     switch (keyCode)
     {
+    case Key::Left:
+        MoveLeft();
+        return true;
+    case Key::Right:
+        MoveRight();
+        return true;
     case Key::PageUp:
         return true;
     case Key::PageDown:
@@ -317,6 +438,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
+    case CMD_ID_WORD_WRAP:
+        this->settings->wordWrap = !this->settings->wordWrap;
+        UpdateViewBounderies();
+        return true;
     }
     return false;
 }

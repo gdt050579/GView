@@ -92,6 +92,96 @@ namespace Utils
         bool Reserve(unsigned int count);
         const Zone* OffsetToZone(uint64 offset);
     };
+
+    namespace CharacterEncoding
+    {
+        enum class Encoding : uint8
+        {
+            Binary,
+            Ascii,
+            UTF8,
+            Unicode16LE,
+            Unicode16BE
+        };
+        class ExpandedCharacter
+        {
+            char16 unicodeValue;
+            uint16 length;
+
+          public:
+            ExpandedCharacter() : unicodeValue(0), length(0)
+            {
+            }
+            inline operator char16() const
+            {
+                return unicodeValue;
+            }
+            inline char16 GetChar() const
+            {
+                return unicodeValue;
+            }
+            inline uint32 Length() const
+            {
+                return length;
+            }
+            inline bool IsValid() const
+            {
+                return length > 0;
+            }
+            bool FromUTF8Buffer(const uint8* start, const uint8* end);
+            inline bool FromEncoding(Encoding e, const uint8* start, const uint8* end)
+            {
+                if (start >= end)
+                {
+                    unicodeValue = 0;
+                    length       = 0;
+                    return false;
+                }
+                switch (e)
+                {
+                case Encoding::Ascii:
+                case Encoding::Binary:
+                    unicodeValue = *start;
+                    length       = 1;
+                    return true;
+                case Encoding::Unicode16LE:
+                    if (start + 1 < end)
+                    {
+                        length       = 2;
+                        unicodeValue = *(const char16*) start;
+                        return true;
+                    }
+                    length       = 0;
+                    unicodeValue = 0;
+                    return false;
+                case Encoding::Unicode16BE:
+                    if (start + 1 < end)
+                    {
+                        length       = 2;
+                        unicodeValue = ((uint16) (*start) << 8) | (start[1]);
+                        return true;
+                    }
+                    length       = 0;
+                    unicodeValue = 0;
+                    return false;
+                case Encoding::UTF8:
+                    if ((*start) < 0x80)
+                    {
+                        unicodeValue = *start;
+                        length       = 1;
+                        return true;
+                    }
+                    return FromUTF8Buffer(start, end);
+                default:
+                    unicodeValue = 0;
+                    length       = 0;
+                    return false;
+                }
+            }
+        };
+
+        Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
+    }; // namespace StringEncoding
 } // namespace Utils
 
 namespace Generic
@@ -235,7 +325,7 @@ namespace App
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
-        bool AddBufferWindow(BufferView buf, const ConstString & name, string_view typeExtension);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
