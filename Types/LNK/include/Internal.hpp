@@ -173,7 +173,7 @@ static const std::string GetHotKeyHighFromFlags(uint8 flags)
         }
     }
 
-    if (HotKeyHighNames.empty())
+    if (high.empty())
     {
         high = "NONE";
     }
@@ -441,17 +441,162 @@ struct Header
 
 static_assert(sizeof(Header) == 76);
 
+enum class ClassTypeIndicators : uint8
+{
+    Unknown0                  = 0x00,
+    Unknown1                  = 0x01,
+    Unknown2                  = 0x17,
+    CLSID_ShellDesktop_       = 0x1E, // Not seen in wild but reason to believe it exists.
+    CLSID_ShellDesktop        = 0x1F, // Root folder shell item
+    CLSID_MyComputer          = 0x20, // Volume shell item -> 0x20 – 0x2f
+    CLSID_ShellFSFolder       = 0x30, // File entry shell item -> 0x30 – 0x3f
+    CLSID_NetworkRoot         = 0x40, // Network location shell item -> 0x40 – 0x4f
+    CompressedFolderShellItem = 0x52, // Network location shell item -> 0x40 – 0x4f
+    CLSID_Internet            = 0x61, // URI shell item
+    ControlPanel_             = 0x70, // Not seen in wild but reason to believe it exists. Item has no item data at offset 0x04.
+    ControlPanel              = 0x71, // Control Panel shell item
+    Printers                  = 0x72, // Not seen in wild but reason to believe it exists.
+    CommonPlacesFolder        = 0x73, // Not seen in wild but reason to believe it exists.
+    UsersFilesFolder          = 0x74, // Only seen as delegate item.
+    Unknown3                  = 0x76,
+    Unknown4                  = 0x80, // Different meaning per class type indicator?
+    Unknown5                  = 0xFF
+};
+
+static const std::map<ClassTypeIndicators, std::string_view> ClassTypeIndicatorsNames{
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown0),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown1),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown2),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_ShellDesktop_),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_ShellDesktop),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_MyComputer),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_ShellFSFolder),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_NetworkRoot),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CompressedFolderShellItem),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_Internet),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::ControlPanel_),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::ControlPanel),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Printers),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::CommonPlacesFolder),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::UsersFilesFolder),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown3),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown4),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown5)
+};
+
+#pragma pack(push, 2)
+struct Extensionblock0xbeef0017
+{
+    uint16 size;      // Extension size. Includes the 2 bytes of the size itself.
+    uint16 version;   // Extension version.
+    uint32 signature; // Extension signature.
+    uint32 unknown0;  // Empty values
+    uint32 unknown1;
+    uint32 unknown2;
+    uint32 unknown3;
+    uint32 unknown4;
+    uint32 unknown5;
+    uint32 unknown6;
+    uint64 unknown7; // Empty values
+    uint32 unknown8;
+    uint8 unknown9[24];        // Empty values
+    uint16 blockVersionOffset; // First extension block version offset. The offset is relative from the start of the shell item.
+};
+#pragma pack(pop)
+
+static_assert(sizeof(Extensionblock0xbeef0017) == 74);
+
+enum class SortIndex : uint8
+{
+    InternetExplorer0 = 0x00,
+    Libraries         = 0x42,
+    Users             = 0x44,
+    MyDocuments       = 0x48,
+    MyComputer        = 0x50,
+    Network           = 0x58,
+    RecycleBin        = 0x60,
+    InternetExplorer1 = 0x68,
+    Unknown           = 0x70,
+    MyGames           = 0x80
+};
+
+static const std::map<SortIndex, std::string_view> SortIndexNames{ GET_PAIR_FROM_ENUM(SortIndex::InternetExplorer0),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::Libraries),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::Users),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::MyDocuments),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::MyComputer),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::Network),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::RecycleBin),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::InternetExplorer1),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::Unknown),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::MyGames) };
+
+#pragma pack(push, 4)
+struct RootFolderShellItem
+{
+    uint16 size;                   // The size of the shell item. Includes the 2 bytes of the size itself.
+    ClassTypeIndicators indicator; // Class type indicator
+    SortIndex sortIndex;
+    uint8 shellFolderIdentifier[16]; // GUID
+    // extension block maybe -> Present if shell item size > 20 (seen in Windows 7)
+};
+#pragma pack(pop)
+
+struct RootFolderShellItemWithExtensionBlock0xBEEF0017
+{
+    RootFolderShellItem item;
+    Extensionblock0xbeef0017 block;
+};
+
+// The volume shell item is identified by a value of 0x20 after applying a bitmask of 0x70. The remaining bits in the class type indicator
+// are presumed to be a sub-type or flags.
+enum class VolumeShellItemFlags : uint8
+{
+    HasName          = 0x01,
+    Unknown0         = 0x02,
+    Unknown1         = 0x04,
+    IsRemovableMedia = 0x08
+};
+
+static const std::map<VolumeShellItemFlags, std::string_view> VolumeShellItemFlagsNames{ GET_PAIR_FROM_ENUM(VolumeShellItemFlags::HasName),
+                                                                                         GET_PAIR_FROM_ENUM(VolumeShellItemFlags::Unknown0),
+                                                                                         GET_PAIR_FROM_ENUM(VolumeShellItemFlags::Unknown1),
+                                                                                         GET_PAIR_FROM_ENUM(
+                                                                                               VolumeShellItemFlags::IsRemovableMedia) };
+
+static const std::vector<VolumeShellItemFlags> GetVolumeShellItemFlags(uint8 flags)
+{
+    std::vector<VolumeShellItemFlags> output;
+
+    for (const auto& data : VolumeShellItemFlagsNames)
+    {
+        const auto flag = static_cast<VolumeShellItemFlags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace_back(flag);
+        }
+    }
+
+    return output;
+}
+
+struct VolumeShellItem
+{
+    uint16 size;        // The size of the shell item. Includes the 2 bytes of the size itself.
+    uint8 indicator;    // Class type indicator 0x20 after applying a bitmask of 0x70.
+    uint8 unknownFlags; // If class type indicator flag 0x01 (has name) is not set. Unknown (Flags) Seen 0x00, 0x1e, 0x80.
+};
+
 struct ShellItem
 {
-    uint16 size;
     uint8 type;
-    uint8 data[0];
+    uint8 data[1];
 };
 
 struct ItemID
 {
     uint16 ItemIDSize;
-    uint8 data[0];
+    ShellItem item;
 };
 
 struct IDList
@@ -463,7 +608,7 @@ struct IDList
 struct LinkTargetIDList
 {
     uint16 IDListSize;
-    // uint8 IDList[0];
+    // uint8 IDList[1];
 };
 
 } // namespace GView::Type::LNK

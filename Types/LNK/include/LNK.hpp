@@ -10,6 +10,7 @@ class LNKFile : public TypeInterface
     Header header;
     LinkTargetIDList linkTargetIDList;
     Buffer linkTargetIDListBuffer;
+    std::vector<ItemID*> itemIDS;
 
     LNKFile();
     virtual ~LNKFile()

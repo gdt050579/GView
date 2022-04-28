@@ -18,9 +18,7 @@ bool LNKFile::Update()
         auto offset = 0;
         while (offset < linkTargetIDList.IDListSize - 2) // - terminal
         {
-            const auto itemID = (ItemID*) &linkTargetIDListBuffer.GetData()[offset];
-            // TODO: actual parsing of shell items
-            const auto* si = (ShellItem*) &linkTargetIDListBuffer.GetData()[offset + sizeof(ItemID::ItemIDSize)];
+            const auto itemID = itemIDS.emplace_back((ItemID*) &linkTargetIDListBuffer.GetData()[offset]);
             offset += itemID->ItemIDSize;
         }
     }

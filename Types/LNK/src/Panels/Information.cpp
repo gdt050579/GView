@@ -148,6 +148,156 @@ void Information::UpdateGeneralInformation()
         const auto idListSize    = nf.ToString(lnk->linkTargetIDList.IDListSize, dec);
         const auto idListSizeHex = nf2.ToString(lnk->linkTargetIDList.IDListSize, hex);
         general->AddItem({ "ID List Size", ls.Format("%-20s (%s)", idListSize.data(), idListSizeHex.data()) });
+
+        const auto itemIDsCount    = nf.ToString(lnk->itemIDS.size(), dec);
+        const auto itemIDsCountHex = nf2.ToString(lnk->itemIDS.size(), hex);
+        general->AddItem({ "ItemIDs #", ls.Format("%-20s (%s)", itemIDsCount.data(), itemIDsCountHex.data()) });
+
+        auto i = 0;
+        for (const auto& id : lnk->itemIDS)
+        {
+            const auto& item     = id->item;
+            const auto& type     = item.type;
+            const auto indicator = (ClassTypeIndicators) (type > (uint8) ClassTypeIndicators::CLSID_ShellDesktop ? (type & 0x70) : type);
+
+            switch (indicator)
+            {
+            case ClassTypeIndicators::CLSID_ShellDesktop:
+            {
+                if (id->ItemIDSize > 20)
+                {
+                    const auto rfsi = (RootFolderShellItemWithExtensionBlock0xBEEF0017*) id;
+
+                    general->AddItem("RootFolderShellItemWithExtensionBlock0xBEEF0017").SetType(ListViewItem::Type::Category);
+
+                    const auto size    = nf.ToString(rfsi->item.size, dec);
+                    const auto sizeHex = nf2.ToString(rfsi->item.size, hex);
+                    general->AddItem({ "Size", ls.Format("%-20s (%s)", size.data(), sizeHex.data()) });
+
+                    const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at(rfsi->item.indicator);
+                    const auto indicatorHex   = nf2.ToString((uint8) rfsi->item.indicator, hex);
+                    general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicatorName.data(), indicatorHex.data()) });
+
+                    const auto& sortIndexName = LNK::SortIndexNames.at(rfsi->item.sortIndex);
+                    const auto sortIndexHex   = nf2.ToString((uint8) rfsi->item.sortIndex, hex);
+                    general->AddItem({ "Sort Index", ls.Format("%-20s (%s)", sortIndexName.data(), sortIndexHex.data()) });
+
+                    const auto& guid = rfsi->item.shellFolderIdentifier;
+                    general->AddItem({ "Shell Folder Identifierr",
+                                       ls.Format(
+                                             "{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+                                             guid[0],
+                                             guid[1],
+                                             guid[2],
+                                             guid[3],
+                                             guid[4],
+                                             guid[5],
+                                             guid[6],
+                                             guid[7],
+                                             guid[8],
+                                             guid[9],
+                                             guid[10],
+                                             guid[11],
+                                             guid[12],
+                                             guid[13],
+                                             guid[14],
+                                             guid[15]) });
+
+                    // TODO: block output, cleanup, remove duplicate code/refactor
+                }
+                else
+                {
+                    const auto rfsi = (RootFolderShellItem*) id;
+
+                    general->AddItem("RootFolderShellItem").SetType(ListViewItem::Type::Category);
+
+                    const auto size    = nf.ToString(rfsi->size, dec);
+                    const auto sizeHex = nf2.ToString(rfsi->size, hex);
+                    general->AddItem({ "Size", ls.Format("%-20s (%s)", size.data(), sizeHex.data()) });
+
+                    const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at(rfsi->indicator);
+                    const auto indicatorHex   = nf2.ToString((uint8) rfsi->indicator, hex);
+                    general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicatorName.data(), indicatorHex.data()) });
+
+                    const auto& sortIndexName = LNK::SortIndexNames.at(rfsi->sortIndex);
+                    const auto sortIndexHex   = nf2.ToString((uint8) rfsi->sortIndex, hex);
+                    general->AddItem({ "Sort Index", ls.Format("%-20s (%s)", sortIndexName.data(), sortIndexHex.data()) });
+
+                    const auto& guid = rfsi->shellFolderIdentifier;
+                    general->AddItem({ "Shell Folder Identifierr",
+                                       ls.Format(
+                                             "{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+                                             guid[0],
+                                             guid[1],
+                                             guid[2],
+                                             guid[3],
+                                             guid[4],
+                                             guid[5],
+                                             guid[6],
+                                             guid[7],
+                                             guid[8],
+                                             guid[9],
+                                             guid[10],
+                                             guid[11],
+                                             guid[12],
+                                             guid[13],
+                                             guid[14],
+                                             guid[15]) });
+                }
+            }
+            break;
+            case ClassTypeIndicators::CLSID_MyComputer:
+            {
+                const auto vsi = (VolumeShellItem*) id;
+
+                general->AddItem("VolumeShellItem").SetType(ListViewItem::Type::Category);
+
+                const auto size    = nf.ToString(vsi->size, dec);
+                const auto sizeHex = nf2.ToString(vsi->size, hex);
+                general->AddItem({ "Size", ls.Format("%-20s (%s)", size.data(), sizeHex.data()) });
+
+                const auto indicator    = nf2.ToString(vsi->indicator, hex);
+                const auto indicatorHex = nf2.ToString(vsi->indicator, hex);
+                general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicator.data(), indicatorHex.data()) });
+
+                const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at((ClassTypeIndicators) (vsi->indicator & 0x70));
+                LocalString<16> hfls;
+
+                hfls.Format("(0x%X)", (vsi->indicator & 0x70));
+                general->AddItem({ "", ls.Format("%-20s %-4s", indicatorName.data(), hfls.GetText()) })
+                      .SetType(ListViewItem::Type::Emphasized_2);
+
+                const auto vsiFlags = LNK::GetVolumeShellItemFlags(vsi->indicator & 0x0F);
+                for (const auto& flag : vsiFlags)
+                {
+                    hfls.Format("(0x%X)", flag);
+                    const auto flagName = LNK::VolumeShellItemFlagsNames.at(flag).data();
+                    general->AddItem({ "", ls.Format("%-20s %-4s", flagName, hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+                }
+
+                if ((vsi->indicator & 0x0F) & (uint8) VolumeShellItemFlags::HasName)
+                {
+                    general->AddItem({ "Path", ls.Format("%s", (char8*) &vsi->unknownFlags, hfls.GetText()) });
+                }
+                else
+                {
+                    const auto unknownFlags    = nf.ToString(vsi->unknownFlags, dec);
+                    const auto unknownFlagsHex = nf2.ToString(vsi->unknownFlags, hex);
+                    general->AddItem({ "Unknown Flags", ls.Format("%-20s (%s)", unknownFlags.data(), unknownFlagsHex.data()) });
+                }
+            }
+            break;
+            default:
+            {
+                const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at(indicator);
+                const auto indicatorHex   = nf2.ToString((uint8) indicator, hex);
+                general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicatorName.data(), indicatorHex.data()) });
+            }
+            break;
+            }
+
+            i++;
+        }
     }
 }
 
