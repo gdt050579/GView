@@ -14,13 +14,10 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        struct Sig
-        {
-            uint32 sig;
-        };
-        auto signature = buf.GetObject<Sig>(0);
-        CHECK(signature.IsValid(), false, "");
-        CHECK(signature->sig == MAM::SIGNATURE, false, "");
+        auto header = buf.GetObject<LNK::Header>(0);
+        CHECK(header.IsValid(), false, "");
+        CHECK(header->headerSize == LNK::SIGNATURE, false, "");
+        CHECK(memcmp(header->classIdentifier, LNK::CLASS_IDENTIFIER, 16) == 0, false, "");
 
         return true;
     }
@@ -34,9 +31,7 @@ extern "C"
     {
         BufferViewer::Settings settings;
 
-        settings.AddZone(0, 4, ColorPair{ Color::Pink, Color::DarkBlue }, "Signature");
-        settings.AddZone(4, 4, ColorPair{ Color::Magenta, Color::DarkBlue }, "Size Uncompressed");
-        settings.AddZone(8, win->GetObject()->GetData().GetSize() - 8, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Content");
+        settings.AddZone(0, sizeof(LNK::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
 
         win->CreateViewer("BufferView", settings);
     }
@@ -57,8 +52,8 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]   = "hex:'4D 41 4D 04'";
-        sect["Extension"] = "pf";
+        sect["Pattern"]   = "hex:'4C 00 00 00'";
+        sect["Extension"] = "lnk";
         sect["Priority"]  = 1;
     }
 }

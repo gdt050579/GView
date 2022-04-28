@@ -7,9 +7,7 @@ namespace GView::Type::LNK
 class LNKFile : public TypeInterface
 {
   public:
-    uint32 signature;
-    uint32 uncompressedSize;
-    uint32 compressedSize;
+    Header header;
 
     LNKFile();
     virtual ~LNKFile()
@@ -52,4 +50,4 @@ namespace Panels
         bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
     };
 }; // namespace Panels
-} // namespace GView::Type::MAM
+} // namespace GView::Type::LNK
