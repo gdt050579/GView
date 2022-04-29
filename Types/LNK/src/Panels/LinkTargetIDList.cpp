@@ -83,10 +83,11 @@ void Panels::LinkTargetIDList::UpdateVolumeShellItem(VolumeShellItem& item)
     AddDecAndHexElement("Size", "%-20s (%s)", item.size);
     AddDecAndHexElement("Class Type Indicator", "%-20s (%s)", item.indicator);
 
-    const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at((ClassTypeIndicators) (item.indicator & 0x70));
+    const auto& indicatorName =
+          LNK::ClassTypeIndicatorsNames.at((ClassTypeIndicators) (item.indicator < 0x50 ? item.indicator & 0x70 : item.indicator));
     LocalString<16> hfls;
 
-    hfls.Format("(0x%X)", (item.indicator & 0x70));
+    hfls.Format("(0x%X)", (item.indicator < 0x50 ? item.indicator & 0x70 : item.indicator));
     general->AddItem({ "", ls.Format("%-20s %-4s", indicatorName.data(), hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
 
     const auto vsiFlags = LNK::GetVolumeShellItemFlags(item.indicator & 0x0F);
@@ -118,9 +119,10 @@ void Panels::LinkTargetIDList::UpdateLinkTargetIDList()
 
     for (const auto& id : lnk->itemIDS)
     {
-        const auto& item     = id->item;
-        const auto& type     = item.type;
-        const auto indicator = (ClassTypeIndicators) (type > (uint8) ClassTypeIndicators::CLSID_ShellDesktop ? (type & 0x70) : type);
+        const auto& item = id->item;
+        const auto& type = item.type;
+        const auto indicator =
+              (ClassTypeIndicators) (type > (uint8) ClassTypeIndicators::CLSID_ShellDesktop && type < (uint8) ClassTypeIndicators::CompressedFolderShellItem ? (type & 0x70) : type);
 
         switch (indicator)
         {
@@ -152,6 +154,20 @@ void Panels::LinkTargetIDList::UpdateLinkTargetIDList()
         {
             general->AddItem("CLSID_ShellFSFolder").SetType(ListViewItem::Type::Category);
             UpdateFileEntryShellItem_XPAndLater(id);
+        }
+        break;
+        case ClassTypeIndicators::ControlPanel_:
+        {
+            general->AddItem("ControlPanel 0x70").SetType(ListViewItem::Type::Category);
+            const auto cpsi = (ControlPanelShellItem*) id;
+            UpdateControlPanelShellItem(*cpsi);
+        }
+        break;
+        case ClassTypeIndicators::UsersFilesFolder:
+        {
+            general->AddItem("UsersFilesFolder").SetType(ListViewItem::Type::Category);
+            const auto dsi = (DelegateShellItem*) id;
+            UpdateDelegateShellItem(*dsi);
         }
         break;
         default:
@@ -325,6 +341,95 @@ void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0004_V9(ExtensionBlock0
 
     const auto firstExtension = *(uint16*) ((uint8*) block + block->base.size - sizeof(uint16));
     AddDecAndHexElement("First Extension", "%-20s (%s)", firstExtension);
+}
+
+void Panels::LinkTargetIDList::UpdateControlPanelShellItem(ControlPanelShellItem& block)
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+
+    AddDecAndHexElement("Size", "%-20s (%s)", block.size);
+    AddDecAndHexElement("Class Type Indicator", "%-20s (%s)", block.indicator);
+
+    const auto& indicatorName =
+          LNK::ClassTypeIndicatorsNames.at((ClassTypeIndicators) (block.indicator < 0x50 ? block.indicator & 0x70 : block.indicator));
+    LocalString<16> hfls;
+    hfls.Format("(0x%X)", (block.indicator & 0x70));
+    general->AddItem({ "", ls.Format("%-20s %-4s", indicatorName.data(), hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+
+    AddDecAndHexElement("Unknown0", "%-20s (%s)", block.unknown0);
+    AddDecAndHexElement("Unknown1", "%-20s (%s)", block.unknown1);
+    AddGUIDElement("Identifier", block.identifier);
+}
+
+void Panels::LinkTargetIDList::UpdateDelegateShellItem(DelegateShellItem& item)
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+
+    AddDecAndHexElement("Size", "%-20s (%s)", item.size);
+    AddDecAndHexElement("Class Type Indicator", "%-20s (%s)", item.indicator);
+    AddDecAndHexElement("Unknown0", "%-20s (%s)", item.unknown0);
+    AddDecAndHexElement("Unknown1", "%-20s (%s)", item.unknown1);
+    AddDecAndHexElement("Unknown Signature", "%-20s (%s)", item.unknownSignature);
+    AddDecAndHexElement("Sub Shell Item Data Size", "%-20s (%s)", item.subShellItemDataSize);
+    AddDecAndHexElement("Subclass Type Indicator", "%-20s (%s)", item.subClassTypeIndicator);
+    AddDecAndHexElement("Unknown2", "%-20s (%s)", item.unknown2);
+    AddDecAndHexElement("Filesize", "%-20s (%s)", item.filesize);
+
+    DateTime dt;
+    dt.CreateFromFATUTC(item.lastModificationDateAndTime);
+    const auto lastModificationDateAndTimeHex = nf.ToString(item.lastModificationDateAndTime, hex);
+    general
+          ->AddItem({ "Last Modification Date And Time",
+                      ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), lastModificationDateAndTimeHex.data()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+
+    AddDecAndHexElement("File Attribute Flags", "%-20s (%s)", item.fileAttributes);
+
+    const auto faFlags = LNK::GetFileAttributeFlags(item.fileAttributes);
+    for (const auto& flag : faFlags)
+    {
+        LocalString<16> hfls;
+        hfls.Format("(0x%X)", flag);
+
+        const auto flagName        = LNK::FileAttributeFlagsNames.at(flag).data();
+        const auto flagDescription = LNK::FileAttributeFlagsDescriptions.at(flag).data();
+
+        general->AddItem({ "", ls.Format("%-20s %-4s %s", flagName, hfls.GetText(), flagDescription) })
+              .SetType(ListViewItem::Type::Emphasized_2);
+    }
+
+    const auto primaryName = (uint8*) &item + sizeof(DelegateShellItem);
+    general->AddItem({ "Primary Name", ls.Format("%s", primaryName) });
+
+    auto offset = sizeof(DelegateShellItem);
+    offset += strlen((char*) primaryName);
+    offset = (offset % 2 == 0 ? offset + 2 : offset + 1); // 16 bit aligned
+
+    const auto unknown3 = *(uint16*) ((uint8*) &item + offset);
+    AddDecAndHexElement("Unknown3", "%-20s (%s)", unknown3);
+    offset += sizeof(uint16);
+
+    const auto delegateItemIdentifier = ((uint8*) &item + offset);
+    AddGUIDElement("Delegate item identifier", delegateItemIdentifier);
+    offset += 16;
+
+    const auto itemClassIdentifier = ((uint8*) &item + offset);
+    AddGUIDElement("Item (class) identifier", itemClassIdentifier);
+    offset += 16;
+
+    auto base = (ExtensionBlock0xBEEF0004Base*) ((uint8*) &item + offset);
+    switch (base->version)
+    {
+    case VersionBEEF0004::Windows8dot1or10:
+        UpdateExtensionBlock0xBEEF0004_V9((ExtensionBlock0xBEEF0004_V9*) base);
+        break;
+    default:
+        general->AddItem("BEEF0004").SetType(ListViewItem::Type::Category);
+        UpdateExtensionBlock0xBEEF0004Base(*base);
+        break;
+    }
 }
 
 void Panels::LinkTargetIDList::UpdateIssues()

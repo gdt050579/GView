@@ -119,6 +119,8 @@ namespace Panels
         void UpdateExtensionBlock0xBEEF0003(ExtensionBlock0xBEEF0003& block);
         void UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block);
         void UpdateExtensionBlock0xBEEF0004_V9(ExtensionBlock0xBEEF0004_V9* block);
+        void UpdateControlPanelShellItem(ControlPanelShellItem& block);
+        void UpdateDelegateShellItem(DelegateShellItem& item);
         void UpdateIssues();
         void RecomputePanelsPositions();
 

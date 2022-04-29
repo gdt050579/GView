@@ -451,7 +451,7 @@ enum class ClassTypeIndicators : uint8
     CLSID_MyComputer          = 0x20, // Volume shell item -> 0x20 – 0x2f
     CLSID_ShellFSFolder       = 0x30, // File entry shell item -> 0x30 – 0x3f
     CLSID_NetworkRoot         = 0x40, // Network location shell item -> 0x40 – 0x4f
-    CompressedFolderShellItem = 0x52, // Network location shell item -> 0x40 – 0x4f
+    CompressedFolderShellItem = 0x52, // Compressed Folder Shell Item
     CLSID_Internet            = 0x61, // URI shell item
     ControlPanel_             = 0x70, // Not seen in wild but reason to believe it exists. Item has no item data at offset 0x04.
     ControlPanel              = 0x71, // Control Panel shell item
@@ -777,6 +777,40 @@ struct FileEntryShellItem_XPAndLater
 struct FileEntryShellItem_SolidWorks
 {
 };
+
+#pragma pack(push, 1)
+struct ControlPanelShellItem
+{
+    uint16 size;          // The size of the shell item. Includes the 2 bytes of the size itself.
+    uint8 indicator;      // Class type indicator 0x20 after applying a bitmask of 0x70.
+    uint8 unknown0;       // Unknown (sort order ?)
+    uint8 unknown1;       // Unknown (empty values)
+    uint8 identifier[16]; // Control Panel Item identifier. Contains a GUID.
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct DelegateShellItem
+{
+    uint16 size;     // The size of the shell item. Includes the 2 bytes of the size itself.
+    uint8 indicator; // Class type indicator 0x20 after applying a bitmask of 0x70.
+    uint8 unknown0;
+    uint16 unknown1; // Unknown (size ?). Size does not Includes the 2 bytes of the size itself, should map up to the start of the delegate
+                     // item identifier Inner or delegated data size?
+    uint32 unknownSignature;     // "CFSF"
+    uint16 subShellItemDataSize; // Value does not includes the 2 bytes of the size itself
+    uint8 subClassTypeIndicator;
+    uint8 unknown2;
+    uint32 filesize;                    // What about > 32-bit file sizes?
+    uint32 lastModificationDateAndTime; // Contains a FAT date and time in UTC
+    uint16 fileAttributes;
+    // Primary Name -> ASCII string with end-of-string character. This value is 16 - bit aligned, so it can contain an additional zero byte.
+    // Unknown (Empty values) -> Empty extension block? (uint16)
+    // Delegate item identifier. Contains a GUID. -> 5e591a74-df96-48d3-8d67-1733bcee28ba
+    // Item (class) identifier. Contains a GUID.
+    // Extension block 0xbeef0004
+};
+#pragma pack(pop)
 
 struct ShellItem
 {
