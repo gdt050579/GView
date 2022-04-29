@@ -146,7 +146,8 @@ void Instance::RecomputeLineIndexes()
         auto* loopEnd = buf.end();
         if (((offset + buf.GetLength()) < sz) && (buf.GetLength() > 16))
         {
-            // if this is a partial part of the file and it has more then 16 bytes, deduct 8 bytes to make sure that any possible conversion will be made
+            // if this is a partial part of the file and it has more then 16 bytes, deduct 8 bytes to make sure that any possible conversion
+            // will be made
             loopEnd -= 8;
         }
         while (p < loopEnd)
@@ -296,8 +297,9 @@ void Instance::UpdateViewBounderies()
     this->ViewDataCount    = 0;
     auto xScroll           = 0U; // temporary -> should be a class data member
     auto xMaxPos           = xScroll + w;
+    auto nrLines           = lines.size();
 
-    while (y < h)
+    while ((y < h) && (lineNo < nrLines))
     {
         ComputeSubLineIndexes(lineNo, buf, lineStartOffset);
 
