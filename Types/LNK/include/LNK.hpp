@@ -44,6 +44,7 @@ namespace Panels
         void UpdateLinkTargetIDList();
         void UpdateFileEntryShellItem_XPAndLater(ItemID* item);
         void UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block);
+        void UpdateExtensionBlock0xBEEF0004BaseV9(ExtensionBlock0xBEEF0004_V9* block);
         void UpdateIssues();
         void RecomputePanelsPositions();
 

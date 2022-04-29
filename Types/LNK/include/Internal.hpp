@@ -660,7 +660,7 @@ struct ExtensionBlock0xBEEF0004Base
 
 struct NTFSFileReference
 {
-    uint8 mftEntryIndex;
+    uint8 mftEntryIndex[6];
     uint16 sequenceNumber;
 };
 

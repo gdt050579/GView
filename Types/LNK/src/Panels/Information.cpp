@@ -278,13 +278,11 @@ void Information::UpdateFileEntryShellItem_XPAndLater(ItemID* id)
 
     if ((item.indicator & 0x0F) & (uint8) FileEntryShellItemFlags::HasUnicodeStrings)
     {
-        std::u16string_view sv{ (char16*) primaryName, wcslen((wchar_t*) primaryName) };
         general->AddItem({ "Primary Name", ls.Format("%S", primaryName) });
         offset += (wcslen((wchar_t*) primaryName) * sizeof(wchar_t));
     }
     else
     {
-        std::string_view sv{ (char*) primaryName, strlen((char*) primaryName) };
         general->AddItem({ "Primary Name", ls.Format("%s", primaryName) });
         offset += strlen((char*) primaryName);
     }
@@ -292,7 +290,15 @@ void Information::UpdateFileEntryShellItem_XPAndLater(ItemID* id)
     offset = (offset % 2 == 0 ? offset : offset + 1) + 2; // 16 bit aligned
 
     auto base = (ExtensionBlock0xBEEF0004Base*) ((uint8*) (id) + offset);
-    UpdateExtensionBlock0xBEEF0004Base(*base);
+    switch (base->version)
+    {
+    case VersionBEEF0004::Windows8dot1or10:
+        UpdateExtensionBlock0xBEEF0004BaseV9((ExtensionBlock0xBEEF0004_V9*) base);
+        break;
+    default:
+        UpdateExtensionBlock0xBEEF0004Base(*base);
+        break;
+    }
 }
 
 void Information::UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block)
@@ -324,6 +330,29 @@ void Information::UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Bas
           .SetType(ListViewItem::Type::Emphasized_1);
 
     AddDecAndHexElement("BEEF0004 Unknown0", "%-20s (%s)", block.unknown0);
+}
+
+void Information::UpdateExtensionBlock0xBEEF0004BaseV9(ExtensionBlock0xBEEF0004_V9* block)
+{
+    UpdateExtensionBlock0xBEEF0004Base(block->base);
+
+    AddDecAndHexElement("BEEF0004 v9 Unknown0", "%-20s (%s)", block->unknown0);
+    AddDecAndHexElement("BEEF0004 v9 MFT Entry Index", "%-20s (%s)", (*(uint64*) block->fileReference.mftEntryIndex) & 0xFFFFFFFF);
+    AddDecAndHexElement("BEEF0004 v9 Sequence Number", "%-20s (%s)", block->fileReference.sequenceNumber);
+    AddDecAndHexElement("BEEF0004 v9 Unknown1", "%-20s (%s)", block->unknown1);
+    AddDecAndHexElement("BEEF0004 v9 Long String Size", "%-20s (%s)", block->longStringSize);
+    AddDecAndHexElement("BEEF0004 v9 Unknown2", "%-20s (%s)", block->unknown2);
+    AddDecAndHexElement("BEEF0004 v9 Unknown3", "%-20s (%s)", block->unknown3);
+
+    if (block->longStringSize > 0)
+    {
+        LocalString<1024> ls;
+        const auto locaLizedName = (uint16*) ((uint8*) block + sizeof(ExtensionBlock0xBEEF0004_V9));
+        general->AddItem({ "BEEF0004 v9 Localized Name", ls.Format("%S", locaLizedName) });
+    }
+
+    const auto firstExtension = *(uint16*) ((uint8*) block + block->base.size - sizeof(uint16));
+    AddDecAndHexElement("BEEF0004 v9 First Extension", "%-20s (%s)", firstExtension);
 }
 
 void Information::UpdateIssues()
