@@ -277,9 +277,41 @@ void Instance::MoveTo(uint32 lineNo, uint32 charInde)
 }
 void Instance::MoveLeft()
 {
+    LineInfo li;
+    if (GetLineInfo(this->Cursor.lineNo, li) == false)
+        return;
+    if (this->Cursor.charIndex == 0)
+    {
+        if (this->Cursor.lineNo>0)
+        {
+            this->Cursor.lineNo--;
+            GetLineInfo(this->Cursor.lineNo, li);
+            this->Cursor.charIndex = li.charsCount;
+        }
+    }
+    else
+    {
+        this->Cursor.charIndex--;
+    }
 }
 void Instance::MoveRight()
 {
+    LineInfo li;
+    if (GetLineInfo(this->Cursor.lineNo, li) == false)
+        return;
+    this->Cursor.charIndex++;
+    if (this->Cursor.charIndex >= li.charsCount)
+    {
+        if ((this->Cursor.lineNo + 1) >= this->lines.size())
+        {
+            this->Cursor.charIndex = li.charsCount;
+        }
+        else
+        {
+            this->Cursor.lineNo++;
+            this->Cursor.charIndex = 0;
+        }
+    }
 }
 void Instance::UpdateViewBounderies()
 {
