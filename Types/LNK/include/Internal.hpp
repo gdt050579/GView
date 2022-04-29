@@ -485,7 +485,7 @@ static const std::map<ClassTypeIndicators, std::string_view> ClassTypeIndicators
 };
 
 #pragma pack(push, 2)
-struct Extensionblock0xbeef0017
+struct ExtensionBlock0xBEEF0017
 {
     uint16 size;      // Extension size. Includes the 2 bytes of the size itself.
     uint16 version;   // Extension version.
@@ -504,7 +504,7 @@ struct Extensionblock0xbeef0017
 };
 #pragma pack(pop)
 
-static_assert(sizeof(Extensionblock0xbeef0017) == 74);
+static_assert(sizeof(ExtensionBlock0xBEEF0017) == 74);
 
 enum class SortIndex : uint8
 {
@@ -545,7 +545,7 @@ struct RootFolderShellItem
 struct RootFolderShellItemWithExtensionBlock0xBEEF0017
 {
     RootFolderShellItem item;
-    Extensionblock0xbeef0017 block;
+    ExtensionBlock0xBEEF0017 block;
 };
 
 // The volume shell item is identified by a value of 0x20 after applying a bitmask of 0x70. The remaining bits in the class type indicator
