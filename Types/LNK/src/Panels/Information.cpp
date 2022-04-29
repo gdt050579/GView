@@ -140,10 +140,7 @@ void Information::UpdateVolumeShellItem(VolumeShellItem& item)
     NumericFormatter nf2;
 
     AddDecAndHexElement("Size", "%-20s (%s)", item.size);
-
-    const auto indicator    = nf2.ToString(item.indicator, hex);
-    const auto indicatorHex = nf2.ToString(item.indicator, hex);
-    general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicator.data(), indicatorHex.data()) });
+    AddDecAndHexElement("Class Type Indicator", "%-20s (%s)", item.indicator);
 
     const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at((ClassTypeIndicators) (item.indicator & 0x70));
     LocalString<16> hfls;
@@ -175,13 +172,8 @@ void Information::UpdateLinkTargetIDList()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto idListSize    = nf.ToString(lnk->linkTargetIDList.IDListSize, dec);
-    const auto idListSizeHex = nf2.ToString(lnk->linkTargetIDList.IDListSize, hex);
-    general->AddItem({ "ID List Size", ls.Format("%-20s (%s)", idListSize.data(), idListSizeHex.data()) });
-
-    const auto itemIDsCount    = nf.ToString(lnk->itemIDS.size(), dec);
-    const auto itemIDsCountHex = nf2.ToString(lnk->itemIDS.size(), hex);
-    general->AddItem({ "ItemIDs #", ls.Format("%-20s (%s)", itemIDsCount.data(), itemIDsCountHex.data()) });
+    AddDecAndHexElement("ID List Size", "%-20s (%s)", lnk->linkTargetIDList.IDListSize);
+    AddDecAndHexElement("ItemIDs #", "%-20s (%s)", lnk->itemIDS.size());
 
     for (const auto& id : lnk->itemIDS)
     {
@@ -215,15 +207,123 @@ void Information::UpdateLinkTargetIDList()
             UpdateVolumeShellItem(*vsi);
         }
         break;
+        case ClassTypeIndicators::CLSID_ShellFSFolder:
+        {
+            general->AddItem("CLSID_ShellFSFolder").SetType(ListViewItem::Type::Category);
+            UpdateFileEntryShellItem_XPAndLater(id);
+        }
+        break;
         default:
         {
             const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at(indicator);
             const auto indicatorHex   = nf2.ToString((uint8) indicator, hex);
-            general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicatorName.data(), indicatorHex.data()) });
+            general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicatorName.data(), indicatorHex.data()) })
+                  .SetType(ListViewItem::Type::ErrorInformation);
         }
         break;
         }
     }
+}
+
+void Information::UpdateFileEntryShellItem_XPAndLater(ItemID* id)
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+
+    const auto item = *(FileEntryShellItem_XPAndLater*) id;
+    AddDecAndHexElement("Size", "%-20s (%s)", item.size);
+    AddDecAndHexElement("Class Type Indicator", "%-20s (%s)", item.indicator);
+
+    const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at((ClassTypeIndicators) (item.indicator & 0x70));
+    LocalString<16> hfls;
+    hfls.Format("(0x%X)", (item.indicator & 0x70));
+    general->AddItem({ "", ls.Format("%-20s %-4s", indicatorName.data(), hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+
+    const auto fesiFlags = LNK::GetFileEntryShellItemFlags(item.indicator & 0x0F);
+    for (const auto& flag : fesiFlags)
+    {
+        hfls.Format("(0x%X)", flag);
+        const auto flagName = LNK::FileEntryShellItemFlagsNames.at(flag).data();
+        general->AddItem({ "", ls.Format("%-20s %-4s", flagName, hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+    }
+
+    AddDecAndHexElement("Unknown0", "%-20s %-4s", item.unknown0);
+    AddDecAndHexElement("FileSize", "%-20s %-4s", item.fileSize);
+
+    DateTime dt;
+    dt.CreateFromFATUTC(item.lastModificationDateAndTime);
+    const auto lastModificationDateAndTimeHex = nf.ToString(item.lastModificationDateAndTime, hex);
+    general
+          ->AddItem({ "Last Modification Date And Time",
+                      ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), lastModificationDateAndTimeHex.data()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+
+    AddDecAndHexElement("File Attribute Flags", "%-20s (%s)", item.fileAttributesFlags);
+
+    const auto faFlags = LNK::GetFileAttributeFlags(item.fileAttributesFlags);
+    for (const auto& flag : faFlags)
+    {
+        LocalString<16> hfls;
+        hfls.Format("(0x%X)", flag);
+
+        const auto flagName        = LNK::FileAttributeFlagsNames.at(flag).data();
+        const auto flagDescription = LNK::FileAttributeFlagsDescriptions.at(flag).data();
+
+        general->AddItem({ "", ls.Format("%-20s %-4s %s", flagName, hfls.GetText(), flagDescription) })
+              .SetType(ListViewItem::Type::Emphasized_2);
+    }
+
+    auto offset            = sizeof(FileEntryShellItem_XPAndLater);
+    const auto primaryName = ((uint8*) (id) + offset);
+
+    if ((item.indicator & 0x0F) & (uint8) FileEntryShellItemFlags::HasUnicodeStrings)
+    {
+        std::u16string_view sv{ (char16*) primaryName, wcslen((wchar_t*) primaryName) };
+        general->AddItem({ "Primary Name", ls.Format("%S", primaryName) });
+        offset += (wcslen((wchar_t*) primaryName) * sizeof(wchar_t));
+    }
+    else
+    {
+        std::string_view sv{ (char*) primaryName, strlen((char*) primaryName) };
+        general->AddItem({ "Primary Name", ls.Format("%s", primaryName) });
+        offset += strlen((char*) primaryName);
+    }
+
+    offset = (offset % 2 == 0 ? offset : offset + 1) + 2; // 16 bit aligned
+
+    auto base = (ExtensionBlock0xBEEF0004Base*) ((uint8*) (id) + offset);
+    UpdateExtensionBlock0xBEEF0004Base(*base);
+}
+
+void Information::UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block)
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+
+    AddDecAndHexElement("BEEF0004 Size", "%-20s (%s)", block.size);
+
+    const auto& versionName = LNK::VersionBEEF0004Names.at(block.version);
+    const auto versionHex   = nf.ToString((uint16) block.version, hex);
+    general->AddItem({ "BEEF0004 Version", ls.Format("%-20s (%s)", versionName.data(), versionHex.data()) });
+
+    AddDecAndHexElement("BEEF0004 Signature", "%-20s (%s)", block.signature);
+
+    DateTime dt;
+    dt.CreateFromFATUTC(block.creationDateAndTime);
+    const auto creationDateAndTimeBEEF0004Hex = nf.ToString(block.creationDateAndTime, hex);
+    general
+          ->AddItem({ "BEEF0004 Creation Date And Time",
+                      ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), creationDateAndTimeBEEF0004Hex.data()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+
+    dt.CreateFromFATUTC(block.lastDateAndTime);
+    const auto lastDateAndTimeBEEF0004Hex = nf.ToString(block.lastDateAndTime, hex);
+    general
+          ->AddItem({ "BEEF0004 Last Date And Time",
+                      ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), lastDateAndTimeBEEF0004Hex.data()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+
+    AddDecAndHexElement("BEEF0004 Unknown0", "%-20s (%s)", block.unknown0);
 }
 
 void Information::UpdateIssues()
@@ -234,7 +334,7 @@ void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
-    general->Resize(GetWidth(), general->GetItemsCount() + 3);
+    general->Resize(GetWidth(), std::min<>(this->GetHeight(), (int) general->GetItemsCount() + 3));
 
     // CHECKRET(general.IsValid() & issues.IsValid(), "");
     // issues->SetVisible(issues->GetItemsCount() > 0);

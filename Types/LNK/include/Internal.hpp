@@ -587,6 +587,192 @@ struct VolumeShellItem
     uint8 unknownFlags; // If class type indicator flag 0x01 (has name) is not set. Unknown (Flags) Seen 0x00, 0x1e, 0x80.
 };
 
+// The file entry shell item is identified by a value of 0x30 after applying a bitmask of 0x70. The remaining bits in the class type
+// indicator are presumed to be a sub-type or flags.
+enum class FileEntryShellItemFlags : uint8
+{
+    IsDirectory        = 0x01,
+    IsFile             = 0x02,
+    HasUnicodeStrings  = 0x04,
+    Unknown0           = 0x08, // Related to the common item dialog?
+    HasClassIdentifier = 0x80  // Related to junction?
+};
+
+static const std::map<FileEntryShellItemFlags, std::string_view> FileEntryShellItemFlagsNames{
+    GET_PAIR_FROM_ENUM(FileEntryShellItemFlags::IsDirectory),        GET_PAIR_FROM_ENUM(FileEntryShellItemFlags::IsFile),
+    GET_PAIR_FROM_ENUM(FileEntryShellItemFlags::HasUnicodeStrings),  GET_PAIR_FROM_ENUM(FileEntryShellItemFlags::Unknown0),
+    GET_PAIR_FROM_ENUM(FileEntryShellItemFlags::HasClassIdentifier),
+};
+
+static const std::vector<FileEntryShellItemFlags> GetFileEntryShellItemFlags(uint8 flags)
+{
+    std::vector<FileEntryShellItemFlags> output;
+
+    for (const auto& data : FileEntryShellItemFlagsNames)
+    {
+        const auto flag = static_cast<FileEntryShellItemFlags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace_back(flag);
+        }
+    }
+
+    return output;
+}
+
+#pragma pack(push, 1)
+struct ExtensionBlock0xBEEF0003
+{
+    uint16 size;                     // Extension size. Includes the 2 bytes of the size itself.
+    uint16 version;                  // Extension version.
+    uint32 signature;                // Extension signature.
+    uint8 shellFolderIdentifier[16]; // Contains a GUID
+    uint16 blockVersionOffset;       // First extension block version offset. The offset is relative from the start of the shell item.
+};
+#pragma pack(pop)
+
+static_assert(sizeof(ExtensionBlock0xBEEF0003) == 26);
+
+enum class VersionBEEF0004 : uint16
+{
+    WindowsXPOr2003   = 0x03,
+    WindowsVistaOrSP0 = 0x07,
+    Windows2008Or7Or8 = 0x08,
+    Windows8dot1or10  = 0x09,
+};
+
+static const std::map<VersionBEEF0004, std::string_view> VersionBEEF0004Names{ GET_PAIR_FROM_ENUM(VersionBEEF0004::WindowsXPOr2003),
+                                                                               GET_PAIR_FROM_ENUM(VersionBEEF0004::WindowsVistaOrSP0),
+                                                                               GET_PAIR_FROM_ENUM(VersionBEEF0004::Windows2008Or7Or8),
+                                                                               GET_PAIR_FROM_ENUM(VersionBEEF0004::Windows8dot1or10) };
+
+#pragma pack(push, 1)
+struct ExtensionBlock0xBEEF0004Base
+{
+    uint16 size;                // Extension size. Includes the 2 bytes of the size itself.
+    VersionBEEF0004 version;    // Extension version.
+    uint32 signature;           // Extension signature.
+    uint32 creationDateAndTime; // Contains a FAT date and time in UTC
+    uint32 lastDateAndTime;     // Contains a FAT date and time in UTC
+    uint16 unknown0;            // Unknown (version or identifier?)
+};
+#pragma pack(pop)
+
+struct NTFSFileReference
+{
+    uint8 mftEntryIndex;
+    uint16 sequenceNumber;
+};
+
+#pragma pack(push, 1)
+struct ExtensionBlock0xBEEF0004_V3
+{
+    ExtensionBlock0xBEEF0004Base base;
+    uint16 longStringSize; // If extension version >= 3 -> Contains the size of long name and localized name or 0 if no localized name is
+                           // present. For extension version
+    // 8 and later it also includes the size of values after this size and before the long name.
+    // LocaLizedName    -> If extension version >= 3 and long string size > 0 -> ASCII string with end-of-string character
+    // First extension -> If extension version >= 3 block version offset      -> The offset is relative from the start of the shell item.
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct ExtensionBlock0xBEEF0004_V7
+{
+    ExtensionBlock0xBEEF0004Base base;
+    uint16 unknown0;                 // If extension version >= 7
+    NTFSFileReference fileReference; // If extension version >= 7
+    uint64 unknown1;                 // If extension version >= 7
+    uint16 longStringSize; // If extension version >= 3 -> Contains the size of long name and localized name or 0 if no localized name is
+                           // present. For extension version
+    // 8 and later it also includes the size of values after this size and before the long name.
+    // LocaLizedName    -> If extension version >= 3 and long string size > 0 -> ASCII string with end-of-string character
+    // LocaLizedName    -> If extension version >= 7 and long string size > 0 -> UTF-16 little-endian string with end-of-string character
+    // First extension -> If extension version >= 3 block version offset      -> The offset is relative from the start of the shell item.
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct ExtensionBlock0xBEEF0004_V8
+{
+    ExtensionBlock0xBEEF0004Base base;
+    uint16 unknown0;                 // If extension version >= 7
+    NTFSFileReference fileReference; // If extension version >= 7
+    uint64 unknown1;                 // If extension version >= 7
+    uint16 longStringSize; // If extension version >= 3 -> Contains the size of long name and localized name or 0 if no localized name is
+                           // present. For extension version
+    // 8 and later it also includes the size of values after this size and before the long name.
+    uint32 unknown3; // If extension version >= 8
+    // LocaLizedName    -> If extension version >= 7 and long string size > 0 -> UTF-16 little-endian string with end-of-string character
+    // First extension -> If extension version >= 3 block version offset      -> The offset is relative from the start of the shell item.
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct ExtensionBlock0xBEEF0004_V9
+{
+    ExtensionBlock0xBEEF0004Base base;
+    uint16 unknown0;                 // If extension version >= 7
+    NTFSFileReference fileReference; // If extension version >= 7
+    uint64 unknown1;                 // If extension version >= 7
+    uint16 longStringSize; // If extension version >= 3 -> Contains the size of long name and localized name or 0 if no localized name is
+                           // present. For extension version
+    // 8 and later it also includes the size of values after this size and before the long name.
+    uint32 unknown2; // If extension version >= 9
+    uint32 unknown3; // If extension version >= 8
+    // LocaLizedName    -> If extension version >= 7 and long string size > 0 -> UTF-16 little-endian string with end-of-string character
+    // First extension -> If extension version >= 3 block version offset      -> The offset is relative from the start of the shell item.
+};
+#pragma pack(pop)
+
+// TODO:
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0005
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0006
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0008
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0009
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef000a
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef000b
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef000c
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef000e
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0010
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0013
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0014
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0016
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0019
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef001a
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0021
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0025
+
+struct FileEntryShellItem_PreWindowsXP
+{
+};
+
+#pragma pack(push, 2)
+struct FileEntryShellItem_XPAndLater
+{
+    uint16 size;                        // The size of the shell item. Includes the 2 bytes of the size itself.
+    uint8 indicator;                    // Class type indicator 0x20 after applying a bitmask of 0x70.
+    uint8 unknown0;                     // Unknown (Empty value)
+    uint32 fileSize;                    // What about > 32-bit file sizes?
+    uint32 lastModificationDateAndTime; // Contains a FAT date and time in UTC
+    uint16 fileAttributesFlags;         // Contains the lower 16-bit part of the file attribute flags.
+
+    // Primary Name -> Depending on flag 0x04 an ASCII or UTF-16 little-endian string with end-of-string character. This value is
+    // 16-bit aligned, so for ASCII strings it can contain an additional zero byte.
+
+    // 	Extension block 0xbeef0004 -> This value contains the the size of the extension block or 0 if not set.
+
+    // Present if shell item contains more data (and flag 0x80 is not set?) (seen in Windows 2003) -> Extension block -> Seen extension
+    // block 0xbeef0005, 0xbeef0006 and 0xbeef001a.
+
+    // If class type indicator flag 0x80 is set -> Extension block 0xbeef0003
+};
+#pragma pack(pop)
+
+struct FileEntryShellItem_SolidWorks
+{
+};
+
 struct ShellItem
 {
     uint8 type;
