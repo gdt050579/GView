@@ -43,33 +43,35 @@ void Panels::LinkTargetIDList::UpdateRootFolderShellItem(RootFolderShellItem& it
 
 void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0017(ExtensionBlock0xBEEF0017& block)
 {
-    AddDecAndHexElement("Block Size", "%-20s (%s)", block.size);
-    AddDecAndHexElement("Block Version", "%-20s (%s)", block.version);
-    AddDecAndHexElement("Block Signature", "%-20s (%s)", block.signature);
-    AddDecAndHexElement("Block Unknown0", "%-20s (%s)", block.unknown0);
-    AddDecAndHexElement("Block Unknown1", "%-20s (%s)", block.unknown1);
-    AddDecAndHexElement("Block Unknown2", "%-20s (%s)", block.unknown2);
-    AddDecAndHexElement("Block Unknown3", "%-20s (%s)", block.unknown3);
-    AddDecAndHexElement("Block Unknown4", "%-20s (%s)", block.unknown4);
-    AddDecAndHexElement("Block Unknown5", "%-20s (%s)", block.unknown5);
-    AddDecAndHexElement("Block Unknown6", "%-20s (%s)", block.unknown6);
-    AddDecAndHexElement("Block Unknown7", "%-20s (%s)", block.unknown7);
-    AddDecAndHexElement("Block Unknown8", "%-20s (%s)", block.unknown8);
-    AddDecAndHexElement("Block Unknown9", "%-20s (%s)", block.unknown9);
-    AddDecAndHexElement("Block Unknown10", "%-20s (%s)", block.unknown10);
+    general->AddItem("BEEF0017").SetType(ListViewItem::Type::Category);
+
+    AddDecAndHexElement("Size", "%-20s (%s)", block.size);
+    AddDecAndHexElement("Version", "%-20s (%s)", block.version);
+    AddDecAndHexElement("Signature", "%-20s (%s)", block.signature);
+    AddDecAndHexElement("Unknown0", "%-20s (%s)", block.unknown0);
+    AddDecAndHexElement("Unknown1", "%-20s (%s)", block.unknown1);
+    AddDecAndHexElement("Unknown2", "%-20s (%s)", block.unknown2);
+    AddDecAndHexElement("Unknown3", "%-20s (%s)", block.unknown3);
+    AddDecAndHexElement("Unknown4", "%-20s (%s)", block.unknown4);
+    AddDecAndHexElement("Unknown5", "%-20s (%s)", block.unknown5);
+    AddDecAndHexElement("Unknown6", "%-20s (%s)", block.unknown6);
+    AddDecAndHexElement("Unknown7", "%-20s (%s)", block.unknown7);
+    AddDecAndHexElement("Unknown8", "%-20s (%s)", block.unknown8);
+    AddDecAndHexElement("Unknown9", "%-20s (%s)", block.unknown9);
+    AddDecAndHexElement("Unknown10", "%-20s (%s)", block.unknown10);
 
     LocalString<1024> ls;
     NumericFormatter nf;
     DateTime dt;
     dt.CreateFromFATUTC(block.unknown11);
     const auto unknown11Hex = nf.ToString(block.unknown11, hex);
-    general->AddItem({ "Date And Time", ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), unknown11Hex.data()) })
+    general->AddItem({ "Unknown11 Date And Time", ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), unknown11Hex.data()) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
-    AddDecAndHexElement("Block Unknown12", "%-20s (%s)", block.unknown12);
-    AddDecAndHexElement("Block Unknown13", "%-20s (%s)", block.unknown13);
-    AddDecAndHexElement("Block Unknown14", "%-20s (%s)", block.unknown14);
-    AddDecAndHexElement("Block VersionOffset ", "%-20s (%s)", block.blockVersionOffset);
+    AddDecAndHexElement("Unknown12", "%-20s (%s)", block.unknown12);
+    AddDecAndHexElement("Unknown13", "%-20s (%s)", block.unknown13);
+    AddDecAndHexElement("Unknown14", "%-20s (%s)", block.unknown14);
+    AddDecAndHexElement("VersionOffset ", "%-20s (%s)", block.blockVersionOffset);
 }
 
 void Panels::LinkTargetIDList::UpdateVolumeShellItem(VolumeShellItem& item)
@@ -228,17 +230,42 @@ void Panels::LinkTargetIDList::UpdateFileEntryShellItem_XPAndLater(ItemID* id)
 
     offset = (offset % 2 == 0 ? offset + 2 : offset + 1); // 16 bit aligned
 
-    // 04 00 ef be
     auto base = (ExtensionBlock0xBEEF0004Base*) ((uint8*) (id) + offset);
     switch (base->version)
     {
     case VersionBEEF0004::Windows8dot1or10:
-        UpdateExtensionBlock0xBEEF0004BaseV9((ExtensionBlock0xBEEF0004_V9*) base);
+        UpdateExtensionBlock0xBEEF0004_V9((ExtensionBlock0xBEEF0004_V9*) base);
         break;
     default:
+        general->AddItem("BEEF0004").SetType(ListViewItem::Type::Category);
         UpdateExtensionBlock0xBEEF0004Base(*base);
         break;
     }
+
+    if (item.indicator & 0x80)
+    {
+        general->AddItem("BEEF0003").SetType(ListViewItem::Type::Category);
+        UpdateExtensionBlock0xBEEF0003(*(ExtensionBlock0xBEEF0003*) ((uint8*) id + offset + base->size));
+    }
+    else
+    {
+        const auto current = offset + base->size;
+        if (item.size > current)
+        {
+            general->AddItem("Missing BEEF!").SetType(ListViewItem::Type::Category);
+            // Present if shell item contains more data (and flag 0x80 is not set?) (seen in Windows 2003)
+            // Extension block -> Seen extension block 0xbeef0005, 0xbeef0006 and 0xbeef001a.
+        }
+    }
+}
+
+void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0003(ExtensionBlock0xBEEF0003& block)
+{
+    AddDecAndHexElement("Size", "%-20s (%s)", block.size);
+    AddDecAndHexElement("Version", "%-20s (%s)", block.version);
+    AddDecAndHexElement("Signature", "%-20s (%s)", block.signature);
+    AddGUIDElement("Shell Folder Identifier", block.shellFolderIdentifier);
+    AddDecAndHexElement("Version Offset", "%-20s (%s)", block.blockVersionOffset);
 }
 
 void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block)
@@ -246,53 +273,58 @@ void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock
     LocalString<1024> ls;
     NumericFormatter nf;
 
-    AddDecAndHexElement("BEEF0004 Size", "%-20s (%s)", block.size);
+    AddDecAndHexElement("Size", "%-20s (%s)", block.size);
 
     const auto& versionName = LNK::VersionBEEF0004Names.at(block.version);
     const auto versionHex   = nf.ToString((uint16) block.version, hex);
-    general->AddItem({ "BEEF0004 Version", ls.Format("%-20s (%s)", versionName.data(), versionHex.data()) });
+    general->AddItem({ "Version", ls.Format("%-20s (%s)", versionName.data(), versionHex.data()) });
 
-    AddDecAndHexElement("BEEF0004 Signature", "%-20s (%s)", block.signature);
+    AddDecAndHexElement("Signature", "%-20s (%s)", block.signature);
 
     DateTime dt;
     dt.CreateFromFATUTC(block.creationDateAndTime);
     const auto creationDateAndTimeBEEF0004Hex = nf.ToString(block.creationDateAndTime, hex);
     general
-          ->AddItem({ "BEEF0004 Creation Date And Time",
+          ->AddItem({ "Creation Date And Time",
                       ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), creationDateAndTimeBEEF0004Hex.data()) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
     dt.CreateFromFATUTC(block.lastDateAndTime);
     const auto lastDateAndTimeBEEF0004Hex = nf.ToString(block.lastDateAndTime, hex);
     general
-          ->AddItem({ "BEEF0004 Last Date And Time",
-                      ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), lastDateAndTimeBEEF0004Hex.data()) })
+          ->AddItem(
+                { "Last Date And Time", ls.Format("%-20s %-4s", dt.GetStringRepresentation().data(), lastDateAndTimeBEEF0004Hex.data()) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
-    AddDecAndHexElement("BEEF0004 Unknown0", "%-20s (%s)", block.unknown0);
+    AddDecAndHexElement("Unknown0", "%-20s (%s)", block.unknown0);
 }
 
-void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0004BaseV9(ExtensionBlock0xBEEF0004_V9* block)
+void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0004_V9(ExtensionBlock0xBEEF0004_V9* block)
 {
+    general->AddItem("BEEF0004 v9").SetType(ListViewItem::Type::Category);
+
     UpdateExtensionBlock0xBEEF0004Base(block->base);
 
-    AddDecAndHexElement("BEEF0004 v9 Unknown0", "%-20s (%s)", block->unknown0);
-    AddDecAndHexElement("BEEF0004 v9 MFT Entry Index", "%-20s (%s)", (*(uint64*) block->fileReference.mftEntryIndex) & 0xFFFFFFFF);
-    AddDecAndHexElement("BEEF0004 v9 Sequence Number", "%-20s (%s)", block->fileReference.sequenceNumber);
-    AddDecAndHexElement("BEEF0004 v9 Unknown1", "%-20s (%s)", block->unknown1);
-    AddDecAndHexElement("BEEF0004 v9 Long String Size", "%-20s (%s)", block->longStringSize);
-    AddDecAndHexElement("BEEF0004 v9 Unknown2", "%-20s (%s)", block->unknown2);
-    AddDecAndHexElement("BEEF0004 v9 Unknown3", "%-20s (%s)", block->unknown3);
+    AddDecAndHexElement("Unknown0", "%-20s (%s)", block->unknown0);
+    AddDecAndHexElement("MFT Entry Index", "%-20s (%s)", (*(uint64*) block->fileReference.mftEntryIndex) & 0xFFFFFFFF);
+    AddDecAndHexElement("Sequence Number", "%-20s (%s)", block->fileReference.sequenceNumber);
+    AddDecAndHexElement("Unknown1", "%-20s (%s)", block->unknown1);
+    AddDecAndHexElement("Long String Size", "%-20s (%s)", block->longStringSize);
+    AddDecAndHexElement("Unknown2", "%-20s (%s)", block->unknown2);
+    AddDecAndHexElement("Unknown3", "%-20s (%s)", block->unknown3);
+
+    LocalString<1024> ls;
+    const auto longName = (uint16*) ((uint8*) block + sizeof(ExtensionBlock0xBEEF0004_V9));
+    general->AddItem({ "Long Name", ls.Format("%S", longName) });
 
     if (block->longStringSize > 0)
     {
-        LocalString<1024> ls;
-        const auto locaLizedName = (uint16*) ((uint8*) block + sizeof(ExtensionBlock0xBEEF0004_V9));
-        general->AddItem({ "BEEF0004 v9 Localized Name", ls.Format("%S", locaLizedName) });
+        const auto locaLizedName = (uint16*) ((uint8*) longName + wcslen((wchar_t*) longName) * sizeof(wchar_t) + 2);
+        general->AddItem({ "Localized Name", ls.Format("%S", locaLizedName) });
     }
 
     const auto firstExtension = *(uint16*) ((uint8*) block + block->base.size - sizeof(uint16));
-    AddDecAndHexElement("BEEF0004 v9 First Extension", "%-20s (%s)", firstExtension);
+    AddDecAndHexElement("First Extension", "%-20s (%s)", firstExtension);
 }
 
 void Panels::LinkTargetIDList::UpdateIssues()

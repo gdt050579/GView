@@ -116,21 +116,11 @@ namespace Panels
         void UpdateVolumeShellItem(VolumeShellItem& item);
         void UpdateLinkTargetIDList();
         void UpdateFileEntryShellItem_XPAndLater(ItemID* item);
+        void UpdateExtensionBlock0xBEEF0003(ExtensionBlock0xBEEF0003& block);
         void UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block);
-        void UpdateExtensionBlock0xBEEF0004BaseV9(ExtensionBlock0xBEEF0004_V9* block);
+        void UpdateExtensionBlock0xBEEF0004_V9(ExtensionBlock0xBEEF0004_V9* block);
         void UpdateIssues();
         void RecomputePanelsPositions();
-
-        void AddDateTime(std::string_view name, std::string_view format, uint64 value)
-        {
-            LocalString<1024> ls;
-            NumericFormatter nf;
-            AppCUI::OS::DateTime dt;
-            dt.CreateFromFileTime(value);
-            const auto valueHex = nf.ToString(value, hex);
-            general->AddItem({ name, ls.Format(format.data(), dt.GetStringRepresentation().data(), valueHex.data()) })
-                  .SetType(ListViewItem::Type::Emphasized_1);
-        }
 
         template <typename T>
         void AddDecAndHexElement(std::string_view name, std::string_view format, T value)
