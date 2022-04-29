@@ -55,6 +55,10 @@ extern "C"
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new LNK::Panels::Information(win->GetObject(), lnk)), true);
+        if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
+        {
+            win->AddPanel(Pointer<TabPage>(new LNK::Panels::LinkTargetIDList(win->GetObject(), lnk)), true);
+        }
 
         return true;
     }

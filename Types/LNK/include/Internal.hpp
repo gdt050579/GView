@@ -499,7 +499,12 @@ struct ExtensionBlock0xBEEF0017
     uint32 unknown6;
     uint64 unknown7; // Empty values
     uint32 unknown8;
-    uint8 unknown9[24];        // Empty values
+    uint32 unknown9;
+    uint32 unknown10;
+    uint32 unknown11;
+    uint32 unknown12;
+    uint32 unknown13;
+    uint32 unknown14;
     uint16 blockVersionOffset; // First extension block version offset. The offset is relative from the start of the shell item.
 };
 #pragma pack(pop)
