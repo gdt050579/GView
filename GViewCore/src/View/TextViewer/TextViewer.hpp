@@ -78,12 +78,15 @@ namespace View
             void RecomputeLineIndexes();
 
             bool GetLineInfo(uint32 lineNo, LineInfo& li);
+            LineInfo GetLineInfo(uint32 lineNo);
             bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64 &startOffset);
             void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
-            void MoveTo(uint32 lineNo, uint32 charIndex);
-
-            void MoveLeft();
-            void MoveRight();
+            
+            void MoveTo(uint32 lineNo, uint32 charIndex, bool select);
+            void MoveToStartOfLine(uint32 lineNo, bool select);
+            void MoveToEndOfLine(uint32 lineNo, bool select);
+            void MoveLeft(bool select);
+            void MoveRight(bool select);
 
             void UpdateViewBounderies();
 

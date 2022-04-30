@@ -236,6 +236,17 @@ bool Instance::GetLineInfo(uint32 lineNo, LineInfo& li)
     li = this->lines[lineNo];
     return true;
 }
+LineInfo Instance::GetLineInfo(uint32 lineNo)
+{
+    const auto sz = this->lines.size();
+    if (lineNo < sz)
+        return this->lines[lineNo];
+    // if its outside --> always return the last line
+    if (sz > 0)
+        return this->lines[sz - 1];
+    // otherwise return an empty line
+    return LineInfo(0, 0, 0);
+}
 bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset)
 {
     LineInfo li;
@@ -268,50 +279,57 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     }
     return true;
 }
-void Instance::MoveTo(uint32 lineNo, uint32 charInde)
+void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
 {
-    // const auto ptr = this->lineIndex.GetUInt32Array();
-    // auto idx       = std::upper_bound(ptr, ptr + this->lineIndex.Len(), (uint32) pos) - ptr;
-    // if (idx > 0)
-    //     idx--;
-}
-void Instance::MoveLeft()
-{
-    LineInfo li;
-    if (GetLineInfo(this->Cursor.lineNo, li) == false)
-        return;
-    if (this->Cursor.charIndex == 0)
+    // sanity checks
+    if (lineNo > this->lines.size())
+        lineNo = this->lines.size() - 1;
+    LineInfo li = GetLineInfo(lineNo);
+    if (charIndex >= li.charsCount)
     {
-        if (this->Cursor.lineNo>0)
-        {
-            this->Cursor.lineNo--;
-            GetLineInfo(this->Cursor.lineNo, li);
-            this->Cursor.charIndex = li.charsCount;
-        }
+        charIndex = li.charsCount == 0 ? 0 : li.charsCount - 1;
+    }
+    // all good -> valid values for lineNo and charIndex
+
+    this->Cursor.lineNo    = lineNo;
+    this->Cursor.charIndex = charIndex;
+}
+void Instance::MoveToStartOfLine(uint32 lineNo, bool select)
+{
+    if (lineNo >= this->lines.size())
+        MoveToEndOfLine(this->lines.size() - 1, select); // last position
+    else
+        MoveTo(lineNo, 0, select);
+}
+void Instance::MoveToEndOfLine(uint32 lineNo, bool select)
+{
+    LineInfo li = GetLineInfo(lineNo);
+    if (li.charsCount > 0)
+        MoveTo(lineNo, li.charsCount - 1, select);
+    else
+        MoveTo(lineNo, 0, select);
+}
+void Instance::MoveLeft(bool select)
+{
+    if (this->Cursor.charIndex > 0)
+    {
+        MoveTo(this->Cursor.lineNo, this->Cursor.charIndex - 1, select);
     }
     else
     {
-        this->Cursor.charIndex--;
+        if (this->Cursor.lineNo == 0)
+            MoveTo(0, 0, select);
+        else
+            MoveToEndOfLine(this->Cursor.lineNo - 1, select);
     }
 }
-void Instance::MoveRight()
+void Instance::MoveRight(bool select)
 {
-    LineInfo li;
-    if (GetLineInfo(this->Cursor.lineNo, li) == false)
-        return;
-    this->Cursor.charIndex++;
-    if (this->Cursor.charIndex >= li.charsCount)
-    {
-        if ((this->Cursor.lineNo + 1) >= this->lines.size())
-        {
-            this->Cursor.charIndex = li.charsCount;
-        }
-        else
-        {
-            this->Cursor.lineNo++;
-            this->Cursor.charIndex = 0;
-        }
-    }
+    LineInfo li = GetLineInfo(this->Cursor.lineNo);
+    if (this->Cursor.charIndex + 1 < li.charsCount)
+        MoveTo(this->Cursor.lineNo, this->Cursor.charIndex + 1, select);
+    else
+        MoveToStartOfLine(this->Cursor.lineNo + 1, select);
 }
 void Instance::UpdateViewBounderies()
 {
@@ -449,10 +467,28 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     switch (keyCode)
     {
     case Key::Left:
-        MoveLeft();
+        MoveLeft(false);
+        return true;
+    case Key::Left | Key::Shift:
+        MoveLeft(true);
         return true;
     case Key::Right:
-        MoveRight();
+        MoveRight(false);
+        return true;
+    case Key::Right | Key::Shift:
+        MoveRight(true);
+        return true;
+    case Key::Home:
+        MoveToStartOfLine(this->Cursor.lineNo, false);
+        return true;
+    case Key::Home | Key::Shift:
+        MoveToStartOfLine(this->Cursor.lineNo, true);
+        return true;
+    case Key::End:
+        MoveToEndOfLine(this->Cursor.lineNo, false);
+        return true;
+    case Key::End | Key::Shift:
+        MoveToEndOfLine(this->Cursor.lineNo, true);
         return true;
     case Key::PageUp:
         return true;
