@@ -31,7 +31,7 @@ void Information::UpdateGeneralInformation()
     general->AddItem("Header").SetType(ListViewItem::Type::Category);
 
     AddDecAndHexElement("Header Size", "%-20s (%s)", lnk->header.headerSize);
-    AddGUIDElement("Class Identifier", lnk->header.classIdentifier);
+    AddGUIDElement(general, "Class Identifier", lnk->header.classIdentifier);
     AddDecAndHexElement("Link Flags", "%-20s (%s)", lnk->header.linkFlags);
 
     const auto lFlags = LNK::GetLinkFlags(lnk->header.linkFlags);
@@ -93,14 +93,6 @@ void Information::UpdateGeneralInformation()
         std::string path;
         lusb.ToString(path);
         general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) });
-    }
-
-    general->AddItem("Extra Data").SetType(ListViewItem::Type::Category);
-    for (const auto& extraData : lnk->extraDataBases)
-    {
-        const auto& signature     = extraData->signature;
-        const auto& signatureName = LNK::ExtraDataSignaturesNames.at(signature);
-        general->AddItem({ signatureName.data(), "" });
     }
 }
 

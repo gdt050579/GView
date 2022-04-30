@@ -38,7 +38,7 @@ void Panels::LinkTargetIDList::UpdateRootFolderShellItem(RootFolderShellItem& it
     const auto sortIndexHex   = nf.ToString((uint8) item.sortIndex, hex);
     general->AddItem({ "Sort Index", ls.Format("%-20s (%s)", sortIndexName.data(), sortIndexHex.data()) });
 
-    AddGUIDElement("Shell Folder Identifier", item.shellFolderIdentifier);
+    AddGUIDElement(general, "Shell Folder Identifier", item.shellFolderIdentifier);
 }
 
 void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0017(ExtensionBlock0xBEEF0017& block)
@@ -280,7 +280,7 @@ void Panels::LinkTargetIDList::UpdateExtensionBlock0xBEEF0003(ExtensionBlock0xBE
     AddDecAndHexElement("Size", "%-20s (%s)", block.size);
     AddDecAndHexElement("Version", "%-20s (%s)", block.version);
     AddDecAndHexElement("Signature", "%-20s (%s)", block.signature);
-    AddGUIDElement("Shell Folder Identifier", block.shellFolderIdentifier);
+    AddGUIDElement(general, "Shell Folder Identifier", block.shellFolderIdentifier);
     AddDecAndHexElement("Version Offset", "%-20s (%s)", block.blockVersionOffset);
 }
 
@@ -359,7 +359,7 @@ void Panels::LinkTargetIDList::UpdateControlPanelShellItem(ControlPanelShellItem
 
     AddDecAndHexElement("Unknown0", "%-20s (%s)", block.unknown0);
     AddDecAndHexElement("Unknown1", "%-20s (%s)", block.unknown1);
-    AddGUIDElement("Identifier", block.identifier);
+    AddGUIDElement(general, "Identifier", block.identifier);
 }
 
 void Panels::LinkTargetIDList::UpdateDelegateShellItem(DelegateShellItem& item)
@@ -412,11 +412,11 @@ void Panels::LinkTargetIDList::UpdateDelegateShellItem(DelegateShellItem& item)
     offset += sizeof(uint16);
 
     const auto delegateItemIdentifier = ((uint8*) &item + offset);
-    AddGUIDElement("Delegate item identifier", delegateItemIdentifier);
+    AddGUIDElement(general, "Delegate item identifier", delegateItemIdentifier);
     offset += 16;
 
     const auto itemClassIdentifier = ((uint8*) &item + offset);
-    AddGUIDElement("Item (class) identifier", itemClassIdentifier);
+    AddGUIDElement(general, "Item (class) identifier", itemClassIdentifier);
     offset += 16;
 
     auto base = (ExtensionBlock0xBEEF0004Base*) ((uint8*) &item + offset);

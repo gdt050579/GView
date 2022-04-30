@@ -111,6 +111,11 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new LNK::Panels::LocationInformation(win->GetObject(), lnk)), true);
         }
 
+        if (lnk->extraDataBases.size() > 0)
+        {
+            win->AddPanel(Pointer<TabPage>(new LNK::Panels::ExtraData(win->GetObject(), lnk)), true);
+        }
+
         return true;
     }
 
