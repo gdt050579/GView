@@ -8,32 +8,32 @@ LNKFile::LNKFile()
 
 bool LNKFile::Update()
 {
-    CHECK(obj->GetData().Copy<Header>(0, header), false, "");
+    auto offset = 0;
+    CHECK(obj->GetData().Copy<Header>(offset, header), false, "");
+    offset += sizeof(header);
+
     if (header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
     {
-        CHECK(obj->GetData().Copy<LinkTargetIDList>(sizeof(header), linkTargetIDList), false, "");
-        linkTargetIDListBuffer = obj->GetData().CopyToBuffer(sizeof(Header) + sizeof(LinkTargetIDList), linkTargetIDList.IDListSize);
+        CHECK(obj->GetData().Copy<LinkTargetIDList>(offset, linkTargetIDList), false, "");
+        offset += sizeof(LinkTargetIDList);
+        linkTargetIDListBuffer = obj->GetData().CopyToBuffer(offset, linkTargetIDList.IDListSize);
         CHECK(linkTargetIDListBuffer.IsValid(), false, "");
 
-        auto offset = 0;
-        while (offset < linkTargetIDList.IDListSize - 2) // - terminal
+        auto offset2 = 0;
+        while (offset2 < linkTargetIDList.IDListSize - 2) // - terminal
         {
-            const auto itemID = itemIDS.emplace_back((ItemID*) &linkTargetIDListBuffer.GetData()[offset]);
-            offset += itemID->ItemIDSize;
+            const auto itemID = itemIDS.emplace_back((ItemID*) &linkTargetIDListBuffer.GetData()[offset2]);
+            offset2 += itemID->ItemIDSize;
         }
+        offset += offset2 + 2;
     }
 
     if (header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo)
     {
-        auto offset = sizeof(header);
-        if (header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
-        {
-            offset += sizeof(LinkTargetIDList) + linkTargetIDList.IDListSize;
-        }
         CHECK(obj->GetData().Copy<LocationInformation>(offset, locationInformation), false, "");
-        locationInformationBuffer =
-              obj->GetData().CopyToBuffer(offset, (uint32) obj->GetData().GetSize() - offset); // getting everything left here
+        locationInformationBuffer = obj->GetData().CopyToBuffer(offset, locationInformation.size);
         CHECK(locationInformationBuffer.IsValid(), false, "");
+        offset += locationInformation.size;
 
         if (locationInformation.headerSize > 28)
         {
@@ -56,6 +56,59 @@ bool LNKFile::Update()
         {
             networkShareInformation =
                   (NetworkShareInformation*) (locationInformationBuffer.GetData() + locationInformation.networkShareOffset);
+        }
+    }
+
+    dataStringsBuffer    = obj->GetData().CopyToBuffer(offset, (uint32) (obj->GetData().GetSize() - offset));
+    dataStringsOffset    = (uint32) offset;
+    const bool isUnicode = (header.linkFlags & (uint32) LNK::LinkFlags::IsUnicode);
+
+    auto dataStringBufferOffset = 0;
+    for (const auto& flag : std::initializer_list{ LNK::LinkFlags::HasName,
+                                                   LNK::LinkFlags::HasRelativePath,
+                                                   LNK::LinkFlags::HasWorkingDir,
+                                                   LNK::LinkFlags::HasArguments,
+                                                   LNK::LinkFlags::HasIconLocation })
+    {
+        if (header.linkFlags & (uint32) flag)
+        {
+            DataStringTypes dst = DataStringTypes::Description;
+
+            switch (flag)
+            {
+            case LNK::LinkFlags::HasName:
+                dst = DataStringTypes::Description;
+                break;
+            case LNK::LinkFlags::HasRelativePath:
+                dst = DataStringTypes::RelativePath;
+                break;
+            case LNK::LinkFlags::HasWorkingDir:
+                dst = DataStringTypes::WorkingDirectory;
+                break;
+            case LNK::LinkFlags::HasArguments:
+                dst = DataStringTypes::CommandLineArguments;
+                break;
+            case LNK::LinkFlags::HasIconLocation:
+                dst = DataStringTypes::IconLocation;
+                break;
+            default:
+                break;
+            }
+
+            const auto ds  = (DataString*) (dataStringsBuffer.GetData() + dataStringBufferOffset);
+            const auto buf = ((uint8*) &ds->charsCount + sizeof(DataString));
+            if (isUnicode)
+            {
+                std::u16string_view sv{ (char16*) buf, ds->charsCount };
+                dataStrings.emplace(std::pair<DataStringTypes, ConstString>{ dst, ConstString{ sv } });
+                dataStringBufferOffset += (ds->charsCount + 1ULL) * sizeof(char16);
+            }
+            else
+            {
+                std::string_view sv{ (char*) buf, ds->charsCount };
+                dataStrings.emplace(std::pair<DataStringTypes, ConstString>{ dst, ConstString{ sv } });
+                dataStringBufferOffset += (ds->charsCount + 1ULL);
+            }
         }
     }
 

@@ -82,6 +82,18 @@ void Information::UpdateGeneralInformation()
     AddDecAndHexElement("Unknown0", "%-20s (%s)", lnk->header.unknown0);
     AddDecAndHexElement("Unknown1", "%-20s (%s)", lnk->header.unknown1);
     AddDecAndHexElement("Unknown2", "%-20s (%s)", lnk->header.unknown2);
+
+    general->AddItem("Data Strings").SetType(ListViewItem::Type::Category);
+
+    LocalUnicodeStringBuilder<1024> lusb;
+    for (const auto& [type, data] : lnk->dataStrings)
+    {
+        const auto& typeName = LNK::DataStringTypesNames.at(type);
+        lusb.Set(data);
+        std::string path;
+        lusb.ToString(path);
+        general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) });
+    }
 }
 
 void Information::UpdateIssues()

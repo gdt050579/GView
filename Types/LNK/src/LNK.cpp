@@ -27,38 +27,65 @@ extern "C"
         return new LNK::LNKFile();
     }
 
+    static constexpr auto MagentaDarkBlue = ColorPair{ Color::Magenta, Color::DarkBlue };
+    static constexpr auto DarkGreenBlue   = ColorPair{ Color::DarkGreen, Color::DarkBlue };
+    static constexpr auto DarkRedBlue     = ColorPair{ Color::DarkRed, Color::DarkBlue };
+
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<LNK::LNKFile> lnk)
     {
         BufferViewer::Settings settings;
 
-        auto offset = 0;
-        settings.AddZone(offset, sizeof(LNK::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
+        auto offset = 0ULL;
+        settings.AddZone(offset, sizeof(LNK::Header), MagentaDarkBlue, "Header");
         offset += sizeof(LNK::Header);
 
         if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
         {
             settings.AddZone(
-                  offset,
-                  sizeof(lnk->linkTargetIDList.IDListSize) + lnk->linkTargetIDList.IDListSize,
-                  ColorPair{ Color::DarkGreen, Color::DarkBlue },
-                  "LinkTargetIDList");
+                  offset, sizeof(lnk->linkTargetIDList.IDListSize) + lnk->linkTargetIDList.IDListSize, DarkGreenBlue, "LinkTargetIDList");
             offset += sizeof(lnk->linkTargetIDList.IDListSize) + lnk->linkTargetIDList.IDListSize;
         }
 
         const auto liStartOffset = offset;
         if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo)
         {
-            settings.AddZone(offset, lnk->locationInformation.size, ColorPair{ Color::DarkRed, Color::DarkBlue }, "LocationInformation");
+            settings.AddZone(offset, lnk->locationInformation.size + 1ULL, DarkRedBlue, "LocationInformation");
             offset += lnk->locationInformation.size;
         }
 
         if (lnk->volumeInformation != nullptr)
         {
             settings.AddZone(
-                  liStartOffset + lnk->locationInformation.volumeInformationOffset,
+                  (uint64) liStartOffset + lnk->locationInformation.volumeInformationOffset,
                   lnk->volumeInformation->size,
-                  ColorPair{ Color::DarkGreen, Color::DarkBlue },
+                  DarkGreenBlue,
                   "Volume Information");
+        }
+
+        const bool isUnicode = (lnk->header.linkFlags & (uint32) LNK::LinkFlags::IsUnicode);
+        offset               = lnk->dataStringsOffset;
+        auto count           = 0;
+        for (const auto& [type, data] : lnk->dataStrings)
+        {
+            auto size = 0ULL;
+            if (isUnicode)
+            {
+                std::u16string_view sv{ std::get<std::u16string_view>(data) };
+                size = sv.size() * sizeof(char16);
+            }
+            else
+            {
+                std::string_view sv{ std::get<std::string_view>(data) };
+                size = sv.size();
+            }
+            size += 2ULL;
+
+            const auto& typeName         = LNK::DataStringTypesNames.at(type);
+            constexpr static auto colors = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
+            const auto& c                = *(colors.begin() + (count % 2));
+            settings.AddZone(offset, size, c, typeName.data());
+            offset += size;
+            count++;
         }
 
         win->CreateViewer("BufferView", settings);

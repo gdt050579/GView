@@ -1034,4 +1034,35 @@ struct LocationInformation
     // If location information header size > 32
     //      The Unicode common path UTF-16 little-endian string terminated by an end-of-string character
 };
+
+/*
+ * Dependent on the flags in the file header the following data strings are present or not. They are stored in the following order directly
+ * after the location information:
+ *      description
+ *      relative path
+ *      working directory
+ *      command line arguments
+ *      icon location
+ */
+
+enum class DataStringTypes : uint8
+{
+    Description          = 0,
+    RelativePath         = 1,
+    WorkingDirectory     = 2,
+    CommandLineArguments = 3,
+    IconLocation         = 4,
+};
+
+static const std::map<DataStringTypes, std::string_view> DataStringTypesNames{ GET_PAIR_FROM_ENUM(DataStringTypes::Description),
+                                                                               GET_PAIR_FROM_ENUM(DataStringTypes::RelativePath),
+                                                                               GET_PAIR_FROM_ENUM(DataStringTypes::WorkingDirectory),
+                                                                               GET_PAIR_FROM_ENUM(DataStringTypes::CommandLineArguments),
+                                                                               GET_PAIR_FROM_ENUM(DataStringTypes::IconLocation) };
+struct DataString
+{
+    uint16 charsCount; // The number of characters in the string
+                       // The string ASCII or UTF-16 little-endian string
+};
+
 } // namespace GView::Type::LNK

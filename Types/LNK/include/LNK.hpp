@@ -8,9 +8,11 @@ class LNKFile : public TypeInterface
 {
   public:
     Header header;
+
     LinkTargetIDList linkTargetIDList;
     Buffer linkTargetIDListBuffer;
     std::vector<ItemID*> itemIDS;
+
     Buffer locationInformationBuffer;
     LocationInformation locationInformation;
     uint32 unicodeLocalPathOffset = 0;
@@ -19,6 +21,10 @@ class LNKFile : public TypeInterface
     std::u16string_view unicodeCommonPath;
     VolumeInformation* volumeInformation             = nullptr;
     NetworkShareInformation* networkShareInformation = nullptr;
+
+    uint32 dataStringsOffset = 0;
+    Buffer dataStringsBuffer;
+    std::map<DataStringTypes, ConstString> dataStrings;
 
     LNKFile();
     virtual ~LNKFile()
