@@ -836,4 +836,202 @@ struct LinkTargetIDList
     // uint8 IDList[1];
 };
 
+enum class LocationFlags : uint32
+{
+    VolumeIDAndLocalBasePath               = 0x01,
+    CommonNetworkRelativeLinkAndPathSuffix = 0x02
+};
+
+static const std::map<LocationFlags, std::string_view> LocationFlagsNames{
+    GET_PAIR_FROM_ENUM(LocationFlags::VolumeIDAndLocalBasePath),
+    GET_PAIR_FROM_ENUM(LocationFlags::CommonNetworkRelativeLinkAndPathSuffix),
+};
+
+static const std::map<LocationFlags, std::string_view> LocationFlagsDescriptions{
+    { LocationFlags::VolumeIDAndLocalBasePath,
+      "The linked file is on a volume. If set the volume informationand the local path contain data." },
+    { LocationFlags::CommonNetworkRelativeLinkAndPathSuffix,
+      "The linked file is on a network share. If set the network share informationand common path contain data." }
+};
+
+enum class DriveType : uint32
+{
+    Unknown         = 0,
+    NoRootDirectory = 1,
+    Removable       = 2,
+    Fixed           = 3,
+    Remote          = 4,
+    CDRom           = 5,
+    RamDisk         = 6,
+};
+
+static const std::map<DriveType, std::string_view> DriveTypeNames{
+    GET_PAIR_FROM_ENUM(DriveType::Unknown), GET_PAIR_FROM_ENUM(DriveType::NoRootDirectory), GET_PAIR_FROM_ENUM(DriveType::Removable),
+    GET_PAIR_FROM_ENUM(DriveType::Fixed),   GET_PAIR_FROM_ENUM(DriveType::Remote),          GET_PAIR_FROM_ENUM(DriveType::CDRom),
+    GET_PAIR_FROM_ENUM(DriveType::RamDisk)
+};
+
+static const std::map<DriveType, std::string_view> DriveTypeDescriptions{
+    { DriveType::Unknown, "Unknown." },
+    { DriveType::NoRootDirectory, "No root directory" },
+    { DriveType::Removable, "Removable storage media (floppy, usb)." },
+    { DriveType::Fixed, "Fixed storage media (harddisk)." },
+    { DriveType::Remote, "Remote storage." },
+    { DriveType::CDRom, "Optical disc (CD-ROM, DVD, BD)." },
+    { DriveType::RamDisk, "RAM drive." },
+};
+
+struct VolumeInformation
+{
+    uint32 size;              // The size of the volume information including the 4 bytes of the size itself.
+    DriveType driveType;      //
+    uint32 driveSerialNumber; //
+    uint32 volumeLabelOffset; // The offset is relative to the start of the volume information.
+    // Offset to the volume label > 16 -> Offset to the Unicode volume label. The offset is relative to the start of the volume information.
+    // Volume information data
+    //      The volume label -> ASCII string terminated by an end-of-string character.
+    //      The Unicode volume label -> UTF-16 little-endian string terminated by an end-of-string character.
+};
+
+enum class NetworkShareFlags : uint32
+{
+    ValidDevice  = 0x01,
+    ValidNetType = 0x02
+};
+
+static const std::map<NetworkShareFlags, std::string_view> NetworkShareFlagsNames{ GET_PAIR_FROM_ENUM(NetworkShareFlags::ValidDevice),
+                                                                                   GET_PAIR_FROM_ENUM(NetworkShareFlags::ValidNetType)
+
+};
+
+static const std::map<NetworkShareFlags, std::string_view> NetworkShareFlagsDescriptions{
+    { NetworkShareFlags::ValidDevice, "If set the device name contains data." },
+    { NetworkShareFlags::ValidNetType, "If set the network provider type contains data." }
+};
+
+static const std::vector<NetworkShareFlags> GetNetworkShareFlags(uint32 flags)
+{
+    std::vector<NetworkShareFlags> output;
+
+    for (const auto& data : NetworkShareFlagsNames)
+    {
+        const auto flag = static_cast<NetworkShareFlags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace_back(flag);
+        }
+    }
+
+    return output;
+}
+
+enum class NetworkProviderTypes : uint32
+{
+    AVID        = 0x001A0000,
+    DOCUSPACE   = 0x001B0000,
+    MANGOSOFT   = 0x001C0000,
+    SERNET      = 0x001D0000,
+    RIVERFRONT1 = 0x001E0000,
+    RIVERFRONT2 = 0x001F0000,
+    DECORB      = 0x00200000,
+    PROTSTOR    = 0x00210000,
+    FJ_REDIR    = 0x00220000,
+    DISTINCT    = 0x00230000,
+    TWINS       = 0x00240000,
+    RDR2SAMPLE  = 0x00250000,
+    CSC         = 0x00260000,
+    _3IN1       = 0x00270000,
+    EXTENDNET   = 0x00290000,
+    STAC        = 0x002A0000,
+    FOXBAT      = 0x002B0000,
+    YAHOO       = 0x002C0000,
+    EXIFS       = 0x002D0000,
+    DAV         = 0x002E0000,
+    KNOWARE     = 0x002F0000,
+    OBJECT_DIRE = 0x00300000,
+    MASFAX      = 0x00310000,
+    HOB_NFS     = 0x00320000,
+    SHIVA       = 0x00330000,
+    IBMAL       = 0x00340000,
+    LOCK        = 0x00350000,
+    TERMSRV     = 0x00360000,
+    SRT         = 0x00370000,
+    QUINCY      = 0x00380000,
+    OPENAFS     = 0x00390000,
+    AVID1       = 0x003A0000,
+    DFS         = 0x003B0000,
+    KWNP        = 0x003C0000,
+    ZENWORKS    = 0x003D0000,
+    DRIVEONWEB  = 0x003E0000,
+    VMWARE      = 0x003F0000,
+    RSFX        = 0x00400000,
+    MFILES      = 0x00410000,
+    MS_NFS      = 0x00420000,
+    GOOGLE      = 0x00430000
+};
+
+static const std::map<NetworkProviderTypes, std::string_view> NetworkProviderTypesNames{
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::AVID),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::DOCUSPACE),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MANGOSOFT),   GET_PAIR_FROM_ENUM(NetworkProviderTypes::SERNET),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::RIVERFRONT1), GET_PAIR_FROM_ENUM(NetworkProviderTypes::RIVERFRONT2),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DECORB),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::PROTSTOR),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::FJ_REDIR),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DISTINCT),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::TWINS),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::RDR2SAMPLE),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::CSC),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::_3IN1),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::EXTENDNET),   GET_PAIR_FROM_ENUM(NetworkProviderTypes::STAC),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::FOXBAT),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::YAHOO),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::EXIFS),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::DAV),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::KNOWARE),     GET_PAIR_FROM_ENUM(NetworkProviderTypes::OBJECT_DIRE),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MASFAX),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::HOB_NFS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::SHIVA),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::IBMAL),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::LOCK),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::TERMSRV),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::SRT),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::QUINCY),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::OPENAFS),     GET_PAIR_FROM_ENUM(NetworkProviderTypes::AVID1),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DFS),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::KWNP),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::ZENWORKS),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DRIVEONWEB),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::VMWARE),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::RSFX),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MFILES),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::MS_NFS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::GOOGLE)
+};
+
+struct NetworkShareInformation
+{
+    uint32 size;  // The size of the network share information.
+    uint32 flags; // Network share flags (or type).
+    uint32
+          networkShareNameOffset; // Offset to the network share name. The offset is relative to the start of the network share information.
+    uint32 deviceNameOffset; // Offset to the device name. The offset is relative to the start of the network share information or 0 if not
+                             // present.
+    NetworkProviderTypes networkProviderType;
+    // Offset to the network share name > 20
+    //  	(uint32) Offset to the Unicode network share name. The offset is relative to the start of the network share information.
+    //      (uint32) Offset to the Unicode device name. The offset is relative to the start of the network share information or 0 if not
+    //      present.
+    // Network share information data
+    //      The network share name -> ASCII string terminated by an end-of-string character.
+    //      The device name -> ASCII string terminated by an end-of-string character.
+    //      The Unicode network share name -> UTF-16 little-endian string terminated by an end-of-string character.
+    //      The Unicode device name -> UTF-16 little-endian string terminated by an end-of-string character.
+};
+
+struct LocationInformation
+{
+    uint32 size;                    // The size of the location information including the 4 bytes of the size itself.
+    uint32 headerSize;              // Location information header size.
+    uint32 flags;                   // Location flags.
+    uint32 volumeInformationOffset; // Offset to the volume information. The offset is relative to the start of the location information.
+    uint32 localPathOffset;         // Offset to the local path. The offset is relative to the start of the location information.
+    uint32 networkShareOffset; // Offset to the network share information. The offset is relative to the start of the location information.
+    uint32 commonPathOffset;   // Offset to the common path. The offset is relative to the start of the location information.
+
+    // If location information header size > 28 -> Offset to the Unicode local path.
+    // If location information header size > 32 -> Offset to the Unicode common path.
+    // Location information data
+    //      The volume information        -> The local path string ASCII string terminated by an end-of-string character.
+    //      The network share information -> The common path ASCII string terminated by an end-of-string character
+    // If location information header size > 28
+    //      The Unicode local path string UTF-16 little-endian string terminated by an end-of-string character
+    // If location information header size > 32
+    //      The Unicode common path UTF-16 little-endian string terminated by an end-of-string character
+};
 } // namespace GView::Type::LNK

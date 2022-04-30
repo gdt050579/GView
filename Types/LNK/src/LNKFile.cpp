@@ -23,5 +23,41 @@ bool LNKFile::Update()
         }
     }
 
+    if (header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo)
+    {
+        auto offset = sizeof(header);
+        if (header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
+        {
+            offset += sizeof(LinkTargetIDList) + linkTargetIDList.IDListSize;
+        }
+        CHECK(obj->GetData().Copy<LocationInformation>(offset, locationInformation), false, "");
+        locationInformationBuffer =
+              obj->GetData().CopyToBuffer(offset, (uint32) obj->GetData().GetSize() - offset); // getting everything left here
+        CHECK(locationInformationBuffer.IsValid(), false, "");
+
+        if (locationInformation.headerSize > 28)
+        {
+            unicodeLocalPathOffset                = *(uint32*) (locationInformationBuffer.GetData() + sizeof(LocationInformation));
+            const auto unicodeLocalPathOffsetSize = wcslen((wchar_t*) (locationInformationBuffer.GetData() + unicodeLocalPathOffset));
+            unicodeLocalPath = { (char16*) (locationInformationBuffer.GetData() + unicodeLocalPathOffset), unicodeLocalPathOffsetSize };
+
+            if (locationInformation.headerSize > 32)
+            {
+                unicodeCommonPathOffset =
+                      *(uint32*) (locationInformationBuffer.GetData() + sizeof(LocationInformation) + sizeof(unicodeLocalPathOffset));
+                const auto unicodeCommonPathOffsetSize = wcslen((wchar_t*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset));
+                unicodeCommonPath                      = { (char16*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset),
+                                      unicodeCommonPathOffsetSize };
+            }
+        }
+        volumeInformation = (VolumeInformation*) (locationInformationBuffer.GetData() + locationInformation.volumeInformationOffset);
+
+        if (locationInformation.networkShareOffset > 0)
+        {
+            networkShareInformation =
+                  (NetworkShareInformation*) (locationInformationBuffer.GetData() + locationInformation.networkShareOffset);
+        }
+    }
+
     return true;
 }

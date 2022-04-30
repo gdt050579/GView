@@ -11,6 +11,14 @@ class LNKFile : public TypeInterface
     LinkTargetIDList linkTargetIDList;
     Buffer linkTargetIDListBuffer;
     std::vector<ItemID*> itemIDS;
+    Buffer locationInformationBuffer;
+    LocationInformation locationInformation;
+    uint32 unicodeLocalPathOffset = 0;
+    std::u16string_view unicodeLocalPath;
+    uint32 unicodeCommonPathOffset = 0;
+    std::u16string_view unicodeCommonPath;
+    VolumeInformation* volumeInformation             = nullptr;
+    NetworkShareInformation* networkShareInformation = nullptr;
 
     LNKFile();
     virtual ~LNKFile()
@@ -162,6 +170,44 @@ namespace Panels
 
       public:
         LinkTargetIDList(Reference<Object> _object, Reference<GView::Type::LNK::LNKFile> _lnk);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            RecomputePanelsPositions();
+        }
+        bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
+    };
+
+    class LocationInformation : public AppCUI::Controls::TabPage
+    {
+        Reference<Object> object;
+        Reference<GView::Type::LNK::LNKFile> lnk;
+        Reference<AppCUI::Controls::ListView> general;
+        Reference<AppCUI::Controls::ListView> issues;
+
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        void UpdateGeneralInformation();
+        void UpdateIssues();
+        void RecomputePanelsPositions();
+
+        template <typename T>
+        void AddDecAndHexElement(std::string_view name, std::string_view format, T value)
+        {
+            LocalString<1024> ls;
+            NumericFormatter nf;
+            NumericFormatter nf2;
+
+            const auto v    = nf.ToString(value, dec);
+            const auto hexV = nf2.ToString(value, hex);
+            general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
+        }
+
+      public:
+        LocationInformation(Reference<Object> _object, Reference<GView::Type::LNK::LNKFile> _lnk);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override

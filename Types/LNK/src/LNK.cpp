@@ -31,15 +31,34 @@ extern "C"
     {
         BufferViewer::Settings settings;
 
-        settings.AddZone(0, sizeof(LNK::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
+        auto offset = 0;
+        settings.AddZone(offset, sizeof(LNK::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
+        offset += sizeof(LNK::Header);
 
         if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
         {
             settings.AddZone(
-                  sizeof(LNK::Header),
+                  offset,
                   sizeof(lnk->linkTargetIDList.IDListSize) + lnk->linkTargetIDList.IDListSize,
                   ColorPair{ Color::DarkGreen, Color::DarkBlue },
                   "LinkTargetIDList");
+            offset += sizeof(lnk->linkTargetIDList.IDListSize) + lnk->linkTargetIDList.IDListSize;
+        }
+
+        const auto liStartOffset = offset;
+        if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo)
+        {
+            settings.AddZone(offset, lnk->locationInformation.size, ColorPair{ Color::DarkRed, Color::DarkBlue }, "LocationInformation");
+            offset += lnk->locationInformation.size;
+        }
+
+        if (lnk->volumeInformation != nullptr)
+        {
+            settings.AddZone(
+                  liStartOffset + lnk->locationInformation.volumeInformationOffset,
+                  lnk->volumeInformation->size,
+                  ColorPair{ Color::DarkGreen, Color::DarkBlue },
+                  "Volume Information");
         }
 
         win->CreateViewer("BufferView", settings);
@@ -58,6 +77,11 @@ extern "C"
         if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasTargetIDList)
         {
             win->AddPanel(Pointer<TabPage>(new LNK::Panels::LinkTargetIDList(win->GetObject(), lnk)), true);
+        }
+
+        if (lnk->header.linkFlags & (uint32) LNK::LinkFlags::HasLinkInfo)
+        {
+            win->AddPanel(Pointer<TabPage>(new LNK::Panels::LocationInformation(win->GetObject(), lnk)), true);
         }
 
         return true;
