@@ -1065,4 +1065,57 @@ struct DataString
                        // The string ASCII or UTF-16 little-endian string
 };
 
+/*
+ * The extra data consist of extra data blocks terminated by the terminal block (an empty extra data block).
+ * The extra data blocks are stored in the following order directly after the last data string:
+ *      ConsoleProperties,
+ *      ConsoleCodepage,
+ *      DarwinProperties,
+ *      EnvironmentVariablesLocation,
+ *      IconLocation,
+ *      KnownFolderLocation,
+ *      MetadataPropertyStore,
+ *      ShimLayerProperties,
+ *      SpecialFolderLocation,
+ *      DistributedLinkTrackerProperties,
+ *      ShellItemIdentifiersListProperties // Vista and Later
+ *      Terminal Block (empty)
+ */
+
+enum class ExtraDataSignatures : uint32
+{
+    EnvironmentVariablesLocation       = 0xA0000001,
+    ConsoleProperties                  = 0xA0000002,
+    DistributedLinkTrackerProperties   = 0xA0000003,
+    ConsoleCodepage                    = 0xA0000004,
+    SpecialFolderLocation              = 0xA0000005,
+    DarwinProperties                   = 0xA0000006,
+    IconLocation                       = 0xA0000007,
+    ShimLayerProperties                = 0xA0000008,
+    MetadataPropertyStore              = 0xA0000009,
+    KnownFolderLocation                = 0xA000000B,
+    ShellItemIdentifiersListProperties = 0xA000000C // Vista and Later
+};
+
+static const std::map<ExtraDataSignatures, std::string_view> ExtraDataSignaturesNames{
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::EnvironmentVariablesLocation),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::ConsoleProperties),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::DistributedLinkTrackerProperties),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::ConsoleCodepage),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::SpecialFolderLocation),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::DarwinProperties),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::IconLocation),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::ShimLayerProperties),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::MetadataPropertyStore),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::KnownFolderLocation),
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::ShellItemIdentifiersListProperties)
+};
+
+#pragma pack(push, 1)
+struct ExtraDataBase
+{
+    uint32 size;                   // Includes 4 bytes of the size
+    ExtraDataSignatures signature; // The extra block signature
+};
+#pragma pack(pop)
 } // namespace GView::Type::LNK

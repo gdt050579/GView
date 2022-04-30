@@ -26,6 +26,9 @@ class LNKFile : public TypeInterface
     Buffer dataStringsBuffer;
     std::map<DataStringTypes, ConstString> dataStrings;
 
+    Buffer extraDataBuffer;
+    std::vector<ExtraDataBase*> extraDataBases;
+
     LNKFile();
     virtual ~LNKFile()
     {

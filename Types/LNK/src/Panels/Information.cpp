@@ -94,6 +94,14 @@ void Information::UpdateGeneralInformation()
         lusb.ToString(path);
         general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) });
     }
+
+    general->AddItem("Extra Data").SetType(ListViewItem::Type::Category);
+    for (const auto& extraData : lnk->extraDataBases)
+    {
+        const auto& signature     = extraData->signature;
+        const auto& signatureName = LNK::ExtraDataSignaturesNames.at(signature);
+        general->AddItem({ signatureName.data(), "" });
+    }
 }
 
 void Information::UpdateIssues()
