@@ -15,21 +15,21 @@ class CharacterStream
     const uint8* pos;
     const uint8* end;
     uint32 xPos, nextPos;
-    uint32 charRelativeOffset, nextCharRelativeOffset;
+    uint32 charIndex, nextCharIndex;
     Reference<SettingsData> settings;
     CharacterEncoding::ExpandedCharacter ec;
 
   public:
-    CharacterStream(BufferView buf, Reference<SettingsData> _settings)
+    CharacterStream(BufferView buf, uint32 characterIndex, Reference<SettingsData> _settings)
     {
-        this->pos                    = buf.begin();
-        this->start                  = this->pos;
-        this->end                    = buf.end();
-        this->xPos                   = 0;
-        this->nextPos                = 0;
-        this->charRelativeOffset     = 0;
-        this->nextCharRelativeOffset = 0;
-        this->settings               = _settings;
+        this->pos           = buf.begin();
+        this->start         = this->pos;
+        this->end           = buf.end();
+        this->xPos          = 0;
+        this->nextPos       = 0;
+        this->charIndex     = characterIndex;
+        this->nextCharIndex = characterIndex;
+        this->settings      = _settings;
     }
     bool Next()
     {
@@ -40,7 +40,7 @@ class CharacterStream
             this->ch = this->ec.GetChar();
             this->pos += this->ec.Length();
             this->xPos               = this->nextPos;
-            this->charRelativeOffset = this->nextCharRelativeOffset++;
+            this->charIndex          = this->nextCharIndex++;
             if (this->ch == '\t')
             {
                 this->ch      = ' '; // tab will be showd as a space
@@ -62,9 +62,9 @@ class CharacterStream
     {
         return this->nextPos;
     }
-    inline uint32 GetRelativeOffset() const
+    inline uint32 GetCharIndex() const
     {
-        return this->charRelativeOffset;
+        return this->charIndex;
     }
     inline void ResetXOffset(uint32 value = 0)
     {
@@ -263,7 +263,7 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     else
         w -= (this->lineNumberWidth + 1);
     buf = this->obj->GetData().Get(li.offset, li.size, false);
-    CharacterStream cs(buf, this->settings.ToReference());
+    CharacterStream cs(buf, 0, this->settings.ToReference());
     // process
     if (this->settings->wordWrap)
     {
@@ -272,7 +272,7 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
             if (cs.GetXOffset() >= w)
             {
                 // move to next line
-                this->subLineIndex.Push(cs.GetRelativeOffset());
+                this->subLineIndex.Push(cs.GetCharIndex());
                 cs.ResetXOffset();
             }
         }
@@ -363,7 +363,7 @@ void Instance::UpdateViewBounderies()
         {
             auto start = *idx;
             auto end   = (idx + 1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
-            CharacterStream cs(BufferView(cBuf + start, end - start), this->settings.ToReference());
+            CharacterStream cs(BufferView(cBuf + start, end - start), start, this->settings.ToReference());
 
             // skip left part
             if (xScroll > 0)
@@ -409,7 +409,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         break;
     }
     const auto vd = this->ViewData + y;
-    CharacterStream cs(this->obj->GetData().Get(vd->pos, vd->bufferSize, false), this->settings.ToReference());
+    CharacterStream cs(this->obj->GetData().Get(vd->pos, vd->bufferSize, false), vd->pos, this->settings.ToReference());
     auto c     = this->chars;
     auto lastC = this->chars + 1;
     auto c_end = c + MAX_CHARACTERS_PER_LINE;
@@ -425,7 +425,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         }
         c->Code  = cs.GetCharacter();
         c->Color = textColor;
-        if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetRelativeOffset() == Cursor.charIndex))
+        if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
             c->Color = Cfg.Cursor.Normal;
         lastC = c + 1;
     }
