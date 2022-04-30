@@ -45,17 +45,27 @@ namespace View
             {
             }
         };
+        struct SubLineInfo
+        {
+            uint32 relativeOffset;
+            uint32 size;
+            uint32 relativeCharIndex;
+            uint32 charsCount;
+            SubLineInfo(uint32 _relativeOffset, uint32 _size, uint32 _relativeCharIndex, uint32 _charsCount)
+                : relativeOffset(_relativeOffset), size(_size), relativeCharIndex(_relativeCharIndex), charsCount(_charsCount)
+            {
+            }
+        };
         class Instance : public View::ViewControl
         {
             std::vector<LineInfo> lines;
-            Array32 subLineIndex;
+            std::vector<SubLineInfo> subLines;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
             uint32 sizeOfBOM;
-
 
             struct
             {
@@ -73,15 +83,14 @@ namespace View
             uint32 ViewDataCount;
 
             static Config config;
-            
-            
+
             void RecomputeLineIndexes();
 
             bool GetLineInfo(uint32 lineNo, LineInfo& li);
             LineInfo GetLineInfo(uint32 lineNo);
-            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64 &startOffset);
+            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset);
             void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
-            
+
             void MoveTo(uint32 lineNo, uint32 charIndex, bool select);
             void MoveToStartOfLine(uint32 lineNo, bool select);
             void MoveToEndOfLine(uint32 lineNo, bool select);

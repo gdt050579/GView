@@ -39,8 +39,8 @@ class CharacterStream
         {
             this->ch = this->ec.GetChar();
             this->pos += this->ec.Length();
-            this->xPos               = this->nextPos;
-            this->charIndex          = this->nextCharIndex++;
+            this->xPos      = this->nextPos;
+            this->charIndex = this->nextCharIndex++;
             if (this->ch == '\t')
             {
                 this->ch      = ' '; // tab will be showd as a space
@@ -105,7 +105,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->ViewDataCount    = 0;
     this->Cursor.lineNo    = 0;
     this->Cursor.charIndex = 0;
-    this->subLineIndex.Create(256); // alocate 256 entries
+
+    this->subLines.reserve(256); // reserve 256 sub-lines
 
     this->settings->encoding = CharacterEncoding::AnalyzeBufferForEncoding(this->obj->GetData().Get(0, 4096, false), true, this->sizeOfBOM);
     this->UpdateViewBounderies();
@@ -249,14 +250,13 @@ LineInfo Instance::GetLineInfo(uint32 lineNo)
 }
 bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset)
 {
-    LineInfo li;
-    uint32 w    = this->GetWidth();
-    startOffset = 0;
+    LineInfo li      = GetLineInfo(lineNo);
+    uint32 w         = this->GetWidth();
+    uint32 bufPos    = 0;
+    uint32 charIndex = 0;
+    startOffset      = li.offset;
 
-    this->subLineIndex.Clear();
-    CHECK(GetLineInfo(lineNo, li), false, "");
-    startOffset = li.offset;
-    CHECK(this->subLineIndex.Push(0), false, "");
+    this->subLines.clear();
 
     if ((this->lineNumberWidth + 1) >= w)
         w = 1;
@@ -265,6 +265,7 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     buf = this->obj->GetData().Get(li.offset, li.size, false);
     CharacterStream cs(buf, 0, this->settings.ToReference());
     // process
+
     if (this->settings->wordWrap)
     {
         while (cs.Next())
@@ -272,7 +273,9 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
             if (cs.GetXOffset() >= w)
             {
                 // move to next line
-                this->subLineIndex.Push(cs.GetCharIndex());
+                this->subLines.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetCharIndex() - charIndex);
+                bufPos    = cs.GetCurrentBufferPos();
+                charIndex = cs.GetCharIndex();
                 cs.ResetXOffset();
             }
         }
