@@ -411,12 +411,12 @@ void Panels::LinkTargetIDList::UpdateDelegateShellItem(DelegateShellItem& item)
     AddDecAndHexElement("Unknown3", "%-20s (%s)", unknown3);
     offset += sizeof(uint16);
 
-    const auto delegateItemIdentifier = ((uint8*) &item + offset);
-    AddGUIDElement(general, "Delegate item identifier", delegateItemIdentifier);
+    const auto delegateItemIdentifier = (MyGUID*) ((uint8*) &item + offset);
+    AddGUIDElement(general, "Delegate item identifier", *delegateItemIdentifier);
     offset += 16;
 
-    const auto itemClassIdentifier = ((uint8*) &item + offset);
-    AddGUIDElement(general, "Item (class) identifier", itemClassIdentifier);
+    const auto itemClassIdentifier = (MyGUID*) ((uint8*) &item + offset);
+    AddGUIDElement(general, "Item (class) identifier", *itemClassIdentifier);
     offset += 16;
 
     auto base = (ExtensionBlock0xBEEF0004Base*) ((uint8*) &item + offset);

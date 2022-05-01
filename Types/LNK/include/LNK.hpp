@@ -44,38 +44,27 @@ class LNKFile : public TypeInterface
 
 namespace Panels
 {
-    static void AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, uint8 value[16])
+    static void AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
     {
         CHECKRET(list.IsValid(), "");
 
         LocalString<1024> ls;
         list->AddItem({ name,
                         ls.Format(
-                              "{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
-                              value[3],
-                              value[2],
-                              value[1],
-                              value[0],
-                              value[5],
-                              value[4],
-                              value[7],
-                              value[6],
-                              value[8],
-                              value[9],
-                              value[10],
-                              value[11],
-                              value[12],
-                              value[13],
-                              value[14],
-                              value[15]) });
-    }
-
-    static void AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
-    {
-        CHECKRET(list.IsValid(), "");
-
-        const auto value = (uint8*) &guid;
-        AddGUIDElement(list, name, value);
+                              "%-20s {%08lX-%04hX-%04hX-%02hhX%02hhX-%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX}",
+                              GetNameFromGUID(guid).data(),
+                              guid.a,
+                              guid.b,
+                              guid.c,
+                              guid.d[0],
+                              guid.d[1],
+                              guid.d[2],
+                              guid.d[3],
+                              guid.d[4],
+                              guid.d[5],
+                              guid.d[6],
+                              guid.d[7]) })
+              .SetType(ListViewItem::Type::Emphasized_1);
     }
 
     class Information : public AppCUI::Controls::TabPage

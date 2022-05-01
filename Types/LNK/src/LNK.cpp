@@ -17,7 +17,7 @@ extern "C"
         auto header = buf.GetObject<LNK::Header>(0);
         CHECK(header.IsValid(), false, "");
         CHECK(header->headerSize == LNK::SIGNATURE, false, "");
-        CHECK(memcmp(header->classIdentifier, LNK::CLASS_IDENTIFIER, 16) == 0, false, "");
+        CHECK(memcmp(&header->classIdentifier, LNK::CLASS_IDENTIFIER, sizeof(LNK::MyGUID)) == 0, false, "");
 
         return true;
     }
