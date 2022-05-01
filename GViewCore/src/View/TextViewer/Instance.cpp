@@ -280,6 +280,10 @@ bool Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
             }
         }
     }
+    else
+    {
+        this->subLines.emplace_back(0, li.size, 0, li.charsCount);
+    }
     return true;
 }
 void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
@@ -357,16 +361,14 @@ void Instance::UpdateViewBounderies()
         ComputeSubLineIndexes(lineNo, buf, lineStartOffset);
 
         // write text
-        auto idx    = this->subLineIndex.GetUInt32Array();
-        auto idxEnd = idx + this->subLineIndex.Len();
-        auto cBuf   = buf.begin();
+        auto sl    = this->subLines.begin();
+        auto slEnd = this->subLines.end();
+        auto cBuf  = buf.begin();
 
         // parse each sub-line
-        while ((idx < idxEnd) && (y < h))
+        while ((sl < slEnd) && (y < h))
         {
-            auto start = *idx;
-            auto end   = (idx + 1) < idxEnd ? idx[1] : (uint32) buf.GetLength();
-            CharacterStream cs(BufferView(cBuf + start, end - start), start, this->settings.ToReference());
+            CharacterStream cs(BufferView(cBuf + sl->relativeOffset, sl->size), sl->relativeCharIndex, this->settings.ToReference());
 
             // skip left part
             if (xScroll > 0)
@@ -377,7 +379,7 @@ void Instance::UpdateViewBounderies()
             }
             auto cptr  = cs.GetCurrentBufferPos();
             vd->lineNo = lineNo;
-            vd->pos    = lineStartOffset + start + cptr;
+            vd->pos    = lineStartOffset + sl->relativeOffset + cptr;
             vd->xStart = cs.GetNextXOffset() - xScroll;
             while ((cs.Next()) && (cs.GetXOffset() < xMaxPos))
             {
@@ -385,7 +387,7 @@ void Instance::UpdateViewBounderies()
             vd->bufferSize = (uint32) (cs.GetCurrentBufferPos() - cptr);
 
             y++;
-            idx++;
+            sl++;
             vd++;
             this->ViewDataCount++;
         }
