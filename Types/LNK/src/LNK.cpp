@@ -62,9 +62,10 @@ extern "C"
                   "Volume Information");
         }
 
-        const bool isUnicode = (lnk->header.linkFlags & (uint32) LNK::LinkFlags::IsUnicode);
-        offset               = lnk->dataStringsOffset;
-        auto count           = 0;
+        const bool isUnicode         = (lnk->header.linkFlags & (uint32) LNK::LinkFlags::IsUnicode);
+        offset                       = lnk->dataStringsOffset;
+        auto count                   = 0;
+        constexpr static auto colors = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
         for (const auto& [type, data] : lnk->dataStrings)
         {
             auto size = 0ULL;
@@ -80,9 +81,8 @@ extern "C"
             }
             size += 2ULL;
 
-            const auto& typeName         = LNK::DataStringTypesNames.at(type);
-            constexpr static auto colors = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
-            const auto& c                = *(colors.begin() + (count % 2));
+            const auto& typeName = LNK::DataStringTypesNames.at(type);
+            const auto& c        = *(colors.begin() + (count % 2));
             settings.AddZone(offset, size, c, typeName.data());
             offset += size;
             count++;
@@ -90,12 +90,17 @@ extern "C"
 
         for (const auto& extraData : lnk->extraDataBases)
         {
-            const auto& name             = LNK::ExtraDataSignaturesNames.at(extraData->signature);
-            constexpr static auto colors = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
-            const auto& c                = *(colors.begin() + (count % 2));
+            const auto& name = LNK::ExtraDataSignaturesNames.at(extraData->signature);
+            const auto& c    = *(colors.begin() + (count % 2));
             settings.AddZone(offset, extraData->size, c, name.data());
             count++;
             offset += extraData->size;
+        }
+
+        if (lnk->obj->GetData().GetSize() == offset + 4) // terminal block
+        {
+            const auto& c = *(colors.begin() + (count % 2));
+            settings.AddZone(offset, sizeof(uint32), c, "Terminal");
         }
 
         win->CreateViewer("BufferView", settings);

@@ -1278,6 +1278,48 @@ struct ExtraData_SpecialFolderLocation
                                     // offset contains the number of bytes relative from the start of the (shell) item identifiers list.
 };
 
+static_assert(sizeof(ExtraData_SpecialFolderLocation) == 16);
+
+struct ExtraData_DarwinProperties
+{
+    ExtraDataBase base;
+    uint8 darwinApplicationIdentifier[260];         // ASCII string terminated by an end-of-string character. Unused bytes are set to 0.
+    uint16 unicodeDarwinApplicationIdentifier[260]; // UTF-16 little-endian string terminated by an end-of-string character. Unused bytes
+                                                    // are set to 0.
+};
+
+static_assert(sizeof(ExtraData_DarwinProperties) == 788);
+
+struct ExtraData_IconLocation
+{
+    ExtraDataBase base;
+    uint8 location[260];         // ASCII string terminated by an end-of-string character. Unused bytes can contain remnant data.
+    uint16 unicodeLocation[260]; // UTF-16 little-endian string terminated by an end-of-string character. Unused bytes can contain remnant
+                                 // data.
+};
+
+static_assert(sizeof(ExtraData_IconLocation) == 788);
+
+struct ExtraData_ShimLayer // The shim layer properties data block is variable of size.
+{
+    ExtraDataBase base;
+    uint8 location[260]; // ASCII string terminated by an end-of-string character. Unused bytes can contain remnant data.
+    /*
+        Name of the shim layer.
+        UTF-16 little-endian string terminated by an end-of-string character.
+        Unused bytes are set to 0.
+    */
+};
+
+struct ExtraData_MetadataPropertyStore // The metadata property store data block is variable of size .
+{
+    ExtraDataBase base;
+    /*
+        Property store data.
+        Contains one or more property stores.
+    */
+};
+
 constexpr MyGUID FOLDERID_NetworkFolder          = { 0xD20BEEC4, 0x5CA8, 0x4905, 0xAE, 0x3B, 0xBF, 0x25, 0x1E, 0xA0, 0x9B, 0x53 };
 constexpr MyGUID FOLDERID_ComputerFolder         = { 0x0AC0837C, 0xBBF8, 0x452A, 0x85, 0x0D, 0x79, 0xD0, 0x8E, 0x66, 0x7C, 0xA7 };
 constexpr MyGUID FOLDERID_InternetFolder         = { 0x4D9F7874, 0x4E0C, 0x4904, 0x96, 0x7B, 0x40, 0xB0, 0xD2, 0x0C, 0x3E, 0x4B };
@@ -1582,5 +1624,13 @@ struct ExtraData_KnownFolderLocation
     uint32 firstChildSegmentOffset; // The first child segment offset refers to the location of the (shell) item identifier of the first
                                     // child segment of the (shell) item identifiers list specified by the known folder identifier. The
                                     // offset contains the number of bytes relative from the start of the (shell) item identifiers list.
+};
+
+struct ExtraData_ShellItemIdentifiers // The metadata property store data block is variable of size .
+{
+    ExtraDataBase base;
+    /*
+        The shell item identifiers list - https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc
+    */
 };
 } // namespace GView::Type::LNK

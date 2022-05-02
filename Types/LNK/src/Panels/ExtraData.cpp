@@ -42,16 +42,16 @@ void ExtraData::UpdateGeneralInformation()
             UpdateExtraData_SpecialFolderLocation((ExtraData_SpecialFolderLocation*) extraData);
             break;
         case ExtraDataSignatures::DarwinProperties:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_DarwinProperties((ExtraData_DarwinProperties*) extraData);
             break;
         case ExtraDataSignatures::IconLocation:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_IconLocation((ExtraData_IconLocation*) extraData);
             break;
         case ExtraDataSignatures::ShimLayerProperties:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_ShimLayer((ExtraData_ShimLayer*) extraData);
             break;
         case ExtraDataSignatures::MetadataPropertyStore:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_MetadataPropertyStore((ExtraData_MetadataPropertyStore*) extraData);
             break;
         case ExtraDataSignatures::KnownFolderLocation:
             UpdateExtraData_KnownFolderLocation((ExtraData_KnownFolderLocation*) extraData);
@@ -74,20 +74,6 @@ void ExtraData::UpdateExtraDataBase(ExtraDataBase* base)
 
     AddDecAndHexElement("Size", "%-20s (%s)", base->size);
     AddDecAndHexElement("Signature", "%-20s (%s)", (uint32) base->signature);
-}
-
-void ExtraData::UpdateExtraData_SpecialFolderLocation(ExtraData_SpecialFolderLocation* data)
-{
-    UpdateExtraDataBase(&data->base);
-    AddDecAndHexElement("Identifier", "%-20s (%s)", data->identifier);
-    AddDecAndHexElement("First Child Segment Offset", "%-20s (%s)", data->firstChildSegmentOffset);
-}
-
-void ExtraData::UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data)
-{
-    UpdateExtraDataBase(&data->base);
-    AddGUIDElement(general, "Identifier", data->identifier);
-    AddDecAndHexElement("First Child Segment Offset", "%-20s (%s)", data->firstChildSegmentOffset);
 }
 
 void ExtraData::UpdateExtraData_EnvironmentVariablesLocation(ExtraData_EnvironmentVariablesLocation* data)
@@ -145,7 +131,7 @@ void ExtraData::UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* d
 
     hfls.Format("(0x%X)", data->fontWeigth);
     general->AddItem({ "Font Weigth", ls.Format("%-20s %-4s", data->fontWeigth < 700 ? "Regular" : "Bold", hfls.GetText()) });
-    general->AddItem({ "Face Name", ls.Format("%*.S", sizeof(data->faceName) / sizeof(data->faceName[0]), data->faceName) });
+    general->AddItem({ "Face Name", ls.Format("%.*S", sizeof(data->faceName) / sizeof(data->faceName[0]), data->faceName) });
     hfls.Format("(0x%X)", data->cursorSize);
     general->AddItem({ "Font Weigth",
                        ls.Format(
@@ -179,7 +165,7 @@ void ExtraData::UpdateExtraData_DistributedLinkTrackerProperties(ExtraData_Distr
     AddDecAndHexElement("Version Of Distributed Link Tracker Data", "%-20s (%s)", data->versionOfDistributedLinkTrackerData);
     general->AddItem({ "Machine Identifier String",
                        ls.Format(
-                             "%*.s",
+                             "%.*s",
                              sizeof(data->machineIdentifierString) / sizeof(data->machineIdentifierString[0]),
                              data->machineIdentifierString) });
     AddGUIDElement(general, "Droid Volume Identifier", data->droidVolumeIdentifier);
@@ -192,6 +178,78 @@ void ExtraData::UpdateExtraData_ConsoleCodepage(ExtraData_ConsoleCodepage* data)
 {
     UpdateExtraDataBase(&data->base);
     AddDecAndHexElement("Code Page", "%-20s (%s)", data->codePage);
+}
+
+void ExtraData::UpdateExtraData_SpecialFolderLocation(ExtraData_SpecialFolderLocation* data)
+{
+    UpdateExtraDataBase(&data->base);
+    AddDecAndHexElement("Identifier", "%-20s (%s)", data->identifier);
+    AddDecAndHexElement("First Child Segment Offset", "%-20s (%s)", data->firstChildSegmentOffset);
+}
+
+void ExtraData::UpdateExtraData_DarwinProperties(ExtraData_DarwinProperties* data)
+{
+    LocalString<1024> ls;
+
+    UpdateExtraDataBase(&data->base);
+
+    general->AddItem({ "Darwin Application Identifier",
+                       ls.Format(
+                             "%.*s",
+                             sizeof(data->darwinApplicationIdentifier) / sizeof(data->darwinApplicationIdentifier[0]),
+                             data->darwinApplicationIdentifier) });
+
+    general->AddItem({ "Unicode Darwin Application Identifier",
+                       ls.Format(
+                             "%.*S",
+                             sizeof(data->unicodeDarwinApplicationIdentifier) / sizeof(data->unicodeDarwinApplicationIdentifier[0]),
+                             data->unicodeDarwinApplicationIdentifier) });
+}
+
+void ExtraData::UpdateExtraData_IconLocation(ExtraData_IconLocation* data)
+{
+    LocalString<1024> ls;
+
+    UpdateExtraDataBase(&data->base);
+
+    general->AddItem({ "Location ASCII", ls.Format("%.*s", sizeof(data->location) / sizeof(data->location[0]), data->location) });
+    general->AddItem({ "Location Unicode",
+                       ls.Format("%.*S", sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0]), data->unicodeLocation) });
+}
+
+void ExtraData::UpdateExtraData_ShimLayer(ExtraData_ShimLayer* data)
+{
+    LocalString<1024> ls;
+
+    UpdateExtraDataBase(&data->base);
+    general->AddItem(
+          { "Name", ls.Format("%.*S", data->base.size - sizeof(ExtraData_ShimLayer), ((uint8*) &data) + sizeof(ExtraData_ShimLayer)) });
+}
+
+void ExtraData::UpdateExtraData_MetadataPropertyStore(ExtraData_MetadataPropertyStore* data)
+{
+    UpdateExtraDataBase(&data->base);
+    general
+          ->AddItem(
+                { "TODO:", "Map https://github.com/libyal/libfwps/blob/main/documentation/Windows%20Property%20Store%20format.asciidoc" })
+          .SetType(ListViewItem::Type::ErrorInformation);
+}
+
+void ExtraData::UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data)
+{
+    UpdateExtraDataBase(&data->base);
+    AddGUIDElement(general, "Identifier", data->identifier);
+    AddDecAndHexElement("First Child Segment Offset", "%-20s (%s)", data->firstChildSegmentOffset);
+}
+
+void ExtraData::UpdateExtraData_ShellItemIdentifiers(ExtraData_ShellItemIdentifiers* data)
+{
+    UpdateExtraDataBase(&data->base);
+
+    general
+          ->AddItem(
+                { "TODO:", "Map https://github.com/libyal/libfwps/blob/main/documentation/Windows%20Property%20Store%20format.asciidoc" })
+          .SetType(ListViewItem::Type::ErrorInformation);
 }
 
 void ExtraData::UpdateIssues()

@@ -214,12 +214,17 @@ namespace Panels
 
         void UpdateGeneralInformation();
         void UpdateExtraDataBase(ExtraDataBase* base);
-        void UpdateExtraData_SpecialFolderLocation(ExtraData_SpecialFolderLocation* data);
-        void UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data);
         void UpdateExtraData_EnvironmentVariablesLocation(ExtraData_EnvironmentVariablesLocation* data);
         void UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* data);
         void UpdateExtraData_DistributedLinkTrackerProperties(ExtraData_DistributedLinkTrackerProperties* data);
         void UpdateExtraData_ConsoleCodepage(ExtraData_ConsoleCodepage* data);
+        void UpdateExtraData_SpecialFolderLocation(ExtraData_SpecialFolderLocation* data);
+        void UpdateExtraData_DarwinProperties(ExtraData_DarwinProperties* data);
+        void UpdateExtraData_IconLocation(ExtraData_IconLocation* data);
+        void UpdateExtraData_ShimLayer(ExtraData_ShimLayer* data);
+        void UpdateExtraData_MetadataPropertyStore(ExtraData_MetadataPropertyStore* data);
+        void UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data);
+        void UpdateExtraData_ShellItemIdentifiers(ExtraData_ShellItemIdentifiers* data);
         void UpdateIssues();
         void RecomputePanelsPositions();
 
