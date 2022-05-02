@@ -217,6 +217,7 @@ namespace Panels
         void UpdateExtraData_SpecialFolderLocation(ExtraData_SpecialFolderLocation* data);
         void UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data);
         void UpdateExtraData_EnvironmentVariablesLocation(ExtraData_EnvironmentVariablesLocation* data);
+        void UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* data);
         void UpdateIssues();
         void RecomputePanelsPositions();
 

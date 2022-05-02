@@ -30,7 +30,7 @@ void ExtraData::UpdateGeneralInformation()
             UpdateExtraData_EnvironmentVariablesLocation((ExtraData_EnvironmentVariablesLocation*) extraData);
             break;
         case ExtraDataSignatures::ConsoleProperties:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_ConsoleProperties((ExtraData_ConsoleProperties*) extraData);
             break;
         case ExtraDataSignatures::DistributedLinkTrackerProperties:
             UpdateExtraDataBase(extraData);
@@ -98,6 +98,76 @@ void ExtraData::UpdateExtraData_EnvironmentVariablesLocation(ExtraData_Environme
     general->AddItem({ "Location ASCII", ls.Format("%.*s", data->location, sizeof(data->location) / sizeof(data->location[0])) });
     general->AddItem({ "Location Unicode",
                        ls.Format("%.*S", data->unicodeLocation, sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0])) });
+}
+
+void ExtraData::UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* data)
+{
+    LocalString<1024> ls;
+
+    UpdateExtraDataBase(&data->base);
+
+    AddDecAndHexElement("Color Flags", "%-20s (%s)", data->colorFlags);
+    const auto colorFlags = LNK::GetConsoleColorFlags(data->colorFlags);
+    for (const auto& flag : colorFlags)
+    {
+        LocalString<16> hfls;
+        hfls.Format("(0x%X)", flag);
+
+        const auto flagName = LNK::ConsoleColorFlagsNames.at(flag).data();
+        general->AddItem({ "", ls.Format("%-20s %-4s", flagName, hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+    }
+
+    AddDecAndHexElement("Pop Up Fill Attributes", "%-20s (%s)", data->popUpFillAttributes);
+    const auto popUpFillAttributes = LNK::GetConsoleColorFlags(data->popUpFillAttributes);
+    for (const auto& flag : popUpFillAttributes)
+    {
+        LocalString<16> hfls;
+        hfls.Format("(0x%X)", flag);
+
+        const auto flagName = LNK::ConsoleColorFlagsNames.at(flag).data();
+        general->AddItem({ "", ls.Format("%-20s %-4s", flagName, hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+    }
+
+    AddDecAndHexElement("Screen Width Buffer Size", "%-20s (%s)", data->screenWidthBufferSize);
+    AddDecAndHexElement("Screen Height Buffer Size", "%-20s (%s)", data->screenHeightBufferSize);
+    AddDecAndHexElement("Window Width", "%-20s (%s)", data->windowWidth);
+    AddDecAndHexElement("Window Height", "%-20s (%s)", data->windowHeight);
+    AddDecAndHexElement("Window Origin X Coordinate", "%-20s (%s)", data->windowOriginXCoordinate);
+    AddDecAndHexElement("Window Origin Y Coordinate", "%-20s (%s)", data->windowOriginYCoordinate);
+    AddDecAndHexElement("Unknown0", "%-20s (%s)", data->unknown0);
+    AddDecAndHexElement("Unknown1", "%-20s (%s)", data->unknown1);
+    AddDecAndHexElement("Font Size", "%-20s (%s)", data->fontSize);
+
+    LocalString<128> hfls;
+    hfls.Format("(0x%X)", data->fontFamily);
+    const auto fontFamily = LNK::ConsoleFontFamilyNames.at(data->fontFamily).data();
+    general->AddItem({ "Font Family", ls.Format("%-20s %-4s", fontFamily, hfls.GetText()) }).SetType(ListViewItem::Type::Emphasized_2);
+
+    hfls.Format("(0x%X)", data->fontWeigth);
+    general->AddItem({ "Font Weigth", ls.Format("%-20s %-4s", data->fontWeigth < 700 ? "Regular" : "Bold", hfls.GetText()) });
+    general->AddItem({ "Face Name", ls.Format("%*.S", sizeof(data->faceName) / sizeof(data->faceName[0]), data->faceName) });
+    hfls.Format("(0x%X)", data->cursorSize);
+    general->AddItem({ "Font Weigth",
+                       ls.Format(
+                             "%-20s %-4s",
+                             data->cursorSize <= 25   ? "Small"
+                             : data->cursorSize <= 50 ? "Normal"
+                                                      : "Large",
+                             hfls.GetText()) });
+    AddDecAndHexElement("Full Screen", "%-20s (%s)", data->fullScreen);
+    AddDecAndHexElement("Quick Edit", "%-20s (%s)", data->quickEdit);
+    AddDecAndHexElement("Insert Mode", "%-20s (%s)", data->insertMode);
+    AddDecAndHexElement("Auto Position", "%-20s (%s)", data->autoPosition);
+    AddDecAndHexElement("History Buffer Size", "%-20s (%s)", data->historyBufferSize);
+    AddDecAndHexElement("Number Of History Buffers", "%-20s (%s)", data->numberOfHistoryBuffers);
+    AddDecAndHexElement("History No Dup", "%-20s (%s)", data->historyNoDup);
+
+    hfls.Clear();
+    for (const auto& c : data->colorTable)
+    {
+        hfls.AddFormat("%02X", c);
+    }
+    general->AddItem({ "Color Table", ls.Format("%s", fontFamily, hfls.GetText()) });
 }
 
 void ExtraData::UpdateIssues()

@@ -29,15 +29,16 @@ void Panels::LocationInformation::UpdateGeneralInformation()
 
     AddDecAndHexElement("Size", "%-20s (%s)", lnk->locationInformation.size);
     AddDecAndHexElement("Header Size", "%-20s (%s)", lnk->locationInformation.headerSize);
+    AddDecAndHexElement("Flags", "%-20s (%s)", lnk->locationInformation.flags);
 
-    const auto flags = LNK::GetNetworkShareFlags(lnk->locationInformation.flags);
+    const auto flags = LNK::GetLocationFlags(lnk->locationInformation.flags);
     for (const auto& flag : flags)
     {
         LocalString<16> hfls;
         hfls.Format("(0x%X)", flag);
 
-        const auto flagName        = LNK::NetworkShareFlagsNames.at(flag).data();
-        const auto flagDescription = LNK::NetworkShareFlagsDescriptions.at(flag).data();
+        const auto flagName        = LNK::LocationFlagsNames.at(flag).data();
+        const auto flagDescription = LNK::LocationFlagsDescriptions.at(flag).data();
 
         general->AddItem({ "", ls.Format("%-20s %-4s %s", flagName, hfls.GetText(), flagDescription) })
               .SetType(ListViewItem::Type::Emphasized_2);

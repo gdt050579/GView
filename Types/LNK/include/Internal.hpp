@@ -866,10 +866,26 @@ static const std::map<LocationFlags, std::string_view> LocationFlagsNames{
 
 static const std::map<LocationFlags, std::string_view> LocationFlagsDescriptions{
     { LocationFlags::VolumeIDAndLocalBasePath,
-      "The linked file is on a volume. If set the volume informationand the local path contain data." },
+      "The linked file is on a volume. If set the volume information and the local path contain data." },
     { LocationFlags::CommonNetworkRelativeLinkAndPathSuffix,
       "The linked file is on a network share. If set the network share informationand common path contain data." }
 };
+
+static const std::vector<LocationFlags> GetLocationFlags(uint32 flags)
+{
+    std::vector<LocationFlags> output;
+
+    for (const auto& data : LocationFlagsNames)
+    {
+        const auto flag = static_cast<LocationFlags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace_back(flag);
+        }
+    }
+
+    return output;
+}
 
 enum class DriveType : uint32
 {
@@ -1136,7 +1152,6 @@ struct ExtraDataBase
 };
 #pragma pack(pop)
 
-#pragma pack(push, 1)
 struct ExtraData_EnvironmentVariablesLocation
 {
     ExtraDataBase base;
@@ -1144,9 +1159,92 @@ struct ExtraData_EnvironmentVariablesLocation
     uint16 unicodeLocation[260]; // UTF-16 little-endian string terminated by an end-of-string character. Unused bytes can contain remnant
                                  // data.
 };
-#pragma pack(pop)
 
 static_assert(sizeof(ExtraData_EnvironmentVariablesLocation) == 788);
+
+enum class ConsoleColorFlags : uint16
+{
+    ForegroundBlue      = 0x0001,
+    ForegroundGreen     = 0x0002,
+    ForegroundRed       = 0x0004,
+    ForegroundIntensity = 0x0008,
+    BackgroundBlue      = 0x0010,
+    BackgroundGreen     = 0x0020,
+    BackgroundRed       = 0x0040,
+    BackgroundIntensity = 0x0080
+};
+
+static const std::map<ConsoleColorFlags, std::string_view> ConsoleColorFlagsNames{
+    GET_PAIR_FROM_ENUM(ConsoleColorFlags::ForegroundBlue), GET_PAIR_FROM_ENUM(ConsoleColorFlags::ForegroundGreen),
+    GET_PAIR_FROM_ENUM(ConsoleColorFlags::ForegroundRed),  GET_PAIR_FROM_ENUM(ConsoleColorFlags::ForegroundIntensity),
+    GET_PAIR_FROM_ENUM(ConsoleColorFlags::BackgroundBlue), GET_PAIR_FROM_ENUM(ConsoleColorFlags::BackgroundGreen),
+    GET_PAIR_FROM_ENUM(ConsoleColorFlags::BackgroundRed),  GET_PAIR_FROM_ENUM(ConsoleColorFlags::BackgroundIntensity)
+};
+
+static const std::vector<ConsoleColorFlags> GetConsoleColorFlags(uint16 flags)
+{
+    std::vector<ConsoleColorFlags> output;
+
+    for (const auto& data : ConsoleColorFlagsNames)
+    {
+        const auto flag = static_cast<ConsoleColorFlags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace_back(flag);
+        }
+    }
+
+    return output;
+}
+
+enum class ConsoleFontFamily : uint16
+{
+    DontCare   = 0x0000, // Unknown font
+    Roman      = 0x0010, // Variable-width font with serifs
+    Swiss      = 0x0020, // Variable-width font without serifs
+    Modern     = 0x0030, // Fixed-width font with or without serifs
+    Script     = 0x0040, // Handwriting like font
+    Decorative = 0x0050  // Novelty font
+};
+
+static const std::map<ConsoleFontFamily, std::string_view> ConsoleFontFamilyNames{
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::DontCare), GET_PAIR_FROM_ENUM(ConsoleFontFamily::Roman),
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Swiss),    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Modern),
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Script),   GET_PAIR_FROM_ENUM(ConsoleFontFamily::Decorative)
+};
+
+struct ExtraData_ConsoleProperties
+{
+    ExtraDataBase base;
+    uint16 colorFlags;          // Fill attributes that control the foregroundand background text colors in the console window.
+    uint16 popUpFillAttributes; // Fill attributes that control the foregroundand background text color in the console window popup.
+    uint16 screenWidthBufferSize;
+    uint16 screenHeightBufferSize;
+    uint16 windowWidth;
+    uint16 windowHeight;
+    uint16 windowOriginXCoordinate;
+    uint16 windowOriginYCoordinate;
+    uint32 unknown0;
+    uint32 unknown1;
+    uint32 fontSize;
+    ConsoleFontFamily fontFamily;
+    uint32 fontWeigth;   // value < 700 (regular) | value >= 700 (bold)
+    uint16 faceName[32]; // UTF-16 little-endian string terminated by an end-of-string character.
+    uint32 cursorSize;   // value <= 25 (small) | [26, 50] (normal) | [51, 100] (large)
+    uint32 fullScreen;   // A value of 0 represents windowed-mode another value full screen mode.
+    uint32 quickEdit;    // A value of 0 represents insert mode is disabled another value enabled.
+    uint32 insertMode;   // A value of 0 represents insert mode is disabled another value enabled.
+    uint32 autoPosition; // A value of 0 represents automatic positioning is disabled another value enabled. When automatic
+                         // positioning is off the window origin x and y-coordinates are used to position the window.
+    uint32 historyBufferSize;
+    uint32 numberOfHistoryBuffers;
+    uint32 historyNoDup;
+    uint8 colorTable[64]; // A table of 16 32-bit, unsigned integers specifying the RGB colors that are used for text in the console
+                          // window. The values of the fill attribute fields FillAttributesand PopupFillAttributes are used as indexes into
+                          // this table to specify the final foregroundand background color for a character.
+};
+
+static_assert(sizeof(ExtraData_ConsoleProperties) == 204);
 
 struct ExtraData_SpecialFolderLocation
 {
