@@ -27,7 +27,7 @@ void ExtraData::UpdateGeneralInformation()
         switch (extraData->signature)
         {
         case ExtraDataSignatures::EnvironmentVariablesLocation:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_EnvironmentVariablesLocation((ExtraData_EnvironmentVariablesLocation*) extraData);
             break;
         case ExtraDataSignatures::ConsoleProperties:
             UpdateExtraDataBase(extraData);
@@ -86,8 +86,18 @@ void ExtraData::UpdateExtraData_SpecialFolderLocation(ExtraData_SpecialFolderLoc
 void ExtraData::UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data)
 {
     UpdateExtraDataBase(&data->base);
-    AddGUIDElement(general, "Identifier", data->identifier); // TODO: map GUIDS
+    AddGUIDElement(general, "Identifier", data->identifier);
     AddDecAndHexElement("First Child Segment Offset", "%-20s (%s)", data->firstChildSegmentOffset);
+}
+
+void ExtraData::UpdateExtraData_EnvironmentVariablesLocation(ExtraData_EnvironmentVariablesLocation* data)
+{
+    LocalString<1024> ls;
+
+    UpdateExtraDataBase(&data->base);
+    general->AddItem({ "Location ASCII", ls.Format("%.*s", data->location, sizeof(data->location) / sizeof(data->location[0])) });
+    general->AddItem({ "Location Unicode",
+                       ls.Format("%.*S", data->unicodeLocation, sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0])) });
 }
 
 void ExtraData::UpdateIssues()

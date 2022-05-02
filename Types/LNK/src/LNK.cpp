@@ -88,6 +88,16 @@ extern "C"
             count++;
         }
 
+        for (const auto& extraData : lnk->extraDataBases)
+        {
+            const auto& name             = LNK::ExtraDataSignaturesNames.at(extraData->signature);
+            constexpr static auto colors = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
+            const auto& c                = *(colors.begin() + (count % 2));
+            settings.AddZone(offset, extraData->size, c, name.data());
+            count++;
+            offset += extraData->size;
+        }
+
         win->CreateViewer("BufferView", settings);
     }
 

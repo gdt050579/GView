@@ -1136,6 +1136,18 @@ struct ExtraDataBase
 };
 #pragma pack(pop)
 
+#pragma pack(push, 1)
+struct ExtraData_EnvironmentVariablesLocation
+{
+    ExtraDataBase base;
+    uint8 location[260];         // ASCII string terminated by an end-of-string character. Unused bytes can contain remnant data.
+    uint16 unicodeLocation[260]; // UTF-16 little-endian string terminated by an end-of-string character. Unused bytes can contain remnant
+                                 // data.
+};
+#pragma pack(pop)
+
+static_assert(sizeof(ExtraData_EnvironmentVariablesLocation) == 788);
+
 struct ExtraData_SpecialFolderLocation
 {
     ExtraDataBase base;
