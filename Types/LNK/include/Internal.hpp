@@ -476,6 +476,7 @@ enum class ClassTypeIndicators : uint8
     CommonPlacesFolder        = 0x73, // Not seen in wild but reason to believe it exists.
     UsersFilesFolder          = 0x74, // Only seen as delegate item.
     Unknown3                  = 0x76,
+    Unknown6                  = 0xC3,
     Unknown4                  = 0x80, // Different meaning per class type indicator?
     Unknown5                  = 0xFF
 };
@@ -497,6 +498,7 @@ static const std::map<ClassTypeIndicators, std::string_view> ClassTypeIndicators
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::CommonPlacesFolder),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::UsersFilesFolder),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown3),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown6),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown4),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown5)
 };
@@ -1204,14 +1206,16 @@ enum class ConsoleFontFamily : uint16
     Roman      = 0x0010, // Variable-width font with serifs
     Swiss      = 0x0020, // Variable-width font without serifs
     Modern     = 0x0030, // Fixed-width font with or without serifs
+    Unknown0   = 0x0036,
     Script     = 0x0040, // Handwriting like font
     Decorative = 0x0050  // Novelty font
 };
 
 static const std::map<ConsoleFontFamily, std::string_view> ConsoleFontFamilyNames{
-    GET_PAIR_FROM_ENUM(ConsoleFontFamily::DontCare), GET_PAIR_FROM_ENUM(ConsoleFontFamily::Roman),
-    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Swiss),    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Modern),
-    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Script),   GET_PAIR_FROM_ENUM(ConsoleFontFamily::Decorative)
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::DontCare),  GET_PAIR_FROM_ENUM(ConsoleFontFamily::Roman),
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Swiss),     GET_PAIR_FROM_ENUM(ConsoleFontFamily::Modern),
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Unknown0),  GET_PAIR_FROM_ENUM(ConsoleFontFamily::Script),
+    GET_PAIR_FROM_ENUM(ConsoleFontFamily::Decorative)
 };
 
 struct ExtraData_ConsoleProperties

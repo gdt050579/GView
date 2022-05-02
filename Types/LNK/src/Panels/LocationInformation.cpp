@@ -65,31 +65,39 @@ void Panels::LocationInformation::UpdateGeneralInformation()
         }
     }
 
-    general->AddItem(
-          { "Local Path", ls.Format("%s", lnk->locationInformationBuffer.GetData() + lnk->locationInformation.localPathOffset) });
+    if (lnk->locationInformation.localPathOffset > 0)
+    {
+        general->AddItem(
+              { "Local Path", ls.Format("%s", lnk->locationInformationBuffer.GetData() + lnk->locationInformation.localPathOffset) });
+    }
+
     general->AddItem(
           { "Common Path", ls.Format("%s", lnk->locationInformationBuffer.GetData() + lnk->locationInformation.commonPathOffset) });
 
-    general->AddItem("Volume Information").SetType(ListViewItem::Type::Category);
-
-    AddDecAndHexElement("Size", "%-20s (%s)", lnk->volumeInformation->size);
-
-    const auto driveTypeName        = LNK::DriveTypeNames.at(lnk->volumeInformation->driveType).data();
-    const auto driveTypeDescription = LNK::DriveTypeDescriptions.at(lnk->volumeInformation->driveType).data();
-    ls2.Format("(0x%X)", lnk->volumeInformation->driveType);
-    general->AddItem({ "Drive Type", ls.Format("%-20s %-4s %s", driveTypeName, ls2.GetText(), driveTypeDescription) })
-          .SetType(ListViewItem::Type::Emphasized_2);
-
-    AddDecAndHexElement("Drive Serial Number", "%-20s (%s)", lnk->volumeInformation->driveSerialNumber);
-    AddDecAndHexElement("Volume Label Offset", "%-20s (%s)", lnk->volumeInformation->volumeLabelOffset);
-    general->AddItem({ "Volume Label", ls.Format("%s", ((uint8*) lnk->volumeInformation) + lnk->volumeInformation->volumeLabelOffset) });
-
-    if (lnk->volumeInformation->volumeLabelOffset > 16)
+    if (lnk->locationInformation.volumeInformationOffset != 0)
     {
-        const auto unicodeVolumeLabelOffset =
-              *(uint32*) ((uint8*) lnk->volumeInformation + sizeof(lnk->volumeInformation->volumeLabelOffset));
-        AddDecAndHexElement("Unicode Volume Label Offset", "%-20s (%s)", unicodeVolumeLabelOffset);
-        general->AddItem({ "Unicode Volume Label", ls.Format("%s", (uint8*) lnk->volumeInformation + unicodeVolumeLabelOffset) });
+        general->AddItem("Volume Information").SetType(ListViewItem::Type::Category);
+
+        AddDecAndHexElement("Size", "%-20s (%s)", lnk->volumeInformation->size);
+
+        const auto driveTypeName        = LNK::DriveTypeNames.at(lnk->volumeInformation->driveType).data();
+        const auto driveTypeDescription = LNK::DriveTypeDescriptions.at(lnk->volumeInformation->driveType).data();
+        ls2.Format("(0x%X)", lnk->volumeInformation->driveType);
+        general->AddItem({ "Drive Type", ls.Format("%-20s %-4s %s", driveTypeName, ls2.GetText(), driveTypeDescription) })
+              .SetType(ListViewItem::Type::Emphasized_2);
+
+        AddDecAndHexElement("Drive Serial Number", "%-20s (%s)", lnk->volumeInformation->driveSerialNumber);
+        AddDecAndHexElement("Volume Label Offset", "%-20s (%s)", lnk->volumeInformation->volumeLabelOffset);
+        general->AddItem(
+              { "Volume Label", ls.Format("%s", ((uint8*) lnk->volumeInformation) + lnk->volumeInformation->volumeLabelOffset) });
+
+        if (lnk->volumeInformation->volumeLabelOffset > 16)
+        {
+            const auto unicodeVolumeLabelOffset =
+                  *(uint32*) ((uint8*) lnk->volumeInformation + sizeof(lnk->volumeInformation->volumeLabelOffset));
+            AddDecAndHexElement("Unicode Volume Label Offset", "%-20s (%s)", unicodeVolumeLabelOffset);
+            general->AddItem({ "Unicode Volume Label", ls.Format("%s", (uint8*) lnk->volumeInformation + unicodeVolumeLabelOffset) });
+        }
     }
 
     if (lnk->locationInformation.networkShareOffset > 0)
@@ -115,11 +123,11 @@ void Panels::LocationInformation::UpdateGeneralInformation()
         AddDecAndHexElement("Device Name Offset", "%-20s (%s)", lnk->networkShareInformation->deviceNameOffset);
 
         const auto networkProviderTypeName = LNK::NetworkProviderTypesNames.at(lnk->networkShareInformation->networkProviderType).data();
-        const auto networkProviderTypeHex  = ls2.Format("(0x%X)", lnk->networkShareInformation->networkProviderType);
+        const auto networkProviderTypeHex  = ls2.Format("(0x%X)", lnk->networkShareInformation->networkProviderType).data();
         general->AddItem({ "Network Provider Type", ls.Format("%-20s %-4s", networkProviderTypeName, networkProviderTypeHex) })
               .SetType(ListViewItem::Type::Emphasized_2);
 
-        if (lnk->networkShareInformation->networkShareNameOffset > 20)
+        if (lnk->networkShareInformation->networkShareNameOffset > 0x20)
         {
             const auto unicodeLocalPathOffset = *(uint32*) ((uint8*) lnk->networkShareInformation + sizeof(LocationInformation));
             AddDecAndHexElement("Unicode Local Path Offset", "%-20s (%s)", unicodeLocalPathOffset);
@@ -133,8 +141,12 @@ void Panels::LocationInformation::UpdateGeneralInformation()
 
         general->AddItem({ "Network Share Name",
                            ls.Format("%s", (uint8*) lnk->networkShareInformation + lnk->networkShareInformation->networkShareNameOffset) });
-        general->AddItem({ "Device Name Offset",
-                           ls.Format("%s", (uint8*) lnk->networkShareInformation + lnk->networkShareInformation->deviceNameOffset) });
+
+        if (lnk->networkShareInformation->deviceNameOffset > 0)
+        {
+            general->AddItem({ "Device Name",
+                               ls.Format("%s", (uint8*) lnk->networkShareInformation + lnk->networkShareInformation->deviceNameOffset) });
+        }
     }
 }
 

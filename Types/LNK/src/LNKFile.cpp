@@ -50,7 +50,11 @@ bool LNKFile::Update()
                                       unicodeCommonPathOffsetSize };
             }
         }
-        volumeInformation = (VolumeInformation*) (locationInformationBuffer.GetData() + locationInformation.volumeInformationOffset);
+
+        if (locationInformation.volumeInformationOffset > 0)
+        {
+            volumeInformation = (VolumeInformation*) (locationInformationBuffer.GetData() + locationInformation.volumeInformationOffset);
+        }
 
         if (locationInformation.networkShareOffset > 0)
         {
@@ -127,9 +131,9 @@ bool LNKFile::Update()
         {
             auto offset = sizeof(ExtraData_MetadataPropertyStore);
             {
-                while (offset < ((ExtraData_MetadataPropertyStore*)extra)->base.size - sizeof(ExtraData_MetadataPropertyStore))
+                while (offset < ((ExtraData_MetadataPropertyStore*) extra)->base.size - sizeof(ExtraData_MetadataPropertyStore))
                 {
-                    auto ps = (PropertyStore*)((uint8*)extra + offset);
+                    auto ps = (PropertyStore*) ((uint8*) extra + offset);
                     propertyStores.emplace(std::pair<PropertyStore*, std::vector<PropertyStore_ShellPropertySheet*>>{ ps, {} });
                     offset += ps->size;
                 }
@@ -137,12 +141,12 @@ bool LNKFile::Update()
 
             for (auto& [key, values] : propertyStores)
             {
-                offset = sizeof(PropertyStore);
-                auto& sps = values.emplace_back((PropertyStore_ShellPropertySheet*)(((uint8*)key) + offset));
+                offset    = sizeof(PropertyStore);
+                auto& sps = values.emplace_back((PropertyStore_ShellPropertySheet*) (((uint8*) key) + offset));
                 offset += sizeof(PropertyStore_ShellPropertySheet);
                 while (offset < key->size - sizeof(uint32) /* terminal */)
                 {
-                    auto snpp = (PropertyStore_ShellPropertyNumeric*)((uint8*)key + offset);
+                    auto snpp = (PropertyStore_ShellPropertyNumeric*) ((uint8*) key + offset);
                     offset += snpp->size;
                 }
             }
