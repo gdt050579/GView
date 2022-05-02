@@ -1311,6 +1311,7 @@ struct ExtraData_ShimLayer // The shim layer properties data block is variable o
     */
 };
 
+#pragma pack(push, 1)
 struct ExtraData_MetadataPropertyStore // The metadata property store data block is variable of size .
 {
     ExtraDataBase base;
@@ -1319,6 +1320,7 @@ struct ExtraData_MetadataPropertyStore // The metadata property store data block
         Contains one or more property stores.
     */
 };
+#pragma pack(pop)
 
 constexpr MyGUID FOLDERID_NetworkFolder          = { 0xD20BEEC4, 0x5CA8, 0x4905, 0xAE, 0x3B, 0xBF, 0x25, 0x1E, 0xA0, 0x9B, 0x53 };
 constexpr MyGUID FOLDERID_ComputerFolder         = { 0x0AC0837C, 0xBBF8, 0x452A, 0x85, 0x0D, 0x79, 0xD0, 0x8E, 0x66, 0x7C, 0xA7 };
@@ -1462,160 +1464,13 @@ constexpr MyGUID FOLDERID_AppDataDocuments       = { 0x7be16610, 0x1f7f, 0x44ac,
 constexpr MyGUID FOLDERID_AppDataFavorites       = { 0x7cfbefbc, 0xde1f, 0x45aa, 0xb8, 0x43, 0xa5, 0x42, 0xac, 0x53, 0x6c, 0xc9 };
 constexpr MyGUID FOLDERID_AppDataProgramData     = { 0x559d40a3, 0xa036, 0x40fa, 0xaf, 0x61, 0x84, 0xcb, 0x43, 0x0a, 0x4d, 0x34 };
 
-#define CHECK_FOLDERID(a, b)                                                                                                               \
+#define CHECK_GUID(a, b)                                                                                                                   \
     {                                                                                                                                      \
         if (a == b)                                                                                                                        \
         {                                                                                                                                  \
             return (#b);                                                                                                                   \
         }                                                                                                                                  \
     }
-
-static std::string_view GetNameFromGUID(const MyGUID& guid)
-{
-    CHECK_FOLDERID(guid, FOLDERID_NetworkFolder);
-    CHECK_FOLDERID(guid, FOLDERID_ComputerFolder);
-    CHECK_FOLDERID(guid, FOLDERID_InternetFolder);
-    CHECK_FOLDERID(guid, FOLDERID_ControlPanelFolder);
-    CHECK_FOLDERID(guid, FOLDERID_PrintersFolder);
-    CHECK_FOLDERID(guid, FOLDERID_SyncManagerFolder);
-    CHECK_FOLDERID(guid, FOLDERID_SyncSetupFolder);
-    CHECK_FOLDERID(guid, FOLDERID_ConflictFolder);
-    CHECK_FOLDERID(guid, FOLDERID_SyncResultsFolder);
-    CHECK_FOLDERID(guid, FOLDERID_RecycleBinFolder);
-    CHECK_FOLDERID(guid, FOLDERID_ConnectionsFolder);
-    CHECK_FOLDERID(guid, FOLDERID_Fonts);
-    CHECK_FOLDERID(guid, FOLDERID_Desktop);
-    CHECK_FOLDERID(guid, FOLDERID_Startup);
-    CHECK_FOLDERID(guid, FOLDERID_Programs);
-    CHECK_FOLDERID(guid, FOLDERID_StartMenu);
-    CHECK_FOLDERID(guid, FOLDERID_Recent);
-    CHECK_FOLDERID(guid, FOLDERID_SendTo);
-    CHECK_FOLDERID(guid, FOLDERID_Documents);
-    CHECK_FOLDERID(guid, FOLDERID_Favorites);
-    CHECK_FOLDERID(guid, FOLDERID_NetHood);
-    CHECK_FOLDERID(guid, FOLDERID_PrintHood);
-    CHECK_FOLDERID(guid, FOLDERID_Templates);
-    CHECK_FOLDERID(guid, FOLDERID_CommonStartup);
-    CHECK_FOLDERID(guid, FOLDERID_CommonPrograms);
-    CHECK_FOLDERID(guid, FOLDERID_CommonStartMenu);
-    CHECK_FOLDERID(guid, FOLDERID_PublicDesktop);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramData);
-    CHECK_FOLDERID(guid, FOLDERID_CommonTemplates);
-    CHECK_FOLDERID(guid, FOLDERID_PublicDocuments);
-    CHECK_FOLDERID(guid, FOLDERID_RoamingAppData);
-    CHECK_FOLDERID(guid, FOLDERID_LocalAppData);
-    CHECK_FOLDERID(guid, FOLDERID_LocalAppDataLow);
-    CHECK_FOLDERID(guid, FOLDERID_InternetCache);
-    CHECK_FOLDERID(guid, FOLDERID_Cookies);
-    CHECK_FOLDERID(guid, FOLDERID_History);
-    CHECK_FOLDERID(guid, FOLDERID_System);
-    CHECK_FOLDERID(guid, FOLDERID_SystemX86);
-    CHECK_FOLDERID(guid, FOLDERID_Windows);
-    CHECK_FOLDERID(guid, FOLDERID_Profile);
-    CHECK_FOLDERID(guid, FOLDERID_Pictures);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramFilesX86);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramFilesCommonX86);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramFilesX64);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramFilesCommonX64);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramFiles);
-    CHECK_FOLDERID(guid, FOLDERID_ProgramFilesCommon);
-    CHECK_FOLDERID(guid, FOLDERID_UserProgramFiles);
-    CHECK_FOLDERID(guid, FOLDERID_UserProgramFilesCommon);
-    CHECK_FOLDERID(guid, FOLDERID_AdminTools);
-    CHECK_FOLDERID(guid, FOLDERID_CommonAdminTools);
-    CHECK_FOLDERID(guid, FOLDERID_Music);
-    CHECK_FOLDERID(guid, FOLDERID_Videos);
-    CHECK_FOLDERID(guid, FOLDERID_Ringtones);
-    CHECK_FOLDERID(guid, FOLDERID_PublicPictures);
-    CHECK_FOLDERID(guid, FOLDERID_PublicMusic);
-    CHECK_FOLDERID(guid, FOLDERID_PublicVideos);
-    CHECK_FOLDERID(guid, FOLDERID_PublicRingtones);
-    CHECK_FOLDERID(guid, FOLDERID_ResourceDir);
-    CHECK_FOLDERID(guid, FOLDERID_LocalizedResourcesDir);
-    CHECK_FOLDERID(guid, FOLDERID_CommonOEMLinks);
-    CHECK_FOLDERID(guid, FOLDERID_CDBurning);
-    CHECK_FOLDERID(guid, FOLDERID_UserProfiles);
-    CHECK_FOLDERID(guid, FOLDERID_Playlists);
-    CHECK_FOLDERID(guid, FOLDERID_SamplePlaylists);
-    CHECK_FOLDERID(guid, FOLDERID_SampleMusic);
-    CHECK_FOLDERID(guid, FOLDERID_SamplePictures);
-    CHECK_FOLDERID(guid, FOLDERID_SampleVideos);
-    CHECK_FOLDERID(guid, FOLDERID_PhotoAlbums);
-    CHECK_FOLDERID(guid, FOLDERID_Public);
-    CHECK_FOLDERID(guid, FOLDERID_ChangeRemovePrograms);
-    CHECK_FOLDERID(guid, FOLDERID_AppUpdates);
-    CHECK_FOLDERID(guid, FOLDERID_AddNewPrograms);
-    CHECK_FOLDERID(guid, FOLDERID_Downloads);
-    CHECK_FOLDERID(guid, FOLDERID_PublicDownloads);
-    CHECK_FOLDERID(guid, FOLDERID_SavedSearches);
-    CHECK_FOLDERID(guid, FOLDERID_QuickLaunch);
-    CHECK_FOLDERID(guid, FOLDERID_Contacts);
-    CHECK_FOLDERID(guid, FOLDERID_SidebarParts);
-    CHECK_FOLDERID(guid, FOLDERID_SidebarDefaultParts);
-    CHECK_FOLDERID(guid, FOLDERID_PublicGameTasks);
-    CHECK_FOLDERID(guid, FOLDERID_GameTasks);
-    CHECK_FOLDERID(guid, FOLDERID_SavedGames);
-    CHECK_FOLDERID(guid, FOLDERID_Games);
-    CHECK_FOLDERID(guid, FOLDERID_SEARCH_MAPI);
-    CHECK_FOLDERID(guid, FOLDERID_SEARCH_CSC);
-    CHECK_FOLDERID(guid, FOLDERID_Links);
-    CHECK_FOLDERID(guid, FOLDERID_UsersFiles);
-    CHECK_FOLDERID(guid, FOLDERID_UsersLibraries);
-    CHECK_FOLDERID(guid, FOLDERID_SearchHome);
-    CHECK_FOLDERID(guid, FOLDERID_OriginalImages);
-    CHECK_FOLDERID(guid, FOLDERID_DocumentsLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_MusicLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_PicturesLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_VideosLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_RecordedTVLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_HomeGroup);
-    CHECK_FOLDERID(guid, FOLDERID_HomeGroupCurrentUser);
-    CHECK_FOLDERID(guid, FOLDERID_DeviceMetadataStore);
-    CHECK_FOLDERID(guid, FOLDERID_Libraries);
-    CHECK_FOLDERID(guid, FOLDERID_PublicLibraries);
-    CHECK_FOLDERID(guid, FOLDERID_UserPinned);
-    CHECK_FOLDERID(guid, FOLDERID_ImplicitAppShortcuts);
-    CHECK_FOLDERID(guid, FOLDERID_AccountPictures);
-    CHECK_FOLDERID(guid, FOLDERID_PublicUserTiles);
-    CHECK_FOLDERID(guid, FOLDERID_AppsFolder);
-    CHECK_FOLDERID(guid, FOLDERID_StartMenuAllPrograms);
-    CHECK_FOLDERID(guid, FOLDERID_CommonStartMenuPlaces);
-    CHECK_FOLDERID(guid, FOLDERID_ApplicationShortcuts);
-    CHECK_FOLDERID(guid, FOLDERID_RoamingTiles);
-    CHECK_FOLDERID(guid, FOLDERID_RoamedTileImages);
-    CHECK_FOLDERID(guid, FOLDERID_Screenshots);
-    CHECK_FOLDERID(guid, FOLDERID_CameraRoll);
-    CHECK_FOLDERID(guid, FOLDERID_SkyDrive);
-    CHECK_FOLDERID(guid, FOLDERID_OneDrive);
-    CHECK_FOLDERID(guid, FOLDERID_SkyDriveDocuments);
-    CHECK_FOLDERID(guid, FOLDERID_SkyDrivePictures);
-    CHECK_FOLDERID(guid, FOLDERID_SkyDriveMusic);
-    CHECK_FOLDERID(guid, FOLDERID_SkyDriveCameraRoll);
-    CHECK_FOLDERID(guid, FOLDERID_SearchHistory);
-    CHECK_FOLDERID(guid, FOLDERID_SearchTemplates);
-    CHECK_FOLDERID(guid, FOLDERID_CameraRollLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_SavedPictures);
-    CHECK_FOLDERID(guid, FOLDERID_SavedPicturesLibrary);
-    CHECK_FOLDERID(guid, FOLDERID_RetailDemo);
-    CHECK_FOLDERID(guid, FOLDERID_Device);
-    CHECK_FOLDERID(guid, FOLDERID_DevelopmentFiles);
-    CHECK_FOLDERID(guid, FOLDERID_Objects3D);
-    CHECK_FOLDERID(guid, FOLDERID_AppCaptures);
-    CHECK_FOLDERID(guid, FOLDERID_LocalDocuments);
-    CHECK_FOLDERID(guid, FOLDERID_LocalPictures);
-    CHECK_FOLDERID(guid, FOLDERID_LocalVideos);
-    CHECK_FOLDERID(guid, FOLDERID_LocalMusic);
-    CHECK_FOLDERID(guid, FOLDERID_LocalDownloads);
-    CHECK_FOLDERID(guid, FOLDERID_RecordedCalls);
-    CHECK_FOLDERID(guid, FOLDERID_AllAppMods);
-    CHECK_FOLDERID(guid, FOLDERID_CurrentAppMods);
-    CHECK_FOLDERID(guid, FOLDERID_AppDataDesktop);
-    CHECK_FOLDERID(guid, FOLDERID_AppDataDocuments);
-    CHECK_FOLDERID(guid, FOLDERID_AppDataFavorites);
-    CHECK_FOLDERID(guid, FOLDERID_AppDataProgramData);
-
-    return "Unknown";
-}
 
 struct ExtraData_KnownFolderLocation
 {
@@ -1633,4 +1488,253 @@ struct ExtraData_ShellItemIdentifiers // The metadata property store data block 
         The shell item identifiers list - https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc
     */
 };
+
+#pragma pack(push, 1)
+struct PropertyStore_ShellPropertySheet // (aka  SerializedPropertyStorage) -> variable size
+{
+    uint32 version; // "1SPS" -> Serialized property storage version 1
+    MyGUID formatClassIdentifier;
+    // Serialized property value
+    // uint32 Terminal identifier. Signifies the end of the serialized property storage
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct PropertyStore
+{
+    uint32 size; // Size of the property store. Includes the 4 bytes of the size itself.
+    // SerializedPropertyStorage
+    // uint32 Terminal identifier. Signifies the end of the property store.
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct PropertyStore_TypedPropertyValue
+{
+    uint16 type;
+    uint16 padding;
+    // Property value data
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct PropertyStore_ShellPropertyNumeric // (aka SerializedNumericPropertyValue) -> variable size
+{
+    uint32 size;
+    uint32 identifier;
+    uint8 unknown0; // Reserved
+    PropertyStore_TypedPropertyValue value;
+};
+#pragma pack(pop)
+
+struct PropertyStore_ShellPropertyName // (aka SerializedNamePropertyValue) -> variable size
+{
+    uint32 size;
+    uint32 nameSize;
+    uint8 unknown0; // Reserved
+    // Name string. UTF-16 little-endian string terminated by an end-of-string character.
+    // Typed property value
+};
+
+struct PropertyValueData_FMTID_SID
+{
+    uint32 size;
+    wchar_t SID[1];
+};
+
+struct PropertyValueData_FMTID_ThumbnailCacheId
+{
+    MyGUID id;
+};
+
+static_assert(sizeof(PropertyValueData_FMTID_ThumbnailCacheId) == 16);
+
+struct PropertyValueData_FMTID_InternetShortcut
+{
+    uint32 size;
+    wchar_t URL[1];
+};
+
+constexpr MyGUID FMTID_InternetSite                  = { 0x000214a1, 0x0000, 0x0000, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 };
+constexpr MyGUID WPD_STORAGE_OBJECT_PROPERTIES_V1    = { 0x01a3057a, 0x74d6, 0x4e80, 0xbe, 0xa7, 0xdc, 0x4c, 0x21, 0x2c, 0xe5, 0x0a };
+constexpr MyGUID FMTID_SID                           = { 0x46588ae2, 0x4cbc, 0x4338, 0xbb, 0xfc, 0x13, 0x93, 0x26, 0x98, 0x6d, 0xce };
+constexpr MyGUID UNKNOWN_1                           = { 0x4d545058, 0x4fce, 0x4578, 0x95, 0xc8, 0x86, 0x98, 0xa9, 0xbc, 0x0f, 0x49 };
+constexpr MyGUID FMTID_Music                         = { 0x56a3372e, 0xce9c, 0x11d2, 0x9f, 0xe0, 0x00, 0x60, 0x97, 0xc6, 0x86, 0xf6 };
+constexpr MyGUID FMTID_Image                         = { 0x6444048f, 0x4c8b, 0x11d1, 0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03 };
+constexpr MyGUID FMTID_Audio                         = { 0x64440490, 0x4c8b, 0x11d1, 0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03 };
+constexpr MyGUID FMTID_Video                         = { 0x64440491, 0x4c8b, 0x11d1, 0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03 };
+constexpr MyGUID FMTID_MediaFile                     = { 0x64440492, 0x4c8b, 0x11d1, 0x8b, 0x70, 0x08, 0x00, 0x36, 0xb1, 0x1a, 0x03 };
+constexpr MyGUID WPD_FUNCTIONAL_OBJECT_PROPERTIES_V1 = { 0x8f052d93, 0xabca, 0x4fc5, 0xa5, 0xac, 0xb0, 0x1d, 0xf4, 0xdb, 0xe5, 0x98 };
+constexpr MyGUID UNKNOWN_2                           = { 0xb725f130, 0x47ef, 0x101a, 0xa5, 0xf1, 0x02, 0x60, 0x8c, 0x9e, 0xeb, 0xac };
+constexpr MyGUID FMTID_Doc                           = { 0xd5cdd502, 0x2e9c, 0x101b, 0x93, 0x97, 0x08, 0x00, 0x2b, 0x2c, 0xf9, 0xae };
+constexpr MyGUID FMTID_UserDefinedProperties         = { 0xd5cdd505, 0x2e9c, 0x101b, 0x93, 0x97, 0x08, 0x00, 0x2b, 0x2c, 0xf9, 0xae };
+constexpr MyGUID WPD_OBJECT_PROPERTIES_V1            = { 0xef6b490d, 0x5cd8, 0x437a, 0xaf, 0xfc, 0xda, 0x8b, 0x60, 0xee, 0x4a, 0x3c };
+constexpr MyGUID FMTID_SummaryInformation            = { 0xf29f85e0, 0x4ff9, 0x1068, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3, 0xd9 };
+constexpr MyGUID FMTID_ThumbnailCacheId              = { 0x446D16B1, 0x8DAD, 0x4870, 0xa7, 0x48, 0x40, 0x2E, 0xA4, 0x3D, 0x78, 0x8C };
+constexpr MyGUID FMTID_InternetShortcut              = { 0x9F4C2855, 0x9F79, 0x4B39, 0xa8, 0xd0, 0xe1, 0xd4, 0x2d, 0xe1, 0xd5, 0xf3 };
+
+static std::string_view GetNameFromGUID(const MyGUID& guid)
+{
+    CHECK_GUID(guid, FOLDERID_NetworkFolder);
+    CHECK_GUID(guid, FOLDERID_ComputerFolder);
+    CHECK_GUID(guid, FOLDERID_InternetFolder);
+    CHECK_GUID(guid, FOLDERID_ControlPanelFolder);
+    CHECK_GUID(guid, FOLDERID_PrintersFolder);
+    CHECK_GUID(guid, FOLDERID_SyncManagerFolder);
+    CHECK_GUID(guid, FOLDERID_SyncSetupFolder);
+    CHECK_GUID(guid, FOLDERID_ConflictFolder);
+    CHECK_GUID(guid, FOLDERID_SyncResultsFolder);
+    CHECK_GUID(guid, FOLDERID_RecycleBinFolder);
+    CHECK_GUID(guid, FOLDERID_ConnectionsFolder);
+    CHECK_GUID(guid, FOLDERID_Fonts);
+    CHECK_GUID(guid, FOLDERID_Desktop);
+    CHECK_GUID(guid, FOLDERID_Startup);
+    CHECK_GUID(guid, FOLDERID_Programs);
+    CHECK_GUID(guid, FOLDERID_StartMenu);
+    CHECK_GUID(guid, FOLDERID_Recent);
+    CHECK_GUID(guid, FOLDERID_SendTo);
+    CHECK_GUID(guid, FOLDERID_Documents);
+    CHECK_GUID(guid, FOLDERID_Favorites);
+    CHECK_GUID(guid, FOLDERID_NetHood);
+    CHECK_GUID(guid, FOLDERID_PrintHood);
+    CHECK_GUID(guid, FOLDERID_Templates);
+    CHECK_GUID(guid, FOLDERID_CommonStartup);
+    CHECK_GUID(guid, FOLDERID_CommonPrograms);
+    CHECK_GUID(guid, FOLDERID_CommonStartMenu);
+    CHECK_GUID(guid, FOLDERID_PublicDesktop);
+    CHECK_GUID(guid, FOLDERID_ProgramData);
+    CHECK_GUID(guid, FOLDERID_CommonTemplates);
+    CHECK_GUID(guid, FOLDERID_PublicDocuments);
+    CHECK_GUID(guid, FOLDERID_RoamingAppData);
+    CHECK_GUID(guid, FOLDERID_LocalAppData);
+    CHECK_GUID(guid, FOLDERID_LocalAppDataLow);
+    CHECK_GUID(guid, FOLDERID_InternetCache);
+    CHECK_GUID(guid, FOLDERID_Cookies);
+    CHECK_GUID(guid, FOLDERID_History);
+    CHECK_GUID(guid, FOLDERID_System);
+    CHECK_GUID(guid, FOLDERID_SystemX86);
+    CHECK_GUID(guid, FOLDERID_Windows);
+    CHECK_GUID(guid, FOLDERID_Profile);
+    CHECK_GUID(guid, FOLDERID_Pictures);
+    CHECK_GUID(guid, FOLDERID_ProgramFilesX86);
+    CHECK_GUID(guid, FOLDERID_ProgramFilesCommonX86);
+    CHECK_GUID(guid, FOLDERID_ProgramFilesX64);
+    CHECK_GUID(guid, FOLDERID_ProgramFilesCommonX64);
+    CHECK_GUID(guid, FOLDERID_ProgramFiles);
+    CHECK_GUID(guid, FOLDERID_ProgramFilesCommon);
+    CHECK_GUID(guid, FOLDERID_UserProgramFiles);
+    CHECK_GUID(guid, FOLDERID_UserProgramFilesCommon);
+    CHECK_GUID(guid, FOLDERID_AdminTools);
+    CHECK_GUID(guid, FOLDERID_CommonAdminTools);
+    CHECK_GUID(guid, FOLDERID_Music);
+    CHECK_GUID(guid, FOLDERID_Videos);
+    CHECK_GUID(guid, FOLDERID_Ringtones);
+    CHECK_GUID(guid, FOLDERID_PublicPictures);
+    CHECK_GUID(guid, FOLDERID_PublicMusic);
+    CHECK_GUID(guid, FOLDERID_PublicVideos);
+    CHECK_GUID(guid, FOLDERID_PublicRingtones);
+    CHECK_GUID(guid, FOLDERID_ResourceDir);
+    CHECK_GUID(guid, FOLDERID_LocalizedResourcesDir);
+    CHECK_GUID(guid, FOLDERID_CommonOEMLinks);
+    CHECK_GUID(guid, FOLDERID_CDBurning);
+    CHECK_GUID(guid, FOLDERID_UserProfiles);
+    CHECK_GUID(guid, FOLDERID_Playlists);
+    CHECK_GUID(guid, FOLDERID_SamplePlaylists);
+    CHECK_GUID(guid, FOLDERID_SampleMusic);
+    CHECK_GUID(guid, FOLDERID_SamplePictures);
+    CHECK_GUID(guid, FOLDERID_SampleVideos);
+    CHECK_GUID(guid, FOLDERID_PhotoAlbums);
+    CHECK_GUID(guid, FOLDERID_Public);
+    CHECK_GUID(guid, FOLDERID_ChangeRemovePrograms);
+    CHECK_GUID(guid, FOLDERID_AppUpdates);
+    CHECK_GUID(guid, FOLDERID_AddNewPrograms);
+    CHECK_GUID(guid, FOLDERID_Downloads);
+    CHECK_GUID(guid, FOLDERID_PublicDownloads);
+    CHECK_GUID(guid, FOLDERID_SavedSearches);
+    CHECK_GUID(guid, FOLDERID_QuickLaunch);
+    CHECK_GUID(guid, FOLDERID_Contacts);
+    CHECK_GUID(guid, FOLDERID_SidebarParts);
+    CHECK_GUID(guid, FOLDERID_SidebarDefaultParts);
+    CHECK_GUID(guid, FOLDERID_PublicGameTasks);
+    CHECK_GUID(guid, FOLDERID_GameTasks);
+    CHECK_GUID(guid, FOLDERID_SavedGames);
+    CHECK_GUID(guid, FOLDERID_Games);
+    CHECK_GUID(guid, FOLDERID_SEARCH_MAPI);
+    CHECK_GUID(guid, FOLDERID_SEARCH_CSC);
+    CHECK_GUID(guid, FOLDERID_Links);
+    CHECK_GUID(guid, FOLDERID_UsersFiles);
+    CHECK_GUID(guid, FOLDERID_UsersLibraries);
+    CHECK_GUID(guid, FOLDERID_SearchHome);
+    CHECK_GUID(guid, FOLDERID_OriginalImages);
+    CHECK_GUID(guid, FOLDERID_DocumentsLibrary);
+    CHECK_GUID(guid, FOLDERID_MusicLibrary);
+    CHECK_GUID(guid, FOLDERID_PicturesLibrary);
+    CHECK_GUID(guid, FOLDERID_VideosLibrary);
+    CHECK_GUID(guid, FOLDERID_RecordedTVLibrary);
+    CHECK_GUID(guid, FOLDERID_HomeGroup);
+    CHECK_GUID(guid, FOLDERID_HomeGroupCurrentUser);
+    CHECK_GUID(guid, FOLDERID_DeviceMetadataStore);
+    CHECK_GUID(guid, FOLDERID_Libraries);
+    CHECK_GUID(guid, FOLDERID_PublicLibraries);
+    CHECK_GUID(guid, FOLDERID_UserPinned);
+    CHECK_GUID(guid, FOLDERID_ImplicitAppShortcuts);
+    CHECK_GUID(guid, FOLDERID_AccountPictures);
+    CHECK_GUID(guid, FOLDERID_PublicUserTiles);
+    CHECK_GUID(guid, FOLDERID_AppsFolder);
+    CHECK_GUID(guid, FOLDERID_StartMenuAllPrograms);
+    CHECK_GUID(guid, FOLDERID_CommonStartMenuPlaces);
+    CHECK_GUID(guid, FOLDERID_ApplicationShortcuts);
+    CHECK_GUID(guid, FOLDERID_RoamingTiles);
+    CHECK_GUID(guid, FOLDERID_RoamedTileImages);
+    CHECK_GUID(guid, FOLDERID_Screenshots);
+    CHECK_GUID(guid, FOLDERID_CameraRoll);
+    CHECK_GUID(guid, FOLDERID_SkyDrive);
+    CHECK_GUID(guid, FOLDERID_OneDrive);
+    CHECK_GUID(guid, FOLDERID_SkyDriveDocuments);
+    CHECK_GUID(guid, FOLDERID_SkyDrivePictures);
+    CHECK_GUID(guid, FOLDERID_SkyDriveMusic);
+    CHECK_GUID(guid, FOLDERID_SkyDriveCameraRoll);
+    CHECK_GUID(guid, FOLDERID_SearchHistory);
+    CHECK_GUID(guid, FOLDERID_SearchTemplates);
+    CHECK_GUID(guid, FOLDERID_CameraRollLibrary);
+    CHECK_GUID(guid, FOLDERID_SavedPictures);
+    CHECK_GUID(guid, FOLDERID_SavedPicturesLibrary);
+    CHECK_GUID(guid, FOLDERID_RetailDemo);
+    CHECK_GUID(guid, FOLDERID_Device);
+    CHECK_GUID(guid, FOLDERID_DevelopmentFiles);
+    CHECK_GUID(guid, FOLDERID_Objects3D);
+    CHECK_GUID(guid, FOLDERID_AppCaptures);
+    CHECK_GUID(guid, FOLDERID_LocalDocuments);
+    CHECK_GUID(guid, FOLDERID_LocalPictures);
+    CHECK_GUID(guid, FOLDERID_LocalVideos);
+    CHECK_GUID(guid, FOLDERID_LocalMusic);
+    CHECK_GUID(guid, FOLDERID_LocalDownloads);
+    CHECK_GUID(guid, FOLDERID_RecordedCalls);
+    CHECK_GUID(guid, FOLDERID_AllAppMods);
+    CHECK_GUID(guid, FOLDERID_CurrentAppMods);
+    CHECK_GUID(guid, FOLDERID_AppDataDesktop);
+    CHECK_GUID(guid, FOLDERID_AppDataDocuments);
+    CHECK_GUID(guid, FOLDERID_AppDataFavorites);
+    CHECK_GUID(guid, FOLDERID_AppDataProgramData);
+
+    CHECK_GUID(guid, FMTID_InternetSite);
+    CHECK_GUID(guid, WPD_STORAGE_OBJECT_PROPERTIES_V1);
+    CHECK_GUID(guid, FMTID_SID);
+    CHECK_GUID(guid, UNKNOWN_1);
+    CHECK_GUID(guid, FMTID_Music);
+    CHECK_GUID(guid, FMTID_Image);
+    CHECK_GUID(guid, FMTID_Audio);
+    CHECK_GUID(guid, FMTID_Video);
+    CHECK_GUID(guid, FMTID_MediaFile);
+    CHECK_GUID(guid, WPD_FUNCTIONAL_OBJECT_PROPERTIES_V1);
+    CHECK_GUID(guid, UNKNOWN_2);
+    CHECK_GUID(guid, FMTID_Doc);
+    CHECK_GUID(guid, FMTID_UserDefinedProperties);
+    CHECK_GUID(guid, WPD_OBJECT_PROPERTIES_V1);
+    CHECK_GUID(guid, FMTID_SummaryInformation);
+    CHECK_GUID(guid, FMTID_ThumbnailCacheId);
+    CHECK_GUID(guid, FMTID_InternetShortcut);
+
+    return "Unknown";
+}
 } // namespace GView::Type::LNK

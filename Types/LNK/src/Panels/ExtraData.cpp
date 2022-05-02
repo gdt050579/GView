@@ -228,7 +228,150 @@ void ExtraData::UpdateExtraData_ShimLayer(ExtraData_ShimLayer* data)
 
 void ExtraData::UpdateExtraData_MetadataPropertyStore(ExtraData_MetadataPropertyStore* data)
 {
+    LocalString<1024> ls;
+
     UpdateExtraDataBase(&data->base);
+
+    for (auto& [key, values] : lnk->propertyStores)
+    {
+        general->AddItem("PropertyStore").SetType(ListViewItem::Type::Category);
+        AddDecAndHexElement("Size", "%-20s (%s)", key->size);
+
+        auto offset = sizeof(PropertyStore_ShellPropertySheet);
+        for (const auto& sheet : values)
+        {
+            general->AddItem("PropertyStore_ShellPropertySheet").SetType(ListViewItem::Type::Category);
+
+            AddDecAndHexElement("Property Version", "%-20s (%s)", sheet->version);
+            auto classElement = AddGUIDElement(general, "Format Class Identifier", sheet->formatClassIdentifier);
+
+            while (offset < key->size - sizeof(PropertyStore) - sizeof(uint32) /* terminal */)
+            {
+                if (sheet->formatClassIdentifier == FMTID_UserDefinedProperties)
+                {
+                    classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    break;
+                }
+                else
+                {
+                    general->AddItem("PropertyStore_ShellPropertyNumeric").SetType(ListViewItem::Type::Category);
+
+                    auto snpp = (PropertyStore_ShellPropertyNumeric*) ((uint8*) sheet + offset);
+                    AddDecAndHexElement("Size", "%-20s (%s)", snpp->size);
+                    auto identifierElement = AddDecAndHexElement("Identifier", "%-20s (%s)", snpp->identifier);
+                    AddDecAndHexElement("Unknown0", "%-20s (%s)", snpp->unknown0);
+
+                    general->AddItem("PropertyStore_TypedPropertyValue").SetType(ListViewItem::Type::Category);
+                    AddDecAndHexElement("Type", "%-20s (%s)", snpp->value.type);
+                    AddDecAndHexElement("Padding", "%-20s (%s)", snpp->value.padding);
+
+                    if (sheet->formatClassIdentifier == FMTID_InternetSite)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == WPD_STORAGE_OBJECT_PROPERTIES_V1)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_SID)
+                    {
+                        general->AddItem("PropertyValueData_FMTID_SID").SetType(ListViewItem::Type::Category);
+
+                        auto pvdSID = (PropertyValueData_FMTID_SID*) ((uint8*) &snpp->value.padding + sizeof(snpp->value.padding));
+                        AddDecAndHexElement("Size", "%-20s (%s)", pvdSID->size);
+
+                        const auto sidSize = pvdSID->size - sizeof(pvdSID);
+                        general->AddItem({ "Name", ls.Format("%.*S", sidSize, pvdSID->SID) });
+                    }
+                    else if (sheet->formatClassIdentifier == UNKNOWN_1)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_Music)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_Image)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_Audio)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_Video)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_MediaFile)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == WPD_FUNCTIONAL_OBJECT_PROPERTIES_V1)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == UNKNOWN_2)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_Doc)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_UserDefinedProperties)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == WPD_OBJECT_PROPERTIES_V1)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_SummaryInformation)
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_ThumbnailCacheId)
+                    {
+                        general->AddItem("PropertyValueData_FMTID_ThumbnailCacheId").SetType(ListViewItem::Type::Category);
+
+                        auto pvdtci =
+                              (PropertyValueData_FMTID_ThumbnailCacheId*) ((uint8*) &snpp->value.padding + sizeof(snpp->value.padding));
+                        AddGUIDElement(general, "ID", pvdtci->id);
+                    }
+                    else if (sheet->formatClassIdentifier == FMTID_InternetShortcut)
+                    {
+                        general->AddItem("PropertyValueData_FMTID_InternetShortcut").SetType(ListViewItem::Type::Category);
+
+                        if (snpp->identifier == 0x05)
+                        {
+                            auto pvdis =
+                                  (PropertyValueData_FMTID_InternetShortcut*) ((uint8*) &snpp->value.padding + sizeof(snpp->value.padding));
+                            AddDecAndHexElement("Unknown", "%-20s (%s)", pvdis->size);
+                            const auto URLSize = pvdis->size * sizeof(wchar_t);
+                            general->AddItem({ "URL", ls.Format("%.*S", URLSize, pvdis->URL) });
+                        }
+                        else if (snpp->identifier == 0x1A)
+                        {
+                            auto buffer = (MyGUID*) ((uint8*) &snpp->value.padding + sizeof(snpp->value.padding));
+                            AddGUIDElement(general, "FormatID(?)", *buffer);
+                        }
+                        else
+                        {
+                            identifierElement.SetType(ListViewItem::Type::ErrorInformation);
+                        }
+                    }
+                    else
+                    {
+                        classElement.SetType(ListViewItem::Type::ErrorInformation);
+                    }
+
+                    offset += snpp->size;
+                }
+            }
+        }
+    }
+
     general
           ->AddItem(
                 { "TODO:", "Map https://github.com/libyal/libfwps/blob/main/documentation/Windows%20Property%20Store%20format.asciidoc" })

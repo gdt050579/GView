@@ -122,6 +122,31 @@ bool LNKFile::Update()
         CHECKBK(extra->size != 0, "");
         extraDataBases.emplace_back(extra);
         extraDataBufferOffset += extra->size;
+
+        if (extra->signature == ExtraDataSignatures::MetadataPropertyStore)
+        {
+            auto offset = sizeof(ExtraData_MetadataPropertyStore);
+            {
+                while (offset < ((ExtraData_MetadataPropertyStore*)extra)->base.size - sizeof(ExtraData_MetadataPropertyStore))
+                {
+                    auto ps = (PropertyStore*)((uint8*)extra + offset);
+                    propertyStores.emplace(std::pair<PropertyStore*, std::vector<PropertyStore_ShellPropertySheet*>>{ ps, {} });
+                    offset += ps->size;
+                }
+            }
+
+            for (auto& [key, values] : propertyStores)
+            {
+                offset = sizeof(PropertyStore);
+                auto& sps = values.emplace_back((PropertyStore_ShellPropertySheet*)(((uint8*)key) + offset));
+                offset += sizeof(PropertyStore_ShellPropertySheet);
+                while (offset < key->size - sizeof(uint32) /* terminal */)
+                {
+                    auto snpp = (PropertyStore_ShellPropertyNumeric*)((uint8*)key + offset);
+                    offset += snpp->size;
+                }
+            }
+        }
     }
 
     return true;

@@ -28,6 +28,7 @@ class LNKFile : public TypeInterface
 
     Buffer extraDataBuffer;
     std::vector<ExtraDataBase*> extraDataBases;
+    std::map<PropertyStore*, std::vector<PropertyStore_ShellPropertySheet*>> propertyStores;
 
     LNKFile();
     virtual ~LNKFile()
@@ -44,27 +45,29 @@ class LNKFile : public TypeInterface
 
 namespace Panels
 {
-    static void AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
+    static ListViewItem AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
     {
-        CHECKRET(list.IsValid(), "");
+        CHECK(list.IsValid(), ListViewItem{}, "");
 
         LocalString<1024> ls;
-        list->AddItem({ name,
-                        ls.Format(
-                              "%-20s {%08lX-%04hX-%04hX-%02hhX%02hhX-%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX}",
-                              GetNameFromGUID(guid).data(),
-                              guid.a,
-                              guid.b,
-                              guid.c,
-                              guid.d[0],
-                              guid.d[1],
-                              guid.d[2],
-                              guid.d[3],
-                              guid.d[4],
-                              guid.d[5],
-                              guid.d[6],
-                              guid.d[7]) })
-              .SetType(ListViewItem::Type::Emphasized_1);
+        auto element = list->AddItem({ name,
+                                       ls.Format(
+                                             "%-20s {%08lX-%04hX-%04hX-%02hhX%02hhX-%02hhX%02hhX%02hhX%02hhX%02hhX%02hhX}",
+                                             GetNameFromGUID(guid).data(),
+                                             guid.a,
+                                             guid.b,
+                                             guid.c,
+                                             guid.d[0],
+                                             guid.d[1],
+                                             guid.d[2],
+                                             guid.d[3],
+                                             guid.d[4],
+                                             guid.d[5],
+                                             guid.d[6],
+                                             guid.d[7]) });
+        element.SetType(ListViewItem::Type::Emphasized_1);
+
+        return element;
     }
 
     class Information : public AppCUI::Controls::TabPage
@@ -229,7 +232,7 @@ namespace Panels
         void RecomputePanelsPositions();
 
         template <typename T>
-        void AddDecAndHexElement(std::string_view name, std::string_view format, T value)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
@@ -237,7 +240,7 @@ namespace Panels
 
             const auto v    = nf.ToString(value, dec);
             const auto hexV = nf2.ToString(value, hex);
-            general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
+            return general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
         }
 
       public:
