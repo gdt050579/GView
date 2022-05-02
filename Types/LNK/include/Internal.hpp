@@ -1246,6 +1246,29 @@ struct ExtraData_ConsoleProperties
 
 static_assert(sizeof(ExtraData_ConsoleProperties) == 204);
 
+struct ExtraData_DistributedLinkTrackerProperties
+{
+    ExtraDataBase base;
+    uint32 sizeOfDistributedLinkTrackerData;
+    uint32 versionOfDistributedLinkTrackerData;
+    uint8 machineIdentifierString[16]; // ASCII string terminated by an end-of-string character. Unused bytes are set to 0.
+    MyGUID droidVolumeIdentifier;      // GUID containing an NTFS object identifier.
+    MyGUID droidFileIdentifier;        // GUID containing an NTFS object identifier.
+    MyGUID birthDroidVolumeIdentifier; // GUID containing an NTFS object identifier.
+    MyGUID birthDroidFileIdentifier;   // GUID containing an NTFS object identifier.
+};
+
+static_assert(sizeof(ExtraData_DistributedLinkTrackerProperties) == 96);
+
+struct ExtraData_ConsoleCodepage
+{
+    ExtraDataBase base;
+    uint32 codePage; // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-lcid/70feba9f-294e-491e-b6eb-56532684c37f
+    // TODO: several hundreds of options to map..,
+};
+
+static_assert(sizeof(ExtraData_ConsoleCodepage) == 12);
+
 struct ExtraData_SpecialFolderLocation
 {
     ExtraDataBase base;

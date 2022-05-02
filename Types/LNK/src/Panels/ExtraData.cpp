@@ -33,10 +33,10 @@ void ExtraData::UpdateGeneralInformation()
             UpdateExtraData_ConsoleProperties((ExtraData_ConsoleProperties*) extraData);
             break;
         case ExtraDataSignatures::DistributedLinkTrackerProperties:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_DistributedLinkTrackerProperties((ExtraData_DistributedLinkTrackerProperties*) extraData);
             break;
         case ExtraDataSignatures::ConsoleCodepage:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_ConsoleCodepage((ExtraData_ConsoleCodepage*) extraData);
             break;
         case ExtraDataSignatures::SpecialFolderLocation:
             UpdateExtraData_SpecialFolderLocation((ExtraData_SpecialFolderLocation*) extraData);
@@ -168,6 +168,30 @@ void ExtraData::UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* d
         hfls.AddFormat("%02X", c);
     }
     general->AddItem({ "Color Table", ls.Format("%s", fontFamily, hfls.GetText()) });
+}
+
+void ExtraData::UpdateExtraData_DistributedLinkTrackerProperties(ExtraData_DistributedLinkTrackerProperties* data)
+{
+    LocalString<1024> ls;
+
+    UpdateExtraDataBase(&data->base);
+    AddDecAndHexElement("Size Of Distributed Link Tracker Data", "%-20s (%s)", data->sizeOfDistributedLinkTrackerData);
+    AddDecAndHexElement("Version Of Distributed Link Tracker Data", "%-20s (%s)", data->versionOfDistributedLinkTrackerData);
+    general->AddItem({ "Machine Identifier String",
+                       ls.Format(
+                             "%*.s",
+                             sizeof(data->machineIdentifierString) / sizeof(data->machineIdentifierString[0]),
+                             data->machineIdentifierString) });
+    AddGUIDElement(general, "Droid Volume Identifier", data->droidVolumeIdentifier);
+    AddGUIDElement(general, "Droid File Identifier", data->droidFileIdentifier);
+    AddGUIDElement(general, "Birth Droid Volume Identifier", data->birthDroidVolumeIdentifier);
+    AddGUIDElement(general, "Birth Droid File Identifier", data->birthDroidFileIdentifier);
+}
+
+void ExtraData::UpdateExtraData_ConsoleCodepage(ExtraData_ConsoleCodepage* data)
+{
+    UpdateExtraDataBase(&data->base);
+    AddDecAndHexElement("Code Page", "%-20s (%s)", data->codePage);
 }
 
 void ExtraData::UpdateIssues()

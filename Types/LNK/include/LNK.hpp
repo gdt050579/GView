@@ -218,6 +218,8 @@ namespace Panels
         void UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data);
         void UpdateExtraData_EnvironmentVariablesLocation(ExtraData_EnvironmentVariablesLocation* data);
         void UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* data);
+        void UpdateExtraData_DistributedLinkTrackerProperties(ExtraData_DistributedLinkTrackerProperties* data);
+        void UpdateExtraData_ConsoleCodepage(ExtraData_ConsoleCodepage* data);
         void UpdateIssues();
         void RecomputePanelsPositions();
 
