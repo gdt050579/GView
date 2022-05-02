@@ -81,9 +81,9 @@ void ExtraData::UpdateExtraData_EnvironmentVariablesLocation(ExtraData_Environme
     LocalString<1024> ls;
 
     UpdateExtraDataBase(&data->base);
-    general->AddItem({ "Location ASCII", ls.Format("%.*s", data->location, sizeof(data->location) / sizeof(data->location[0])) });
+    general->AddItem({ "Location ASCII", ls.Format("%.*s", sizeof(data->location) / sizeof(data->location[0]), data->location) });
     general->AddItem({ "Location Unicode",
-                       ls.Format("%.*S", data->unicodeLocation, sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0])) });
+                       ls.Format("%.*S", sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0]), data->unicodeLocation) });
 }
 
 void ExtraData::UpdateExtraData_ConsoleProperties(ExtraData_ConsoleProperties* data)

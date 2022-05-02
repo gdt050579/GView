@@ -115,7 +115,7 @@ void Panels::LocationInformation::UpdateGeneralInformation()
         AddDecAndHexElement("Device Name Offset", "%-20s (%s)", lnk->networkShareInformation->deviceNameOffset);
 
         const auto networkProviderTypeName = LNK::NetworkProviderTypesNames.at(lnk->networkShareInformation->networkProviderType).data();
-        const auto networkProviderTypeHex  = ls2.Format("(0x%X)", lnk->volumeInformation->driveType);
+        const auto networkProviderTypeHex  = ls2.Format("(0x%X)", lnk->networkShareInformation->networkProviderType);
         general->AddItem({ "Network Provider Type", ls.Format("%-20s %-4s", networkProviderTypeName, networkProviderTypeHex) })
               .SetType(ListViewItem::Type::Emphasized_2);
 

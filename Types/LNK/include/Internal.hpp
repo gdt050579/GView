@@ -960,6 +960,7 @@ static const std::vector<NetworkShareFlags> GetNetworkShareFlags(uint32 flags)
 
 enum class NetworkProviderTypes : uint32
 {
+    Unknown0    = 0x00020000,
     AVID        = 0x001A0000,
     DOCUSPACE   = 0x001B0000,
     MANGOSOFT   = 0x001C0000,
@@ -1004,27 +1005,27 @@ enum class NetworkProviderTypes : uint32
 };
 
 static const std::map<NetworkProviderTypes, std::string_view> NetworkProviderTypesNames{
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::AVID),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::DOCUSPACE),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MANGOSOFT),   GET_PAIR_FROM_ENUM(NetworkProviderTypes::SERNET),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::RIVERFRONT1), GET_PAIR_FROM_ENUM(NetworkProviderTypes::RIVERFRONT2),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DECORB),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::PROTSTOR),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::FJ_REDIR),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DISTINCT),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::TWINS),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::RDR2SAMPLE),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::CSC),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::_3IN1),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::EXTENDNET),   GET_PAIR_FROM_ENUM(NetworkProviderTypes::STAC),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::FOXBAT),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::YAHOO),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::EXIFS),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::DAV),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::KNOWARE),     GET_PAIR_FROM_ENUM(NetworkProviderTypes::OBJECT_DIRE),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MASFAX),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::HOB_NFS),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::SHIVA),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::IBMAL),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::LOCK),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::TERMSRV),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::SRT),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::QUINCY),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::OPENAFS),     GET_PAIR_FROM_ENUM(NetworkProviderTypes::AVID1),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DFS),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::KWNP),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::ZENWORKS),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DRIVEONWEB),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::VMWARE),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::RSFX),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MFILES),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::MS_NFS),
-    GET_PAIR_FROM_ENUM(NetworkProviderTypes::GOOGLE)
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::Unknown0),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::AVID),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DOCUSPACE),   GET_PAIR_FROM_ENUM(NetworkProviderTypes::MANGOSOFT),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::SERNET),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::RIVERFRONT1),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::RIVERFRONT2), GET_PAIR_FROM_ENUM(NetworkProviderTypes::DECORB),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::PROTSTOR),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::FJ_REDIR),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DISTINCT),    GET_PAIR_FROM_ENUM(NetworkProviderTypes::TWINS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::RDR2SAMPLE),  GET_PAIR_FROM_ENUM(NetworkProviderTypes::CSC),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::_3IN1),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::EXTENDNET),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::STAC),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::FOXBAT),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::YAHOO),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::EXIFS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DAV),         GET_PAIR_FROM_ENUM(NetworkProviderTypes::KNOWARE),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::OBJECT_DIRE), GET_PAIR_FROM_ENUM(NetworkProviderTypes::MASFAX),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::HOB_NFS),     GET_PAIR_FROM_ENUM(NetworkProviderTypes::SHIVA),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::IBMAL),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::LOCK),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::TERMSRV),     GET_PAIR_FROM_ENUM(NetworkProviderTypes::SRT),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::QUINCY),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::OPENAFS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::AVID1),       GET_PAIR_FROM_ENUM(NetworkProviderTypes::DFS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::KWNP),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::ZENWORKS),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::DRIVEONWEB),  GET_PAIR_FROM_ENUM(NetworkProviderTypes::VMWARE),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::RSFX),        GET_PAIR_FROM_ENUM(NetworkProviderTypes::MFILES),
+    GET_PAIR_FROM_ENUM(NetworkProviderTypes::MS_NFS),      GET_PAIR_FROM_ENUM(NetworkProviderTypes::GOOGLE)
 };
 
 struct NetworkShareInformation
