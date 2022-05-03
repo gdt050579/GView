@@ -119,8 +119,9 @@ namespace Panels
         bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
     };
 
-    class LinkTargetIDList : public AppCUI::Controls::TabPage
+    class ShellItems : public AppCUI::Controls::TabPage
     {
+      protected:
         Reference<Object> object;
         Reference<GView::Type::LNK::LNKFile> lnk;
         Reference<AppCUI::Controls::ListView> general;
@@ -129,31 +130,41 @@ namespace Panels
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
         inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-        void UpdateGeneralInformation();
-        void UpdateRootFolderShellItem(RootFolderShellItem& item);
-        void UpdateExtensionBlock0xBEEF0017(ExtensionBlock0xBEEF0017& block);
-        void UpdateVolumeShellItem(VolumeShellItem& item);
-        void UpdateLinkTargetIDList();
-        void UpdateFileEntryShellItem_XPAndLater(ItemID* item);
-        void UpdateExtensionBlock0xBEEF0003(ExtensionBlock0xBEEF0003& block);
-        void UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block);
-        void UpdateExtensionBlock0xBEEF0004_V9(ExtensionBlock0xBEEF0004_V9* block);
-        void UpdateControlPanelShellItem(ControlPanelShellItem& block);
-        void UpdateDelegateShellItem(DelegateShellItem& item);
-        void UpdateIssues();
-        void RecomputePanelsPositions();
+        ShellItems(std::string_view name) : TabPage(name){};
 
         template <typename T>
-        void AddDecAndHexElement(std::string_view name, std::string_view format, T value)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
             NumericFormatter nf2;
 
             const auto v    = nf.ToString(value, dec);
-            const auto hexV = nf2.ToString(value, hex);
-            general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
+            const auto vHex = nf2.ToString(value, hex);
+            return general->AddItem({ name, ls.Format(format.data(), v.data(), vHex.data()) });
         }
+
+        void UpdateRootFolderShellItem(RootFolderShellItem& item);
+        void UpdateExtensionBlock0xBEEF0017(ExtensionBlock0xBEEF0017& block);
+        void UpdateVolumeShellItem(VolumeShellItem& item);
+        void UpdateLinkTargetIDList(const std::vector<ItemID*>& itemIDS);
+        void UpdateFileEntryShellItem(ItemID* item);
+        void UpdateExtensionBlock0xBEEF0003(ExtensionBlock0xBEEF0003& block);
+        void UpdateExtensionBlock0xBEEF0004Base(ExtensionBlock0xBEEF0004Base& block);
+        void UpdateExtensionBlock0xBEEF0004_V3(ExtensionBlock0xBEEF0004_V3* block);
+        void UpdateExtensionBlock0xBEEF0004_V7(ExtensionBlock0xBEEF0004_V7* block);
+        void UpdateExtensionBlock0xBEEF0004_V8(ExtensionBlock0xBEEF0004_V8* block);
+        void UpdateExtensionBlock0xBEEF0004_V9(ExtensionBlock0xBEEF0004_V9* block);
+        void UpdateControlPanelShellItem(ControlPanelShellItem& block);
+        void UpdateDelegateShellItem(DelegateShellItem& item);
+        void UpdateNetworkLocationShellItem(NetworkLocationShellItem& item);
+    };
+
+    class LinkTargetIDList : public ShellItems
+    {
+        void UpdateGeneralInformation();
+        void UpdateIssues();
+        void RecomputePanelsPositions();
 
       public:
         LinkTargetIDList(Reference<Object> _object, Reference<GView::Type::LNK::LNKFile> _lnk);
@@ -205,16 +216,8 @@ namespace Panels
         bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
     };
 
-    class ExtraData : public AppCUI::Controls::TabPage
+    class ExtraData : public ShellItems
     {
-        Reference<Object> object;
-        Reference<GView::Type::LNK::LNKFile> lnk;
-        Reference<AppCUI::Controls::ListView> general;
-        Reference<AppCUI::Controls::ListView> issues;
-
-        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
         void UpdateGeneralInformation();
         void UpdateExtraDataBase(ExtraDataBase* base);
         void UpdateExtraData_EnvironmentVariablesLocation(ExtraData_EnvironmentVariablesLocation* data);
@@ -230,18 +233,6 @@ namespace Panels
         void UpdateExtraData_ShellItemIdentifiers(ExtraData_ShellItemIdentifiers* data);
         void UpdateIssues();
         void RecomputePanelsPositions();
-
-        template <typename T>
-        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value)
-        {
-            LocalString<1024> ls;
-            NumericFormatter nf;
-            NumericFormatter nf2;
-
-            const auto v    = nf.ToString(value, dec);
-            const auto hexV = nf2.ToString(value, hex);
-            return general->AddItem({ name, ls.Format(format.data(), v.data(), hexV.data()) });
-        }
 
       public:
         ExtraData(Reference<Object> _object, Reference<GView::Type::LNK::LNKFile> _lnk);

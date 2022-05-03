@@ -5,7 +5,7 @@ using namespace GView::Type::LNK::Panels;
 using namespace AppCUI::Controls;
 using namespace AppCUI::OS;
 
-ExtraData::ExtraData(Reference<Object> _object, Reference<GView::Type::LNK::LNKFile> _lnk) : TabPage("&ExtraData")
+ExtraData::ExtraData(Reference<Object> _object, Reference<GView::Type::LNK::LNKFile> _lnk) : ShellItems("&ExtraData")
 {
     lnk     = _lnk;
     object  = _object;
@@ -57,7 +57,7 @@ void ExtraData::UpdateGeneralInformation()
             UpdateExtraData_KnownFolderLocation((ExtraData_KnownFolderLocation*) extraData);
             break;
         case ExtraDataSignatures::ShellItemIdentifiersListProperties:
-            UpdateExtraDataBase(extraData);
+            UpdateExtraData_ShellItemIdentifiers((ExtraData_ShellItemIdentifiers*) extraData);
             break;
         default:
             UpdateExtraDataBase(extraData);
@@ -223,7 +223,7 @@ void ExtraData::UpdateExtraData_ShimLayer(ExtraData_ShimLayer* data)
 
     UpdateExtraDataBase(&data->base);
     general->AddItem(
-          { "Name", ls.Format("%.*S", data->base.size - sizeof(ExtraData_ShimLayer), ((uint8*) &data) + sizeof(ExtraData_ShimLayer)) });
+          { "Name", ls.Format("%.*ls", data->base.size - sizeof(ExtraData_ShimLayer), ((uint8*) &data) + sizeof(ExtraData_ShimLayer)) });
 }
 
 void ExtraData::UpdateExtraData_MetadataPropertyStore(ExtraData_MetadataPropertyStore* data)
@@ -388,6 +388,28 @@ void ExtraData::UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocatio
 void ExtraData::UpdateExtraData_ShellItemIdentifiers(ExtraData_ShellItemIdentifiers* data)
 {
     UpdateExtraDataBase(&data->base);
+
+    auto start = ((uint8*) &data->base + sizeof(data->base));
+    std::vector<ItemID*> itemIDS;
+    auto offset = 0ULL;
+    while (offset < data->base.size)
+    {
+        const auto itemID = itemIDS.emplace_back((ItemID*) (start + offset));
+        offset += itemID->ItemIDSize;
+        if (itemID->ItemIDSize == 0)
+        {
+            break;
+        }
+    }
+
+    // TODO: random property store in shell item identifiers??? -> remote.file.aidlist.test & unicodeNetworkPath.lnk.test
+    // [ b3 00 00 00 ad 00 bb af 93 3b 9f 00 04 00 00 00 00 00 ] -> 41 00 00 00 1 S P S
+    // auto ps = (PropertyStore*) ((uint8*) (itemIDS[1]) + 18);
+    // auto sps = (PropertyStore_ShellPropertySheet*) ((uint8*) (itemIDS[1]) + 22);
+    // UpdateExtraData_MetadataPropertyStore();
+    // TODO: call heuristic PropertyStore parsing from here
+
+    UpdateLinkTargetIDList(itemIDS);
 
     general
           ->AddItem(

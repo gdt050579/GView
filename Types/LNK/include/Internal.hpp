@@ -183,94 +183,140 @@ static const std::string GetHotKeyHighFromFlags(uint8 flags)
 
 enum class HotKeyLow : uint8
 {
-    NONE    = 0x00,
-    _0      = 0x30,
-    _1      = 0x31,
-    _2      = 0x32,
-    _3      = 0x33,
-    _4      = 0x34,
-    _5      = 0x35,
-    _6      = 0x36,
-    _7      = 0x37,
-    _8      = 0x38,
-    _9      = 0x39,
-    A       = 0x41,
-    B       = 0x42,
-    C       = 0x43,
-    D       = 0x44,
-    E       = 0x45,
-    F       = 0x46,
-    G       = 0x47,
-    H       = 0x48,
-    I       = 0x49,
-    J       = 0x4A,
-    K       = 0x4B,
-    L       = 0x4C,
-    M       = 0x4D,
-    N       = 0x4E,
-    O       = 0x4F,
-    P       = 0x50,
-    Q       = 0x51,
-    R       = 0x52,
-    S       = 0x53,
-    T       = 0x54,
-    U       = 0x55,
-    V       = 0x56,
-    W       = 0x57,
-    X       = 0x58,
-    Y       = 0x59,
-    Z       = 0x5A,
-    F1      = 0x70,
-    F2      = 0x71,
-    F3      = 0x72,
-    F4      = 0x73,
-    F5      = 0x74,
-    F6      = 0x75,
-    F7      = 0x76,
-    F8      = 0x77,
-    F9      = 0x78,
-    F10     = 0x79,
-    F11     = 0x7A,
-    F12     = 0x7B,
-    F13     = 0x7C,
-    F14     = 0x7D,
-    F15     = 0x7E,
-    F16     = 0x7F,
-    F17     = 0x80,
-    F18     = 0x81,
-    F19     = 0x82,
-    F20     = 0x83,
-    F21     = 0x84,
-    F22     = 0x85,
-    F23     = 0x86,
-    F24     = 0x87,
-    NumLock = 0x90,
-    Scroll  = 0x91,
+    NONE         = 0x00,
+    Unknown_0x02 = 0x02,
+    Unknown_0x03 = 0x03,
+    Unknown_0x06 = 0x06,
+    _0           = 0x30,
+    _1           = 0x31,
+    _2           = 0x32,
+    _3           = 0x33,
+    _4           = 0x34,
+    _5           = 0x35,
+    _6           = 0x36,
+    _7           = 0x37,
+    _8           = 0x38,
+    _9           = 0x39,
+    A            = 0x41,
+    B            = 0x42,
+    C            = 0x43,
+    D            = 0x44,
+    E            = 0x45,
+    F            = 0x46,
+    G            = 0x47,
+    H            = 0x48,
+    I            = 0x49,
+    J            = 0x4A,
+    K            = 0x4B,
+    L            = 0x4C,
+    M            = 0x4D,
+    N            = 0x4E,
+    O            = 0x4F,
+    P            = 0x50,
+    Q            = 0x51,
+    R            = 0x52,
+    S            = 0x53,
+    T            = 0x54,
+    U            = 0x55,
+    V            = 0x56,
+    W            = 0x57,
+    X            = 0x58,
+    Y            = 0x59,
+    Z            = 0x5A,
+    F1           = 0x70,
+    F2           = 0x71,
+    F3           = 0x72,
+    F4           = 0x73,
+    F5           = 0x74,
+    F6           = 0x75,
+    F7           = 0x76,
+    F8           = 0x77,
+    F9           = 0x78,
+    F10          = 0x79,
+    F11          = 0x7A,
+    F12          = 0x7B,
+    F13          = 0x7C,
+    F14          = 0x7D,
+    F15          = 0x7E,
+    F16          = 0x7F,
+    F17          = 0x80,
+    F18          = 0x81,
+    F19          = 0x82,
+    F20          = 0x83,
+    F21          = 0x84,
+    F22          = 0x85,
+    F23          = 0x86,
+    F24          = 0x87,
+    NumLock      = 0x90,
+    Scroll       = 0x91,
 };
 
-static const std::map<HotKeyLow, std::string_view> HotKeyLowNames{
-    GET_PAIR_FROM_ENUM(HotKeyLow::NONE), GET_PAIR_FROM_ENUM(HotKeyLow::_0),      GET_PAIR_FROM_ENUM(HotKeyLow::_1),
-    GET_PAIR_FROM_ENUM(HotKeyLow::_2),   GET_PAIR_FROM_ENUM(HotKeyLow::_3),      GET_PAIR_FROM_ENUM(HotKeyLow::_4),
-    GET_PAIR_FROM_ENUM(HotKeyLow::_5),   GET_PAIR_FROM_ENUM(HotKeyLow::_6),      GET_PAIR_FROM_ENUM(HotKeyLow::_7),
-    GET_PAIR_FROM_ENUM(HotKeyLow::_8),   GET_PAIR_FROM_ENUM(HotKeyLow::_9),      GET_PAIR_FROM_ENUM(HotKeyLow::A),
-    GET_PAIR_FROM_ENUM(HotKeyLow::B),    GET_PAIR_FROM_ENUM(HotKeyLow::C),       GET_PAIR_FROM_ENUM(HotKeyLow::D),
-    GET_PAIR_FROM_ENUM(HotKeyLow::E),    GET_PAIR_FROM_ENUM(HotKeyLow::F),       GET_PAIR_FROM_ENUM(HotKeyLow::G),
-    GET_PAIR_FROM_ENUM(HotKeyLow::H),    GET_PAIR_FROM_ENUM(HotKeyLow::I),       GET_PAIR_FROM_ENUM(HotKeyLow::J),
-    GET_PAIR_FROM_ENUM(HotKeyLow::K),    GET_PAIR_FROM_ENUM(HotKeyLow::L),       GET_PAIR_FROM_ENUM(HotKeyLow::M),
-    GET_PAIR_FROM_ENUM(HotKeyLow::N),    GET_PAIR_FROM_ENUM(HotKeyLow::O),       GET_PAIR_FROM_ENUM(HotKeyLow::P),
-    GET_PAIR_FROM_ENUM(HotKeyLow::Q),    GET_PAIR_FROM_ENUM(HotKeyLow::R),       GET_PAIR_FROM_ENUM(HotKeyLow::S),
-    GET_PAIR_FROM_ENUM(HotKeyLow::T),    GET_PAIR_FROM_ENUM(HotKeyLow::U),       GET_PAIR_FROM_ENUM(HotKeyLow::V),
-    GET_PAIR_FROM_ENUM(HotKeyLow::W),    GET_PAIR_FROM_ENUM(HotKeyLow::X),       GET_PAIR_FROM_ENUM(HotKeyLow::Y),
-    GET_PAIR_FROM_ENUM(HotKeyLow::Z),    GET_PAIR_FROM_ENUM(HotKeyLow::F1),      GET_PAIR_FROM_ENUM(HotKeyLow::F2),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F3),   GET_PAIR_FROM_ENUM(HotKeyLow::F4),      GET_PAIR_FROM_ENUM(HotKeyLow::F5),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F6),   GET_PAIR_FROM_ENUM(HotKeyLow::F7),      GET_PAIR_FROM_ENUM(HotKeyLow::F8),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F9),   GET_PAIR_FROM_ENUM(HotKeyLow::F10),     GET_PAIR_FROM_ENUM(HotKeyLow::F11),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F12),  GET_PAIR_FROM_ENUM(HotKeyLow::F13),     GET_PAIR_FROM_ENUM(HotKeyLow::F14),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F15),  GET_PAIR_FROM_ENUM(HotKeyLow::F16),     GET_PAIR_FROM_ENUM(HotKeyLow::F17),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F18),  GET_PAIR_FROM_ENUM(HotKeyLow::F19),     GET_PAIR_FROM_ENUM(HotKeyLow::F20),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F21),  GET_PAIR_FROM_ENUM(HotKeyLow::F22),     GET_PAIR_FROM_ENUM(HotKeyLow::F23),
-    GET_PAIR_FROM_ENUM(HotKeyLow::F24),  GET_PAIR_FROM_ENUM(HotKeyLow::NumLock), GET_PAIR_FROM_ENUM(HotKeyLow::Scroll)
-};
+static const std::map<HotKeyLow, std::string_view> HotKeyLowNames{ GET_PAIR_FROM_ENUM(HotKeyLow::NONE),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Unknown_0x02),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Unknown_0x03),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Unknown_0x06),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_0),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_1),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_2),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_3),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_4),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_5),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_6),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_7),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_8),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::_9),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::A),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::B),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::C),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::D),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::E),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::G),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::H),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::I),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::J),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::K),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::L),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::M),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::N),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::O),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::P),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Q),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::R),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::S),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::T),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::U),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::V),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::W),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::X),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Y),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Z),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F1),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F2),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F3),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F4),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F5),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F6),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F7),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F8),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F9),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F10),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F11),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F12),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F13),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F14),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F15),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F16),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F17),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F18),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F19),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F20),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F21),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F22),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F23),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::F24),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::NumLock),
+                                                                   GET_PAIR_FROM_ENUM(HotKeyLow::Scroll) };
 
 struct HotKey
 {
@@ -462,6 +508,7 @@ enum class ClassTypeIndicators : uint8
 {
     Unknown0                  = 0x00,
     Unknown1                  = 0x01,
+    Unknown7                  = 0x14,
     Unknown2                  = 0x17,
     CLSID_ShellDesktop_       = 0x1E, // Not seen in wild but reason to believe it exists.
     CLSID_ShellDesktop        = 0x1F, // Root folder shell item
@@ -476,7 +523,8 @@ enum class ClassTypeIndicators : uint8
     CommonPlacesFolder        = 0x73, // Not seen in wild but reason to believe it exists.
     UsersFilesFolder          = 0x74, // Only seen as delegate item.
     Unknown3                  = 0x76,
-    Unknown6                  = 0xC3,
+    Unknown6                  = 0xB1,
+    NetworkLocation           = 0xC3,
     Unknown4                  = 0x80, // Different meaning per class type indicator?
     Unknown5                  = 0xFF
 };
@@ -484,6 +532,7 @@ enum class ClassTypeIndicators : uint8
 static const std::map<ClassTypeIndicators, std::string_view> ClassTypeIndicatorsNames{
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown0),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown1),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown7),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown2),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_ShellDesktop_),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::CLSID_ShellDesktop),
@@ -499,6 +548,7 @@ static const std::map<ClassTypeIndicators, std::string_view> ClassTypeIndicators
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::UsersFilesFolder),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown3),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown6),
+    GET_PAIR_FROM_ENUM(ClassTypeIndicators::NetworkLocation),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown4),
     GET_PAIR_FROM_ENUM(ClassTypeIndicators::Unknown5)
 };
@@ -536,6 +586,7 @@ enum class SortIndex : uint8
     Libraries         = 0x42,
     Users             = 0x44,
     MyDocuments       = 0x48,
+    Unknown0          = 0x4C,
     MyComputer        = 0x50,
     Network           = 0x58,
     RecycleBin        = 0x60,
@@ -548,6 +599,7 @@ static const std::map<SortIndex, std::string_view> SortIndexNames{ GET_PAIR_FROM
                                                                    GET_PAIR_FROM_ENUM(SortIndex::Libraries),
                                                                    GET_PAIR_FROM_ENUM(SortIndex::Users),
                                                                    GET_PAIR_FROM_ENUM(SortIndex::MyDocuments),
+                                                                   GET_PAIR_FROM_ENUM(SortIndex::Unknown0),
                                                                    GET_PAIR_FROM_ENUM(SortIndex::MyComputer),
                                                                    GET_PAIR_FROM_ENUM(SortIndex::Network),
                                                                    GET_PAIR_FROM_ENUM(SortIndex::RecycleBin),
@@ -767,12 +819,11 @@ struct ExtensionBlock0xBEEF0004_V9
 // https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0021
 // https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#extension_block_0xbeef0025
 
-struct FileEntryShellItem_PreWindowsXP
-{
-};
-
+// There are 3 types of FileEntryShellItem but I have no means (that I know of) at the moment to figure it out which is which. I'll let here
+// the one I consider the most used at the moment.
+// https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc#file_entry_shell_item
 #pragma pack(push, 2)
-struct FileEntryShellItem_XPAndLater
+struct FileEntryShellItem
 {
     uint16 size;                        // The size of the shell item. Includes the 2 bytes of the size itself.
     uint8 indicator;                    // Class type indicator 0x20 after applying a bitmask of 0x70.
@@ -828,6 +879,24 @@ struct DelegateShellItem
     // Delegate item identifier. Contains a GUID. -> 5e591a74-df96-48d3-8d67-1733bcee28ba
     // Item (class) identifier. Contains a GUID.
     // Extension block 0xbeef0004
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct NetworkLocationShellItem
+{
+    uint16 size;     // The size of the shell item. Includes the 2 bytes of the size itself.
+    uint8 indicator; // Class type indicator 0x20 after applying a bitmask of 0x70.
+    uint8 unknown0;  // 0x00, 0x01 (in UNC path), 0x03
+    uint8 flags;     // 0x01 | 0x02 | 0x04 | 0x40 -> has comments | 0x80 -> has description
+
+    // Location -> Contains the network name or UNC path ASCII string with end-of-string character.
+    // If flag 0x80 is set:
+    //      Description -> ASCII string with end-of-string character
+    // If flag 0x40 is set:
+    //      Comments -> ASCII string with end-of-string character
+    // If size > ?
+    //      Unknown -> 0x0000 | 0x0002 | 0x000042
 };
 #pragma pack(pop)
 
@@ -1327,6 +1396,7 @@ struct ExtraData_MetadataPropertyStore // The metadata property store data block
 };
 #pragma pack(pop)
 
+constexpr MyGUID FOLDERID_MyNetworkPlaces        = { 0x208d2c60, 0x3aea, 0x1069, 0xA2, 0xd7, 0x08, 0x00, 0x2b, 0x30, 0x30, 0x9d };
 constexpr MyGUID FOLDERID_NetworkFolder          = { 0xD20BEEC4, 0x5CA8, 0x4905, 0xAE, 0x3B, 0xBF, 0x25, 0x1E, 0xA0, 0x9B, 0x53 };
 constexpr MyGUID FOLDERID_ComputerFolder         = { 0x0AC0837C, 0xBBF8, 0x452A, 0x85, 0x0D, 0x79, 0xD0, 0x8E, 0x66, 0x7C, 0xA7 };
 constexpr MyGUID FOLDERID_InternetFolder         = { 0x4D9F7874, 0x4E0C, 0x4904, 0x96, 0x7B, 0x40, 0xB0, 0xD2, 0x0C, 0x3E, 0x4B };
@@ -1580,6 +1650,7 @@ constexpr MyGUID FMTID_InternetShortcut              = { 0x9F4C2855, 0x9F79, 0x4
 
 static std::string_view GetNameFromGUID(const MyGUID& guid)
 {
+    CHECK_GUID(guid, FOLDERID_MyNetworkPlaces);
     CHECK_GUID(guid, FOLDERID_NetworkFolder);
     CHECK_GUID(guid, FOLDERID_ComputerFolder);
     CHECK_GUID(guid, FOLDERID_InternetFolder);

@@ -131,12 +131,12 @@ void Panels::LocationInformation::UpdateGeneralInformation()
         {
             const auto unicodeLocalPathOffset = *(uint32*) ((uint8*) lnk->networkShareInformation + sizeof(LocationInformation));
             AddDecAndHexElement("Unicode Local Path Offset", "%-20s (%s)", unicodeLocalPathOffset);
-            general->AddItem({ "Unicode Local Path", ls.Format("%S", (uint8*) lnk->networkShareInformation + unicodeLocalPathOffset) });
+            general->AddItem({ "Unicode Local Path", ls.Format("%ls", (uint8*) lnk->networkShareInformation + unicodeLocalPathOffset) });
 
             const auto unicodeCommonPathOffset =
                   *(uint32*) ((uint8*) lnk->networkShareInformation + sizeof(LocationInformation) + sizeof(unicodeLocalPathOffset));
             AddDecAndHexElement("Unicode Common Path Offset", "%-20s (%s)", unicodeCommonPathOffset);
-            general->AddItem({ "Unicode Common Path", ls.Format("%S", (uint8*) lnk->networkShareInformation + unicodeCommonPathOffset) });
+            general->AddItem({ "Unicode Common Path", ls.Format("%ls", (uint8*) lnk->networkShareInformation + unicodeCommonPathOffset) });
         }
 
         general->AddItem({ "Network Share Name",
