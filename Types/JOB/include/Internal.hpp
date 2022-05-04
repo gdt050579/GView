@@ -93,14 +93,14 @@ static_assert(sizeof(Priority) == 4);
 
 enum class Status : uint32
 {
-    SCHED_S_TASK_READY         = 0x00041300, // Task is not running but is scheduled to run at some time in the future.
-    SCHED_S_TASK_RUNNING       = 0x00041301, // Task is currently running.
-    SCHED_S_TASK_NOT_SCHEDULED = 0x00041305, // The task is not running and has no valid triggers.
+    TASK_READY         = 0x00041300, // Task is not running but is scheduled to run at some time in the future.
+    TASK_RUNNING       = 0x00041301, // Task is currently running.
+    TASK_NOT_SCHEDULED = 0x00041305, // The task is not running and has no valid triggers.
 };
 
-static const std::map<Status, std::string_view> StatusNames{ GET_PAIR_FROM_ENUM(Status::SCHED_S_TASK_READY),
-                                                             GET_PAIR_FROM_ENUM(Status::SCHED_S_TASK_RUNNING),
-                                                             GET_PAIR_FROM_ENUM(Status::SCHED_S_TASK_NOT_SCHEDULED) };
+static const std::map<Status, std::string_view> StatusNames{ GET_PAIR_FROM_ENUM(Status::TASK_READY),
+                                                             GET_PAIR_FROM_ENUM(Status::TASK_RUNNING),
+                                                             GET_PAIR_FROM_ENUM(Status::TASK_NOT_SCHEDULED) };
 
 union Flags
 {
@@ -185,5 +185,269 @@ struct FIXDLEN_DATA
 #pragma pack(pop)
 
 static_assert(sizeof(FIXDLEN_DATA) == 68);
+
+enum class VariableSizeDataSectionMembers : uint32
+{
+    RunningInstanceCount = 0,
+    ApplicationName      = 1, // -> Consists of a Unicode string.
+    Parameters           = 2, // -> Consists of a Unicode string.
+    WorkingDirectory     = 3, // -> Consists of a Unicode string.
+    Author               = 4, // -> Consists of a Unicode string.
+    Comment              = 5, // -> Consists of a Unicode string.
+    UserData             = 6,
+    ReservedData         = 7,
+    Triggers             = 8,
+    JobSignature         = 9,
+};
+
+struct TASKRESERVED1
+{
+    uint32 startError;
+    uint32 taskFlags;
+};
+
+struct ReservedData
+{
+    uint16 size;
+    TASKRESERVED1 taskReserved1;
+};
+
+/*
+    Trigger
+    offset size value description
+    0	   2		  Trigger Size
+    2	   2		  Reserved1
+    4	   2		  Begin Year
+    6	   2		  Begin Month
+    8	   2		  Begin Day
+    10	   2		  End Year
+    12	   2		  End Month
+    14	   2		  End Day
+    16	   2		  Start Hour
+    18	   2		  Start Minute
+    20	   4		  Minutes Duration
+    24	   4		  Minutes Interval
+    28	   4		  Flags
+    32	   4		  Trigger Type
+    36	   2		  TriggerSpecific0
+    38	   2		  TriggerSpecific1
+    40	   2		  TriggerSpecific2
+    42	   2		  Padding
+    44	   2		  Reserved2
+    46	   2		  Reserved3
+*/
+
+union TriggerFlags
+{
+    struct
+    {
+        uint8 E : 1; // TASK_TRIGGER_FLAG_HAS_END_DATE         -> If set to 1, specifies that the task can stop at some point in time.
+        uint8 K : 1; // TASK_TRIGGER_FLAG_KILL_AT_DURATION_END -> If set to 1, specifies that the task can be stopped at the end of the
+                     // repetition period.
+        uint8 D : 1; // TASK_TRIGGER_FLAG_DISABLED             -> If set to 1, specifies that the trigger is disabled.
+        uint8 : 5;
+        uint8 : 8;
+        uint8 : 8;
+    } fields;
+    uint32 value;
+};
+
+enum class TriggerType : uint32
+{
+    ONCE                 = 0x00000000,
+    DAILY                = 0x00000001,
+    WEEKLY               = 0x00000002,
+    MONTHLYDATE          = 0x00000003,
+    MONTHLYDOW           = 0x00000004,
+    EVENT_ON_IDLE        = 0x00000005,
+    EVENT_AT_SYSTEMSTART = 0x00000006,
+    EVENT_AT_LOGON       = 0x00000007,
+};
+
+static const std::map<TriggerType, std::string_view> TriggerTypeNames{ GET_PAIR_FROM_ENUM(TriggerType::ONCE),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::DAILY),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::WEEKLY),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::MONTHLYDATE),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::MONTHLYDOW),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::EVENT_ON_IDLE),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::EVENT_AT_SYSTEMSTART),
+                                                                       GET_PAIR_FROM_ENUM(TriggerType::EVENT_AT_LOGON) };
+
+union DayOfTheMonth
+{
+    struct
+    {
+        uint8 X : 1;
+        uint8 A : 1;
+        uint8 B : 1;
+        uint8 C : 1;
+        uint8 D : 1;
+        uint8 E : 1;
+        uint8 F : 1;
+        uint8 G : 1;
+        uint8 H : 1;
+        uint8 I : 1;
+        uint8 J : 1;
+        uint8 K : 1;
+        uint8 L : 1;
+        uint8 M : 1;
+        uint8 N : 1;
+        uint8 O : 1;
+        uint8 P : 1;
+        uint8 Q : 1;
+        uint8 R : 1;
+        uint8 S : 1;
+        uint8 T : 1;
+        uint8 U : 1;
+        uint8 V : 1;
+        uint8 _9 : 1;
+        uint8 _8 : 1;
+        uint8 _7 : 1;
+        uint8 _6 : 1;
+        uint8 _5 : 1;
+        uint8 _4 : 1;
+        uint8 _3 : 1;
+        uint8 _2 : 1;
+        uint8 _1 : 1;
+    } fields;
+
+    struct
+    {
+        uint16 specific0;
+        uint16 specific1;
+    } value;
+};
+
+union DayOfTheWeek
+{
+    struct
+    {
+        uint8 SU : 1; // Sunday    -> If set to 1, specifies that the task can run on Sunday.
+        uint8 MO : 1; // Monday    -> If set to 1, specifies that the task can run on Monday.
+        uint8 TU : 1; // Tuesday   -> If set to 1, specifies that the task can run on Tuesday.
+        uint8 WE : 1; // Wednesday -> If set to 1, specifies that the task can run on Wednesday.
+        uint8 TH : 1; // Thursday  -> If set to 1, specifies that the task can run on Thursday.
+        uint8 FR : 1; // Friday    -> If set to 1, specifies that the task can run on Friday.
+        uint8 SA : 1; // Saturday  -> If set to 1, specifies that the task can run on Saturday.
+        uint8 : 1;
+        uint8 : 8;
+    } fields;
+
+    uint16 specific0;
+};
+
+union MonthOfTheYear
+{
+    struct
+    {
+        uint8 JA : 1; // January   -> If set to 1, specifies that the task can run on January.
+        uint8 FE : 1; // February  -> If set to 1, specifies that the task can run on February.
+        uint8 MR : 1; // March     -> If set to 1, specifies that the task can run on March.
+        uint8 AP : 1; // April     -> If set to 1, specifies that the task can run on April.
+        uint8 MA : 1; // May       -> If set to 1, specifies that the task can run on May.
+        uint8 JU : 1; // June      -> If set to 1, specifies that the task can run on June.
+        uint8 JL : 1; // July      -> If set to 1, specifies that the task can run on July.
+        uint8 AU : 1; // August    -> If set to 1, specifies that the task can run on August.
+        uint8 SE : 1; // September -> If set to 1, specifies that the task can run on September.
+        uint8 OC : 1; // October   -> If set to 1, specifies that the task can run on October.
+        uint8 NO : 1; // November  -> If set to 1, specifies that the task can run on November.
+        uint8 DE : 1; // December  -> If set to 1, specifies that the task can run on December.
+        uint8 : 4;
+    } fields;
+
+    uint16 specific0;
+};
+
+struct Daily
+{
+    uint16 daysInterval; // specific0 field
+};
+
+struct Weekly
+{
+    uint16 weeksInterval;
+    DayOfTheWeek daysOfTheWeek;
+};
+
+struct MonthlyDate
+{
+    DayOfTheMonth days;
+    MonthOfTheYear months;
+};
+
+enum class WhichWeek : uint16
+{
+    FIRST_WEEK  = 0x0001,
+    SECOND_WEEK = 0x0002,
+    THIRD_WEEK  = 0x0003,
+    FOURTH_WEEK = 0x0004,
+    LAST_WEEK   = 0x0005,
+};
+
+struct MonthlyDow // monthly day of week
+{
+    WhichWeek whichWeek;
+    DayOfTheWeek daysOfTheWeek;
+    MonthOfTheYear months;
+};
+
+struct Trigger
+{
+    uint16 size;       // Set to 0x0030. When creating a job, the value SHOULD be ignored upon receipt.
+    uint16 reserved1;  // This field is ignored when read in from the file and is set to 0.
+    uint16 beginYear;  // This field contains the first date this trigger is to fire. Begin Year SHOULD be in the range of 1601 to 30827.
+    uint16 beginMonth; // This field contains the first date this trigger is to fire. Begin Month SHOULD be in the range of 1 to 12.
+    uint16 beginDay;   // This field contains the first date this trigger fires. Begin Day SHOULD be in the range of 1 to the number of days
+                       // in the month specified by the Begin Month field.
+    uint16 endYear;    // These fields are ignored if the TASK_TRIGGER_FLAG_HAS_END_DATE bit is not set in the Flags field. Otherwise, these
+                       // fields are set to the last date this trigger fires. End Year SHOULD be in the range of 1601 to 30827.
+    uint16 endMonth;   // These fields are ignored if the TASK_TRIGGER_FLAG_HAS_END_DATE bit is not set in the Flags field. Otherwise, these
+                       // fields are set to the last date this trigger is to fire. End Month SHOULD be in the range of 1 to 12.
+    uint16 endDay;     // These fields are ignored if the TASK_TRIGGER_FLAG_HAS_END_DATE bit is not set in the Flags field. Otherwise, these
+                   // fields are set to the last date this trigger is to fire. End Day SHOULD be in the range of 1 to the number of days in
+                   // the month specified by the End Month field.
+    uint16 startHour;   // This field is set to the hour of the day when this trigger fires. Start Hour is in the range 0 to 23.
+    uint16 startMinute; // This field is set to the minute of the hour when this trigger is to fire. Start Minute is in the range 0 to 59.
+    uint32 minutesDuration; // This field contains a value in minutes, in the range 0x00000000 to 0xFFFFFFFF. For example, if Minutes
+                            // Duration is 60, and Minutes Interval is 15, then if started at 1:00, the task runs every 15 minutes for the
+                            // next 60 minutes (five times: at 1:00, 1:15, 1:30, 1:45, and 2:00.)
+    uint32 minutesInterval; // This field contains a value in minutes, in the range 0x00000000 to 0xFFFFFFFF. Minutes Interval indicates the
+                            // time period between repeated trigger firings.
+    TriggerFlags flags;     // This field contains zero or more bit flags.
+    TriggerType type;
+    uint16 specific0; // This field is set to values specific to each trigger type.
+    uint16 specific1; // This field is set to values specific to each trigger type.
+    uint16 specific2; // This field is set to values specific to each trigger type.
+    uint16 padding;   // MUST be set to zero when sent and MUST be ignored on receipt.
+    uint16 reserved2; // MUST be set to zero when sent and MUST be ignored on receipt.
+    uint16 reserved3; // MUST be set to zero when sent and MUST be ignored on receipt.
+};
+
+struct Triggers
+{
+    uint16 count;
+    std::vector<Trigger> items;
+};
+
+struct JobSignature
+{
+    uint16 size;
+    uint16 minimumClientVersion;
+    uint8 signature[64];
+};
+
+struct VariableSizeDataSection
+{
+    uint16 runningInstanceCount;
+    Buffer applicationName;
+    Buffer parameters;
+    Buffer workingDirectory;
+    Buffer author;
+    Buffer comment;
+    Buffer userData;
+    ReservedData reservedData;
+    Triggers triggers;
+    std::optional<JobSignature> jobSignature;
+};
 
 } // namespace GView::Type::JOB

@@ -9,6 +9,13 @@ class JOBFile : public TypeInterface
   public:
     FIXDLEN_DATA fixedLengthData;
 
+    uint16 applicationNameSize  = 0;
+    uint16 parametersSize       = 0;
+    uint16 workingDirectorySize = 0;
+    uint16 authorSize           = 0;
+    uint16 commentSize          = 0;
+    VariableSizeDataSection variableSizeDataSection;
+
     JOBFile();
     virtual ~JOBFile()
     {
@@ -59,6 +66,7 @@ namespace Panels
         inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
         void UpdateGeneralInformation();
+        void UpdateTrigger(const JOB::Trigger& trigger);
         void UpdateIssues();
         void RecomputePanelsPositions();
 

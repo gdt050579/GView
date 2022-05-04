@@ -47,8 +47,58 @@ extern "C"
         BufferViewer::Settings settings;
 
         auto offset = 0ULL;
-        settings.AddZone(offset, sizeof(job->fixedLengthData), ColorPair{ Color::DarkGreen, Color::DarkBlue }, "FIXDLEN_DATA");
+        settings.AddZone(offset, sizeof(job->fixedLengthData), ColorPair{ Color::Magenta, Color::DarkBlue }, "FIXDLEN_DATA");
         offset += sizeof(job->fixedLengthData);
+
+        settings.AddZone(offset, sizeof(uint16), ColorPair{ Color::Green, Color::DarkBlue }, "Running Instance Count");
+        offset += sizeof(uint16);
+
+        auto size = job->applicationNameSize * sizeof(char16) + sizeof(job->applicationNameSize);
+        settings.AddZone(offset, size, ColorPair{ Color::Aqua, Color::DarkBlue }, "Application Name");
+        offset += size;
+
+        size = job->parametersSize * sizeof(char16) + sizeof(job->parametersSize);
+        settings.AddZone(offset, size, ColorPair{ Color::Red, Color::DarkBlue }, "Parameters");
+        offset += size;
+
+        size = job->workingDirectorySize * sizeof(char16) + sizeof(job->workingDirectorySize);
+        settings.AddZone(offset, size, ColorPair{ Color::Magenta, Color::DarkBlue }, "Working Directory Size");
+        offset += size;
+
+        size = job->authorSize * sizeof(char16) + sizeof(job->authorSize);
+        settings.AddZone(offset, size, ColorPair{ Color::Olive, Color::DarkBlue }, "Author");
+        offset += size;
+
+        size = job->commentSize * sizeof(char16) + sizeof(job->commentSize);
+        settings.AddZone(offset, size, ColorPair{ Color::Silver, Color::DarkBlue }, "Comment");
+        offset += size;
+
+        settings.AddZone(
+              offset,
+              job->variableSizeDataSection.userData.GetLength() + sizeof(uint16),
+              ColorPair{ Color::Green, Color::DarkBlue },
+              "User Data");
+        offset += job->variableSizeDataSection.userData.GetLength() + sizeof(uint16);
+
+        settings.AddZone(
+              offset,
+              job->variableSizeDataSection.reservedData.size + sizeof(uint16),
+              ColorPair{ Color::Aqua, Color::DarkBlue },
+              "Reserved Data");
+        offset += job->variableSizeDataSection.reservedData.size + sizeof(uint16);
+
+        settings.AddZone(
+              offset,
+              job->variableSizeDataSection.triggers.count * sizeof(JOB::Trigger) + sizeof(job->variableSizeDataSection.triggers.count),
+              ColorPair{ Color::Pink, Color::DarkBlue },
+              "Triggers");
+        offset += job->variableSizeDataSection.triggers.count * sizeof(JOB::Trigger) + sizeof(job->variableSizeDataSection.triggers.count);
+
+        if (job->variableSizeDataSection.jobSignature.has_value())
+        {
+            settings.AddZone(offset, sizeof(JOB::JobSignature), ColorPair{ Color::Blue, Color::DarkBlue }, "Job Signature");
+            offset += sizeof(JOB::JobSignature);
+        }
 
         win->CreateViewer("BufferView", settings);
     }
