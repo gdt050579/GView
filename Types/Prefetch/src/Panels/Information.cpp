@@ -75,8 +75,8 @@ void Information::UpdateHeader()
 
     ListViewItem hashItem{};
     {
-        const auto hash    = nf.ToString(prefetch->header.H6, dec);
-        const auto hashHex = nf2.ToString(prefetch->header.H6, hex);
+        const auto hash    = nf.ToString(prefetch->header.hash, dec);
+        const auto hashHex = nf2.ToString(prefetch->header.hash, hex);
         hashItem           = general->AddItem({ "Hash", ls.Format("%-20s (%s)", hash.data(), hashHex.data()) });
     }
 
@@ -87,42 +87,53 @@ void Information::UpdateHeader()
         const auto pos2 = object->GetName().find_last_of('.');
         if (pos != std::string::npos && pos2 != std::string::npos)
         {
-            std::string hashFromName;
+            uint32 hashValue = 0;
             {
+                std::string hashFromName;
                 ConstString cs{ std::u16string_view(object->GetName().data() + pos + 1, pos2 - (pos + 1)) };
                 LocalUnicodeStringBuilder<sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0])> lsub;
                 lsub.Set(cs);
                 lsub.ToString(hashFromName);
+                hashValue = std::stoul(hashFromName, 0, 16);
             }
 
-            const auto headerHashHex = ls.Format("%08X", prefetch->header.H6);
-
-            if (hashFromName.compare(headerHashHex) == 0)
+            if (hashValue == prefetch->header.hash)
             {
                 if (prefetch->header.version != Prefetch::Magic::WIN_10 || prefetch->xpHash != 0)
                 {
-                    const auto computedXpHashHex    = std::string{ ls.Format("%08X", prefetch->xpHash) };
-                    const auto computedVistaHashHex = std::string{ ls.Format("%08X", prefetch->vistaHash) };
-                    const auto computedHash2008Hex  = std::string{ ls.Format("%08X", prefetch->hash2008) };
-                    if (hashFromName.compare(computedXpHashHex) == 0 || hashFromName.compare(computedVistaHashHex) == 0 ||
-                        hashFromName.compare(computedHash2008Hex) == 0)
+                    if (hashValue == prefetch->xpHash || hashValue == prefetch->vistaHash || hashValue == prefetch->hash2008)
                     {
                         hashItem.SetType(ListViewItem::Type::Emphasized_2);
+                    }
+                    else if (hashValue - prefetch->xpHash >= 0 && hashValue - prefetch->xpHash <= 8)
+                    {
+                        hashItem.SetType(ListViewItem::Type::Emphasized_2);
+                        general->AddItem({ "/Prefetch:", ls.Format("%u", hashValue - prefetch->xpHash) })
+                              .SetColor(ColorPair{ Color::Pink, Color::Transparent });
+                    }
+                    else if (hashValue - prefetch->vistaHash >= 0 && hashValue - prefetch->vistaHash <= 8)
+                    {
+                        hashItem.SetType(ListViewItem::Type::Emphasized_2);
+                        general->AddItem({ "/Prefetch:", ls.Format("%u", hashValue - prefetch->vistaHash) })
+                              .SetColor(ColorPair{ Color::Pink, Color::Transparent });
+                    }
+                    else if (hashValue - prefetch->hash2008 >= 0 && hashValue - prefetch->hash2008 <= 8)
+                    {
+                        hashItem.SetType(ListViewItem::Type::Emphasized_2);
+                        general->AddItem({ "/Prefetch:", ls.Format("%u", hashValue - prefetch->hash2008) })
+                              .SetColor(ColorPair{ Color::Pink, Color::Transparent });
                     }
                     else
                     {
                         LocalString<64> ls2;
-                        issues
-                              ->AddItem({ ls2.Format(
-                                    "Hash validation failed when compared to computed XP hash (0x%s)!", computedXpHashHex.data()) })
+                        issues->AddItem(
+                                    { ls2.Format("Hash validation failed when compared to computed XP hash (0x%X)!", prefetch->xpHash) })
                               .SetType(ListViewItem::Type::ErrorInformation);
-                        issues
-                              ->AddItem({ ls2.Format(
-                                    "Hash validation failed when compared to computed VISTA hash (0x%s)!", computedVistaHashHex.data()) })
+                        issues->AddItem({ ls2.Format(
+                                              "Hash validation failed when compared to computed VISTA hash (0x%X)!", prefetch->vistaHash) })
                               .SetType(ListViewItem::Type::ErrorInformation);
-                        issues
-                              ->AddItem({ ls2.Format(
-                                    "Hash validation failed when compared to computed 2008 hash (0x%s)!", computedHash2008Hex.data()) })
+                        issues->AddItem({ ls2.Format(
+                                              "Hash validation failed when compared to computed 2008 hash (0x%X)!", prefetch->hash2008) })
                               .SetType(ListViewItem::Type::ErrorInformation);
                         hashItem.SetType(ListViewItem::Type::ErrorInformation);
                     }
