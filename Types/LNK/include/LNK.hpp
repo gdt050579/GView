@@ -230,7 +230,7 @@ namespace Panels
         void UpdateExtraData_ShimLayer(ExtraData_ShimLayer* data);
         void UpdateExtraData_MetadataPropertyStore(ExtraData_MetadataPropertyStore* data);
         void UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocation* data);
-        void UpdateExtraData_ShellItemIdentifiers(ExtraData_ShellItemIdentifiers* data);
+        void UpdateExtraData_VistaAndAboveIDListDataBlock(ExtraData_VistaAndAboveIDListDataBlock* data);
         void UpdateIssues();
         void RecomputePanelsPositions();
 

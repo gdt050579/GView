@@ -100,8 +100,8 @@ void Instance::OpenCurrentSelection()
     {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32)(end - start));
-        if (buf.IsValid()==false)
+        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start));
+        if (buf.IsValid() == false)
         {
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
             return;
@@ -1389,7 +1389,7 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
         if (this->selection.GetSelection(selectionID, start, end))
         {
             LocalString<32> tmp;
-            tmp.Format("%X,%X", start, (end - start));
+            tmp.Format("%X,%X", start, (end - start) + 1);
             r.WriteSingleLineText(x, y, width, tmp.GetText(), this->CursorColors.Normal);
         }
         else

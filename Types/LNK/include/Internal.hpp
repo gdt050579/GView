@@ -1189,17 +1189,17 @@ struct DataString
 
 enum class ExtraDataSignatures : uint32
 {
-    EnvironmentVariablesLocation       = 0xA0000001,
-    ConsoleProperties                  = 0xA0000002,
-    DistributedLinkTrackerProperties   = 0xA0000003,
-    ConsoleCodepage                    = 0xA0000004,
-    SpecialFolderLocation              = 0xA0000005,
-    DarwinProperties                   = 0xA0000006,
-    IconLocation                       = 0xA0000007,
-    ShimLayerProperties                = 0xA0000008,
-    MetadataPropertyStore              = 0xA0000009,
-    KnownFolderLocation                = 0xA000000B,
-    ShellItemIdentifiersListProperties = 0xA000000C // Vista and Later
+    EnvironmentVariablesLocation     = 0xA0000001,
+    ConsoleProperties                = 0xA0000002,
+    DistributedLinkTrackerProperties = 0xA0000003,
+    ConsoleCodepage                  = 0xA0000004,
+    SpecialFolderLocation            = 0xA0000005,
+    DarwinProperties                 = 0xA0000006,
+    IconLocation                     = 0xA0000007,
+    ShimLayerProperties              = 0xA0000008,
+    MetadataPropertyStore            = 0xA0000009,
+    KnownFolderLocation              = 0xA000000B,
+    VistaAndAboveIDListDataBlock     = 0xA000000C
 };
 
 static const std::map<ExtraDataSignatures, std::string_view> ExtraDataSignaturesNames{
@@ -1213,7 +1213,7 @@ static const std::map<ExtraDataSignatures, std::string_view> ExtraDataSignatures
     GET_PAIR_FROM_ENUM(ExtraDataSignatures::ShimLayerProperties),
     GET_PAIR_FROM_ENUM(ExtraDataSignatures::MetadataPropertyStore),
     GET_PAIR_FROM_ENUM(ExtraDataSignatures::KnownFolderLocation),
-    GET_PAIR_FROM_ENUM(ExtraDataSignatures::ShellItemIdentifiersListProperties)
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::VistaAndAboveIDListDataBlock)
 };
 
 #pragma pack(push, 1)
@@ -1556,9 +1556,10 @@ struct ExtraData_KnownFolderLocation
                                     // offset contains the number of bytes relative from the start of the (shell) item identifiers list.
 };
 
-struct ExtraData_ShellItemIdentifiers // The metadata property store data block is variable of size .
+struct ExtraData_VistaAndAboveIDListDataBlock
 {
     ExtraDataBase base;
+    // IDList
     /*
         The shell item identifiers list - https://github.com/libyal/libfwsi/blob/main/documentation/Windows%20Shell%20Item%20format.asciidoc
     */

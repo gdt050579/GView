@@ -56,8 +56,8 @@ void ExtraData::UpdateGeneralInformation()
         case ExtraDataSignatures::KnownFolderLocation:
             UpdateExtraData_KnownFolderLocation((ExtraData_KnownFolderLocation*) extraData);
             break;
-        case ExtraDataSignatures::ShellItemIdentifiersListProperties:
-            UpdateExtraData_ShellItemIdentifiers((ExtraData_ShellItemIdentifiers*) extraData);
+        case ExtraDataSignatures::VistaAndAboveIDListDataBlock:
+            UpdateExtraData_VistaAndAboveIDListDataBlock((ExtraData_VistaAndAboveIDListDataBlock*) extraData);
             break;
         default:
             UpdateExtraDataBase(extraData);
@@ -385,36 +385,26 @@ void ExtraData::UpdateExtraData_KnownFolderLocation(ExtraData_KnownFolderLocatio
     AddDecAndHexElement("First Child Segment Offset", "%-20s (%s)", data->firstChildSegmentOffset);
 }
 
-void ExtraData::UpdateExtraData_ShellItemIdentifiers(ExtraData_ShellItemIdentifiers* data)
+void ExtraData::UpdateExtraData_VistaAndAboveIDListDataBlock(ExtraData_VistaAndAboveIDListDataBlock* data)
 {
     UpdateExtraDataBase(&data->base);
 
-    auto start = ((uint8*) &data->base + sizeof(data->base));
+    auto item = (ItemID*) ((uint8*) &data->base + sizeof(data->base));
     std::vector<ItemID*> itemIDS;
-    auto offset = 0ULL;
-    while (offset < data->base.size)
+    while (item->ItemIDSize != 0)
     {
-        const auto itemID = itemIDS.emplace_back((ItemID*) (start + offset));
-        offset += itemID->ItemIDSize;
-        if (itemID->ItemIDSize == 0)
-        {
-            break;
-        }
+        itemIDS.emplace_back((ItemID*) (item));
+        item = (ItemID*) ((uint8*) item + item->ItemIDSize);
     }
 
     // TODO: random property store in shell item identifiers??? -> remote.file.aidlist.test & unicodeNetworkPath.lnk.test
-    // [ b3 00 00 00 ad 00 bb af 93 3b 9f 00 04 00 00 00 00 00 ] -> 41 00 00 00 1 S P S
+    // [ [b3 00 00 00] [ad 00] [bb af 93 3b 9f] [00 04] [00 00 00 00 00] ] -> 41 00 00 00 1 S P S
+    // [ [a3 00 00 00] [9d 00] [bb af 93 3b 8f] [00 04] [00 00 00 00 00] ] -> 2d 00 00 00 1 S P S
     // auto ps = (PropertyStore*) ((uint8*) (itemIDS[1]) + 18);
     // auto sps = (PropertyStore_ShellPropertySheet*) ((uint8*) (itemIDS[1]) + 22);
     // UpdateExtraData_MetadataPropertyStore();
-    // TODO: call heuristic PropertyStore parsing from here
 
     UpdateLinkTargetIDList(itemIDS);
-
-    general
-          ->AddItem(
-                { "TODO:", "Map https://github.com/libyal/libfwps/blob/main/documentation/Windows%20Property%20Store%20format.asciidoc" })
-          .SetType(ListViewItem::Type::ErrorInformation);
 }
 
 void ExtraData::UpdateIssues()

@@ -314,12 +314,12 @@ void ShellItems::UpdateLinkTargetIDList(const std::vector<ItemID*>& itemIDS)
         {
             general->AddItem("Unknown").SetType(ListViewItem::Type::Category);
 
+            AddDecAndHexElement("Size", "%-20s (%s)", id->ItemIDSize);
             const auto& indicatorName = LNK::ClassTypeIndicatorsNames.at(indicator);
             const auto indicatorHex   = nf2.ToString((uint8) indicator, hex);
             general->AddItem({ "Class Type Indicator", ls.Format("%-20s (%s)", indicatorName.data(), indicatorHex.data()) })
                   .SetType(ListViewItem::Type::ErrorInformation);
 
-            AddDecAndHexElement("Size", "%-20s (%s)", id->ItemIDSize);
             AddDecAndHexElement("Type", "%-20s (%s)", type);
         }
         break;
