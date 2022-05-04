@@ -85,6 +85,7 @@ add_subdirectory(Types/ISO)
 add_subdirectory(Types/PREFETCH)
 add_subdirectory(Types/MAM)
 add_subdirectory(Types/LNK)
+add_subdirectory(Types/JOB)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
