@@ -459,6 +459,16 @@ struct Header
 
 static_assert(sizeof(Header) == 24);
 
+struct PacketHeader
+{
+    uint32 tsSec;   /* timestamp seconds */
+    uint32 tsUsec;  /* timestamp microseconds */
+    uint32 inclLen; /* number of octets of packet saved in file */
+    uint32 origLen; /* actual length of packet */
+};
+
+static_assert(sizeof(PacketHeader) == 16);
+
 namespace NG
 {
     enum class Magic : uint32

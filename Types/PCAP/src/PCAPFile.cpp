@@ -12,5 +12,15 @@ bool PCAPFile::Update()
     CHECK(obj->GetData().Copy<Header>(offset, header), false, "");
     offset += sizeof(Header);
 
+    data = obj->GetData().CopyToBuffer(offset, (uint32) obj->GetData().GetSize() - offset);
+    CHECK(data.IsValid(), false, "");
+
+    const auto delta = offset;
+    do
+    {
+        const auto& [header, _] = packetHeaders.emplace_back((PacketHeader*) (data.GetData() + offset - delta), offset);
+        offset += (sizeof(PacketHeader) + header->origLen);
+    } while (offset < obj->GetData().GetSize());
+
     return true;
 }

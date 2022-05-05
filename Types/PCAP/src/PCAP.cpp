@@ -55,14 +55,15 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto lnk = win->GetObject()->GetContentType<PCAP::PCAPFile>();
-        lnk->Update();
+        auto pcap = win->GetObject()->GetContentType<PCAP::PCAPFile>();
+        pcap->Update();
 
         // add views
-        CreateBufferView(win, lnk);
+        CreateBufferView(win, pcap);
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new PCAP::Panels::Information(win->GetObject(), lnk)), true);
+        win->AddPanel(Pointer<TabPage>(new PCAP::Panels::Information(win->GetObject(), pcap)), true);
+        win->AddPanel(Pointer<TabPage>(new PCAP::Panels::Packets(pcap, win)), false);
 
         return true;
     }

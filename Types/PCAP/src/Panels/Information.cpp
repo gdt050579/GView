@@ -45,6 +45,8 @@ void Information::UpdateGeneralInformation()
     const auto networkHex         = nf.ToString((uint32) pcap->header.network, hexUint32);
     general->AddItem({ "Network", ls.Format("%-20s (%s) %s", networkName, networkHex.data(), networkDescription) })
           .SetType(ListViewItem::Type::Emphasized_2);
+
+    AddDecAndHexElement("Packets #", "%-20s (%s)", (uint32) pcap->packetHeaders.size()).SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void Information::UpdateIssues()

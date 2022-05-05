@@ -7,7 +7,10 @@ namespace GView::Type::PCAP
 class PCAPFile : public TypeInterface
 {
   public:
+    Buffer data; // it s maximum 0xFFFF so just save it here
+
     Header header;
+    std::vector<std::pair<PacketHeader*, uint32>> packetHeaders;
 
     PCAPFile();
     virtual ~PCAPFile()
@@ -74,6 +77,25 @@ namespace Panels
         }
         bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
+    };
+
+    class Packets : public AppCUI::Controls::TabPage
+    {
+        Reference<PCAPFile> pcap;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        Packets(Reference<PCAPFile> _pcap, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 }; // namespace Panels
 } // namespace GView::Type::PCAP
