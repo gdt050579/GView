@@ -469,6 +469,125 @@ struct PacketHeader
 
 static_assert(sizeof(PacketHeader) == 16);
 
+enum class EtherType : uint16
+{
+    Unknown                         = 0,
+    IEEE802_3LengthFields           = 1,
+    Experimental                    = 2,
+    XeroxPUP                        = 3,
+    PUPAddressTranslation           = 4,
+    XeroxXNSIDP                     = 5,
+    DODIP                           = 6,
+    X75Internet                     = 7,
+    NBSInternet                     = 8,
+    ECMAInternet                    = 9,
+    CHAOSnet                        = 10,
+    X25Level3                       = 11,
+    ARP                             = 12,
+    XeroxXNSCompatibility           = 13,
+    SymbolicsPrivate                = 14,
+    Xyplex                          = 15,
+    UngermannBassNetworkDebugger    = 16,
+    Xerox802_3PUP                   = 17,
+    Xerox802_3PUPAddressTranslation = 18,
+    XeroxPUPCALProtocol             = 19,
+    BanyanSystems                   = 20,
+};
+
+static EtherType GetEtherType(uint16 value)
+{
+    if (value >= 0 && value <= 0x05DC)
+    {
+        return EtherType::IEEE802_3LengthFields;
+    }
+
+    if (value >= 0x0101 && value <= 0x01FF)
+    {
+        return EtherType::Experimental;
+    }
+
+    switch (value)
+    {
+    case 0x0200:
+        return EtherType::XeroxPUP;
+    case 0x0201:
+        return EtherType::PUPAddressTranslation;
+    case 0x0600:
+        return EtherType::XeroxXNSIDP;
+    case 0x0800:
+        return EtherType::DODIP;
+    case 0x0801:
+        return EtherType::X75Internet;
+    case 0x0802:
+        return EtherType::NBSInternet;
+    case 0x0803:
+        return EtherType::ECMAInternet;
+    case 0x0804:
+        return EtherType::CHAOSnet;
+    case 0x0805:
+        return EtherType::X25Level3;
+    case 0x0806:
+        return EtherType::ARP;
+    case 0x0807:
+        return EtherType::XeroxXNSCompatibility;
+    case 0x081C:
+        return EtherType::SymbolicsPrivate;
+    }
+
+    if (value >= 0x0888 && value <= 0x088A)
+    {
+        return EtherType::Xyplex;
+    }
+
+    switch (value)
+    {
+    case 0x0900:
+        return EtherType::UngermannBassNetworkDebugger;
+    case 0x0A00:
+        return EtherType::Xerox802_3PUP;
+    case 0x0A01:
+        return EtherType::Xerox802_3PUPAddressTranslation;
+    case 0x0A02:
+        return EtherType::XeroxPUPCALProtocol;
+    case 0x0BAD:
+        return EtherType::BanyanSystems;
+    }
+
+    return EtherType::Unknown;
+}
+
+static const std::map<EtherType, std::string_view> EtherTypeNames{
+    GET_PAIR_FROM_ENUM(EtherType::Unknown),
+    GET_PAIR_FROM_ENUM(EtherType::IEEE802_3LengthFields),
+    GET_PAIR_FROM_ENUM(EtherType::Experimental),
+    GET_PAIR_FROM_ENUM(EtherType::XeroxPUP),
+    GET_PAIR_FROM_ENUM(EtherType::PUPAddressTranslation),
+    GET_PAIR_FROM_ENUM(EtherType::XeroxXNSIDP),
+    GET_PAIR_FROM_ENUM(EtherType::DODIP),
+    GET_PAIR_FROM_ENUM(EtherType::X75Internet),
+    GET_PAIR_FROM_ENUM(EtherType::NBSInternet),
+    GET_PAIR_FROM_ENUM(EtherType::ECMAInternet),
+    GET_PAIR_FROM_ENUM(EtherType::CHAOSnet),
+    GET_PAIR_FROM_ENUM(EtherType::X25Level3),
+    GET_PAIR_FROM_ENUM(EtherType::ARP),
+    GET_PAIR_FROM_ENUM(EtherType::XeroxXNSCompatibility),
+    GET_PAIR_FROM_ENUM(EtherType::SymbolicsPrivate),
+    GET_PAIR_FROM_ENUM(EtherType::Xyplex),
+    GET_PAIR_FROM_ENUM(EtherType::UngermannBassNetworkDebugger),
+    GET_PAIR_FROM_ENUM(EtherType::Xerox802_3PUP),
+    GET_PAIR_FROM_ENUM(EtherType::Xerox802_3PUPAddressTranslation),
+    GET_PAIR_FROM_ENUM(EtherType::XeroxPUPCALProtocol),
+    GET_PAIR_FROM_ENUM(EtherType::BanyanSystems),
+};
+
+struct Package_EthernetHeader
+{
+    uint8 etherDhost[6]; // destination host
+    uint8 etherShost[6]; // source host
+    uint16 etherType;    // 2 bytes, Protocol type, type of Packet: ARP, DOD(IPv4), IPv6,..
+                         // http://www.networksorcery.com/enp/protocol/802/ethertypes.htm
+};
+
 namespace NG
 {
     enum class Magic : uint32

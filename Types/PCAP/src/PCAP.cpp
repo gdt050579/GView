@@ -38,9 +38,9 @@ extern "C"
         return new PCAP::PCAPFile();
     }
 
-    static constexpr auto MagentaDarkBlue = ColorPair{ Color::Magenta, Color::DarkBlue };
-    static constexpr auto DarkGreenBlue   = ColorPair{ Color::DarkGreen, Color::DarkBlue };
-    static constexpr auto DarkRedBlue     = ColorPair{ Color::DarkRed, Color::DarkBlue };
+    static constexpr auto DarkGreenBlue = ColorPair{ Color::DarkGreen, Color::DarkBlue };
+    static constexpr auto DarkRedBlue   = ColorPair{ Color::DarkRed, Color::DarkBlue };
+    constexpr static auto colors        = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
     {
@@ -49,6 +49,15 @@ extern "C"
         auto offset = 0ULL;
         settings.AddZone(offset, sizeof(pcap->header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         offset += sizeof(pcap->header);
+
+        auto count = 0;
+        LocalString<32> ls;
+        for (const auto& [header, offset] : pcap->packetHeaders)
+        {
+            const auto& c = *(colors.begin() + (count % 2));
+            settings.AddZone(offset, sizeof(PCAP::PacketHeader) + header->inclLen, c, ls.Format("Packet_%u", count));
+            count++;
+        }
 
         win->CreateViewer("BufferView", settings);
     }

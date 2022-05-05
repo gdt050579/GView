@@ -89,6 +89,7 @@ namespace Panels
         std::string_view GetValue(NumericFormatter& n, uint64 value);
         void GoToSelectedSection();
         void SelectCurrentSection();
+        void OpenPacket();
 
       public:
         Packets(Reference<PCAPFile> _pcap, Reference<GView::View::WindowInterface> win);
