@@ -1367,7 +1367,7 @@ bool Instance::Select(uint64 offset, uint64 size)
 {
     if (offset >= this->obj->GetData().GetSize())
         return false;
-    auto end = offset + size;
+    auto end = offset + size - 1;
     if ((end < offset) || (end < size))
         return false;
     if (end > this->obj->GetData().GetSize())

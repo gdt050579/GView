@@ -27,6 +27,31 @@ class PCAPFile : public TypeInterface
 
 namespace Panels
 {
+    static ListViewItem AddMACElement(Reference<ListView> list, std::string_view name, const MAC& mac)
+    {
+        CHECK(list.IsValid(), ListViewItem{}, "");
+
+        LocalString<64> tmp;
+        return list->AddItem(
+              { name.data(),
+                tmp.Format("%02X:%02X:%02X:%02X:%02X:%02X", mac.arr[0], mac.arr[1], mac.arr[2], mac.arr[3], mac.arr[4], mac.arr[5]) });
+    }
+
+    static ListViewItem AddIPElement(Reference<ListView> list, std::string_view name, uint32 ip)
+    {
+        CHECK(list.IsValid(), ListViewItem{}, "");
+
+        union
+        {
+            uint8 values[4];
+            uint32 value;
+        } ipv4{ .value = ip };
+
+        LocalString<64> tmp;
+        return list->AddItem(
+              { name.data(), tmp.Format("%02u.%02u.%02u.%02u", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0]) });
+    }
+
     class Information : public AppCUI::Controls::TabPage
     {
         Reference<Object> object;

@@ -3,6 +3,7 @@
 namespace GView::Type::PCAP::Panels
 {
 using namespace AppCUI::Controls;
+using namespace AppCUI::Endian;
 using namespace AppCUI::Input;
 
 enum class ObjectAction : int32
@@ -22,7 +23,8 @@ Packets::Packets(Reference<PCAPFile> _pcap, Reference<GView::View::WindowInterfa
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Seconds", TextAlignament::Right, 16 },
+          { { "Timestamp", TextAlignament::Right, 20 },
+            { "Seconds", TextAlignament::Right, 16 },
             { "Microseconds", TextAlignament::Right, 16 },
             { "Octets Saved", TextAlignament::Right, 16 },
             { "Actual Length", TextAlignament::Right, 16 } },
@@ -90,7 +92,7 @@ void Panels::Packets::OpenPacket()
             object = _object;
 
             list = CreateChildControl<ListView>(
-                  "x:0,y:0,w:100%,h:28",
+                  "x:0,y:0,w:100%,h:38",
                   std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 24 } },
                   ListViewFlags::None);
 
@@ -98,6 +100,13 @@ void Panels::Packets::OpenPacket()
             NumericFormatter n;
 
             list->AddItem("Header").SetType(ListViewItem::Type::Category);
+
+            auto timestamp = packet->tsSec * (uint64) 1000000 + packet->tsUsec;
+            timestamp /= 1000000;
+            AppCUI::OS::DateTime dt;
+            dt.CreateFromTimestamp(timestamp);
+
+            list->AddItem({ "Timestamp", tmp.Format("%s", dt.GetStringRepresentation().data()) });
             list->AddItem({ "Seconds", tmp.Format("%s", GetValue(n, packet->tsSec).data()) });
             list->AddItem({ "MicroSeconds", tmp.Format("%s", GetValue(n, packet->tsUsec).data()) });
             auto itemInclLen = list->AddItem({ "Saved Length", tmp.Format("%s", GetValue(n, packet->inclLen).data()) });
@@ -107,20 +116,13 @@ void Panels::Packets::OpenPacket()
             }
             list->AddItem({ "Original Length", tmp.Format("%s", GetValue(n, packet->origLen).data()) });
 
+            list->AddItem(LinkTypeNames.at(type).data()).SetType(ListViewItem::Type::Category);
             if (type == LinkType::ETHERNET)
             {
-                list->AddItem("ETHERNET").SetType(ListViewItem::Type::Category);
-
                 auto peh = (Package_EthernetHeader*) ((uint8*) packet + sizeof(PacketHeader));
 
-                union IP
-                {
-                    unsigned char arr[6];
-                    uint64 value;
-                };
-
-                IP etherDHost{ 0 };
-                IP etherSHost{ 0 };
+                MAC etherDHost{ 0 };
+                MAC etherSHost{ 0 };
                 memcpy(&etherDHost, peh->etherDhost, 6);
                 memcpy(&etherSHost, peh->etherShost, 6);
 
@@ -131,36 +133,108 @@ void Panels::Packets::OpenPacket()
                 }
 
                 list->AddItem({ "Destination Host", tmp.Format("%s", GetValue(n, etherDHost.value).data()) });
-                list->AddItem({ "Destination Host",
-                                tmp.Format(
-                                      "%02X.%02X.%02X.%02X.%02X.%02X",
-                                      etherDHost.arr[0],
-                                      etherDHost.arr[1],
-                                      etherDHost.arr[2],
-                                      etherDHost.arr[3],
-                                      etherDHost.arr[4],
-                                      etherDHost.arr[5]) });
+                AddMACElement(list, "Destination Host", etherDHost);
                 list->AddItem({ "Source Host", tmp.Format("%s", GetValue(n, etherSHost.value).data()) });
-                list->AddItem({ "Source Host",
-                                tmp.Format(
-                                      "%02X.%02X.%02X.%02X.%02X.%02X",
-                                      etherSHost.arr[0],
-                                      etherSHost.arr[1],
-                                      etherSHost.arr[2],
-                                      etherSHost.arr[3],
-                                      etherSHost.arr[4],
-                                      etherSHost.arr[5]) });
+                AddMACElement(list, "Source Host", etherSHost);
 
                 auto eType = peh->etherType;
-                if (swap)
+                if (swap == false)
                 {
                     eType = AppCUI::Endian::BigToNative(peh->etherType);
                 }
-                const auto etherType      = PCAP::GetEtherType(swap ? eType : AppCUI::Endian::Swap(eType));
+                const auto etherType      = PCAP::GetEtherType(eType);
                 const auto& etherTypeName = PCAP::EtherTypeNames.at(etherType).data();
                 const auto etherTypeHex   = GetValue(n, eType);
                 list->AddItem({ "Type", tmp.Format("%-10s (%s)", etherTypeName, etherTypeHex.data()) })
                       .SetType(ListViewItem::Type::Emphasized_1);
+
+                list->AddItem(etherTypeName).SetType(ListViewItem::Type::Category);
+                if (etherType == EtherType::IPv4)
+                {
+                    auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
+                    list->AddItem({ "Length", tmp.Format("%s", GetValue(n, BigToNative(ipv4->headerLength)).data()) });
+                    list->AddItem({ "Version", tmp.Format("%s", GetValue(n, BigToNative(ipv4->version)).data()) });
+
+                    const auto& dscpName = PCAP::DscpTypeNames.at((DscpType) BigToNative((uint8) ipv4->dscp)).data();
+                    const auto dscpHex   = GetValue(n, BigToNative((uint8) ipv4->dscp));
+                    list->AddItem({ "DSCP", tmp.Format("%-10s (%s)", dscpName, dscpHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+                    const auto& ecnName = PCAP::EcnTypeNames.at((EcnType) BigToNative((uint8) ipv4->ecn)).data();
+                    const auto ecnHex   = GetValue(n, BigToNative((uint8) ipv4->ecn));
+                    list->AddItem({ "ECN", tmp.Format("%-10s (%s)", ecnName, dscpHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+                    list->AddItem({ "Total Length", tmp.Format("%s", GetValue(n, BigToNative(ipv4->totalLength)).data()) });
+                    list->AddItem({ "Identification", tmp.Format("%s", GetValue(n, BigToNative(ipv4->identification)).data()) });
+
+                    auto fragmentation  = ipv4->fragmentation;
+                    fragmentation.value = BigToNative(fragmentation.value);
+                    list->AddItem({ "Flags", tmp.Format("%s", GetValue(n, fragmentation.flags).data()) });
+
+                    {
+                        FragmentationFlags ff{};
+                        ff.flags = fragmentation.flags;
+                        if (ff.moreFragments)
+                        {
+                            list->AddItem({ "", "More Fragments" }).SetType(ListViewItem::Type::Emphasized_2);
+                        }
+                        if (ff.dontFragment)
+                        {
+                            list->AddItem({ "", "Don't Fragment" }).SetType(ListViewItem::Type::Emphasized_2);
+                        }
+                        if (ff.reserved)
+                        {
+                            list->AddItem({ "", "Reserved" }).SetType(ListViewItem::Type::Emphasized_2);
+                        }
+                    }
+                    list->AddItem({ "Fragment Offset", tmp.Format("%s", GetValue(n, fragmentation.fragmentOffset).data()) });
+
+                    list->AddItem({ "TTL", tmp.Format("%s", GetValue(n, BigToNative(ipv4->ttl)).data()) });
+
+                    const auto& protocolName = PCAP::IPv4_ProtocolNames.at((IPv4_Protocol) BigToNative((uint8) ipv4->protocol)).data();
+                    const auto protocolHex   = GetValue(n, BigToNative((uint8) ipv4->protocol));
+                    list->AddItem({ "Protocol", tmp.Format("%-10s (%s)", protocolName, protocolHex.data()) })
+                          .SetType(ListViewItem::Type::Emphasized_1);
+
+                    list->AddItem({ "CRC", tmp.Format("%s", GetValue(n, BigToNative(ipv4->crc)).data()) });
+
+                    list->AddItem({ "Source Address", tmp.Format("%s", GetValue(n, BigToNative(ipv4->sourceAddress)).data()) });
+                    AddIPElement(list, "Source Address", BigToNative(ipv4->sourceAddress));
+
+                    list->AddItem({ "Destination Address", tmp.Format("%s", GetValue(n, BigToNative(ipv4->destinationAddress)).data()) });
+                    AddIPElement(list, "Destination Address", BigToNative(ipv4->destinationAddress));
+
+                    list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
+                    if ((IPv4_Protocol) BigToNative((uint8) ipv4->protocol) == IPv4_Protocol::TCP)
+                    {
+                        auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
+
+                        list->AddItem({ "Source Port", tmp.Format("%s", GetValue(n, BigToNative(tcp->sPort)).data()) });
+                        list->AddItem({ "Destination Port", tmp.Format("%s", GetValue(n, BigToNative(tcp->dPort)).data()) });
+                        list->AddItem({ "Sequence Number", tmp.Format("%s", GetValue(n, BigToNative(tcp->seq)).data()) });
+                        list->AddItem({ "Acknowledgement Number", tmp.Format("%s", GetValue(n, BigToNative(tcp->ack)).data()) });
+                        list->AddItem({ "Data Offset", tmp.Format("%s", GetValue(n, tcp->dataOffset).data()) });
+                        list->AddItem({ "Rsvd", tmp.Format("%s", GetValue(n, tcp->rsvd).data()) });
+
+                        list->AddItem({ "Flags", tmp.Format("%s", GetValue(n, tcp->flags).data()) });
+                        const auto lFlags = PCAP::GetTCPHeader_Flags(tcp->flags);
+                        for (const auto& [flag, name] : lFlags)
+                        {
+                            LocalString<16> hfls;
+                            hfls.Format("(0x%X)", flag);
+
+                            list->AddItem({ "", tmp.Format("%-20s %-4s", name.data(), hfls.GetText()) })
+                                  .SetType(ListViewItem::Type::Emphasized_2);
+                        }
+
+                        list->AddItem({ "Window", tmp.Format("%s", GetValue(n, tcp->win).data()) });
+                        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, tcp->sum).data()) });
+                        list->AddItem({ "Urgent Pointer", tmp.Format("%s", GetValue(n, tcp->urp).data()) });
+                    }
+                }
+                else
+                {
+                    list->AddItem("Unknown").SetType(ListViewItem::Type::Category);
+                }
             }
             else
             {
@@ -176,7 +250,7 @@ void Panels::Packets::OpenPacket()
     const auto& packet = itemData->first;
 
     LocalString<128> ls;
-    ls.Format("d:c,w:50,h:30", this->GetHeight());
+    ls.Format("d:c,w:50,h:40", this->GetHeight());
     Dialog dialog(
           nullptr,
           PCAP::LinkTypeNames.at(pcap->header.network).data(),
@@ -199,10 +273,17 @@ void Panels::Packets::Update()
     {
         auto& record                 = pcap->packetHeaders[i];
         const auto& [header, offset] = record;
-        auto item                    = list->AddItem({ tmp.Format("%s", GetValue(n, header->tsSec).data()) });
-        item.SetText(1, tmp.Format("%s", GetValue(n, header->tsUsec).data()));
-        item.SetText(2, tmp.Format("%s", GetValue(n, header->inclLen).data()));
-        item.SetText(3, tmp.Format("%s", GetValue(n, header->origLen).data()));
+
+        auto timestamp = header->tsSec * (uint64) 1000000 + header->tsUsec;
+        timestamp /= 1000000;
+        AppCUI::OS::DateTime dt;
+        dt.CreateFromTimestamp(timestamp);
+
+        auto item = list->AddItem({ tmp.Format("%s", dt.GetStringRepresentation().data()) });
+        item.SetText(1, tmp.Format("%s", GetValue(n, header->tsSec).data()));
+        item.SetText(2, tmp.Format("%s", GetValue(n, header->tsUsec).data()));
+        item.SetText(3, tmp.Format("%s", GetValue(n, header->inclLen).data()));
+        item.SetText(4, tmp.Format("%s", GetValue(n, header->origLen).data()));
 
         item.SetData<std::pair<PacketHeader*, uint32>>(&record);
     }

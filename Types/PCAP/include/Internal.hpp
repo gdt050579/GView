@@ -477,7 +477,7 @@ enum class EtherType : uint16
     XeroxPUP                        = 3,
     PUPAddressTranslation           = 4,
     XeroxXNSIDP                     = 5,
-    DODIP                           = 6,
+    IPv4                            = 6, // DODIP
     X75Internet                     = 7,
     NBSInternet                     = 8,
     ECMAInternet                    = 9,
@@ -515,7 +515,7 @@ static EtherType GetEtherType(uint16 value)
     case 0x0600:
         return EtherType::XeroxXNSIDP;
     case 0x0800:
-        return EtherType::DODIP;
+        return EtherType::IPv4;
     case 0x0801:
         return EtherType::X75Internet;
     case 0x0802:
@@ -563,7 +563,7 @@ static const std::map<EtherType, std::string_view> EtherTypeNames{
     GET_PAIR_FROM_ENUM(EtherType::XeroxPUP),
     GET_PAIR_FROM_ENUM(EtherType::PUPAddressTranslation),
     GET_PAIR_FROM_ENUM(EtherType::XeroxXNSIDP),
-    GET_PAIR_FROM_ENUM(EtherType::DODIP),
+    GET_PAIR_FROM_ENUM(EtherType::IPv4),
     GET_PAIR_FROM_ENUM(EtherType::X75Internet),
     GET_PAIR_FROM_ENUM(EtherType::NBSInternet),
     GET_PAIR_FROM_ENUM(EtherType::ECMAInternet),
@@ -580,12 +580,197 @@ static const std::map<EtherType, std::string_view> EtherTypeNames{
     GET_PAIR_FROM_ENUM(EtherType::BanyanSystems),
 };
 
+union MAC
+{
+    unsigned char arr[6];
+    uint64 value;
+};
+
 struct Package_EthernetHeader
 {
     uint8 etherDhost[6]; // destination host
     uint8 etherShost[6]; // source host
     uint16 etherType;    // 2 bytes, Protocol type, type of Packet: ARP, DOD(IPv4), IPv6,..
                          // http://www.networksorcery.com/enp/protocol/802/ethertypes.htm
+};
+
+enum class DscpType : uint8
+{
+    Default = 0x00,
+    CS1     = 0x08,
+    AF11    = 0x0A,
+    AF12    = 0x0C,
+    AF13    = 0x0E,
+    CS2     = 0x10,
+    AF21    = 0x12,
+    AF22    = 0x14,
+    AF23    = 0x16,
+    CS3     = 0x18,
+    AF31    = 0x1A,
+    AF32    = 0x1C,
+    AF33    = 0x1E,
+    CS4     = 0x20,
+    AF41    = 0x22,
+    AF42    = 0x24,
+    AF43    = 0x26,
+    CS5     = 0x28,
+    EF      = 0x2E,
+    CS6     = 0x30,
+    CS7     = 0x38
+};
+
+static const std::map<DscpType, std::string_view> DscpTypeNames{
+    GET_PAIR_FROM_ENUM(DscpType::Default), GET_PAIR_FROM_ENUM(DscpType::CS1),  GET_PAIR_FROM_ENUM(DscpType::AF11),
+    GET_PAIR_FROM_ENUM(DscpType::AF12),    GET_PAIR_FROM_ENUM(DscpType::AF13), GET_PAIR_FROM_ENUM(DscpType::CS2),
+    GET_PAIR_FROM_ENUM(DscpType::AF21),    GET_PAIR_FROM_ENUM(DscpType::AF22), GET_PAIR_FROM_ENUM(DscpType::AF23),
+    GET_PAIR_FROM_ENUM(DscpType::CS3),     GET_PAIR_FROM_ENUM(DscpType::AF31), GET_PAIR_FROM_ENUM(DscpType::AF32),
+    GET_PAIR_FROM_ENUM(DscpType::AF33),    GET_PAIR_FROM_ENUM(DscpType::CS4),  GET_PAIR_FROM_ENUM(DscpType::AF41),
+    GET_PAIR_FROM_ENUM(DscpType::AF42),    GET_PAIR_FROM_ENUM(DscpType::AF43), GET_PAIR_FROM_ENUM(DscpType::CS5),
+    GET_PAIR_FROM_ENUM(DscpType::EF),      GET_PAIR_FROM_ENUM(DscpType::CS6),  GET_PAIR_FROM_ENUM(DscpType::CS7),
+};
+
+enum class EcnType : uint8
+{
+    NotECT = 0x00,
+    ECT1   = 0x01,
+    ECT0   = 0x02,
+    CE     = 0x03
+};
+
+static const std::map<EcnType, std::string_view> EcnTypeNames{
+    GET_PAIR_FROM_ENUM(EcnType::NotECT),
+    GET_PAIR_FROM_ENUM(EcnType::ECT1),
+    GET_PAIR_FROM_ENUM(EcnType::ECT0),
+    GET_PAIR_FROM_ENUM(EcnType::CE),
+};
+
+union FragmentationFlags
+{
+    struct
+    {
+        uint16 moreFragments : 1;
+        uint16 dontFragment : 1;
+        uint16 reserved : 1;
+    };
+    uint16 flags;
+#define IP_RF 0x8000 /* reserved fragment flag */
+#define IP_DF 0x4000 /* dont fragment flag */
+#define IP_MF 0x2000 /* more fragments flag */
+};
+
+union Fragmentation
+{
+    struct
+    {
+        uint16 fragmentOffset : 13;
+        uint16 flags : 3; // Flags (3 bits) + Fragment offset (13 bits)
+    };
+    uint16 value;
+};
+
+enum class IPv4_Protocol : uint8
+{
+    TCP = 6,
+    UDP = 17,
+};
+
+static const std::map<IPv4_Protocol, std::string_view> IPv4_ProtocolNames{
+    GET_PAIR_FROM_ENUM(IPv4_Protocol::TCP),
+    GET_PAIR_FROM_ENUM(IPv4_Protocol::UDP),
+};
+
+#pragma pack(push, 1)
+struct IPv4Header
+{
+    uint8 headerLength : 4; // Version (4 bits) + Internet header length (4 bits) ,  version << 4 | header length >> 2
+    uint8 version : 4;
+    DscpType dscp : 6;     // Type of service
+    EcnType ecn : 2;       // Type of service
+    uint16 totalLength;    // Total length
+    uint16 identification; // Identification
+    Fragmentation fragmentation;
+    uint8 ttl;                 // Time to live
+    IPv4_Protocol protocol;    // Protocol
+    uint16 crc;                // Header checksum
+    uint32 sourceAddress;      // Source address
+    uint32 destinationAddress; // Destination address
+};
+#pragma pack(pop)
+
+enum TCPHeader_Flags
+{
+    NONE = 0,
+    FIN  = 1,
+    SYN  = 2,
+    RST  = 4,
+    PSH  = 8,
+    ACK  = 16,
+    URG  = 32,
+    ECE  = 64,
+    CWR  = 128
+};
+
+static const std::map<TCPHeader_Flags, std::string_view> TCPHeader_FlagsNames{
+    GET_PAIR_FROM_ENUM(TCPHeader_Flags::NONE), GET_PAIR_FROM_ENUM(TCPHeader_Flags::FIN), GET_PAIR_FROM_ENUM(TCPHeader_Flags::SYN),
+    GET_PAIR_FROM_ENUM(TCPHeader_Flags::RST),  GET_PAIR_FROM_ENUM(TCPHeader_Flags::PSH), GET_PAIR_FROM_ENUM(TCPHeader_Flags::ACK),
+    GET_PAIR_FROM_ENUM(TCPHeader_Flags::URG),  GET_PAIR_FROM_ENUM(TCPHeader_Flags::ECE), GET_PAIR_FROM_ENUM(TCPHeader_Flags::CWR),
+};
+
+static const std::map<TCPHeader_Flags, std::string_view> GetTCPHeader_Flags(uint32 flags)
+{
+    std::map<TCPHeader_Flags, std::string_view> output;
+
+    for (const auto& data : TCPHeader_FlagsNames)
+    {
+        const auto flag = static_cast<TCPHeader_Flags>(static_cast<decltype(flags)>(data.first) & flags);
+        if (flag == data.first)
+        {
+            output.emplace(data);
+        }
+    }
+
+    if (output.size() > 1)
+    {
+        output.erase(TCPHeader_Flags::NONE);
+    }
+
+    return output;
+}
+
+#pragma pack(push, 1)
+struct TCPHeader
+{
+    uint16 sPort;         /* source port */
+    uint16 dPort;         /* destination port */
+    uint32 seq;           /* sequence number */
+    uint32 ack;           /* acknowledgement number */
+    uint8 rsvd : 4;       /* rsvd */
+    uint8 dataOffset : 4; /* data offset */
+    uint8 flags;
+    uint16 win; /* window */
+    uint16 sum; /* checksum */
+    uint16 urp; /* urgent pointer */
+};
+#pragma pack(pop)
+
+#define SIZE_IPv6_HEADER 40
+struct Version_TrafficClass_FlowLabel
+{
+    uint32 flow_label : 20;
+    uint32 explicitServicesCodePoint : 2; // Part of traffic class
+    uint32 differentialServices : 6;      // Part of traffic class
+    uint32 version : 4;
+};
+struct IPv6Header
+{
+    uint32 version_trafficClass_flowLabel;
+    uint16 payloadLength;
+    uint8 nextHeader;
+    uint8 hopLimit;
+    // IpAdress sourceAdress;
+    // IpAdress destinationAdress;
+    int8 source[16];
+    int8 destination[16];
 };
 
 namespace NG
