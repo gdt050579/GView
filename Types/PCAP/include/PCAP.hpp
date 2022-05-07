@@ -32,9 +32,17 @@ namespace Panels
         CHECK(list.IsValid(), ListViewItem{}, "");
 
         LocalString<64> tmp;
-        return list->AddItem(
-              { name.data(),
-                tmp.Format("%02X:%02X:%02X:%02X:%02X:%02X", mac.arr[0], mac.arr[1], mac.arr[2], mac.arr[3], mac.arr[4], mac.arr[5]) });
+        LocalString<64> tmp2;
+        return list->AddItem({ name.data(),
+                               tmp.Format(
+                                     "%02X:%02X:%02X:%02X:%02X:%02X (0x%X)",
+                                     mac.arr[0],
+                                     mac.arr[1],
+                                     mac.arr[2],
+                                     mac.arr[3],
+                                     mac.arr[4],
+                                     mac.arr[5],
+                                     mac.value) });
     }
 
     static ListViewItem AddIPElement(Reference<ListView> list, std::string_view name, uint32 ip)
@@ -122,6 +130,29 @@ namespace Panels
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+
+        class PacketDialog : public Window
+        {
+            Reference<GView::Object> object;
+            Reference<ListView> list;
+            int32 base;
+
+            std::string_view GetValue(NumericFormatter& n, uint64 value);
+            void Add_PacketHeader(LinkType type, const PacketHeader* packet);
+            void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen);
+            void Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen);
+            void Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen);
+            void Add_TCPHeader_Options(const TCPHeader* tcp, uint32 packetInclLen);
+
+          public:
+            PacketDialog(
+                  Reference<GView::Object> _object,
+                  std::string_view name,
+                  std::string_view layout,
+                  LinkType type,
+                  const PacketHeader* packet,
+                  int32 _base);
+        };
     };
 }; // namespace Panels
 } // namespace GView::Type::PCAP

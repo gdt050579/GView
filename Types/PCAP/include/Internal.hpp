@@ -611,6 +611,19 @@ struct Package_EthernetHeader
 
 static_assert(sizeof(Package_EthernetHeader) == 14);
 
+static void Swap(Package_EthernetHeader& peh)
+{
+    MAC etherDHost{ 0 };
+    MAC etherSHost{ 0 };
+    memcpy(&etherDHost, peh.etherDhost, 6);
+    memcpy(&etherSHost, peh.etherShost, 6);
+
+    etherDHost.value = AppCUI::Endian::BigToNative(etherDHost.value);
+    etherSHost.value = AppCUI::Endian::BigToNative(etherSHost.value);
+
+    peh.etherType = AppCUI::Endian::BigToNative(peh.etherType);
+}
+
 enum class DscpType : uint8
 {
     Default = 0x00,
@@ -716,6 +729,20 @@ struct IPv4Header
 
 static_assert(sizeof(IPv4Header) == 20);
 
+static void Swap(IPv4Header& ipv4)
+{
+    *(uint8*) (&ipv4)                          = AppCUI::Endian::BigToNative(*(uint8*) (&ipv4));
+    *(uint8*) ((uint8*) &ipv4 + sizeof(uint8)) = AppCUI::Endian::BigToNative(*(uint8*) ((uint8*) &ipv4 + sizeof(uint8)));
+    ipv4.totalLength                           = AppCUI::Endian::BigToNative(ipv4.totalLength);
+    ipv4.identification                        = AppCUI::Endian::BigToNative(ipv4.identification);
+    ipv4.fragmentation.value                   = AppCUI::Endian::BigToNative(ipv4.fragmentation.value);
+    ipv4.ttl                                   = AppCUI::Endian::BigToNative(ipv4.ttl);
+    ipv4.protocol                              = (IPv4_Protocol) AppCUI::Endian::BigToNative((uint8) ipv4.protocol);
+    ipv4.crc                                   = AppCUI::Endian::BigToNative(ipv4.crc);
+    ipv4.sourceAddress                         = AppCUI::Endian::BigToNative(ipv4.sourceAddress);
+    ipv4.destinationAddress                    = AppCUI::Endian::BigToNative(ipv4.destinationAddress);
+}
+
 enum TCPHeader_Flags
 {
     NONE = 0,
@@ -776,6 +803,20 @@ struct TCPHeader
 #pragma pack(pop)
 
 static_assert(sizeof(TCPHeader) == 20);
+
+static void Swap(TCPHeader& tcp)
+{
+    tcp.sPort = AppCUI::Endian::BigToNative(tcp.sPort);
+    tcp.dPort = AppCUI::Endian::BigToNative(tcp.dPort);
+    tcp.seq   = AppCUI::Endian::BigToNative(tcp.seq);
+    tcp.ack   = AppCUI::Endian::BigToNative(tcp.ack);
+    *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)) = AppCUI::Endian::BigToNative(
+          *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)));
+    tcp.flags = AppCUI::Endian::BigToNative(tcp.flags);
+    tcp.win   = AppCUI::Endian::BigToNative(tcp.win);
+    tcp.sum   = AppCUI::Endian::BigToNative(tcp.sum);
+    tcp.urp   = AppCUI::Endian::BigToNative(tcp.urp);
+}
 
 enum class TCPHeader_OptionsKind : uint8 // https://en.wikipedia.org/wiki/Transmission_Control_Protocol
 {
