@@ -11,6 +11,10 @@ bool PCAPFile::Update()
     auto offset = 0;
     CHECK(obj->GetData().Copy<Header>(offset, header), false, "");
     offset += sizeof(Header);
+    if (header.magicNumber == Magic::Swapped)
+    {
+        Swap(header);
+    }
 
     data = obj->GetData().CopyToBuffer(offset, (uint32) obj->GetData().GetSize() - offset);
     CHECK(data.IsValid(), false, "");

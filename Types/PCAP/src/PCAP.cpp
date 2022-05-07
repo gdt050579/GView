@@ -14,21 +14,12 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-        // CHECK(buf.GetLength() > sizeof(JOB::FIXDLEN_DATA), false, "");
-        //
-        // auto fixedLengthData = buf.GetObject<JOB::FIXDLEN_DATA>(0);
-        // CHECK(fixedLengthData.IsValid(), false, "");
-        //
-        // CHECK(fixedLengthData->productVersion == JOB::ProductVersion::WindowsNT4Point0 ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::Windows2000 ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::WindowsXP ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::WindowsVista ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::Windows7 ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::Windows8 ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::Windows8Point1 ||
-        //             fixedLengthData->productVersion == JOB::ProductVersion::Windows10,
-        //       false,
-        //       "");
+        CHECK(buf.GetLength() > sizeof(PCAP::Header), false, "");
+
+        auto header = buf.GetObject<PCAP::Header>(0);
+        CHECK(header.IsValid(), false, "");
+
+        CHECK(header->magicNumber == PCAP::Magic::Identical || header->magicNumber == PCAP::Magic::Swapped, false, "");
 
         return true;
     }
@@ -82,6 +73,8 @@ extern "C"
         // NG -> static const std::initializer_list<std::string> patterns{ "hex:'A1 B2 C3 D4'", "hex:'A1 B2 3C 4D'" };
         // NG -> sect["Pattern"]   = patterns;
 
+        static const std::initializer_list<std::string> patterns{ "hex:'A1 B2 C3 D4'", "hex:'D4 C3 B2 A1'" };
+        sect["Pattern"]   = patterns;
         sect["Extension"] = "pcap"; // NG -> pcapng
         sect["Priority"]  = 1;
     }

@@ -459,6 +459,18 @@ struct Header
 
 static_assert(sizeof(Header) == 24);
 
+static void Swap(Header& header)
+{
+    header.magicNumber  = (Magic) AppCUI::Endian::BigToNative((uint32) header.magicNumber);
+    header.versionMajor = AppCUI::Endian::BigToNative(header.versionMajor);
+    header.versionMinor = AppCUI::Endian::BigToNative(header.versionMinor);
+    header.thiszone     = AppCUI::Endian::BigToNative(header.thiszone);
+    header.sigfigs      = AppCUI::Endian::BigToNative(header.sigfigs);
+    header.snaplen      = AppCUI::Endian::BigToNative(header.snaplen);
+    header.network      = (LinkType) AppCUI::Endian::BigToNative((uint32) header.network);
+}
+
+#pragma pack(push, 1)
 struct PacketHeader
 {
     uint32 tsSec;   /* timestamp seconds */
@@ -466,6 +478,7 @@ struct PacketHeader
     uint32 inclLen; /* number of octets of packet saved in file */
     uint32 origLen; /* actual length of packet */
 };
+#pragma pack(pop)
 
 static_assert(sizeof(PacketHeader) == 16);
 
@@ -586,6 +599,7 @@ union MAC
     uint64 value;
 };
 
+#pragma pack(push, 1)
 struct Package_EthernetHeader
 {
     uint8 etherDhost[6]; // destination host
@@ -593,6 +607,9 @@ struct Package_EthernetHeader
     uint16 etherType;    // 2 bytes, Protocol type, type of Packet: ARP, DOD(IPv4), IPv6,..
                          // http://www.networksorcery.com/enp/protocol/802/ethertypes.htm
 };
+#pragma pack(pop)
+
+static_assert(sizeof(Package_EthernetHeader) == 14);
 
 enum class DscpType : uint8
 {
@@ -697,17 +714,22 @@ struct IPv4Header
 };
 #pragma pack(pop)
 
+static_assert(sizeof(IPv4Header) == 20);
+
 enum TCPHeader_Flags
 {
     NONE = 0,
-    FIN  = 1,
-    SYN  = 2,
-    RST  = 4,
-    PSH  = 8,
-    ACK  = 16,
-    URG  = 32,
-    ECE  = 64,
-    CWR  = 128
+    FIN  = 1, // Used to end the TCP connection. TCP is full duplex so both parties will have to use the FIN bit to end the connection. This
+              // is the normal method how we end an connection.
+    SYN = 2,  // Initial three way handshake and it’s used to set the initial sequence number.
+    RST = 4,  // Resets the connection, when you receive this you have to terminate the connection right away. This is only used when
+              // there are unrecoverable errors and it’s not a normal way to finish the TCP connection.
+    PSH = 8,  // Push function. This tells an application that the data should be transmitted immediately and that we don’t want
+              // to wait to fill the entire TCP segment.
+    ACK = 16, // used for the acknowledgment.
+    URG = 32, // Urgent pointer. When this bit is set, the data should be treated as priority over other data.
+    ECE = 64,
+    CWR = 128
 };
 
 static const std::map<TCPHeader_Flags, std::string_view> TCPHeader_FlagsNames{
@@ -752,6 +774,35 @@ struct TCPHeader
     uint16 urp; /* urgent pointer */
 };
 #pragma pack(pop)
+
+static_assert(sizeof(TCPHeader) == 20);
+
+enum class TCPHeader_OptionsKind : uint8 // https://en.wikipedia.org/wiki/Transmission_Control_Protocol
+{
+    EndOfOptionsList                    = 0,
+    NoOperation                         = 1,
+    MaximumSegmentSize                  = 2,
+    WindowScale                         = 3,
+    SelectiveAcknowledgementPermitted   = 4,
+    SACK                                = 5,
+    TimestampAndEchoOfPreviousTimestamp = 6
+};
+
+static const std::map<TCPHeader_OptionsKind, std::string_view> TCPHeader_OptionsKindNames{
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::EndOfOptionsList),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::NoOperation),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::MaximumSegmentSize),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::WindowScale),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::SelectiveAcknowledgementPermitted),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::SACK),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp)
+};
+
+struct TCPHeader_Options
+{
+    TCPHeader_OptionsKind kind;
+    uint8 length;
+};
 
 #define SIZE_IPv6_HEADER 40
 struct Version_TrafficClass_FlowLabel

@@ -23,7 +23,8 @@ Packets::Packets(Reference<PCAPFile> _pcap, Reference<GView::View::WindowInterfa
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Timestamp", TextAlignament::Right, 20 },
+          { { "#", TextAlignament::Right, 6 },
+            { "Timestamp", TextAlignament::Right, 20 },
             { "Seconds", TextAlignament::Right, 16 },
             { "Microseconds", TextAlignament::Right, 16 },
             { "Octets Saved", TextAlignament::Right, 16 },
@@ -92,7 +93,7 @@ void Panels::Packets::OpenPacket()
             object = _object;
 
             list = CreateChildControl<ListView>(
-                  "x:0,y:0,w:100%,h:38",
+                  "x:0,y:0,w:100%,h:48",
                   std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 24 } },
                   ListViewFlags::None);
 
@@ -186,6 +187,7 @@ void Panels::Packets::OpenPacket()
                             list->AddItem({ "", "Reserved" }).SetType(ListViewItem::Type::Emphasized_2);
                         }
                     }
+
                     list->AddItem({ "Fragment Offset", tmp.Format("%s", GetValue(n, fragmentation.fragmentOffset).data()) });
 
                     list->AddItem({ "TTL", tmp.Format("%s", GetValue(n, BigToNative(ipv4->ttl)).data()) });
@@ -212,11 +214,11 @@ void Panels::Packets::OpenPacket()
                         list->AddItem({ "Destination Port", tmp.Format("%s", GetValue(n, BigToNative(tcp->dPort)).data()) });
                         list->AddItem({ "Sequence Number", tmp.Format("%s", GetValue(n, BigToNative(tcp->seq)).data()) });
                         list->AddItem({ "Acknowledgement Number", tmp.Format("%s", GetValue(n, BigToNative(tcp->ack)).data()) });
-                        list->AddItem({ "Data Offset", tmp.Format("%s", GetValue(n, tcp->dataOffset).data()) });
-                        list->AddItem({ "Rsvd", tmp.Format("%s", GetValue(n, tcp->rsvd).data()) });
+                        list->AddItem({ "Data Offset", tmp.Format("%s", GetValue(n, BigToNative(tcp->dataOffset)).data()) });
+                        list->AddItem({ "Rsvd", tmp.Format("%s", GetValue(n, BigToNative(tcp->rsvd)).data()) });
 
-                        list->AddItem({ "Flags", tmp.Format("%s", GetValue(n, tcp->flags).data()) });
-                        const auto lFlags = PCAP::GetTCPHeader_Flags(tcp->flags);
+                        list->AddItem({ "Flags", tmp.Format("%s", GetValue(n, BigToNative(tcp->flags)).data()) });
+                        const auto lFlags = PCAP::GetTCPHeader_Flags(BigToNative(tcp->flags));
                         for (const auto& [flag, name] : lFlags)
                         {
                             LocalString<16> hfls;
@@ -226,9 +228,83 @@ void Panels::Packets::OpenPacket()
                                   .SetType(ListViewItem::Type::Emphasized_2);
                         }
 
-                        list->AddItem({ "Window", tmp.Format("%s", GetValue(n, tcp->win).data()) });
-                        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, tcp->sum).data()) });
-                        list->AddItem({ "Urgent Pointer", tmp.Format("%s", GetValue(n, tcp->urp).data()) });
+                        list->AddItem({ "Window", tmp.Format("%s", GetValue(n, BigToNative(tcp->win)).data()) });
+                        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, BigToNative(tcp->sum)).data()) });
+                        list->AddItem({ "Urgent Pointer", tmp.Format("%s", GetValue(n, BigToNative(tcp->urp)).data()) });
+
+                        constexpr auto minSize = sizeof(Package_EthernetHeader) + sizeof(IPv4Header) + sizeof(TCPHeader);
+                        uint32 delta           = packet->inclLen - (uint32) minSize;
+                        if (tcp->dataOffset > 5)
+                        {
+                            if (delta > 0)
+                            {
+                                auto options   = ((uint8*) tcp + sizeof(TCPHeader));
+                                const auto end = options + delta;
+                                auto kind      = TCPHeader_OptionsKind::EndOfOptionsList;
+                                auto option    = (TCPHeader_Options*) options;
+                                do
+                                {
+                                    option               = (TCPHeader_Options*) options;
+                                    kind                 = option->kind;
+                                    const auto& kindName = TCPHeader_OptionsKindNames.at(kind).data();
+                                    const auto kindHex   = GetValue(n, BigToNative((uint8) kind));
+                                    list->AddItem({ "Option: Kind", tmp.Format("%-10s (%s)", kindName, kindHex.data()) })
+                                          .SetType(ListViewItem::Type::Emphasized_1);
+
+                                    switch (kind)
+                                    {
+                                    case TCPHeader_OptionsKind::EndOfOptionsList:
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, 1).data()) });
+                                        break;
+                                    case TCPHeader_OptionsKind::NoOperation:
+                                        options = ((uint8*) options + 1);
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, 1).data()) });
+                                        break;
+                                    case TCPHeader_OptionsKind::MaximumSegmentSize:
+                                        options = ((uint8*) options + option->length);
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
+                                        list->AddItem({ "Option: MSS",
+                                                        tmp.Format(
+                                                              "%s",
+                                                              GetValue(n, *(uint32*) ((uint8*) &option->length + sizeof(option->length)))
+                                                                    .data()) });
+                                        break;
+                                    case TCPHeader_OptionsKind::WindowScale:
+                                        options = ((uint8*) options + option->length);
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
+                                        break;
+                                    case TCPHeader_OptionsKind::SelectiveAcknowledgementPermitted:
+                                        options = ((uint8*) options + option->length);
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
+                                        break;
+                                    case TCPHeader_OptionsKind::SACK:
+                                        options = ((uint8*) options + option->length);
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
+                                        break;
+                                    case TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp:
+                                        options = ((uint8*) options + option->length);
+                                        list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
+                                        break;
+                                    default:
+                                        break;
+                                    }
+                                } while (kind != TCPHeader_OptionsKind::EndOfOptionsList && (uint8*) option + option->length < end);
+
+                                const auto optionLen =
+                                      kind == TCPHeader_OptionsKind::EndOfOptionsList || kind == TCPHeader_OptionsKind::NoOperation
+                                            ? 1
+                                            : option->length;
+                                const auto deltaReached = (uint8*) option + optionLen - (uint8*) tcp - sizeof(TCPHeader);
+                                delta                   = (uint32) (deltaReached % 4 != 0) ? ((deltaReached / 4) + 1) * 4 : deltaReached;
+                                delta                   = packet->inclLen - minSize - delta;
+                            }
+                        }
+
+                        if (delta > 6)
+                        {
+                            list->AddItem({ "Payload Size", tmp.Format("%s", GetValue(n, delta).data()) })
+                                  .SetType(ListViewItem::Type::Emphasized_2);
+                        }
                     }
                 }
                 else
@@ -240,9 +316,6 @@ void Panels::Packets::OpenPacket()
             {
                 list->AddItem("Unknown").SetType(ListViewItem::Type::Category);
             }
-
-            // this->Resize(this->GetWidth(), list->GetItemsCount() + 10);
-            // list->Resize(list->GetWidth(), list->GetItemsCount() + 3);
         }
     };
 
@@ -250,7 +323,7 @@ void Panels::Packets::OpenPacket()
     const auto& packet = itemData->first;
 
     LocalString<128> ls;
-    ls.Format("d:c,w:50,h:40", this->GetHeight());
+    ls.Format("d:c,w:50,h:50", this->GetHeight());
     Dialog dialog(
           nullptr,
           PCAP::LinkTypeNames.at(pcap->header.network).data(),
@@ -279,11 +352,12 @@ void Panels::Packets::Update()
         AppCUI::OS::DateTime dt;
         dt.CreateFromTimestamp(timestamp);
 
-        auto item = list->AddItem({ tmp.Format("%s", dt.GetStringRepresentation().data()) });
-        item.SetText(1, tmp.Format("%s", GetValue(n, header->tsSec).data()));
-        item.SetText(2, tmp.Format("%s", GetValue(n, header->tsUsec).data()));
-        item.SetText(3, tmp.Format("%s", GetValue(n, header->inclLen).data()));
-        item.SetText(4, tmp.Format("%s", GetValue(n, header->origLen).data()));
+        auto item = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
+        item.SetText(1, tmp.Format("%s", dt.GetStringRepresentation().data()));
+        item.SetText(2, tmp.Format("%s", GetValue(n, header->tsSec).data()));
+        item.SetText(3, tmp.Format("%s", GetValue(n, header->tsUsec).data()));
+        item.SetText(4, tmp.Format("%s", GetValue(n, header->inclLen).data()));
+        item.SetText(5, tmp.Format("%s", GetValue(n, header->origLen).data()));
 
         item.SetData<std::pair<PacketHeader*, uint32>>(&record);
     }
