@@ -128,6 +128,11 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHea
         auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
         Add_IPv4Header(ipv4, packetInclLen);
     }
+    else if (etherType == EtherType::IPv6)
+    {
+        auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
+        Add_IPv6Header(ipv6);
+    }
 }
 
 void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen)
@@ -147,7 +152,7 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
 
     const auto& ecnName = PCAP::EcnTypeNames.at(ipv4Ref.ecn).data();
     const auto ecnHex   = GetValue(n, (uint8) ipv4Ref.ecn);
-    list->AddItem({ "ECN", tmp.Format("%-10s (%s)", ecnName, dscpHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ "ECN", tmp.Format("%-10s (%s)", ecnName, ecnHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
     list->AddItem({ "Total Length", tmp.Format("%s", GetValue(n, ipv4Ref.totalLength).data()) });
     list->AddItem({ "Identification", tmp.Format("%s", GetValue(n, ipv4Ref.identification).data()) });
@@ -181,12 +186,8 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
     list->AddItem({ "Protocol", tmp.Format("%-10s (%s)", protocolName, protocolHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
     list->AddItem({ "CRC", tmp.Format("%s", GetValue(n, ipv4Ref.crc).data()) });
-
-    list->AddItem({ "Source Address", tmp.Format("%s", GetValue(n, ipv4Ref.sourceAddress).data()) });
-    AddIPElement(list, "Source Address", ipv4Ref.sourceAddress);
-
-    list->AddItem({ "Destination Address", tmp.Format("%s", GetValue(n, ipv4Ref.destinationAddress).data()) });
-    AddIPElement(list, "Destination Address", ipv4Ref.destinationAddress);
+    AddIPv4Element(list, "Source Address", ipv4Ref.sourceAddress);
+    AddIPv4Element(list, "Destination Address", ipv4Ref.destinationAddress);
 
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
     if (ipv4Ref.protocol == IPv4_Protocol::TCP)
@@ -194,6 +195,33 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
         auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
         Add_TCPHeader(tcp, packetInclLen);
     }
+}
+
+void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6)
+{
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    auto ipv6Ref = *ipv6;
+    Swap(ipv6Ref);
+
+    list->AddItem({ "Flow Label", tmp.Format("%s", GetValue(n, ipv6Ref.first.flowLabel).data()) });
+
+    const auto& ecnName = PCAP::EcnTypeNames.at((EcnType) ipv6Ref.first.ecn).data();
+    const auto ecnHex   = GetValue(n, ipv6Ref.first.ecn);
+    list->AddItem({ "ECN", tmp.Format("%-10s (%s)", ecnName, ecnHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    const auto& dscpName = PCAP::DscpTypeNames.at((DscpType) ipv6Ref.first.dscp).data();
+    const auto dscpHex   = GetValue(n, ipv6Ref.first.dscp);
+    list->AddItem({ "DSCP", tmp.Format("%-10s (%s)", dscpName, dscpHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    list->AddItem({ "Version", tmp.Format("%s", GetValue(n, ipv6Ref.first.version).data()) });
+    list->AddItem({ "Payload Length", tmp.Format("%s", GetValue(n, ipv6Ref.payloadLength).data()) });
+    list->AddItem({ "Next Header", tmp.Format("%s", GetValue(n, ipv6Ref.nextHeader).data()) });
+    list->AddItem({ "Hop Limit", tmp.Format("%s", GetValue(n, ipv6Ref.hopLimit).data()) });
+
+    AddIPv6Element(list, "Source Address", ipv6Ref.sourceAddress);
+    AddIPv6Element(list, "Destination Address", ipv6Ref.destinationAddress);
 }
 
 void Packets::PacketDialog::Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen)

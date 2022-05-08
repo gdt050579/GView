@@ -32,7 +32,6 @@ namespace Panels
         CHECK(list.IsValid(), ListViewItem{}, "");
 
         LocalString<64> tmp;
-        LocalString<64> tmp2;
         return list->AddItem({ name.data(),
                                tmp.Format(
                                      "%02X:%02X:%02X:%02X:%02X:%02X (0x%X)",
@@ -45,7 +44,7 @@ namespace Panels
                                      mac.value) });
     }
 
-    static ListViewItem AddIPElement(Reference<ListView> list, std::string_view name, uint32 ip)
+    static ListViewItem AddIPv4Element(Reference<ListView> list, std::string_view name, uint32 ip)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 
@@ -57,7 +56,19 @@ namespace Panels
 
         LocalString<64> tmp;
         return list->AddItem(
-              { name.data(), tmp.Format("%02u.%02u.%02u.%02u", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0]) });
+              { name.data(),
+                tmp.Format("%02u.%02u.%02u.%02u (0x%X)", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0], ipv4.value) });
+    }
+
+    static ListViewItem AddIPv6Element(Reference<ListView> list, std::string_view name, uint16 ipv6[8])
+    {
+        CHECK(list.IsValid(), ListViewItem{}, "");
+
+        LocalString<64> tmp;
+        return list->AddItem(
+              { name.data(),
+                tmp.Format(
+                      "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", ipv6[0], ipv6[1], ipv6[2], ipv6[3], ipv6[4], ipv6[5], ipv6[6], ipv6[7]) });
     }
 
     class Information : public AppCUI::Controls::TabPage
@@ -141,6 +152,7 @@ namespace Panels
             void Add_PacketHeader(LinkType type, const PacketHeader* packet);
             void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen);
             void Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen);
+            void Add_IPv6Header(const IPv6Header* ipv6);
             void Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen);
             void Add_TCPHeader_Options(const TCPHeader* tcp, uint32 packetInclLen);
 
