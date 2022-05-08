@@ -217,11 +217,21 @@ void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6)
 
     list->AddItem({ "Version", tmp.Format("%s", GetValue(n, ipv6Ref.first.version).data()) });
     list->AddItem({ "Payload Length", tmp.Format("%s", GetValue(n, ipv6Ref.payloadLength).data()) });
-    list->AddItem({ "Next Header", tmp.Format("%s", GetValue(n, ipv6Ref.nextHeader).data()) });
+
+    const auto& protocolName = PCAP::IPv6_ProtocolNames.at(ipv6Ref.nextHeader).data();
+    const auto protocolHex   = GetValue(n, (uint8) ipv6Ref.nextHeader);
+    list->AddItem({ "Next Header", tmp.Format("%-10s (%s)", protocolName, protocolHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
     list->AddItem({ "Hop Limit", tmp.Format("%s", GetValue(n, ipv6Ref.hopLimit).data()) });
 
     AddIPv6Element(list, "Source Address", ipv6Ref.sourceAddress);
     AddIPv6Element(list, "Destination Address", ipv6Ref.destinationAddress);
+
+    list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
+    if (ipv6Ref.nextHeader == IPv6_Protocol::UDP)
+    {
+        // TODO: udp
+    }
 }
 
 void Packets::PacketDialog::Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen)

@@ -754,13 +754,35 @@ static void Swap(IPv4Header& ipv4)
     ipv4.destinationAddress                    = AppCUI::Endian::BigToNative(ipv4.destinationAddress);
 }
 
+enum class IPv6_Protocol : uint8
+{
+    HOPOPTS  = 0,
+    TCP      = 6,
+    UDP      = 17,
+    IPV6     = 41,
+    ROUTING  = 43,
+    FRAGMENT = 44,
+    DESTOPTS = 60,
+    ESP      = 50,
+    AH       = 51,
+    ICMPV6   = 58,
+    NONE     = 59,
+};
+
+static const std::map<IPv6_Protocol, std::string_view> IPv6_ProtocolNames{
+    GET_PAIR_FROM_ENUM(IPv6_Protocol::HOPOPTS),  GET_PAIR_FROM_ENUM(IPv6_Protocol::TCP),     GET_PAIR_FROM_ENUM(IPv6_Protocol::UDP),
+    GET_PAIR_FROM_ENUM(IPv6_Protocol::IPV6),     GET_PAIR_FROM_ENUM(IPv6_Protocol::ROUTING), GET_PAIR_FROM_ENUM(IPv6_Protocol::FRAGMENT),
+    GET_PAIR_FROM_ENUM(IPv6_Protocol::DESTOPTS), GET_PAIR_FROM_ENUM(IPv6_Protocol::ESP),     GET_PAIR_FROM_ENUM(IPv6_Protocol::AH),
+    GET_PAIR_FROM_ENUM(IPv6_Protocol::ICMPV6),   GET_PAIR_FROM_ENUM(IPv6_Protocol::NONE),
+};
+
 union IPv6Header_v_tf_fl
 {
     struct
     {
         uint32 flowLabel : 20; // A high-entropy identifier of a flow of packets between a source and destination.
-        uint32 ecn : 2;        //  Explicit Congestion Notification (ECN); priority values subdivide into ranges: traffic where the source
-                               //  provides congestion control and non-congestion control traffic.
+        uint32 ecn : 2;        // Explicit Congestion Notification (ECN); priority values subdivide into ranges: traffic where the source
+                               // provides congestion control and non-congestion control traffic.
         uint32 dscp : 6;       // Differentiated services field (DS field), which is used to classify packets.
         uint32 version : 4;    // The constant 6 (bit sequence 0110).
     };
@@ -773,8 +795,8 @@ struct IPv6Header
     IPv6Header_v_tf_fl first;
     uint16 payloadLength; // The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop
                           // extension header carries a Jumbo Payload option.
-    uint8 nextHeader;     // Specifies the type of the next header.
-    uint8 hopLimit;       // Replaces the time to live field in IPv4.
+    IPv6_Protocol nextHeader;     // Specifies the type of the next header.
+    uint8 hopLimit;               // Replaces the time to live field in IPv4.
     uint16 sourceAddress[8];      // The unicast IPv6 address of the sending node.
     uint16 destinationAddress[8]; // The IPv6 unicast or multicast address of the destination node(s).
 };
@@ -786,7 +808,7 @@ static void Swap(IPv6Header& ipv6)
 {
     ipv6.first.value   = AppCUI::Endian::BigToNative(ipv6.first.value);
     ipv6.payloadLength = AppCUI::Endian::BigToNative(ipv6.payloadLength);
-    ipv6.nextHeader    = AppCUI::Endian::BigToNative(ipv6.nextHeader);
+    ipv6.nextHeader    = (IPv6_Protocol) AppCUI::Endian::BigToNative((uint8) ipv6.nextHeader);
     ipv6.hopLimit      = AppCUI::Endian::BigToNative(ipv6.hopLimit);
 
     for (uint8 i = 0U; i < 8; i++)
