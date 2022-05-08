@@ -505,6 +505,8 @@ enum class EtherType : uint16
     Xerox802_3PUPAddressTranslation = 18,
     XeroxPUPCALProtocol             = 19,
     BanyanSystems                   = 20,
+
+    IPv6,
 };
 
 static EtherType GetEtherType(uint16 value)
@@ -566,6 +568,14 @@ static EtherType GetEtherType(uint16 value)
         return EtherType::BanyanSystems;
     }
 
+    switch (value)
+    {
+    case 0x86DD:
+        return EtherType::IPv6;
+    default:
+        break;
+    }
+
     return EtherType::Unknown;
 }
 
@@ -591,6 +601,7 @@ static const std::map<EtherType, std::string_view> EtherTypeNames{
     GET_PAIR_FROM_ENUM(EtherType::Xerox802_3PUPAddressTranslation),
     GET_PAIR_FROM_ENUM(EtherType::XeroxPUPCALProtocol),
     GET_PAIR_FROM_ENUM(EtherType::BanyanSystems),
+    GET_PAIR_FROM_ENUM(EtherType::IPv6),
 };
 
 union MAC
@@ -743,6 +754,48 @@ static void Swap(IPv4Header& ipv4)
     ipv4.destinationAddress                    = AppCUI::Endian::BigToNative(ipv4.destinationAddress);
 }
 
+union IPv6Header_v_tf_fl
+{
+    struct
+    {
+        uint32 flowLabel : 20; // A high-entropy identifier of a flow of packets between a source and destination.
+        uint32 ecn : 2;        //  Explicit Congestion Notification (ECN); priority values subdivide into ranges: traffic where the source
+                               //  provides congestion control and non-congestion control traffic.
+        uint32 dscp : 6;       // Differentiated services field (DS field), which is used to classify packets.
+        uint32 version : 4;    // The constant 6 (bit sequence 0110).
+    };
+    uint32 value;
+};
+
+#pragma pack(push, 1)
+struct IPv6Header
+{
+    IPv6Header_v_tf_fl first;
+    uint16 payloadLength; // The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop
+                          // extension header carries a Jumbo Payload option.
+    uint8 nextHeader;     // Specifies the type of the next header.
+    uint8 hopLimit;       // Replaces the time to live field in IPv4.
+    uint16 sourceAddress[8];      // The unicast IPv6 address of the sending node.
+    uint16 destinationAddress[8]; // The IPv6 unicast or multicast address of the destination node(s).
+};
+#pragma pack(pop)
+
+static_assert(sizeof(IPv6Header) == 40);
+
+static void Swap(IPv6Header& ipv6)
+{
+    ipv6.first.value   = AppCUI::Endian::BigToNative(ipv6.first.value);
+    ipv6.payloadLength = AppCUI::Endian::BigToNative(ipv6.payloadLength);
+    ipv6.nextHeader    = AppCUI::Endian::BigToNative(ipv6.nextHeader);
+    ipv6.hopLimit      = AppCUI::Endian::BigToNative(ipv6.hopLimit);
+
+    for (uint8 i = 0U; i < 8; i++)
+    {
+        ipv6.sourceAddress[i]      = AppCUI::Endian::BigToNative(ipv6.sourceAddress[i]);
+        ipv6.destinationAddress[i] = AppCUI::Endian::BigToNative(ipv6.destinationAddress[i]);
+    }
+}
+
 enum TCPHeader_Flags
 {
     NONE = 0,
@@ -843,26 +896,6 @@ struct TCPHeader_Options
 {
     TCPHeader_OptionsKind kind;
     uint8 length;
-};
-
-#define SIZE_IPv6_HEADER 40
-struct Version_TrafficClass_FlowLabel
-{
-    uint32 flow_label : 20;
-    uint32 explicitServicesCodePoint : 2; // Part of traffic class
-    uint32 differentialServices : 6;      // Part of traffic class
-    uint32 version : 4;
-};
-struct IPv6Header
-{
-    uint32 version_trafficClass_flowLabel;
-    uint16 payloadLength;
-    uint8 nextHeader;
-    uint8 hopLimit;
-    // IpAdress sourceAdress;
-    // IpAdress destinationAdress;
-    int8 source[16];
-    int8 destination[16];
 };
 
 namespace NG
