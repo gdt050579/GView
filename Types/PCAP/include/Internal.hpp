@@ -1322,6 +1322,61 @@ struct TCPHeader_Options
     uint8 length;
 };
 
+enum class ICMPHeader_Type : uint8
+{
+    EchoReply              = 0,
+    DestinationUnreachable = 3,
+    SourceQuench           = 4,
+    Redirect               = 5,
+    Echo                   = 8,
+    RouterAdvertisement    = 9,
+    RouterSelection        = 10,
+    TimeExceeded           = 11,
+    ParameterProblem       = 12,
+    Timestamp              = 13,
+    TimestampReply         = 14,
+    InformationRequest     = 15,
+    InformationReply       = 16,
+    AddressMaskRequest     = 17,
+    AddressMaskReply       = 18,
+    Traceroute             = 30,
+};
+
+enum class ICMPHeader_Code3 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topic=applications-icmp-type-code-ids
+{
+    NetIsUnreachable                                                = 0,
+    HostIsUnreachable                                               = 1,
+    ProtocolIsUnreachable                                           = 2,
+    PortIsUnreachable                                               = 3,
+    FragmentationIsNeededAndDontFragmentWasSet                      = 4,
+    SourceRouteFailed                                               = 5,
+    DestinationNetworkIsUnknown                                     = 6,
+    DestinationHostIsUnknown                                        = 7,
+    SourceHostIsIsolated                                            = 8,
+    CommunicationWithDestinationNetworkIsAdministrativelyProhibited = 9,
+    CommunicationWithDestinationHostIsAdministrativelyProhibited    = 10,
+    DestinationNetworkIsUnreachableForTypeOfService                 = 11,
+    DestinationHostIsUnreachableForTypeOfService                    = 12,
+    CommunicationIsAdministrativelyProhibited                       = 13,
+    HostPrecedenceViolation                                         = 14,
+    PrecedenceCutoffIsInEffect                                      = 15,
+};
+
+enum class ICMPHeader_Code5 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topic=applications-icmp-type-code-ids
+{
+    RedirectDatagramForTheNetworkOrSubnet         = 0,
+    RedirectDatagramForTheHost                    = 1,
+    RedirectDatagramForTheTypeOfServiceAndNetwork = 2,
+    RedirectDatagramForTheTypeOfServiceAndHost    = 3,
+};
+
+struct ICMPHeader_Base // TODO: on top of this all types should be constructed
+{
+    ICMPHeader_Type type;
+    uint8 code; // depends on the type
+    uint16 checksum;
+};
+
 namespace NG
 {
     enum class Magic : uint32
