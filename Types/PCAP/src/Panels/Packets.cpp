@@ -230,8 +230,86 @@ void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6)
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
     if (ipv6Ref.nextHeader == IPv6_Protocol::UDP)
     {
-        // TODO: udp
+        auto udp = (UDPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
+        Add_UDPHeader(udp);
     }
+}
+
+void Packets::PacketDialog::Add_UDPHeader(const UDPHeader* udp)
+{
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    auto udpRef = *udp;
+    Swap(udpRef);
+
+    list->AddItem({ "Source Port", tmp.Format("%s", GetValue(n, udpRef.srcPort).data()) });
+    list->AddItem({ "Destination Port", tmp.Format("%s", GetValue(n, udpRef.destPort).data()) });
+    list->AddItem({ "Datagram Length", tmp.Format("%s", GetValue(n, udpRef.length).data()) });
+    list->AddItem({ "Datagram Checksum", tmp.Format("%s", GetValue(n, udpRef.checksum).data()) });
+    list->AddItem({ "Payload Size", tmp.Format("%s", GetValue(n, udpRef.length - sizeof(UDPHeader)).data()) });
+
+    list->AddItem("DNS").SetType(ListViewItem::Type::Category);
+    auto dns = (DNSHeader*) ((uint8*) udp + sizeof(UDPHeader));
+    Add_DNSHeader(dns);
+}
+
+void Packets::PacketDialog::Add_DNSHeader(const DNSHeader* dns)
+{
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    auto dnsRef = *dns;
+    Swap(dnsRef);
+
+    list->AddItem({ "ID", tmp.Format("%s", GetValue(n, dnsRef.id).data()) });
+    list->AddItem({ "Flags", tmp.Format("%s", GetValue(n, dnsRef.flags).data()) });
+
+    {
+        if (dnsRef.rd)
+        {
+            list->AddItem({ "", "Recursion Desired" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.rd)
+        {
+            list->AddItem({ "", "Truncated Message" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.aa)
+        {
+            list->AddItem({ "", "Authoritive Answer" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        const auto& opcodeName = DNSHeader_OpcodeNames.at(dnsRef.opcode);
+        list->AddItem({ "", opcodeName.data() }).SetType(ListViewItem::Type::Emphasized_2);
+        if (dnsRef.qr)
+        {
+            list->AddItem({ "", "Query/Response" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.rcode)
+        {
+            list->AddItem({ "", "Response Code" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.cd)
+        {
+            list->AddItem({ "", "Checking Disabled" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.ad)
+        {
+            list->AddItem({ "", "Authenticated Data" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.z)
+        {
+            list->AddItem({ "", "Reserved" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+        if (dnsRef.ra)
+        {
+            list->AddItem({ "", "Recursion Available" }).SetType(ListViewItem::Type::Emphasized_2);
+        }
+    }
+
+    list->AddItem({ "Question Entries #", tmp.Format("%s", GetValue(n, dnsRef.qdcount).data()) });
+    list->AddItem({ "Answer Entries #", tmp.Format("%s", GetValue(n, dnsRef.ancount).data()) });
+    list->AddItem({ "Authority Entries #", tmp.Format("%s", GetValue(n, dnsRef.nscount).data()) });
+    list->AddItem({ "Resource Entries #", tmp.Format("%s", GetValue(n, dnsRef.arcount).data()) });
 }
 
 void Packets::PacketDialog::Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen)

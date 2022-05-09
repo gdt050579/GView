@@ -818,6 +818,76 @@ static void Swap(IPv6Header& ipv6)
     }
 }
 
+struct UDPHeader
+{
+    uint16 srcPort;  /* source port */
+    uint16 destPort; /* destination port */
+    uint16 length;   /* datagram length */
+    uint16 checksum; /* datagram checksum */
+};
+
+static_assert(sizeof(UDPHeader) == 8);
+
+static void Swap(UDPHeader& udp)
+{
+    udp.srcPort  = AppCUI::Endian::BigToNative(udp.srcPort);
+    udp.destPort = AppCUI::Endian::BigToNative(udp.destPort);
+    udp.length   = AppCUI::Endian::BigToNative(udp.length);
+    udp.checksum = AppCUI::Endian::BigToNative(udp.checksum);
+}
+
+enum class DNSHeader_Opcode : uint8
+{
+    StandardQuery       = 0,
+    InverseQuery        = 1,
+    ServerStatusRequest = 2,
+};
+
+static const std::map<DNSHeader_Opcode, std::string_view> DNSHeader_OpcodeNames{ GET_PAIR_FROM_ENUM(DNSHeader_Opcode::StandardQuery),
+                                                                                 GET_PAIR_FROM_ENUM(DNSHeader_Opcode::InverseQuery),
+                                                                                 GET_PAIR_FROM_ENUM(
+                                                                                       DNSHeader_Opcode::ServerStatusRequest) };
+
+#pragma pack(push, 1)
+struct DNSHeader
+{
+    uint16 id; // identification number
+    union
+    {
+        struct
+        {
+            uint8 rd : 1;                // recursion desired
+            uint8 tc : 1;                // truncated message
+            uint8 aa : 1;                // authoritive answer
+            DNSHeader_Opcode opcode : 4; // purpose of message
+            uint8 qr : 1;                // query/response flag
+            uint8 rcode : 4;             // response code
+            uint8 cd : 1;                // checking disabled
+            uint8 ad : 1;                // authenticated data
+            uint8 z : 1;                 // its z! reserved
+            uint8 ra : 1;                // recursion available
+        };
+        uint16 flags;
+    };
+    uint16 qdcount; // number of question entries
+    uint16 ancount; // number of answer entries
+    uint16 nscount; // number of authority entries
+    uint16 arcount; // number of resource entries
+};
+#pragma pack(pop)
+
+static_assert(sizeof(DNSHeader) == 12);
+
+static void Swap(DNSHeader& dns)
+{
+    dns.id      = AppCUI::Endian::BigToNative(dns.id);
+    dns.flags   = AppCUI::Endian::BigToNative(dns.flags);
+    dns.qdcount = AppCUI::Endian::BigToNative(dns.qdcount);
+    dns.ancount = AppCUI::Endian::BigToNative(dns.ancount);
+    dns.nscount = AppCUI::Endian::BigToNative(dns.nscount);
+    dns.arcount = AppCUI::Endian::BigToNative(dns.arcount);
+}
+
 enum TCPHeader_Flags
 {
     NONE = 0,
