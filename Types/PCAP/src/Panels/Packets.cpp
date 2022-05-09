@@ -1,5 +1,7 @@
 #include "PCAP.hpp"
 
+#include <numeric>
+
 namespace GView::Type::PCAP::Panels
 {
 using namespace AppCUI::Controls;
@@ -131,7 +133,7 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHea
     else if (etherType == EtherType::IPv6)
     {
         auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv6Header(ipv6);
+        Add_IPv6Header(ipv6, packetInclLen);
     }
 }
 
@@ -181,7 +183,7 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
 
     list->AddItem({ "TTL", tmp.Format("%s", GetValue(n, ipv4Ref.ttl).data()) });
 
-    const auto& protocolName = PCAP::IPv4_ProtocolNames.at(ipv4Ref.protocol).data();
+    const auto& protocolName = PCAP::IP_ProtocolNames.at(ipv4Ref.protocol).data();
     const auto protocolHex   = GetValue(n, (uint8) ipv4Ref.protocol);
     list->AddItem({ "Protocol", tmp.Format("%-10s (%s)", protocolName, protocolHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
@@ -190,14 +192,19 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
     AddIPv4Element(list, "Destination Address", ipv4Ref.destinationAddress);
 
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
-    if (ipv4Ref.protocol == IPv4_Protocol::TCP)
+    if (ipv4Ref.protocol == IP_Protocol::TCP)
     {
         auto tcp = (TCPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
         Add_TCPHeader(tcp, packetInclLen);
     }
+    else if (ipv4Ref.protocol == IP_Protocol::UDP)
+    {
+        auto udp = (UDPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
+        Add_UDPHeader(udp);
+    }
 }
 
-void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6)
+void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen)
 {
     LocalString<128> tmp;
     NumericFormatter n;
@@ -218,7 +225,7 @@ void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6)
     list->AddItem({ "Version", tmp.Format("%s", GetValue(n, ipv6Ref.first.version).data()) });
     list->AddItem({ "Payload Length", tmp.Format("%s", GetValue(n, ipv6Ref.payloadLength).data()) });
 
-    const auto& protocolName = PCAP::IPv6_ProtocolNames.at(ipv6Ref.nextHeader).data();
+    const auto& protocolName = PCAP::IP_ProtocolNames.at(ipv6Ref.nextHeader).data();
     const auto protocolHex   = GetValue(n, (uint8) ipv6Ref.nextHeader);
     list->AddItem({ "Next Header", tmp.Format("%-10s (%s)", protocolName, protocolHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
@@ -228,7 +235,12 @@ void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6)
     AddIPv6Element(list, "Destination Address", ipv6Ref.destinationAddress);
 
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
-    if (ipv6Ref.nextHeader == IPv6_Protocol::UDP)
+    if (ipv6Ref.nextHeader == IP_Protocol::TCP)
+    {
+        auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv4Header));
+        Add_TCPHeader(tcp, packetInclLen);
+    }
+    else if (ipv6Ref.nextHeader == IP_Protocol::UDP)
     {
         auto udp = (UDPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
         Add_UDPHeader(udp);
@@ -249,9 +261,16 @@ void Packets::PacketDialog::Add_UDPHeader(const UDPHeader* udp)
     list->AddItem({ "Datagram Checksum", tmp.Format("%s", GetValue(n, udpRef.checksum).data()) });
     list->AddItem({ "Payload Size", tmp.Format("%s", GetValue(n, udpRef.length - sizeof(UDPHeader)).data()) });
 
-    list->AddItem("DNS").SetType(ListViewItem::Type::Category);
-    auto dns = (DNSHeader*) ((uint8*) udp + sizeof(UDPHeader));
-    Add_DNSHeader(dns);
+    if (udpRef.destPort == 53)
+    {
+        list->AddItem("DNS").SetType(ListViewItem::Type::Category);
+        auto dns = (DNSHeader*) ((uint8*) udp + sizeof(UDPHeader));
+        Add_DNSHeader(dns);
+    }
+    else
+    {
+        list->AddItem("Unknown/Payload").SetType(ListViewItem::Type::Category);
+    }
 }
 
 void Packets::PacketDialog::Add_DNSHeader(const DNSHeader* dns)
@@ -310,6 +329,78 @@ void Packets::PacketDialog::Add_DNSHeader(const DNSHeader* dns)
     list->AddItem({ "Answer Entries #", tmp.Format("%s", GetValue(n, dnsRef.ancount).data()) });
     list->AddItem({ "Authority Entries #", tmp.Format("%s", GetValue(n, dnsRef.nscount).data()) });
     list->AddItem({ "Resource Entries #", tmp.Format("%s", GetValue(n, dnsRef.arcount).data()) });
+
+    const auto start = (uint8*) dns + sizeof(DNSHeader);
+    uint16 offset    = 0;
+    for (uint16 i = 0; i < dnsRef.qdcount; i++)
+    {
+        std::vector<std::string_view> names;
+
+        uint8 length = 0;
+        do
+        {
+            length = *(start + offset);
+            if (length > 0)
+            {
+                names.emplace_back(std::string_view{ (char*) (start + offset + 1), length });
+            }
+            offset += sizeof(uint8) + length;
+        } while (length != 0);
+
+        DNSHeader_Question question{ names,
+                                     (DNSHeader_Question_QType) (*(uint16*) (start + offset)),
+                                     (DNSHeader_Question_QClass) (*(uint16*) (start + offset + sizeof(uint16))) };
+        Swap(question);
+        offset += 2 * sizeof(uint16);
+
+        list->AddItem("DNS Question").SetType(ListViewItem::Type::Category);
+        Add_DNSHeader_Question(question);
+    }
+
+    if (dnsRef.ancount > 0)
+    {
+        list->AddItem("Answer Entry not supported (please add).").SetType(ListViewItem::Type::ErrorInformation);
+    }
+
+    if (dnsRef.nscount > 0)
+    {
+        list->AddItem("Authority Entry not supported (please add).").SetType(ListViewItem::Type::ErrorInformation);
+    }
+
+    if (dnsRef.arcount > 0)
+    {
+        list->AddItem("Resource Entry not supported (please add).").SetType(ListViewItem::Type::ErrorInformation);
+    }
+}
+
+void Packets::PacketDialog::Add_DNSHeader_Question(const DNSHeader_Question& question)
+{
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    std::string fullname;
+
+    list->AddItem({ "Labels #", tmp.Format("%s", GetValue(n, question.names.size()).data()) }).SetType(ListViewItem::Type::Emphasized_1);
+    for (const auto& sv : question.names)
+    {
+        list->AddItem({ "Label", tmp.Format("(%s) %.*s", GetValue(n, sv.size()).data(), sv.size(), sv.data()) });
+
+        fullname.append(sv).append(".");
+    }
+
+    if (question.names.empty() == false)
+    {
+        fullname.erase(fullname.end() - 1);
+    }
+
+    list->AddItem({ "Fullname", tmp.Format("%s", fullname.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    const auto& qTypeName = DNSHeader_Question_QTypeNames.at(question.qtype).data();
+    const auto& qTypeHex  = GetValue(n, (uint16) question.qtype);
+    list->AddItem({ "QType", tmp.Format("%-6s (%s)", qTypeName, qTypeHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+    const auto& qClassName = DNSHeader_Question_QClassNames.at(question.qclass).data();
+    const auto& qClassHex  = GetValue(n, (uint16) question.qtype);
+    list->AddItem({ "QClass", tmp.Format("%-6s (%s)", qClassName, qClassHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void Packets::PacketDialog::Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen)

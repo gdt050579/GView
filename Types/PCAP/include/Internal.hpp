@@ -709,15 +709,307 @@ union Fragmentation
     uint16 value;
 };
 
-enum class IPv4_Protocol : uint8
+enum class IP_Protocol : uint8 // https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml
 {
-    TCP = 6,
-    UDP = 17,
+    HOPOPT                     = 0,   // IPv6 Hop-by-Hop Option
+    ICMP                       = 1,   // Internet Control Message
+    IGMP                       = 2,   // Internet Group Management
+    GGP                        = 3,   // Gateway-to-Gateway
+    IPv4                       = 4,   // IPv4 encapsulation
+    ST                         = 5,   // Stream
+    TCP                        = 6,   // Transmission Control
+    CBT                        = 7,   // CBT
+    EGP                        = 8,   // Exterior Gateway Protocol
+    IGP                        = 9,   // any private interior gateway (used by Cisco for their IGRP)
+    BBN_RCC_MON                = 10,  // BBN RCC Monitoring
+    NVPII                      = 11,  // Network Voice Protocol
+    PUP                        = 12,  // PUP
+    ARGUS                      = 13,  // ARGUS (deprecated)
+    EMCON                      = 14,  // EMCON
+    XNET                       = 15,  // Cross Net Debugger
+    CHAOS                      = 16,  // Chaos
+    UDP                        = 17,  // User Datagram
+    MUX                        = 18,  // Multiplexing
+    DCN_MEAS                   = 19,  // DCN Measurement Subsystems
+    HMP                        = 20,  // Host Monitoring
+    PRM                        = 21,  // Packet Radio Measurement
+    XNS_IDP                    = 22,  // XEROX NS IDP
+    TRUNK1                     = 23,  // Trunk-1
+    TRUNK2                     = 24,  // Trunk-2
+    LEAF1                      = 25,  // Leaf-1
+    LEAF2                      = 26,  // Leaf-2
+    RDP                        = 27,  // Reliable Data Protocol
+    IRTP                       = 28,  // Internet Reliable Transaction
+    ISO_TP4                    = 29,  // ISO Transport Protocol Class 4
+    NETBLT                     = 30,  // Bulk Data Transfer Protocol
+    MFE_NSP                    = 31,  // MFE Network Services Protocol
+    MERIT_INP                  = 32,  // MERIT Internodal Protocol
+    DCCP                       = 33,  // Datagram Congestion Control Protocol
+    _3PC                       = 34,  // Third Party Connect Protocol
+    IDPR                       = 35,  // Inter-Domain Policy Routing Protocol
+    XTP                        = 36,  // XTP
+    DDP                        = 37,  // Datagram Delivery Protocol
+    IDPR_CMTP                  = 38,  // IDPR Control Message Transport Proto
+    TPPlusPLus                 = 39,  // TP++ Transport Protocol
+    IL                         = 40,  // IL Transport Protocol
+    IPv6                       = 41,  // IPv6 encapsulation
+    SDRP                       = 42,  // Source Demand Routing Protocol
+    IPv6_Route                 = 43,  // Routing Header for IPv6
+    IPv6_Frag                  = 44,  // Fragment Header for IPv6
+    IDRP                       = 45,  // Inter-Domain Routing Protocol
+    RSVP                       = 46,  // Reservation Protocol
+    GRE                        = 47,  // Generic Routing Encapsulation
+    DSR                        = 48,  // Dynamic Source Routing Protocol
+    BNA                        = 49,  // BNA
+    ESP                        = 50,  // Encap Security Payload
+    AH                         = 51,  // Authentication Header
+    I_NLSP                     = 52,  // Integrated Net Layer Security  TUBA
+    SWIPE                      = 53,  // IP with Encryption (deprecated)
+    NARP                       = 54,  // NBMA Address Resolution Protocol
+    MOBILE                     = 55,  // IP Mobility
+    TLSP                       = 56,  // Transport Layer Security Protocol using Kryptonet key management
+    SKIP                       = 57,  // SKIP
+    IPv6_ICMP                  = 58,  // ICMP for IPv6
+    IPv6_NoNxt                 = 59,  // No Next Header for IPv6
+    IPv6_Opts                  = 60,  // Destination Options for IPv6
+    AnyHostInternalProtocol    = 61,  // any host internal protocol
+    CFTP                       = 62,  // CFTP
+    AnyLocalNetwork            = 63,  // any local network
+    SAT_EXPAK                  = 64,  // SATNET and Backroom EXPAK
+    KRYPTOLAN                  = 65,  // Kryptolan
+    RVD                        = 66,  // MIT Remote Virtual Disk Protocol
+    IPPC                       = 67,  // Internet Pluribus Packet Core
+    AnyDistributedFileSystem   = 68,  // any distributed file system
+    SAT_MON                    = 69,  // SATNET Monitoring
+    VISA                       = 70,  // VISA Protocol
+    IPCV                       = 71,  // Internet Packet Core Utility
+    CPNX                       = 72,  // Computer Protocol Network Executive
+    CPHB                       = 73,  // Computer Protocol Heart Beat
+    WSN                        = 74,  // Wang Span Network
+    PVP                        = 75,  // Packet Video Protocol
+    BR_SAT_MON                 = 76,  // Backroom SATNET Monitoring
+    SUN_ND                     = 77,  // SUN ND PROTOCOL-Temporary
+    WB_MON                     = 78,  // WIDEBAND Monitoring
+    WB_EXPAK                   = 79,  // WIDEBAND EXPAK
+    ISO_IP                     = 80,  // ISO Internet Protocol
+    VMTP                       = 81,  // VMTP
+    SECURE_VMTP                = 82,  // SECURE-VMTP
+    VINES                      = 83,  // VINES
+    TTP                        = 84,  // Transaction Transport Protocol
+    IPTM                       = 84,  // Internet Protocol Traffic Manager
+    NSFNET_IGP                 = 85,  // NSFNET-IGP
+    DGP                        = 86,  // Dissimilar Gateway Protocol
+    TCF                        = 87,  // TCF
+    EIGRP                      = 88,  // EIGRP
+    OSPFIGP                    = 89,  // OSPFIGP
+    Sprite_RPC                 = 90,  // Sprite RPC Protocol
+    LARP                       = 91,  // Locus Address Resolution Protocol
+    MTP                        = 92,  // Multicast Transport Protocol
+    AX25                       = 93,  // AX.25 Frames
+    IPIP                       = 94,  // IP-within-IP Encapsulation Protocol
+    MICP                       = 95,  // Mobile Internetworking Control Pro. (deprecated)
+    SCC_SP                     = 96,  // Semaphore Communications Sec. Pro.
+    ETHERIP                    = 97,  // Ethernet-within-IP Encapsulation
+    ENCAP                      = 98,  // Encapsulation Header
+    AnyPrivateEncryptionScheme = 99,  // any private encryption scheme
+    GMTP                       = 100, // GMTP
+    IFMP                       = 101, // Ipsilon Flow Management Protocol
+    PNNI                       = 102, // PNNI over IP
+    PIM                        = 103, // Protocol Independent Multicast
+    ARIS                       = 104, // ARIS
+    SCPS                       = 105, // SCPS
+    QNX                        = 106, // QNX
+    A_N                        = 107, // Active Networks
+    IPComp                     = 108, // IP Payload Compression Protocol
+    SNP                        = 109, // Sitara Networks Protocol
+    Compaq_Peer                = 110, // Compaq Peer Protocol
+    IPX_In_IP                  = 111, // IPX in IP
+    VRRP                       = 112, // Virtual Router Redundancy Protocol
+    PGM                        = 113, // PGM Reliable Transport Protocol
+    Any0HopProtocol            = 114, // any 0-hop protocol
+    L2TP                       = 115, // Layer Two Tunneling Protocol
+    DDX                        = 116, // D-II Data Exchange (DDX)
+    IATP                       = 117, // Interactive Agent Transfer Protocol
+    STP                        = 118, // Schedule Transfer Protocol
+    SRP                        = 119, // SpectraLink Radio Protocol
+    UTI                        = 120, // UTI
+    SMP                        = 121, // Simple Message Protocol
+    SM                         = 122, // Simple Multicast Protocol (deprecated)
+    PTP                        = 123, // Performance Transparency Protocol
+    ISISOverIPv4               = 124, //
+    FIRE                       = 125, //
+    CRTP                       = 126, // Combat Radio Transport Protocol
+    CRUDP                      = 127, // Combat Radio User Datagram
+    SSCOPMCE                   = 128, //
+    IPLT                       = 129, //
+    SPS                        = 130, // Secure Packet Shield
+    PIPE                       = 131, // Private IP Encapsulation within IP
+    SCTP                       = 132, // Stream Control Transmission Protocol
+    FC                         = 133, // Fibre Channel
+    RSVP_E2E_IGNORE            = 134, //
+    MobilityHeader             = 135, //
+    UDPLite                    = 136, //
+    MPLS_In_IP                 = 137, //
+    Manet                      = 138, // MANET Protocols
+    HIP                        = 139, // Host Identity Protocol
+    Shim6                      = 140, // Shim6 Protocol
+    WESP                       = 141, // Wrapped Encapsulating Security Payload
+    ROHC                       = 142, // Robust Header Compression
+    Ethernet                   = 143, // Ethernet
+    ExperimentationAndTesting0 = 253, // Use for experimentation and testing
+    ExperimentationAndTesting1 = 254, // Use for experimentation and testing
+    Reserved                   = 255, // Reserved
 };
 
-static const std::map<IPv4_Protocol, std::string_view> IPv4_ProtocolNames{
-    GET_PAIR_FROM_ENUM(IPv4_Protocol::TCP),
-    GET_PAIR_FROM_ENUM(IPv4_Protocol::UDP),
+static const std::map<IP_Protocol, std::string_view> IP_ProtocolNames{
+    GET_PAIR_FROM_ENUM(IP_Protocol::HOPOPT),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ICMP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IGMP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::GGP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv4),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ST),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TCP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CBT),
+    GET_PAIR_FROM_ENUM(IP_Protocol::EGP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IGP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::BBN_RCC_MON),
+    GET_PAIR_FROM_ENUM(IP_Protocol::NVPII),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PUP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ARGUS),
+    GET_PAIR_FROM_ENUM(IP_Protocol::EMCON),
+    GET_PAIR_FROM_ENUM(IP_Protocol::XNET),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CHAOS),
+    GET_PAIR_FROM_ENUM(IP_Protocol::UDP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MUX),
+    GET_PAIR_FROM_ENUM(IP_Protocol::DCN_MEAS),
+    GET_PAIR_FROM_ENUM(IP_Protocol::HMP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PRM),
+    GET_PAIR_FROM_ENUM(IP_Protocol::XNS_IDP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TRUNK1),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TRUNK2),
+    GET_PAIR_FROM_ENUM(IP_Protocol::LEAF1),
+    GET_PAIR_FROM_ENUM(IP_Protocol::LEAF2),
+    GET_PAIR_FROM_ENUM(IP_Protocol::RDP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IRTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ISO_TP4),
+    GET_PAIR_FROM_ENUM(IP_Protocol::NETBLT),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MFE_NSP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MERIT_INP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::DCCP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::_3PC),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IDPR),
+    GET_PAIR_FROM_ENUM(IP_Protocol::XTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::DDP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IDPR_CMTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TPPlusPLus),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IL),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv6),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SDRP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv6_Route),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv6_Frag),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IDRP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::RSVP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::GRE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::DSR),
+    GET_PAIR_FROM_ENUM(IP_Protocol::BNA),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ESP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::AH),
+    GET_PAIR_FROM_ENUM(IP_Protocol::I_NLSP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SWIPE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::NARP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MOBILE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TLSP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SKIP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv6_ICMP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv6_NoNxt),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPv6_Opts),
+    GET_PAIR_FROM_ENUM(IP_Protocol::AnyHostInternalProtocol),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CFTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::AnyLocalNetwork),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SAT_EXPAK),
+    GET_PAIR_FROM_ENUM(IP_Protocol::KRYPTOLAN),
+    GET_PAIR_FROM_ENUM(IP_Protocol::RVD),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPPC),
+    GET_PAIR_FROM_ENUM(IP_Protocol::AnyDistributedFileSystem),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SAT_MON),
+    GET_PAIR_FROM_ENUM(IP_Protocol::VISA),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPCV),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CPNX),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CPHB),
+    GET_PAIR_FROM_ENUM(IP_Protocol::WSN),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PVP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::BR_SAT_MON),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SUN_ND),
+    GET_PAIR_FROM_ENUM(IP_Protocol::WB_MON),
+    GET_PAIR_FROM_ENUM(IP_Protocol::WB_EXPAK),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ISO_IP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::VMTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SECURE_VMTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::VINES),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPTM),
+    GET_PAIR_FROM_ENUM(IP_Protocol::NSFNET_IGP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::DGP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::TCF),
+    GET_PAIR_FROM_ENUM(IP_Protocol::EIGRP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::OSPFIGP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Sprite_RPC),
+    GET_PAIR_FROM_ENUM(IP_Protocol::LARP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::AX25),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPIP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MICP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SCC_SP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ETHERIP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ENCAP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::AnyPrivateEncryptionScheme),
+    GET_PAIR_FROM_ENUM(IP_Protocol::GMTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IFMP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PNNI),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PIM),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ARIS),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SCPS),
+    GET_PAIR_FROM_ENUM(IP_Protocol::QNX),
+    GET_PAIR_FROM_ENUM(IP_Protocol::A_N),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPComp),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SNP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Compaq_Peer),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPX_In_IP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::VRRP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PGM),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Any0HopProtocol),
+    GET_PAIR_FROM_ENUM(IP_Protocol::L2TP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::DDX),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IATP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::STP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SRP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::UTI),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SMP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SM),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ISISOverIPv4),
+    GET_PAIR_FROM_ENUM(IP_Protocol::FIRE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CRTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::CRUDP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SSCOPMCE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::IPLT),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SPS),
+    GET_PAIR_FROM_ENUM(IP_Protocol::PIPE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::SCTP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::FC),
+    GET_PAIR_FROM_ENUM(IP_Protocol::RSVP_E2E_IGNORE),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MobilityHeader),
+    GET_PAIR_FROM_ENUM(IP_Protocol::UDPLite),
+    GET_PAIR_FROM_ENUM(IP_Protocol::MPLS_In_IP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Manet),
+    GET_PAIR_FROM_ENUM(IP_Protocol::HIP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Shim6),
+    GET_PAIR_FROM_ENUM(IP_Protocol::WESP),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ROHC),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Ethernet),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ExperimentationAndTesting0),
+    GET_PAIR_FROM_ENUM(IP_Protocol::ExperimentationAndTesting1),
+    GET_PAIR_FROM_ENUM(IP_Protocol::Reserved),
 };
 
 #pragma pack(push, 1)
@@ -731,7 +1023,7 @@ struct IPv4Header
     uint16 identification; // Identification
     Fragmentation fragmentation;
     uint8 ttl;                 // Time to live
-    IPv4_Protocol protocol;    // Protocol
+    IP_Protocol protocol;      // Protocol
     uint16 crc;                // Header checksum
     uint32 sourceAddress;      // Source address
     uint32 destinationAddress; // Destination address
@@ -748,33 +1040,11 @@ static void Swap(IPv4Header& ipv4)
     ipv4.identification                        = AppCUI::Endian::BigToNative(ipv4.identification);
     ipv4.fragmentation.value                   = AppCUI::Endian::BigToNative(ipv4.fragmentation.value);
     ipv4.ttl                                   = AppCUI::Endian::BigToNative(ipv4.ttl);
-    ipv4.protocol                              = (IPv4_Protocol) AppCUI::Endian::BigToNative((uint8) ipv4.protocol);
+    ipv4.protocol                              = (IP_Protocol) AppCUI::Endian::BigToNative((uint8) ipv4.protocol);
     ipv4.crc                                   = AppCUI::Endian::BigToNative(ipv4.crc);
     ipv4.sourceAddress                         = AppCUI::Endian::BigToNative(ipv4.sourceAddress);
     ipv4.destinationAddress                    = AppCUI::Endian::BigToNative(ipv4.destinationAddress);
 }
-
-enum class IPv6_Protocol : uint8
-{
-    HOPOPTS  = 0,
-    TCP      = 6,
-    UDP      = 17,
-    IPV6     = 41,
-    ROUTING  = 43,
-    FRAGMENT = 44,
-    DESTOPTS = 60,
-    ESP      = 50,
-    AH       = 51,
-    ICMPV6   = 58,
-    NONE     = 59,
-};
-
-static const std::map<IPv6_Protocol, std::string_view> IPv6_ProtocolNames{
-    GET_PAIR_FROM_ENUM(IPv6_Protocol::HOPOPTS),  GET_PAIR_FROM_ENUM(IPv6_Protocol::TCP),     GET_PAIR_FROM_ENUM(IPv6_Protocol::UDP),
-    GET_PAIR_FROM_ENUM(IPv6_Protocol::IPV6),     GET_PAIR_FROM_ENUM(IPv6_Protocol::ROUTING), GET_PAIR_FROM_ENUM(IPv6_Protocol::FRAGMENT),
-    GET_PAIR_FROM_ENUM(IPv6_Protocol::DESTOPTS), GET_PAIR_FROM_ENUM(IPv6_Protocol::ESP),     GET_PAIR_FROM_ENUM(IPv6_Protocol::AH),
-    GET_PAIR_FROM_ENUM(IPv6_Protocol::ICMPV6),   GET_PAIR_FROM_ENUM(IPv6_Protocol::NONE),
-};
 
 union IPv6Header_v_tf_fl
 {
@@ -795,7 +1065,7 @@ struct IPv6Header
     IPv6Header_v_tf_fl first;
     uint16 payloadLength; // The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop
                           // extension header carries a Jumbo Payload option.
-    IPv6_Protocol nextHeader;     // Specifies the type of the next header.
+    IP_Protocol nextHeader;       // Specifies the type of the next header.
     uint8 hopLimit;               // Replaces the time to live field in IPv4.
     uint16 sourceAddress[8];      // The unicast IPv6 address of the sending node.
     uint16 destinationAddress[8]; // The IPv6 unicast or multicast address of the destination node(s).
@@ -808,7 +1078,7 @@ static void Swap(IPv6Header& ipv6)
 {
     ipv6.first.value   = AppCUI::Endian::BigToNative(ipv6.first.value);
     ipv6.payloadLength = AppCUI::Endian::BigToNative(ipv6.payloadLength);
-    ipv6.nextHeader    = (IPv6_Protocol) AppCUI::Endian::BigToNative((uint8) ipv6.nextHeader);
+    ipv6.nextHeader    = (IP_Protocol) AppCUI::Endian::BigToNative((uint8) ipv6.nextHeader);
     ipv6.hopLimit      = AppCUI::Endian::BigToNative(ipv6.hopLimit);
 
     for (uint8 i = 0U; i < 8; i++)
@@ -886,6 +1156,68 @@ static void Swap(DNSHeader& dns)
     dns.ancount = AppCUI::Endian::BigToNative(dns.ancount);
     dns.nscount = AppCUI::Endian::BigToNative(dns.nscount);
     dns.arcount = AppCUI::Endian::BigToNative(dns.arcount);
+}
+
+enum class DNSHeader_Question_QType : uint16
+{
+    A     = 1,  // a host address
+    NS    = 2,  // an authoritative name server
+    MD    = 3,  // a mail destination (Obsolete - use MX)
+    MF    = 4,  // a mail forwarder (Obsolete - use MX)
+    CNAME = 5,  // the canonical name for an alias
+    SOA   = 6,  // marks the start of a zone of authority
+    MB    = 7,  // a mailbox domain name (EXPERIMENTAL)
+    MG    = 8,  // a mail group member (EXPERIMENTAL)
+    MR    = 9,  // a mail rename domain name (EXPERIMENTAL)
+    NULL_ = 10, // a null RR (EXPERIMENTAL)
+    WKS   = 11, // a well known service description
+    PTR   = 12, // a domain name pointer
+    HINFO = 13, // host information
+    MINFO = 14, // mailbox or mail list information
+    MX    = 15, // mail exchange
+    TXT   = 16, // text strings
+};
+
+static const std::map<DNSHeader_Question_QType, std::string_view> DNSHeader_Question_QTypeNames{
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::A),     GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::NS),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MD),    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MF),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::CNAME), GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::SOA),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MB),    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MG),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MR),    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::NULL_),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::WKS),   GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::PTR),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::HINFO), GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MINFO),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::MX),    GET_PAIR_FROM_ENUM(DNSHeader_Question_QType::TXT),
+};
+
+enum class DNSHeader_Question_QClass : uint16
+{
+    IN = 1, // the internet
+    CS = 2, // the CSNET class (Obsolete - used only for examples in some obsolete RFCs)
+    CH = 3, // the CHAOS class
+    HS = 4, // Hesiod [Dyer 87]
+};
+
+static const std::map<DNSHeader_Question_QClass, std::string_view> DNSHeader_Question_QClassNames{
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QClass::IN),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QClass::CS),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QClass::CH),
+    GET_PAIR_FROM_ENUM(DNSHeader_Question_QClass::HS),
+};
+
+struct DNSHeader_Question
+{
+    std::vector<std::string_view>
+          names; /* A domain name represented as a sequence of labels, where each label consists of a length octet followed by that number
+                    of octets. The domain name terminates with the zero length octet for the null label of the root. Note that this field
+                    may be an odd number of octets; no padding is used.*/
+    DNSHeader_Question_QType qtype;
+    DNSHeader_Question_QClass qclass;
+};
+
+static void Swap(DNSHeader_Question& question)
+{
+    question.qtype  = (DNSHeader_Question_QType) AppCUI::Endian::BigToNative((uint16) question.qtype);
+    question.qclass = (DNSHeader_Question_QClass) AppCUI::Endian::BigToNative((uint16) question.qclass);
 }
 
 enum TCPHeader_Flags
