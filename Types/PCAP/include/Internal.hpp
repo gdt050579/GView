@@ -1322,24 +1322,62 @@ struct TCPHeader_Options
     uint8 length;
 };
 
-enum class ICMPHeader_Type : uint8
+enum class ICMPHeader_Type : uint8 // https://www.rfc-editor.org/rfc/rfc6918
 {
-    EchoReply              = 0,
-    DestinationUnreachable = 3,
-    SourceQuench           = 4,
-    Redirect               = 5,
-    Echo                   = 8,
-    RouterAdvertisement    = 9,
-    RouterSelection        = 10,
-    TimeExceeded           = 11,
-    ParameterProblem       = 12,
-    Timestamp              = 13,
-    TimestampReply         = 14,
-    InformationRequest     = 15,
-    InformationReply       = 16,
-    AddressMaskRequest     = 17,
-    AddressMaskReply       = 18,
-    Traceroute             = 30,
+    EchoReply                 = 0,
+    DestinationUnreachable    = 3,
+    SourceQuench              = 4,
+    Redirect                  = 5,
+    Echo                      = 8,
+    RouterAdvertisement       = 9,
+    RouterSelection           = 10,
+    TimeExceeded              = 11,
+    ParameterProblem          = 12,
+    Timestamp                 = 13,
+    TimestampReply            = 14,
+    InformationRequest        = 15,
+    InformationReply          = 16,
+    AddressMaskRequest        = 17,
+    AddressMaskReply          = 18,
+    Traceroute                = 30,
+    DatagramConversionError   = 31,
+    MobileHostRedirect        = 32,
+    IPv6WhereAreYou           = 33,
+    IPv6IAmHere               = 34,
+    MobileRegistrationRequest = 35,
+    MobileRegistrationReply   = 36,
+    DomainNameRequest         = 37,
+    DomainNameReply           = 38,
+    SKIP                      = 39,
+
+};
+
+static const std::map<ICMPHeader_Type, std::string_view> ICMPHeader_TypeNames{
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::EchoReply),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::DestinationUnreachable),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::SourceQuench),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::Redirect),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::Echo),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::RouterAdvertisement),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::RouterSelection),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::TimeExceeded),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::ParameterProblem),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::Timestamp),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::TimestampReply),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::InformationRequest),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::InformationReply),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::AddressMaskRequest),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::AddressMaskReply),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::Traceroute),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::DatagramConversionError),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::MobileHostRedirect),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::IPv6WhereAreYou),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::IPv6IAmHere),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::MobileRegistrationRequest),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::MobileRegistrationReply),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::DomainNameRequest),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::DomainNameReply),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Type::SKIP),
 };
 
 enum class ICMPHeader_Code3 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topic=applications-icmp-type-code-ids
@@ -1362,6 +1400,25 @@ enum class ICMPHeader_Code3 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topi
     PrecedenceCutoffIsInEffect                                      = 15,
 };
 
+static const std::map<ICMPHeader_Code3, std::string_view> ICMPHeader_Code3Names{
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::NetIsUnreachable),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::HostIsUnreachable),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::ProtocolIsUnreachable),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::PortIsUnreachable),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::FragmentationIsNeededAndDontFragmentWasSet),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::SourceRouteFailed),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::DestinationNetworkIsUnknown),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::DestinationHostIsUnknown),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::SourceHostIsIsolated),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::CommunicationWithDestinationNetworkIsAdministrativelyProhibited),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::CommunicationWithDestinationHostIsAdministrativelyProhibited),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::DestinationNetworkIsUnreachableForTypeOfService),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::DestinationHostIsUnreachableForTypeOfService),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::CommunicationIsAdministrativelyProhibited),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::HostPrecedenceViolation),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code3::PrecedenceCutoffIsInEffect),
+};
+
 enum class ICMPHeader_Code5 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topic=applications-icmp-type-code-ids
 {
     RedirectDatagramForTheNetworkOrSubnet         = 0,
@@ -1370,12 +1427,115 @@ enum class ICMPHeader_Code5 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topi
     RedirectDatagramForTheTypeOfServiceAndHost    = 3,
 };
 
+static const std::map<ICMPHeader_Code5, std::string_view> ICMPHeader_Code5Names{
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code5::RedirectDatagramForTheNetworkOrSubnet),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code5::RedirectDatagramForTheHost),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code5::RedirectDatagramForTheTypeOfServiceAndNetwork),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code5::RedirectDatagramForTheTypeOfServiceAndHost),
+};
+
+enum class ICMPHeader_Code11 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topic=applications-icmp-type-code-ids
+{
+    TimeToLiveExceededInTransit    = 0,
+    FragmentReassemblyTimeExceeded = 1,
+};
+
+static const std::map<ICMPHeader_Code11, std::string_view> ICMPHeader_Code11Names{
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code11::TimeToLiveExceededInTransit),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code11::FragmentReassemblyTimeExceeded),
+};
+
+enum class ICMPHeader_Code12 : uint8 // https://www.ibm.com/docs/en/qsip/7.4?topic=applications-icmp-type-code-ids
+{
+    PointerIndicatesTheError = 0,
+    MissingARequiredOption   = 1,
+    BadLength                = 2,
+};
+
+static const std::map<ICMPHeader_Code12, std::string_view> ICMPHeader_Code12Names{
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code12::PointerIndicatesTheError),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code12::MissingARequiredOption),
+    GET_PAIR_FROM_ENUM(ICMPHeader_Code12::BadLength),
+};
+
+#pragma pack(push, 1)
 struct ICMPHeader_Base // TODO: on top of this all types should be constructed
 {
     ICMPHeader_Type type;
     uint8 code; // depends on the type
     uint16 checksum;
 };
+#pragma pack(pop)
+
+static void Swap(ICMPHeader_Base& icmpBase)
+{
+    icmpBase.type     = (ICMPHeader_Type) AppCUI::Endian::BigToNative((uint8) icmpBase.type);
+    icmpBase.code     = AppCUI::Endian::BigToNative(icmpBase.code);
+    icmpBase.checksum = AppCUI::Endian::BigToNative(icmpBase.checksum);
+}
+
+#pragma pack(push, 1)
+struct ICMPHeader_5
+{
+    ICMPHeader_Base base;
+    uint32 gatewayInternetAddress; /* Address of the gateway to which traffic for the network specified in the internet destination network
+      field of the original datagram's data should be sent. */
+};
+#pragma pack(pop)
+
+static void Swap(ICMPHeader_5& icmp5)
+{
+    Swap(icmp5.base);
+    icmp5.gatewayInternetAddress = AppCUI::Endian::BigToNative(icmp5.gatewayInternetAddress);
+}
+
+#pragma pack(push, 1)
+struct ICMPHeader_8
+{
+    ICMPHeader_Base base;
+    uint16 identifier;     /* If code = 0, an identifier to aid in matching echos and replies, may be zero. */
+    uint16 sequenceNumber; /* If code = 0, a sequence number to aid in matching echos and replies, may be zero. */
+};
+#pragma pack(pop)
+
+static void Swap(ICMPHeader_8& icmp8)
+{
+    Swap(icmp8.base);
+    icmp8.identifier     = AppCUI::Endian::BigToNative(icmp8.identifier);
+    icmp8.sequenceNumber = AppCUI::Endian::BigToNative(icmp8.sequenceNumber);
+}
+
+#pragma pack(push, 1)
+struct ICMPHeader_12
+{
+    ICMPHeader_Base base;
+    uint8 pointer; /*  If code = 0, identifies the octet where an error was detected. */
+};
+#pragma pack(pop)
+
+static void Swap(ICMPHeader_12& icmp12)
+{
+    Swap(icmp12.base);
+    icmp12.pointer = AppCUI::Endian::BigToNative(icmp12.pointer);
+}
+
+#pragma pack(push, 1)
+struct ICMPHeader_13_14
+{
+    ICMPHeader_8 base;
+    uint32 originateTimestamp;
+    uint32 receiveTimestamp;
+    uint32 transmitTimestamp;
+};
+#pragma pack(pop)
+
+static void Swap(ICMPHeader_13_14& icmp13_14)
+{
+    Swap(icmp13_14.base);
+    icmp13_14.originateTimestamp = AppCUI::Endian::BigToNative(icmp13_14.originateTimestamp);
+    icmp13_14.receiveTimestamp   = AppCUI::Endian::BigToNative(icmp13_14.receiveTimestamp);
+    icmp13_14.transmitTimestamp  = AppCUI::Endian::BigToNative(icmp13_14.transmitTimestamp);
+}
 
 namespace NG
 {

@@ -155,6 +155,7 @@ namespace Panels
             void Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen);
             void Add_UDPHeader(const UDPHeader* udp);
             void Add_DNSHeader(const DNSHeader* dns);
+            void Add_ICMPHeader(const ICMPHeader_Base* icmpBase, uint32 icmpSize);
             void Add_DNSHeader_Question(const DNSHeader_Question& question);
             void Add_TCPHeader(const TCPHeader* tcp, uint32 packetInclLen);
             void Add_TCPHeader_Options(const TCPHeader* tcp, uint32 packetInclLen);

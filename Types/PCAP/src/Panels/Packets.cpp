@@ -202,6 +202,11 @@ void Packets::PacketDialog::Add_IPv4Header(const IPv4Header* ipv4, uint32 packet
         auto udp = (UDPHeader*) ((uint8*) ipv4 + sizeof(IPv4Header));
         Add_UDPHeader(udp);
     }
+    else if (ipv4Ref.protocol == IP_Protocol::ICMP)
+    {
+        auto icmpBase = (ICMPHeader_Base*) ((uint8*) ipv4 + sizeof(IPv4Header));
+        Add_ICMPHeader(icmpBase, packetInclLen - sizeof(Package_EthernetHeader) - sizeof(IPv4Header));
+    }
 }
 
 void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen)
@@ -371,6 +376,134 @@ void Packets::PacketDialog::Add_DNSHeader(const DNSHeader* dns)
     {
         list->AddItem("Resource Entry not supported (please add).").SetType(ListViewItem::Type::ErrorInformation);
     }
+}
+
+void Packets::PacketDialog::Add_ICMPHeader(const ICMPHeader_Base* icmpBase, uint32 icmpSize)
+{
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    auto icmpBaseRef = *icmpBase;
+    Swap(icmpBaseRef);
+
+    const auto& icmpTypeName = PCAP::ICMPHeader_TypeNames.at(icmpBaseRef.type).data();
+    const auto icmpTypeHex   = GetValue(n, (uint8) icmpBaseRef.type);
+    list->AddItem({ "Type", tmp.Format("%-10s (%s)", icmpTypeName, icmpTypeHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    switch (icmpBaseRef.type)
+    {
+    case ICMPHeader_Type::EchoReply:
+    case ICMPHeader_Type::Echo:
+    {
+        auto icmp8 = *(ICMPHeader_8*) icmpBase;
+        Swap(icmp8);
+
+        list->AddItem({ "Identifier", tmp.Format("%s", GetValue(n, icmp8.identifier).data()) });
+        list->AddItem({ "Sequence Number", tmp.Format("%s", GetValue(n, icmp8.sequenceNumber).data()) });
+    }
+    break;
+    case ICMPHeader_Type::DestinationUnreachable:
+    {
+        const auto& codeName = PCAP::ICMPHeader_Code3Names.at((ICMPHeader_Code3) icmpBaseRef.code).data();
+        const auto codeHex   = GetValue(n, icmpBaseRef.code);
+        list->AddItem({ "Code", tmp.Format("%-10s (%s)", codeName, codeHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmpBaseRef.checksum).data()) });
+    }
+    break;
+    case ICMPHeader_Type::Redirect:
+    {
+        auto icmp5 = *(ICMPHeader_5*) icmpBase;
+        Swap(icmp5);
+
+        const auto& codeName = PCAP::ICMPHeader_Code5Names.at((ICMPHeader_Code5) icmp5.base.code).data();
+        const auto codeHex   = GetValue(n, icmp5.base.code);
+        list->AddItem({ "Code", tmp.Format("%-10s (%s)", codeName, codeHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmp5.base.checksum).data()) });
+        AddIPv4Element(list, "Gateway Internet Address", icmp5.gatewayInternetAddress);
+    }
+    break;
+    case ICMPHeader_Type::RouterAdvertisement:
+        break;
+    case ICMPHeader_Type::RouterSelection:
+        break;
+    case ICMPHeader_Type::TimeExceeded:
+    {
+        const auto& codeName = PCAP::ICMPHeader_Code11Names.at((ICMPHeader_Code11) icmpBaseRef.code).data();
+        const auto codeHex   = GetValue(n, icmpBaseRef.code);
+        list->AddItem({ "Code", tmp.Format("%-10s (%s)", codeName, codeHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmpBaseRef.checksum).data()) });
+    }
+    break;
+    case ICMPHeader_Type::ParameterProblem:
+    {
+        auto icmp12 = *(ICMPHeader_12*) icmpBase;
+        Swap(icmp12);
+
+        const auto& codeName = PCAP::ICMPHeader_Code12Names.at((ICMPHeader_Code12) icmp12.base.code).data();
+        const auto codeHex   = GetValue(n, icmp12.base.code);
+        list->AddItem({ "Code", tmp.Format("%-10s (%s)", codeName, codeHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmp12.base.checksum).data()) });
+        AddIPv4Element(list, "Pointer", icmp12.pointer);
+    }
+    break;
+    case ICMPHeader_Type::Timestamp:
+    case ICMPHeader_Type::TimestampReply:
+    {
+        auto icmp13_14 = *(ICMPHeader_13_14*) icmpBase;
+        Swap(icmp13_14);
+
+        list->AddItem({ "Code", tmp.Format("%s", GetValue(n, icmp13_14.base.base.code).data()) });
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmp13_14.base.base.checksum).data()) });
+        list->AddItem({ "Identifier", tmp.Format("%s", GetValue(n, icmp13_14.base.identifier).data()) });
+        list->AddItem({ "Sequence Number", tmp.Format("%s", GetValue(n, icmp13_14.base.sequenceNumber).data()) });
+        list->AddItem({ "Originate Timestamp", tmp.Format("%s", GetValue(n, icmp13_14.originateTimestamp).data()) });
+        list->AddItem({ "Receive Timestamp", tmp.Format("%s", GetValue(n, icmp13_14.receiveTimestamp).data()) });
+        list->AddItem({ "Transmit Timestamp", tmp.Format("%s", GetValue(n, icmp13_14.transmitTimestamp).data()) });
+    }
+    break;
+    case ICMPHeader_Type::InformationRequest:
+    case ICMPHeader_Type::InformationReply:
+    {
+        auto icmp15_16 = *(ICMPHeader_8*) icmpBase;
+        Swap(icmp15_16);
+
+        list->AddItem({ "Code", tmp.Format("%s", GetValue(n, icmp15_16.base.code).data()) });
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmp15_16.base.checksum).data()) });
+        list->AddItem({ "Identifier", tmp.Format("%s", GetValue(n, icmp15_16.identifier).data()) });
+        list->AddItem({ "Sequence Number", tmp.Format("%s", GetValue(n, icmp15_16.sequenceNumber).data()) });
+    }
+    break;
+    case ICMPHeader_Type::AddressMaskRequest:
+        break;
+    case ICMPHeader_Type::AddressMaskReply:
+        break;
+    case ICMPHeader_Type::Traceroute:
+        break;
+    case ICMPHeader_Type::DatagramConversionError:
+        break;
+    case ICMPHeader_Type::MobileHostRedirect:
+        break;
+    case ICMPHeader_Type::IPv6WhereAreYou:
+        break;
+    case ICMPHeader_Type::IPv6IAmHere:
+        break;
+    case ICMPHeader_Type::MobileRegistrationRequest:
+        break;
+    case ICMPHeader_Type::MobileRegistrationReply:
+        break;
+    case ICMPHeader_Type::DomainNameRequest:
+        break;
+    case ICMPHeader_Type::DomainNameReply:
+        break;
+    case ICMPHeader_Type::SKIP:
+        break;
+    case ICMPHeader_Type::SourceQuench:
+    default:
+        list->AddItem({ "Code", tmp.Format("%s", GetValue(n, icmpBaseRef.code).data()) });
+        list->AddItem({ "Checksum", tmp.Format("%s", GetValue(n, icmpBaseRef.checksum).data()) });
+        break;
+    }
+    list->AddItem({ "Payload Size", tmp.Format("%s", GetValue(n, icmpSize - sizeof(ICMPHeader_8)).data()) });
 }
 
 void Packets::PacketDialog::Add_DNSHeader_Question(const DNSHeader_Question& question)
