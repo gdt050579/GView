@@ -7,7 +7,7 @@ namespace GView::Type::PCAP
 class PCAPFile : public TypeInterface
 {
   public:
-    Buffer data; // it s maximum 0xFFFF so just save it here
+    Buffer data; // it's maximum 0xFFFF so just save it here
 
     Header header;
     std::vector<std::pair<PacketHeader*, uint32>> packetHeaders;
@@ -83,6 +83,7 @@ namespace Panels
         inline static const auto hexUint64 = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ', 8 };
 
         void UpdateGeneralInformation();
+        void UpdatePcapHeader();
         void UpdateIssues();
         void RecomputePanelsPositions();
 

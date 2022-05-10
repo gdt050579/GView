@@ -29,6 +29,16 @@ void Information::UpdateGeneralInformation()
     AddDecAndHexElement("Size", "%-20s (%s)", pcap->obj->GetData().GetSize());
 
     general->AddItem("Header").SetType(ListViewItem::Type::Category);
+    UpdatePcapHeader();
+
+    AddDecAndHexElement("Packets #", "%-20s (%s)", (uint32) pcap->packetHeaders.size()).SetType(ListViewItem::Type::Emphasized_1);
+}
+
+void Information::UpdatePcapHeader()
+{
+    LocalString<1024> ls;
+    NumericFormatter nf;
+    NumericFormatter nf2;
 
     const auto magicName = PCAP::MagicNames.at(pcap->header.magicNumber).data();
     const auto magicHex  = nf.ToString((uint32) pcap->header.magicNumber, hexUint32);
@@ -45,8 +55,6 @@ void Information::UpdateGeneralInformation()
     const auto networkHex         = nf.ToString((uint32) pcap->header.network, hexUint32);
     general->AddItem({ "Network", ls.Format("%-20s (%s) %s", networkName, networkHex.data(), networkDescription) })
           .SetType(ListViewItem::Type::Emphasized_2);
-
-    AddDecAndHexElement("Packets #", "%-20s (%s)", (uint32) pcap->packetHeaders.size()).SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void Information::UpdateIssues()

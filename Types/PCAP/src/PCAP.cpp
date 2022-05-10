@@ -70,12 +70,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        // NG -> static const std::initializer_list<std::string> patterns{ "hex:'A1 B2 C3 D4'", "hex:'A1 B2 3C 4D'" };
-        // NG -> sect["Pattern"]   = patterns;
-
         static const std::initializer_list<std::string> patterns{ "hex:'A1 B2 C3 D4'", "hex:'D4 C3 B2 A1'" };
         sect["Pattern"]   = patterns;
-        sect["Extension"] = "pcap"; // NG -> pcapng
+        sect["Extension"] = "pcap";
         sect["Priority"]  = 1;
     }
 }

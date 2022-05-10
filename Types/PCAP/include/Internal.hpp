@@ -1921,48 +1921,4 @@ static void Swap(ICMPHeader_13_14& icmp13_14)
     icmp13_14.receiveTimestamp   = AppCUI::Endian::BigToNative(icmp13_14.receiveTimestamp);
     icmp13_14.transmitTimestamp  = AppCUI::Endian::BigToNative(icmp13_14.transmitTimestamp);
 }
-
-namespace NG
-{
-    enum class Magic : uint32
-    {
-        First  = 0xA1B2C3D4, // time stamps in Packet Records are in seconds and microseconds;
-        Second = 0xA1B23C4D  // time stamps in Packet Records are in seconds and nanoseconds.
-    };
-
-    struct LinkType
-    {
-        uint8 : 8;
-        uint8 : 8;
-        uint8 : 8;
-        uint8 : 4;
-        uint8 f : 1;
-        uint8 FCS : 3;
-    };
-
-    struct Header
-    {
-        Magic magicNumber; // These numbers can be used to distinguish sections that have been saved on little-endian machines from the ones
-                           // saved on big-endian machines, and to heuristically identify pcap files.
-        uint16 majorVersion; // The value for the current version of the format is 2. This value should change if the format changes in such
-                             // a way that code that reads the new format could not read the old format (i.e., code to read both formats
-                             // would have to check the version number and use different code paths for the two formats) and code that reads
-                             // the old format could not read the new format.
-        uint16 minorVersion; // The value is for the current version of the format is 4. This value should change if the format changes in
-                             // such a way that code that reads the new format could read the old format without checking the version number
-                             // but code that reads the old format could not read all files in the new format.
-        uint32 reserved1;    // Not used - SHOULD be filled with 0 by pcap file writers, and MUST be ignored by pcap file readers.This value
-                          // was documented by some older implementations as "gmt to local correction".Some older pcap file writers stored
-                          // non - zero values in this field.
-        uint32 reserved2; // Not used - SHOULD be filled with 0 by pcap file writers, and MUST be ignored by pcap file readers.This value
-                          // was documented by some older implementations as "accuracy of timestamps".Some older pcap file writers stored
-                          // non - zero values in this field.
-        uint32 snapLen; // Maximum number of octets captured from each packet.The portion of each packet that exceeds this value will not be
-                        // stored in the file.This value MUST NOT be zero; if no limit was specified, the value should be a number greater
-                        // than or equal to the largest packet length in the file.
-        LinkType linkType; // Defines, in the lower 28 bits, the link layer type of packets in the file.
-    };
-
-    static_assert(sizeof(Header) == 24);
-} // namespace NG
 } // namespace GView::Type::PCAP
