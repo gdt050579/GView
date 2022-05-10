@@ -482,32 +482,134 @@ struct PacketHeader
 
 static_assert(sizeof(PacketHeader) == 16);
 
-enum class EtherType : uint16
+enum class EtherType : uint16 // https://www.liveaction.com/resources/glossary/ethertype-values
 {
-    Unknown                         = 0,
-    IEEE802_3LengthFields           = 1,
-    Experimental                    = 2,
-    XeroxPUP                        = 3,
-    PUPAddressTranslation           = 4,
-    XeroxXNSIDP                     = 5,
-    IPv4                            = 6, // DODIP
-    X75Internet                     = 7,
-    NBSInternet                     = 8,
-    ECMAInternet                    = 9,
-    CHAOSnet                        = 10,
-    X25Level3                       = 11,
-    ARP                             = 12,
-    XeroxXNSCompatibility           = 13,
-    SymbolicsPrivate                = 14,
-    Xyplex                          = 15,
-    UngermannBassNetworkDebugger    = 16,
-    Xerox802_3PUP                   = 17,
-    Xerox802_3PUPAddressTranslation = 18,
-    XeroxPUPCALProtocol             = 19,
-    BanyanSystems                   = 20,
-
-    IPv6,
+    Unknown                                      = 0,
+    IEEE802_3LengthFields                        = 1,
+    Experimental                                 = 2,
+    XeroxPUP                                     = 3,
+    PUPAddressTranslation                        = 4,
+    XeroxXNSIDP                                  = 5,
+    IPv4                                         = 6, // DODIP
+    X75Internet                                  = 7,
+    NBSInternet                                  = 8,
+    ECMAInternet                                 = 9,
+    CHAOSnet                                     = 10,
+    X25Level3                                    = 11,
+    ARP                                          = 12,
+    XeroxXNSCompatibility                        = 13,
+    SymbolicsPrivate                             = 14,
+    Xyplex                                       = 15,
+    UngermannBassNetworkDebugger                 = 16,
+    Xerox802_3PUP                                = 17,
+    Xerox802_3PUPAddressTranslation              = 18,
+    XeroxPUPCALProtocol                          = 19,
+    BanyanSystems                                = 20,
+    BerkeleyTrailerNegotiation                   = 21,
+    BerkeleyTrailerEncapsulationForIP            = 22,
+    VALISSystems                                 = 23,
+    VALIDSystems                                 = 24,
+    _3ComCorporation                             = 25,
+    PCSBasicBlockProtocol                        = 26,
+    BBNSimnetPrivate                             = 27,
+    DECUnassigned                                = 28,
+    DECMOPDumpOrLoadAssistance                   = 29,
+    DECMOPRemoteConsole                          = 30,
+    DECDECnetPhaseIV                             = 31,
+    DECLAT                                       = 32,
+    DECDECnetDiagnosticProtocolDECnetCustomerUse = 33,
+    DECDECnetLAVC                                = 34,
+    DECAmber                                     = 35,
+    DECMUMPS                                     = 36,
+    UngermannBassDownload                        = 37,
+    UngermannBassNIU                             = 38,
+    UngermannBassDiagnosticOrLoopback            = 39,
+    OS9Microware                                 = 40,
+    LRT_England                                  = 41,
+    Proteon                                      = 42,
+    Cabletron                                    = 43,
+    CronusVLN                                    = 44,
+    CronusDirect                                 = 45,
+    HPProbeProtocol                              = 46,
+    Nestar                                       = 47,
+    ATAndT                                       = 48,
+    Excelan                                      = 49,
+    SGIDiagnosticType                            = 50, // (obsolete)
+    SGINetworkGames                              = 51, // (obsolete)
+    SGIReservedType                              = 52, // (obsolete)
+    SGIBounceServer                              = 53, // (obsolete)
+    Apollo                                       = 54,
+    Tymshare                                     = 55,
+    TiganInc                                     = 56,
+    ReverseARP                                   = 57, // (RARP)
+    AeonicSystems                                = 58,
+    DECLANBridge                                 = 59,
+    DECDSM                                       = 60,
+    DECAragon                                    = 61,
+    DECVAXELN                                    = 62,
+    DECNSMV                                      = 63,
+    DECEthernetCSMA_CDEncryptionProtocol         = 64,
+    DECDNA                                       = 65,
+    DECLANTrafficMonitor                         = 66,
+    DECNetBIOS                                   = 67,
+    DECMS_DOS                                    = 68,
+    PlanningResearchCorporation                  = 70,
+    ExperData                                    = 71, // (France)
+    VMTP                                         = 72, // (Versatile Message Transaction Protocol, RFC-1045, Stanford)
+    StanfordVKernelProduction                    = 73, // Version 6.0
+    EvansAndSutherland                           = 74,
+    LittleMachines                               = 75,
+    CounterpointComputers                        = 76,
+    UniversityOfMassachusettsAmherst             = 77,
+    VeecoIntegratedAutomation                    = 78,
+    GeneralDynamics                              = 79,
+    Autophon                                     = 80, // (Switzerland)
+    ComDesign                                    = 81,
+    CompugraphicCorporation                      = 82,
+    LandmarkGraphicsCorporation                  = 83,
+    Matra                                        = 84, // (France)
+    DanskDataElektronicA_S                       = 85, // (Denmark)
+    MeritIntermodal                              = 86,
+    VitaLinkCommunications                       = 87,
+    VitaLinkCommunicationsBridge                 = 88,
+    AppleTalkandKineticsAppletalkOverEthernet    = 90,
+    Datability                                   = 91,
+    SpiderSystems                                = 92, // Ltd. (England)
+    NixdorfComputer                              = 93, // (West Germany)
+    SiemensGammasonicsInc                        = 94,
+    DigitalCommunicationAssociates               = 95,
+    PacerSoftware                                = 96,
+    ApplitekCorporation                          = 97,
+    IntegraphCorporation                         = 98,
+    HarrisCorporation                            = 99,
+    TaylorInst                                   = 100,
+    RosemountCorporation                         = 101,
+    IBMSNAServicesOverEthernet                   = 102,
+    VarianAssociates                             = 103,
+    IntegratedSolutionsTRFS                      = 104, // (Transparent Remote File System)
+    IntegratedSolutions                          = 105,
+    AllenBradley                                 = 106,
+    Retix                                        = 107,
+    KineticsAppleTalkARP                         = 108, // (AARP)
+    Kinetics                                     = 109,
+    ApolloComputer                               = 110,
+    WellfleetCommunications                      = 111,
+    WaterlooMicrosystems                         = 112,
+    VGLaboratorySystems                          = 113,
+    NovellNetWareIPX                             = 114, // (old)
+    Novell                                       = 115,
+    IPv6                                         = 116,
+    KTI                                          = 117,
+    Loopback                                     = 118, // (Conifguration Test Protocol)
+    BridgeCommunicationsXNSSystemsManagement     = 119,
+    BridgeCommunicationsTCP_IPSystemsManagement  = 120,
+    BridgeCommunications                         = 121,
+    BBNVITALLANBridgeCacheWakeup                 = 122,
 };
+
+#define CASE_RETURN(x, y)                                                                                                                  \
+    case x:                                                                                                                                \
+        return y;
 
 static EtherType GetEtherType(uint16 value)
 {
@@ -523,30 +625,18 @@ static EtherType GetEtherType(uint16 value)
 
     switch (value)
     {
-    case 0x0200:
-        return EtherType::XeroxPUP;
-    case 0x0201:
-        return EtherType::PUPAddressTranslation;
-    case 0x0600:
-        return EtherType::XeroxXNSIDP;
-    case 0x0800:
-        return EtherType::IPv4;
-    case 0x0801:
-        return EtherType::X75Internet;
-    case 0x0802:
-        return EtherType::NBSInternet;
-    case 0x0803:
-        return EtherType::ECMAInternet;
-    case 0x0804:
-        return EtherType::CHAOSnet;
-    case 0x0805:
-        return EtherType::X25Level3;
-    case 0x0806:
-        return EtherType::ARP;
-    case 0x0807:
-        return EtherType::XeroxXNSCompatibility;
-    case 0x081C:
-        return EtherType::SymbolicsPrivate;
+        CASE_RETURN(0x0200, EtherType::XeroxPUP);
+        CASE_RETURN(0x0201, EtherType::PUPAddressTranslation);
+        CASE_RETURN(0x0600, EtherType::XeroxXNSIDP);
+        CASE_RETURN(0x0800, EtherType::IPv4);
+        CASE_RETURN(0x0801, EtherType::X75Internet);
+        CASE_RETURN(0x0802, EtherType::NBSInternet);
+        CASE_RETURN(0x0803, EtherType::ECMAInternet);
+        CASE_RETURN(0x0804, EtherType::CHAOSnet);
+        CASE_RETURN(0x0805, EtherType::X25Level3);
+        CASE_RETURN(0x0806, EtherType::ARP);
+        CASE_RETURN(0x0807, EtherType::XeroxXNSCompatibility);
+        CASE_RETURN(0x081C, EtherType::SymbolicsPrivate);
     }
 
     if (value >= 0x0888 && value <= 0x088A)
@@ -556,28 +646,222 @@ static EtherType GetEtherType(uint16 value)
 
     switch (value)
     {
-    case 0x0900:
-        return EtherType::UngermannBassNetworkDebugger;
-    case 0x0A00:
-        return EtherType::Xerox802_3PUP;
-    case 0x0A01:
-        return EtherType::Xerox802_3PUPAddressTranslation;
-    case 0x0A02:
-        return EtherType::XeroxPUPCALProtocol;
-    case 0x0BAD:
-        return EtherType::BanyanSystems;
+        CASE_RETURN(0x0900, EtherType::UngermannBassNetworkDebugger);
+        CASE_RETURN(0x0A00, EtherType::Xerox802_3PUP);
+        CASE_RETURN(0x0A01, EtherType::Xerox802_3PUPAddressTranslation);
+        CASE_RETURN(0x0A02, EtherType::XeroxPUPCALProtocol);
+        CASE_RETURN(0x0BAD, EtherType::BanyanSystems);
+    }
+
+    if (value == 0x1000)
+    {
+        return EtherType::BerkeleyTrailerNegotiation;
+    }
+    if (value >= 1001 && value <= 0x100F)
+    {
+        return EtherType::BerkeleyTrailerEncapsulationForIP;
+    }
+    if (value == 0x1066)
+    {
+        return EtherType::VALISSystems;
+    }
+    if (value == 1600)
+    {
+        return EtherType::VALISSystems;
+    }
+    if (value >= 0x3C01 && value <= 0x3C0D)
+    {
+        return EtherType::_3ComCorporation;
+    }
+    if (value >= 0x3C10 && value <= 0x3C14)
+    {
+        return EtherType::_3ComCorporation;
+    }
+    if (value == 0x4242)
+    {
+        return EtherType::PCSBasicBlockProtocol;
+    }
+    if (value == 0x5208)
+    {
+        return EtherType::BBNSimnetPrivate;
     }
 
     switch (value)
     {
-    case 0x86DD:
-        return EtherType::IPv6;
+        CASE_RETURN(0x6000, EtherType::DECUnassigned);
+        CASE_RETURN(0x6001, EtherType::DECMOPDumpOrLoadAssistance);
+        CASE_RETURN(0x6002, EtherType::DECMOPRemoteConsole);
+        CASE_RETURN(0x6003, EtherType::DECDECnetPhaseIV);
+        CASE_RETURN(0x6004, EtherType::DECLAT);
+        CASE_RETURN(0x6005, EtherType::DECDECnetDiagnosticProtocolDECnetCustomerUse);
+        CASE_RETURN(0x6007, EtherType::DECDECnetLAVC);
+        CASE_RETURN(0x6008, EtherType::DECAmber);
+        CASE_RETURN(0x6009, EtherType::DECMUMPS);
     default:
+        if (value >= 0x6010 && value <= 0x6014)
+        {
+            return EtherType::_3ComCorporation;
+        }
         break;
+    }
+
+    switch (value)
+    {
+        CASE_RETURN(0x7000, EtherType::UngermannBassDownload);
+        CASE_RETURN(0x7001, EtherType::UngermannBassNIU);
+        CASE_RETURN(0x7002, EtherType::UngermannBassDiagnosticOrLoopback);
+        CASE_RETURN(0x7007, EtherType::OS9Microware);
+        CASE_RETURN(0x7030, EtherType::Proteon);
+        CASE_RETURN(0x7034, EtherType::Cabletron);
+    default:
+        if (value >= 0x7020 && value <= 0x7028)
+        {
+            return EtherType::LRT_England;
+        }
+        break;
+    }
+
+    switch (value)
+    {
+        CASE_RETURN(0x8003, EtherType::CronusVLN);
+        CASE_RETURN(0x8004, EtherType::CronusDirect);
+        CASE_RETURN(0x8005, EtherType::HPProbeProtocol);
+        CASE_RETURN(0x8006, EtherType::Nestar);
+        CASE_RETURN(0x8008, EtherType::ATAndT);
+        CASE_RETURN(0x8010, EtherType::Excelan);
+        CASE_RETURN(0x8013, EtherType::SGIDiagnosticType);
+        CASE_RETURN(0x8014, EtherType::SGINetworkGames);
+        CASE_RETURN(0x8015, EtherType::SGIReservedType);
+        CASE_RETURN(0x8016, EtherType::SGIBounceServer);
+        CASE_RETURN(0x8019, EtherType::Apollo);
+        CASE_RETURN(0x802E, EtherType::Tymshare);
+        CASE_RETURN(0x802F, EtherType::TiganInc);
+        CASE_RETURN(0x8035, EtherType::ReverseARP);
+        CASE_RETURN(0x8036, EtherType::AeonicSystems);
+        CASE_RETURN(0x8038, EtherType::DECLANBridge);
+        CASE_RETURN(0x8039, EtherType::DECDSM);
+        CASE_RETURN(0x803A, EtherType::DECAragon);
+        CASE_RETURN(0x803B, EtherType::DECVAXELN);
+        CASE_RETURN(0x803C, EtherType::DECNSMV);
+        CASE_RETURN(0x803D, EtherType::DECEthernetCSMA_CDEncryptionProtocol);
+        CASE_RETURN(0x803E, EtherType::DECDNA);
+        CASE_RETURN(0x803F, EtherType::DECLANTrafficMonitor);
+        CASE_RETURN(0x8040, EtherType::DECNetBIOS);
+        CASE_RETURN(0x8041, EtherType::DECMS_DOS);
+        CASE_RETURN(0x8042, EtherType::DECUnassigned);
+        CASE_RETURN(0x8044, EtherType::PlanningResearchCorporation);
+        CASE_RETURN(0x8046, EtherType::ATAndT);
+        CASE_RETURN(0x8047, EtherType::ATAndT);
+        CASE_RETURN(0x8049, EtherType::ExperData);
+        CASE_RETURN(0x805B, EtherType::VMTP);
+        CASE_RETURN(0x805C, EtherType::StanfordVKernelProduction);
+        CASE_RETURN(0x805D, EtherType::EvansAndSutherland);
+        CASE_RETURN(0x8060, EtherType::LittleMachines);
+        CASE_RETURN(0x8062, EtherType::CounterpointComputers);
+        CASE_RETURN(0x8065, EtherType::UniversityOfMassachusettsAmherst);
+        CASE_RETURN(0x8066, EtherType::UniversityOfMassachusettsAmherst);
+        CASE_RETURN(0x8067, EtherType::VeecoIntegratedAutomation);
+        CASE_RETURN(0x8068, EtherType::GeneralDynamics);
+        CASE_RETURN(0x8069, EtherType::ATAndT);
+        CASE_RETURN(0x806A, EtherType::Autophon);
+        CASE_RETURN(0x806C, EtherType::ComDesign);
+        CASE_RETURN(0x806D, EtherType::CompugraphicCorporation);
+        CASE_RETURN(0x807A, EtherType::Matra);
+        CASE_RETURN(0x807B, EtherType::DanskDataElektronicA_S);
+        CASE_RETURN(0x807C, EtherType::MeritIntermodal);
+        CASE_RETURN(0x807D, EtherType::VitaLinkCommunications);
+        CASE_RETURN(0x807E, EtherType::VitaLinkCommunications);
+        CASE_RETURN(0x807F, EtherType::VitaLinkCommunications);
+        CASE_RETURN(0x8080, EtherType::VitaLinkCommunicationsBridge);
+        CASE_RETURN(0x8081, EtherType::CounterpointComputers);
+        CASE_RETURN(0x8082, EtherType::CounterpointComputers);
+        CASE_RETURN(0x8083, EtherType::CounterpointComputers);
+        CASE_RETURN(0x8088, EtherType::Xyplex);
+        CASE_RETURN(0x8089, EtherType::Xyplex);
+        CASE_RETURN(0x808A, EtherType::Xyplex);
+        CASE_RETURN(0x809B, EtherType::AppleTalkandKineticsAppletalkOverEthernet);
+        CASE_RETURN(0x809C, EtherType::Datability);
+        CASE_RETURN(0x809D, EtherType::Datability);
+        CASE_RETURN(0x809E, EtherType::Datability);
+        CASE_RETURN(0x809F, EtherType::SpiderSystems);
+        CASE_RETURN(0x80A3, EtherType::NixdorfComputer);
+        CASE_RETURN(0x80C0, EtherType::DigitalCommunicationAssociates);
+        CASE_RETURN(0x80C1, EtherType::DigitalCommunicationAssociates);
+        CASE_RETURN(0x80C2, EtherType::DigitalCommunicationAssociates);
+        CASE_RETURN(0x80C3, EtherType::DigitalCommunicationAssociates);
+        CASE_RETURN(0x80C6, EtherType::PacerSoftware);
+        CASE_RETURN(0x80C7, EtherType::ApplitekCorporation);
+        CASE_RETURN(0x80CD, EtherType::HarrisCorporation);
+        CASE_RETURN(0x80CE, EtherType::HarrisCorporation);
+        CASE_RETURN(0x80D3, EtherType::RosemountCorporation);
+        CASE_RETURN(0x80D4, EtherType::RosemountCorporation);
+        CASE_RETURN(0x80D5, EtherType::IBMSNAServicesOverEthernet);
+        CASE_RETURN(0x80DD, EtherType::VarianAssociates);
+        CASE_RETURN(0x80DE, EtherType::IntegratedSolutionsTRFS);
+        CASE_RETURN(0x80DF, EtherType::IntegratedSolutions);
+        CASE_RETURN(0x80F2, EtherType::Retix);
+        CASE_RETURN(0x80F3, EtherType::KineticsAppleTalkARP);
+        CASE_RETURN(0x80F4, EtherType::Kinetics);
+        CASE_RETURN(0x80F5, EtherType::Kinetics);
+        CASE_RETURN(0x80F7, EtherType::ApolloComputer);
+        CASE_RETURN(0x8107, EtherType::SymbolicsPrivate);
+        CASE_RETURN(0x8108, EtherType::SymbolicsPrivate);
+        CASE_RETURN(0x8109, EtherType::SymbolicsPrivate);
+        CASE_RETURN(0x8130, EtherType::WaterlooMicrosystems);
+        CASE_RETURN(0x8131, EtherType::VGLaboratorySystems);
+        CASE_RETURN(0x8137, EtherType::NovellNetWareIPX);
+        CASE_RETURN(0x8138, EtherType::Novell);
+
+        CASE_RETURN(0x86DD, EtherType::IPv6);
+    default:
+        if (value >= 0x806E && value <= 0x8077)
+        {
+            return EtherType::LandmarkGraphicsCorporation;
+        }
+        if (value >= 0x80A4 && value <= 0x80B3)
+        {
+            return EtherType::SiemensGammasonicsInc;
+        }
+        if (value >= 0x80C8 && value <= 0x80CC)
+        {
+            return EtherType::IntegraphCorporation;
+        }
+        if (value >= 0x80CF && value <= 0x80D2)
+        {
+            return EtherType::TaylorInst;
+        }
+        if (value >= 0x80E0 && value <= 0x80E3)
+        {
+            return EtherType::AllenBradley;
+        }
+        if (value >= 0x80E4 && value <= 0x80F0)
+        {
+            return EtherType::Datability;
+        }
+        if (value >= 0x80FF && value <= 0x8103)
+        {
+            return EtherType::WellfleetCommunications;
+        }
+        if (value >= 0x8139 && value <= 0x813D)
+        {
+            return EtherType::KTI;
+        }
+        break;
+    }
+
+    switch (value)
+    {
+        CASE_RETURN(0x9000, EtherType::Loopback);
+        CASE_RETURN(0x9001, EtherType::BridgeCommunicationsXNSSystemsManagement);
+        CASE_RETURN(0x9002, EtherType::BridgeCommunicationsTCP_IPSystemsManagement);
+        CASE_RETURN(0x9003, EtherType::BridgeCommunications);
+        CASE_RETURN(0xFF00, EtherType::BBNVITALLANBridgeCacheWakeup);
     }
 
     return EtherType::Unknown;
 }
+
+#undef CASE_RETURN
 
 static const std::map<EtherType, std::string_view> EtherTypeNames{
     GET_PAIR_FROM_ENUM(EtherType::Unknown),
@@ -601,7 +885,108 @@ static const std::map<EtherType, std::string_view> EtherTypeNames{
     GET_PAIR_FROM_ENUM(EtherType::Xerox802_3PUPAddressTranslation),
     GET_PAIR_FROM_ENUM(EtherType::XeroxPUPCALProtocol),
     GET_PAIR_FROM_ENUM(EtherType::BanyanSystems),
+    GET_PAIR_FROM_ENUM(EtherType::BerkeleyTrailerNegotiation),
+    GET_PAIR_FROM_ENUM(EtherType::BerkeleyTrailerEncapsulationForIP),
+    GET_PAIR_FROM_ENUM(EtherType::VALISSystems),
+    GET_PAIR_FROM_ENUM(EtherType::VALIDSystems),
+    GET_PAIR_FROM_ENUM(EtherType::_3ComCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::PCSBasicBlockProtocol),
+    GET_PAIR_FROM_ENUM(EtherType::BBNSimnetPrivate),
+    GET_PAIR_FROM_ENUM(EtherType::DECUnassigned),
+    GET_PAIR_FROM_ENUM(EtherType::DECMOPDumpOrLoadAssistance),
+    GET_PAIR_FROM_ENUM(EtherType::DECMOPRemoteConsole),
+    GET_PAIR_FROM_ENUM(EtherType::DECDECnetPhaseIV),
+    GET_PAIR_FROM_ENUM(EtherType::DECLAT),
+    GET_PAIR_FROM_ENUM(EtherType::DECDECnetDiagnosticProtocolDECnetCustomerUse),
+    GET_PAIR_FROM_ENUM(EtherType::DECDECnetLAVC),
+    GET_PAIR_FROM_ENUM(EtherType::DECAmber),
+    GET_PAIR_FROM_ENUM(EtherType::DECMUMPS),
+    GET_PAIR_FROM_ENUM(EtherType::UngermannBassDownload),
+    GET_PAIR_FROM_ENUM(EtherType::UngermannBassNIU),
+    GET_PAIR_FROM_ENUM(EtherType::UngermannBassDiagnosticOrLoopback),
+    GET_PAIR_FROM_ENUM(EtherType::OS9Microware),
+    GET_PAIR_FROM_ENUM(EtherType::LRT_England),
+    GET_PAIR_FROM_ENUM(EtherType::Proteon),
+    GET_PAIR_FROM_ENUM(EtherType::Cabletron),
+    GET_PAIR_FROM_ENUM(EtherType::CronusVLN),
+    GET_PAIR_FROM_ENUM(EtherType::CronusDirect),
+    GET_PAIR_FROM_ENUM(EtherType::HPProbeProtocol),
+    GET_PAIR_FROM_ENUM(EtherType::Nestar),
+    GET_PAIR_FROM_ENUM(EtherType::ATAndT),
+    GET_PAIR_FROM_ENUM(EtherType::Excelan),
+    GET_PAIR_FROM_ENUM(EtherType::SGIDiagnosticType),
+    GET_PAIR_FROM_ENUM(EtherType::SGINetworkGames),
+    GET_PAIR_FROM_ENUM(EtherType::SGIReservedType),
+    GET_PAIR_FROM_ENUM(EtherType::SGIBounceServer),
+    GET_PAIR_FROM_ENUM(EtherType::Apollo),
+    GET_PAIR_FROM_ENUM(EtherType::Tymshare),
+    GET_PAIR_FROM_ENUM(EtherType::TiganInc),
+    GET_PAIR_FROM_ENUM(EtherType::ReverseARP),
+    GET_PAIR_FROM_ENUM(EtherType::AeonicSystems),
+    GET_PAIR_FROM_ENUM(EtherType::DECLANBridge),
+    GET_PAIR_FROM_ENUM(EtherType::DECDSM),
+    GET_PAIR_FROM_ENUM(EtherType::DECAragon),
+    GET_PAIR_FROM_ENUM(EtherType::DECVAXELN),
+    GET_PAIR_FROM_ENUM(EtherType::DECNSMV),
+    GET_PAIR_FROM_ENUM(EtherType::DECEthernetCSMA_CDEncryptionProtocol),
+    GET_PAIR_FROM_ENUM(EtherType::DECDNA),
+    GET_PAIR_FROM_ENUM(EtherType::DECLANTrafficMonitor),
+    GET_PAIR_FROM_ENUM(EtherType::DECNetBIOS),
+    GET_PAIR_FROM_ENUM(EtherType::DECMS_DOS),
+    GET_PAIR_FROM_ENUM(EtherType::DECUnassigned),
+    GET_PAIR_FROM_ENUM(EtherType::PlanningResearchCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::ExperData),
+    GET_PAIR_FROM_ENUM(EtherType::VMTP),
+    GET_PAIR_FROM_ENUM(EtherType::StanfordVKernelProduction),
+    GET_PAIR_FROM_ENUM(EtherType::EvansAndSutherland),
+    GET_PAIR_FROM_ENUM(EtherType::LittleMachines),
+    GET_PAIR_FROM_ENUM(EtherType::CounterpointComputers),
+    GET_PAIR_FROM_ENUM(EtherType::UniversityOfMassachusettsAmherst),
+    GET_PAIR_FROM_ENUM(EtherType::VeecoIntegratedAutomation),
+    GET_PAIR_FROM_ENUM(EtherType::GeneralDynamics),
+    GET_PAIR_FROM_ENUM(EtherType::Autophon),
+    GET_PAIR_FROM_ENUM(EtherType::ComDesign),
+    GET_PAIR_FROM_ENUM(EtherType::CompugraphicCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::LandmarkGraphicsCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::Matra),
+    GET_PAIR_FROM_ENUM(EtherType::DanskDataElektronicA_S),
+    GET_PAIR_FROM_ENUM(EtherType::MeritIntermodal),
+    GET_PAIR_FROM_ENUM(EtherType::VitaLinkCommunications),
+    GET_PAIR_FROM_ENUM(EtherType::VitaLinkCommunicationsBridge),
+    GET_PAIR_FROM_ENUM(EtherType::CounterpointComputers),
+    GET_PAIR_FROM_ENUM(EtherType::AppleTalkandKineticsAppletalkOverEthernet),
+    GET_PAIR_FROM_ENUM(EtherType::Datability),
+    GET_PAIR_FROM_ENUM(EtherType::SpiderSystems),
+    GET_PAIR_FROM_ENUM(EtherType::NixdorfComputer),
+    GET_PAIR_FROM_ENUM(EtherType::SiemensGammasonicsInc),
+    GET_PAIR_FROM_ENUM(EtherType::DigitalCommunicationAssociates),
+    GET_PAIR_FROM_ENUM(EtherType::PacerSoftware),
+    GET_PAIR_FROM_ENUM(EtherType::ApplitekCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::IntegraphCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::HarrisCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::TaylorInst),
+    GET_PAIR_FROM_ENUM(EtherType::RosemountCorporation),
+    GET_PAIR_FROM_ENUM(EtherType::IBMSNAServicesOverEthernet),
+    GET_PAIR_FROM_ENUM(EtherType::VarianAssociates),
+    GET_PAIR_FROM_ENUM(EtherType::IntegratedSolutionsTRFS),
+    GET_PAIR_FROM_ENUM(EtherType::IntegratedSolutions),
+    GET_PAIR_FROM_ENUM(EtherType::AllenBradley),
+    GET_PAIR_FROM_ENUM(EtherType::Retix),
+    GET_PAIR_FROM_ENUM(EtherType::KineticsAppleTalkARP),
+    GET_PAIR_FROM_ENUM(EtherType::Kinetics),
+    GET_PAIR_FROM_ENUM(EtherType::ApolloComputer),
+    GET_PAIR_FROM_ENUM(EtherType::WellfleetCommunications),
+    GET_PAIR_FROM_ENUM(EtherType::WaterlooMicrosystems),
+    GET_PAIR_FROM_ENUM(EtherType::VGLaboratorySystems),
+    GET_PAIR_FROM_ENUM(EtherType::NovellNetWareIPX),
+    GET_PAIR_FROM_ENUM(EtherType::Novell),
     GET_PAIR_FROM_ENUM(EtherType::IPv6),
+    GET_PAIR_FROM_ENUM(EtherType::KTI),
+    GET_PAIR_FROM_ENUM(EtherType::Loopback),
+    GET_PAIR_FROM_ENUM(EtherType::BridgeCommunicationsXNSSystemsManagement),
+    GET_PAIR_FROM_ENUM(EtherType::BridgeCommunicationsTCP_IPSystemsManagement),
+    GET_PAIR_FROM_ENUM(EtherType::BridgeCommunications),
+    GET_PAIR_FROM_ENUM(EtherType::BBNVITALLANBridgeCacheWakeup),
 };
 
 union MAC
