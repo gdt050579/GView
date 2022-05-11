@@ -68,7 +68,7 @@ void VolumeFiles::Update_17()
             auto item = list->AddItem({ ls.Format("%s", GetValue(nf, i).data()) });
 
             item.SetText(1, ls.Format("0x%02X%02X%02X", fr.entryIndex[0], fr.entryIndex[1], fr.entryIndex[2]));
-            item.SetText(2, ls.Format("%-20S", GetValue(nf, fr.sequenceNumber).data()));
+            item.SetText(2, ls.Format("%-20s", GetValue(nf, fr.sequenceNumber).data()));
 
             item.SetData<FileReference>(&fr);
         }
@@ -92,7 +92,7 @@ void VolumeFiles::Update_23_26_30()
             auto item = list->AddItem({ ls.Format("%s", GetValue(nf, i).data()) });
 
             item.SetText(1, ls.Format("0x%02X%02X%02X", fr.entryIndex[0], fr.entryIndex[1], fr.entryIndex[2]));
-            item.SetText(2, ls.Format("%-20S", GetValue(nf, fr.sequenceNumber).data()));
+            item.SetText(2, ls.Format("%-20s", GetValue(nf, fr.sequenceNumber).data()));
 
             item.SetData<FileReference>(&fr);
         }
