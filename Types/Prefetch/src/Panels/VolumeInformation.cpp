@@ -27,6 +27,7 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               {
                     { "Path Offset", TextAlignament::Right, 14 },
                     { "Path Length", TextAlignament::Right, 14 },
+                    { "Path", TextAlignament::Right, 40 },
                     { "Creation Time", TextAlignament::Right, 20 },
                     { "Serial Number", TextAlignament::Right, 16 },
                     { "File References Offset", TextAlignament::Right, 30 },
@@ -46,6 +47,7 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               {
                     { "Path Offset", TextAlignament::Right, 14 },
                     { "Path Length", TextAlignament::Right, 14 },
+                    { "Path", TextAlignament::Right, 40 },
                     { "Creation Time", TextAlignament::Right, 20 },
                     { "Serial Number", TextAlignament::Right, 16 },
                     { "File References Offset", TextAlignament::Right, 30 },
@@ -99,16 +101,22 @@ void VolumeInformation::Update_17()
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
 
+        const auto path = std::u16string_view{
+            (char16_t*) (((uint8*) prefetch->bufferSectionD.GetData() + sizeof(VolumeInformationEntry_30) * i) + entry->devicePathOffset),
+            entry->devicePathLength
+        };
+        item.SetText(2, ls.Format("%.*ls", path.size(), path.data()));
+
         AppCUI::OS::DateTime dt;
         dt.CreateFromFileTime(entry->creationTime);
-        item.SetText(2, ls.Format("%-20s", dt.GetStringRepresentation().data()));
+        item.SetText(3, ls.Format("%-20s", dt.GetStringRepresentation().data()));
 
-        item.SetText(3, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
-        item.SetText(4, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
-        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
-        item.SetText(6, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
-        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
-        item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
+        item.SetText(4, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
+        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
+        item.SetText(6, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
+        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
+        item.SetText(8, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
+        item.SetText(9, ls.Format("%s", GetValue(nf, entry->VI9).data()));
 
         item.SetData<VolumeInformationEntry_17>(
               (VolumeInformationEntry_17*) (prefetch->bufferSectionA.GetData() + sizeof(VolumeInformationEntry_17) * i));
@@ -127,20 +135,26 @@ void VolumeInformation::Update_23_26()
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
 
+        const auto path = std::u16string_view{
+            (char16_t*) (((uint8*) prefetch->bufferSectionD.GetData() + sizeof(VolumeInformationEntry_30) * i) + entry->devicePathOffset),
+            entry->devicePathLength
+        };
+        item.SetText(2, ls.Format("%.*ls", path.size(), path.data()));
+
         AppCUI::OS::DateTime dt;
         dt.CreateFromFileTime(entry->creationTime);
-        item.SetText(2, ls.Format("%-20s", dt.GetStringRepresentation().data()));
+        item.SetText(3, ls.Format("%-20s", dt.GetStringRepresentation().data()));
 
-        item.SetText(3, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
-        item.SetText(4, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
-        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
-        item.SetText(6, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
-        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
-        item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
-        item.SetText(9, "Unknown array (28 bytes)");
-        item.SetText(10, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
-        item.SetText(11, "Unknown array (28 bytes)");
-        item.SetText(12, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
+        item.SetText(4, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
+        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
+        item.SetText(6, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
+        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
+        item.SetText(8, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
+        item.SetText(9, ls.Format("%s", GetValue(nf, entry->VI9).data()));
+        item.SetText(10, "Unknown array (28 bytes)");
+        item.SetText(11, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
+        item.SetText(12, "Unknown array (28 bytes)");
+        item.SetText(13, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
 
         item.SetData<VolumeInformationEntry_23_26>(
               (VolumeInformationEntry_23_26*) (prefetch->bufferSectionA.GetData() + sizeof(VolumeInformationEntry_23_26) * i));
@@ -159,20 +173,26 @@ void VolumeInformation::Update_30()
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
 
+        const auto path = std::u16string_view{
+            (char16_t*) (((uint8*) prefetch->bufferSectionD.GetData() + sizeof(VolumeInformationEntry_30) * i) + entry->devicePathOffset),
+            entry->devicePathLength
+        };
+        item.SetText(2, ls.Format("%.*ls", path.size(), path.data()));
+
         AppCUI::OS::DateTime dt;
         dt.CreateFromFileTime(entry->creationTime);
-        item.SetText(2, ls.Format("%-20s", dt.GetStringRepresentation().data()));
+        item.SetText(3, ls.Format("%-20s", dt.GetStringRepresentation().data()));
 
-        item.SetText(3, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
-        item.SetText(4, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
-        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
-        item.SetText(6, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
-        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
-        item.SetText(8, ls.Format("%s", GetValue(nf, entry->VI9).data()));
-        item.SetText(9, "Unknown array (24 bytes)");
-        item.SetText(10, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
-        item.SetText(11, "Unknown array (24 bytes)");
-        item.SetText(12, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
+        item.SetText(4, ls.Format("%s", GetValue(nf, entry->serialNumber).data()));
+        item.SetText(5, ls.Format("%s", GetValue(nf, entry->fileReferencesOffset).data()));
+        item.SetText(6, ls.Format("%s", GetValue(nf, entry->fileReferencesSize).data()));
+        item.SetText(7, ls.Format("%s", GetValue(nf, entry->directoryStringsOffset).data()));
+        item.SetText(8, ls.Format("%s", GetValue(nf, entry->directoryStringsEntries).data()));
+        item.SetText(9, ls.Format("%s", GetValue(nf, entry->VI9).data()));
+        item.SetText(10, "Unknown array (24 bytes)");
+        item.SetText(11, ls.Format("%s", GetValue(nf, entry->unknown0).data()));
+        item.SetText(12, "Unknown array (24 bytes)");
+        item.SetText(13, ls.Format("%s", GetValue(nf, entry->unknown2).data()));
 
         item.SetData<VolumeInformationEntry_30>(
               (VolumeInformationEntry_30*) (prefetch->bufferSectionA.GetData() + sizeof(VolumeInformationEntry_30) * i));
