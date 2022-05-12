@@ -99,7 +99,7 @@ void VolumeDirectories::AddItem(uint32 index, uint32 directoryStringsEntries)
 
         item.SetData<DirectoryStringEntry>(dse);
 
-        offset += sizeof(DirectoryStringEntry::size) + (dse->size + 1ULL) * sizeof(char16_t);
+        offset += sizeof(DirectoryStringEntry::size) + (dse->size + 1ULL) * sizeof(char16);
         entries++;
     }
 }
