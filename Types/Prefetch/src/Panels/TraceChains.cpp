@@ -26,21 +26,23 @@ TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::Vie
         list = Factory::ListView::Create(
               this,
               "d:c",
-              { { "Next Entry Index", TextAlignament::Right, 14 },
-                { "Blocks Fetched", TextAlignament::Right, 10 },
-                { "Unknown", TextAlignament::Right, 18 },
-                { "Duration", TextAlignament::Right, 10 },
-                { "Unknown2", TextAlignament::Right, 18 } },
+              { "n:Next Entry Index,a:r,w:14",
+                "n:Blocks Fetched,a:r,w:10",
+                "n:Unknown,a:r,w:18",
+                "n:Duration,a:r,w:10",
+                "n:Unknown2,a:r,w:18" },
               ListViewFlags::None);
         break;
     case Magic::WIN_10:
         list = Factory::ListView::Create(
               this,
               "d:c",
-              { { "Next Entry Index", TextAlignament::Right, 14 },
-                { "Unknown0", TextAlignament::Right, 18 },
-                { "Unknown1", TextAlignament::Right, 18 },
-                { "Unknown2", TextAlignament::Right, 18 } },
+              {
+                    "n:Next Entry Index,a:r,w:14",
+                    "n:Unknown0,a:r,w:18",
+                    "n:Unknown1,a:r,w:18",
+                    "n:Unknown2,a:r,w:18",
+              },
               ListViewFlags::None);
         break;
     default:
@@ -93,8 +95,7 @@ void TraceChains::Update_30()
         item.SetText(2, tmp.Format("%s", GetValue(n, entry->unknown1).data()));
         item.SetText(3, tmp.Format("%s", GetValue(n, entry->unknown2).data()));
 
-        item.SetData<TraceChainEntry_30>(
-              (TraceChainEntry_30*) (prefetch->bufferSectionB.GetData() + sizeof(TraceChainEntry_30) * i));
+        item.SetData<TraceChainEntry_30>((TraceChainEntry_30*) (prefetch->bufferSectionB.GetData() + sizeof(TraceChainEntry_30) * i));
     }
 }
 

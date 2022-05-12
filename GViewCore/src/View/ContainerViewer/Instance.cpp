@@ -39,11 +39,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     imgView = Factory::ImageView::Create(this, "x:0,y:0,w:16,h:8", ViewerFlags::HideScrollBar);
     if ((this->settings->icon.GetWidth() == 16) && (this->settings->icon.GetHeight() == 16))
         imgView->SetImage(this->settings->icon, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
-    this->propList = Factory::ListView::Create(
-          this,
-          "l:17,t:0,r:0,h:8",
-          { { "Field", TextAlignament::Left, 20 }, { "Value", TextAlignament::Left, 200 } },
-          ListViewFlags::HideColumns);
+    this->propList = Factory::ListView::Create(this, "l:17,t:0,r:0,h:8", { "n:Field,w:20", "n:Value,w:200" }, ListViewFlags::HideColumns);
 
     this->items = Factory::TreeView::Create(
           this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);

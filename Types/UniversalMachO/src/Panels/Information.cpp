@@ -7,9 +7,7 @@ using namespace AppCUI::Controls;
 Information::Information(Reference<UniversalMachOFile> _machO) : TabPage("Informa&Tion")
 {
     machO   = _machO;
-    general = Factory::ListView::Create(
-          this,
-          "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 12 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
 
     Update();
 }
@@ -23,7 +21,8 @@ void Information::UpdateGeneralInformation()
     general->AddItem("Fat Binary Info").SetType(ListViewItem::Type::Category);
     general->AddItem({ "File", "NOT IMPLEMENTED" });
     general->AddItem(
-          { "Size", tempStr.Format("%s bytes", n.ToString(machO->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+          { "Size",
+            tempStr.Format("%s bytes", n.ToString(machO->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     general->AddItem({ "Arch", machO->is64 ? "x64" : "x86" });
     general->AddItem(
           { "Objects",

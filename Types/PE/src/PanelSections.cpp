@@ -18,16 +18,16 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Name", TextAlignament::Left, 8 },
-            { "FilePoz", TextAlignament::Right, 12 },
-            { "FileSize", TextAlignament::Right, 12 },
-            { "RVA", TextAlignament::Right, 12 },
-            { "MemSize", TextAlignament::Right, 12 },
-            { "PtrReloc", TextAlignament::Left, 10 },
-            { "NrReloc", TextAlignament::Right, 10 },
-            { "PtrLnNum", TextAlignament::Left, 10 },
-            { "NrLnNum", TextAlignament::Right, 10 },
-            { "Characteristics", TextAlignament::Left, 32 } },
+          { "n:Name,w:8",
+            "n:FilePoz,a:r,w:12",
+            "n:FileSize,a:r,w:12",
+            "n:RVA,a:r,w:12",
+            "n:MemSize,a:r,w:12",
+            "n:PtrReloc,w:10",
+            "n:NrReloc,a:r,w:10",
+            "n:PtrLnNum,w:10",
+            "n:NrLnNum,a:r,w:10",
+            "n:Characteristics,w:32" },
           ListViewFlags::None);
 
     Update();

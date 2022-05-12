@@ -17,14 +17,14 @@ Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<G
           this,
           "d:c",
           {
-                { "&Type", TextAlignament::Left, 16 },
-                { "&Name", TextAlignament::Left, 16 },
-                { "&ID", TextAlignament::Left, 4 },
-                { "&Extra infos", TextAlignament::Left, 20 },
-                { "File &Ofs", TextAlignament::Right, 10 },
-                { "&Size", TextAlignament::Right, 10 },
-                { "&CodePage", TextAlignament::Left, 10 },
-                { "&Language", TextAlignament::Left, 18 },
+                "n:&Type,w:16",
+                "n:&Name,w:16",
+                "n:&ID,w:4",
+                "n:&Extra infos,w:20",
+                "n:File &Ofs,a:r,w:10",
+                "n:&Size,a:r,w:10",
+                "n:&CodePage,w:10",
+                "n:&Language,w:18",
           },
           ListViewFlags::None);
 

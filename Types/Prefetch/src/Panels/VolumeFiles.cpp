@@ -22,9 +22,9 @@ VolumeFiles::VolumeFiles(Reference<PrefetchFile> _prefetch, Reference<GView::Vie
           this,
           "d:c",
           {
-                { "Volume #", TextAlignament::Right, 14 },
-                { "MFT entry index", TextAlignament::Right, 20 },
-                { "Sequence number", TextAlignament::Right, 20 },
+                "n:Volume #,a:r,w:14",
+                "n:MFT entry index,a:r,w:20",
+                "n:Sequence number,a:r,w:20",
           },
           ListViewFlags::None);
 
