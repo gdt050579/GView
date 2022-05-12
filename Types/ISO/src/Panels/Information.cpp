@@ -9,7 +9,7 @@ Panels::Information::Information(Reference<Object> _object, Reference<GView::Typ
     object  = _object;
     general = CreateChildControl<ListView>(
           "x:0,y:0,w:100%,h:10",
-          std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } },
+          std::initializer_list<ConstString>{ "n:Field,w:24","n:Value,w:100" },
           ListViewFlags::None);
 
     Update();
