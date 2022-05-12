@@ -6,12 +6,9 @@ using namespace AppCUI::Controls;
 Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
 {
     pe      = _pe;
-    general = Factory::ListView::Create(
-          this,
-          "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 12 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
 
-    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { { "Info", TextAlignament::Left, 200 } }, ListViewFlags::HideColumns);
-
+    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     this->Update();
 }
