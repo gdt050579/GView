@@ -9,16 +9,11 @@ Panels::Imports::Imports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = Factory::ListView::Create(
-          this,
-          "x:0,y:0,w:100%,h:10", { { "Name", TextAlignament::Left, 25 }, { "RVA", TextAlignament::Left, 12 } }, ListViewFlags::None);
+    list = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Name,w:25", "n:RVA,w:12" }, ListViewFlags::None);
 
-    dlls = Factory::ListView::Create(this, "x:0,y:10,w:100%,h:10", { { "", TextAlignament::Left, 50 } }, ListViewFlags::HideColumns);
+    dlls = Factory::ListView::Create(this, "x:0,y:10,w:100%,h:10", { "w:50" }, ListViewFlags::HideColumns);
 
-    info = Factory::ListView::Create(
-          this,
-          "x:0,y:20,w:100%,h:4", { { "", TextAlignament::Left, 12 }, { "", TextAlignament::Left, 25 } }, ListViewFlags::HideColumns);
-
+    info = Factory::ListView::Create(this, "x:0,y:20,w:100%,h:4", { "w:12", "w:25" }, ListViewFlags::HideColumns);
 
     Update();
 }

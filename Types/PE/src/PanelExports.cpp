@@ -11,11 +11,7 @@ Panels::Exports::Exports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = Factory::ListView::Create(
-          this,
-          "d:c",
-          { { "Name", TextAlignament::Left, 60 }, { "Ord", TextAlignament::Left, 5 }, { "RVA", TextAlignament::Left, 12 } },
-          ListViewFlags::None);
+    list = Factory::ListView::Create(this, "d:c", { "n:Name,w:60", "n:Ord,w:5", "n:RVA,w:12" }, ListViewFlags::None);
 
     Update();
 }

@@ -27,8 +27,7 @@ class DefaultInformationPanel : public TabPage
   public:
     DefaultInformationPanel(Reference<Object> obj) : TabPage("&Information")
     {
-        Factory::ListView::Create(
-              this, "d:c", { { "Field", TextAlignament::Left, 10 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+        Factory::ListView::Create(this, "d:c", { "n:Field,a:l,w:10", "n:Value,a:l,w:100" }, ListViewFlags::None);
     }
 };
 class FolderType : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface

@@ -15,14 +15,7 @@ Panels::Directories::Directories(Reference<GView::Type::PE::PEFile> _pe, Referen
     pe  = _pe;
     win = _win;
 
-    list = Factory::ListView::Create(
-          this,
-          "d:c",
-          { { "Name", TextAlignament::Left, 10 },
-            { "Sect", TextAlignament::Left, 12 },
-            { "Address", TextAlignament::Left, 20 },
-            { "Size", TextAlignament::Left, 20 } },
-          ListViewFlags::None);
+    list = Factory::ListView::Create(this, "d:c", { "n:Name,w:10", "n:Sect,w:12", "n:Address,w:20", "n:Size,w:20" }, ListViewFlags::None);
 
     // directories
     for (auto dirID = 0U; dirID < 15; dirID++)

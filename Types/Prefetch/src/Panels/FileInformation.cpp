@@ -25,12 +25,12 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
         list = Factory::ListView::Create(
               this,
               "d:c",
-              { { "Start Time", TextAlignament::Right, 12 },
-                { "Duration", TextAlignament::Right, 10 },
-                { "Filename Offset", TextAlignament::Right, 18 },
-                { "Filename Size", TextAlignament::Right, 16 },
-                { "Unknown", TextAlignament::Right, 10 },
-                { "Path", TextAlignament::Right, 140 } },
+              { "n:Start Time,a:r,w:12",
+                "n:Duration,a:r,w:10",
+                "n:Filename Offset,a:r,w:18",
+                "n:Filename Size,a:r,w:16",
+                "n:Unknown,a:r,w:10",
+                "n:Path,a:r,w:140" },
               ListViewFlags::None);
 
         break;
@@ -40,14 +40,14 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
         list = Factory::ListView::Create(
               this,
               "d:c",
-              { { "Start Time", TextAlignament::Right, 12 },
-                { "Duration", TextAlignament::Right, 10 },
-                { "Average Duration", TextAlignament::Right, 20 },
-                { "Filename Offset", TextAlignament::Right, 18 },
-                { "Filename Size", TextAlignament::Right, 16 },
-                { "Unknown", TextAlignament::Right, 10 },
-                { "NTFS File Reference", TextAlignament::Right, 24 },
-                { "Path", TextAlignament::Right, 100 } },
+              { "n:Start Time,a:r,w:12",
+                "n:Duration,a:r,w:10",
+                "n:Average Duration,a:r,w:20",
+                "n:Filename Offset,a:r,w:18",
+                "n:Filename Size,a:r,w:16",
+                "n:Unknown,a:r,w:10",
+                "n:NTFS File Reference,a:r,w:24",
+                "n:Path,a:r,w:100" },
               ListViewFlags::None);
         break;
     default:

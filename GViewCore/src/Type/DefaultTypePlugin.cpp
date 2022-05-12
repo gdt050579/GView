@@ -20,8 +20,7 @@ class DefaultInformationPanel : public TabPage
   public:
     DefaultInformationPanel(Reference<Object> obj) : TabPage("&Information")
     {
-        auto lv = Factory::ListView::Create(
-              this, "d:c", { { "Field", TextAlignament::Left, 10 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+        auto lv = Factory::ListView::Create(this, "d:c", { "n:Field,a:l,w:10", "n:Value,a:l,w:100" }, ListViewFlags::None);
     }
 };
 

@@ -11,10 +11,7 @@ Panels::Headers::Headers(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = Factory::ListView::Create(
-          this,
-          "d:c", { { "Field", TextAlignament::Left, 16 }, { "Value", TextAlignament::Left, 60 } }, ListViewFlags::None);
-
+    list = Factory::ListView::Create(this, "d:c", { "n:Field,w:16", "n:Value,w:60" }, ListViewFlags::None);
 
     Update();
 }
@@ -29,7 +26,7 @@ void Panels::Headers::AddNumber(std::string_view name, uint32_t value)
 }
 void Panels::Headers::AddItem(std::string_view name, std::string_view value)
 {
-    list->AddItem({name, value});
+    list->AddItem({ name, value });
 }
 void Panels::Headers::AddMagic(uint8* offset, uint32 size)
 {
@@ -63,7 +60,6 @@ void Panels::Headers::Update()
     AddNumber("SizeOfOptionalHeader", pe->nth32.FileHeader.SizeOfOptionalHeader);
     AddItem("Machine", pe->GetMachine());
     AddNumber("Characteristics", pe->nth32.FileHeader.Characteristics);
-    
 
     AddHeader("DOS Header");
     AddMagic((uint8*) &pe->dos.e_magic, 2);
