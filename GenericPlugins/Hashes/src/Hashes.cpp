@@ -46,8 +46,7 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
 {
     this->object = object;
 
-    hashesList = Factory::ListView::Create(
-          this, "l:0,t:0,r:0,b:3", { { "Type", TextAlignament::Left, 17 }, { "Value", TextAlignament::Left, 130 } });
+    hashesList = Factory::ListView::Create(this, "l:0,t:0,r:0,b:3", { "n:Type,w:17", "n:Value,w:130" });
 
     hashesList->SetVisible(false);
 
@@ -61,8 +60,8 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
     computeForSelection->SetEnabled(false); /* TODO: when selection object will be passed */
 
     options = Factory::ListView::Create(
-          this, "l:1,t:3,r:1,b:3", {}, Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
-    options->AddColumn("", TextAlignament::Left, 30);
+          this, "l:1,t:3,r:1,b:3", { "w:30" }, Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
+
     Adler32        = options->AddItem(Adler32::GetName());
     CRC16          = options->AddItem(CRC16::GetName());
     CRC32_JAMCRC_0 = options->AddItem(CRC32::GetName(CRC32Type::JAMCRC_0));
