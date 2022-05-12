@@ -21,17 +21,17 @@ Segments::Segments(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Name", TextAlignament::Left, 14 },
-            { "Type", TextAlignament::Left, 18 },
-            { "Command Size", TextAlignament::Right, 14 },
-            { "Memory Address", TextAlignament::Right, 18 },
-            { "Memory Size", TextAlignament::Right, 14 },
-            { "File Offset", TextAlignament::Right, 14 },
-            { "File Size", TextAlignament::Right, 14 },
-            { "Max VM Prot", TextAlignament::Right, 26 },
-            { "Ini VM Prot", TextAlignament::Right, 26 },
-            { "Sections count", TextAlignament::Right, 18 },
-            { "Flags", TextAlignament::Right, 10 } },
+          { "n:Name,w:14",
+            "n:Type,w:18",
+            "n:Command Size,a:r,w:14",
+            "n:Memory Address,a:r,w:18",
+            "n:Memory Size,a:r,w:14",
+            "n:File Offset,a:r,w:14",
+            "n:File Size,a:r,w:14",
+            "n:Max VM Prot,a:r,w:26",
+            "n:Ini VM Prot,a:r,w:26",
+            "n:Sections count,a:r,w:18",
+            "n:Flags,a:r,w:10" },
           ListViewFlags::None);
     Update();
 }

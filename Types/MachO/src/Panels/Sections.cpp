@@ -21,22 +21,22 @@ Sections::Sections(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Section name", TextAlignament::Left, 16 },
-            { "Segment name", TextAlignament::Left, 16 },
-            { "Memory Address", TextAlignament::Right, 18 },
-            { "Size", TextAlignament::Right, 14 },
-            { "File Offset", TextAlignament::Right, 14 },
-            { "Align", TextAlignament::Right, 10 },
-            { "Real Align", TextAlignament::Right, 12 },
-            { "Reloc Offset", TextAlignament::Right, 14 },
-            { "Reloc Entries Count", TextAlignament::Right, 22 },
-            { "Flags", TextAlignament::Right, 30 },
-            { "Reserved1", TextAlignament::Right, 12 },
-            { "Reserved2", TextAlignament::Right, 12 } },
+          { "n:Section name,w:16",
+            "n:Segment name,w:16",
+            "n:Memory Address,a:r,w:18",
+            "n:Size,a:r,w:14",
+            "n:File Offset,a:r,w:14",
+            "n:Align,a:r,w:10",
+            "n:Real Align,a:r,w:12",
+            "n:Reloc Offset,a:r,w:14",
+            "n:Reloc Entries Count,a:r,w:22",
+            "n:Flags,a:r,w:30",
+            "n:Reserved1,a:r,w:12",
+            "n:Reserved2,a:r,w:12" },
           ListViewFlags::None);
     if (machO->is64)
     {
-        list->AddColumn("Reserved3", TextAlignament::Right, 12);
+        list->AddColumn("Reserved3,a:r,w:12");
     }
 
     Update();

@@ -27,13 +27,13 @@ Objects::Objects(Reference<UniversalMachOFile> _machO, Reference<GView::View::Wi
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "CPU type", TextAlignament::Right, 25 },
-            { "CPU subtype", TextAlignament::Right, 25 },
-            { "File type", TextAlignament::Left, 80 },
-            { "Offset", TextAlignament::Right, 12 },
-            { "Size", TextAlignament::Right, 12 },
-            { "Align", TextAlignament::Right, 12 },
-            { "Real Align", TextAlignament::Right, 12 } },
+          { "n:CPU type,a:r,w:25",
+            "n:CPU subtype,a:r,w:25",
+            "n:File type,e:80",
+            "n:Offset,a:r,w:12",
+            "n:Size,a:r,w:12",
+            "n:Align,a:r,w:12",
+            "n:Real Align,a:r,w:12" },
           ListViewFlags::None);
 
     Update();

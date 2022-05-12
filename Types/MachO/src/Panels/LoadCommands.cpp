@@ -22,11 +22,11 @@ LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::W
           this,
           "d:c",
           {
-                { "Index", TextAlignament::Right, 8 },
-                { "Type", TextAlignament::Left, 30 },
-                { "File Offset", TextAlignament::Right, 14 },
-                { "Size", TextAlignament::Right, 14 },
-                { "Description", TextAlignament::Left, 50 },
+                "n:Index,a:r,w:8",
+                "n:Type,w:30",
+                "n:File Offset,a:r,w:14",
+                "n:Size,a:r,w:14",
+                "n:Description,w:50",
           },
           ListViewFlags::None);
 
@@ -69,10 +69,10 @@ void Panels::LoadCommands::Update()
 
         const auto& lcName     = MAC::LoadCommandNames.at(lc.value.cmd);
         const auto& lcHexValue = GetValue(nf, static_cast<uint32_t>(lc.value.cmd));
-        item.SetText( 1, ls.Format("%s (%s)", lcName.data(), lcHexValue.data()));
-        item.SetText( 2, GetValue(nf, lc.offset));
-        item.SetText( 3, GetValue(nf, lc.value.cmdsize));
-        item.SetText( 4, MAC::LoadCommandDescriptions.at(lc.value.cmd));
+        item.SetText(1, ls.Format("%s (%s)", lcName.data(), lcHexValue.data()));
+        item.SetText(2, GetValue(nf, lc.offset));
+        item.SetText(3, GetValue(nf, lc.value.cmdsize));
+        item.SetText(4, MAC::LoadCommandDescriptions.at(lc.value.cmd));
 
         i++;
     }

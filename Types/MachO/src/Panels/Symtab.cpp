@@ -21,12 +21,12 @@ SymTab::SymTab(Reference<MachOFile> _machO, Reference<GView::View::WindowInterfa
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Index", TextAlignament::Left, 8 },
-            { "Name", TextAlignament::Left, 60 },
-            { "Type", TextAlignament::Right, 20 },
-            { "Section", TextAlignament::Right, 30 },
-            { "[Align|Ordinal|Reference] Desc", TextAlignament::Right, 60 },
-            { "Value", TextAlignament::Right, 15 } },
+          { "n:Index,w:8",
+            "n:Name,w:60",
+            "n:Type,a:r,w:20",
+            "n:Section,a:r,w:30",
+            "n:[Align|Ordinal|Reference] Desc,a:r,w:60",
+            "n:Value,a:r,w:15" },
           ListViewFlags::None);
     Update();
 }
@@ -52,7 +52,7 @@ void SymTab::SelectCurrentSection()
 {
     const auto offset =
           machO->dySymTab->sc.symoff + (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist)) * list->GetCurrentItem().GetData(0);
-    const auto size   = (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
+    const auto size = (machO->is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
     win->GetCurrentView()->Select(offset, size);
 }
 
@@ -115,7 +115,7 @@ void SymTab::Update()
         {
             auto current        = 0U;
             const auto required = nl.n_sect - 1ULL;
-            auto found = true;
+            auto found          = true;
             for (const auto& segment : machO->segments)
             {
                 for (const auto& section : segment.sections)

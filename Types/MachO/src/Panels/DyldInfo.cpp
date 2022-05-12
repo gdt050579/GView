@@ -7,9 +7,7 @@ using namespace AppCUI::Controls;
 DyldInfo::DyldInfo(Reference<MachOFile> _machO) : TabPage("&DyldInfo")
 {
     machO   = _machO;
-    general = Factory::ListView::Create(
-          this,
-          "x:0,y:0,w:100%,h:10", { { "Field", TextAlignament::Left, 12 }, { "Value", TextAlignament::Left, 100 } });
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" });
 
     Update();
 }

@@ -6,8 +6,7 @@ using namespace AppCUI::Controls;
 
 Information::Information(Reference<Object> _object, Reference<MachOFile> _machO) : TabPage("Informa&Tion"), object(_object), machO(_machO)
 {
-    general = Factory::ListView::Create(
-          this, "x:0,y:0,w:100%,h:10", { { "Key", TextAlignament::Left, 16 }, { "Value", TextAlignament::Left, 48 } }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Key,w:16", "n:Value,w:48" }, ListViewFlags::None);
 
     Update();
 }

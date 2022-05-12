@@ -21,17 +21,17 @@ Objects::Objects(Reference<ISOFile> _iso, Reference<GView::View::WindowInterface
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "LEN-DR", TextAlignament::Right, 10 },
-            { "Attr Len", TextAlignament::Right, 10 },
-            { "Extent Location", TextAlignament::Right, 17 },
-            { "Data Length", TextAlignament::Right, 13 },
-            { "Date", TextAlignament::Right, 25 },
-            { "File Flags", TextAlignament::Right, 28 },
-            { "File Unit Size", TextAlignament::Right, 11 },
-            { "Interleave Gap Size", TextAlignament::Right, 21 },
-            { "Volume Sequence Number", TextAlignament::Right, 24 },
-            { "LEN-FI", TextAlignament::Right, 10 },
-            { "File Identifier", TextAlignament::Left, 100 } },
+          { "n:LEN-DR,a:r,w:10",
+            "n:Attr Len,a:r,w:10",
+            "n:Extent Location,a:r,w:17",
+            "n:Data Length,a:r,w:13",
+            "n:Date,a:r,w:25",
+            "n:File Flags,a:r,w:28",
+            "n:File Unit Size,a:r,w:11",
+            "n:Interleave Gap Size,a:r,w:21",
+            "n:Volume Sequence Number,a:r,w:24",
+            "n:LEN-FI,a:r,w:10",
+            "n:File Identifier,a:r,w:100" },
           ListViewFlags::None);
 
     Update();

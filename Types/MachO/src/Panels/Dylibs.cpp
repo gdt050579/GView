@@ -21,13 +21,13 @@ Dylib::Dylib(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "Command", TextAlignament::Left, 16 },
-            { "Size", TextAlignament::Right, 8 },
-            { "Name", TextAlignament::Left, 100 },
-            { "Name Offset", TextAlignament::Right, 13 },
-            { "Timestamp", TextAlignament::Left, 24 },
-            { "Current Version", TextAlignament::Right, 25 },
-            { "Compatibility Version", TextAlignament::Right, 25 } },
+          { "n:Command,w:16",
+            "n:Size,a:r,w:8",
+            "n:Name,w:100",
+            "n:Name Offset,a:r,w:13",
+            "n:Timestamp,w:24",
+            "n:Current Version,a:r,w:25",
+            "n:Compatibility Version,a:r,w:25" },
           ListViewFlags::None);
 
     if (machO->is64)
