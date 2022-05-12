@@ -647,9 +647,7 @@ Panels::Packets::PacketDialog::PacketDialog(
     : Window(name, layout, WindowFlags::ProcessReturn | WindowFlags::FixedPosition), object(_object), base(_base)
 {
     list = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:48",
-          std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 40 } },
-          ListViewFlags::None);
+          "x:0,y:0,w:100%,h:48", std::initializer_list<ConstString>{ "n:Field,w:24", "n:Value,w:40" }, ListViewFlags::None);
 
     Add_PacketHeader(type, packet);
 }
