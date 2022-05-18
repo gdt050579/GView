@@ -87,6 +87,7 @@ add_subdirectory(Types/MAM)
 add_subdirectory(Types/LNK)
 add_subdirectory(Types/JOB)
 add_subdirectory(Types/PCAP)
+add_subdirectory(Types/SQLite)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
