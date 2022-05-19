@@ -205,13 +205,13 @@ class DB
         auto t = sqlite3_close(handle);
 
         auto uri = sqlite3_mprintf("file:mem?ptr=0x%p&sz=%lld", buffer.GetData(), (long long) buffer.GetLength());
-        auto w = sqlite3_open_v2(uri, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, "memvfs");
+        auto w   = sqlite3_open_v2(uri, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, "memvfs");
         sqlite3_free(uri);
     }
 
     DB& operator=(DB&& other) noexcept
     {
-        handle = other.handle;
+        handle       = other.handle;
         other.handle = nullptr;
     }
 
