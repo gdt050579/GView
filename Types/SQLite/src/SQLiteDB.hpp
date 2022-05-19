@@ -58,12 +58,9 @@ class Statement
 
         auto status = sqlite3_step(handle);
 
-        switch (status)
+        if (status == SQLITE_DONE)
         {
-        case SQLITE_DONE:
             return {};
-        case SQLITE_ROW:
-            break;
         }
 
         auto columnCount = sqlite3_column_count(handle);
