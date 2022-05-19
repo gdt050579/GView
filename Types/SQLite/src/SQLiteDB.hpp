@@ -49,6 +49,7 @@ class Statement
     {
         if (shouldReset)
         {
+            // TODO: Move this logic at the bottom and get rid of this ugly edge case
             sqlite3_reset(handle);
         }
         else
@@ -98,9 +99,9 @@ class Statement
         {
             for (int i = 0; i < columnCount; ++i)
             {
-                // If the column is null now, it may not be null in future rows
+                // If the column is null now, it may not be null in future rows.
                 // Therefore, get the actual type. If the actual type is also null,
-                // the column is null for each row.
+                // the column is null for every row.
                 if (result[i].type == Column::Type::Null)
                 {
                     auto type = sqlite3_column_type(handle, i);
@@ -141,6 +142,8 @@ class Statement
                     auto ptr  = sqlite3_column_text(handle, i);
                     auto size = sqlite3_column_bytes(handle, i);
 
+                    // TODO: This strdup is ugly, replace it with something else?
+                    // (also, this could cause a memory leak, so check if it's actually freed)
                     result[i].values.push_back((const char*) strdup((const char*) ptr));
                     break;
                 }
