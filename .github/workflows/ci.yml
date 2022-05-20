@@ -31,9 +31,9 @@ jobs:
       with:
         repository: microsoft/vcpkg
     - name: Integrate install
-      run: vcpkg/vcpkg.exe integrate install
+      run: microsoft/vcpkg/vcpkg.exe integrate install
     - name: Install OpenSSL
-      run: vcpkg/vcpkg.exe install openssl:x64-windows
+      run: microsoft/vcpkg/vcpkg.exe install openssl:x64-windows
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build
