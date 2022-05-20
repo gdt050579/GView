@@ -29,7 +29,7 @@ jobs:
     - name: Checkout vcpkg
       uses: actions/checkout@v3
       with:
-        repository: https://github.com/microsoft/vcpkg
+        repository: microsoft/vcpkg
     - name: Integrate install
       run: vcpkg/vcpkg.exe integrate install
     - name: Install OpenSSL
