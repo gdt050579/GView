@@ -66,8 +66,6 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# target_link_libraries(GViewCore PUBLIC ${CXX_FILESYSTEM_LIBRARIES})
-
 add_subdirectory(3rdPartyLibs/LLVMDemangle)
 
 add_subdirectory(AppCUI)
