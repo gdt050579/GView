@@ -12,7 +12,6 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 find_package(OpenSSL REQUIRED)
-target_link_libraries(GView PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
@@ -92,3 +91,5 @@ add_subdirectory(Types/PCAP)
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
+
+target_link_libraries(GView PRIVATE OpenSSL::SSL OpenSSL::Crypto)
