@@ -1,5 +1,5 @@
 import os
 
 cwd = os.getcwd()
-print('CWD: {cwd}')
+print('CWD: ' + cwd)
 os.system('"call vcpkg.bat"')
