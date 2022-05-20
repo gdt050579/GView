@@ -22,17 +22,12 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: recursive
-        repository: microsoft/vcpkg
     - name: Install requests
       run: pip install requests
     - name: Install SDL2
       run: python .github/workflows/win_sdl2.py
-    - name: Bootstrap vcpkg
-      run: bootstrap-vcpkg.bat
-    - name: Integrate install vcpkg
-      run: vcpkg.exe integrate install
-    - name: Install OpenSSL
-      run: vcpkg.exe install openssl:x64-windows
+    - name: Vcpkg (OpenSSL)
+      run: vcpkg.bat
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build
