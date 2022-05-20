@@ -109,17 +109,17 @@ bool CMSToHumanReadable(const Buffer& buffer, String& output)
     CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
 
     ERR_clear_error();
-    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, nullptr));
+    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, nullptr) };
     GetError(error, output);
     CHECK(cms.data != nullptr, false, output.GetText());
 
     ERR_clear_error();
-    WrapperBIO out(BIO_new(BIO_s_mem()));
+    WrapperBIO out{ BIO_new(BIO_s_mem()) };
     GetError(error, output);
     CHECK(out.memory != nullptr, false, output.GetText());
 
     ERR_clear_error();
-    WrapperASN1_PCTX pctx(ASN1_PCTX_new());
+    WrapperASN1_PCTX pctx{ ASN1_PCTX_new() };
     GetError(error, output);
     CHECK(pctx.data != nullptr, false, output.GetText());
 
@@ -149,13 +149,13 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
     auto& current = output[0];
 
     ERR_clear_error();
-    WrapperBIO in(BIO_new(BIO_s_mem()));
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
     uint32 error = 0;
     GetError(error, current);
     CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
 
     ERR_clear_error();
-    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, NULL));
+    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, NULL) };
     GetError(error, current);
 
     ERR_clear_error();
@@ -204,7 +204,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
     auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
 
     ERR_clear_error();
-    WrapperBIO in(BIO_new(BIO_s_mem()));
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
     uint32 error = 0;
     GetError(error, output.errorMessage);
 
@@ -213,7 +213,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
           output.errorMessage.GetText());
 
     ERR_clear_error();
-    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, nullptr));
+    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, nullptr) };
     GetError(error, output.errorMessage);
     CHECK(cms.data, false, output.errorMessage.GetText());
 
