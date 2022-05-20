@@ -1,5 +1,6 @@
 import os
 
-cwd = os.getcwd()
+cwd = os.path.dirname(os.path.realpath(__file__))
 print('CWD: ' + cwd)
-os.system('"call vcpkg.bat"')
+os.chdir(cwd)             
+os.system("call vcpkg.bat")
