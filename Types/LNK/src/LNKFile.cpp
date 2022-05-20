@@ -1,5 +1,7 @@
 #include "LNK.hpp"
 
+#include <array>
+
 using namespace GView::Type::LNK;
 
 LNKFile::LNKFile()
@@ -68,11 +70,11 @@ bool LNKFile::Update()
     const bool isUnicode = (header.linkFlags & (uint32) LNK::LinkFlags::IsUnicode);
 
     auto dataStringBufferOffset = 0;
-    for (const auto& flag : std::initializer_list{ LNK::LinkFlags::HasName,
-                                                   LNK::LinkFlags::HasRelativePath,
-                                                   LNK::LinkFlags::HasWorkingDir,
-                                                   LNK::LinkFlags::HasArguments,
-                                                   LNK::LinkFlags::HasIconLocation })
+    for (const auto& flag : std::array<LNK::LinkFlags, 5>{ LNK::LinkFlags::HasName,
+                                                           LNK::LinkFlags::HasRelativePath,
+                                                           LNK::LinkFlags::HasWorkingDir,
+                                                           LNK::LinkFlags::HasArguments,
+                                                           LNK::LinkFlags::HasIconLocation })
     {
         if (header.linkFlags & (uint32) flag)
         {
@@ -381,12 +383,12 @@ void ShellItems::UpdateFileEntryShellItem(ItemID* id)
     if ((item.indicator & 0x0F) & (uint8) FileEntryShellItemFlags::HasUnicodeStrings)
     {
         general->AddItem({ "Primary Name", ls.Format("%S", primaryName) });
-        offset += std::min<uint64>((uint64)wcslen((wchar_t*) primaryName) * sizeof(wchar_t), 16ULL);
+        offset += std::min<uint64>((uint64) wcslen((wchar_t*) primaryName) * sizeof(wchar_t), 16ULL);
     }
     else
     {
         general->AddItem({ "Primary Name", ls.Format("%s", primaryName) });
-        offset += std::min<uint64>((uint64)strlen((char*) primaryName), 16ULL);
+        offset += std::min<uint64>((uint64) strlen((char*) primaryName), 16ULL);
     }
 
     offset = (offset % 2 == 0 ? offset + 2 : offset + 1); // 16 bit aligned

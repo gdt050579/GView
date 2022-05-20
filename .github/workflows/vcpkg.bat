@@ -3,3 +3,4 @@ cd vcpkg
 call bootstrap-vcpkg.bat
 vcpkg.exe integrate install
 vcpkg.exe install openssl:x64-windows
+openssl version -a
