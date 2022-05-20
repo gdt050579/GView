@@ -47,8 +47,9 @@ bool LNKFile::Update()
             {
                 unicodeCommonPathOffset =
                       *(uint32*) (locationInformationBuffer.GetData() + sizeof(LocationInformation) + sizeof(unicodeLocalPathOffset));
-                const auto unicodeCommonPathOffsetSize = wcslen((wchar_t*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset));
-                unicodeCommonPath                      = { (char16*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset),
+                const auto unicodeCommonPathOffsetSize =
+                      wcslen(reinterpret_cast<wchar_t*>(locationInformationBuffer.GetData() + unicodeCommonPathOffset));
+                unicodeCommonPath = { (char16*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset),
                                       unicodeCommonPathOffsetSize };
             }
         }
