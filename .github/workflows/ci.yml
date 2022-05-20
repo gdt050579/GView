@@ -23,8 +23,9 @@ jobs:
       with:
         submodules: recursive
     - name: Vcpkg (OpenSSL)
-      run: ./github/workflows/vcpkg.bat
+      run: vcpkg.bat
       shell: cmd
+      working-directory: .github/workflows
     - name: Install requests
       run: pip install requests
     - name: Install SDL2
