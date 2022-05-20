@@ -23,8 +23,7 @@ jobs:
       with:
         submodules: recursive
     - name: Vcpkg (OpenSSL)
-      run: vcpkg.bat
-      shell: cmd
+      run: python .github/workflows/vcpkg.py
       working-directory: .github/workflows
     - name: Install requests
       run: pip install requests
