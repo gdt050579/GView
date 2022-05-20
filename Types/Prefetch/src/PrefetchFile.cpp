@@ -230,7 +230,8 @@ bool PrefetchFile::AddVolumeEntry(
     const auto nOffset = area.sectionD.offset + devicePathOffset;
     {
         const auto buffer = obj->GetData().CopyToBuffer(
-              nOffset, static_cast<uint32>(std::min<>(devicePathLength * sizeof(char16), obj->GetData().GetSize() - nOffset - 4)));
+              nOffset,
+              static_cast<uint32>(std::min<uint64>((uint64) devicePathLength * sizeof(char16), obj->GetData().GetSize() - nOffset - 4ULL)));
         ConstString cs{ u16string_view{ (char16*) buffer.GetData(), buffer.GetLength() } };
         LocalUnicodeStringBuilder<1024> lsub;
         CHECK(lsub.Set(cs), false, "");
