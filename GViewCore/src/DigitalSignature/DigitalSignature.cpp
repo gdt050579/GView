@@ -79,7 +79,7 @@ struct WrapperBUF_MEM
 
 inline static bool ASN1TIMEtoString(const ASN1_TIME* time, String& output)
 {
-    WrapperBIO out(BIO_new(BIO_s_mem()));
+    WrapperBIO out{ BIO_new(BIO_s_mem()) };
     CHECK(out.memory, false, "");
 
     ASN1_TIME_print(out.memory, time);
