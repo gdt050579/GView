@@ -89,11 +89,3 @@ add_subdirectory(Types/PCAP)
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
-
-if(MSVC)
-  target_compile_options(GView PUBLIC "/ZI")
-  target_link_options(GView PUBLIC "/ZI" "/INCREMENTAL")
-endif()
-
-find_package(OpenSSL REQUIRED)
-target_link_libraries(GView PRIVATE OpenSSL::SSL OpenSSL::Crypto)
