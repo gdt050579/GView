@@ -17,6 +17,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/../bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/../bin/Debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/../bin/Release)
 
+find_package(OpenSSL REQUIRED)
+
 if (MSVC)
     add_definitions(-DBUILD_FOR_WINDOWS)
     add_compile_options(-W3 /MP)
