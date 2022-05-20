@@ -49,9 +49,9 @@ jobs:
     - name: Install updated ncurses
       run: brew install ncurses
     - name: Install OpenSSL 
-      run: brew install openssl
+      run: brew install openssl@1.1
     - name: Export OpenSSL 
-      run: echo 'export PATH="/usr/local/opt/openssl@3/bin:$PATH"' >> /Users/runner/.bash_profile
+      run: echo 'export PATH="/usr/local/opt/openssl@1.1/bin:$PATH"' >> /Users/runner/.bash_profile
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build
