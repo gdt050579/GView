@@ -21,7 +21,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        submodules: true
+        submodules: recursive
     - name: Install requests
       run: pip install requests
     - name: Install SDL2
@@ -36,7 +36,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        submodules: true
+        submodules: recursive
     - name: Install sdl
       run: brew install sdl2
     - name: Install sdl2_ttf
@@ -56,7 +56,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        submodules: true
+        submodules: recursive
     - name: Update
       run: sudo apt-get update -y
     - name: Install SDL2
