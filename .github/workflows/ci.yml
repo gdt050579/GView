@@ -30,10 +30,12 @@ jobs:
       uses: actions/checkout@v3
       with:
         repository: microsoft/vcpkg
-    - name: Integrate install
-      run: microsoft/vcpkg/vcpkg.exe integrate install
+    - name: Bootstrap vcpkg
+      run: bootstrap-vcpkg.bat
+    - name: Integrate install vcpkg
+      run: vcpkg.exe integrate install
     - name: Install OpenSSL
-      run: microsoft/vcpkg/vcpkg.exe install openssl:x64-windows
+      run: vcpkg.exe install openssl:x64-windows
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build
