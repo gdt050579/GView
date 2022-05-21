@@ -337,17 +337,21 @@ uint32 Instance::CharacterIndexToSubLineNo(uint32 charIndex)
 }
 void Instance::CommputeViewPort_NoWrap(uint32 lineNo, Direction dir)
 {
-    auto h            = std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW);
-    uint32 start      = lineNo;
-    uint32 lastLineNo = static_cast<uint32>(this->lines.size() - 1); // lines.size() will alway be bigger than 1
-    auto* l           = ViewPort.Lines;
+    auto h       = (std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW)) - 1U;
+    uint32 start = lineNo;
+    auto* l      = ViewPort.Lines;
 
     if (dir == Direction::BottomToTop)
     {
-        start = (lineNo + 1) > h ? (lineNo + 1) - h : 0;
+        start = lineNo > h ? lineNo - h : 0;
     }
 
     ViewPort.Reset();
+    if (this->lines.empty())
+        return;
+
+    uint32 lastLineNo = static_cast<uint32>(this->lines.size() - 1); // lines.size() will alway be bigger than 1
+
     // sets the view port
     ViewPort.Start.lineNo    = start;
     ViewPort.Start.subLineNo = 0;
@@ -431,8 +435,15 @@ void Instance::ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir)
 void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
 {
     // sanity checks
-    if (lineNo > static_cast<uint32>(this->lines.size()))
-        lineNo = static_cast<uint32>(this->lines.size() - 1);
+    if (this->lines.size() == 0)
+    {
+        lineNo = 0;
+    }
+    else
+    {
+        if (lineNo >= static_cast<uint32>(this->lines.size()))
+            lineNo = static_cast<uint32>(this->lines.size() - 1);
+    }
     LineInfo li = GetLineInfo(lineNo);
     if (charIndex >= li.charsCount)
     {
