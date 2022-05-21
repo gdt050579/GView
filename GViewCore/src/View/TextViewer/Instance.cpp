@@ -715,6 +715,18 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     case Key::Down | Key::Shift:
         MoveDown(1, true);
         return true;
+    case Key::PageUp:
+        MoveUp(std::max<>(1, this->GetHeight()), false);
+        return true;
+    case Key::PageUp | Key::Shift:
+        MoveUp(std::max<>(1, this->GetHeight()), true);
+        return true;
+    case Key::PageDown:
+        MoveDown(std::max<>(1, this->GetHeight()), false);
+        return true;
+    case Key::PageDown | Key::Shift:
+        MoveDown(std::max<>(1, this->GetHeight()), true);
+        return true;
     case Key::Home:
         MoveToStartOfLine(this->Cursor.lineNo, false);
         return true;
@@ -726,10 +738,6 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::End | Key::Shift:
         MoveToEndOfLine(this->Cursor.lineNo, true);
-        return true;
-    case Key::PageUp:
-        return true;
-    case Key::PageDown:
         return true;
     }
 
