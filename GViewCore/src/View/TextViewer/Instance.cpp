@@ -494,6 +494,10 @@ void Instance::MoveRight(bool select)
 }
 void Instance::UpdateViewPort()
 {
+    if (ViewPort.linesCount == 0)
+    {
+        ComputeViewPort(0, 0, Direction::BottomToTop);
+    }
     if ((Cursor.lineNo < ViewPort.Start.lineNo) ||
         ((Cursor.lineNo == ViewPort.Start.lineNo) && (Cursor.sublineNo < ViewPort.Start.subLineNo)))
     {
@@ -680,6 +684,11 @@ void Instance::OnStart()
 {
     this->RecomputeLineIndexes();
     this->ViewPort.Reset();
+    this->UpdateViewPort();
+}
+void Instance::OnAfterResize(int newWidth, int newHeight)
+{
+    this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
     this->UpdateViewPort();
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
