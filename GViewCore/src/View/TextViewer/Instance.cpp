@@ -613,11 +613,14 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
 void Instance::Paint(Graphics::Renderer& renderer)
 {
     auto idx         = 0U;
-    auto lineNo      = 0xFFFFFFFFU;
+    auto lineNo      = INVALID_LINE_NUMBER;
     const auto focus = this->HasFocus();
 
     if (this->ViewPort.linesCount == 0)
-        UpdateViewPort();
+    {
+        this->ComputeViewPort(0, 0, Direction::BottomToTop);
+        this->UpdateViewPort();
+    }
 
     while (idx < this->ViewPort.linesCount)
     {
@@ -675,7 +678,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 }
 void Instance::OnStart()
 {
-    RecomputeLineIndexes();
+    this->RecomputeLineIndexes();
+    this->ViewPort.Reset();
+    this->UpdateViewPort();
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
