@@ -134,10 +134,15 @@ namespace View
             void MoveToEndOfLine(uint32 lineNo, bool select);
             void MoveLeft(bool select);
             void MoveRight(bool select);
-            void MoveDown(uint32 noOfTime, bool select);
-            void MoveUp(uint32 noOfTime, bool select);
+            void MoveDown(uint32 noOfTimes, bool select);
+            void MoveUp(uint32 noOfTimes, bool select);
 
             void UpdateViewPort();
+
+            inline bool HasWordWrap() const
+            {
+                return this->settings->wordWrap;
+            }
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);

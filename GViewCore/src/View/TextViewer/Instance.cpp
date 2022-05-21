@@ -299,12 +299,12 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo)
 uint32 Instance::CharacterIndexToSubLineNo(uint32 charIndex)
 {
     // binary search
-    auto start     = 0U;
-    auto end       = static_cast<uint32>(this->SubLines.entries.size() - 1); // always at least one
-    auto middle    = (start + end) >> 1;
+    auto start  = 0U;
+    auto end    = static_cast<uint32>(this->SubLines.entries.size() - 1); // always at least one
+    auto middle = (start + end) >> 1;
 
     if (end == 0)
-        return 0; // only one-subline
+        return 0;                       // only one-subline
     auto lastValidStartIndex = end - 1; // end is bigger than 0
     // boundery check
     if (charIndex < this->SubLines.entries[0].relativeCharIndex)
@@ -492,11 +492,37 @@ void Instance::MoveRight(bool select)
     else
         MoveToStartOfLine(this->Cursor.lineNo + 1, select);
 }
-void Instance::MoveDown(uint32 noOfTime, bool select)
+void Instance::MoveDown(uint32 noOfTimes, bool select)
 {
+    uint32 lastLine = static_cast<uint32>(this->lines.size());
+    if (HasWordWrap())
+    {
+    }
+    else
+    {
+        if (Cursor.lineNo == lastLine)
+            MoveToEndOfLine(lastLine, select);
+        else
+            MoveTo(std::min<>(lastLine, this->Cursor.lineNo + noOfTimes), this->Cursor.charIndex, select);
+    }
 }
-void Instance::MoveUp(uint32 noOfTime, bool select)
+void Instance::MoveUp(uint32 noOfTimes, bool select)
 {
+    if (HasWordWrap())
+    {
+    }
+    else
+    {
+        if (Cursor.lineNo == 0)
+            MoveToStartOfLine(0, select);
+        else
+        {
+            if (Cursor.lineNo > noOfTimes)
+                MoveTo(Cursor.lineNo - noOfTimes, this->Cursor.charIndex, select);
+            else
+                MoveTo(0, this->Cursor.charIndex, select);
+        }
+    }
 }
 void Instance::UpdateViewPort()
 {
