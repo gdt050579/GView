@@ -492,6 +492,12 @@ void Instance::MoveRight(bool select)
     else
         MoveToStartOfLine(this->Cursor.lineNo + 1, select);
 }
+void Instance::MoveDown(uint32 noOfTime, bool select)
+{
+}
+void Instance::MoveUp(uint32 noOfTime, bool select)
+{
+}
 void Instance::UpdateViewPort()
 {
     if (ViewPort.linesCount == 0)
@@ -659,6 +665,18 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Right | Key::Shift:
         MoveRight(true);
+        return true;
+    case Key::Up:
+        MoveUp(1, false);
+        return true;
+    case Key::Up | Key::Shift:
+        MoveUp(1, true);
+        return true;
+    case Key::Down:
+        MoveDown(1, false);
+        return true;
+    case Key::Down | Key::Shift:
+        MoveDown(1, true);
         return true;
     case Key::Home:
         MoveToStartOfLine(this->Cursor.lineNo, false);

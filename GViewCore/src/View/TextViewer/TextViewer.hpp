@@ -134,6 +134,8 @@ namespace View
             void MoveToEndOfLine(uint32 lineNo, bool select);
             void MoveLeft(bool select);
             void MoveRight(bool select);
+            void MoveDown(uint32 noOfTime, bool select);
+            void MoveUp(uint32 noOfTime, bool select);
 
             void UpdateViewPort();
 
