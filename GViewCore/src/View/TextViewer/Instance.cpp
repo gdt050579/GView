@@ -823,6 +823,8 @@ enum class PropertyID : uint32
 {
     // display
     WordWrap,
+    Encoding,
+    HasBOM,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -831,7 +833,13 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
-        value = false;
+        value = this->HasWordWrap();
+        return true;
+    case PropertyID::Encoding:
+        value = static_cast<uint32>(this->settings->encoding);
+        return true;
+    case PropertyID::HasBOM:
+        value = this->sizeOfBOM > 0;
         return true;
     }
     return false;
@@ -854,6 +862,8 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
     switch (static_cast<PropertyID>(propertyID))
     {
     case PropertyID::WordWrap:
+    case PropertyID::Encoding:
+    case PropertyID::HasBOM:
         return true;
     }
 
@@ -862,7 +872,9 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
+        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean }, 
+        { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" }, 
+        { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
     };
 }
 #undef BT

@@ -97,11 +97,11 @@ namespace Utils
     {
         enum class Encoding : uint8
         {
-            Binary,
-            Ascii,
-            UTF8,
-            Unicode16LE,
-            Unicode16BE
+            Binary      = 0,
+            Ascii       = 1,
+            UTF8        = 2,
+            Unicode16LE = 3,
+            Unicode16BE = 4
         };
         class ExpandedCharacter
         {
@@ -181,7 +181,7 @@ namespace Utils
         };
 
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
-    }; // namespace StringEncoding
+    }; // namespace CharacterEncoding
 } // namespace Utils
 
 namespace Generic
