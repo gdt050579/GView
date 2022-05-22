@@ -630,32 +630,45 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         textColor = Cfg.Text.Inactive;
         break;
     }
+
+    // fill in the line and the line number
     const auto vd = this->ViewPort.Lines + y;
-    CharacterStream cs(this->obj->GetData().Get(vd->offset, vd->size, false), 0, this->settings.ToReference());
-    auto c     = this->chars;
-    auto lastC = this->chars + 1;
-    auto c_end = c + MAX_CHARACTERS_PER_LINE;
-    while ((cs.Next()) && (lastC < c_end))
-    {
-        auto c = this->chars + cs.GetXOffset();
-        // fill in the spaces
-        while (lastC < c)
-        {
-            lastC->Code  = ' ';
-            lastC->Color = textColor;
-            lastC++;
-        }
-        c->Code  = cs.GetCharacter();
-        c->Color = textColor;
-        if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
-            c->Color = Cfg.Cursor.Normal;
-        lastC = c + 1;
-    }
     renderer.FillHorizontalLine(0, y, this->lineNumberWidth - 1, ' ', lineNoColor);
     if (showLineNumber)
         renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(vd->lineNo + 1), lineNoColor, TextAlignament::Right);
     renderer.WriteSpecialCharacter(this->lineNumberWidth, y, SpecialChars::BoxVerticalSingleLine, lineSepColor);
-    renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
+
+    if (vd->size > 0)
+    {
+        CharacterStream cs(this->obj->GetData().Get(vd->offset, vd->size, false), 0, this->settings.ToReference());
+        auto c     = this->chars;
+        auto lastC = this->chars + 1;
+        auto c_end = c + MAX_CHARACTERS_PER_LINE;
+        while ((cs.Next()) && (lastC < c_end))
+        {
+            auto c = this->chars + cs.GetXOffset();
+            // fill in the spaces
+            while (lastC < c)
+            {
+                lastC->Code  = ' ';
+                lastC->Color = textColor;
+                lastC++;
+            }
+            c->Code  = cs.GetCharacter();
+            c->Color = textColor;
+            if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                c->Color = Cfg.Cursor.Normal;
+            lastC = c + 1;
+        }
+        renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
+    }
+    else
+    {
+        // empty line
+        if ((focused) && (this->Cursor.lineNo == vd->lineNo))
+            renderer.WriteCharacter(this->lineNumberWidth + 1, y, ' ', Cfg.Cursor.Normal);
+
+    }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
