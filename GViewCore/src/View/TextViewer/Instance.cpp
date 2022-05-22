@@ -19,6 +19,7 @@ class CharacterStream
     uint32 charIndex, nextCharIndex;
     Reference<SettingsData> settings;
     CharacterEncoding::ExpandedCharacter ec;
+    bool decodingError;
 
   public:
     CharacterStream(BufferView buf, uint32 characterIndex, Reference<SettingsData> _settings)
@@ -38,7 +39,8 @@ class CharacterStream
             return false; // stop getting the next character
         if (this->ec.FromEncoding(this->settings->encoding, this->pos, this->end))
         {
-            this->ch = this->ec.GetChar();
+            this->decodingError = false;
+            this->ch            = this->ec.GetChar();
             this->pos += this->ec.Length();
             this->xPos      = this->nextPos;
             this->charIndex = this->nextCharIndex++;
@@ -52,6 +54,12 @@ class CharacterStream
         }
         else
         {
+            // conversion error
+            this->decodingError = true;
+            this->ch            = *this->pos; // binary character
+            this->pos++;
+            this->xPos      = this->nextPos++;
+            this->charIndex = this->nextCharIndex++;
         }
         return true;
     }
@@ -78,6 +86,10 @@ class CharacterStream
     inline uint32 GetCurrentBufferPos() const
     {
         return (uint32) (this->pos - this->start);
+    }
+    inline bool HasDecodingErrors() const
+    {
+        return this->decodingError;
     }
 };
 
@@ -664,8 +676,13 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
             }
             c->Code  = cs.GetCharacter();
             c->Color = textColor;
-            if ((focused) && (vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
-                c->Color = Cfg.Cursor.Normal;
+            if (focused)
+            {
+                if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                    c->Color = Cfg.Cursor.Normal;
+                else if (cs.HasDecodingErrors())
+                    c->Color = Cfg.Text.Error;
+            }
             lastC = c + 1;
         }
         renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
@@ -872,8 +889,8 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean }, 
-        { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" }, 
+        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
+        { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
     };
 }
