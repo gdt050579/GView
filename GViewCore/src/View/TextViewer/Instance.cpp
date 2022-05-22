@@ -505,7 +505,9 @@ void Instance::MoveRight(bool select)
 }
 void Instance::MoveDown(uint32 noOfTimes, bool select)
 {
-    uint32 lastLine = static_cast<uint32>(this->lines.size());
+    if (this->lines.size() == 0)
+        return; // safety check
+    uint32 lastLine = static_cast<uint32>(this->lines.size()-1);
     if (HasWordWrap())
     {
     }
