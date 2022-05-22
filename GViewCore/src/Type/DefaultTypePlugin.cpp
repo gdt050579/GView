@@ -46,7 +46,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     auto bomLength = 0U;
     auto enc       = CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLength);
     
-    if (enc != CharacterEncoding::Encoding::Binary)
+    if (enc != CharacterEncoding::Encoding::Binary) 
     {
         View::TextViewer::Settings settings;
         win->CreateViewer("Text view", settings);
