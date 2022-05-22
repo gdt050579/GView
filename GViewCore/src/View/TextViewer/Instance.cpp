@@ -44,8 +44,8 @@ class CharacterStream
             this->charIndex = this->nextCharIndex++;
             if (this->ch == '\t')
             {
-                this->ch      = ' '; // tab will be showd as a space
-                this->nextPos = this->settings->tabSize - (this->nextPos % this->settings->tabSize);
+                this->ch = ' '; // tab will be showd as a space
+                this->nextPos += this->settings->tabSize - (this->xPos % this->settings->tabSize);
             }
             else
                 this->nextPos++;
@@ -513,7 +513,7 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
 {
     if (this->lines.size() == 0)
         return; // safety check
-    uint32 lastLine = static_cast<uint32>(this->lines.size()-1);
+    uint32 lastLine = static_cast<uint32>(this->lines.size() - 1);
     if (HasWordWrap())
     {
     }
@@ -675,7 +675,6 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         // empty line
         if ((focused) && (this->Cursor.lineNo == vd->lineNo))
             renderer.WriteCharacter(this->lineNumberWidth + 1, y, ' ', Cfg.Cursor.Normal);
-
     }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
