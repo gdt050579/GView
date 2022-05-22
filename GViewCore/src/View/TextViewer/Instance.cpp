@@ -481,6 +481,12 @@ void Instance::MoveToEndOfLine(uint32 lineNo, bool select)
     else
         MoveTo(lineNo, 0, select);
 }
+void Instance::MoveToEndOfFile(bool select)
+{
+    if (this->lines.empty())
+        return;
+    MoveTo(static_cast<uint32>(this->lines.size() - 1), 0xFFFFFFFF, select);
+}
 void Instance::MoveLeft(bool select)
 {
     if (this->Cursor.charIndex > 0)
@@ -753,6 +759,18 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::End | Key::Shift:
         MoveToEndOfLine(this->Cursor.lineNo, true);
+        return true;
+    case Key::Home | Key::Ctrl:
+        MoveTo(0, 0, false);
+        return true;
+    case Key::Home | Key::Ctrl | Key::Shift:
+        MoveTo(0, 0, true);
+        return true;
+    case Key::End | Key::Ctrl:
+        MoveToEndOfFile(false);
+        return true;
+    case Key::End | Key::Ctrl | Key::Shift:
+        MoveToEndOfFile(true);
         return true;
     }
 

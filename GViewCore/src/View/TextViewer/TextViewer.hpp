@@ -132,6 +132,7 @@ namespace View
             void MoveTo(uint32 lineNo, uint32 charIndex, bool select);
             void MoveToStartOfLine(uint32 lineNo, bool select);
             void MoveToEndOfLine(uint32 lineNo, bool select);
+            void MoveToEndOfFile(bool select);
             void MoveLeft(bool select);
             void MoveRight(bool select);
             void MoveDown(uint32 noOfTimes, bool select);
