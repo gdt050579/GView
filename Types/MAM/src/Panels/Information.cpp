@@ -82,7 +82,7 @@ bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
             uncompressed.Resize(mam->uncompressedSize);
 
             const auto chunk = mam->obj->GetData().GetCacheSize();
-            auto pos         = 8ULL;
+            uint64 pos       = 8ULL;
             const auto size  = mam->obj->GetData().GetSize() - 8;
 
             Buffer compressed;
@@ -90,7 +90,7 @@ bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 
             while (pos < mam->obj->GetData().GetSize())
             {
-                auto toRead    = std::min<>((uint64) chunk, mam->obj->GetData().GetSize() - pos);
+                auto toRead    = std::min<uint64>((uint64) chunk, mam->obj->GetData().GetSize() - pos);
                 const Buffer b = mam->obj->GetData().CopyToBuffer(pos, chunk, false);
                 memcpy(compressed.GetData() + pos - 8ULL, b.GetData(), toRead);
                 pos += toRead;

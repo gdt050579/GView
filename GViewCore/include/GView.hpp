@@ -1,5 +1,8 @@
 #pragma once
 
+// Version MUST be in the following format <Major>.<Minor>.<Patch>
+#define GVIEW_VERSION "0.0.0"
+
 #include <AppCUI/include/AppCUI.hpp>
 
 using namespace AppCUI::Controls;
@@ -449,7 +452,7 @@ class CORE_EXPORT Object
 
   public:
     Object(Type objType, Utils::DataCache&& dataCache, TypeInterface* contType, ConstString objName, ConstString objFilePath, uint32 pid)
-        : cache(std::move(dataCache)), objectType(objType), name(objName), filePath(objFilePath), PID(pid), contentType(contType)
+        : cache(std::move(dataCache)), contentType(contType), name(objName), filePath(objFilePath), PID(pid), objectType(objType)
     {
         if (contentType)
             contentType->obj = this;
