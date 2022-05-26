@@ -39,8 +39,9 @@ bool LNKFile::Update()
 
         if (locationInformation.headerSize > 28)
         {
-            unicodeLocalPathOffset                = *(uint32*) (locationInformationBuffer.GetData() + sizeof(LocationInformation));
-            const auto unicodeLocalPathOffsetSize = wcslen((wchar_t*) (locationInformationBuffer.GetData() + unicodeLocalPathOffset));
+            unicodeLocalPathOffset = *(uint32*) (locationInformationBuffer.GetData() + sizeof(LocationInformation));
+            const auto unicodeLocalPathOffsetSize =
+                  wcslen(reinterpret_cast<wchar_t*>((void*) (locationInformationBuffer.GetData() + unicodeLocalPathOffset)));
             unicodeLocalPath = { (char16*) (locationInformationBuffer.GetData() + unicodeLocalPathOffset), unicodeLocalPathOffsetSize };
 
             if (locationInformation.headerSize > 32)
@@ -48,7 +49,7 @@ bool LNKFile::Update()
                 unicodeCommonPathOffset =
                       *(uint32*) (locationInformationBuffer.GetData() + sizeof(LocationInformation) + sizeof(unicodeLocalPathOffset));
                 const auto unicodeCommonPathOffsetSize =
-                      wcslen(reinterpret_cast<wchar_t*>(locationInformationBuffer.GetData() + unicodeCommonPathOffset));
+                      wcslen(reinterpret_cast<wchar_t*>((void*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset)));
                 unicodeCommonPath = { (char16*) (locationInformationBuffer.GetData() + unicodeCommonPathOffset),
                                       unicodeCommonPathOffsetSize };
             }
@@ -383,8 +384,8 @@ void ShellItems::UpdateFileEntryShellItem(ItemID* id)
 
     if ((item.indicator & 0x0F) & (uint8) FileEntryShellItemFlags::HasUnicodeStrings)
     {
-        general->AddItem({ "Primary Name", ls.Format("%S", primaryName) });
-        offset += std::min<uint64>((uint64) wcslen((wchar_t*) primaryName) * sizeof(wchar_t), 16ULL);
+        general->AddItem({ "Primary Name", ls.Format("%ls", primaryName) });
+        offset += std::min<uint64>((uint64) wcslen(reinterpret_cast<wchar_t*>((void*) (primaryName))) * sizeof(wchar_t), 16ULL);
     }
     else
     {
