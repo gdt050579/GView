@@ -58,8 +58,7 @@ namespace View
         };
         class Instance : public View::ViewControl
         {
-            std::vector<LineInfo> lines;
-            std::vector<SubLineInfo> subLines;
+            std::vector<LineInfo> lines;            
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
@@ -67,10 +66,21 @@ namespace View
             uint32 lineNumberWidth;
             uint32 sizeOfBOM;
 
+            enum class Direction
+            {
+                TopToBottom,
+                BottomToTop
+            };
+            struct
+            {
+                std::vector<SubLineInfo> entries;
+                uint32 lineNo;
+            } SubLines;
             struct
             {
                 uint64 pos;
                 uint32 lineNo;
+                uint32 sublineNo;
                 uint32 charIndex;
             } Cursor;
             struct
@@ -79,25 +89,61 @@ namespace View
                 uint32 bufferSize;
                 uint32 lineNo;
                 uint32 xStart;
-            } ViewData[MAX_LINES_TO_VIEW];
-            uint32 ViewDataCount;
+            } ViewData__[MAX_LINES_TO_VIEW];
+            struct
+            {
+                struct
+                {
+                    uint32 lineNo, subLineNo;
+                } Start, End;
+                struct
+                {
+                    uint64 offset;
+                    uint32 size;
+                    uint32 lineNo;
+                    uint32 xStart;
+                } Lines[MAX_LINES_TO_VIEW];
+                uint32 scrollX;
+                uint32 linesCount;
+                inline void Reset()
+                {
+                    Start.lineNo = Start.subLineNo = 0;
+                    End.lineNo = End.subLineNo = 0;
+                    scrollX                    = 0;
+                    linesCount                 = 0;
+                }
+            } ViewPort;
+            uint32 ViewDataCount__;
 
             static Config config;
 
             void RecomputeLineIndexes();
+            void CommputeViewPort_NoWrap(uint32 lineNo, Direction dir);
+            void ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir);
 
             bool GetLineInfo(uint32 lineNo, LineInfo& li);
             LineInfo GetLineInfo(uint32 lineNo);
-            bool ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset);
+            void ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& startOffset);
+            void ComputeSubLineIndexes(uint32 lineNo);
+            uint32 CharacterIndexToSubLineNo(uint32 charIndex);
+            
             void DrawLine(uint32 viewDataIndex, Graphics::Renderer& renderer, ControlState state, bool showLineNumber);
 
             void MoveTo(uint32 lineNo, uint32 charIndex, bool select);
             void MoveToStartOfLine(uint32 lineNo, bool select);
             void MoveToEndOfLine(uint32 lineNo, bool select);
+            void MoveToEndOfFile(bool select);
             void MoveLeft(bool select);
             void MoveRight(bool select);
+            void MoveDown(uint32 noOfTimes, bool select);
+            void MoveUp(uint32 noOfTimes, bool select);
 
-            void UpdateViewBounderies();
+            void UpdateViewPort();
+
+            inline bool HasWordWrap() const
+            {
+                return this->settings->wordWrap;
+            }
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -107,6 +153,7 @@ namespace View
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             virtual void OnStart() override;
+            virtual void OnAfterResize(int newWidth, int newHeight) override;
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;

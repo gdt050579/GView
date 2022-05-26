@@ -42,25 +42,11 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
 
     // 2. views
-    auto b   = win->GetObject()->GetData().Get(0, 4096, false);
-    auto z   = 0U;
-    auto asc = 0U;
-
-    for (auto ch : b)
-    {
-        if (ch == 0)
-            z++;
-        else if (((ch >= 32) && (ch <= 127)) || (ch == '\t') || (ch == '\n') || (ch == '\r'))
-            asc++;
-    }
-    auto add_textview = false;
-    if (b.GetLength() > 0)
-    {
-        asc *= 100;
-        z *= 100;
-        add_textview = ((size_t) asc / b.GetLength()) >= 75;
-    }
-    if (add_textview)
+    auto buf       = win->GetObject()->GetData().Get(0, 4096, false);
+    auto bomLength = 0U;
+    auto enc       = CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLength);
+    
+    if (enc != CharacterEncoding::Encoding::Binary) 
     {
         View::TextViewer::Settings settings;
         win->CreateViewer("Text view", settings);

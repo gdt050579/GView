@@ -6,7 +6,7 @@ using namespace AppCUI::Input;
 SettingsData::SettingsData()
 {
     this->tabSize  = 4;
-    this->wordWrap = true;
+    this->wordWrap = false;
     this->encoding = CharacterEncoding::Encoding::Binary;
 }
 Settings::Settings()
