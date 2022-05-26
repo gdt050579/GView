@@ -277,7 +277,8 @@ bool PEFile::ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxS
     if ((obj->GetData().Copy<uint16>(addr, sz) == false) || (sz > 256))
         return false;
 
-    for (tr = 0, addr += 2; (tr < sz) && (tr < maxSize - 1U) && (obj->GetData().Copy<uint8>(addr, val)) && (val != 0); tr++, addr += 2)
+    for (tr = 0, addr += 2; (tr < sz) && ((uint32) tr < maxSize - 1U) && (obj->GetData().Copy<uint8>(addr, val)) && (val != 0);
+         tr++, addr += 2)
         text[tr] = val;
     text[tr] = 0;
 
