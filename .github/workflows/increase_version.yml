@@ -26,7 +26,7 @@ jobs:
         submodules: recursive
 
     - name: Get Version to env and increase it
-      run: python .github/workflows/get_version_and_update.py GView/GView/GViewCore/include/GView.hpp ${{ github.event.inputs.versionToUpdate }}
+      run: python .github/workflows/get_version_and_update.py GViewCore/include/GView.hpp ${{ github.event.inputs.versionToUpdate }}
 
     - name: Commit files
       run: |
