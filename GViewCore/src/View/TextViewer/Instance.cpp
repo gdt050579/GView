@@ -605,7 +605,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
             {
                 if (cs.GetNextXOffset() >= ViewPort.scrollX)
                 {
-                    xScroll = cs.GetNextXOffset();
+                    xScroll = ViewPort.scrollX;
                     break;
                 }
             }
