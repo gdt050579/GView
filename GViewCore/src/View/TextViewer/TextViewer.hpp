@@ -109,8 +109,8 @@ namespace View
                 {
                     Start.lineNo = Start.subLineNo = 0;
                     End.lineNo = End.subLineNo = 0;
-                    scrollX                    = 0;
                     linesCount                 = 0;
+                    // never reset the scrollX -> as it has to be recomputed
                 }
             } ViewPort;
             uint32 ViewDataCount__;
@@ -138,6 +138,7 @@ namespace View
             void MoveDown(uint32 noOfTimes, bool select);
             void MoveUp(uint32 noOfTimes, bool select);
 
+            void UpdateCursorXOffset();
             void UpdateViewPort();
 
             inline bool HasWordWrap() const

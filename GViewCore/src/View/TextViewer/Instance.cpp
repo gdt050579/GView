@@ -116,7 +116,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     this->lineNumberWidth = 0;
     this->SubLines.entries.reserve(256); // reserve 256 sub-lines
-    this->SubLines.lineNo = INVALID_LINE_NUMBER;
+    this->SubLines.lineNo  = INVALID_LINE_NUMBER;
+    this->ViewPort.scrollX = 0;
     this->ViewPort.Reset();
 
     this->settings->encoding = CharacterEncoding::AnalyzeBufferForEncoding(this->obj->GetData().Get(0, 4096, false), true, this->sizeOfBOM);
@@ -386,63 +387,11 @@ void Instance::CommputeViewPort_NoWrap(uint32 lineNo, Direction dir)
 }
 void Instance::ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir)
 {
-    bool hasWordWrap = this->settings->wordWrap;
-    if (hasWordWrap)
+    if (this->HasWordWrap())
     {
     }
     else
         CommputeViewPort_NoWrap(lineNo, dir);
-
-    // if (dir == Direction::TopToBottom)
-    //{
-    //     if (hasWordWrap)
-    //     {
-    //         // we need to process each line and sub-line
-    //         ViewPort.Start.lineNo = lineNo;
-    //         ComputeSubLineIndexes(lineNo);
-    //         subLineNo                = std::min<>(subLineNo, (uint32) subLines.size());
-    //         ViewPort.Start.subLineNo = subLineNo;
-    //         uint32 sz                = 0;
-    //         const auto leftSublines  = ((uint32) subLines.size()) - subLineNo;
-    //         if (leftSublines < h)
-    //         {
-    //             sz += leftSublines;
-    //             lineNo++;
-    //             while ((sz < h) && (lineNo < this->lines.size()))
-    //             {
-    //                 ComputeSubLineIndexes(lineNo);
-    //                 // adaug liniie
-    //             }
-    //         }
-    //         else
-    //         {
-    //             ViewPort.End.lineNo    = lineNo;
-    //             ViewPort.End.subLineNo = subLineNo + h - 1;
-    //         }
-    //     }
-    //     else
-    //     {
-    //         // no word wrap --> just lines and scroll
-    //         ViewPort.Start.lineNo    = lineNo;
-    //         ViewPort.Start.subLineNo = 0;
-    //         ViewPort.End.lineNo      = lineNo + h - 1;
-    //         ViewPort.End.subLineNo   = 0;
-    //     }
-    // }
-    // else
-    //{
-    //     if (hasWordWrap)
-    //     {
-    //     }
-    //     else
-    //     {
-    //         // no word wrap --> just lines and scroll
-    //         ViewPort.End.lineNo      = lineNo;
-    //         ViewPort.End.subLineNo   = 0;
-    //         ViewPort.Start.lineNo    = (lineNo + 1 >= h) ? lineNo + 1 - h : 0;
-    //         ViewPort.Start.subLineNo = 0;
-    //     }
-    // }
 }
 void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
 {
@@ -555,81 +504,62 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
         }
     }
 }
+void Instance::UpdateCursorXOffset()
+{
+    // simple checkes
+    if (Cursor.charIndex == 0)
+    {
+        this->ViewPort.scrollX = 0;
+        return; // obvious --> first char is first in the line
+    }
+
+    uint32 w = this->GetWidth();
+    w        = (w <= (this->lineNumberWidth + 1)) ? 1 : w - (this->lineNumberWidth + 1);
+    auto li  = GetLineInfo(Cursor.lineNo);
+    auto idx = 0;
+
+    CharacterStream cs(this->obj->GetData().Get(li.offset, li.size, false), 0, this->settings.ToReference());
+    while ((cs.Next()) && (idx < Cursor.charIndex))
+    {
+        idx++;
+    }
+    auto newXPos = (idx == Cursor.charIndex) ? cs.GetXOffset() : 0;
+    if ((newXPos >= this->ViewPort.scrollX) && (newXPos < (this->ViewPort.scrollX + w)))
+        return; // already visible
+    if (newXPos <= this->ViewPort.scrollX)
+    {
+        this->ViewPort.scrollX = newXPos;
+    }
+    else
+    {
+        this->ViewPort.scrollX = newXPos > w ? newXPos - w : 0;
+    }
+}
 void Instance::UpdateViewPort()
 {
     if (ViewPort.linesCount == 0)
     {
         ComputeViewPort(0, 0, Direction::BottomToTop);
+        if (!HasWordWrap())
+            UpdateCursorXOffset();
     }
     if ((Cursor.lineNo < ViewPort.Start.lineNo) ||
         ((Cursor.lineNo == ViewPort.Start.lineNo) && (Cursor.sublineNo < ViewPort.Start.subLineNo)))
     {
         // cursor is before current ViewPort
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::TopToBottom);
+        if (!HasWordWrap())
+            UpdateCursorXOffset();
         return;
     }
     if ((Cursor.lineNo > ViewPort.End.lineNo) || ((Cursor.lineNo == ViewPort.End.lineNo) && (Cursor.sublineNo > ViewPort.End.subLineNo)))
     {
         // cursor is after
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::BottomToTop);
+        if (!HasWordWrap())
+            UpdateCursorXOffset();
         return;
     }
-
-    //
-    // ComputeViewPort(0, 0, Direction::TopToBottom);
-    // BufferView buf;
-    // auto h   = this->GetHeight();
-    // uint32 w = this->GetWidth();
-    // if (w <= (this->lineNumberWidth + 2))
-    //     w = 0;
-    // else
-    //     w = w - (this->lineNumberWidth + 2);
-    // uint64 lineStartOffset = 0;
-    // auto y                 = 0;
-    // auto lineNo            = 0U;
-    // auto vd                = this->ViewData;
-    // this->ViewDataCount    = 0;
-    // auto xScroll           = 0U; // temporary -> should be a class data member
-    // auto xMaxPos           = xScroll + w;
-    // auto nrLines           = lines.size();
-
-    // while ((y < h) && (lineNo < nrLines))
-    //{
-    //     ComputeSubLineIndexes(lineNo, buf, lineStartOffset);
-
-    //    // write text
-    //    auto sl    = this->subLines.begin();
-    //    auto slEnd = this->subLines.end();
-    //    auto cBuf  = buf.begin();
-
-    //    // parse each sub-line
-    //    while ((sl < slEnd) && (y < h))
-    //    {
-    //        CharacterStream cs(BufferView(cBuf + sl->relativeOffset, sl->size), sl->relativeCharIndex, this->settings.ToReference());
-
-    //        // skip left part
-    //        if (xScroll > 0)
-    //        {
-    //            while ((cs.Next()) && (cs.GetNextXOffset() < xScroll))
-    //            {
-    //            }
-    //        }
-    //        auto cptr  = cs.GetCurrentBufferPos();
-    //        vd->lineNo = lineNo;
-    //        vd->pos    = lineStartOffset + sl->relativeOffset + cptr;
-    //        vd->xStart = cs.GetNextXOffset() - xScroll;
-    //        while ((cs.Next()) && (cs.GetXOffset() < xMaxPos))
-    //        {
-    //        }
-    //        vd->bufferSize = (uint32) (cs.GetCurrentBufferPos() - cptr);
-
-    //        y++;
-    //        sl++;
-    //        vd++;
-    //        this->ViewDataCount++;
-    //    }
-    //    lineNo++;
-    //}
 }
 void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState state, bool showLineNumber)
 {
