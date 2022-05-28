@@ -573,11 +573,21 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
     auto lineNoColor  = Cfg.LineMarker.GetColor(state);
     auto lineSepColor = Cfg.Lines.GetColor(state);
     bool focused      = state == ControlState::Focused;
+    const auto vd     = this->ViewPort.Lines + y;
 
     switch (state)
     {
     case ControlState::Focused:
-        textColor = Cfg.Text.Normal;
+        if (vd->lineNo == this->Cursor.lineNo)
+        {
+            textColor   = Cfg.Editor.Focused;
+            lineNoColor = Cfg.Selection.Editor;
+            renderer.FillHorizontalLine(this->lineNumberWidth + 2, y, this->GetWidth(), ' ', Cfg.Editor.Focused);
+        }
+        else
+        {
+            textColor = Cfg.Text.Normal;
+        }
         break;
     default:
         textColor = Cfg.Text.Inactive;
@@ -585,7 +595,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
     }
 
     // fill in the line and the line number
-    const auto vd = this->ViewPort.Lines + y;
+
     renderer.FillHorizontalLine(0, y, this->lineNumberWidth - 1, ' ', lineNoColor);
     if (showLineNumber)
         renderer.WriteSingleLineText(0, y, this->lineNumberWidth, n.ToDec(vd->lineNo + 1), lineNoColor, TextAlignament::Right);
