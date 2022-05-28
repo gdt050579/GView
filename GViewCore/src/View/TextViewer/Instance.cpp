@@ -414,7 +414,7 @@ void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
 
     this->Cursor.lineNo    = lineNo;
     this->Cursor.charIndex = charIndex;
-    if (this->settings->wordWrap)
+    if (this->HasWordWrap())
     {
         // find the new subline for the cursor
         ComputeSubLineIndexes(lineNo);
@@ -532,7 +532,7 @@ void Instance::UpdateCursorXOffset()
     }
     else
     {
-        this->ViewPort.scrollX = newXPos > w ? newXPos - w : 0;
+        this->ViewPort.scrollX = newXPos >= w ? newXPos + 1 - w : 0;
     }
 }
 void Instance::UpdateViewPort()
@@ -560,6 +560,9 @@ void Instance::UpdateViewPort()
             UpdateCursorXOffset();
         return;
     }
+    // else the viewport is ok --> xOffset has to be computed
+    if (!HasWordWrap())
+        UpdateCursorXOffset();
 }
 void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState state, bool showLineNumber)
 {
@@ -591,12 +594,25 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
     if (vd->size > 0)
     {
         CharacterStream cs(this->obj->GetData().Get(vd->offset, vd->size, false), 0, this->settings.ToReference());
-        auto c     = this->chars;
-        auto lastC = this->chars + 1;
-        auto c_end = c + MAX_CHARACTERS_PER_LINE;
+        auto c       = this->chars;
+        auto lastC   = this->chars;
+        auto c_end   = c + MAX_CHARACTERS_PER_LINE;
+        auto xScroll = 0U;
+
+        if (ViewPort.scrollX > 0)
+        {
+            while (cs.Next())
+            {
+                if (cs.GetNextXOffset() >= ViewPort.scrollX)
+                {
+                    xScroll = cs.GetNextXOffset();
+                    break;
+                }
+            }
+        }
         while ((cs.Next()) && (lastC < c_end))
         {
-            auto c = this->chars + cs.GetXOffset();
+            auto c = this->chars + (cs.GetXOffset() - xScroll);
             // fill in the spaces
             while (lastC < c)
             {
