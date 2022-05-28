@@ -92,7 +92,7 @@ void Information::UpdateHeader()
                 LocalUnicodeStringBuilder<sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0])> lsub;
                 lsub.Set(cs);
                 lsub.ToString(hashFromName);
-                hashValue = std::stoul(hashFromName, 0, 16);
+                hashValue = std::stoul(hashFromName, nullptr, 16);
             }
 
             if (hashValue == prefetch->header.hash)
@@ -165,8 +165,8 @@ void Information::UpdateHeader()
     const auto h7Hex = nf2.ToString(prefetch->header.H7, hex);
     general->AddItem({ "H7", ls.Format("%-20s (%s)", h7.data(), h7Hex.data()) });
 
-    const auto fileInformationSize    = nf.ToString(prefetch->area.sectionA.offset - sizeof(prefetch->header), dec);
-    const auto fileInformationSizeHex = nf2.ToString(prefetch->area.sectionA.offset - sizeof(prefetch->header), hex);
+    const auto fileInformationSize    = nf.ToString((uint32) (prefetch->area.sectionA.offset - sizeof(prefetch->header)), dec);
+    const auto fileInformationSizeHex = nf2.ToString((uint32) (prefetch->area.sectionA.offset - sizeof(prefetch->header)), hex);
     general->AddItem({ "File Information Size", ls.Format("%-20s (%s)", fileInformationSize.data(), fileInformationSizeHex.data()) })
           .SetType(ListViewItem::Type::Highlighted);
 }

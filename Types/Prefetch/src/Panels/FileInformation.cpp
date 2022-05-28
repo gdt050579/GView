@@ -1,4 +1,4 @@
-#include "prefetch.hpp"
+#include "Prefetch.hpp"
 
 namespace GView::Type::Prefetch::Panels
 {

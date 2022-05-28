@@ -236,7 +236,7 @@ static int64 SSCA_XP_HASH(BufferView bv)
 {
     CHECK(bv.IsValid(), 0, "");
     int64 hash_value = 0;
-    for (auto i = 0; i < bv.GetLength(); i++)
+    for (auto i = 0U; i < bv.GetLength(); i++)
     {
         const auto& character = *(bv.GetData() + i);
         hash_value            = ((hash_value * 37) + (character)) % 0x100000000;
@@ -387,7 +387,7 @@ static int64 SSCA_VISTA_HASH(BufferView bv)
 {
     CHECK(bv.IsValid(), 0, "");
     int64 hash_value = 314159;
-    for (auto i = 0; i < bv.GetLength(); i++)
+    for (auto i = 0U; i < bv.GetLength(); i++)
     {
         const auto& character = *(bv.GetData() + i);
         hash_value            = ((hash_value * 37) + character) % 0x100000000;

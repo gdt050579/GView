@@ -1178,11 +1178,11 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveTo(this->Cursor.currentPos + 1, select);
         return true;
     case Key::PageDown:
-        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLine * this->Layout.visibleRows, select);
+        MoveTo(this->Cursor.currentPos + (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows, select);
         return true;
     case Key::PageUp:
-        if (this->Cursor.currentPos > this->Layout.charactersPerLine * this->Layout.visibleRows)
-            MoveTo(this->Cursor.currentPos - (this->Layout.charactersPerLine * this->Layout.visibleRows), select);
+        if (this->Cursor.currentPos > (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows)
+            MoveTo(this->Cursor.currentPos - ((uint64) this->Layout.charactersPerLine * this->Layout.visibleRows), select);
         else
             MoveTo(0, select);
         return true;

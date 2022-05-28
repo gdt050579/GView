@@ -20,7 +20,7 @@ void Panels::LinkTargetIDList::UpdateGeneralInformation()
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
     AddDecAndHexElement("ID List Size", "%-20s (%s)", lnk->linkTargetIDList.IDListSize);
-    AddDecAndHexElement("ItemIDs #", "%-20s (%s)", lnk->itemIDS.size());
+    AddDecAndHexElement("ItemIDs #", "%-20s (%s)", (uint32)lnk->itemIDS.size());
     UpdateLinkTargetIDList(lnk->itemIDS);
 }
 

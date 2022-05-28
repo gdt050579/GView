@@ -79,7 +79,7 @@ struct WrapperBUF_MEM
 
 inline static bool ASN1TIMEtoString(const ASN1_TIME* time, String& output)
 {
-    WrapperBIO out(BIO_new(BIO_s_mem()));
+    WrapperBIO out{ BIO_new(BIO_s_mem()) };
     CHECK(out.memory, false, "");
 
     ASN1_TIME_print(out.memory, time);
@@ -103,23 +103,23 @@ bool CMSToHumanReadable(const Buffer& buffer, String& output)
     auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
 
     ERR_clear_error();
-    WrapperBIO in(BIO_new(BIO_s_mem()));
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
     uint32 error = 0;
     GetError(error, output);
     CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
 
     ERR_clear_error();
-    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, nullptr));
+    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, nullptr) };
     GetError(error, output);
     CHECK(cms.data != nullptr, false, output.GetText());
 
     ERR_clear_error();
-    WrapperBIO out(BIO_new(BIO_s_mem()));
+    WrapperBIO out{ BIO_new(BIO_s_mem()) };
     GetError(error, output);
     CHECK(out.memory != nullptr, false, output.GetText());
 
     ERR_clear_error();
-    WrapperASN1_PCTX pctx(ASN1_PCTX_new());
+    WrapperASN1_PCTX pctx{ ASN1_PCTX_new() };
     GetError(error, output);
     CHECK(pctx.data != nullptr, false, output.GetText());
 
@@ -149,17 +149,17 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
     auto& current = output[0];
 
     ERR_clear_error();
-    WrapperBIO in(BIO_new(BIO_s_mem()));
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
     uint32 error = 0;
     GetError(error, current);
     CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
 
     ERR_clear_error();
-    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, NULL));
+    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, nullptr) };
     GetError(error, current);
 
     ERR_clear_error();
-    WrapperSTACK_OF_X509 certs(CMS_get1_certs(cms.data));
+    WrapperSTACK_OF_X509 certs{ CMS_get1_certs(cms.data) };
     GetError(error, current);
     CHECK(certs.data != nullptr, false, "");
 
@@ -178,7 +178,7 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
         CHECK(cert != nullptr, false, "");
 
         ERR_clear_error();
-        WrapperBIO bioCert(BIO_new(BIO_s_mem()));
+        WrapperBIO bioCert{ BIO_new(BIO_s_mem()) };
         GetError(error, current);
         CHECK(bioCert.memory != nullptr, false, "");
 
@@ -204,7 +204,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
     auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
 
     ERR_clear_error();
-    WrapperBIO in(BIO_new(BIO_s_mem()));
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
     uint32 error = 0;
     GetError(error, output.errorMessage);
 
@@ -213,7 +213,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
           output.errorMessage.GetText());
 
     ERR_clear_error();
-    WrapperCMS_ContentInfo cms(d2i_CMS_bio(in.memory, nullptr));
+    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, nullptr) };
     GetError(error, output.errorMessage);
     CHECK(cms.data, false, output.errorMessage.GetText());
 
@@ -232,7 +232,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
     }
 
     ERR_clear_error();
-    WrapperSTACK_OF_X509 certs(CMS_get1_certs(cms.data));
+    WrapperSTACK_OF_X509 certs{ CMS_get1_certs(cms.data) };
     GetError(error, output.errorMessage);
     CHECK(certs.data != nullptr, false, "");
 
@@ -255,7 +255,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         const auto serialNumber = X509_get_serialNumber(cert);
         if (serialNumber)
         {
-            WrapperBIGNUM num(ASN1_INTEGER_to_BN(serialNumber, nullptr));
+            WrapperBIGNUM num{ ASN1_INTEGER_to_BN(serialNumber, nullptr) };
             if (num.data != nullptr)
             {
                 const auto hex = BN_bn2hex(num.data);
@@ -269,7 +269,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
 
         sigCert.signatureAlgorithm = OBJ_nid2ln(X509_get_signature_nid(cert));
 
-        WrapperEVP_PKEY pubkey(X509_get_pubkey(cert));
+        WrapperEVP_PKEY pubkey{ X509_get_pubkey(cert) };
         sigCert.publicKeyAlgorithm = OBJ_nid2ln(EVP_PKEY_id(pubkey.data));
 
         ASN1TIMEtoString(X509_get0_notBefore(cert), sigCert.validityNotBefore);
@@ -292,7 +292,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         }
 
         ERR_clear_error();
-        WrapperEVP_PKEY pkey(X509_get_pubkey(cert));
+        WrapperEVP_PKEY pkey{ X509_get_pubkey(cert) };
         GetError(error, output.errorMessage);
         CHECK(pkey.data != nullptr, false, "");
 
@@ -332,7 +332,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         auto& signer       = output.signers[i];
 
         signer.count = CMS_signed_get_attr_count(si);
-        if (signer.count >= MAX_SIZE_IN_CONTAINER)
+        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER)
         {
             throw std::runtime_error("Unable to parse this number of signers!");
         }
@@ -352,7 +352,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                 continue;
             }
 
-            if (attribute.count >= MAX_SIZE_IN_CONTAINER)
+            if ((uint32) attribute.count >= MAX_SIZE_IN_CONTAINER)
             {
                 throw std::runtime_error("Unable to parse this number of attributes!");
             }
@@ -367,7 +367,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
 
             auto objLen = OBJ_obj2txt(nullptr, -1, obj, 1) + 1;
             attribute.contentType.Realloc(objLen);
-            OBJ_obj2txt((char*) attribute.contentType.GetText(), objLen, obj, 1);
+            OBJ_obj2txt(const_cast<char*>(attribute.contentType.GetText()), objLen, obj, 1);
             attribute.contentType.Realloc(objLen - 1);
 
             ASN1_TYPE* av = X509_ATTRIBUTE_get0_type(attr, 0);
@@ -396,7 +396,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
             else if (asnType == ASN1TYPE::UTCTIME)
             {
                 ERR_clear_error();
-                WrapperBIO bio(BIO_new(BIO_s_mem()));
+                WrapperBIO bio{ BIO_new(BIO_s_mem()) };
                 GetError(error, output.errorMessage);
                 CHECK(bio.memory != nullptr, false, "");
 
@@ -415,7 +415,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                     if (av != nullptr)
                     {
                         ERR_clear_error();
-                        WrapperBIO in(BIO_new(BIO_s_mem()));
+                        WrapperBIO in{ BIO_new(BIO_s_mem()) };
                         GetError(error, output.errorMessage);
                         CHECK(in.memory != nullptr, false, "");
 

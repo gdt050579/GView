@@ -687,7 +687,7 @@ namespace Type
             bool hasTLS;
 
             std::string_view ReadString(uint32_t RVA, uint32 maxSize);
-            bool ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize);
+            bool ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxSize);
 
           public:
             PEFile();

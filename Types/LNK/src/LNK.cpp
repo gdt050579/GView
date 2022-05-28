@@ -1,5 +1,7 @@
 #include "LNK.hpp"
 
+#include <array>
+
 using namespace AppCUI;
 using namespace AppCUI::OS;
 using namespace AppCUI::Utils;
@@ -65,7 +67,7 @@ extern "C"
         const bool isUnicode         = (lnk->header.linkFlags & (uint32) LNK::LinkFlags::IsUnicode);
         offset                       = lnk->dataStringsOffset;
         auto count                   = 0;
-        constexpr static auto colors = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
+        constexpr static auto colors = std::array<ColorPair, 2>{ DarkGreenBlue, DarkRedBlue };
         for (const auto& [type, data] : lnk->dataStrings)
         {
             auto size = 0ULL;

@@ -269,15 +269,16 @@ std::string_view PEFile::ReadString(uint32_t RVA, uint32 maxSize)
     return std::string_view{ reinterpret_cast<const char*>(buf.GetData()), static_cast<size_t>(p - buf.GetData()) };
 }
 
-bool PEFile::ReadUnicodeLengthString(uint32_t FileAddress, char* text, int maxSize)
+bool PEFile::ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxSize)
 {
-    uint16_t sz, tr;
-    uint8_t val;
-    uint64_t addr = FileAddress;
-    if ((obj->GetData().Copy<uint16_t>(addr, sz) == false) || (sz > 256))
+    uint16 sz, tr;
+    uint8 val;
+    uint64 addr = FileAddress;
+    if ((obj->GetData().Copy<uint16>(addr, sz) == false) || (sz > 256))
         return false;
 
-    for (tr = 0, addr += 2; (tr < sz) && (tr < maxSize - 1) && (obj->GetData().Copy<uint8_t>(addr, val)) && (val != 0); tr++, addr += 2)
+    for (tr = 0, addr += 2; (tr < sz) && ((uint32) tr < maxSize - 1U) && (obj->GetData().Copy<uint8>(addr, val)) && (val != 0);
+         tr++, addr += 2)
         text[tr] = val;
     text[tr] = 0;
 
@@ -1015,7 +1016,8 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
 
     if (hdr64)
     {
-        while ((obj->GetData().Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
+        while ((obj->GetData().Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) &&
+               (count_f < MAX_IMPORTED_FUNCTIONS))
         {
             if ((rvaFName64.u1.AddressOfData & __IMAGE_ORDINAL_FLAG64) != 0) // imported by ordinal
             {
@@ -1042,7 +1044,8 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
     }
     else
     {
-        while ((obj->GetData().Copy<ImageThunkData32>(addr, rvaFName32)) && (rvaFName32.u1.AddressOfData != 0) && (count_f < MAX_IMPORTED_FUNCTIONS))
+        while ((obj->GetData().Copy<ImageThunkData32>(addr, rvaFName32)) && (rvaFName32.u1.AddressOfData != 0) &&
+               (count_f < MAX_IMPORTED_FUNCTIONS))
         {
             if ((rvaFName32.u1.AddressOfData & __IMAGE_ORDINAL_FLAG32) != 0) // avem functie importata prin ordinal:
             {
@@ -1545,7 +1548,7 @@ bool PEFile::Update()
     // overlap cases
     for (tr = 0; tr < 15; tr++)
     {
-        if (tr == (uint8_t)DirectoryType::Security)
+        if (tr == (uint8_t) DirectoryType::Security)
             continue;
         dr = &dirs[tr];
         if ((dr->VirtualAddress > 0) && (dr->Size > 0))
