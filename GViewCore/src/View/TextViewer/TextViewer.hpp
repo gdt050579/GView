@@ -19,6 +19,7 @@ namespace View
             uint32 tabSize;
             CharacterEncoding::Encoding encoding;
             bool wordWrap;
+            bool highlightCurrentLine;
             SettingsData();
         };
 
@@ -85,13 +86,6 @@ namespace View
             } Cursor;
             struct
             {
-                uint64 pos;
-                uint32 bufferSize;
-                uint32 lineNo;
-                uint32 xStart;
-            } ViewData__[MAX_LINES_TO_VIEW];
-            struct
-            {
                 struct
                 {
                     uint32 lineNo, subLineNo;
@@ -113,7 +107,6 @@ namespace View
                     // never reset the scrollX -> as it has to be recomputed
                 }
             } ViewPort;
-            uint32 ViewDataCount__;
 
             static Config config;
 

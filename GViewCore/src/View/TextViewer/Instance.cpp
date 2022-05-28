@@ -578,7 +578,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
     switch (state)
     {
     case ControlState::Focused:
-        if (vd->lineNo == this->Cursor.lineNo)
+        if ((vd->lineNo == this->Cursor.lineNo) && (this->settings->highlightCurrentLine))
         {
             textColor   = Cfg.Editor.Focused;
             lineNoColor = Cfg.Selection.Editor;
@@ -798,6 +798,7 @@ enum class PropertyID : uint32
     WordWrap,
     Encoding,
     HasBOM,
+    HighlightCurrentLine
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -814,6 +815,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::HasBOM:
         value = this->sizeOfBOM > 0;
         return true;
+    case PropertyID::HighlightCurrentLine:
+        value = this->settings->highlightCurrentLine;
+        return true;
     }
     return false;
 }
@@ -822,6 +826,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
+        return true;
+    case PropertyID::HighlightCurrentLine:
+        this->settings->highlightCurrentLine = std::get<bool>(value);
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
@@ -846,6 +853,7 @@ const vector<Property> Instance::GetPropertiesList()
 {
     return {
         { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
+        { BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
     };
