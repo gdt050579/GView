@@ -793,7 +793,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     auto xPoz = 0;
     xPoz      = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
     xPoz      = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
-
 }
 
 //======================================================================[PROPERTY]============================
@@ -803,7 +802,8 @@ enum class PropertyID : uint32
     WordWrap,
     Encoding,
     HasBOM,
-    HighlightCurrentLine
+    HighlightCurrentLine,
+    TabSize
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -823,17 +823,36 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::HighlightCurrentLine:
         value = this->settings->highlightCurrentLine;
         return true;
+    case PropertyID::TabSize:
+        value = this->settings->tabSize;
+        return true;
     }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
+    uint32 uint32Temp = 0;
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
         return true;
     case PropertyID::HighlightCurrentLine:
         this->settings->highlightCurrentLine = std::get<bool>(value);
+        return true;
+    case PropertyID::TabSize:
+        uint32Temp = std::get<uint32>(value);
+        if (uint32Temp < 1)
+        {
+            error.Set("Tab size should not be smaller than 1 character !");
+            return false;
+        }
+        if (uint32Temp > 32)
+        {
+            error.Set("Tab size should not be bigger than 32 characters");
+            return false;
+        }
+        this->settings->tabSize = uint32Temp;
+        this->UpdateViewPort();
         return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
@@ -859,6 +878,7 @@ const vector<Property> Instance::GetPropertiesList()
     return {
         { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
         { BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
+        { BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
     };
