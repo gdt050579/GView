@@ -8,6 +8,7 @@ SettingsData::SettingsData()
     this->tabSize              = 4;
     this->wordWrap             = false;
     this->highlightCurrentLine = true;
+    this->showTabCharacter     = false;
     this->encoding             = CharacterEncoding::Encoding::Binary;
 }
 Settings::Settings()

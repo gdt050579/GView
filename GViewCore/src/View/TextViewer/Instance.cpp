@@ -20,6 +20,7 @@ class CharacterStream
     Reference<SettingsData> settings;
     CharacterEncoding::ExpandedCharacter ec;
     bool decodingError;
+    bool charIsTab;
 
   public:
     CharacterStream(BufferView buf, uint32 characterIndex, Reference<SettingsData> _settings)
@@ -41,12 +42,13 @@ class CharacterStream
         {
             this->decodingError = false;
             this->ch            = this->ec.GetChar();
+            this->charIsTab     = ch == '\t';
             this->pos += this->ec.Length();
             this->xPos      = this->nextPos;
             this->charIndex = this->nextCharIndex++;
-            if (this->ch == '\t')
+            if (this->charIsTab)
             {
-                this->ch = ' '; // tab will be showd as a space
+                this->ch = settings->showTabCharacter ? 0x2192 : ' '; // tab will be showd as a space
                 this->nextPos += this->settings->tabSize - (this->xPos % this->settings->tabSize);
             }
             else
@@ -57,6 +59,7 @@ class CharacterStream
             // conversion error
             this->decodingError = true;
             this->ch            = *this->pos; // binary character
+            this->charIsTab     = false;
             this->pos++;
             this->xPos      = this->nextPos++;
             this->charIndex = this->nextCharIndex++;
@@ -82,6 +85,10 @@ class CharacterStream
     inline char16 GetCharacter() const
     {
         return this->ch;
+    }
+    inline bool IsTabCharacter() const
+    {
+        return this->charIsTab;
     }
     inline uint32 GetCurrentBufferPos() const
     {
@@ -582,11 +589,11 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         {
             textColor   = Cfg.Editor.Focused;
             lineNoColor = Cfg.Selection.Editor;
-            renderer.FillHorizontalLine(this->lineNumberWidth + 2, y, this->GetWidth(), ' ', Cfg.Editor.Focused);
+            renderer.FillHorizontalLine(this->lineNumberWidth + 1, y, this->GetWidth(), ' ', Cfg.Editor.Focused);
         }
         else
         {
-            textColor = Cfg.Text.Normal;
+            textColor = Cfg.Text.Focused;
         }
         break;
     default:
@@ -623,13 +630,17 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         while ((cs.Next()) && (lastC < c_end))
         {
             auto c = this->chars + (cs.GetXOffset() - xScroll);
+            if (c >= c_end) // safety check
+                break;
             // fill in the spaces
+
             while (lastC < c)
             {
                 lastC->Code  = ' ';
                 lastC->Color = textColor;
                 lastC++;
             }
+
             c->Code  = cs.GetCharacter();
             c->Color = textColor;
             if (focused)
@@ -638,6 +649,8 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
                     c->Color = Cfg.Cursor.Normal;
                 else if (cs.HasDecodingErrors())
                     c->Color = Cfg.Text.Error;
+                else if (cs.IsTabCharacter())
+                    c->Color = Cfg.Text.Inactive;
             }
             lastC = c + 1;
         }
@@ -803,7 +816,8 @@ enum class PropertyID : uint32
     Encoding,
     HasBOM,
     HighlightCurrentLine,
-    TabSize
+    TabSize,
+    ShowTabCharacter
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -825,6 +839,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::TabSize:
         value = this->settings->tabSize;
+        return true;
+    case PropertyID::ShowTabCharacter:
+        value = this->settings->showTabCharacter;
         return true;
     }
     return false;
@@ -854,6 +871,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->settings->tabSize = uint32Temp;
         this->UpdateViewPort();
         return true;
+    case PropertyID::ShowTabCharacter:
+        this->settings->showTabCharacter = std::get<bool>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -879,6 +899,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
         { BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         { BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
+        { BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
     };

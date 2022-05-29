@@ -20,6 +20,7 @@ namespace View
             CharacterEncoding::Encoding encoding;
             bool wordWrap;
             bool highlightCurrentLine;
+            bool showTabCharacter;
             SettingsData();
         };
 
