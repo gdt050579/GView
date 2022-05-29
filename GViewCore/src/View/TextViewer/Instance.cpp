@@ -789,6 +789,11 @@ std::string_view Instance::GetName()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
+    LocalString<128> tmp;
+    auto xPoz = 0;
+    xPoz      = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
+    xPoz      = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
+
 }
 
 //======================================================================[PROPERTY]============================
