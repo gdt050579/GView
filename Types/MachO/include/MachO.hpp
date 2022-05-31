@@ -166,12 +166,13 @@ class MachOFile : public TypeInterface,
     bool shouldSwapEndianess;
     bool is64;
 
-    uint64_t panelsMask;
+    uint64 panelsMask;
+    uint32 currentItemIndex;
 
   public:
     // OffsetTranslateInterface
-    uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) override;
-    uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) override;
+    uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
+    uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
 
     // TypeInterface
     std::string_view GetTypeName() override
@@ -187,9 +188,9 @@ class MachOFile : public TypeInterface,
 
     bool HasPanel(Panels::IDs id);
 
-    bool SetHeaderInfo(uint64_t& offset);
-    bool SetHeader(uint64_t& offset);
-    bool SetLoadCommands(uint64_t& offset);
+    bool SetHeaderInfo(uint64& offset);
+    bool SetHeader(uint64& offset);
+    bool SetLoadCommands(uint64& offset);
     bool SetSegmentsAndTheirSections();
     bool SetDyldInfo();
     bool SetIdDylibs();
@@ -226,6 +227,8 @@ namespace Panels
         void UpdateUUID();
         void UpdateVersionMin();
         void RecomputePanelsPositions();
+
+        void UpdateFatInfo();
 
       public:
         Information(Reference<Object> _object, Reference<MachOFile> _machO);

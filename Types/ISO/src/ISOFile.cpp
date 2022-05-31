@@ -142,7 +142,7 @@ bool ISOFile::PopulateItem(TreeViewItem item)
     const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
     const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    const auto& currentObject = objects[currentItemIndex];
+    const auto& currentObject = objects.at(currentItemIndex);
     item.SetText(std::string_view{ currentObject.fileIdentifier, currentObject.lengthOfFileIdentifier });
 
     if (currentObject.fileFlags & ECMA_119_FileFlags::Directory)

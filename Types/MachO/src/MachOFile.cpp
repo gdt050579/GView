@@ -2,7 +2,8 @@
 
 namespace GView::Type::MachO
 {
-MachOFile::MachOFile(Reference<GView::Utils::DataCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
+MachOFile::MachOFile(Reference<GView::Utils::DataCache> file)
+    : header({}), fatHeader({}), isFat(false), isMacho(false), is64(false), shouldSwapEndianess(false), panelsMask(0)
 {
 }
 
@@ -11,6 +12,8 @@ bool MachOFile::Update()
     uint64 offset = 0;
 
     SetHeaderInfo(offset);
+
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
 
     if (isMacho)
     {
@@ -27,7 +30,6 @@ bool MachOFile::Update()
         SetCodeSignature();
         SetVersionMin();
 
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
         panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
 
         if (segments.empty() == false)
@@ -58,7 +60,68 @@ bool MachOFile::Update()
     }
     else if (isFat)
     {
-        // TODO:
+        uint64 offset = 0;
+
+        CHECK(obj->GetData().Copy<MAC::fat_header>(offset, fatHeader), false, "");
+        offset += sizeof(MAC::fat_header);
+
+        if (shouldSwapEndianess)
+        {
+            Swap(fatHeader);
+        }
+
+        archs.clear();
+        archs.reserve(fatHeader.nfat_arch);
+
+        for (decltype(fatHeader.nfat_arch) i = 0; i < fatHeader.nfat_arch; i++)
+        {
+            MAC::Arch arch{};
+            if (is64)
+            {
+                MAC::fat_arch64 fa64;
+                CHECK(obj->GetData().Copy<MAC::fat_arch64>(offset, fa64), false, "");
+                if (shouldSwapEndianess)
+                {
+                    Swap(fa64);
+                }
+                offset += sizeof(MAC::fat_arch64);
+
+                arch.cputype    = fa64.cputype;
+                arch.cpusubtype = fa64.cpusubtype;
+                arch.offset     = fa64.offset;
+                arch.size       = fa64.size;
+                arch.align      = fa64.align;
+                arch.reserved   = fa64.reserved;
+            }
+            else
+            {
+                MAC::fat_arch fa;
+                CHECK(obj->GetData().Copy<MAC::fat_arch>(offset, fa), false, "");
+                if (shouldSwapEndianess)
+                {
+                    Swap(fa);
+                }
+                offset += sizeof(MAC::fat_arch);
+
+                arch.cputype    = fa.cputype;
+                arch.cpusubtype = fa.cpusubtype;
+                arch.offset     = fa.offset;
+                arch.size       = fa.size;
+                arch.align      = fa.align;
+            }
+
+            MAC::mach_header mh{};
+            CHECK(obj->GetData().Copy<MAC::mach_header>(arch.offset, mh), false, "");
+            if (mh.magic == MAC::MH_CIGAM || mh.magic == MAC::MH_CIGAM_64)
+            {
+                Swap(mh);
+            }
+
+            arch.filetype = mh.filetype;
+
+            arch.info = MAC::GetArchInfoFromCPUTypeAndSubtype(arch.cputype, arch.cpusubtype);
+            archs.emplace_back(arch);
+        }
     }
 
     return true;
@@ -69,23 +132,23 @@ bool MachOFile::HasPanel(Panels::IDs id)
     return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
 }
 
-uint64_t MachOFile::TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex)
+uint64_t MachOFile::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
 {
     return value;
 }
 
-uint64_t MachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex)
+uint64_t MachOFile::TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex)
 {
     return value;
 }
 
-bool MachOFile::SetHeaderInfo(uint64_t& offset)
+bool MachOFile::SetHeaderInfo(uint64& offset)
 {
     uint32 magic = 0;
-    CHECK(obj->GetData().Copy<uint32_t>(offset, magic), false, "");
+    CHECK(obj->GetData().Copy<uint32>(offset, magic), false, "");
 
-    const bool isMacho = magic == MAC::MH_MAGIC || magic == MAC::MH_CIGAM || magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
-    const bool isFat   = magic == MAC::FAT_MAGIC || magic == MAC::FAT_CIGAM || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
+    isMacho = magic == MAC::MH_MAGIC || magic == MAC::MH_CIGAM || magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
+    isFat   = magic == MAC::FAT_MAGIC || magic == MAC::FAT_CIGAM || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
 
     is64 = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
     shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_CIGAM || magic == MAC::FAT_CIGAM_64;
@@ -93,7 +156,7 @@ bool MachOFile::SetHeaderInfo(uint64_t& offset)
     return true;
 }
 
-bool MachOFile::SetHeader(uint64_t& offset)
+bool MachOFile::SetHeader(uint64& offset)
 {
     CHECK(obj->GetData().Copy<MAC::mach_header>(offset, header), false, "");
     offset += sizeof(header);
@@ -110,7 +173,7 @@ bool MachOFile::SetHeader(uint64_t& offset)
     return true;
 }
 
-bool MachOFile::SetLoadCommands(uint64_t& offset)
+bool MachOFile::SetLoadCommands(uint64& offset)
 {
     loadCommands.reserve(header.ncmds);
 
@@ -825,16 +888,45 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
 
 bool MachOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
-    // TODO:
-    return false;
+    currentItemIndex = 0;
+    return archs.size() > 0;
 }
 bool MachOFile::PopulateItem(TreeViewItem item)
 {
-    // TODO:
-    return false;
+    LocalString<128> tmp;
+    NumericFormatter nf;
+    const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
+    const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+    const auto& arch = archs.at(currentItemIndex);
+    const auto& info = arch.info;
+    item.SetText(tmp.Format("%s (%s)", info.name.c_str(), nf.ToString(arch.cputype, hex).data()));
+    item.SetText(1, tmp.Format("%s (%s)", info.description.c_str(), nf.ToString(arch.cpusubtype, hex).data()));
+
+    const auto fileType             = arch.filetype;
+    const auto& fileTypeName        = MAC::FileTypeNames.at(fileType);
+    const auto& fileTypeDescription = MAC::FileTypeDescriptions.at(fileType);
+    item.SetText(2, tmp.Format("%s (0x%X) %s", fileTypeName.data(), fileType, fileTypeDescription.data()));
+    item.SetText(3, nf.ToString(arch.offset, hex));
+    item.SetText(4, nf.ToString(arch.size, hex));
+    item.SetText(5, nf.ToString(arch.align, hex));
+    item.SetText(6, nf.ToString(1ULL << arch.align, hex));
+
+    item.SetData<MAC::Arch>(&archs.at(currentItemIndex));
+
+    currentItemIndex++;
+
+    return currentItemIndex != archs.size();
 }
 void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
-    // TODO:
+    CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
+
+    auto data         = item.GetData<MAC::Arch>();
+    const auto offset = data->offset;
+    const auto length = (uint32) data->size;
+
+    const auto buffer = obj->GetData().CopyToBuffer(offset, length);
+    GView::App::OpenBuffer(buffer, data->info.name);
 }
 } // namespace GView::Type::MachO

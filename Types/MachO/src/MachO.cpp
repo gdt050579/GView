@@ -112,7 +112,28 @@ extern "C"
         }
         else if (machO->isFat)
         {
-            // TODO:
+            uint64_t offsetHeaders = 0;
+
+            settings.AddZone(offsetHeaders, sizeof(machO->fatHeader), machO->colors.header, "Header");
+            offsetHeaders += sizeof(machO->header);
+
+            uint32_t objectCount = 0;
+            LocalString<128> temp;
+
+            for (const auto& vArch : machO->archs)
+            {
+                temp.Format("Arch #%u", objectCount);
+
+                const auto structSize = machO->is64 ? sizeof(fat_arch64) : sizeof(fat_arch);
+                settings.AddZone(offsetHeaders, structSize, machO->colors.arch, temp);
+                offsetHeaders += structSize;
+
+                const auto& ai = machO->archs[objectCount].info;
+                temp.Format("#%u %s", objectCount, ai.name.c_str());
+                settings.AddZone(machO->archs[objectCount].offset, machO->archs[objectCount].size, machO->colors.object, temp);
+
+                objectCount++;
+            }
         }
 
         win->CreateViewer("BufferView", settings);
