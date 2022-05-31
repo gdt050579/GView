@@ -221,15 +221,40 @@ void Information::RecomputePanelsPositions()
     general->Resize(GetWidth(), general->GetItemsCount() + 3);
 }
 
+void Information::UpdateFatInfo()
+{
+    LocalString<256> tempStr;
+    NumericFormatter n;
+
+    general->DeleteAllItems();
+    general->AddItem("Fat Binary Info").SetType(ListViewItem::Type::Category);
+    general->AddItem({ "File", object->GetName() });
+    general->AddItem(
+          { "Size",
+            tempStr.Format("%s bytes", n.ToString(machO->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+    general->AddItem({ "Arch", machO->is64 ? "x64" : "x86" });
+    general->AddItem(
+          { "Objects",
+            tempStr.Format("%s", n.ToString(static_cast<uint64_t>(machO->fatHeader.nfat_arch), { NumericFormatFlags::None, 10 }).data()) });
+}
+
 void Information::Update()
 {
     general->DeleteAllItems();
 
-    UpdateBasicInfo();
-    UpdateEntryPoint();
-    UpdateSourceVersion();
-    UpdateUUID();
-    UpdateVersionMin();
+    if (machO->isMacho)
+    {
+        UpdateBasicInfo();
+        UpdateEntryPoint();
+        UpdateSourceVersion();
+        UpdateUUID();
+        UpdateVersionMin();
+    }
+    else if (machO->isFat)
+    {
+        UpdateFatInfo();
+    }
+
     RecomputePanelsPositions();
 }
 } // namespace GView::Type::MachO::Panels

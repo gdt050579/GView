@@ -36,7 +36,7 @@ Sections::Sections(Reference<MachOFile> _machO, Reference<GView::View::WindowInt
           ListViewFlags::None);
     if (machO->is64)
     {
-        list->AddColumn("Reserved3,a:r,w:12");
+        list->AddColumn("n:Reserved3,a:r,w:12");
     }
 
     Update();

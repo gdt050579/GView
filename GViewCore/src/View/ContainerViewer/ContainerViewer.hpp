@@ -16,9 +16,7 @@ namespace View
             static constexpr uint32 MAX_PROPERTIES = 32;
             struct
             {
-                FixSizeUnicode<29> Name;
-                TextAlignament Align;
-                uint32 Width;
+                LocalUnicodeStringBuilder<256> layout;
             } columns[MAX_COLUMNS];
             uint32 columnsCount;
             struct

@@ -160,11 +160,11 @@ extern "C"
 
         settings.SetIcon(ISO_ICON);
         settings.SetColumns({
-              { "&Name", TextAlignament::Left, 80 },
-              { "&Size", TextAlignament::Right, 20 },
-              { "&Created", TextAlignament::Right, 25 },
-              { "&OffsetInFile", TextAlignament::Right, 20 },
-              { "&Flags", TextAlignament::Right, 25 },
+              "n:&Name,a:l,w:80",
+              "n:&Size,a:r,w:20",
+              "n:&Created,a:r,2:25",
+              "n:&OffsetInFile,a:r,w:20",
+              "n:&Flags,a:r,w:25",
         });
 
         settings.SetEnumerateCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
