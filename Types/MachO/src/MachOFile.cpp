@@ -822,4 +822,19 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
 
     return false;
 }
+
+bool MachOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+{
+    // TODO:
+    return false;
+}
+bool MachOFile::PopulateItem(TreeViewItem item)
+{
+    // TODO:
+    return false;
+}
+void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
+{
+    // TODO:
+}
 } // namespace GView::Type::MachO

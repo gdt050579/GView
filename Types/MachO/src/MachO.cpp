@@ -11,6 +11,23 @@ using namespace GView::View;
 using namespace GView::Type::MachO;
 using namespace MAC;
 
+constexpr string_view FAT_ICON = "......................"  // 1
+                                 "......................"  // 2
+                                 "......................"  // 3
+                                 "......................"  // 4
+                                 "WWWWWW.WWWWWWW.WWWWWWW"  // 5
+                                 "WW.....W.....W....W..."  // 6
+                                 "WW.....W.....W....W..."  // 7
+                                 "WWWWWW.WWWWWWW....W..."  // 8
+                                 "WW.....W.....W....W..."  // 9
+                                 "WW.....W.....W....W..."  // 10
+                                 "WW.....W.....W....W..."  // 11
+                                 "......................"  // 12
+                                 "......................"  // 13
+                                 "......................"  // 14
+                                 "......................"  // 15
+                                 "......................"; // 16
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
@@ -101,10 +118,38 @@ extern "C"
         win->CreateViewer("BufferView", settings);
     }
 
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
+    {
+        ContainerViewer::Settings settings;
+
+        settings.SetIcon(FAT_ICON);
+        settings.SetColumns({
+              "n:CPU type,a:r,w:25",
+              "n:CPU subtype,a:r,w:25",
+              "n:File type,w:80",
+              "n:Offset,a:r,w:12",
+              "n:Size,a:r,w:12",
+              "n:Align,a:r,w:12",
+              "n:Real Align,a:r,w:12",
+        });
+
+        settings.SetEnumerateCallback(
+              win->GetObject()->GetContentType<MachO::MachOFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(
+              win->GetObject()->GetContentType<MachO::MachOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+        win->CreateViewer("ContainerViewer", settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto machO = win->GetObject()->GetContentType<MachO::MachOFile>();
         machO->Update();
+
+        if (machO->isFat)
+        {
+            CreateContainerView(win, machO);
+        }
 
         CreateBufferView(win, machO);
 

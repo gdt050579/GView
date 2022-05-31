@@ -20,7 +20,10 @@ namespace Panels
     };
 };
 
-class MachOFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+class MachOFile : public TypeInterface,
+                  public View::BufferViewer::OffsetTranslateInterface,
+                  public View::ContainerViewer::EnumerateInterface,
+                  public View::ContainerViewer::OpenItemInterface
 {
   public:
     struct Colors
@@ -197,6 +200,10 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetLinkEditData();
     bool SetCodeSignature();
     bool SetVersionMin();
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
   private:
     bool ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const;
