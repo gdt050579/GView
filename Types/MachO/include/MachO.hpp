@@ -25,10 +25,13 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
   public:
     struct Colors
     {
-        ColorPair header{ Color::Olive, Color::Transparent };
-        ColorPair loadCommand{ Color::Magenta, Color::Transparent };
-        ColorPair section{ Color::Silver, Color::Transparent };
-        ColorPair linkEdit{ Color::Teal, Color::Transparent };
+        const ColorPair header{ Color::Olive, Color::Transparent };
+        const ColorPair loadCommand{ Color::Magenta, Color::Transparent };
+        const ColorPair section{ Color::Silver, Color::Transparent };
+        const ColorPair linkEdit{ Color::Teal, Color::Transparent };
+        const ColorPair arch{ Color::Magenta, Color::Transparent };
+        const ColorPair objectName{ Color::DarkRed, Color::Transparent };
+        const ColorPair object{ Color::Silver, Color::Transparent };
     } colors;
 
     struct LoadCommand
@@ -138,6 +141,11 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     };
 
   public:
+    /* Universal/Fat*/
+    MAC::fat_header fatHeader;
+    std::vector<MAC::Arch> archs;
+
+    /* MachO */
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
@@ -150,6 +158,8 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<MAC::linkedit_data_command> linkEditDatas;
     std::optional<CodeSignature> codeSignature;
     std::optional<MAC::version_min_command> versionMin;
+    bool isMacho;
+    bool isFat;
     bool shouldSwapEndianess;
     bool is64;
 
@@ -174,7 +184,7 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
 
     bool HasPanel(Panels::IDs id);
 
-    bool SetArchitectureAndEndianess(uint64_t& offset);
+    bool SetHeaderInfo(uint64_t& offset);
     bool SetHeader(uint64_t& offset);
     bool SetLoadCommands(uint64_t& offset);
     bool SetSegmentsAndTheirSections();

@@ -1,13 +1,5 @@
 #include "MachO.hpp"
 
-//#include <time.h>
-//#include <openssl/pem.h>
-//#include <openssl/cms.h>
-//#include <openssl/err.h>
-//#include <openssl/pkcs12.h>
-//#include <openssl/conf.h>
-//#include <openssl/asn1.h>
-
 namespace GView::Type::MachO
 {
 MachOFile::MachOFile(Reference<GView::Utils::DataCache> file) : header({}), is64(false), shouldSwapEndianess(false), panelsMask(0)
@@ -16,49 +8,57 @@ MachOFile::MachOFile(Reference<GView::Utils::DataCache> file) : header({}), is64
 
 bool MachOFile::Update()
 {
-    uint64_t offset = 0;
+    uint64 offset = 0;
 
-    SetArchitectureAndEndianess(offset);
-    SetHeader(offset);
-    SetLoadCommands(offset);
-    SetSegmentsAndTheirSections();
-    SetDyldInfo();
-    SetIdDylibs();
-    SetMain();
-    SetSymbols();
-    SetSourceVersion();
-    SetUUID();
-    SetLinkEditData();
-    SetCodeSignature();
-    SetVersionMin();
+    SetHeaderInfo(offset);
 
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
-
-    if (segments.empty() == false)
+    if (isMacho)
     {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
+        SetHeader(offset);
+        SetLoadCommands(offset);
+        SetSegmentsAndTheirSections();
+        SetDyldInfo();
+        SetIdDylibs();
+        SetMain();
+        SetSymbols();
+        SetSourceVersion();
+        SetUUID();
+        SetLinkEditData();
+        SetCodeSignature();
+        SetVersionMin();
+
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
+
+        if (segments.empty() == false)
+        {
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
+        }
+
+        if (dyldInfo.has_value())
+        {
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
+        }
+
+        if (dylibs.empty() == false)
+        {
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
+        }
+
+        if (dySymTab.has_value())
+        {
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
+        }
+
+        if (codeSignature.has_value())
+        {
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::CodeSign);
+        }
     }
-
-    if (dyldInfo.has_value())
+    else if (isFat)
     {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
-    }
-
-    if (dylibs.empty() == false)
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
-    }
-
-    if (dySymTab.has_value())
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
-    }
-
-    if (codeSignature.has_value())
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::CodeSign);
+        // TODO:
     }
 
     return true;
@@ -79,13 +79,16 @@ uint64_t MachOFile::TranslateFromFileOffset(uint64_t value, uint32 toTranslation
     return value;
 }
 
-bool MachOFile::SetArchitectureAndEndianess(uint64_t& offset)
+bool MachOFile::SetHeaderInfo(uint64_t& offset)
 {
-    uint32_t magic = 0;
+    uint32 magic = 0;
     CHECK(obj->GetData().Copy<uint32_t>(offset, magic), false, "");
 
-    is64                = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
-    shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64;
+    const bool isMacho = magic == MAC::MH_MAGIC || magic == MAC::MH_CIGAM || magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
+    const bool isFat   = magic == MAC::FAT_MAGIC || magic == MAC::FAT_CIGAM || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
+
+    is64 = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
+    shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_CIGAM || magic == MAC::FAT_CIGAM_64;
 
     return true;
 }
