@@ -910,7 +910,7 @@ bool MachOFile::PopulateItem(TreeViewItem item)
     item.SetText(3, nf.ToString(arch.offset, hex));
     item.SetText(4, nf.ToString(arch.size, hex));
     item.SetText(5, nf.ToString(arch.align, hex));
-    item.SetText(6, nf.ToString(1ULL << arch.align, hex));
+    item.SetText(6, nf.ToString((uint32) (1ULL << arch.align), hex));
 
     item.SetData<MAC::Arch>(&archs.at(currentItemIndex));
 
