@@ -123,8 +123,7 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     // 2. views
     View::ContainerViewer::Settings settings;
     settings.SetIcon(folderIcon);
-    settings.SetColumns(
-          { { "&Name", TextAlignament::Left, 50 }, { "&Size", TextAlignament::Right, 16 }, { "&Created", TextAlignament::Center, 21 } });
+    settings.SetColumns({ "n:&Name,a:l,w:50", "n:&Size,a:r,w:16", "n:&Created,a:c,w:21" });
     settings.AddProperty("Path", ft->root.u16string());
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::OpenItemInterface>());

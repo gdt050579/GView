@@ -29,7 +29,7 @@ Objects::Objects(Reference<UniversalMachOFile> _machO, Reference<GView::View::Wi
           "d:c",
           { "n:CPU type,a:r,w:25",
             "n:CPU subtype,a:r,w:25",
-            "n:File type,e:80",
+            "n:File type,w:80",
             "n:Offset,a:r,w:12",
             "n:Size,a:r,w:12",
             "n:Align,a:r,w:12",

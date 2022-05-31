@@ -37,34 +37,14 @@ bool Settings::AddProperty(string_view name, const ConstString& value, ListViewI
     SD->propertiesCount++;
     return true;
 }
-void Settings::SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns)
+void Settings::SetColumns(std::initializer_list<ConstString> columns)
 {
-    LocalUnicodeStringBuilder<64> temp;
     for (const auto& col : columns)
     {
-        if (temp.Set(col.name))
-        {
-            SD->columns[SD->columnsCount].Name = temp.ToStringView();
-        }
-        else
-        {
-            SD->columns[SD->columnsCount].Name = u"?";
-        }
-
-        SD->columns[SD->columnsCount].Align = col.align;
-        SD->columns[SD->columnsCount].Width = col.width;
+        SD->columns[SD->columnsCount].layout.Set(col);
         SD->columnsCount++;
     }
 }
-// bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
-//{
-//     CHECK(SD->columnsCount < SettingsData::MAX_COLUMNS, false, "");
-//     SD->columns[SD->columnsCount].Name  = name;
-//     SD->columns[SD->columnsCount].Align = align;
-//     SD->columns[SD->columnsCount].Width = std::max<>(4U, width);
-//     SD->columnsCount++;
-//     return true;
-// }
 void Settings::SetEnumerateCallback(Reference<EnumerateInterface> callback)
 {
     SD->enumInterface = callback;
