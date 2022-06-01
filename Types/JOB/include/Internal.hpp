@@ -93,13 +93,15 @@ static_assert(sizeof(Priority) == 4);
 
 enum class Status : uint32
 {
-    TASK_READY         = 0x00041300, // Task is not running but is scheduled to run at some time in the future.
-    TASK_RUNNING       = 0x00041301, // Task is currently running.
-    TASK_NOT_SCHEDULED = 0x00041305, // The task is not running and has no valid triggers.
+    TASK_READY           = 0x00041300, // Task is not running but is scheduled to run at some time in the future.
+    TASK_RUNNING         = 0x00041301, // Task is currently running.
+    TASK_HAS_NOT_YET_RUN = 0x00041303, // Task is unkown.
+    TASK_NOT_SCHEDULED   = 0x00041305, // The task is not running and has no valid triggers.
 };
 
 static const std::map<Status, std::string_view> StatusNames{ GET_PAIR_FROM_ENUM(Status::TASK_READY),
                                                              GET_PAIR_FROM_ENUM(Status::TASK_RUNNING),
+                                                             GET_PAIR_FROM_ENUM(Status::TASK_HAS_NOT_YET_RUN),
                                                              GET_PAIR_FROM_ENUM(Status::TASK_NOT_SCHEDULED) };
 
 union Flags

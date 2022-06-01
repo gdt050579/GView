@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.2.0"
+#define GVIEW_VERSION "0.6.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -587,7 +587,7 @@ namespace View
             bool SetIcon(string_view imageStringFormat16x16);
             bool SetPathSeparator(char16 separator);
             bool AddProperty(string_view name, const ConstString& value, ListViewItem::Type itemType = ListViewItem::Type::Normal);
-            void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
+            void SetColumns(std::initializer_list<ConstString> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
             void SetOpenItemCallback(Reference<OpenItemInterface> callback);
         };

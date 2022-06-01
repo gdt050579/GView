@@ -65,7 +65,7 @@ void Information::UpdateGeneralInformation()
     AddDecAndHexElement("Exit Code", "%-20s (%s)", job->fixedLengthData.exitCode);
 
     const auto& statusName      = JOB::StatusNames.at(job->fixedLengthData.status);
-    const auto statusVersionHex = nf2.ToString((uint16) job->fixedLengthData.status, hex);
+    const auto statusVersionHex = nf2.ToString((uint32) job->fixedLengthData.status, hex);
     general->AddItem({ "Status", ls.Format("%-20s (%s)", statusName.data(), statusVersionHex.data()) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
