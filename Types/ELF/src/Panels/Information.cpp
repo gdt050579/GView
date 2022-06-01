@@ -73,6 +73,32 @@ void Information::UpdateHeader()
         AddDecAndHexElement("PAD1", format, pad1);
         const auto pad2 = (*(uint32*) (header.e_ident + EI_PAD + sizeof(pad1))) << 8;
         AddDecAndHexElement("PAD2", format, pad2);
+
+        const auto typeName = ELF::GetNameAndDecriptionFromElfType(header.e_type);
+        const auto typeHex  = nf.ToString(header.e_type, hex);
+        general->AddItem({ "Type", ls.Format(formatDescription.data(), typeName.first.data(), typeHex.data(), typeName.second.data()) })
+              .SetType(ListViewItem::Type::Emphasized_2);
+
+        const auto machineName = ELF::GetNameFromElfMachine(header.e_machine);
+        const auto machineHex  = nf.ToString(header.e_type, hex);
+        general->AddItem({ "Machine", ls.Format(format.data(), machineName.data(), machineHex.data()) })
+              .SetType(ListViewItem::Type::Emphasized_1);
+
+        const auto versionHName = ELF::GetNameFromElfVersion(header.e_version);
+        const auto versionHHex  = nf.ToString(header.e_version, hex);
+        general->AddItem({ "Version", ls.Format(format.data(), versionHName.data(), versionHHex.data()) })
+              .SetType(ListViewItem::Type::Emphasized_1);
+
+        AddDecAndHexElement("Entry Point", format, header.e_entry, ListViewItem::Type::Highlighted);
+        AddDecAndHexElement("PHT File Offset", format, header.e_phoff);
+        AddDecAndHexElement("SHT File Offset", format, header.e_shoff);
+        AddDecAndHexElement("Processor Flags", format, header.e_flags);
+        AddDecAndHexElement("ELF Header Size", format, header.e_ehsize);
+        AddDecAndHexElement("PHT Entry Size", format, header.e_phentsize);
+        AddDecAndHexElement("PHT # Entries", format, header.e_phnum);
+        AddDecAndHexElement("SH Size", format, header.e_shentsize);
+        AddDecAndHexElement("SHT # Entries", format, header.e_shnum);
+        AddDecAndHexElement("SHT String Index", format, header.e_shstrndx);
     }
     else
     {
@@ -109,6 +135,32 @@ void Information::UpdateHeader()
         AddDecAndHexElement("PAD1", format, pad1);
         const auto pad2 = (*(uint32*) (header.e_ident + EI_PAD + sizeof(pad1))) << 8;
         AddDecAndHexElement("PAD2", format, pad2);
+
+        const auto typeName = ELF::GetNameAndDecriptionFromElfType(header.e_type);
+        const auto typeHex  = nf.ToString(header.e_type, hex);
+        general->AddItem({ "Type", ls.Format(formatDescription.data(), typeName.first.data(), typeHex.data(), typeName.second.data()) })
+              .SetType(ListViewItem::Type::Emphasized_2);
+
+        const auto machineName = ELF::GetNameFromElfMachine(header.e_machine);
+        const auto machineHex  = nf.ToString(header.e_type, hex);
+        general->AddItem({ "Machine", ls.Format(format.data(), machineName.data(), machineHex.data()) })
+              .SetType(ListViewItem::Type::Emphasized_1);
+
+        const auto versionHName = ELF::GetNameFromElfVersion(header.e_version);
+        const auto versionHHex  = nf.ToString(header.e_version, hex);
+        general->AddItem({ "Version", ls.Format(format.data(), versionHName.data(), versionHHex.data()) })
+              .SetType(ListViewItem::Type::Emphasized_1);
+
+        AddDecAndHexElement("Entry Point", format, header.e_entry, ListViewItem::Type::Highlighted);
+        AddDecAndHexElement("PHT File Offset", format, header.e_phoff);
+        AddDecAndHexElement("SHT File Offset", format, header.e_shoff);
+        AddDecAndHexElement("Processor Flags", format, header.e_flags);
+        AddDecAndHexElement("ELF Header Size", format, header.e_ehsize);
+        AddDecAndHexElement("PHT Entry Size", format, header.e_phentsize);
+        AddDecAndHexElement("PHT # Entries", format, header.e_phnum);
+        AddDecAndHexElement("SH Size", format, header.e_shentsize);
+        AddDecAndHexElement("SHT # Entries", format, header.e_shnum);
+        AddDecAndHexElement("SHT String Index", format, header.e_shstrndx);
     }
 }
 

@@ -98,7 +98,7 @@ constexpr Elf_Half EM_68HC12          = 53; // Motorola M68HC12
 constexpr Elf_Half EM_MMA             = 54; // Fujitsu Multimedia Accelerator
 constexpr Elf_Half EM_PCP             = 55; // Siemens PCP
 constexpr Elf_Half EM_NCPU            = 56; // Sony nCPU embedded RISC processor
-constexpr Elf_Half EM_NDR1            = 57; // Denso NDR1 microprocesspr
+constexpr Elf_Half EM_NDR1            = 57; // Denso NDR1 microprocessor
 constexpr Elf_Half EM_STARCORE        = 58; // Motorola Star*Core processor
 constexpr Elf_Half EM_ME16            = 59; // Toyota ME16 processor
 constexpr Elf_Half EM_ST100           = 60; // STMicroelectronics ST100 processor
@@ -109,38 +109,38 @@ constexpr Elf_Half EM_PDP10           = 64; // Digital Equipment Corp. PDP-10
 constexpr Elf_Half EM_PDP11           = 65; // Digital Equipment Corp. PDP-11
 constexpr Elf_Half EM_FX66            = 66; // Siemens FX66 microcontroller
 constexpr Elf_Half EM_ST9PLUS         = 67; // STMicroelectronics ST9+ 8/16 bit microcontroller
-constexpr Elf_Half EM_ST7             = 68 ; // STMicroelectronics ST7 8-bit microcontroller
-constexpr Elf_Half EM_68HC16          = 69 ; // Motorola MC68HC16 Microcontroller
-constexpr Elf_Half EM_68HC11          = 70 ; // Motorola MC68HC11 Microcontroller
-constexpr Elf_Half EM_68HC08          = 71 ; // Motorola MC68HC08 Microcontroller
-constexpr Elf_Half EM_68HC05          = 72 ; // Motorola MC68HC05 Microcontroller
-constexpr Elf_Half EM_SVX             = 73 ; // Silicon Graphics SVx
-constexpr Elf_Half EM_ST19            = 74 ; // STMicroelectronics ST19 8-bit cpu
-constexpr Elf_Half EM_VAX             = 75 ; // Digital VAX
-constexpr Elf_Half EM_CRIS            = 76 ; // Axis Communications 32-bit embedded processor
-constexpr Elf_Half EM_JAVELIN         = 77 ; // Infineon Technologies 32-bit embedded cpu
-constexpr Elf_Half EM_FIREPATH        = 78 ; // Element 14 64-bit DSP processor
-constexpr Elf_Half EM_ZSP             = 79 ; // LSI Logic's 16-bit DSP processor
-constexpr Elf_Half EM_MMIX            = 80 ; // Donald Knuth's educational 64-bit processor
-constexpr Elf_Half EM_HUANY           = 81 ; // Harvard's machine-independent format
-constexpr Elf_Half EM_PRISM           = 82 ; // SiTera Prism
-constexpr Elf_Half EM_AVR             = 83 ; // Atmel AVR 8-bit microcontroller
-constexpr Elf_Half EM_FR30            = 84 ; // Fujitsu FR30
-constexpr Elf_Half EM_D10V            = 85 ; // Mitsubishi D10V
-constexpr Elf_Half EM_D30V            = 86 ; // Mitsubishi D30V
-constexpr Elf_Half EM_V850            = 87 ; // NEC v850
-constexpr Elf_Half EM_M32R            = 88 ; // Renesas M32R (formerly Mitsubishi M32R)
-constexpr Elf_Half EM_MN10300         = 89 ; // Matsushita MN10300
-constexpr Elf_Half EM_MN10200         = 90 ; // Matsushita MN10200
-constexpr Elf_Half EM_PJ              = 91 ; // picoJava
-constexpr Elf_Half EM_OPENRISC        = 92 ; // OpenRISC 32-bit embedded processor
-constexpr Elf_Half EM_ARC_A5          = 93 ; // ARC Cores Tangent-A5
-constexpr Elf_Half EM_XTENSA          = 94 ; // Tensilica Xtensa Architecture
-constexpr Elf_Half EM_VIDEOCORE       = 95 ; // Alphamosaic VideoCore processor
-constexpr Elf_Half EM_TMM_GPP         = 96 ; // Thompson Multimedia General Purpose Processor
-constexpr Elf_Half EM_NS32K           = 97 ; // National Semiconductor 32000 series
-constexpr Elf_Half EM_TPC             = 98 ; // Tenor Network TPC processor
-constexpr Elf_Half EM_SNP1K           = 99 ; // Trebia SNP 1000 processor
+constexpr Elf_Half EM_ST7             = 68; // STMicroelectronics ST7 8-bit microcontroller
+constexpr Elf_Half EM_68HC16          = 69; // Motorola MC68HC16 Microcontroller
+constexpr Elf_Half EM_68HC11          = 70; // Motorola MC68HC11 Microcontroller
+constexpr Elf_Half EM_68HC08          = 71; // Motorola MC68HC08 Microcontroller
+constexpr Elf_Half EM_68HC05          = 72; // Motorola MC68HC05 Microcontroller
+constexpr Elf_Half EM_SVX             = 73; // Silicon Graphics SVx
+constexpr Elf_Half EM_ST19            = 74; // STMicroelectronics ST19 8-bit cpu
+constexpr Elf_Half EM_VAX             = 75; // Digital VAX
+constexpr Elf_Half EM_CRIS            = 76; // Axis Communications 32-bit embedded processor
+constexpr Elf_Half EM_JAVELIN         = 77; // Infineon Technologies 32-bit embedded cpu
+constexpr Elf_Half EM_FIREPATH        = 78; // Element 14 64-bit DSP processor
+constexpr Elf_Half EM_ZSP             = 79; // LSI Logic's 16-bit DSP processor
+constexpr Elf_Half EM_MMIX            = 80; // Donald Knuth's educational 64-bit processor
+constexpr Elf_Half EM_HUANY           = 81; // Harvard's machine-independent format
+constexpr Elf_Half EM_PRISM           = 82; // SiTera Prism
+constexpr Elf_Half EM_AVR             = 83; // Atmel AVR 8-bit microcontroller
+constexpr Elf_Half EM_FR30            = 84; // Fujitsu FR30
+constexpr Elf_Half EM_D10V            = 85; // Mitsubishi D10V
+constexpr Elf_Half EM_D30V            = 86; // Mitsubishi D30V
+constexpr Elf_Half EM_V850            = 87; // NEC v850
+constexpr Elf_Half EM_M32R            = 88; // Renesas M32R (formerly Mitsubishi M32R)
+constexpr Elf_Half EM_MN10300         = 89; // Matsushita MN10300
+constexpr Elf_Half EM_MN10200         = 90; // Matsushita MN10200
+constexpr Elf_Half EM_PJ              = 91; // picoJava
+constexpr Elf_Half EM_OPENRISC        = 92; // OpenRISC 32-bit embedded processor
+constexpr Elf_Half EM_ARC_A5          = 93; // ARC Cores Tangent-A5
+constexpr Elf_Half EM_XTENSA          = 94; // Tensilica Xtensa Architecture
+constexpr Elf_Half EM_VIDEOCORE       = 95; // Alphamosaic VideoCore processor
+constexpr Elf_Half EM_TMM_GPP         = 96; // Thompson Multimedia General Purpose Processor
+constexpr Elf_Half EM_NS32K           = 97; // National Semiconductor 32000 series
+constexpr Elf_Half EM_TPC             = 98; // Tenor Network TPC processor
+constexpr Elf_Half EM_SNP1K           = 99; // Trebia SNP 1000 processor
 constexpr Elf_Half EM_ST200           = 100; // STMicroelectronics ST200 microcontroller
 constexpr Elf_Half EM_IP2K            = 101; // Ubicom IP2022 micro controller
 constexpr Elf_Half EM_MAX             = 102; // MAX Processor
@@ -348,7 +348,10 @@ constexpr unsigned char ELFOSABI_OPENBSD = 12; // Open BSD
 constexpr unsigned char ELFOSABI_OPENVMS = 13; // Open VMS
 constexpr unsigned char ELFOSABI_NSK     = 14; // Hewlett-Packard Non-Stop Kernel
 constexpr unsigned char ELFOSABI_AROS    = 15; // Amiga Research OS
-constexpr unsigned char ELFOSABI_FENIXOS = 16; // The FenixOS highly scalable multi-core OS
+constexpr unsigned char ELFOSABI_FENIXOS = 16; // The FenixOS highly scalable multi-core 
+constexpr unsigned char ELFOSABI_CLOUDABI = 17;      // Nuxi CloudABI
+constexpr unsigned char ELFOSABI_STANDALONE = 255;   // Standalone (embedded) application
+constexpr unsigned char ELFOSABI_LAST_ARCH = 255;    // Last Architecture-specific OS ABI
 
 // 64-255 Architecture-specific value range
 // AMDGPU OS for HSA compatible compute kernels
@@ -359,11 +362,18 @@ constexpr unsigned char ELFOSABI_AMDGPU_PAL = 65;
 // AMDGPU OS for Mesa3D compatible graphics
 // shaders and compute kernels
 constexpr unsigned char ELFOSABI_AMDGPU_MESA3D = 66;
+
+constexpr unsigned char ELFOSABI_FIRST_ARCH = 64;    // First architecture-specific OS ABI
+constexpr unsigned char ELFOSABI_C6000_ELFABI = 64;  // Bare-metal TMS320C6000
+constexpr unsigned char ELFOSABI_C6000_LINUX = 65;   // Linux TMS320C6000
+constexpr unsigned char ELFOSABI_ARM = 97;           // ARM
+
 // clang-format on
 
 constexpr unsigned char ELFABIVERSION_AMDGPU_HSA_V2 = 0;
 constexpr unsigned char ELFABIVERSION_AMDGPU_HSA_V3 = 1;
 constexpr unsigned char ELFABIVERSION_AMDGPU_HSA_V4 = 2;
+constexpr unsigned char ELFABIVERSION_AMDGPU_HSA_V5 = 3;
 
 // AMDGPU specific e_flags
 constexpr Elf_Word EF_AMDGPU_MACH = 0x0ff; // AMDGPU processor selection mask.
@@ -922,21 +932,21 @@ constexpr Elf_Word PT_NOTE              = 4;
 constexpr Elf_Word PT_SHLIB             = 5;
 constexpr Elf_Word PT_PHDR              = 6;
 constexpr Elf_Word PT_TLS               = 7;
-constexpr Elf_Word PT_LOOS              = 0X60000000;
-constexpr Elf_Word PT_GNU_EH_FRAME      = 0X6474E550; // Frame unwind information
-constexpr Elf_Word PT_GNU_STACK         = 0X6474E551; // Stack flags
-constexpr Elf_Word PT_GNU_RELRO         = 0X6474E552; // Read only after relocs
-constexpr Elf_Word PT_GNU_PROPERTY      = 0X6474E553; // GNU property
-constexpr Elf_Word PT_GNU_MBIND_LO      = 0X6474E555; // Mbind segments start
-constexpr Elf_Word PT_GNU_MBIND_HI      = 0X6474F554; // Mbind segments finish
-constexpr Elf_Word PT_PAX_FLAGS         = 0X65041580;
-constexpr Elf_Word PT_OPENBSD_RANDOMIZE = 0X65A3DBE6;
-constexpr Elf_Word PT_OPENBSD_WXNEEDED  = 0X65A3DBE7;
-constexpr Elf_Word PT_OPENBSD_BOOTDATA  = 0X65A41BE6;
-constexpr Elf_Word PT_SUNWSTACK         = 0X6FFFFFFB;
-constexpr Elf_Word PT_HIOS              = 0X6FFFFFFF;
-constexpr Elf_Word PT_LOPROC            = 0X70000000;
-constexpr Elf_Word PT_HIPROC            = 0X7FFFFFFF;
+constexpr Elf_Word PT_LOOS              = 0x60000000;
+constexpr Elf_Word PT_GNU_EH_FRAME      = 0x6474E550; // Frame unwind information
+constexpr Elf_Word PT_GNU_STACK         = 0x6474E551; // Stack flags
+constexpr Elf_Word PT_GNU_RELRO         = 0x6474E552; // Read only after relocs
+constexpr Elf_Word PT_GNU_PROPERTY      = 0x6474E553; // GNU property
+constexpr Elf_Word PT_GNU_MBIND_LO      = 0x6474E555; // Mbind segments start
+constexpr Elf_Word PT_GNU_MBIND_HI      = 0x6474F554; // Mbind segments finish
+constexpr Elf_Word PT_PAX_FLAGS         = 0x65041580;
+constexpr Elf_Word PT_OPENBSD_RANDOMIZE = 0x65A3DBE6;
+constexpr Elf_Word PT_OPENBSD_WXNEEDED  = 0x65A3DBE7;
+constexpr Elf_Word PT_OPENBSD_BOOTDATA  = 0x65A41BE6;
+constexpr Elf_Word PT_SUNWSTACK         = 0x6FFFFFFB;
+constexpr Elf_Word PT_HIOS              = 0x6FFFFFFF;
+constexpr Elf_Word PT_LOPROC            = 0x70000000;
+constexpr Elf_Word PT_HIPROC            = 0x7FFFFFFF;
 
 // Segment flags
 constexpr Elf_Word PF_X        = 1;          // Execute
@@ -944,6 +954,20 @@ constexpr Elf_Word PF_W        = 2;          // Write
 constexpr Elf_Word PF_R        = 4;          // Read
 constexpr Elf_Word PF_MASKOS   = 0x0ff00000; // Unspecified
 constexpr Elf_Word PF_MASKPROC = 0xf0000000; // Unspecified
+
+// PAX Segment Flags
+constexpr Elf_Word PF_PAGEEXEC   = (1 << 4);  /* Enable  PAGEEXEC */
+constexpr Elf_Word PF_NOPAGEEXEC = (1 << 5);  /* Disable PAGEEXEC */
+constexpr Elf_Word PF_SEGMEXEC   = (1 << 6);  /* Enable  SEGMEXEC */
+constexpr Elf_Word PF_NOSEGMEXEC = (1 << 7);  /* Disable SEGMEXEC */
+constexpr Elf_Word PF_MPROTECT   = (1 << 8);  /* Enable  MPROTECT */
+constexpr Elf_Word PF_NOMPROTECT = (1 << 9);  /* Disable MPROTECT */
+constexpr Elf_Word PF_RANDEXEC   = (1 << 10); /* Enable  RANDEXEC */
+constexpr Elf_Word PF_NORANDEXEC = (1 << 11); /* Disable RANDEXEC */
+constexpr Elf_Word PF_EMUTRAMP   = (1 << 12); /* Enable  EMUTRAMP */
+constexpr Elf_Word PF_NOEMUTRAMP = (1 << 13); /* Disable EMUTRAMP */
+constexpr Elf_Word PF_RANDMMAP   = (1 << 14); /* Enable  RANDMMAP */
+constexpr Elf_Word PF_NORANDMMAP = (1 << 15); /* Disable RANDMMAP */
 
 // Dynamic Array Tags
 constexpr Elf_Word DT_NULL            = 0;
@@ -1001,38 +1025,77 @@ constexpr Elf_Word DF_STATIC_TLS = 0x10;
 // ELF file header
 struct Elf32_Ehdr
 {
-    unsigned char e_ident[EI_NIDENT];
-    Elf_Half e_type;
-    Elf_Half e_machine;
-    Elf_Word e_version;
-    Elf32_Addr e_entry;
-    Elf32_Off e_phoff;
-    Elf32_Off e_shoff;
-    Elf_Word e_flags;
-    Elf_Half e_ehsize;
-    Elf_Half e_phentsize;
-    Elf_Half e_phnum;
-    Elf_Half e_shentsize;
-    Elf_Half e_shnum;
-    Elf_Half e_shstrndx;
+    unsigned char e_ident[EI_NIDENT]; /* This array of bytes specifies how to interpret the file, independent of the processor or the file's
+                                         remaining contents. */
+    Elf_Half e_type;                  /* This member of the structure identifies the object file type */
+    Elf_Half e_machine;               /* This member specifies the required architecture for an individual file. */
+    Elf_Word e_version;               /* This member identifies the file version. */
+    Elf32_Addr e_entry; /* This member gives the virtual address to which the system first transfers control, thus starting the process. If
+                           the file has no associated entry point, this member holds zero. */
+    Elf32_Off e_phoff;  /* This member holds the program header table's file offset in bytes. If the file has no program header table, this
+                           member holds zero. */
+    Elf32_Off e_shoff;  /* This member holds the section header table's file offset in bytes.  If the file has no section header table, this
+                           member holds zero. */
+    Elf_Word e_flags;   /* This member holds processor-specific flags associated with the file.  Flag names take the form EF_`machine_flag'.
+                           Currently, no flags have been defined. */
+    Elf_Half e_ehsize;  /* This member holds the ELF header's size in bytes. */
+    Elf_Half e_phentsize; /* This member holds the size in bytes of one entry in the file's program header table; all entries are the same
+                             size. */
+    Elf_Half e_phnum; /* This member holds the number of entries in the program header table. Thus the product of e_phentsize and e_phnum
+             gives the table's size in bytes. If a file has no program header, e_phnum holds the value zero. If the number of entries in the
+             program header table is larger than or equal to PN_XNUM (0xffff), this member holds PN_XNUM (0xffff) and the real number of
+             entries in the program header table is held in the sh_info member of the initial entry in section header table.  Otherwise, the
+             sh_info member of the initial entry contains the value zero. */
+    Elf_Half e_shentsize; /* This member holds a sections header's size in bytes. A section header is one entry in the section header table;
+                             all entries are the same size.*/
+    Elf_Half e_shnum;    /* This member holds the number of entries in the section header table. Thus the product of e_shentsize and e_shnum
+                 gives the section header table's size in bytes.  If a file has no section header table, e_shnum holds the value of zero.
+                 If the number of entries in the section header table is larger than or equal to SHN_LORESERVE (0xff00), e_shnum holds the
+                 value zero and the real number of entries in the section header table is held in the sh_size member of the initial entry in
+                 section header table.  Otherwise, the sh_size member of the initial entry in the section header table holds the value zero. */
+    Elf_Half e_shstrndx; /* This member holds the section header table index of the entry associated with the section name string table. If
+              the file has no section name string table, this member holds the value SHN_UNDEF. If the index of section name string table
+              section is larger than or equal to SHN_LORESERVE (0xff00), this member holds SHN_XINDEX (0xffff) and the real index of the
+              section name string table section is held in the sh_link member of the initial entry in section header table. Otherwise, the
+              sh_link member of the initial entry in section header table contains the value zero. */
 };
 
 struct Elf64_Ehdr
 {
-    unsigned char e_ident[EI_NIDENT];
-    Elf_Half e_type;
-    Elf_Half e_machine;
-    Elf_Word e_version;
-    Elf64_Addr e_entry;
-    Elf64_Off e_phoff;
-    Elf64_Off e_shoff;
-    Elf_Word e_flags;
-    Elf_Half e_ehsize;
-    Elf_Half e_phentsize;
-    Elf_Half e_phnum;
-    Elf_Half e_shentsize;
-    Elf_Half e_shnum;
-    Elf_Half e_shstrndx;
+    unsigned char e_ident[EI_NIDENT]; /* This array of bytes specifies how to interpret the file, independent of the processor or the file's
+                                         remaining contents. */
+    Elf_Half e_type;                  /* This member of the structure identifies the object file type */
+    Elf_Half e_machine;               /* This member specifies the required architecture for an individual file. */
+    Elf_Word e_version;               /* This member identifies the file version. */
+    Elf64_Addr e_entry; /* This member gives the virtual address to which the system first transfers control, thus starting the process. If
+                            the file has no associated entry point, this member holds zero. */
+    Elf64_Off e_phoff;  /* This member holds the program header table's file offset in bytes. If the file has no program header table, this
+                           member holds zero. */
+    Elf64_Off e_shoff;  /* This member holds the section header table's file offset in bytes.  If the file has no section header table, this
+                             member holds zero. */
+    Elf_Word e_flags;   /* This member holds processor-specific flags associated with the file.  Flag names take the form EF_`machine_flag'.
+                             Currently, no flags have been defined. */
+    Elf_Half e_ehsize;  /* This member holds the ELF header's size in bytes. */
+    Elf_Half e_phentsize; /* This member holds the size in bytes of one entry in the file's program header table; all entries are the same
+                             size. */
+    Elf_Half e_phnum; /* This member holds the number of entries in the program header table. Thus the product of e_phentsize and e_phnum
+              gives the table's size in bytes. If a file has no program header, e_phnum holds the value zero. If the number of entries in
+              the program header table is larger than or equal to PN_XNUM (0xffff), this member holds PN_XNUM (0xffff) and the real number
+              of entries in the program header table is held in the sh_info member of the initial entry in section header table.  Otherwise,
+              the sh_info member of the initial entry contains the value zero. */
+    Elf_Half e_shentsize; /* This member holds a sections header's size in bytes. A section header is one entry in the section header table;
+                             all entries are the same size.*/
+    Elf_Half
+          e_shnum;       /* This member holds the number of entries in the section header table. Thus the product of e_shentsize and e_shnum
+                  gives the section header table's size in bytes.  If a file has no section header table, e_shnum holds the value of zero.
+                  If the number of entries in the section header table is larger than or equal to SHN_LORESERVE (0xff00), e_shnum holds the
+                  value zero and the real number of entries in the section header table is held in the sh_size member of the initial entry in
+                  section header table.  Otherwise, the sh_size member of the initial entry in the section header table holds the value zero. */
+    Elf_Half e_shstrndx; /* This member holds the section header table index of the entry associated with the section name string table. If
+              the file has no section name string table, this member holds the value SHN_UNDEF. If the index of section name string table
+              section is larger than or equal to SHN_LORESERVE (0xff00), this member holds SHN_XINDEX (0xffff) and the real index of the
+              section name string table section is held in the sh_link member of the initial entry in section header table. Otherwise, the
+              sh_link member of the initial entry in section header table contains the value zero. */
 };
 
 // Section header

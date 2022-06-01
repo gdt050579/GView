@@ -24,13 +24,25 @@ bool ELFFile::Update()
 
     if (is64)
     {
-        CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, program64), false, "");
-        offset += sizeof(Elf64_Phdr);
+        offset = header64.e_phoff;
+        for (auto i = 0; i < header64.e_phnum; i++)
+        {
+            Elf64_Phdr entry{};
+            CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, entry), false, "");
+            programs64.emplace_back(entry);
+            offset += sizeof(entry);
+        }
     }
     else
     {
-        CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, program32), false, "");
-        offset += sizeof(Elf32_Phdr);
+        offset = header32.e_phoff;
+        for (auto i = 0; i < header32.e_phnum; i++)
+        {
+            Elf32_Phdr entry{};
+            CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, entry), false, "");
+            programs32.emplace_back(entry);
+            offset += sizeof(entry);
+        }
     }
 
     return true;

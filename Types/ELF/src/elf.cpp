@@ -24,8 +24,8 @@ extern "C"
         return new ELF::ELFFile();
     }
 
-    static const auto HEADER_COLOR  = ColorPair{ Color::Olive, Color::Transparent };
-    static const auto PROGRAM_COLOR = ColorPair{ Color::Magenta, Color::Transparent };
+    static const auto HEADER_COLOR = ColorPair{ Color::Olive, Color::Transparent };
+    static const auto SHT_COLOR    = ColorPair{ Color::Magenta, Color::Transparent };
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ELF::ELFFile> elf)
     {
@@ -35,18 +35,20 @@ extern "C"
         if (elf->is64)
         {
             settings.AddZone(offset, sizeof(ELF::Elf64_Ehdr), HEADER_COLOR, "Header64");
-            offset += sizeof(ELF::Elf64_Ehdr);
 
-            settings.AddZone(offset, sizeof(ELF::Elf64_Phdr), PROGRAM_COLOR, "Program64");
-            offset += sizeof(ELF::Elf64_Phdr);
+            offset          = elf->header64.e_phoff;
+            const auto size = elf->header64.e_phnum * elf->header64.e_phentsize;
+            settings.AddZone(offset, size, SHT_COLOR, "PHT64");
+            offset += size;
         }
         else
         {
             settings.AddZone(offset, sizeof(ELF::Elf32_Ehdr), HEADER_COLOR, "Header32");
-            offset += sizeof(ELF::Elf32_Ehdr);
 
-            settings.AddZone(offset, sizeof(ELF::Elf32_Phdr), PROGRAM_COLOR, "Program32");
-            offset += sizeof(ELF::Elf32_Phdr);
+            offset          = elf->header32.e_phoff;
+            const auto size = elf->header32.e_phnum * elf->header32.e_phentsize;
+            settings.AddZone(offset, size, SHT_COLOR, "PHT32");
+            offset += size;
         }
 
         win->CreateViewer("BufferView", settings);
@@ -62,6 +64,7 @@ extern "C"
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new ELF::Panels::Information(win->GetObject(), elf)), true);
+        win->AddPanel(Pointer<TabPage>(new ELF::Panels::Segments(elf, win)), false);
 
         return true;
     }
