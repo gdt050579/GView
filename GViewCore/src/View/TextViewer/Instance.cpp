@@ -513,24 +513,36 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
 }
 void Instance::UpdateCursorXOffset()
 {
+    auto li = GetLineInfo(Cursor.lineNo);
     // simple checkes
     if (Cursor.charIndex == 0)
     {
         this->ViewPort.scrollX = 0;
+        this->Cursor.pos       = li.offset;
         return; // obvious --> first char is first in the line
     }
 
     uint32 w = this->GetWidth();
     w        = (w <= (this->lineNumberWidth + 1)) ? 1 : w - (this->lineNumberWidth + 1);
-    auto li  = GetLineInfo(Cursor.lineNo);
     auto idx = 0;
 
     CharacterStream cs(this->obj->GetData().Get(li.offset, li.size, false), 0, this->settings.ToReference());
-    while ((cs.Next()) && (idx < Cursor.charIndex))
+    // while ((cs.Next()) && (idx < Cursor.charIndex))
+    while ((idx < Cursor.charIndex) && (cs.Next()))
     {
         idx++;
     }
-    auto newXPos = (idx == Cursor.charIndex) ? cs.GetXOffset() : 0;
+    uint32 newXPos;
+    if (idx == Cursor.charIndex)
+    {
+        newXPos    = cs.GetNextXOffset();
+        Cursor.pos = static_cast<uint64>(cs.GetCurrentBufferPos()) + li.offset;
+    }
+    else
+    {
+        newXPos    = 0;
+        Cursor.pos = 0; // de vazut daca e ok
+    }
     if ((newXPos >= this->ViewPort.scrollX) && (newXPos < (this->ViewPort.scrollX + w)))
         return; // already visible
     if (newXPos <= this->ViewPort.scrollX)
@@ -806,6 +818,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     auto xPoz = 0;
     xPoz      = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
     xPoz      = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
+    xPoz      = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
 }
 
 //======================================================================[PROPERTY]============================
