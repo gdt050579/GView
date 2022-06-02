@@ -16,7 +16,7 @@ const std::string_view unsigned_dec_header =
 bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false, true,  true,  true,  true,  true,  true,
-    false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
     true,  true,  false, false, true,  false, false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
     true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, true,  false, false,
     true,  false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
@@ -379,18 +379,18 @@ void Instance::UpdateStringInfo(uint64 offset)
     // check for unicode
     if (this->StringInfo.showUnicode)
     {
-        auto* s = (char16_t*) buf.GetData();
+        auto* s = (char16*) buf.GetData();
         auto* e = s + buf.GetLength() / 2;
         if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
         {
             while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - (char16_t*) buf.GetData() >= StringInfo.minCount)
+            if (s - (char16*) buf.GetData() >= StringInfo.minCount)
             {
                 // ascii string found
                 StringInfo.start  = offset;
                 StringInfo.end    = offset + ((const uint8*) s - buf.GetData());
-                StringInfo.middle = offset + (s - (char16_t*) buf.GetData());
+                StringInfo.middle = offset + (s - (char16*) buf.GetData());
                 StringInfo.type   = StringType::Unicode;
                 return;
             }
