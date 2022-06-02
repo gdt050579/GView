@@ -1110,7 +1110,7 @@ struct Elf32_Shdr
     Elf32_Addr sh_addr; /* If this section appears in the memory image of a process, this member holds the address at which the section's
                            first byte should reside. Otherwise, the member contains zero. */
     Elf32_Off
-          sh_offset;  /* This member's value holds the byte offset from the beginning of the file to the first byte in the section.One
+          sh_offset;  /* This member's value holds the byte offset from the beginning of the file to the first byte in the section. One
            section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
     Elf_Word sh_size; /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
               bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */

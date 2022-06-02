@@ -744,4 +744,117 @@ static const std::string GetPermissionsFromSegmentPaxFlags(uint32 segmentPaxFlag
 
     return "[" + output + "]";
 };
+
+static std::string_view GetNameFromSectionType(uint32 sectionType)
+{
+    switch (sectionType)
+    {
+    case SHT_NULL:
+        return "NULL";
+    case SHT_PROGBITS:
+        return "PROGBITS";
+    case SHT_SYMTAB:
+        return "SYMTAB";
+    case SHT_STRTAB:
+        return "STRTAB";
+    case SHT_RELA:
+        return "RELA";
+    case SHT_HASH:
+        return "HASH";
+    case SHT_DYNAMIC:
+        return "DYNAMIC";
+    case SHT_NOTE:
+        return "NOTE";
+    case SHT_NOBITS:
+        return "NOBITS";
+    case SHT_REL:
+        return "REL";
+    case SHT_SHLIB:
+        return "SHLIB";
+    case SHT_DYNSYM:
+        return "DYNSYM";
+    case SHT_INIT_ARRAY:
+        return "INIT_ARRAY";
+    case SHT_FINI_ARRAY:
+        return "FINI_ARRAY";
+    case SHT_PREINIT_ARRAY:
+        return "PREINIT_ARRAY";
+    case SHT_GROUP:
+        return "GROUP";
+    case SHT_SYMTAB_SHNDX:
+        return "SYMTAB_SHNDX";
+    case SHT_GNU_ATTRIBUTES:
+        return "GNU_ATTRIBUTES";
+    case SHT_GNU_HASH:
+        return "GNU_HASH";
+    case SHT_GNU_LIBLIST:
+        return "GNU_LIBLIST";
+    case SHT_CHECKSUM:
+        return "CHECKSUM";
+    case SHT_LOSUNW:
+        return "LOSUNW";
+    case SHT_SUNW_COMDAT:
+        return "SUNW_COMDAT";
+    case SHT_SUNW_syminfo:
+        return "SUNW_syminfo";
+    case SHT_GNU_verdef:
+        return "GNU_verdef";
+    case SHT_GNU_verneed:
+        return "GNU_verneed";
+    case SHT_GNU_versym:
+        return "GNU_versym";
+    case SHT_LOOS:
+        return "LOOS";
+    case SHT_LOPROC:
+        return "LOPROC";
+    case SHT_HIPROC:
+        return "HIPROC";
+    case SHT_LOUSER:
+        return "LOUSER";
+    case SHT_HIUSER:
+        return "HIUSER";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static const std::string GetNamesFromSectionFlags(uint64 sectionFlags)
+{
+    static const std::initializer_list<uint32> types{ SHF_WRITE,     SHF_ALLOC,      SHF_EXECINSTR,        SHF_MERGE, SHF_STRINGS,
+                                                      SHF_INFO_LINK, SHF_LINK_ORDER, SHF_OS_NONCONFORMING, SHF_GROUP, SHF_TLS };
+
+    static const std::map<uint64, std::string_view> FlagsNames{
+        { SHF_WRITE, "WRITE" },           { SHF_ALLOC, "ALLOC" },
+        { SHF_EXECINSTR, "EXECINSTR" },   { SHF_MERGE, "MERGE" },
+        { SHF_STRINGS, "STRINGS" },       { SHF_INFO_LINK, "INFO_LINK" },
+        { SHF_LINK_ORDER, "LINK_ORDER" }, { SHF_OS_NONCONFORMING, "OS_NONCONFORMING" },
+        { SHF_GROUP, "GROUP" },           { SHF_TLS, "TLS" }
+    };
+
+    std::string output;
+    if (sectionFlags == 0)
+    {
+        output = "NONE";
+    }
+    else
+    {
+        for (const auto& t : types)
+        {
+            if ((sectionFlags & t) == t)
+            {
+                if (output.empty())
+                {
+                    output += FlagsNames.at(t);
+                }
+                else
+                {
+                    output += " | ";
+                    output += FlagsNames.at(t);
+                }
+            }
+        }
+    }
+
+    return "[" + output + "]";
+};
 } // namespace GView::Type::ELF

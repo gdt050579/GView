@@ -21,16 +21,17 @@ Sections::Sections(Reference<ELFFile> _elf, Reference<GView::View::WindowInterfa
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { "n:#,a:r,w:10",
-            "n:Name Index,a:r,w:24",
-            "n:Type,a:r,w:24",
-            "n:Flags,a:r,w:50",
+          { "n:#,a:r,w:6",
+            "n:Name,a:r,w:16",
+            "n:Name Index,a:r,w:12",
+            "n:Type,a:r,w:16",
+            "n:Flags,a:r,w:40",
             "n:VA,a:r,w:14",
             "n:FA,a:r,w:14",
             "n:Size in File,a:r,w:14",
             "n:SHT Index,a:r,w:14",
             "n:Info,a:r,w:16",
-            "n:Table Entry Size,a:r,w:14" },
+            "n:Table Entry Size,a:r,w:24" },
           ListViewFlags::None);
 
     Update();
@@ -97,16 +98,19 @@ void Sections::Update()
             const auto& record = elf->sections64[i];
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
-            item.SetText(1, tmp.Format("%s", GetValue(n, record.sh_name).data()));
-            item.SetText(2, tmp.Format("%s", GetValue(n, record.sh_type).data()));
-            item.SetText(3, tmp.Format("%s", GetValue(n, record.sh_flags).data()));
-            item.SetText(4, tmp.Format("%s", GetValue(n, record.sh_addr).data()));
-            item.SetText(5, tmp.Format("%s", GetValue(n, record.sh_offset).data()));
-            item.SetText(6, tmp.Format("%s", GetValue(n, record.sh_size).data()));
-            item.SetText(7, tmp.Format("%s", GetValue(n, record.sh_link).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_info).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_addralign).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_entsize).data()));
+            const auto& name = elf->sectionNames.at(i);
+            item.SetText(1, tmp.Format("%s", name.c_str()));
+            item.SetText(2, tmp.Format("%s", GetValue(n, record.sh_name).data()));
+            item.SetText(3, tmp.Format("%s (%s)", ELF::GetNameFromSectionType(record.sh_type).data(), GetValue(n, record.sh_type).data()));
+            item.SetText(
+                  4, tmp.Format("%s (%s)", ELF::GetNamesFromSectionFlags(record.sh_flags).c_str(), GetValue(n, record.sh_flags).data()));
+            item.SetText(5, tmp.Format("%s", GetValue(n, record.sh_addr).data()));
+            item.SetText(6, tmp.Format("%s", GetValue(n, record.sh_offset).data()));
+            item.SetText(7, tmp.Format("%s", GetValue(n, record.sh_size).data()));
+            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_link).data()));
+            item.SetText(9, tmp.Format("%s", GetValue(n, record.sh_info).data()));
+            item.SetText(10, tmp.Format("%s", GetValue(n, record.sh_addralign).data()));
+            item.SetText(11, tmp.Format("%s", GetValue(n, record.sh_entsize).data()));
 
             item.SetData<Elf64_Shdr>(&elf->sections64[i]);
         }
@@ -118,16 +122,19 @@ void Sections::Update()
             const auto& record = elf->sections32[i];
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
-            item.SetText(1, tmp.Format("%s", GetValue(n, record.sh_name).data()));
-            item.SetText(2, tmp.Format("%s", GetValue(n, record.sh_type).data()));
-            item.SetText(3, tmp.Format("%s", GetValue(n, record.sh_flags).data()));
-            item.SetText(4, tmp.Format("%s", GetValue(n, record.sh_addr).data()));
-            item.SetText(5, tmp.Format("%s", GetValue(n, record.sh_offset).data()));
-            item.SetText(6, tmp.Format("%s", GetValue(n, record.sh_size).data()));
-            item.SetText(7, tmp.Format("%s", GetValue(n, record.sh_link).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_info).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_addralign).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_entsize).data()));
+            const auto& name = elf->sectionNames.at(i);
+            item.SetText(1, tmp.Format("%s", name.c_str()));
+            item.SetText(2, tmp.Format("%s", GetValue(n, record.sh_name).data()));
+            item.SetText(3, tmp.Format("%s (%s)", ELF::GetNameFromSectionType(record.sh_type).data(), GetValue(n, record.sh_type).data()));
+            item.SetText(
+                  4, tmp.Format("%s (%s)", ELF::GetNamesFromSectionFlags(record.sh_flags).c_str(), GetValue(n, record.sh_flags).data()));
+            item.SetText(5, tmp.Format("%s", GetValue(n, record.sh_addr).data()));
+            item.SetText(6, tmp.Format("%s", GetValue(n, record.sh_offset).data()));
+            item.SetText(7, tmp.Format("%s", GetValue(n, record.sh_size).data()));
+            item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_link).data()));
+            item.SetText(9, tmp.Format("%s", GetValue(n, record.sh_info).data()));
+            item.SetText(10, tmp.Format("%s", GetValue(n, record.sh_addralign).data()));
+            item.SetText(11, tmp.Format("%s", GetValue(n, record.sh_entsize).data()));
 
             item.SetData<Elf32_Shdr>(&elf->sections32[i]);
         }

@@ -55,6 +55,26 @@ bool ELFFile::Update()
             sections64.emplace_back(entry);
             offset += sizeof(entry);
         }
+
+        sectionNames.reserve(header64.e_shnum);
+
+        if (header64.e_shstrndx != SHN_UNDEF && header64.e_shstrndx < SHN_LORESERVE)
+        {
+            const auto& shstrtab = sections64.at(header64.e_shstrndx);
+            auto buffer          = obj->GetData().CopyToBuffer(shstrtab.sh_offset, (uint32) shstrtab.sh_size);
+            if (buffer.IsValid())
+            {
+                for (const auto& section : sections64)
+                {
+                    const auto name = (char*) (buffer.GetData() + section.sh_name);
+                    sectionNames.emplace_back(name);
+                }
+            }
+        }
+        else if (header64.e_shstrndx >= SHN_LORESERVE)
+        {
+            // TODO:
+        }
     }
     else
     {
@@ -65,6 +85,26 @@ bool ELFFile::Update()
             CHECK(obj->GetData().Copy<Elf32_Shdr>(offset, entry), false, "");
             sections32.emplace_back(entry);
             offset += sizeof(entry);
+        }
+
+        sectionNames.reserve(header32.e_shnum);
+
+        if (header32.e_shstrndx != SHN_UNDEF && header32.e_shstrndx < SHN_LORESERVE)
+        {
+            const auto& shstrtab = sections32.at(header32.e_shstrndx);
+            auto buffer          = obj->GetData().CopyToBuffer(shstrtab.sh_offset, shstrtab.sh_size);
+            if (buffer.IsValid())
+            {
+                for (const auto& section : sections32)
+                {
+                    const auto name = (char*) (buffer.GetData() + section.sh_name);
+                    sectionNames.emplace_back(name);
+                }
+            }
+        }
+        else if (header32.e_shstrndx >= SHN_LORESERVE)
+        {
+            // TODO:
         }
     }
 

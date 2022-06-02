@@ -17,6 +17,8 @@ class ELFFile : public TypeInterface
     std::vector<Elf32_Shdr> sections32;
     std::vector<Elf64_Shdr> sections64;
 
+    std::vector<std::string> sectionNames;
+
   public:
     ELFFile();
     virtual ~ELFFile()
@@ -107,7 +109,7 @@ namespace Panels
         void GoToSelectedSection();
         void SelectCurrentSection();
 
-    public:
+      public:
         Sections(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
 
         void Update();
