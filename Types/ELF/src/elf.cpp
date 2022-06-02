@@ -89,7 +89,7 @@ extern "C"
             {
                 if (segment.p_vaddr <= elf->header32.e_entry && elf->header32.e_entry < segment.p_vaddr + segment.p_memsz)
                 {
-                    epFA = elf->header32.e_entry - segment.p_vaddr + segment.p_offset;
+                    epFA = (uint64) elf->header32.e_entry - segment.p_vaddr + segment.p_offset;
                     break;
                 }
             }
