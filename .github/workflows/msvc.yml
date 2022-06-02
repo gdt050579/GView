@@ -19,6 +19,7 @@ on:
 env:
   # Path to the CMake build directory.
   build: '${{ github.workspace }}/build'
+  BUILD_TYPE: Release
 
 permissions:
   contents: read
@@ -30,13 +31,16 @@ jobs:
       security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
     name: Analyze
     runs-on: windows-latest
-
+    env:
+      VCPKGRS_DYNAMIC: 1
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+            submodules: recursive
 
       - name: Configure CMake
-        run: cmake -B ${{ env.build }}
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
 
       # Build is not required unless generated source files are used
       # - name: Build CMake
