@@ -91,9 +91,9 @@ void Panels::Segments::Update()
 
     if (elf->is64)
     {
-        for (auto i = 0ULL; i < elf->programs64.size(); i++)
+        for (auto i = 0ULL; i < elf->segments64.size(); i++)
         {
-            const auto& record = elf->programs64[i];
+            const auto& record = elf->segments64[i];
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
             item.SetText(
@@ -119,14 +119,14 @@ void Panels::Segments::Update()
             item.SetText(7, tmp.Format("%s", GetValue(n, record.p_memsz).data()));
             item.SetText(8, tmp.Format("%s", GetValue(n, record.p_align).data()));
 
-            item.SetData<Elf64_Phdr>(&elf->programs64[i]);
+            item.SetData<Elf64_Phdr>(&elf->segments64[i]);
         }
     }
     else
     {
-        for (auto i = 0ULL; i < elf->programs32.size(); i++)
+        for (auto i = 0ULL; i < elf->segments32.size(); i++)
         {
-            const auto& record = elf->programs32[i];
+            const auto& record = elf->segments32[i];
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
             item.SetText(
@@ -152,7 +152,7 @@ void Panels::Segments::Update()
             item.SetText(7, tmp.Format("%s", GetValue(n, record.p_memsz).data()));
             item.SetText(8, tmp.Format("%s", GetValue(n, record.p_align).data()));
 
-            item.SetData<Elf32_Phdr>(&elf->programs32[i]);
+            item.SetData<Elf32_Phdr>(&elf->segments32[i]);
         }
     }
 }

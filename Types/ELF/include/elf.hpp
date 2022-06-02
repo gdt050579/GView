@@ -11,8 +11,11 @@ class ELFFile : public TypeInterface
     Elf64_Ehdr header64;
     bool is64{ false };
 
-    std::vector<Elf32_Phdr> programs32;
-    std::vector<Elf64_Phdr> programs64;
+    std::vector<Elf32_Phdr> segments32;
+    std::vector<Elf64_Phdr> segments64;
+
+    std::vector<Elf32_Shdr> sections32;
+    std::vector<Elf64_Shdr> sections64;
 
   public:
     ELFFile();
@@ -87,6 +90,25 @@ namespace Panels
 
       public:
         Segments(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class Sections : public AppCUI::Controls::TabPage
+    {
+        Reference<ELFFile> elf;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+    public:
+        Sections(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

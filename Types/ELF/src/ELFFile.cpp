@@ -29,7 +29,7 @@ bool ELFFile::Update()
         {
             Elf64_Phdr entry{};
             CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, entry), false, "");
-            programs64.emplace_back(entry);
+            segments64.emplace_back(entry);
             offset += sizeof(entry);
         }
     }
@@ -40,7 +40,30 @@ bool ELFFile::Update()
         {
             Elf32_Phdr entry{};
             CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, entry), false, "");
-            programs32.emplace_back(entry);
+            segments32.emplace_back(entry);
+            offset += sizeof(entry);
+        }
+    }
+
+    if (is64)
+    {
+        offset = header64.e_shoff;
+        for (auto i = 0; i < header64.e_shnum; i++)
+        {
+            Elf64_Shdr entry{};
+            CHECK(obj->GetData().Copy<Elf64_Shdr>(offset, entry), false, "");
+            sections64.emplace_back(entry);
+            offset += sizeof(entry);
+        }
+    }
+    else
+    {
+        offset = header32.e_shoff;
+        for (auto i = 0; i < header32.e_shnum; i++)
+        {
+            Elf32_Shdr entry{};
+            CHECK(obj->GetData().Copy<Elf32_Shdr>(offset, entry), false, "");
+            sections32.emplace_back(entry);
             offset += sizeof(entry);
         }
     }

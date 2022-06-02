@@ -1101,30 +1101,53 @@ struct Elf64_Ehdr
 // Section header
 struct Elf32_Shdr
 {
-    Elf_Word sh_name;
-    Elf_Word sh_type;
-    Elf_Word sh_flags;
-    Elf32_Addr sh_addr;
-    Elf32_Off sh_offset;
-    Elf_Word sh_size;
-    Elf_Word sh_link;
-    Elf_Word sh_info;
-    Elf_Word sh_addralign;
-    Elf_Word sh_entsize;
+    Elf_Word sh_name; /* This member specifies the name of the section. Its value is an index into the section header string table section,
+                         giving the location of a null-terminated string. */
+    Elf_Word sh_type; /* This member categorizes the section's contents and semantics. */
+    Elf_Word
+          sh_flags;     /* Sections support one-bit flags that describe miscellaneous attributes. If a flag bit is set in sh_flags, the
+               attribute is "on" for the section.  Otherwise, the attribute is "off" or does not apply. Undefined attributes are set to zero. */
+    Elf32_Addr sh_addr; /* If this section appears in the memory image of a process, this member holds the address at which the section's
+                           first byte should reside. Otherwise, the member contains zero. */
+    Elf32_Off
+          sh_offset;  /* This member's value holds the byte offset from the beginning of the file to the first byte in the section.One
+           section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
+    Elf_Word sh_size; /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
+              bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */
+    Elf_Word sh_link; /* This member holds a section header table index link, whose interpretation depends on the section type. */
+    Elf_Word sh_info; /* This member holds extra information, whose interpretation depends on the section type. */
+    Elf_Word sh_addralign; /* Some sections have address alignment constraints. If a section holds a doubleword, the system must ensure
+              doubleword alignment for the entire section. That is, the value of sh_addr must be congruent to zero, modulo the value of
+              sh_addralign. Only zero and positive integral powers of two are allowed. The value 0 or 1 means that the section has no
+              alignment constraints. */
+    Elf_Word sh_entsize; /* Some sections hold a table of fixed-sized entries, such as a symbol table. For such a section, this member gives
+              the size in bytes for each entry. This member contains zero if the section does not hold a table of fixed-size entries. */
 };
 
 struct Elf64_Shdr
 {
-    Elf_Word sh_name;
-    Elf_Word sh_type;
-    Elf_Xword sh_flags;
-    Elf64_Addr sh_addr;
-    Elf64_Off sh_offset;
-    Elf_Xword sh_size;
-    Elf_Word sh_link;
-    Elf_Word sh_info;
-    Elf_Xword sh_addralign;
-    Elf_Xword sh_entsize;
+    Elf_Word sh_name; /* This member specifies the name of the section. Its value is an index into the section header string table section,
+                         giving the location of a null-terminated string. */
+    Elf_Word sh_type; /* This member categorizes the section's contents and semantics. */
+    Elf_Xword
+          sh_flags;     /* Sections support one-bit flags that describe miscellaneous attributes. If a flag bit is set in sh_flags, the
+               attribute is "on" for the section.  Otherwise, the attribute is "off" or does not apply. Undefined attributes are set to zero. */
+    Elf64_Addr sh_addr; /* If this section appears in the memory image of a process, this member holds the address at which the section's
+                           first byte should reside. Otherwise, the member contains zero. */
+    Elf64_Off
+          sh_offset;   /* This member's value holds the byte offset from the beginning of the file to the first byte in the section.One
+         section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
+    Elf_Xword sh_size; /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
+              bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */
+    Elf_Word sh_link;  /* This member holds a section header table index link, whose interpretation depends on the section type. */
+    Elf_Word sh_info;  /* This member holds extra information, whose interpretation depends on the section type. */
+    Elf_Xword sh_addralign; /* Some sections have address alignment constraints. If a section holds a doubleword, the system must ensure
+              doubleword alignment for the entire section. That is, the value of sh_addr must be congruent to zero, modulo the value of
+              sh_addralign. Only zero and positive integral powers of two are allowed. The value 0 or 1 means that the section has no
+              alignment constraints. */
+    Elf_Xword
+          sh_entsize; /* Some sections hold a table of fixed-sized entries, such as a symbol table. For such a section, this member gives
+          the size in bytes for each entry. This member contains zero if the section does not hold a table of fixed-size entries. */
 };
 
 /* Program segment header.  */
