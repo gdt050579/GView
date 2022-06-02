@@ -13,9 +13,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  schedule:
-    - cron: '28 6 * * 6'
-
+    
 env:
   # Path to the CMake build directory.
   build: '${{ github.workspace }}/build'
@@ -43,7 +41,7 @@ jobs:
           submodules: recursive
 
     - name: Configure CMake
-    run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
 
     # Build is not required unless generated source files are used
     # - name: Build CMake
