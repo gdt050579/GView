@@ -18,6 +18,7 @@ class ELFFile : public TypeInterface
     std::vector<Elf64_Shdr> sections64;
 
     std::vector<std::string> sectionNames;
+    std::vector<uint32> sectionsToSegments;
 
   public:
     ELFFile();

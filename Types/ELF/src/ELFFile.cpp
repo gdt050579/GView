@@ -50,10 +50,21 @@ bool ELFFile::Update()
         offset = header64.e_shoff;
         for (auto i = 0; i < header64.e_shnum; i++)
         {
-            Elf64_Shdr entry{};
+            auto& entry = sections64.emplace_back(Elf64_Shdr{});
             CHECK(obj->GetData().Copy<Elf64_Shdr>(offset, entry), false, "");
-            sections64.emplace_back(entry);
             offset += sizeof(entry);
+
+            auto& segmentIdx = sectionsToSegments.emplace_back(-1);
+            for (auto i = 0; i < segments64.size(); i++)
+            {
+                const auto& segment = segments64.at(i);
+                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr &&
+                    entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                {
+                    segmentIdx = i;
+                    break;
+                }
+            }
         }
 
         sectionNames.reserve(header64.e_shnum);
@@ -81,10 +92,21 @@ bool ELFFile::Update()
         offset = header32.e_shoff;
         for (auto i = 0; i < header32.e_shnum; i++)
         {
-            Elf32_Shdr entry{};
+            auto& entry = sections32.emplace_back(Elf32_Shdr{});
             CHECK(obj->GetData().Copy<Elf32_Shdr>(offset, entry), false, "");
-            sections32.emplace_back(entry);
             offset += sizeof(entry);
+
+            auto& segmentIdx = sectionsToSegments.emplace_back(-1);
+            for (auto i = 0; i < segments32.size(); i++)
+            {
+                const auto& segment = segments32.at(i);
+                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr &&
+                    entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                {
+                    segmentIdx = i;
+                    break;
+                }
+            }
         }
 
         sectionNames.reserve(header32.e_shnum);
