@@ -167,9 +167,9 @@ void GoFunctions::Update()
 
 bool GoFunctions::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(ObjectAction::GoTo));
-    commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(ObjectAction::Select));
-    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32_t>(ObjectAction::ChangeBase));
+    commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32>(ObjectAction::GoTo));
+    commandBar.SetCommand(Key::F9, "Select", static_cast<int32>(ObjectAction::Select));
+    commandBar.SetCommand(Key::F2, Base == 10 ? "Dec" : "Hex", static_cast<int32>(ObjectAction::ChangeBase));
 
     return true;
 }

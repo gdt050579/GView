@@ -158,20 +158,20 @@ bool ELFFile::ParseGoData()
                 const auto& section = sections64.at(i);
                 gopclntabBuffer     = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
 
-                goFunctionHeader          = (GoFunctionHeader*) gopclntabBuffer.GetData();
-                sizeOfFunctionSymbolTable = *(uint64*) (gopclntabBuffer.GetData() + sizeof(GoFunctionHeader));
+                goFunctionHeader          = (Go::GoFunctionHeader*) gopclntabBuffer.GetData();
+                sizeOfFunctionSymbolTable = *(uint64*) (gopclntabBuffer.GetData() + sizeof(Go::GoFunctionHeader));
 
-                auto offset = sizeof(GoFunctionHeader) + sizeof(uint64);
+                auto offset = sizeof(Go::GoFunctionHeader) + sizeof(uint64);
                 while (offset < sizeOfFunctionSymbolTable)
                 {
-                    auto entry64 = *(FstEntry64*) (gopclntabBuffer.GetData() + offset);
+                    auto entry64 = *(Go::FstEntry64*) (gopclntabBuffer.GetData() + offset);
                     entries64.emplace_back(entry64);
-                    offset += sizeof(FstEntry64);
+                    offset += sizeof(Go::FstEntry64);
                 }
 
                 for (const auto& entry : entries64)
                 {
-                    const auto& func = functions64.emplace_back(*(Func64*) (gopclntabBuffer.GetData() + entry.functionOffset));
+                    const auto& func = functions64.emplace_back(*(Go::Func64*) (gopclntabBuffer.GetData() + entry.functionOffset));
                     functionsNames.emplace_back((char*) gopclntabBuffer.GetData() + func.name);
                 }
             }
@@ -180,20 +180,20 @@ bool ELFFile::ParseGoData()
                 const auto& section = sections32.at(i);
                 gopclntabBuffer     = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
 
-                goFunctionHeader          = (GoFunctionHeader*) gopclntabBuffer.GetData();
-                sizeOfFunctionSymbolTable = *(uint32*) (gopclntabBuffer.GetData() + sizeof(GoFunctionHeader));
+                goFunctionHeader          = (Go::GoFunctionHeader*) gopclntabBuffer.GetData();
+                sizeOfFunctionSymbolTable = *(uint32*) (gopclntabBuffer.GetData() + sizeof(Go::GoFunctionHeader));
 
-                auto offset = sizeof(GoFunctionHeader) + sizeof(uint32);
+                auto offset = sizeof(Go::GoFunctionHeader) + sizeof(uint32);
                 while (offset < sizeOfFunctionSymbolTable)
                 {
-                    auto entry32 = *(FstEntry32*) (gopclntabBuffer.GetData() + offset);
+                    auto entry32 = *(Go::FstEntry32*) (gopclntabBuffer.GetData() + offset);
                     entries32.emplace_back(entry32);
-                    offset += sizeof(FstEntry32);
+                    offset += sizeof(Go::FstEntry32);
                 }
 
                 for (const auto& entry : entries32)
                 {
-                    const auto& func = functions32.emplace_back(*(Func32*) (gopclntabBuffer.GetData() + entry.functionOffset));
+                    const auto& func = functions32.emplace_back(*(Go::Func32*) (gopclntabBuffer.GetData() + entry.functionOffset));
                     functionsNames.emplace_back((char*) gopclntabBuffer.GetData() + func.name);
                 }
             }

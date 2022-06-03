@@ -167,7 +167,7 @@ void Information::UpdateGoInformation()
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto magicName = ELF::GetNameForGoMagic(elf->goFunctionHeader->magic);
+    const auto magicName = ELF::Go::GetNameForGoMagic(elf->goFunctionHeader->magic);
     const auto magicHex  = nf.ToString((uint32) elf->goFunctionHeader->magic, hex);
     general->AddItem({ "Magic", ls.Format(format.data(), magicName.data(), magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 

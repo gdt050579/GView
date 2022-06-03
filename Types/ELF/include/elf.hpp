@@ -4,100 +4,86 @@
 
 namespace GView::Type::ELF
 {
-// version of the pclntab (Program Counter Line Table) -: https://go.dev/src/debug/gosym/pclntab.go
-enum class PclntabVersion : int32
+namespace Go
 {
-    Unknown = -1,
-    _11     = 0,
-    _12     = 1,
-    _116    = 2,
-    _118    = 3,
-};
-
-enum class GoMagic : uint32 // https://go.dev/src/debug/gosym/pclntab.go
-{
-    _12  = 0xfffffffb,
-    _116 = 0xfffffffa,
-    _118 = 0xfffffff0,
-};
-
-static std::string_view GetNameForGoMagic(GoMagic magic)
-{
-    switch (magic)
+    // version of the pclntab (Program Counter Line Table) -: https://go.dev/src/debug/gosym/pclntab.go
+    enum class PclntabVersion : int32
     {
-    case GView::Type::ELF::GoMagic::_12:
-        return "Version 12";
-    case GView::Type::ELF::GoMagic::_116:
-        return "Version 116";
-    case GView::Type::ELF::GoMagic::_118:
-        return "Version 118";
-    default:
-        return "Version Unknown";
+        Unknown = -1,
+        _11     = 0,
+        _12     = 1,
+        _116    = 2,
+        _118    = 3,
+    };
+
+    enum class GoMagic : uint32 // https://go.dev/src/debug/gosym/pclntab.go
+    {
+        _12  = 0xfffffffb,
+        _116 = 0xfffffffa,
+        _118 = 0xfffffff0,
+    };
+
+    static std::string_view GetNameForGoMagic(GoMagic magic)
+    {
+        switch (magic)
+        {
+        case GoMagic::_12:
+            return "Version 12";
+        case GoMagic::_116:
+            return "Version 116";
+        case GoMagic::_118:
+            return "Version 118";
+        default:
+            return "Version Unknown";
+        }
     }
-}
 
-struct GoFunctionHeader
-{
-    GoMagic magic;
-    uint16 padding;
-    uint8 instructionSizeQuantum; // (1 for x86, 4 for ARM)
-    uint8 sizeOfUintptr;          // in bytes
-};
+    struct GoFunctionHeader
+    {
+        GoMagic magic;
+        uint16 padding;
+        uint8 instructionSizeQuantum; // (1 for x86, 4 for ARM)
+        uint8 sizeOfUintptr;          // in bytes
+    };
 
-struct FstEntry32
-{
-    uint32 pc;
-    uint32 functionOffset;
-};
+    struct FstEntry32
+    {
+        uint32 pc;
+        uint32 functionOffset;
+    };
 
-struct FstEntry64
-{
-    uint64 pc;
-    uint32 functionOffset;
-};
+    struct FstEntry64
+    {
+        uint64 pc;
+        uint32 functionOffset;
+    };
 
-struct GoFunctionHeader2
-{
-    uint32 magic;          // 0xFFFFFFF0
-    uint8 pad1;            // 0
-    uint8 pad2;            // 0
-    uint8 minLC;           // min instruction size (1 for x86, 4 for ARM)
-    uint8 ptrSize;         // size of a ptr in bytes
-    int32 nfunc;           // number of functions in the module
-    uint32 nfiles;         // number of entries in the file tab
-    uint32 textStart;      // base for function entry PC offsets in this module, equal to moduledata.text
-    uint32 funcnameOffset; // offset to the funcnametab variable from pcHeader
-    uint32 cuOffset;       // offset to the cutab variable from pcHeader
-    uint32 filetabOffset;  // offset to the filetab variable from pcHeader
-    uint32 pctabOffset;    // offset to the pctab variable from pcHeader
-    uint32 pclnOffset;     // offset to the pclntab variable from pcHeader
-};
+    struct Func32
+    {
+        uint32 entry;    // start pc
+        int32 name;      // name (offset to C string)
+        int32 args;      // size of arguments passed to function
+        int32 frame;     // size of function frame, including saved caller PC
+        int32 pcsp;      // pcsp table (offset to pcvalue table)
+        int32 pcfile;    // pcfile table (offset to pcvalue table)
+        int32 pcln;      // pcln table (offset to pcvalue table)
+        int32 nfuncdata; // number of entries in funcdata list
+        int32 npcdata;   // number of entries in pcdata list
+    };
 
-struct Func32
-{
-    uint32 entry;    // start pc
-    int32 name;      // name (offset to C string)
-    int32 args;      // size of arguments passed to function
-    int32 frame;     // size of function frame, including saved caller PC
-    int32 pcsp;      // pcsp table (offset to pcvalue table)
-    int32 pcfile;    // pcfile table (offset to pcvalue table)
-    int32 pcln;      // pcln table (offset to pcvalue table)
-    int32 nfuncdata; // number of entries in funcdata list
-    int32 npcdata;   // number of entries in pcdata list
-};
-
-struct Func64
-{
-    uint64 entry;    // start pc
-    int32 name;      // name (offset to C string)
-    int32 args;      // size of arguments passed to function
-    int32 frame;     // size of function frame, including saved caller PC
-    int32 pcsp;      // pcsp table (offset to pcvalue table)
-    int32 pcfile;    // pcfile table (offset to pcvalue table)
-    int32 pcln;      // pcln table (offset to pcvalue table)
-    int32 nfuncdata; // number of entries in funcdata list
-    int32 npcdata;   // number of entries in pcdata list
-};
+    struct Func64
+    {
+        uint64 entry;    // start pc
+        int32 name;      // name (offset to C string)
+        int32 args;      // size of arguments passed to function
+        int32 frame;     // size of function frame, including saved caller PC
+        int32 pcsp;      // pcsp table (offset to pcvalue table)
+        int32 pcfile;    // pcfile table (offset to pcvalue table)
+        int32 pcln;      // pcln table (offset to pcvalue table)
+        int32 nfuncdata; // number of entries in funcdata list
+        int32 npcdata;   // number of entries in pcdata list
+    };
+} // namespace Go
 
 enum class AddressType : uint8
 {
@@ -139,12 +125,12 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     // GO
     uint32 goplcntabSectionIndex = -1;
     Buffer gopclntabBuffer{};
-    GoFunctionHeader* goFunctionHeader = nullptr;
-    uint64 sizeOfFunctionSymbolTable   = 0;
-    std::vector<FstEntry32> entries32;
-    std::vector<FstEntry64> entries64;
-    std::vector<Func32> functions32;
-    std::vector<Func64> functions64;
+    Go::GoFunctionHeader* goFunctionHeader = nullptr;
+    uint64 sizeOfFunctionSymbolTable       = 0;
+    std::vector<Go::FstEntry32> entries32;
+    std::vector<Go::FstEntry64> entries64;
+    std::vector<Go::Func32> functions32;
+    std::vector<Go::Func64> functions64;
     std::vector<std::string> functionsNames;
 
   public:
