@@ -177,7 +177,7 @@ void Information::UpdateGoInformation()
     AddDecAndHexElement("Size Of Function Symbol Table", format, elf->sizeOfFunctionSymbolTable);
 
     const auto entriesNo = elf->is64 ? elf->entries64.size() : elf->entries32.size();
-    AddDecAndHexElement("# FST Entries", format, entriesNo);
+    AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);
 }
 
 void Information::UpdateIssues()
