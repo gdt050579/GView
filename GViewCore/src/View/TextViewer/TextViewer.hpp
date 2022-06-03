@@ -60,7 +60,8 @@ namespace View
         };
         class Instance : public View::ViewControl
         {
-            std::vector<LineInfo> lines;            
+            std::vector<LineInfo> lines;      
+            Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             FixSizeString<29> name;
@@ -134,6 +135,8 @@ namespace View
 
             void UpdateCursorXOffset();
             void UpdateViewPort();
+
+            int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
 
             inline bool HasWordWrap() const
             {
