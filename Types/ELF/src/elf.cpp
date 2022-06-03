@@ -97,6 +97,9 @@ extern "C"
             settings.SetEntryPointOffset(epFA);
         }
 
+        // translation
+        settings.SetOffsetTranslationList({ "VA" }, elf.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
+
         win->CreateViewer("BufferView", settings);
     }
 
@@ -109,9 +112,22 @@ extern "C"
         CreateBufferView(win, elf);
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new ELF::Panels::Information(win->GetObject(), elf)), true);
-        win->AddPanel(Pointer<TabPage>(new ELF::Panels::Segments(elf, win)), false);
-        win->AddPanel(Pointer<TabPage>(new ELF::Panels::Sections(elf, win)), false);
+        if (elf->HasPanel(ELF::Panels::IDs::Information))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::Information(win->GetObject(), elf)), true);
+        }
+        if (elf->HasPanel(ELF::Panels::IDs::Segments))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::Segments(elf, win)), false);
+        }
+        if (elf->HasPanel(ELF::Panels::IDs::Sections))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::Sections(elf, win)), false);
+        }
+        if (elf->HasPanel(ELF::Panels::IDs::GoFunctions))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::GoFunctions(elf, win)), false);
+        }
 
         return true;
     }

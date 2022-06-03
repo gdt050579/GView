@@ -16,13 +16,6 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::ELF::
 
 void Information::UpdateGeneralInformation()
 {
-    LocalString<256> tempStr;
-    NumericFormatter n;
-
-    LocalString<1024> ls;
-    NumericFormatter nf;
-    NumericFormatter nf2;
-
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
     general->AddItem({ "File", object->GetName() });
@@ -30,6 +23,7 @@ void Information::UpdateGeneralInformation()
 
     general->AddItem("Header").SetType(ListViewItem::Type::Category);
     UpdateHeader();
+    UpdateGoInformation();
 }
 
 void Information::UpdateHeader()
@@ -162,6 +156,28 @@ void Information::UpdateHeader()
         AddDecAndHexElement("SHT # Entries", format, header.e_shnum);
         AddDecAndHexElement("SHT String Index", format, header.e_shstrndx);
     }
+}
+
+void Information::UpdateGoInformation()
+{
+    CHECKRET(elf->goFunctionHeader != nullptr, "");
+    general->AddItem("Go Information").SetType(ListViewItem::Type::Category);
+
+    LocalString<1024> ls;
+    NumericFormatter nf;
+    NumericFormatter nf2;
+
+    const auto magicName = ELF::GetNameForGoMagic(elf->goFunctionHeader->magic);
+    const auto magicHex  = nf.ToString((uint32) elf->goFunctionHeader->magic, hex);
+    general->AddItem({ "Magic", ls.Format(format.data(), magicName.data(), magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    AddDecAndHexElement("Padding", format, elf->goFunctionHeader->padding);
+    AddDecAndHexElement("Instruction Size Quantum", format, elf->goFunctionHeader->instructionSizeQuantum);
+    AddDecAndHexElement("Size Of UIntPtr", format, elf->goFunctionHeader->sizeOfUintptr);
+    AddDecAndHexElement("Size Of Function Symbol Table", format, elf->sizeOfFunctionSymbolTable);
+
+    const auto entriesNo = elf->is64 ? elf->entries64.size() : elf->entries32.size();
+    AddDecAndHexElement("# FST Entries", format, entriesNo);
 }
 
 void Information::UpdateIssues()

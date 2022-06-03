@@ -8,6 +8,10 @@ ELFFile::ELFFile()
 
 bool ELFFile::Update()
 {
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
+    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
+
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");
     if (header32.e_ident[EI_CLASS] != ELFCLASS32)
@@ -130,5 +134,171 @@ bool ELFFile::Update()
         }
     }
 
+    CHECK(ParseGoData(), false, "");
+
     return true;
+}
+
+bool ELFFile::HasPanel(Panels::IDs id)
+{
+    return (panelsMask & (1ULL << ((uint8) id))) != 0;
+}
+
+bool ELFFile::ParseGoData()
+{
+    for (auto i = 0U; i < sectionNames.size(); i++)
+    {
+        auto& name = sectionNames.at(i);
+        if (name == ".gopclntab")
+        {
+            panelsMask |= (1ULL << (uint8_t) Panels::IDs::GoFunctions);
+
+            if (is64)
+            {
+                const auto& section = sections64.at(i);
+                gopclntabBuffer     = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
+
+                goFunctionHeader          = (GoFunctionHeader*) gopclntabBuffer.GetData();
+                sizeOfFunctionSymbolTable = *(uint64*) (gopclntabBuffer.GetData() + sizeof(GoFunctionHeader));
+
+                auto offset = sizeof(GoFunctionHeader) + sizeof(uint64);
+                while (offset < sizeOfFunctionSymbolTable)
+                {
+                    auto entry64 = *(FstEntry64*) (gopclntabBuffer.GetData() + offset);
+                    entries64.emplace_back(entry64);
+                    offset += sizeof(FstEntry64);
+                }
+
+                for (const auto& entry : entries64)
+                {
+                    const auto& func = functions64.emplace_back(*(Func64*) (gopclntabBuffer.GetData() + entry.functionOffset));
+                    functionsNames.emplace_back((char*) gopclntabBuffer.GetData() + func.name);
+                }
+            }
+            else
+            {
+                const auto& section = sections32.at(i);
+                gopclntabBuffer     = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
+
+                goFunctionHeader          = (GoFunctionHeader*) gopclntabBuffer.GetData();
+                sizeOfFunctionSymbolTable = *(uint32*) (gopclntabBuffer.GetData() + sizeof(GoFunctionHeader));
+
+                auto offset = sizeof(GoFunctionHeader) + sizeof(uint32);
+                while (offset < sizeOfFunctionSymbolTable)
+                {
+                    auto entry32 = *(FstEntry32*) (gopclntabBuffer.GetData() + offset);
+                    entries32.emplace_back(entry32);
+                    offset += sizeof(FstEntry32);
+                }
+
+                for (const auto& entry : entries32)
+                {
+                    const auto& func = functions32.emplace_back(*(Func32*) (gopclntabBuffer.GetData() + entry.functionOffset));
+                    functionsNames.emplace_back((char*) gopclntabBuffer.GetData() + func.name);
+                }
+            }
+
+            goplcntabSectionIndex = i;
+            break;
+        }
+    }
+
+    return true;
+}
+
+uint64 ELFFile::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
+{
+    return ConvertAddress(value, static_cast<AddressType>(fromTranslationIndex), AddressType::FileOffset);
+}
+
+uint64 ELFFile::TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex)
+{
+    return ConvertAddress(value, AddressType::FileOffset, static_cast<AddressType>(toTranslationIndex));
+}
+
+uint64 ELFFile::ConvertAddress(uint64 address, AddressType fromAddressType, AddressType toAddressType)
+{
+    switch (fromAddressType)
+    {
+    case AddressType::FileOffset:
+        switch (toAddressType)
+        {
+        case AddressType::FileOffset:
+            return address;
+        case AddressType::VA:
+            return FileOffsetToVA(address);
+        };
+        break;
+    case AddressType::VA:
+        switch (toAddressType)
+        {
+        case AddressType::FileOffset:
+            return VAToFileOffset(address);
+        case AddressType::VA:
+            return address;
+        };
+        break;
+    }
+
+    return ELF_INVALID_ADDRESS;
+}
+
+uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
+{
+    if (is64)
+    {
+        for (const auto& section : sections64)
+        {
+            if (section.sh_offset <= fileOffset && fileOffset <= section.sh_offset + section.sh_size)
+            {
+                auto diff     = fileOffset - section.sh_offset;
+                const auto fa = section.sh_addr + diff;
+                return fa;
+            }
+        }
+    }
+    else
+    {
+        for (const auto& section : sections32)
+        {
+            if (section.sh_offset <= fileOffset && fileOffset <= section.sh_offset + section.sh_size)
+            {
+                auto diff     = fileOffset - section.sh_offset;
+                const auto fa = section.sh_addr + diff;
+                return fa;
+            }
+        }
+    }
+
+    return ELF_INVALID_ADDRESS;
+}
+
+uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
+{
+    if (is64)
+    {
+        for (const auto& section : sections64)
+        {
+            if (section.sh_addr <= virtualAddress && virtualAddress <= section.sh_addr + section.sh_size)
+            {
+                auto diff     = virtualAddress - section.sh_addr;
+                const auto fa = section.sh_offset + diff;
+                return fa;
+            }
+        }
+    }
+    else
+    {
+        for (const auto& section : sections32)
+        {
+            if (section.sh_addr <= virtualAddress && virtualAddress <= (uint64) section.sh_addr + section.sh_size)
+            {
+                auto diff     = virtualAddress - section.sh_addr;
+                const auto fa = section.sh_offset + diff;
+                return fa;
+            }
+        }
+    }
+
+    return ELF_INVALID_ADDRESS;
 }
