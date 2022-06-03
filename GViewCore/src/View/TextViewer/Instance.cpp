@@ -402,6 +402,9 @@ void Instance::ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir)
 }
 void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
 {
+    auto sidx = -1;
+    if (select)
+        sidx = this->selection.BeginSelection(this->Cursor.pos);
     // sanity checks
     if (this->lines.size() == 0)
     {
@@ -433,6 +436,10 @@ void Instance::MoveTo(uint32 lineNo, uint32 charIndex, bool select)
         this->Cursor.sublineNo = 0;
     }
     this->UpdateViewPort();
+    if ((select) && (sidx >= 0))
+    {
+        this->selection.UpdateSelection(sidx, this->Cursor.pos);
+    }
 }
 void Instance::MoveToStartOfLine(uint32 lineNo, bool select)
 {
@@ -639,6 +646,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
                 }
             }
         }
+        auto bufPos = cs.GetCurrentBufferPos();
         while ((cs.Next()) && (lastC < c_end))
         {
             auto c = this->chars + (cs.GetXOffset() - xScroll);
@@ -657,14 +665,25 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
             c->Color = textColor;
             if (focused)
             {
-                if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
-                    c->Color = Cfg.Cursor.Normal;
-                else if (cs.HasDecodingErrors())
-                    c->Color = Cfg.Text.Error;
-                else if (cs.IsTabCharacter())
-                    c->Color = Cfg.Text.Inactive;
+                if (this->selection.Contains(vd->offset+bufPos))
+                {
+                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                        c->Color = Cfg.Cursor.OverSelection;
+                    else
+                        c->Color = Cfg.Selection.Editor;
+                }
+                else
+                {
+                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                        c->Color = Cfg.Cursor.Normal;
+                    else if (cs.HasDecodingErrors())
+                        c->Color = Cfg.Text.Error;
+                    else if (cs.IsTabCharacter())
+                        c->Color = Cfg.Text.Inactive;
+                }
             }
             lastC = c + 1;
+            bufPos = cs.GetCurrentBufferPos();
         }
         renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
     }
@@ -811,14 +830,53 @@ std::string_view Instance::GetName()
     return this->name;
 }
 //======================================================================[Cursor information]==================
-
+int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
+{
+    uint64 start, end;
+    bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
+    if (show)
+    {
+        if (this->selection.GetSelection(selectionID, start, end))
+        {
+            LocalString<32> tmp;
+            tmp.Format("%X,%X", start, (end - start) + 1);
+            r.WriteSingleLineText(x, y, width, tmp.GetText(), this->Cfg.Text.Normal);
+        }
+        else
+        {
+            r.WriteSingleLineText(x, y, width, "NO Selection", Cfg.Text.Inactive, TextAlignament::Center);
+        }
+    }
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
+    return x + width + 1;
+}
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
     LocalString<128> tmp;
     auto xPoz = 0;
-    xPoz      = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
-    xPoz      = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
-    xPoz      = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
+    if (height == 1)
+    {
+        xPoz = PrintSelectionInfo(0, 0, 0, 16, r);
+        if (this->selection.IsMultiSelectionEnabled())
+        {
+            xPoz = PrintSelectionInfo(1, xPoz, 0, 16, r);
+            xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
+            xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
+        }
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
+    }
+    else
+    {
+        PrintSelectionInfo(0, 0, 0, 16, r);
+        xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
+        PrintSelectionInfo(1, xPoz, 0, 16, r);
+        xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
+        this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
+        xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
+    }
 }
 
 //======================================================================[PROPERTY]============================

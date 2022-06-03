@@ -66,7 +66,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         this->root = this->items->AddItem("/", true);
         this->root.Unfold();
     }
-    this->items->Sort(0, SortDirection::Ascendent);
+    this->items->Sort(0, /*SortDirection::Ascendent*/true);
     this->items->SetFocus();
     UpdatePathForItem(this->items->GetCurrentItem());
 }
