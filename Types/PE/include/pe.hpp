@@ -583,7 +583,7 @@ namespace Type
             Manifest     = 24
         };
 
-        struct X86_X64_ColorBuffer: public GView::View::BufferViewer::PositionToColorInterface
+        struct X86_X64_ColorBuffer : public GView::View::BufferViewer::PositionToColorInterface
         {
             uint64_t memStartOffset, memEndOffset;
             bool GetColorForBuffer(uint64_t offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
@@ -594,9 +594,9 @@ namespace Type
           public:
             struct ExportedFunction
             {
-                uint32_t RVA;
-                uint16_t Ordinal;
-                FixSizeString<125> Name;
+                uint32 RVA;
+                uint16 Ordinal;
+                String Name;
             };
             struct PEColors
             {
@@ -634,9 +634,9 @@ namespace Type
             };
             struct ImportFunctionInformation
             {
-                uint64_t RVA;
-                uint32_t dllIndex;
-                FixSizeString<111> Name;
+                uint64 RVA;
+                uint32 dllIndex;
+                String Name;
             };
             enum
             {
@@ -744,6 +744,7 @@ namespace Type
         {
             class Information : public AppCUI::Controls::TabPage
             {
+                Reference<Object> object;
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
@@ -753,7 +754,7 @@ namespace Type
                 void RecomputePanelsPositions();
 
               public:
-                Information(Reference<GView::Type::PE::PEFile> pe);
+                Information(Reference<Object> _object, Reference<GView::Type::PE::PEFile> pe);
 
                 void Update();
                 virtual void OnAfterResize(int newWidth, int newHeight) override
