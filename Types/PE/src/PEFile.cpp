@@ -506,7 +506,7 @@ bool PEFile::BuildExport()
     uint64 faddr, oaddr, naddr;
     uint32 RVA, export_RVA;
     uint16 exportOrdinal;
-    std::unique_ptr<bool[]> ordinals(nullptr);
+    std::vector<bool> ordinals;
 
     exp.clear();
 
@@ -572,7 +572,7 @@ bool PEFile::BuildExport()
 
     if (exportDir.NumberOfNames < exportDir.NumberOfFunctions)
     {
-        ordinals.reset(new bool[exportDir.NumberOfFunctions]);
+        ordinals.resize(exportDir.NumberOfFunctions);
         for (uint32 tr = 0; tr < exportDir.NumberOfFunctions; tr++)
             ordinals[tr] = false;
     }
