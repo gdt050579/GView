@@ -160,21 +160,20 @@ void Information::UpdateHeader()
 
 void Information::UpdateGoInformation()
 {
-    CHECKRET(elf->goFunctionHeader != nullptr, "");
+    CHECKRET(elf->pclntab112.header != nullptr, "");
     general->AddItem("Go Information").SetType(ListViewItem::Type::Category);
 
     LocalString<1024> ls;
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto magicName = ELF::Go::GetNameForGoMagic(elf->goFunctionHeader->magic);
-    const auto magicHex  = nf.ToString((uint32) elf->goFunctionHeader->magic, hex);
+    const auto magicName = ELF::Go::GetNameForGoMagic(elf->pclntab112.header->magic);
+    const auto magicHex  = nf.ToString((uint32) elf->pclntab112.header->magic, hex);
     general->AddItem({ "Magic", ls.Format(format.data(), magicName.data(), magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
-    AddDecAndHexElement("Padding", format, elf->goFunctionHeader->padding);
-    AddDecAndHexElement("Instruction Size Quantum", format, elf->goFunctionHeader->instructionSizeQuantum);
-    AddDecAndHexElement("Size Of UIntPtr", format, elf->goFunctionHeader->sizeOfUintptr);
-    AddDecAndHexElement("Size Of Function Symbol Table", format, elf->sizeOfFunctionSymbolTable);
+    AddDecAndHexElement("Padding", format, elf->pclntab112.header->padding);
+    AddDecAndHexElement("Instruction Size Quantum", format, elf->pclntab112.header->instructionSizeQuantum);
+    AddDecAndHexElement("Size Of UIntPtr", format, elf->pclntab112.header->sizeOfUintptr);
 
     const auto entriesNo = elf->is64 ? elf->entries64.size() : elf->entries32.size();
     AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);

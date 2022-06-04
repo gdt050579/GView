@@ -52,6 +52,26 @@ namespace Go
         uint8 sizeOfUintptr;          // in bytes
     };
 
+    struct GoPclntab112
+    {
+        Buffer buffer{};
+        GoFunctionHeader* header{ nullptr };
+
+        // https://go.dev/src/debug/gosym/pclntab.go
+        uint32 nfunctab{ 0 };
+        uint8* funcdata{ nullptr };
+        uint8* funcnametab{ nullptr };
+        uint8* functab{ nullptr };
+        uint8* pctab{ nullptr };
+        int32 functabsize{ 0 };
+        uint32 fileoff{ 0 };
+        uint8* filetab{ nullptr };
+        uint32 nfiletab{ 0 };
+
+        // map
+        std::map<uint32, std::string_view> files;
+    };
+
     struct FstEntry32
     {
         uint32 pc;
@@ -145,10 +165,8 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     std::string noteName{};
     std::string buildId;
     std::string gnuString;
-    uint32 goplcntabSectionIndex = -1;
-    Buffer gopclntabBuffer{};
-    Go::GoFunctionHeader* goFunctionHeader = nullptr;
-    uint64 sizeOfFunctionSymbolTable       = 0;
+    uint32 goPlcntabSectionIndex = -1;
+    Go::GoPclntab112 pclntab112{};
     std::vector<Go::FstEntry32> entries32;
     std::vector<Go::FstEntry64> entries64;
     std::vector<Go::Func32> functions32;

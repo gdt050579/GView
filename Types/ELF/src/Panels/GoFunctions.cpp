@@ -79,29 +79,13 @@ void GoFunctions::SelectCurrentSection()
     {
         const auto& record = elf->functions64.at(i);
         offset             = elf->VAToFileOffset(record.entry);
-
-        if (i == elf->functions64.size() - 1)
-        {
-            // TODO: ?
-        }
-        else
-        {
-            size = elf->functions64.at(i + 1).entry - record.entry;
-        }
+        size               = elf->functions64.at(i + 1).entry - record.entry;
     }
     else
     {
         const auto& record = elf->functions32.at(i);
         offset             = elf->VAToFileOffset(record.entry);
-
-        if (i == elf->functions32.size() - 1)
-        {
-            // TODO: ?
-        }
-        else
-        {
-            size = (uint64) elf->functions32.at(i + 1).entry - record.entry;
-        }
+        size               = (uint64) elf->functions32.at(i + 1).entry - record.entry;
     }
 
     win->GetCurrentView()->Select(offset, size);
