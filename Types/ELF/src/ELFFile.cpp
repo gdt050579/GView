@@ -8,9 +8,9 @@ ELFFile::ELFFile()
 
 bool ELFFile::Update()
 {
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
+    panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
+    panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
+    panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
 
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");
@@ -135,6 +135,7 @@ bool ELFFile::Update()
     }
 
     CHECK(ParseGoData(), false, "");
+    CHECK(ParseSymbols(), false, "");
 
     return true;
 }
@@ -146,12 +147,56 @@ bool ELFFile::HasPanel(Panels::IDs id)
 
 bool ELFFile::ParseGoData()
 {
+    // go metadata
+
+    Buffer noteBuffer;
+    if (is64)
+    {
+        for (const auto& segment : segments64)
+        {
+            if (segment.p_type == PT_NOTE)
+            {
+                noteBuffer = obj->GetData().CopyToBuffer(segment.p_offset, (uint32) segment.p_filesz);
+            }
+        }
+    }
+    else
+    {
+        for (const auto& segment : segments32)
+        {
+            if (segment.p_type == PT_NOTE)
+            {
+                noteBuffer = obj->GetData().CopyToBuffer(segment.p_offset, segment.p_filesz);
+            }
+        }
+    }
+
+    if (noteBuffer.IsValid() && noteBuffer.GetLength() >= 16)
+    {
+        nameSize = *(uint32*) noteBuffer.GetData();
+        valSize  = *(uint32*) (noteBuffer.GetData() + 4);
+        tag      = *(uint32*) (noteBuffer.GetData() + 8);
+        noteName = std::string((char*) noteBuffer.GetData() + 12, 4);
+
+        std::string_view noteNameView{ (char*) noteBuffer.GetData() + 12, 4 };
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Go::ELF_GO_BUILD_ID_TAG && noteNameView == Go::ELF_GO_NOTE)
+        {
+            buildId = std::string((char*) noteBuffer.GetData() + 16, valSize);
+        }
+
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Go::GNU_BUILD_ID_TAG && noteNameView == Go::ELF_GNU_NOTE)
+        {
+            gnuString = std::string((char*) noteBuffer.GetData() + 16, valSize);
+        }
+    }
+
+    // go symbols
     for (auto i = 0U; i < sectionNames.size(); i++)
     {
         auto& name = sectionNames.at(i);
         if (name == ".gopclntab")
         {
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::GoFunctions);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::GoFunctions);
 
             if (is64)
             {
@@ -200,6 +245,126 @@ bool ELFFile::ParseGoData()
 
             goplcntabSectionIndex = i;
             break;
+        }
+    }
+
+    return true;
+}
+
+bool ELFFile::ParseSymbols()
+{
+    if (is64)
+    {
+        for (auto i = 0; i < sections64.size(); i++)
+        {
+            const auto& section = sections64.at(i);
+            if (section.sh_type == SHT_SYMTAB) /* Static symbol table */
+            {
+                panelsMask |= (1ULL << (uint8) Panels::IDs::StaticSymbols);
+
+                const auto staticSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
+
+                const auto& strtabSection = sections64.at(section.sh_link);
+                const auto strtabBuffer   = obj->GetData().CopyToBuffer(strtabSection.sh_offset, (uint32) strtabSection.sh_size);
+
+                auto offset = 0U;
+                while (offset < section.sh_size)
+                {
+                    const auto& sym = staticSymbols64.emplace_back(*(Elf64_Sym*) (staticSymbolsBuffer.GetData() + offset));
+                    offset += sizeof(Elf64_Sym);
+
+                    String demangled;
+                    const auto str = reinterpret_cast<char*>((char*) (strtabBuffer.GetData() + sym.st_name));
+                    if (GView::Utils::Demangle(str, demangled) == false)
+                    {
+                        demangled = str;
+                    }
+
+                    staticSymbolsNames.emplace_back(demangled.GetText());
+                }
+            }
+            else if (section.sh_type == SHT_DYNSYM) /* Dynamic symbol table */
+            {
+                panelsMask |= (1ULL << (uint8) Panels::IDs::DynamicSymbols);
+
+                const auto dynamicSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
+
+                const auto& dstrtabSection = sections64.at(section.sh_link);
+                const auto dstrtabBuffer   = obj->GetData().CopyToBuffer(dstrtabSection.sh_offset, (uint32) dstrtabSection.sh_size);
+
+                auto offset = 0U;
+                while (offset < section.sh_size)
+                {
+                    const auto& sym = dynamicSymbols64.emplace_back(*(Elf64_Sym*) (dynamicSymbolsBuffer.GetData() + offset));
+                    offset += sizeof(Elf64_Sym);
+
+                    String demangled;
+                    const auto str = reinterpret_cast<char*>((char*) (dstrtabBuffer.GetData() + sym.st_name));
+                    if (GView::Utils::Demangle(str, demangled) == false)
+                    {
+                        demangled = str;
+                    }
+
+                    dynamicSymbolsNames.emplace_back(demangled.GetText());
+                }
+            }
+        }
+    }
+    else
+    {
+        for (auto i = 0; i < sections32.size(); i++)
+        {
+            const auto& section = sections32.at(i);
+            if (section.sh_type == SHT_SYMTAB) /* Static symbol table */
+            {
+                panelsMask |= (1ULL << (uint8) Panels::IDs::StaticSymbols);
+
+                const auto staticSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
+
+                const auto& strtabSection = sections32.at(section.sh_link);
+                const auto strtabBuffer   = obj->GetData().CopyToBuffer(strtabSection.sh_offset, strtabSection.sh_size);
+
+                auto offset = 0U;
+                while (offset < section.sh_size)
+                {
+                    const auto& sym = staticSymbols32.emplace_back(*(Elf32_Sym*) (staticSymbolsBuffer.GetData() + offset));
+                    offset += sizeof(Elf32_Sym);
+
+                    String demangled;
+                    const auto str = reinterpret_cast<char*>((char*) (strtabBuffer.GetData() + sym.st_name));
+                    if (GView::Utils::Demangle(str, demangled) == false)
+                    {
+                        demangled = str;
+                    }
+
+                    staticSymbolsNames.emplace_back(demangled.GetText());
+                }
+            }
+            else if (section.sh_type == SHT_DYNSYM) /* Dynamic symbol table */
+            {
+                panelsMask |= (1ULL << (uint8) Panels::IDs::DynamicSymbols);
+
+                const auto dynamicSymbolsBuffer = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
+
+                const auto& dstrtabSection = sections32.at(section.sh_link);
+                const auto dstrtabBuffer   = obj->GetData().CopyToBuffer(dstrtabSection.sh_offset, dstrtabSection.sh_size);
+
+                auto offset = 0U;
+                while (offset < section.sh_size)
+                {
+                    const auto& sym = dynamicSymbols32.emplace_back(*(Elf32_Sym*) (dynamicSymbolsBuffer.GetData() + offset));
+                    offset += sizeof(Elf32_Sym);
+
+                    String demangled;
+                    const auto str = reinterpret_cast<char*>((char*) (dstrtabBuffer.GetData() + sym.st_name));
+                    if (GView::Utils::Demangle(str, demangled) == false)
+                    {
+                        demangled = str;
+                    }
+
+                    dynamicSymbolsNames.emplace_back(demangled.GetText());
+                }
+            }
         }
     }
 

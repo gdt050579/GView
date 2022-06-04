@@ -1178,22 +1178,22 @@ struct Elf64_Phdr
 // Symbol table entry
 struct Elf32_Sym
 {
-    Elf_Word st_name;
-    Elf32_Addr st_value;
-    Elf_Word st_size;
-    unsigned char st_info;
-    unsigned char st_other;
-    Elf_Half st_shndx;
+    Elf_Word st_name;       // Symbol name (index into string table)
+    Elf32_Addr st_value;    // Value or address associated with the symbol
+    Elf_Word st_size;       // Size of the symbol
+    unsigned char st_info;  // Symbol's type and binding attributes
+    unsigned char st_other; // Must be zero; reserved
+    Elf_Half st_shndx;      // Which section (header tbl index) it's defined in
 };
 
 struct Elf64_Sym
 {
-    Elf_Word st_name;
-    unsigned char st_info;
-    unsigned char st_other;
-    Elf_Half st_shndx;
-    Elf64_Addr st_value;
-    Elf_Xword st_size;
+    Elf_Word st_name;       // Symbol name (index into string table)
+    unsigned char st_info;  // Symbol's type and binding attributes
+    unsigned char st_other; // Must be zero; reserved
+    Elf_Half st_shndx;      // Which section (header tbl index) it's defined in
+    Elf64_Addr st_value;    // Value or address associated with the symbol
+    Elf_Xword st_size;      // Size of the symbol
 };
 
 #define ELF_ST_BIND(i)    ((i) >> 4)

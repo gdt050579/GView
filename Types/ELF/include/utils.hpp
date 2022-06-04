@@ -857,4 +857,100 @@ static const std::string GetNamesFromSectionFlags(uint64 sectionFlags)
 
     return "[" + output + "]";
 };
+
+static std::string_view GetSectionSpecialIndexFromSymbolIndex(uint16 index)
+{
+    switch (index)
+    {
+    case SHN_UNDEF:
+        return "UNDEF";
+    case SHN_LOPROC:
+        return "LOPROC";
+    case SHN_HIPROC:
+        return "HIPROC";
+    case SHN_LOOS:
+        return "LOOS";
+    case SHN_HIOS:
+        return "HIOS";
+    case SHN_ABS:
+        return "ABS";
+    case SHN_COMMON:
+        return "COMMON";
+    case SHN_XINDEX:
+        return "XINDEX";
+    default:
+        return "";
+    }
+}
+
+static std::string_view GetNameFromSymbolBinding(uint8 bind)
+{
+    switch (bind)
+    {
+    case STB_LOCAL:
+        return "LOCAL";
+    case STB_GLOBAL:
+        return "GLOBAL";
+    case STB_WEAK:
+        return "WEAK";
+    case STB_LOOS:
+        return "LOOS";
+    case STB_HIOS:
+        return "HIOS";
+    case STB_LOPROC:
+        return "LOPROC";
+    case STB_HIPROC:
+        return "HIPROC";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static std::string_view GetNameFromSymbolType(uint8 type)
+{
+    switch (type)
+    {
+    case STT_NOTYPE:
+        return "NOTYPE";
+    case STT_OBJECT:
+        return "OBJECT";
+    case STT_FUNC:
+        return "FUNC";
+    case STT_SECTION:
+        return "SECTION";
+    case STT_FILE:
+        return "FILE";
+    case STT_COMMON:
+        return "COMMON";
+    case STT_TLS:
+        return "TLS";
+    case STT_LOOS:
+        return "LOOS";
+    case STT_HIOS:
+        return "HIOS";
+    case STT_LOPROC:
+        return "LOPROC";
+    case STT_HIPROC:
+        return "HIPROC";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static std::string_view GetNameFromSymbolVisibility(uint8 visibility)
+{
+    switch (visibility)
+    {
+    case STV_DEFAULT:
+        return "DEFAULT";
+    case STV_INTERNAL:
+        return "INTERNAL";
+    case STV_HIDDEN:
+        return "HIDDEN";
+    case STV_PROTECTED:
+        return "PROTECTED";
+    default:
+        return "UNKNOWN";
+    }
+}
 } // namespace GView::Type::ELF

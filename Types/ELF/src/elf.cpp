@@ -128,6 +128,14 @@ extern "C"
         {
             win->AddPanel(Pointer<TabPage>(new ELF::Panels::GoFunctions(elf, win)), false);
         }
+        if (elf->HasPanel(ELF::Panels::IDs::StaticSymbols))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::StaticSymbols(elf, win)), false);
+        }
+        if (elf->HasPanel(ELF::Panels::IDs::DynamicSymbols))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::DynamicSymbols(elf, win)), false);
+        }
 
         return true;
     }

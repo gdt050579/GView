@@ -6,6 +6,12 @@ namespace GView::Type::ELF
 {
 namespace Go
 {
+    constexpr auto ELF_GO_BUILD_ID_TAG = 4U;
+    constexpr auto GNU_BUILD_ID_TAG    = 3U;
+
+    constexpr auto ELF_GO_NOTE  = std::string_view("Go\x00\x00", 4);
+    constexpr auto ELF_GNU_NOTE = std::string_view("GNU\x00", 4);
+
     // version of the pclntab (Program Counter Line Table) -: https://go.dev/src/debug/gosym/pclntab.go
     enum class PclntabVersion : int32
     {
@@ -97,10 +103,12 @@ namespace Panels
 {
     enum class IDs : uint8_t
     {
-        Information = 0x0,
-        Segments    = 0x1,
-        Sections    = 0x2,
-        GoFunctions = 0x3,
+        Information    = 0x0,
+        Segments       = 0x1,
+        Sections       = 0x2,
+        GoFunctions    = 0x3,
+        StaticSymbols  = 0x4,
+        DynamicSymbols = 0x5,
     };
 };
 
@@ -122,7 +130,21 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     std::vector<std::string> sectionNames;
     std::vector<uint32> sectionsToSegments;
 
+    std::vector<Elf32_Sym> staticSymbols32;
+    std::vector<Elf64_Sym> staticSymbols64;
+    std::vector<std::string> staticSymbolsNames;
+
+    std::vector<Elf32_Sym> dynamicSymbols32;
+    std::vector<Elf64_Sym> dynamicSymbols64;
+    std::vector<std::string> dynamicSymbolsNames;
+
     // GO
+    uint32 nameSize = 0;
+    uint32 valSize  = 0;
+    uint32 tag      = 0;
+    std::string noteName{};
+    std::string buildId;
+    std::string gnuString;
     uint32 goplcntabSectionIndex = -1;
     Buffer gopclntabBuffer{};
     Go::GoFunctionHeader* goFunctionHeader = nullptr;
@@ -142,6 +164,7 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     bool Update();
     bool HasPanel(Panels::IDs id);
     bool ParseGoData();
+    bool ParseSymbols();
 
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
     uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
@@ -254,6 +277,44 @@ namespace Panels
 
       public:
         GoFunctions(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class DynamicSymbols : public AppCUI::Controls::TabPage
+    {
+        Reference<ELFFile> elf;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        DynamicSymbols(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class StaticSymbols : public AppCUI::Controls::TabPage
+    {
+        Reference<ELFFile> elf;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        StaticSymbols(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

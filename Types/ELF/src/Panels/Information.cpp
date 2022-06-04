@@ -178,6 +178,15 @@ void Information::UpdateGoInformation()
 
     const auto entriesNo = elf->is64 ? elf->entries64.size() : elf->entries32.size();
     AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);
+
+    general->AddItem("Go Note").SetType(ListViewItem::Type::Category);
+
+    AddDecAndHexElement("Name Size", format, elf->nameSize);
+    AddDecAndHexElement("Value Size", format, elf->valSize);
+    AddDecAndHexElement("Tag", format, elf->tag);
+    general->AddItem({ "Note Name", ls.Format("%s", elf->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    general->AddItem({ "Build ID", ls.Format("%s", elf->buildId.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    general->AddItem({ "GNU String", ls.Format("%s", elf->gnuString.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void Information::UpdateIssues()
