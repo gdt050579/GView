@@ -32,9 +32,9 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
     {
-        auto dword = buf.GetObject<uint32_t>();
+        auto dword = buf.GetObject<uint32>();
         CHECK(dword != nullptr, false, "");
-        const uint32_t magic = dword;
+        const uint32 magic = dword;
         const bool isMacho   = magic == MH_MAGIC || magic == MH_CIGAM || magic == MH_MAGIC_64 || magic == MH_CIGAM_64;
         const bool isFat     = magic == FAT_MAGIC || magic == FAT_CIGAM || magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64;
         CHECK(isMacho || isFat, false, "Magic is [%u]!", magic);
