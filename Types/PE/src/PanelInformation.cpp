@@ -3,12 +3,13 @@
 using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 
-Panels::Information::Information(Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
+Panels::Information::Information(Reference<Object> _object, Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
 {
-    pe      = _pe;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
+    object = _object;
+    pe     = _pe;
 
-    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
+    issues  = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     this->Update();
 }
@@ -21,7 +22,7 @@ void Panels::Information::UpdateGeneralInformation()
     general->DeleteAllItems();
     item = general->AddItem("PE Info");
     item.SetType(ListViewItem::Type::Category);
-    general->AddItem("File");
+    general->AddItem({ "File", object->GetName() });
     // general->SetItemText(poz++, 1, (char*) pe->obj->GetData().GetFileName(true));
     //  size
     general->AddItem(

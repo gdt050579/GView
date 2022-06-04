@@ -34,11 +34,11 @@ namespace Go
         switch (magic)
         {
         case GoMagic::_12:
-            return "Version 12";
+            return "Version 1.2";
         case GoMagic::_116:
-            return "Version 116";
+            return "Version 1.16";
         case GoMagic::_118:
-            return "Version 118";
+            return "Version 1.18";
         default:
             return "Version Unknown";
         }

@@ -503,42 +503,40 @@ uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, A
 
 bool PEFile::BuildExport()
 {
-    uint64_t faddr, oaddr, naddr;
-    uint32_t RVA, export_RVA;
-    uint16_t export_ordinal;
-    bool* ordinals;
+    uint64 faddr, oaddr, naddr;
+    uint32 RVA, export_RVA;
+    uint16 exportOrdinal;
+    std::unique_ptr<bool[]> ordinals(nullptr);
 
     exp.clear();
-    ordinals = nullptr;
 
     RVA = dirs[0].VirtualAddress; // export directory
-    if (RVA == 0)
-        return false;
+    CHECK(RVA != 0, false, "")
 
     if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
     {
-        errList.AddError("Invalid RVA for Export directory (0x%X)", (uint32_t) RVA);
+        errList.AddError("Invalid RVA for Export directory (0x%X)", (uint32) RVA);
         return false;
     }
     if (obj->GetData().Copy<ImageExportDirectory>(faddr, exportDir) == false)
     {
-        errList.AddError("Unable to read full Export Directory structure from RVA (0x%X)", (uint32_t) RVA);
+        errList.AddError("Unable to read full Export Directory structure from RVA (0x%X)", (uint32) RVA);
         return false;
     }
     if (exportDir.Name == 0)
     {
-        errList.AddWarning("Invalid RVA for export name (0x%08X)", (uint32_t) exportDir.Name);
+        errList.AddWarning("Invalid RVA for export name (0x%08X)", (uint32) exportDir.Name);
     }
     else
     {
-        auto dll_name = ReadString(exportDir.Name, MAX_DLL_NAME);
-        if (dll_name.empty())
+        auto dllName = ReadString(exportDir.Name, MAX_DLL_NAME);
+        if (dllName.empty())
         {
-            errList.AddError("Unable to read export name from RVA (0x%X)", (uint32_t) exportDir.Name);
+            errList.AddError("Unable to read export name from RVA (0x%X)", (uint32) exportDir.Name);
             return false;
         }
-        this->dllName = dll_name;
-        for (auto ch : dll_name)
+        this->dllName = dllName;
+        for (auto ch : dllName)
             if ((ch < 32) || (ch > 127))
             {
                 errList.AddWarning("Export name contains invalid characters !");
@@ -558,76 +556,81 @@ bool PEFile::BuildExport()
 
     if ((naddr = RVAtoFilePointer(exportDir.AddressOfNames)) == PE_INVALID_ADDRESS)
     {
-        errList.AddError("Invalid AddressOfNames (0x%x) from export directory", (uint32_t) exportDir.AddressOfNames);
+        errList.AddError("Invalid AddressOfNames (0x%x) from export directory", (uint32) exportDir.AddressOfNames);
         return false;
     }
     if ((oaddr = RVAtoFilePointer(exportDir.AddressOfNameOrdinals)) == PE_INVALID_ADDRESS)
     {
-        errList.AddError("Invalid AddressOfNameOrdinals (0x%x) from export directory", (uint32_t) exportDir.AddressOfNameOrdinals);
+        errList.AddError("Invalid AddressOfNameOrdinals (0x%x) from export directory", (uint32) exportDir.AddressOfNameOrdinals);
         return false;
     }
     if ((faddr = RVAtoFilePointer(exportDir.AddressOfFunctions)) == PE_INVALID_ADDRESS)
     {
-        errList.AddError("Invalid AddressOfFunctions (0x%x) from export directory", (uint32_t) exportDir.AddressOfFunctions);
+        errList.AddError("Invalid AddressOfFunctions (0x%x) from export directory", (uint32) exportDir.AddressOfFunctions);
         return false;
     }
 
     if (exportDir.NumberOfNames < exportDir.NumberOfFunctions)
     {
-        ordinals = new bool[exportDir.NumberOfFunctions];
-        for (uint32_t tr = 0; tr < exportDir.NumberOfFunctions; tr++)
+        ordinals.reset(new bool[exportDir.NumberOfFunctions]);
+        for (uint32 tr = 0; tr < exportDir.NumberOfFunctions; tr++)
             ordinals[tr] = false;
     }
-    for (uint32_t tr = 0; tr < exportDir.NumberOfNames; tr++, naddr += 4, oaddr += 2)
+    for (uint32 tr = 0; tr < exportDir.NumberOfNames; tr++, naddr += 4, oaddr += 2)
     {
-        if (obj->GetData().Copy<uint32_t>(naddr, RVA) == false)
+        if (obj->GetData().Copy<uint32>(naddr, RVA) == false)
         {
             errList.AddError("Unable to read export function name");
             return false;
         }
-        if (obj->GetData().Copy<uint16_t>(oaddr, export_ordinal) == false)
+        if (obj->GetData().Copy<uint16>(oaddr, exportOrdinal) == false)
         {
             errList.AddError("Unable to read export function ordinal");
             return false;
         }
-        if (obj->GetData().Copy<uint32_t>(faddr + ((uint64_t) export_ordinal) * 4, export_RVA) == false)
+        if (obj->GetData().Copy<uint32>(faddr + ((uint64) exportOrdinal) * 4, export_RVA) == false)
         {
             errList.AddError("Unable to read export function address");
             return false;
         }
-        auto export_name = ReadString(RVA, MAX_EXPORTFNC_SIZE);
-        if (export_name.empty())
+        auto exportName = ReadString(RVA, MAX_EXPORTFNC_SIZE);
+        if (exportName.empty())
         {
             errList.AddError("Unable to read export function name");
             return false;
         }
-        export_ordinal += exportDir.Base;
-        if ((exportDir.NumberOfNames < exportDir.NumberOfFunctions) && (export_ordinal < exportDir.NumberOfFunctions))
+        exportOrdinal += exportDir.Base;
+        if ((exportDir.NumberOfNames < exportDir.NumberOfFunctions) && (exportOrdinal < exportDir.NumberOfFunctions))
         {
-            ordinals[export_ordinal] = true;
+            ordinals[exportOrdinal] = true;
         }
+
         // add to list
         auto& item   = exp.emplace_back();
         item.RVA     = export_RVA;
-        item.Ordinal = export_ordinal;
-        item.Name    = export_name;
+        item.Ordinal = exportOrdinal;
+        if (GView::Utils::Demangle(exportName.data(), item.Name) == false)
+        {
+            item.Name = exportName.data();
+        }
     }
+
     // adaug si ordinalii
     if (exportDir.NumberOfNames < exportDir.NumberOfFunctions)
     {
         LocalString<128> ordinal_name;
-        for (uint32_t tr = 0; tr < exportDir.NumberOfFunctions; tr++)
+        for (uint32 tr = 0; tr < exportDir.NumberOfFunctions; tr++)
         {
             if (ordinals[tr] == false)
             {
-                if (obj->GetData().Copy<uint32_t>(faddr + ((uint64_t) tr) * 4, export_RVA) == false)
+                if (obj->GetData().Copy<uint32>(faddr + ((uint64) tr) * 4, export_RVA) == false)
                 {
                     errList.AddError("Unable to read export function ordinal ID");
                     return false;
                 }
                 if (export_RVA > 0)
                 {
-                    export_ordinal = tr;
+                    exportOrdinal = tr;
                     if (!ordinal_name.SetFormat("_Ordinal_%u", tr))
                     {
                         errList.AddError("Fail to create ordinal name for ID");
@@ -635,15 +638,12 @@ bool PEFile::BuildExport()
                     }
                     auto& item   = exp.emplace_back();
                     item.RVA     = export_RVA;
-                    item.Ordinal = export_ordinal;
-                    item.Name    = std::string_view{ ordinal_name.GetText(), ordinal_name.Len() };
+                    item.Ordinal = exportOrdinal;
+                    item.Name.Set(ordinal_name.GetText(), ordinal_name.Len());
                 }
             }
         }
     }
-
-    if (ordinals) // free memory
-        delete[] ordinals;
 
     return true;
 }
@@ -990,10 +990,9 @@ bool PEFile::BuildResources()
 
 bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD)
 {
-    uint64_t addr, IATaddr;
+    uint64 addr, IATaddr;
     ImageThunkData32 rvaFName32;
     ImageThunkData64 rvaFName64;
-    std::string_view import_name;
     LocalString<64> tempStr;
     uint32 count_f = 0;
 
@@ -1014,6 +1013,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
         return false;
     }
 
+    std::string_view importName;
     if (hdr64)
     {
         while ((obj->GetData().Copy<ImageThunkData64>(addr, rvaFName64)) && (rvaFName64.u1.AddressOfData != 0) &&
@@ -1022,21 +1022,26 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
             if ((rvaFName64.u1.AddressOfData & __IMAGE_ORDINAL_FLAG64) != 0) // imported by ordinal
             {
                 tempStr.SetFormat("Ordinal:%u", (rvaFName64.u1.Ordinal - __IMAGE_ORDINAL_FLAG64));
-                import_name = tempStr.ToStringView();
+                importName = tempStr.ToStringView();
             }
             else
             {
-                import_name = ReadString((uint32_t) (rvaFName64.u1.AddressOfData + 2), MAX_IMPORTFNC_SIZE);
-                if (import_name.empty())
+                importName = ReadString((uint32_t) (rvaFName64.u1.AddressOfData + 2), MAX_IMPORTFNC_SIZE);
+                if (importName.empty())
                 {
                     errList.AddError("Invalid RVA import name (0x%X)", (uint32_t) rvaFName64.u1.AddressOfData + 2);
                     return false;
                 }
             }
-            auto& item    = impFunc.emplace_back();
+
+            auto& item = impFunc.emplace_back();
+            if (GView::Utils::Demangle(importName.data(), item.Name) == false)
+            {
+                item.Name = importName.data();
+            }
+
             item.dllIndex = index;
             item.RVA      = IATaddr;
-            item.Name     = import_name;
             count_f++;
             addr += sizeof(ImageThunkData64);
             IATaddr += sizeof(ImageThunkData64);
@@ -1050,21 +1055,26 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
             if ((rvaFName32.u1.AddressOfData & __IMAGE_ORDINAL_FLAG32) != 0) // avem functie importata prin ordinal:
             {
                 tempStr.SetFormat("Ordinal:%u", (rvaFName32.u1.Ordinal - __IMAGE_ORDINAL_FLAG32));
-                import_name = tempStr.ToStringView();
+                importName = tempStr.ToStringView();
             }
             else
             {
-                import_name = ReadString(rvaFName32.u1.AddressOfData + 2, MAX_IMPORTFNC_SIZE);
-                if (import_name.empty())
+                importName = ReadString(rvaFName32.u1.AddressOfData + 2, MAX_IMPORTFNC_SIZE);
+                if (importName.empty())
                 {
                     errList.AddError("Invalid RVA import name (0x%X)", (uint32_t) rvaFName32.u1.AddressOfData + 2);
                     return false;
                 }
             }
-            auto& item    = impFunc.emplace_back();
+
+            auto& item = impFunc.emplace_back();
+            if (GView::Utils::Demangle(importName.data(), item.Name) == false)
+            {
+                item.Name = importName.data();
+            }
+
             item.dllIndex = index;
             item.RVA      = IATaddr;
-            item.Name     = import_name;
             count_f++;
             addr += sizeof(ImageThunkData32);
             IATaddr += sizeof(ImageThunkData32);
