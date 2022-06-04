@@ -127,6 +127,7 @@ extern "C"
         if (elf->HasPanel(ELF::Panels::IDs::GoInformation))
         {
             win->AddPanel(Pointer<TabPage>(new ELF::Panels::GoInformation(win->GetObject(), elf)), true);
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::GoFiles(win->GetObject(), elf)), true);
             win->AddPanel(Pointer<TabPage>(new ELF::Panels::GoFunctions(elf, win)), false);
         }
         if (elf->HasPanel(ELF::Panels::IDs::StaticSymbols))
