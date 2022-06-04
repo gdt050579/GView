@@ -196,7 +196,7 @@ bool ELFFile::ParseGoData()
         auto& name = sectionNames.at(i);
         if (name == ".gopclntab")
         {
-            panelsMask |= (1ULL << (uint8) Panels::IDs::GoFunctions);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::GoInformation);
 
             if (is64)
             {

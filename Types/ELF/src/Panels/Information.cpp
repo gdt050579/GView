@@ -23,7 +23,6 @@ void Information::UpdateGeneralInformation()
 
     general->AddItem("Header").SetType(ListViewItem::Type::Category);
     UpdateHeader();
-    UpdateGoInformation();
 }
 
 void Information::UpdateHeader()
@@ -156,36 +155,6 @@ void Information::UpdateHeader()
         AddDecAndHexElement("SHT # Entries", format, header.e_shnum);
         AddDecAndHexElement("SHT String Index", format, header.e_shstrndx);
     }
-}
-
-void Information::UpdateGoInformation()
-{
-    CHECKRET(elf->pclntab112.header != nullptr, "");
-    general->AddItem("Go Information").SetType(ListViewItem::Type::Category);
-
-    LocalString<1024> ls;
-    NumericFormatter nf;
-    NumericFormatter nf2;
-
-    const auto magicName = ELF::Go::GetNameForGoMagic(elf->pclntab112.header->magic);
-    const auto magicHex  = nf.ToString((uint32) elf->pclntab112.header->magic, hex);
-    general->AddItem({ "Magic", ls.Format(format.data(), magicName.data(), magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
-
-    AddDecAndHexElement("Padding", format, elf->pclntab112.header->padding);
-    AddDecAndHexElement("Instruction Size Quantum", format, elf->pclntab112.header->instructionSizeQuantum);
-    AddDecAndHexElement("Size Of UIntPtr", format, elf->pclntab112.header->sizeOfUintptr);
-
-    const auto entriesNo = elf->is64 ? elf->entries64.size() : elf->entries32.size();
-    AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);
-
-    general->AddItem("Go Note").SetType(ListViewItem::Type::Category);
-
-    AddDecAndHexElement("Name Size", format, elf->nameSize);
-    AddDecAndHexElement("Value Size", format, elf->valSize);
-    AddDecAndHexElement("Tag", format, elf->tag);
-    general->AddItem({ "Note Name", ls.Format("%s", elf->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
-    general->AddItem({ "Build ID", ls.Format("%s", elf->buildId.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
-    general->AddItem({ "GNU String", ls.Format("%s", elf->gnuString.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void Information::UpdateIssues()

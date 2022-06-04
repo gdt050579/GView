@@ -126,7 +126,7 @@ namespace Panels
         Information    = 0x0,
         Segments       = 0x1,
         Sections       = 0x2,
-        GoFunctions    = 0x3,
+        GoInformation  = 0x3,
         StaticSymbols  = 0x4,
         DynamicSymbols = 0x5,
     };
@@ -214,7 +214,6 @@ namespace Panels
 
         void UpdateGeneralInformation();
         void UpdateHeader();
-        void UpdateGoInformation();
         void UpdateIssues();
         void RecomputePanelsPositions();
 
@@ -280,6 +279,45 @@ namespace Panels
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class GoInformation : public TabPage
+    {
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        const std::string_view format            = "%-16s (%s)";
+        const std::string_view formatDescription = "%-16s (%s) %s";
+
+        Reference<Object> object;
+        Reference<GView::Type::ELF::ELFFile> elf;
+        Reference<AppCUI::Controls::ListView> list;
+
+      public:
+        GoInformation(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile> _elf);
+
+        template <typename T>
+        ListViewItem AddDecAndHexElement(
+              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        {
+            LocalString<1024> ls;
+            NumericFormatter nf;
+            NumericFormatter nf2;
+
+            // static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ', sizeof(T) * 2 };
+            static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ' };
+
+            const auto v    = nf.ToString(value, dec);
+            const auto vHex = nf2.ToString(value, hexBySize);
+            auto it         = list->AddItem({ name, ls.Format(format.data(), v.data(), vHex.data()) });
+            it.SetType(type);
+
+            return it;
+        }
+
+        void Update();
+        void UpdateGoInformation();
+        void OnAfterResize(int newWidth, int newHeight) override;
     };
 
     class GoFunctions : public AppCUI::Controls::TabPage
