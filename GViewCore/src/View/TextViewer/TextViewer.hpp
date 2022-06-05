@@ -114,6 +114,7 @@ namespace View
 
             void RecomputeLineIndexes();
             void CommputeViewPort_NoWrap(uint32 lineNo, Direction dir);
+            void CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir);
             void ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir);
 
             bool GetLineInfo(uint32 lineNo, LineInfo& li);
