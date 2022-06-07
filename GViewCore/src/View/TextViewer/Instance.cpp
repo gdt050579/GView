@@ -407,9 +407,7 @@ void Instance::CommputeViewPort_NoWrap(uint32 lineNo, Direction dir)
 }
 void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir)
 {
-    auto h            = (std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW)) - 1U;
-    auto* l           = ViewPort.Lines;
-    const auto* l_max = l + h;
+    auto h = (std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW)) - 1U;
 
     ViewPort.Reset();
     if (this->lines.empty())
@@ -422,6 +420,8 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
         ViewPort.End.subLineNo   = subLineNo;
         auto start               = lineNo;
         auto startSL             = subLineNo;
+        auto* l                  = ViewPort.Lines;
+        const auto* l_max        = l + h;
 
         while ((l < l_max) && (start < this->lines.size()))
         {
@@ -448,6 +448,42 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
     }
     else
     {
+        ViewPort.Start.lineNo    = lineNo;
+        ViewPort.Start.subLineNo = subLineNo;
+        ViewPort.End.lineNo      = lineNo;
+        ViewPort.End.subLineNo   = subLineNo;
+        auto* l                  = ViewPort.Lines + MAX_LINES_TO_VIEW - 1;
+        const auto* l_min        = l - h;
+        auto start               = (int32) lineNo;
+        auto startSL             = (int32) subLineNo;
+        bool resetSL             = false;
+        while ((l > l_min) && (start >= 0))
+        {
+            auto lineInfo = GetLineInfo(start);
+            ComputeSubLineIndexes(start);
+            ViewPort.Start.lineNo    = start;
+            ViewPort.Start.subLineNo = resetSL ? subLineNo : static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
+            while ((l > l_min) && (startSL >= 0))
+            {
+                auto sl   = this->SubLines.entries[startSL];
+                l->lineNo = start;
+                l->offset = sl.relativeOffset + lineInfo.offset;
+                l->xStart = 0;
+                l->size   = sl.size;
+                l--;
+                ViewPort.Start.subLineNo = startSL;
+                startSL--;
+            }
+            resetSL = true;
+            start--;
+        }
+        l++; // last added line
+        ViewPort.linesCount = (uint32) ((ViewPort.Lines + MAX_LINES_TO_VIEW) - l);
+        // we need to move the lines to the first position
+        if (l != ViewPort.Lines)
+        {
+            memmove(ViewPort.Lines, l, ViewPort.linesCount * sizeof(ViewPort.Lines[0]));
+        }
     }
 }
 void Instance::ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir)
@@ -622,7 +658,7 @@ void Instance::UpdateViewPort()
 {
     if (ViewPort.linesCount == 0)
     {
-        ComputeViewPort(0, 0, Direction::BottomToTop);
+        ComputeViewPort(0, 0, Direction::TopToBottom);
         if (!HasWordWrap())
             UpdateCursorXOffset();
     }
