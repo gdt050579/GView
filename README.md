@@ -47,6 +47,6 @@ On every commit to `main`, a compiled version of the Sphinx documentation is pub
 	git clone --recurse-submodules <your-repo-link/GView.git>
 ```
 
-Contributors can install sphinx using `pip install -r requirements.txt`, this will install Sphinx tooling and `alabaster`. Local building is done with `make html`
+Contributors can install sphinx using `pip install -r requirements.txt`, this will install Sphinx tooling and `sphinx_rtd_theme`. Local building is done with `make html`
 
 After the command executes successfully, the html pages can be found in the `build` folder.
