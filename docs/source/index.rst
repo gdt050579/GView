@@ -10,6 +10,12 @@ Welcome to GView's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   description
+   usage
+   architecture
+   build
+   contributing
+
 
 
 Indices and tables

@@ -21,6 +21,8 @@
 ## Architecture
 ![alt text for screen readers](/docs/source/_static/GView.svg "High level architecture at the current moment.").
 
+![alt text for screen readers](/docs/source/_static/GViewCore.svg "Core architecture at the current moment.").
+
 ## Building
 ### Tools used
 CMake is used to build the entire project regardless of the platform.
