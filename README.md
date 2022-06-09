@@ -28,7 +28,9 @@
 CMake is used to build the entire project regardless of the platform.
 ### Supported platforms
 #### Windows
-Requires a manual installation of OpenSSL 1.x. You can get an already prepared .msi or .exe or you can install it via [vcpkg](https://github.com/microsoft/vcpkg).
+Requires a manual installation of `OpenSSL 1.x`. You can get an already built .msi or .exe or you can install it via package manager [vcpkg](https://github.com/microsoft/vcpkg).
+You can grab an `OpenSSL 1.x` binary from [here](/.github/workflows/ci.yml).
+Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can be seen [here](https://slproweb.com/products/Win32OpenSSL.html).
 #### OSX
 Works out of the box as long as you have an installation of `OpenSSL 1.x`.
 #### Linux
