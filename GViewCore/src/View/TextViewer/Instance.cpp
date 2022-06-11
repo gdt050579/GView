@@ -325,6 +325,8 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
 }
 void Instance::ComputeSubLineIndexes(uint32 lineNo)
 {
+    if (lineNo == this->SubLines.lineNo)
+        return; // we've already computed this --> no need to computed again
     uint64 startOffset;
     BufferView buf;
     ComputeSubLineIndexes(lineNo, buf, startOffset);
@@ -584,6 +586,56 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
     uint32 lastLine = static_cast<uint32>(this->lines.size() - 1);
     if (HasWordWrap())
     {
+        auto lineNo = this->Cursor.lineNo;
+        ComputeSubLineIndexes(lineNo);
+        auto slIndex              = CharacterIndexToSubLineNo(this->Cursor.charIndex);
+        const auto initialSubLine = slIndex;
+        while (true)
+        {
+            ComputeSubLineIndexes(lineNo);
+            const auto slCount = static_cast<uint32>(this->SubLines.entries.size());
+            const auto dif     = std::min<>(noOfTimes, slCount - slIndex);
+            noOfTimes -= dif;
+            slIndex += dif;
+            if (noOfTimes > 0)
+            {
+                lineNo++;
+                slIndex = 0;
+                if (lineNo > lastLine)
+                {
+                    lineNo    = lastLine;
+                    noOfTimes = 0;
+                    slIndex   = slCount - 1; // last subline
+                }
+            }
+            else
+            {
+                if (slIndex >= slCount)
+                {
+                    if (lineNo < lastLine)
+                    {
+                        // move to next line
+                        lineNo++;
+                        slIndex = 0;
+                    }
+                    else
+                    {
+                        // we are already at the last line
+                        if (initialSubLine + 1 == slCount)
+                        {
+                            MoveToEndOfLine(lastLine, select);
+                            return;
+                        }
+                        else
+                        {
+                            slIndex = slCount - 1;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        MoveTo(lineNo, this->SubLines.entries[slIndex].relativeCharIndex, select);
     }
     else
     {
