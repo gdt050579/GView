@@ -98,6 +98,7 @@ namespace View
                     uint32 size;
                     uint32 lineNo;
                     uint32 xStart;
+                    uint32 lineCharIndex;
                 } Lines[MAX_LINES_TO_VIEW];
                 uint32 scrollX;
                 uint32 linesCount;

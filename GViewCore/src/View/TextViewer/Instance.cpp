@@ -398,11 +398,12 @@ void Instance::CommputeViewPort_NoWrap(uint32 lineNo, Direction dir)
     auto* l_end         = l + ViewPort.linesCount;
     while (l < l_end)
     {
-        auto lineInfo = GetLineInfo(start);
-        l->lineNo     = start;
-        l->size       = lineInfo.size;
-        l->offset     = lineInfo.offset;
-        l->xStart     = 0;
+        auto lineInfo    = GetLineInfo(start);
+        l->lineNo        = start;
+        l->size          = lineInfo.size;
+        l->offset        = lineInfo.offset;
+        l->xStart        = 0;
+        l->lineCharIndex = 0;
         start++;
         l++;
     }
@@ -433,11 +434,12 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
             ViewPort.End.subLineNo = 0; // default value
             while ((l < l_max) && (startSL < this->SubLines.entries.size()))
             {
-                auto sl   = this->SubLines.entries[startSL];
-                l->lineNo = start;
-                l->offset = sl.relativeOffset + lineInfo.offset;
-                l->xStart = 0;
-                l->size   = sl.size;
+                auto sl          = this->SubLines.entries[startSL];
+                l->lineNo        = start;
+                l->offset        = sl.relativeOffset + lineInfo.offset;
+                l->xStart        = 0;
+                l->size          = sl.size;
+                l->lineCharIndex = sl.relativeCharIndex;
                 l++;
                 ViewPort.End.subLineNo = startSL;
                 startSL++;
@@ -467,11 +469,12 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
             ViewPort.Start.subLineNo = resetSL ? subLineNo : static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
             while ((l > l_min) && (startSL >= 0))
             {
-                auto sl   = this->SubLines.entries[startSL];
-                l->lineNo = start;
-                l->offset = sl.relativeOffset + lineInfo.offset;
-                l->xStart = 0;
-                l->size   = sl.size;
+                auto sl          = this->SubLines.entries[startSL];
+                l->lineNo        = start;
+                l->offset        = sl.relativeOffset + lineInfo.offset;
+                l->xStart        = 0;
+                l->size          = sl.size;
+                l->lineCharIndex = sl.relativeCharIndex;
                 l--;
                 ViewPort.Start.subLineNo = startSL;
                 startSL--;
@@ -812,14 +815,14 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
             {
                 if (this->selection.Contains(vd->offset + bufPos))
                 {
-                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() + vd->lineCharIndex == Cursor.charIndex))
                         c->Color = Cfg.Cursor.OverSelection;
                     else
                         c->Color = Cfg.Selection.Editor;
                 }
                 else
                 {
-                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() + vd->lineCharIndex == Cursor.charIndex))
                         c->Color = Cfg.Cursor.Normal;
                     else if (cs.HasDecodingErrors())
                         c->Color = Cfg.Text.Error;
