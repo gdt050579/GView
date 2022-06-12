@@ -256,137 +256,137 @@ namespace Type
 
         struct ImageFileHeader
         {
-            uint16_t Machine;
-            uint16_t NumberOfSections;
-            uint32_t TimeDateStamp;
-            uint32_t PointerToSymbolTable;
-            uint32_t NumberOfSymbols;
-            uint16_t SizeOfOptionalHeader;
-            uint16_t Characteristics;
+            uint16 Machine;
+            uint16 NumberOfSections;
+            uint32 TimeDateStamp;
+            uint32 PointerToSymbolTable;
+            uint32 NumberOfSymbols;
+            uint16 SizeOfOptionalHeader;
+            uint16 Characteristics;
         };
 
         struct ImageDataDirectory
         {
-            uint32_t VirtualAddress;
-            uint32_t Size;
+            uint32 VirtualAddress;
+            uint32 Size;
         };
 
         struct ImageOptionalHeader32
         {
-            uint16_t Magic;
-            uint8_t MajorLinkerVersion;
-            uint8_t MinorLinkerVersion;
-            uint32_t SizeOfCode;
-            uint32_t SizeOfInitializedData;
-            uint32_t SizeOfUninitializedData;
-            uint32_t AddressOfEntryPoint;
-            uint32_t BaseOfCode;
-            uint32_t BaseOfData;
-            uint32_t ImageBase;
-            uint32_t SectionAlignment;
-            uint32_t FileAlignment;
-            uint16_t MajorOperatingSystemVersion;
-            uint16_t MinorOperatingSystemVersion;
-            uint16_t MajorImageVersion;
-            uint16_t MinorImageVersion;
-            uint16_t MajorSubsystemVersion;
-            uint16_t MinorSubsystemVersion;
-            uint32_t Win32VersionValue;
-            uint32_t SizeOfImage;
-            uint32_t SizeOfHeaders;
-            uint32_t CheckSum;
-            uint16_t Subsystem;
-            uint16_t DllCharacteristics;
-            uint32_t SizeOfStackReserve;
-            uint32_t SizeOfStackCommit;
-            uint32_t SizeOfHeapReserve;
-            uint32_t SizeOfHeapCommit;
-            uint32_t LoaderFlags;
-            uint32_t NumberOfRvaAndSizes;
+            uint16 Magic;
+            uint8 MajorLinkerVersion;
+            uint8 MinorLinkerVersion;
+            uint32 SizeOfCode;
+            uint32 SizeOfInitializedData;
+            uint32 SizeOfUninitializedData;
+            uint32 AddressOfEntryPoint;
+            uint32 BaseOfCode;
+            uint32 BaseOfData;
+            uint32 ImageBase;
+            uint32 SectionAlignment;
+            uint32 FileAlignment;
+            uint16 MajorOperatingSystemVersion;
+            uint16 MinorOperatingSystemVersion;
+            uint16 MajorImageVersion;
+            uint16 MinorImageVersion;
+            uint16 MajorSubsystemVersion;
+            uint16 MinorSubsystemVersion;
+            uint32 Win32VersionValue;
+            uint32 SizeOfImage;
+            uint32 SizeOfHeaders;
+            uint32 CheckSum;
+            uint16 Subsystem;
+            uint16 DllCharacteristics;
+            uint32 SizeOfStackReserve;
+            uint32 SizeOfStackCommit;
+            uint32 SizeOfHeapReserve;
+            uint32 SizeOfHeapCommit;
+            uint32 LoaderFlags;
+            uint32 NumberOfRvaAndSizes;
             ImageDataDirectory DataDirectory[__IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
         };
 
         struct ImageNTHeaders32
         {
-            uint32_t Signature;
+            uint32 Signature;
             ImageFileHeader FileHeader;
             ImageOptionalHeader32 OptionalHeader;
         };
 
         struct ImageOptionalHeader64
         {
-            uint16_t Magic;
-            uint8_t MajorLinkerVersion;
-            uint8_t MinorLinkerVersion;
-            uint32_t SizeOfCode;
-            uint32_t SizeOfInitializedData;
-            uint32_t SizeOfUninitializedData;
-            uint32_t AddressOfEntryPoint;
-            uint32_t BaseOfCode;
-            uint64_t ImageBase;
-            uint32_t SectionAlignment;
-            uint32_t FileAlignment;
-            uint16_t MajorOperatingSystemVersion;
-            uint16_t MinorOperatingSystemVersion;
-            uint16_t MajorImageVersion;
-            uint16_t MinorImageVersion;
-            uint16_t MajorSubsystemVersion;
-            uint16_t MinorSubsystemVersion;
-            uint32_t Win32VersionValue;
-            uint32_t SizeOfImage;
-            uint32_t SizeOfHeaders;
-            uint32_t CheckSum;
-            uint16_t Subsystem;
-            uint16_t DllCharacteristics;
-            uint64_t SizeOfStackReserve;
-            uint64_t SizeOfStackCommit;
-            uint64_t SizeOfHeapReserve;
-            uint64_t SizeOfHeapCommit;
-            uint32_t LoaderFlags;
-            uint32_t NumberOfRvaAndSizes;
+            uint16 Magic;
+            uint8 MajorLinkerVersion;
+            uint8 MinorLinkerVersion;
+            uint32 SizeOfCode;
+            uint32 SizeOfInitializedData;
+            uint32 SizeOfUninitializedData;
+            uint32 AddressOfEntryPoint;
+            uint32 BaseOfCode;
+            uint64 ImageBase;
+            uint32 SectionAlignment;
+            uint32 FileAlignment;
+            uint16 MajorOperatingSystemVersion;
+            uint16 MinorOperatingSystemVersion;
+            uint16 MajorImageVersion;
+            uint16 MinorImageVersion;
+            uint16 MajorSubsystemVersion;
+            uint16 MinorSubsystemVersion;
+            uint32 Win32VersionValue;
+            uint32 SizeOfImage;
+            uint32 SizeOfHeaders;
+            uint32 CheckSum;
+            uint16 Subsystem;
+            uint16 DllCharacteristics;
+            uint64 SizeOfStackReserve;
+            uint64 SizeOfStackCommit;
+            uint64 SizeOfHeapReserve;
+            uint64 SizeOfHeapCommit;
+            uint32 LoaderFlags;
+            uint32 NumberOfRvaAndSizes;
             ImageDataDirectory DataDirectory[__IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
         };
 
         struct ImageNTHeaders64
         {
-            uint32_t Signature;
+            uint32 Signature;
             ImageFileHeader FileHeader;
             ImageOptionalHeader64 OptionalHeader;
         };
 
         struct ImageSectionHeader
         {
-            uint8_t Name[__IMAGE_SIZEOF_SHORT_NAME];
+            uint8 Name[__IMAGE_SIZEOF_SHORT_NAME];
             union
             {
-                uint32_t PhysicalAddress;
-                uint32_t VirtualSize;
+                uint32 PhysicalAddress;
+                uint32 VirtualSize;
             } Misc;
-            uint32_t VirtualAddress;
-            uint32_t SizeOfRawData;
-            uint32_t PointerToRawData;
-            uint32_t PointerToRelocations;
-            uint32_t PointerToLinenumbers;
-            uint16_t NumberOfRelocations;
-            uint16_t NumberOfLinenumbers;
-            uint32_t Characteristics;
+            uint32 VirtualAddress;
+            uint32 SizeOfRawData;
+            uint32 PointerToRawData;
+            uint32 PointerToRelocations;
+            uint32 PointerToLinenumbers;
+            uint16 NumberOfRelocations;
+            uint16 NumberOfLinenumbers;
+            uint32 Characteristics;
         };
 
         struct ImageImportDescriptor
         {
             union
             {
-                uint32_t Characteristics;    // 0 for terminating null import descriptor
-                uint32_t OriginalFirstThunk; // RVA to original unbound IAT (PIMAGE_THUNK_DATA)
+                uint32 Characteristics;    // 0 for terminating null import descriptor
+                uint32 OriginalFirstThunk; // RVA to original unbound IAT (PIMAGE_THUNK_DATA)
             };
-            uint32_t TimeDateStamp; // 0 if not bound,
+            uint32 TimeDateStamp; // 0 if not bound,
             // -1 if bound, and real date\time stamp
             //     in IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT (new BIND)
             // O.W. date/time stamp of DLL bound to (Old BIND)
 
-            uint32_t ForwarderChain; // -1 if no forwarders
-            uint32_t Name;
-            uint32_t FirstThunk; // RVA to IAT (if bound this IAT has actual addresses)
+            uint32 ForwarderChain; // -1 if no forwarders
+            uint32 Name;
+            uint32 FirstThunk; // RVA to IAT (if bound this IAT has actual addresses)
         };
 
         struct ImageResourceDataEntry
@@ -399,12 +399,12 @@ namespace Type
 
         struct ImageResourceDirectory
         {
-            uint32_t Characteristics;
-            uint32_t TimeDateStamp;
-            uint16_t MajorVersion;
-            uint16_t MinorVersion;
-            uint16_t NumberOfNamedEntries;
-            uint16_t NumberOfIdEntries;
+            uint32 Characteristics;
+            uint32 TimeDateStamp;
+            uint16 MajorVersion;
+            uint16 MinorVersion;
+            uint16 NumberOfNamedEntries;
+            uint16 NumberOfIdEntries;
             //  IMAGE_RESOURCE_DIRECTORY_ENTRY DirectoryEntries[];
         };
 
@@ -414,19 +414,19 @@ namespace Type
             {
                 struct
                 {
-                    uint32_t NameOffset : 31;
-                    uint32_t NameIsString : 1;
+                    uint32 NameOffset : 31;
+                    uint32 NameIsString : 1;
                 };
-                uint32_t Name;
-                uint16_t Id;
+                uint32 Name;
+                uint16 Id;
             };
             union
             {
-                uint32_t OffsetToData;
+                uint32 OffsetToData;
                 struct
                 {
-                    uint32_t OffsetToDirectory : 31;
-                    uint32_t DataIsDirectory : 1;
+                    uint32 OffsetToDirectory : 31;
+                    uint32 DataIsDirectory : 1;
                 };
             };
         };
@@ -435,12 +435,36 @@ namespace Type
         {
             union
             {
-                uint32_t ForwarderString; // PBYTE
-                uint32_t Function;        // PDWORD
-                uint32_t Ordinal;
-                uint32_t AddressOfData; // PIMAGE_IMPORT_BY_NAME
+                uint32 ForwarderString; // PBYTE
+                uint32 Function;        // PDWORD
+                uint32 Ordinal;
+                uint32 AddressOfData; // PIMAGE_IMPORT_BY_NAME
             } u1;
         };
+
+#pragma pack(push, 1)
+        struct ImageSymbol
+        {
+            union
+            {
+                uint8 ShortName[__IMAGE_SIZEOF_SHORT_NAME];
+                struct
+                {
+                    uint32 Short; // if 0, use LongName
+                    uint32 Long;  // offset into string table
+                } Name;
+                uint32 LongName[2]; // PBYTE [2]
+            } N;
+            uint32 Value;
+            int16 SectionNumber;
+            uint16 Type;
+            uint8 StorageClass;
+            uint8 NumberOfAuxSymbols;
+        };
+#pragma pack(pop) // Back to 4 byte packing.
+
+        constexpr auto IMAGE_SIZEOF_SYMBOL = 18U;
+        static_assert(sizeof(ImageSymbol) == IMAGE_SIZEOF_SYMBOL, "");
 
 #pragma pack(push, 8)
 
@@ -448,10 +472,10 @@ namespace Type
         {
             union
             {
-                uint64_t ForwarderString; // PBYTE
-                uint64_t Function;        // PDWORD
-                uint64_t Ordinal;
-                uint64_t AddressOfData; // PIMAGE_IMPORT_BY_NAME
+                uint64 ForwarderString; // PBYTE
+                uint64 Function;        // PDWORD
+                uint64 Ordinal;
+                uint64 AddressOfData; // PIMAGE_IMPORT_BY_NAME
             } u1;
         };
 
@@ -461,26 +485,26 @@ namespace Type
 
         struct DIBInfoHeader
         {
-            uint32_t sizeOfHeader;
-            uint32_t width;
-            uint32_t height;
-            uint16_t colorPlanes;
-            uint16_t bitsPerPixel;
-            uint32_t comppresionMethod;
-            uint32_t imageSize;
-            uint32_t horizontalResolution;
-            uint32_t verticalResolution;
-            uint32_t numberOfColors;
-            uint32_t numberOfImportantColors;
+            uint32 sizeOfHeader;
+            uint32 width;
+            uint32 height;
+            uint16 colorPlanes;
+            uint16 bitsPerPixel;
+            uint32 comppresionMethod;
+            uint32 imageSize;
+            uint32 horizontalResolution;
+            uint32 verticalResolution;
+            uint32 numberOfColors;
+            uint32 numberOfImportantColors;
         };
         struct PNGHeader
         {
-            uint32_t magic;
-            uint32_t reserved;
-            uint32_t ihdrLength;
-            uint32_t ihdrMagic;
-            uint32_t width;
-            uint32_t height;
+            uint32 magic;
+            uint32 reserved;
+            uint32 ihdrLength;
+            uint32 ihdrMagic;
+            uint32 width;
+            uint32 height;
         };
 
         enum class AddressType : uint8
@@ -613,23 +637,23 @@ namespace Type
             struct ResourceInformation
             {
                 ResourceType Type;
-                uint32_t ID;
-                uint32_t CodePage;
-                uint32_t Language;
-                uint64_t Start;
-                uint64_t Size;
+                uint32 ID;
+                uint32 CodePage;
+                uint32 Language;
+                uint64 Start;
+                uint64 Size;
                 FixSizeString<61> Name;
                 struct
                 {
-                    uint32_t width, height;
-                    uint8_t bitsPerPixel;
+                    uint32 width, height;
+                    uint8 bitsPerPixel;
                     ImageType type;
                 } Image;
             };
 
             struct ImportDllInformation
             {
-                uint64_t RVA;
+                uint64 RVA;
                 FixSizeString<117> Name;
             };
             struct ImportFunctionInformation
@@ -656,11 +680,11 @@ namespace Type
                 ImageNTHeaders32 nth32;
                 ImageNTHeaders64 nth64;
             };
-            uint32_t nrSections;
-            uint64_t computedSize, virtualComputedSize, computedWithCertificate;
-            uint64_t imageBase;
-            uint64_t rvaEntryPoint;
-            uint64_t fileAlign;
+            uint32 nrSections;
+            uint64 computedSize, virtualComputedSize, computedWithCertificate;
+            uint64 imageBase;
+            uint64 rvaEntryPoint;
+            uint64 fileAlign;
             FixSizeString<61> dllName;
             FixSizeString<125> pdbName;
             ImageSectionHeader sect[MAX_NR_SECTIONS];
@@ -676,9 +700,9 @@ namespace Type
             ImageTLSDirectory32 tlsDir;
             PEColors peCols;
             VersionInformation Ver;
-            uint32_t asmShow;
-            uint32_t sectStart, peStart;
-            uint64_t panelsMask;
+            uint32 asmShow;
+            uint32 sectStart, peStart;
+            uint64 panelsMask;
 
             X86_X64_ColorBuffer x86x64ColorBuffer;
 
@@ -726,7 +750,8 @@ namespace Type
 
             bool HasPanel(Panels::IDs id);
 
-            void CopySectionName(uint32_t index, String& name);
+            void CopySectionName(uint32 index, String& name);
+            void GetSectionName(uint32 index, String& name);
 
             bool GetResourceImageInformation(const ResourceInformation& r, String& info);
             bool LoadIcon(const ResourceInformation& r, Image& img);
