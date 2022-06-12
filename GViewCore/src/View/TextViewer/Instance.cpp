@@ -471,7 +471,9 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
             auto lineInfo = GetLineInfo(start);
             ComputeSubLineIndexes(start);
             ViewPort.Start.lineNo    = start;
-            ViewPort.Start.subLineNo = resetSL ? subLineNo : static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
+            if (resetSL)
+                startSL = static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
+            ViewPort.Start.subLineNo = startSL;
             while ((l > l_min) && (startSL >= 0))
             {
                 const auto& sl   = this->SubLines.entries[startSL];
