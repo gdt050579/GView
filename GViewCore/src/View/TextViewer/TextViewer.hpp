@@ -135,7 +135,8 @@ namespace View
             void MoveDown(uint32 noOfTimes, bool select);
             void MoveUp(uint32 noOfTimes, bool select);
 
-            void UpdateCursorXOffset();
+            void UpdateCursor_NoWrap();
+            void UpdateCursor_Wrap();
             void UpdateViewPort();
 
             int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);

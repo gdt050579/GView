@@ -303,7 +303,8 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
             if (cs.GetNextXOffset() > w)
             {
                 // move to next line
-                this->SubLines.entries.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
+                this->SubLines.entries.emplace_back(
+                      bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
                 bufPos    = cs.GetCurrentBufferPos();
                 charIndex = cs.GetNextCharIndex();
                 cs.ResetXOffset();
@@ -677,7 +678,7 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
         }
     }
 }
-void Instance::UpdateCursorXOffset()
+void Instance::UpdateCursor_NoWrap()
 {
     auto li = GetLineInfo(Cursor.lineNo);
     // simple checkes
@@ -720,13 +721,37 @@ void Instance::UpdateCursorXOffset()
         this->ViewPort.scrollX = newXPos >= w ? newXPos + 1 - w : 0;
     }
 }
+void Instance::UpdateCursor_Wrap()
+{
+    // only file pos need to be computed
+    auto li = GetLineInfo(Cursor.lineNo);
+    ComputeSubLineIndexes(Cursor.lineNo);
+    const auto& sl = this->SubLines.entries[Cursor.sublineNo];
+    auto idx       = sl.relativeCharIndex;
+    CharacterStream cs(this->obj->GetData().Get(sl.relativeOffset + li.offset, sl.size, false), 0, this->settings.ToReference());
+    // while ((cs.Next()) && (idx < Cursor.charIndex))
+    while ((idx < Cursor.charIndex) && (cs.Next()))
+    {
+        idx++;
+    }
+    if (idx == Cursor.charIndex)
+    {
+        Cursor.pos = static_cast<uint64>(cs.GetCurrentBufferPos()) + li.offset + sl.relativeOffset;
+    }
+    else
+    {
+        Cursor.pos = 0; // de vazut daca e ok
+    }
+}
 void Instance::UpdateViewPort()
 {
     if (ViewPort.linesCount == 0)
     {
         ComputeViewPort(0, 0, Direction::TopToBottom);
         if (!HasWordWrap())
-            UpdateCursorXOffset();
+            UpdateCursor_NoWrap();
+        else
+            UpdateCursor_Wrap();
     }
     if ((Cursor.lineNo < ViewPort.Start.lineNo) ||
         ((Cursor.lineNo == ViewPort.Start.lineNo) && (Cursor.sublineNo < ViewPort.Start.subLineNo)))
@@ -734,7 +759,9 @@ void Instance::UpdateViewPort()
         // cursor is before current ViewPort
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::TopToBottom);
         if (!HasWordWrap())
-            UpdateCursorXOffset();
+            UpdateCursor_NoWrap();
+        else
+            UpdateCursor_Wrap();
         return;
     }
     if ((Cursor.lineNo > ViewPort.End.lineNo) || ((Cursor.lineNo == ViewPort.End.lineNo) && (Cursor.sublineNo > ViewPort.End.subLineNo)))
@@ -742,12 +769,16 @@ void Instance::UpdateViewPort()
         // cursor is after
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::BottomToTop);
         if (!HasWordWrap())
-            UpdateCursorXOffset();
+            UpdateCursor_NoWrap();
+        else
+            UpdateCursor_Wrap();
         return;
     }
     // else the viewport is ok --> xOffset has to be computed
     if (!HasWordWrap())
-        UpdateCursorXOffset();
+        UpdateCursor_NoWrap();
+    else
+        UpdateCursor_Wrap();
 }
 void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState state, bool showLineNumber)
 {
