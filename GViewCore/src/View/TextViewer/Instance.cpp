@@ -415,7 +415,7 @@ void Instance::CommputeViewPort_NoWrap(uint32 lineNo, Direction dir)
 }
 void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir)
 {
-    auto h = (std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW)) - 1U;
+    auto h = (std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW));
 
     ViewPort.Reset();
     if (this->lines.empty())
