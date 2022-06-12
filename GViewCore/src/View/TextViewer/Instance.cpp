@@ -970,6 +970,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     {
     case CMD_ID_WORD_WRAP:
         this->settings->wordWrap = !this->settings->wordWrap;
+        this->ViewPort.scrollX   = 0;
         this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
         this->UpdateViewPort();
         return true;
