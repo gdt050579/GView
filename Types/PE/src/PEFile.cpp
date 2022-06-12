@@ -1240,7 +1240,7 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
         }
 
         auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
-        const auto length   = strnlen_s((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
+        const auto length   = (uint32) strnlen((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
         String name;
         name.Set((char*) bufferLongName.GetData(), length);
 
