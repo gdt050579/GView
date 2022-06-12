@@ -78,6 +78,10 @@ class CharacterStream
     {
         return this->charIndex;
     }
+    inline uint32 GetNextCharIndex() const
+    {
+        return this->nextCharIndex;
+    }
     inline void ResetXOffset(uint32 value = 0)
     {
         this->xPos = this->nextPos = value;
@@ -296,12 +300,12 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     {
         while (cs.Next())
         {
-            if (cs.GetXOffset() >= w)
+            if (cs.GetNextXOffset() > w)
             {
                 // move to next line
-                this->SubLines.entries.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetCharIndex() - charIndex);
+                this->SubLines.entries.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
                 bufPos    = cs.GetCurrentBufferPos();
-                charIndex = cs.GetCharIndex();
+                charIndex = cs.GetNextCharIndex();
                 cs.ResetXOffset();
             }
         }
@@ -434,7 +438,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
             ViewPort.End.subLineNo = 0; // default value
             while ((l < l_max) && (startSL < this->SubLines.entries.size()))
             {
-                auto sl          = this->SubLines.entries[startSL];
+                const auto& sl   = this->SubLines.entries[startSL];
                 l->lineNo        = start;
                 l->offset        = sl.relativeOffset + lineInfo.offset;
                 l->xStart        = 0;
@@ -469,7 +473,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
             ViewPort.Start.subLineNo = resetSL ? subLineNo : static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
             while ((l > l_min) && (startSL >= 0))
             {
-                auto sl          = this->SubLines.entries[startSL];
+                const auto& sl   = this->SubLines.entries[startSL];
                 l->lineNo        = start;
                 l->offset        = sl.relativeOffset + lineInfo.offset;
                 l->xStart        = 0;
@@ -593,6 +597,9 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
         ComputeSubLineIndexes(lineNo);
         auto slIndex              = CharacterIndexToSubLineNo(this->Cursor.charIndex);
         const auto initialSubLine = slIndex;
+        const auto charIndexDif   = this->Cursor.charIndex > this->SubLines.entries[slIndex].relativeCharIndex
+                                          ? this->Cursor.charIndex - this->SubLines.entries[slIndex].relativeCharIndex
+                                          : 0U;
         while (true)
         {
             ComputeSubLineIndexes(lineNo);
@@ -638,7 +645,11 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
                 break;
             }
         }
-        MoveTo(lineNo, this->SubLines.entries[slIndex].relativeCharIndex, select);
+        const auto& currentSL = this->SubLines.entries[slIndex];
+        if (currentSL.charsCount == 0)
+            MoveTo(lineNo, currentSL.relativeCharIndex, select);
+        else
+            MoveTo(lineNo, currentSL.relativeCharIndex + std::min<>(currentSL.charsCount - 1, charIndexDif), select);
     }
     else
     {
