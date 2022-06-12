@@ -726,8 +726,9 @@ void Instance::UpdateCursor_Wrap()
     // only file pos need to be computed
     auto li = GetLineInfo(Cursor.lineNo);
     ComputeSubLineIndexes(Cursor.lineNo);
-    const auto& sl = this->SubLines.entries[Cursor.sublineNo];
-    auto idx       = sl.relativeCharIndex;
+    Cursor.sublineNo = CharacterIndexToSubLineNo(Cursor.charIndex);
+    const auto& sl   = this->SubLines.entries[Cursor.sublineNo];
+    auto idx         = sl.relativeCharIndex;
     CharacterStream cs(this->obj->GetData().Get(sl.relativeOffset + li.offset, sl.size, false), 0, this->settings.ToReference());
     // while ((cs.Next()) && (idx < Cursor.charIndex))
     while ((idx < Cursor.charIndex) && (cs.Next()))
@@ -1002,6 +1003,8 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case CMD_ID_WORD_WRAP:
         this->settings->wordWrap = !this->settings->wordWrap;
         this->ViewPort.scrollX   = 0;
+        this->SubLines.lineNo    = INVALID_LINE_NUMBER;
+        this->ViewPort.Reset();
         this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
         this->UpdateViewPort();
         return true;
