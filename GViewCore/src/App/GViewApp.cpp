@@ -97,18 +97,26 @@ bool GView::App::ResetConfiguration()
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
+
 void GView::App::OpenFile(const std::filesystem::path& path)
 {
     if (gviewAppInstance)
     {
-        if (path.is_absolute())
+        try
+        {
+            if (path.is_absolute())
+            {
+                gviewAppInstance->AddFileWindow(path);
+            }
+            else
+            {
+                const auto absPath = std::filesystem::canonical(path);
+                gviewAppInstance->AddFileWindow(absPath);
+            }
+        }
+        catch (std::filesystem::filesystem_error /* e */)
         {
             gviewAppInstance->AddFileWindow(path);
-        }
-        else
-        {
-            const auto absPath = std::filesystem::canonical(path);
-            gviewAppInstance->AddFileWindow(absPath);
         }
     }
 }
