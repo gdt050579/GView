@@ -1227,7 +1227,9 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
     {
         auto strtableOffset       = 0ULL;
         const auto& sectionHeader = sect[index];
-        auto symbolIndex          = atoi((const char*) sectionHeader.Name + 1);
+
+        const auto symbolIndex = Number::ToUInt64((const char*) sectionHeader.Name + 1);
+        CHECKRET(symbolIndex.has_value(), "");
 
         switch (nth32.OptionalHeader.Magic)
         {
@@ -1239,7 +1241,7 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
             break;
         }
 
-        auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
+        auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + *symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
         const auto length   = (uint32) strnlen((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
         String name;
         name.Set((char*) bufferLongName.GetData(), length);
