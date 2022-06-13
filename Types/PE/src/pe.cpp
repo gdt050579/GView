@@ -110,7 +110,7 @@ extern "C"
         CreateDissasmView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
-            win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(win->GetObject(), pe)), true);
         if (pe->HasPanel(PE::Panels::IDs::Headers))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Headers(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Sections))

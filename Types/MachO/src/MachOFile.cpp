@@ -613,6 +613,7 @@ bool MachOFile::SetCodeSignature()
         if (lc.value.cmd == MAC::LoadCommandType::CODE_SIGNATURE)
         {
             codeSignature.emplace(CodeSignature{});
+            codeSignature->signature.humanReadable.Set("");
 
             CHECK(obj->GetData().Copy<MAC::linkedit_data_command>(lc.offset, codeSignature->ledc), false, "");
             if (shouldSwapEndianess)
@@ -734,10 +735,13 @@ bool MachOFile::SetCodeSignature()
                     const auto blobBuffer = obj->GetData().CopyToBuffer(
                           codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
                     codeSignature->signature.errorHumanReadable =
+                          !blobBuffer.IsValid() ||
                           !GView::DigitalSignature::CMSToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
-                    codeSignature->signature.errorPEMs = !GView::DigitalSignature::CMSToPEMCerts(
-                          blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
-                    codeSignature->signature.errorSig = !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
+                    codeSignature->signature.errorPEMs =
+                          !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToPEMCerts(
+                                                         blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
+                    codeSignature->signature.errorSig =
+                          !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
                 }
                 break;
                 case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
