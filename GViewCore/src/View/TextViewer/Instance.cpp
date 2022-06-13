@@ -78,6 +78,10 @@ class CharacterStream
     {
         return this->charIndex;
     }
+    inline uint32 GetNextCharIndex() const
+    {
+        return this->nextCharIndex;
+    }
     inline void ResetXOffset(uint32 value = 0)
     {
         this->xPos = this->nextPos = value;
@@ -282,11 +286,12 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     //|  We will always have at least ONE sub-line      |
     //---------------------------------------------------
     this->SubLines.entries.clear();
+    this->SubLines.lineNo = lineNo;
 
-    if ((this->lineNumberWidth + 1) >= w)
+    if ((this->lineNumberWidth + 2) >= w)
         w = 1;
     else
-        w -= (this->lineNumberWidth + 1);
+        w -= (this->lineNumberWidth + 2);
     buf = this->obj->GetData().Get(li.offset, li.size, false);
     CharacterStream cs(buf, 0, this->settings.ToReference());
     // process
@@ -295,23 +300,38 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     {
         while (cs.Next())
         {
-            if (cs.GetXOffset() >= w)
+            if (cs.GetNextXOffset() > w)
             {
                 // move to next line
-                this->SubLines.entries.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetCharIndex() - charIndex);
+                this->SubLines.entries.emplace_back(
+                      bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
                 bufPos    = cs.GetCurrentBufferPos();
-                charIndex = cs.GetCharIndex();
+                charIndex = cs.GetNextCharIndex();
                 cs.ResetXOffset();
             }
+        }
+        if (cs.GetCurrentBufferPos() > bufPos)
+            this->SubLines.entries.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetCharIndex() - charIndex);
+        // there should always be at least one sub-line
+        if (this->SubLines.entries.empty())
+        {
+            this->SubLines.entries.emplace_back(0, 0, 0, 0);
+            this->SubLines.lineNo = INVALID_LINE_NUMBER; // need to recompute
         }
     }
     else
     {
         this->SubLines.entries.emplace_back(0, li.size, 0, li.charsCount);
+        if ((li.size == 0) || (li.charsCount == 0))
+        {
+            this->SubLines.lineNo = INVALID_LINE_NUMBER; // need to recompute
+        }
     }
 }
 void Instance::ComputeSubLineIndexes(uint32 lineNo)
 {
+    if (lineNo == this->SubLines.lineNo)
+        return; // we've already computed this --> no need to computed again
     uint64 startOffset;
     BufferView buf;
     ComputeSubLineIndexes(lineNo, buf, startOffset);
@@ -383,20 +403,105 @@ void Instance::CommputeViewPort_NoWrap(uint32 lineNo, Direction dir)
     auto* l_end         = l + ViewPort.linesCount;
     while (l < l_end)
     {
-        auto lineInfo = GetLineInfo(start);
-        l->lineNo     = start;
-        l->size       = lineInfo.size;
-        l->offset     = lineInfo.offset;
-        l->xStart     = 0;
+        auto lineInfo    = GetLineInfo(start);
+        l->lineNo        = start;
+        l->size          = lineInfo.size;
+        l->offset        = lineInfo.offset;
+        l->xStart        = 0;
+        l->lineCharIndex = 0;
         start++;
         l++;
+    }
+}
+void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir)
+{
+    auto h = (std::min<>(static_cast<uint32>(std::max<>(this->GetHeight(), 1)), MAX_LINES_TO_VIEW));
+
+    ViewPort.Reset();
+    if (this->lines.empty())
+        return;
+    if (dir == Direction::TopToBottom)
+    {
+        ViewPort.Start.lineNo    = lineNo;
+        ViewPort.Start.subLineNo = subLineNo;
+        ViewPort.End.lineNo      = lineNo;
+        ViewPort.End.subLineNo   = subLineNo;
+        auto start               = lineNo;
+        auto startSL             = subLineNo;
+        auto* l                  = ViewPort.Lines;
+        const auto* l_max        = l + h;
+
+        while ((l < l_max) && (start < this->lines.size()))
+        {
+            auto lineInfo = GetLineInfo(start);
+            ComputeSubLineIndexes(start);
+            ViewPort.End.lineNo    = start;
+            ViewPort.End.subLineNo = 0; // default value
+            while ((l < l_max) && (startSL < this->SubLines.entries.size()))
+            {
+                const auto& sl   = this->SubLines.entries[startSL];
+                l->lineNo        = start;
+                l->offset        = sl.relativeOffset + lineInfo.offset;
+                l->xStart        = 0;
+                l->size          = sl.size;
+                l->lineCharIndex = sl.relativeCharIndex;
+                l++;
+                ViewPort.End.subLineNo = startSL;
+                startSL++;
+            }
+            startSL = 0; // reset sub-line index
+            start++;
+        }
+
+        ViewPort.linesCount = (uint32) (l - ViewPort.Lines);
+    }
+    else
+    {
+        ViewPort.Start.lineNo    = lineNo;
+        ViewPort.Start.subLineNo = subLineNo;
+        ViewPort.End.lineNo      = lineNo;
+        ViewPort.End.subLineNo   = subLineNo;
+        auto* l                  = ViewPort.Lines + MAX_LINES_TO_VIEW - 1;
+        const auto* l_min        = l - h;
+        auto start               = (int32) lineNo;
+        auto startSL             = (int32) subLineNo;
+        bool resetSL             = false;
+        while ((l > l_min) && (start >= 0))
+        {
+            auto lineInfo = GetLineInfo(start);
+            ComputeSubLineIndexes(start);
+            ViewPort.Start.lineNo    = start;
+            if (resetSL)
+                startSL = static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
+            ViewPort.Start.subLineNo = startSL;
+            while ((l > l_min) && (startSL >= 0))
+            {
+                const auto& sl   = this->SubLines.entries[startSL];
+                l->lineNo        = start;
+                l->offset        = sl.relativeOffset + lineInfo.offset;
+                l->xStart        = 0;
+                l->size          = sl.size;
+                l->lineCharIndex = sl.relativeCharIndex;
+                l--;
+                ViewPort.Start.subLineNo = startSL;
+                startSL--;
+            }
+            resetSL = true;
+            start--;
+        }
+        l++; // last added line
+        ViewPort.linesCount = (uint32) ((ViewPort.Lines + MAX_LINES_TO_VIEW) - l);
+        // we need to move the lines to the first position
+        if (l != ViewPort.Lines)
+        {
+            memmove(ViewPort.Lines, l, ViewPort.linesCount * sizeof(ViewPort.Lines[0]));
+        }
     }
 }
 void Instance::ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir)
 {
     if (this->HasWordWrap())
-    {
-    }
+        CommputeViewPort_Wrap(lineNo, subLineNo, dir);
     else
         CommputeViewPort_NoWrap(lineNo, dir);
 }
@@ -491,6 +596,63 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
     uint32 lastLine = static_cast<uint32>(this->lines.size() - 1);
     if (HasWordWrap())
     {
+        auto lineNo = this->Cursor.lineNo;
+        ComputeSubLineIndexes(lineNo);
+        auto slIndex              = CharacterIndexToSubLineNo(this->Cursor.charIndex);
+        const auto initialSubLine = slIndex;
+        const auto charIndexDif   = this->Cursor.charIndex > this->SubLines.entries[slIndex].relativeCharIndex
+                                          ? this->Cursor.charIndex - this->SubLines.entries[slIndex].relativeCharIndex
+                                          : 0U;
+        while (true)
+        {
+            ComputeSubLineIndexes(lineNo);
+            const auto slCount = static_cast<uint32>(this->SubLines.entries.size());
+            const auto dif     = std::min<>(noOfTimes, slCount - slIndex);
+            noOfTimes -= dif;
+            slIndex += dif;
+            if (noOfTimes > 0)
+            {
+                lineNo++;
+                slIndex = 0;
+                if (lineNo > lastLine)
+                {
+                    lineNo    = lastLine;
+                    noOfTimes = 0;
+                    slIndex   = slCount - 1; // last subline
+                }
+            }
+            else
+            {
+                if (slIndex >= slCount)
+                {
+                    if (lineNo < lastLine)
+                    {
+                        // move to next line
+                        lineNo++;
+                        slIndex = 0;
+                    }
+                    else
+                    {
+                        // we are already at the last line
+                        if (initialSubLine + 1 == slCount)
+                        {
+                            MoveToEndOfLine(lastLine, select);
+                            return;
+                        }
+                        else
+                        {
+                            slIndex = slCount - 1;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        const auto& currentSL = this->SubLines.entries[slIndex];
+        if (currentSL.charsCount == 0)
+            MoveTo(lineNo, currentSL.relativeCharIndex, select);
+        else
+            MoveTo(lineNo, currentSL.relativeCharIndex + std::min<>(currentSL.charsCount - 1, charIndexDif), select);
     }
     else
     {
@@ -504,6 +666,51 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
 {
     if (HasWordWrap())
     {
+        auto lineNo = this->Cursor.lineNo;
+        ComputeSubLineIndexes(lineNo);
+        auto slIndex              = CharacterIndexToSubLineNo(this->Cursor.charIndex);
+        const auto initialSubLine = slIndex;
+        const auto charIndexDif   = this->Cursor.charIndex > this->SubLines.entries[slIndex].relativeCharIndex
+                                          ? this->Cursor.charIndex - this->SubLines.entries[slIndex].relativeCharIndex
+                                          : 0U;
+        while (true)
+        {
+            ComputeSubLineIndexes(lineNo);
+            const auto dif     = std::min<>(noOfTimes, slIndex);
+            noOfTimes -= dif;
+            slIndex -= dif;
+            if (noOfTimes > 0)
+            {
+                // slIndex is definetelly 0 (as dif is the smallest from noOfTimes and slIndex)
+                // we've reached the first sub-line
+                if (lineNo > 0)
+                {
+                    // move one line up
+                    lineNo--;
+                    ComputeSubLineIndexes(lineNo);
+                    slIndex = this->SubLines.entries.size() - 1;
+                    noOfTimes--;
+                    if (noOfTimes == 0)
+                        break;
+                }
+                else
+                {
+                    MoveToStartOfLine(0, select);
+                    return;
+                }
+            }
+            else
+            {
+                // noOfTimes is 0
+                break;
+            }
+        }
+        const auto& currentSL = this->SubLines.entries[slIndex];
+        if (currentSL.charsCount == 0)
+            MoveTo(lineNo, currentSL.relativeCharIndex, select);
+        else
+            MoveTo(lineNo, currentSL.relativeCharIndex + std::min<>(currentSL.charsCount - 1, charIndexDif), select);
+
     }
     else
     {
@@ -518,7 +725,7 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
         }
     }
 }
-void Instance::UpdateCursorXOffset()
+void Instance::UpdateCursor_NoWrap()
 {
     auto li = GetLineInfo(Cursor.lineNo);
     // simple checkes
@@ -531,7 +738,7 @@ void Instance::UpdateCursorXOffset()
 
     uint32 w = this->GetWidth();
     w        = (w <= (this->lineNumberWidth + 1)) ? 1 : w - (this->lineNumberWidth + 1);
-    auto idx = 0;
+    auto idx = 0U;
 
     CharacterStream cs(this->obj->GetData().Get(li.offset, li.size, false), 0, this->settings.ToReference());
     // while ((cs.Next()) && (idx < Cursor.charIndex))
@@ -561,13 +768,38 @@ void Instance::UpdateCursorXOffset()
         this->ViewPort.scrollX = newXPos >= w ? newXPos + 1 - w : 0;
     }
 }
+void Instance::UpdateCursor_Wrap()
+{
+    // only file pos need to be computed
+    auto li = GetLineInfo(Cursor.lineNo);
+    ComputeSubLineIndexes(Cursor.lineNo);
+    Cursor.sublineNo = CharacterIndexToSubLineNo(Cursor.charIndex);
+    const auto& sl   = this->SubLines.entries[Cursor.sublineNo];
+    auto idx         = sl.relativeCharIndex;
+    CharacterStream cs(this->obj->GetData().Get(sl.relativeOffset + li.offset, sl.size, false), 0, this->settings.ToReference());
+    // while ((cs.Next()) && (idx < Cursor.charIndex))
+    while ((idx < Cursor.charIndex) && (cs.Next()))
+    {
+        idx++;
+    }
+    if (idx == Cursor.charIndex)
+    {
+        Cursor.pos = static_cast<uint64>(cs.GetCurrentBufferPos()) + li.offset + sl.relativeOffset;
+    }
+    else
+    {
+        Cursor.pos = 0; // de vazut daca e ok
+    }
+}
 void Instance::UpdateViewPort()
 {
     if (ViewPort.linesCount == 0)
     {
-        ComputeViewPort(0, 0, Direction::BottomToTop);
+        ComputeViewPort(0, 0, Direction::TopToBottom);
         if (!HasWordWrap())
-            UpdateCursorXOffset();
+            UpdateCursor_NoWrap();
+        else
+            UpdateCursor_Wrap();
     }
     if ((Cursor.lineNo < ViewPort.Start.lineNo) ||
         ((Cursor.lineNo == ViewPort.Start.lineNo) && (Cursor.sublineNo < ViewPort.Start.subLineNo)))
@@ -575,7 +807,9 @@ void Instance::UpdateViewPort()
         // cursor is before current ViewPort
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::TopToBottom);
         if (!HasWordWrap())
-            UpdateCursorXOffset();
+            UpdateCursor_NoWrap();
+        else
+            UpdateCursor_Wrap();
         return;
     }
     if ((Cursor.lineNo > ViewPort.End.lineNo) || ((Cursor.lineNo == ViewPort.End.lineNo) && (Cursor.sublineNo > ViewPort.End.subLineNo)))
@@ -583,12 +817,16 @@ void Instance::UpdateViewPort()
         // cursor is after
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::BottomToTop);
         if (!HasWordWrap())
-            UpdateCursorXOffset();
+            UpdateCursor_NoWrap();
+        else
+            UpdateCursor_Wrap();
         return;
     }
     // else the viewport is ok --> xOffset has to be computed
     if (!HasWordWrap())
-        UpdateCursorXOffset();
+        UpdateCursor_NoWrap();
+    else
+        UpdateCursor_Wrap();
 }
 void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState state, bool showLineNumber)
 {
@@ -665,16 +903,16 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
             c->Color = textColor;
             if (focused)
             {
-                if (this->selection.Contains(vd->offset+bufPos))
+                if (this->selection.Contains(vd->offset + bufPos))
                 {
-                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() + vd->lineCharIndex == Cursor.charIndex))
                         c->Color = Cfg.Cursor.OverSelection;
                     else
                         c->Color = Cfg.Selection.Editor;
                 }
                 else
                 {
-                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() == Cursor.charIndex))
+                    if ((vd->lineNo == Cursor.lineNo) && (cs.GetCharIndex() + vd->lineCharIndex == Cursor.charIndex))
                         c->Color = Cfg.Cursor.Normal;
                     else if (cs.HasDecodingErrors())
                         c->Color = Cfg.Text.Error;
@@ -682,7 +920,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
                         c->Color = Cfg.Text.Inactive;
                 }
             }
-            lastC = c + 1;
+            lastC  = c + 1;
             bufPos = cs.GetCurrentBufferPos();
         }
         renderer.WriteSingleLineCharacterBuffer(this->lineNumberWidth + 1, y, CharacterView(chars, (size_t) (lastC - chars)), false);
@@ -702,7 +940,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
 
     if (this->ViewPort.linesCount == 0)
     {
-        this->ComputeViewPort(0, 0, Direction::BottomToTop);
+        this->ComputeViewPort(0, 0, Direction::TopToBottom);
         this->UpdateViewPort();
     }
 
@@ -811,6 +1049,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     {
     case CMD_ID_WORD_WRAP:
         this->settings->wordWrap = !this->settings->wordWrap;
+        this->ViewPort.scrollX   = 0;
+        this->SubLines.lineNo    = INVALID_LINE_NUMBER;
+        this->ViewPort.Reset();
         this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
         this->UpdateViewPort();
         return true;

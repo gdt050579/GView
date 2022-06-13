@@ -98,6 +98,7 @@ namespace View
                     uint32 size;
                     uint32 lineNo;
                     uint32 xStart;
+                    uint32 lineCharIndex;
                 } Lines[MAX_LINES_TO_VIEW];
                 uint32 scrollX;
                 uint32 linesCount;
@@ -114,6 +115,7 @@ namespace View
 
             void RecomputeLineIndexes();
             void CommputeViewPort_NoWrap(uint32 lineNo, Direction dir);
+            void CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir);
             void ComputeViewPort(uint32 lineNo, uint32 subLineNo, Direction dir);
 
             bool GetLineInfo(uint32 lineNo, LineInfo& li);
@@ -133,7 +135,8 @@ namespace View
             void MoveDown(uint32 noOfTimes, bool select);
             void MoveUp(uint32 noOfTimes, bool select);
 
-            void UpdateCursorXOffset();
+            void UpdateCursor_NoWrap();
+            void UpdateCursor_Wrap();
             void UpdateViewPort();
 
             int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
