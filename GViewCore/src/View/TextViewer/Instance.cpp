@@ -666,6 +666,51 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
 {
     if (HasWordWrap())
     {
+        auto lineNo = this->Cursor.lineNo;
+        ComputeSubLineIndexes(lineNo);
+        auto slIndex              = CharacterIndexToSubLineNo(this->Cursor.charIndex);
+        const auto initialSubLine = slIndex;
+        const auto charIndexDif   = this->Cursor.charIndex > this->SubLines.entries[slIndex].relativeCharIndex
+                                          ? this->Cursor.charIndex - this->SubLines.entries[slIndex].relativeCharIndex
+                                          : 0U;
+        while (true)
+        {
+            ComputeSubLineIndexes(lineNo);
+            const auto dif     = std::min<>(noOfTimes, slIndex);
+            noOfTimes -= dif;
+            slIndex -= dif;
+            if (noOfTimes > 0)
+            {
+                // slIndex is definetelly 0 (as dif is the smallest from noOfTimes and slIndex)
+                // we've reached the first sub-line
+                if (lineNo > 0)
+                {
+                    // move one line up
+                    lineNo--;
+                    ComputeSubLineIndexes(lineNo);
+                    slIndex = this->SubLines.entries.size() - 1;
+                    noOfTimes--;
+                    if (noOfTimes == 0)
+                        break;
+                }
+                else
+                {
+                    MoveToStartOfLine(0, select);
+                    return;
+                }
+            }
+            else
+            {
+                // noOfTimes is 0
+                break;
+            }
+        }
+        const auto& currentSL = this->SubLines.entries[slIndex];
+        if (currentSL.charsCount == 0)
+            MoveTo(lineNo, currentSL.relativeCharIndex, select);
+        else
+            MoveTo(lineNo, currentSL.relativeCharIndex + std::min<>(currentSL.charsCount - 1, charIndexDif), select);
+
     }
     else
     {
