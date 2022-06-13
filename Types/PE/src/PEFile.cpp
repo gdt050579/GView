@@ -1223,35 +1223,44 @@ void PEFile::CopySectionName(uint32 index, String& name)
 
 void PEFile::GetSectionName(uint32 index, String& sectionName)
 {
+    bool longSectionNameProcessed = false;
+
     if (sect[index].Name[0] == '/' && sect[index].Name[1] >= '0' && sect[index].Name[1] <= '9') // long name | eg.: /4, /9, etc
     {
-        auto strtableOffset       = 0ULL;
         const auto& sectionHeader = sect[index];
 
         const auto symbolIndex = Number::ToUInt64((const char*) sectionHeader.Name + 1);
-        CHECKRET(symbolIndex.has_value(), "");
-
-        switch (nth32.OptionalHeader.Magic)
+        if (symbolIndex.has_value())
         {
-        case __IMAGE_NT_OPTIONAL_HDR32_MAGIC:
-            strtableOffset = nth32.FileHeader.PointerToSymbolTable + nth32.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
-            break;
-        case __IMAGE_NT_OPTIONAL_HDR64_MAGIC:
-            strtableOffset = nth64.FileHeader.PointerToSymbolTable + nth64.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
-            break;
+            auto strtableOffset = 0ULL;
+            switch (nth32.OptionalHeader.Magic)
+            {
+            case __IMAGE_NT_OPTIONAL_HDR32_MAGIC:
+                strtableOffset = nth32.FileHeader.PointerToSymbolTable + nth32.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
+                break;
+            case __IMAGE_NT_OPTIONAL_HDR64_MAGIC:
+                strtableOffset = nth64.FileHeader.PointerToSymbolTable + nth64.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
+                break;
+            }
+
+            auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + *symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
+            if (bufferLongName.IsValid() && strtableOffset != 0ULL)
+            {
+                const auto length = (uint32) strnlen((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
+                String name;
+                if (name.Set((char*) bufferLongName.GetData(), length))
+                {
+                    String indexName;
+                    if (indexName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME))
+                    {
+                        longSectionNameProcessed = sectionName.Format("(%s) %s", indexName.GetText(), name.GetText()).size() != 0;
+                    }
+                }
+            }
         }
-
-        auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + *symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
-        const auto length   = (uint32) strnlen((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
-        String name;
-        name.Set((char*) bufferLongName.GetData(), length);
-
-        String indexName;
-        indexName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME);
-
-        sectionName.Format("(%s) %s", indexName.GetText(), name.GetText());
     }
-    else
+
+    if (longSectionNameProcessed == false)
     {
         sectionName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME);
     }
