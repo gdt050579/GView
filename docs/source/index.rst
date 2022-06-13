@@ -13,7 +13,7 @@ Welcome to GView's documentation!
    description
    usage
    architecture
-   build
+   development
    contributing
 
 

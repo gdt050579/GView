@@ -100,9 +100,19 @@ bool GView::App::ResetConfiguration()
 void GView::App::OpenFile(const std::filesystem::path& path)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddFileWindow(path);
+    {
+        if (path.is_absolute())
+        {
+            gviewAppInstance->AddFileWindow(path);
+        }
+        else
+        {
+            const auto absPath = std::filesystem::canonical(path);
+            gviewAppInstance->AddFileWindow(absPath);
+        }
+    }
 }
-void GView::App::OpenBuffer(BufferView buf, const ConstString& name,string_view typeExtension)
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension)
 {
     if (gviewAppInstance)
         gviewAppInstance->AddBufferWindow(buf, name, typeExtension);
