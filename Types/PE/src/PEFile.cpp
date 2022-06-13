@@ -690,7 +690,7 @@ void PEFile::BuildVersionInfo()
             errList.AddWarning("Unable to read version infornation resource");
             break;
         }
-        if (Ver.ComputeVersionInformation(buf.GetData(), buf.GetLength()) == false)
+        if (Ver.ComputeVersionInformation(buf.GetData(), (int32) buf.GetLength()) == false)
         {
             errList.AddWarning("Invalid version information resource.");
             break;
@@ -1212,14 +1212,58 @@ bool PEFile::BuildDebugData()
     return true;
 }
 
-void PEFile::CopySectionName(uint32_t index, String& name)
+void PEFile::CopySectionName(uint32 index, String& name)
 {
-    int tr;
     name.Clear();
     if (index >= nrSections)
         return;
-    for (tr = 0; (sect[index].Name[tr] != 0) && (tr < 8); tr++)
-        name.AddChar(sect[index].Name[tr]);
+
+    GetSectionName(index, name);
+}
+
+void PEFile::GetSectionName(uint32 index, String& sectionName)
+{
+    bool longSectionNameProcessed = false;
+
+    if (sect[index].Name[0] == '/' && sect[index].Name[1] >= '0' && sect[index].Name[1] <= '9') // long name | eg.: /4, /9, etc
+    {
+        const auto& sectionHeader = sect[index];
+
+        const auto symbolIndex = Number::ToUInt64((const char*) sectionHeader.Name + 1);
+        if (symbolIndex.has_value())
+        {
+            auto strtableOffset = 0ULL;
+            switch (nth32.OptionalHeader.Magic)
+            {
+            case __IMAGE_NT_OPTIONAL_HDR32_MAGIC:
+                strtableOffset = nth32.FileHeader.PointerToSymbolTable + nth32.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
+                break;
+            case __IMAGE_NT_OPTIONAL_HDR64_MAGIC:
+                strtableOffset = nth64.FileHeader.PointerToSymbolTable + nth64.FileHeader.NumberOfSymbols * sizeof(ImageSymbol);
+                break;
+            }
+
+            auto bufferLongName = obj->GetData().CopyToBuffer(strtableOffset + *symbolIndex, __IMAGE_SIZEOF_SHORT_NAME * 2);
+            if (bufferLongName.IsValid() && strtableOffset != 0ULL)
+            {
+                const auto length = (uint32) strnlen((char*) bufferLongName.GetData(), __IMAGE_SIZEOF_SHORT_NAME * 2);
+                String name;
+                if (name.Set((char*) bufferLongName.GetData(), length))
+                {
+                    String indexName;
+                    if (indexName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME))
+                    {
+                        longSectionNameProcessed = sectionName.Format("(%s) %s", indexName.GetText(), name.GetText()).size() != 0;
+                    }
+                }
+            }
+        }
+    }
+
+    if (longSectionNameProcessed == false)
+    {
+        sectionName.Set((char*) sect[index].Name, __IMAGE_SIZEOF_SHORT_NAME);
+    }
 }
 
 bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& info)
@@ -1268,7 +1312,7 @@ bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& i
 bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
 {
     CHECK(res.Type == ResourceType::Icon, false, "Expecting a valid ICON resource !");
-    auto buf = this->obj->GetData().CopyToBuffer(res.Start, res.Size);
+    auto buf = this->obj->GetData().CopyToBuffer(res.Start, (uint32) res.Size);
     CHECK(buf.IsValid(), false, "Fail to read %llu bytes from offset %llu", res.Size, res.Start);
     if (buf.IsValid())
     {
@@ -1277,7 +1321,7 @@ bool PEFile::LoadIcon(const ResourceInformation& res, Image& img)
         {
             if (iconHeader->sizeOfHeader == 40)
             {
-                CHECK(img.CreateFromDIB(buf.GetData(), buf.GetLength(), true), false, "Fail to create icon from buffer !");
+                CHECK(img.CreateFromDIB(buf.GetData(), (uint32) buf.GetLength(), true), false, "Fail to create icon from buffer !");
                 return true;
             }
         }
@@ -1332,7 +1376,7 @@ bool PEFile::Update()
     nrSections    = nth32.FileHeader.NumberOfSections;        // same
 
     poz       = dos.e_lfanew + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
-    sectStart = (uint32_t) poz;
+    sectStart = (uint32) poz;
     peStart   = dos.e_lfanew;
     computedSize = virtualComputedSize = 0;
 
@@ -1384,7 +1428,7 @@ bool PEFile::Update()
                 errList.AddError("Section %d and %d are not consecutive.", (tr + 1), (tr + 2));
             }
         }
-        if ((tr > 0) && ((*(uint64_t*) &sect[tr - 1].Name) == (*(uint64_t*) &sect[tr].Name)))
+        if ((tr > 0) && ((*(uint64*) &sect[tr - 1].Name) == (*(uint64*) &sect[tr].Name)))
         {
             tempStr.SetFormat("Sections %d and %d have the same name: [", (tr + 1), (tr + 2));
             for (gr = 0; gr < 8; gr++)
