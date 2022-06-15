@@ -28,7 +28,7 @@ static std::string_view peDirsNames[15] = { "Export",      "Import",       "Reso
                                             "Base Reloc",  "Debug",        "Architecture", "Global Ptr",        "TLS",
                                             "Load Config", "Bound Import", "IAT",          "Delay Import Desc", "COM+ Runtime" };
 
-static std::map<uint32_t, std::string_view> languageCode = {
+static std::map<uint32, std::string_view> languageCode = {
     { 0, "None" },
     { 1025, "Arabic (Saudi Arabia)" },
     { 1026, "Bulgarian" },
@@ -1654,6 +1654,54 @@ bool PEFile::Update()
 
     if (hasTLS)
         ADD_PANEL(Panels::IDs::TLS);
+
+    if (this->hdr64)
+    {
+        if (nth64.FileHeader.PointerToSymbolTable != 0)
+        {
+            ADD_PANEL(Panels::IDs::Symbols);
+            BuildSymbols();
+        }
+    }
+    else
+    {
+        if (nth32.FileHeader.PointerToSymbolTable != 0)
+        {
+            ADD_PANEL(Panels::IDs::Symbols);
+            BuildSymbols();
+        }
+    }
+
+    return true;
+}
+
+bool PEFile::BuildSymbols()
+{
+    auto offset    = 0ULL;
+    auto symbolsNo = 0ULL;
+
+    if (this->hdr64)
+    {
+        offset    = nth64.FileHeader.PointerToSymbolTable;
+        symbolsNo = nth64.FileHeader.NumberOfSymbols;
+    }
+    else
+    {
+        offset    = nth32.FileHeader.PointerToSymbolTable;
+        symbolsNo = nth32.FileHeader.NumberOfSymbols;
+    }
+
+    CHECK(offset != 0, false, "");
+
+    const auto size = symbolsNo * IMAGE_SIZEOF_SYMBOL;
+    Buffer buffer   = this->obj->GetData().CopyToBuffer(offset, size);
+    CHECK(buffer.IsValid(), false, "");
+
+    std::vector<ImageSymbol*> symbols;
+    for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++)
+    {
+        symbols.emplace_back((ImageSymbol*) buffer.GetData() + i * IMAGE_SIZEOF_SYMBOL);
+    }
 
     return true;
 }

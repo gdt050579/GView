@@ -109,6 +109,7 @@ namespace Type
                 Icons,
                 Imports,
                 TLS,
+                Symbols,
             };
         };
         class VersionInformation
@@ -747,6 +748,7 @@ namespace Type
             bool BuildImport();
             bool BuildTLS();
             bool BuildDebugData();
+            bool BuildSymbols();
 
             bool HasPanel(Panels::IDs id);
 
@@ -765,6 +767,7 @@ namespace Type
             static std::string_view LanguageIDToName(uint32_t langID);
             static std::string_view DirectoryIDToName(uint32_t dirID);
         };
+
         namespace Panels
         {
             class Information : public AppCUI::Controls::TabPage
@@ -842,6 +845,24 @@ namespace Type
 
               public:
                 Exports(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+            class Symbols : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+                int Base;
+
+                std::string_view GetValue(NumericFormatter& n, uint32 value);
+                void GoToSelectedSection();
+                void SelectCurrentSection();
+
+              public:
+                Symbols(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
