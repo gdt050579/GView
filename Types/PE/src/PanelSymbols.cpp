@@ -4,10 +4,7 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-constexpr int PE_SECTIONS_GOTO       = 1;
-constexpr int PE_SECTIONS_SELECT     = 2;
-constexpr int PE_SECTIONS_EDIT       = 3;
-constexpr int PE_SECTIONS_CHANGEBASE = 4;
+constexpr int32 PE_SYMBOLS_CHANGEBASE = 1;
 
 Panels::Symbols::Symbols(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("S&ymbols")
 {
@@ -18,16 +15,15 @@ Panels::Symbols::Symbols(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { "n:Name,w:8",
-            "n:FilePoz,a:r,w:12",
-            "n:FileSize,a:r,w:12",
-            "n:RVA,a:r,w:12",
-            "n:MemSize,a:r,w:12",
-            "n:PtrReloc,w:10",
-            "n:NrReloc,a:r,w:10",
-            "n:PtrLnNum,w:10",
-            "n:NrLnNum,a:r,w:10",
-            "n:Characteristics,w:32" },
+          { "n:Index,w:8",
+            "n:Name,w:60",
+            "n:Name.Short,a:r,w:12",
+            "n:Name.Long,a:r,w:12",
+            "n:Value,a:r,w:10",
+            "n:SectionNumber,a:r,w:24",
+            "n:Type,a:r,w:20",
+            "n:StorageClass,a:r,w:20",
+            "n:NumberOfAuxSymbols,a:r,w:20" },
           ListViewFlags::None);
 
     Update();
@@ -36,23 +32,119 @@ Panels::Symbols::Symbols(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
 std::string_view Panels::Symbols::GetValue(NumericFormatter& n, uint32 value)
 {
     if (Base == 10)
+    {
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
-    else
-        return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
+    }
+
+    return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
 }
 
-void Panels::Symbols::GoToSelectedSection()
+void Panels::Symbols::GetSymbolType(uint32 type, String& name)
 {
-    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
-    if (sect.IsValid())
-        win->GetCurrentView()->GoTo(sect->PointerToRawData);
+    switch (type)
+    {
+    case SYM_NOT_A_FUNCTION:
+        name.Set("NOT A FUNCTION");
+        break;
+    case SYM_FUNCTION:
+        name.Set("FUNCTION");
+        break;
+    default:
+        break;
+    }
 }
 
-void Panels::Symbols::SelectCurrentSection()
+void Panels::Symbols::GetStorageClass(uint16 storageclass, String& name)
 {
-    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
-    if (sect.IsValid())
-        win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
+    switch (storageclass)
+    {
+    case IMAGE_SYM_CLASS_END_OF_FUNCTION:
+        name.Set("END_OF_FUNCTION");
+        break;
+    case IMAGE_SYM_CLASS_NULL:
+        name.Set("NULL");
+        break;
+    case IMAGE_SYM_CLASS_AUTOMATIC:
+        name.Set("AUTOMATIC");
+        break;
+    case IMAGE_SYM_CLASS_EXTERNAL:
+        name.Set("EXTERNAL");
+        break;
+    case IMAGE_SYM_CLASS_STATIC:
+        name.Set("STATIC");
+        break;
+    case IMAGE_SYM_CLASS_REGISTER:
+        name.Set("REGISTER");
+        break;
+    case IMAGE_SYM_CLASS_EXTERNAL_DEF:
+        name.Set("EXTERNAL_DEF");
+        break;
+    case IMAGE_SYM_CLASS_LABEL:
+        name.Set("LABEL");
+        break;
+    case IMAGE_SYM_CLASS_UNDEFINED_LABEL:
+        name.Set("UNDEFINED_LABEL");
+        break;
+    case IMAGE_SYM_CLASS_MEMBER_OF_STRUCT:
+        name.Set("MEMBER_OF_STRUCT");
+        break;
+    case IMAGE_SYM_CLASS_ARGUMENT:
+        name.Set("ARGUMENT");
+        break;
+    case IMAGE_SYM_CLASS_STRUCT_TAG:
+        name.Set("STRUCT_TAG");
+        break;
+    case IMAGE_SYM_CLASS_MEMBER_OF_UNION:
+        name.Set("MEMBER_OF_UNION");
+        break;
+    case IMAGE_SYM_CLASS_UNION_TAG:
+        name.Set("UNION_TAG");
+        break;
+    case IMAGE_SYM_CLASS_TYPE_DEFINITION:
+        name.Set("TYPE_DEFINITION");
+        break;
+    case IMAGE_SYM_CLASS_UNDEFINED_STATIC:
+        name.Set("UNDEFINED_STATIC");
+        break;
+    case IMAGE_SYM_CLASS_ENUM_TAG:
+        name.Set("ENUM_TAG");
+        break;
+    case IMAGE_SYM_CLASS_MEMBER_OF_ENUM:
+        name.Set("MEMBER_OF_ENUM");
+        break;
+    case IMAGE_SYM_CLASS_REGISTER_PARAM:
+        name.Set("REGISTER_PARAM");
+        break;
+    case IMAGE_SYM_CLASS_BIT_FIELD:
+        name.Set("BIT_FIELD");
+        break;
+    case IMAGE_SYM_CLASS_FAR_EXTERNAL:
+        name.Set("FAR_EXTERNAL");
+        break;
+    case IMAGE_SYM_CLASS_BLOCK:
+        name.Set("BLOCK");
+        break;
+    case IMAGE_SYM_CLASS_FUNCTION:
+        name.Set("FUNCTION");
+        break;
+    case IMAGE_SYM_CLASS_END_OF_STRUCT:
+        name.Set("END_OF_STRUCT");
+        break;
+    case IMAGE_SYM_CLASS_FILE:
+        name.Set("FILE");
+        break;
+    case IMAGE_SYM_CLASS_SECTION:
+        name.Set("SECTION");
+        break;
+    case IMAGE_SYM_CLASS_WEAK_EXTERNAL:
+        name.Set("WEAK_EXTERNAL");
+        break;
+    case IMAGE_SYM_CLASS_CLR_TOKEN:
+        name.Set("CLR_TOKEN");
+        break;
+    default:
+        break;
+    }
 }
 
 void Panels::Symbols::Update()
@@ -61,102 +153,67 @@ void Panels::Symbols::Update()
     NumericFormatter n;
     list->DeleteAllItems();
 
-    for (auto tr = 0U; tr < pe->nrSections; tr++)
+    for (auto i = 0U; i < pe->symbols.size(); i++)
     {
-        pe->CopySectionName(tr, temp);
-        auto item = list->AddItem(temp);
-        item.SetData<PE::ImageSectionHeader>(pe->sect + tr);
-        item.SetText(1, GetValue(n, pe->sect[tr].PointerToRawData));
-        item.SetText(2, GetValue(n, pe->sect[tr].SizeOfRawData));
-        item.SetText(3, GetValue(n, pe->sect[tr].VirtualAddress));
-        item.SetText(4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
-        item.SetText(5, GetValue(n, pe->sect[tr].PointerToRelocations));
-        item.SetText(6, GetValue(n, pe->sect[tr].NumberOfRelocations));
-        item.SetText(7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
-        item.SetText(8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
+        const auto& s = pe->symbols.at(i);
 
-        // caracteristics
-        const auto tmp = pe->sect[tr].Characteristics;
-        temp.SetFormat("0x%08X  [", tmp);
-        if ((tmp & __IMAGE_SCN_MEM_READ) != 0)
-            temp.AddChar('R');
-        else
-            temp.AddChar('-');
-        if ((tmp & __IMAGE_SCN_MEM_WRITE) != 0)
-            temp.AddChar('W');
-        else
-            temp.AddChar('-');
-        if ((tmp & __IMAGE_SCN_MEM_SHARED) != 0)
-            temp.AddChar('S');
-        else
-            temp.AddChar('-');
-        if ((tmp & __IMAGE_SCN_MEM_EXECUTE) != 0)
-            temp.AddChar('X');
-        else
-            temp.AddChar('-');
-        temp.Add("  ");
-        if ((tmp & __IMAGE_SCN_CNT_CODE) != 0)
-            temp.AddChar('C');
-        else
-            temp.AddChar('-');
-        if ((tmp & __IMAGE_SCN_CNT_INITIALIZED_DATA) != 0)
-            temp.AddChar('I');
-        else
-            temp.AddChar('-');
-        if ((tmp & __IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0)
-            temp.AddChar('U');
-        else
-            temp.AddChar('-');
-        temp.AddChar(']');
-        if (tmp - (tmp & (__IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE | __IMAGE_SCN_MEM_SHARED | __IMAGE_SCN_MEM_EXECUTE |
-                          __IMAGE_SCN_CNT_CODE | __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_CNT_UNINITIALIZED_DATA)) !=
-            0)
-        {
-            temp.Add(" [+]");
-        }
-        item.SetText(9, temp);
+        auto item = list->AddItem(GetValue(n, i));
+        item.SetData<PE::PEFile::SymbolInformation>(&pe->symbols.at(i));
+
+        item.SetText(1, s.name);
+        item.SetText(2, GetValue(n, s.is.N.Name.Short));
+        item.SetText(3, GetValue(n, s.is.N.Name.Long));
+        item.SetText(4, GetValue(n, s.is.Value));
+
+        String sectionName;
+        pe->CopySectionName(s.is.SectionNumber > 0 ? s.is.SectionNumber - 1 : s.is.SectionNumber, sectionName);
+        item.SetText(5, temp.Format("[%s] %s", sectionName.GetText(), GetValue(n, s.is.SectionNumber).data()));
+
+        String sectionType;
+        GetSymbolType(s.is.Type, sectionType);
+        item.SetText(6, temp.Format("[%s] %s", sectionType.GetText(), GetValue(n, s.is.Type).data()));
+
+        String storageClass;
+        GetStorageClass(s.is.StorageClass, storageClass);
+        item.SetText(7, temp.Format("[%s] %s", storageClass.GetText(), GetValue(n, s.is.StorageClass).data()));
+
+        item.SetText(8, GetValue(n, s.is.NumberOfAuxSymbols));
     }
 }
 
 bool Panels::Symbols::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(Key::Enter, "GoTo", PE_SECTIONS_GOTO);
-    commandBar.SetCommand(Key::F3, "Edit", PE_SECTIONS_EDIT);
-    commandBar.SetCommand(Key::F9, "Select", PE_SECTIONS_SELECT);
     if (this->Base == 10)
-        commandBar.SetCommand(Key::F2, "Dec", PE_SECTIONS_CHANGEBASE);
+    {
+        commandBar.SetCommand(Key::F2, "Dec", PE_SYMBOLS_CHANGEBASE);
+    }
     else
-        commandBar.SetCommand(Key::F2, "Hex", PE_SECTIONS_CHANGEBASE);
+    {
+        commandBar.SetCommand(Key::F2, "Hex", PE_SYMBOLS_CHANGEBASE);
+    }
+
     return true;
 }
 
 bool Panels::Symbols::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
-        return true;
-    if (evnt == Event::ListViewItemPressed)
     {
-        GoToSelectedSection();
         return true;
     }
+
     if (evnt == Event::Command)
     {
         switch (controlID)
         {
-        case PE_SECTIONS_GOTO:
-            GoToSelectedSection();
-            return true;
-        case PE_SECTIONS_CHANGEBASE:
+        case PE_SYMBOLS_CHANGEBASE:
             this->Base = 26 - this->Base;
             Update();
             return true;
-        case PE_SECTIONS_EDIT:
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "(Edit) Not implemented yet !");
-            return true;
-        case PE_SECTIONS_SELECT:
-            SelectCurrentSection();
-            return true;
+        default:
+            break;
         }
     }
+
     return false;
 }
