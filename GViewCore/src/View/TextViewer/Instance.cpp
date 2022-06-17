@@ -9,6 +9,13 @@ Config Instance::config;
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
+enum class BulletParserState : uint8
+{
+    FirstPadding,
+    Bullet,
+    NextPadding
+};
+
 class CharacterStream
 {
     char16 ch;
@@ -281,6 +288,8 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     uint32 bufPos          = 0;
     uint32 charIndex       = 0;
     bool computeAlignament = true;
+    auto bp                = BulletParserState::FirstPadding;
+    uint32 bpBulletWidth   = 0;
     startOffset            = li.offset;
 
     //---------------------------------------------------
@@ -326,6 +335,40 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
                         this->SubLines.leftAlignament = cs.GetNextXOffset();
                     else
                         computeAlignament = false;
+                    break;
+                case WrapMethod::Bullets:
+                    // its important for the parser to check this states in this order (next padding, first padding and bullet)
+                    if (bp == BulletParserState::NextPadding)
+                    {
+                        if ((cs.GetCharacter() == ' ') || (cs.IsTabCharacter()))
+                            this->SubLines.leftAlignament = cs.GetNextXOffset();
+                        else
+                            computeAlignament = false;
+                    }
+                    if (bp == BulletParserState::FirstPadding)
+                    {
+                        if ((cs.GetCharacter() == ' ') || (cs.IsTabCharacter()))
+                            this->SubLines.leftAlignament = cs.GetNextXOffset();
+                        else
+                        {
+                            bp            = BulletParserState::Bullet;
+                            bpBulletWidth = 0;
+                        }
+                    }
+                    if (bp == BulletParserState::Bullet)
+                    {
+                        this->SubLines.leftAlignament = cs.GetNextXOffset();
+                        bpBulletWidth++;
+                        if ((cs.GetCharacter() == '-') || (cs.GetCharacter() == '*') || (cs.GetCharacter() == '.') ||
+                            (cs.GetCharacter() == ')'))
+                            bp = BulletParserState::NextPadding;
+                        else if (bpBulletWidth > 4)
+                        {
+                            // no special bullet detected --> align normally to the left margin
+                            computeAlignament             = false;
+                            this->SubLines.leftAlignament = 0;
+                        }
+                    }
                     break;
                 default:
                     computeAlignament = false;
