@@ -300,6 +300,7 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     {
         while (cs.Next())
         {
+            // simple
             if (cs.GetNextXOffset() > w)
             {
                 // move to next line

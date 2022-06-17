@@ -18,7 +18,7 @@ namespace View
         {
             uint32 tabSize;
             CharacterEncoding::Encoding encoding;
-            bool wordWrap;
+            WrapMethod wrapMethod;
             bool highlightCurrentLine;
             bool showTabCharacter;
             SettingsData();

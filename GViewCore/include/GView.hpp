@@ -595,17 +595,22 @@ namespace View
 
     namespace TextViewer
     {
-        struct CORE_EXPORT LoadImageInterface
+        enum class WrapMethod : uint8
         {
-            virtual bool LoadImageToObject(Image& img, uint32 index) = 0;
+            None       = 0,
+            LeftMargin = 1,
+            Padding    = 2,
+            Bullets    = 3,
         };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
-            void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
-            void AddImage(uint64 offset, uint64 size);
+            void SetWrapMethod(WrapMethod method);
+            void SetTabSize(uint32 tabSize);
+            void ShowTabCharacter(bool show);
+            void HightlightCurrentLine(bool highlight);
         };
     }; // namespace TextViewer
 
