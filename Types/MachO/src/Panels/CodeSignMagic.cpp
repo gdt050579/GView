@@ -439,41 +439,11 @@ void CodeSignMagic::SelectArea()
 
 void CodeSignMagic::MoreInfo()
 {
-    class Dialog : public Window
-    {
-        Reference<GView::Object> object;
-        Reference<TextArea> text = Factory::TextArea::Create(
-              this,
-              "Digital Signature",
-              "d:c",
-              TextAreaFlags::Border | TextAreaFlags::ScrollBars | TextAreaFlags::Readonly | TextAreaFlags::DisableAutoSelectOnFocus);
-
-      public:
-        Dialog(Reference<GView::Object> _object, std::string_view name, std::string_view layout)
-            : Window(name, layout, WindowFlags::ProcessReturn | WindowFlags::Sizeable)
-        {
-            object = _object;
-        }
-
-        bool SetText(ConstString _text)
-        {
-            return text->SetText(_text);
-        }
-
-        void SetWidth(uint32 width)
-        {
-            this->Resize(width, this->GetHeight());
-            text->Resize(width - 10, text->GetHeight());
-        }
-    };
-
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
     {
-        LocalString<128> ls;
-        ls.Format("d:c,w:150,h:%d", this->GetHeight());
-        Dialog dialog(nullptr, "CMS human readable", ls.GetText());
-        dialog.SetText(machO->codeSignature->signature.humanReadable.GetText());
-        dialog.Show();
+        GView::App::OpenBuffer(
+              BufferView{ machO->codeSignature->signature.humanReadable.GetText(), machO->codeSignature->signature.humanReadable.Len() },
+              "Digital Signature - CMS human readable");
     }
 
     if (PEMs.IsValid() && PEMs.IsCurrent())
@@ -487,11 +457,7 @@ void CodeSignMagic::MoreInfo()
             input += "\n";
         }
 
-        LocalString<128> ls;
-        ls.Format("d:c,w:70,h:%d", this->GetHeight());
-        Dialog dialog(nullptr, "PEM Certificates", ls.GetText());
-        dialog.SetText(input.c_str());
-        dialog.Show();
+        GView::App::OpenBuffer(BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates");
     }
 }
 
