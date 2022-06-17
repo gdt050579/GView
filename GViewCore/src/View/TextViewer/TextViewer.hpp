@@ -18,7 +18,7 @@ namespace View
         {
             uint32 tabSize;
             CharacterEncoding::Encoding encoding;
-            bool wordWrap;
+            WrapMethod wrapMethod;
             bool highlightCurrentLine;
             bool showTabCharacter;
             SettingsData();
@@ -78,6 +78,7 @@ namespace View
             {
                 std::vector<SubLineInfo> entries;
                 uint32 lineNo;
+                uint32 leftAlignament;
             } SubLines;
             struct
             {
@@ -143,7 +144,7 @@ namespace View
 
             inline bool HasWordWrap() const
             {
-                return this->settings->wordWrap;
+                return this->settings->wrapMethod != WrapMethod::None;
             }
 
           public:

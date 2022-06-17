@@ -9,6 +9,13 @@ Config Instance::config;
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
+enum class BulletParserState : uint8
+{
+    FirstPadding,
+    Bullet,
+    NextPadding
+};
+
 class CharacterStream
 {
     char16 ch;
@@ -276,17 +283,21 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     if (lineNo == this->SubLines.lineNo)
         return; // we've already computed this --> no need to computed again
 
-    LineInfo li      = GetLineInfo(lineNo);
-    uint32 w         = this->GetWidth();
-    uint32 bufPos    = 0;
-    uint32 charIndex = 0;
-    startOffset      = li.offset;
+    LineInfo li            = GetLineInfo(lineNo);
+    uint32 w               = this->GetWidth();
+    uint32 bufPos          = 0;
+    uint32 charIndex       = 0;
+    bool computeAlignament = true;
+    auto bp                = BulletParserState::FirstPadding;
+    uint32 bpBulletWidth   = 0;
+    startOffset            = li.offset;
 
     //---------------------------------------------------
     //|  We will always have at least ONE sub-line      |
     //---------------------------------------------------
     this->SubLines.entries.clear();
-    this->SubLines.lineNo = lineNo;
+    this->SubLines.lineNo         = lineNo;
+    this->SubLines.leftAlignament = 0;
 
     if ((this->lineNumberWidth + 2) >= w)
         w = 1;
@@ -296,8 +307,9 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     CharacterStream cs(buf, 0, this->settings.ToReference());
     // process
 
-    if (this->settings->wordWrap)
+    if (this->settings->wrapMethod != WrapMethod::None)
     {
+        // parse first sub-line
         while (cs.Next())
         {
             if (cs.GetNextXOffset() > w)
@@ -305,9 +317,63 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
                 // move to next line
                 this->SubLines.entries.emplace_back(
                       bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
-                bufPos    = cs.GetCurrentBufferPos();
-                charIndex = cs.GetNextCharIndex();
-                cs.ResetXOffset();
+                bufPos            = cs.GetCurrentBufferPos();
+                charIndex         = cs.GetNextCharIndex();
+                computeAlignament = false;
+                cs.ResetXOffset(this->SubLines.leftAlignament);
+            }
+            if (computeAlignament)
+            {
+                switch (this->settings->wrapMethod)
+                {
+                case WrapMethod::LeftMargin:
+                    computeAlignament             = false;
+                    this->SubLines.leftAlignament = 0;
+                    break;
+                case WrapMethod::Padding:
+                    if ((cs.GetCharacter() == ' ') || (cs.IsTabCharacter()))
+                        this->SubLines.leftAlignament = cs.GetNextXOffset();
+                    else
+                        computeAlignament = false;
+                    break;
+                case WrapMethod::Bullets:
+                    // its important for the parser to check this states in this order (next padding, first padding and bullet)
+                    if (bp == BulletParserState::NextPadding)
+                    {
+                        if ((cs.GetCharacter() == ' ') || (cs.IsTabCharacter()))
+                            this->SubLines.leftAlignament = cs.GetNextXOffset();
+                        else
+                            computeAlignament = false;
+                    }
+                    if (bp == BulletParserState::FirstPadding)
+                    {
+                        if ((cs.GetCharacter() == ' ') || (cs.IsTabCharacter()))
+                            this->SubLines.leftAlignament = cs.GetNextXOffset();
+                        else
+                        {
+                            bp            = BulletParserState::Bullet;
+                            bpBulletWidth = 0;
+                        }
+                    }
+                    if (bp == BulletParserState::Bullet)
+                    {
+                        this->SubLines.leftAlignament = cs.GetNextXOffset();
+                        bpBulletWidth++;
+                        if ((cs.GetCharacter() == '-') || (cs.GetCharacter() == '*') || (cs.GetCharacter() == '.') ||
+                            (cs.GetCharacter() == ')'))
+                            bp = BulletParserState::NextPadding;
+                        else if (bpBulletWidth > 4)
+                        {
+                            // no special bullet detected --> align normally to the left margin
+                            computeAlignament             = false;
+                            this->SubLines.leftAlignament = 0;
+                        }
+                    }
+                    break;
+                default:
+                    computeAlignament = false;
+                    break;
+                }
             }
         }
         if (cs.GetCurrentBufferPos() > bufPos)
@@ -442,7 +508,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
                 const auto& sl   = this->SubLines.entries[startSL];
                 l->lineNo        = start;
                 l->offset        = sl.relativeOffset + lineInfo.offset;
-                l->xStart        = 0;
+                l->xStart        = startSL == 0 ? 0 : this->SubLines.leftAlignament;
                 l->size          = sl.size;
                 l->lineCharIndex = sl.relativeCharIndex;
                 l++;
@@ -470,7 +536,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
         {
             auto lineInfo = GetLineInfo(start);
             ComputeSubLineIndexes(start);
-            ViewPort.Start.lineNo    = start;
+            ViewPort.Start.lineNo = start;
             if (resetSL)
                 startSL = static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
             ViewPort.Start.subLineNo = startSL;
@@ -479,7 +545,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
                 const auto& sl   = this->SubLines.entries[startSL];
                 l->lineNo        = start;
                 l->offset        = sl.relativeOffset + lineInfo.offset;
-                l->xStart        = 0;
+                l->xStart        = startSL == 0 ? 0 : this->SubLines.leftAlignament;
                 l->size          = sl.size;
                 l->lineCharIndex = sl.relativeCharIndex;
                 l--;
@@ -676,7 +742,7 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
         while (true)
         {
             ComputeSubLineIndexes(lineNo);
-            const auto dif     = std::min<>(noOfTimes, slIndex);
+            const auto dif = std::min<>(noOfTimes, slIndex);
             noOfTimes -= dif;
             slIndex -= dif;
             if (noOfTimes > 0)
@@ -688,7 +754,7 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
                     // move one line up
                     lineNo--;
                     ComputeSubLineIndexes(lineNo);
-                    slIndex = this->SubLines.entries.size() - 1;
+                    slIndex = static_cast<uint32>(this->SubLines.entries.size()) - 1;
                     noOfTimes--;
                     if (noOfTimes == 0)
                         break;
@@ -710,7 +776,6 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
             MoveTo(lineNo, currentSL.relativeCharIndex, select);
         else
             MoveTo(lineNo, currentSL.relativeCharIndex + std::min<>(currentSL.charsCount - 1, charIndexDif), select);
-
     }
     else
     {
@@ -887,7 +952,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         auto bufPos = cs.GetCurrentBufferPos();
         while ((cs.Next()) && (lastC < c_end))
         {
-            auto c = this->chars + (cs.GetXOffset() - xScroll);
+            auto c = this->chars + (cs.GetXOffset() + vd->xStart - xScroll);
             if (c >= c_end) // safety check
                 break;
             // fill in the spaces
@@ -955,10 +1020,21 @@ void Instance::Paint(Graphics::Renderer& renderer)
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    if (this->settings->wordWrap)
-        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:ON", CMD_ID_WORD_WRAP);
-    else
-        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:OFF", CMD_ID_WORD_WRAP);
+    switch (this->settings->wrapMethod)
+    {
+    case WrapMethod::None:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:OFF", CMD_ID_WORD_WRAP);
+        break;
+    case WrapMethod::LeftMargin:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:LeftMargin", CMD_ID_WORD_WRAP);
+        break;
+    case WrapMethod::Padding:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Padding", CMD_ID_WORD_WRAP);
+        break;
+    case WrapMethod::Bullets:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Bullets", CMD_ID_WORD_WRAP);
+        break;
+    }
 
     return false;
 }
@@ -1048,9 +1124,26 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     switch (ID)
     {
     case CMD_ID_WORD_WRAP:
-        this->settings->wordWrap = !this->settings->wordWrap;
-        this->ViewPort.scrollX   = 0;
-        this->SubLines.lineNo    = INVALID_LINE_NUMBER;
+        switch (this->settings->wrapMethod)
+        {
+        case WrapMethod::None:
+            this->settings->wrapMethod = WrapMethod::LeftMargin;
+            break;
+        case WrapMethod::LeftMargin:
+            this->settings->wrapMethod = WrapMethod::Padding;
+            break;
+        case WrapMethod::Padding:
+            this->settings->wrapMethod = WrapMethod::Bullets;
+            break;
+        case WrapMethod::Bullets:
+            this->settings->wrapMethod = WrapMethod::None;
+            break;
+        default:
+            this->settings->wrapMethod = WrapMethod::None;
+            break;
+        }
+        this->ViewPort.scrollX = 0;
+        this->SubLines.lineNo  = INVALID_LINE_NUMBER;
         this->ViewPort.Reset();
         this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
         this->UpdateViewPort();
