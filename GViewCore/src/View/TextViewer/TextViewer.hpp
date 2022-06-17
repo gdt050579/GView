@@ -78,6 +78,7 @@ namespace View
             {
                 std::vector<SubLineInfo> entries;
                 uint32 lineNo;
+                uint32 leftAlignament;
             } SubLines;
             struct
             {

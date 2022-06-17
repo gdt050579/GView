@@ -276,17 +276,19 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     if (lineNo == this->SubLines.lineNo)
         return; // we've already computed this --> no need to computed again
 
-    LineInfo li      = GetLineInfo(lineNo);
-    uint32 w         = this->GetWidth();
-    uint32 bufPos    = 0;
-    uint32 charIndex = 0;
-    startOffset      = li.offset;
+    LineInfo li            = GetLineInfo(lineNo);
+    uint32 w               = this->GetWidth();
+    uint32 bufPos          = 0;
+    uint32 charIndex       = 0;
+    bool computeAlignament = true;
+    startOffset            = li.offset;
 
     //---------------------------------------------------
     //|  We will always have at least ONE sub-line      |
     //---------------------------------------------------
     this->SubLines.entries.clear();
-    this->SubLines.lineNo = lineNo;
+    this->SubLines.lineNo         = lineNo;
+    this->SubLines.leftAlignament = 0;
 
     if ((this->lineNumberWidth + 2) >= w)
         w = 1;
@@ -298,17 +300,37 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
 
     if (this->settings->wrapMethod != WrapMethod::None)
     {
+        // parse first sub-line
         while (cs.Next())
         {
-            // simple
             if (cs.GetNextXOffset() > w)
             {
                 // move to next line
                 this->SubLines.entries.emplace_back(
                       bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
-                bufPos    = cs.GetCurrentBufferPos();
-                charIndex = cs.GetNextCharIndex();
-                cs.ResetXOffset();
+                bufPos            = cs.GetCurrentBufferPos();
+                charIndex         = cs.GetNextCharIndex();
+                computeAlignament = false;
+                cs.ResetXOffset(this->SubLines.leftAlignament);
+            }
+            if (computeAlignament)
+            {
+                switch (this->settings->wrapMethod)
+                {
+                case WrapMethod::LeftMargin:
+                    computeAlignament             = false;
+                    this->SubLines.leftAlignament = 0;
+                    break;
+                case WrapMethod::Padding:
+                    if ((cs.GetCharacter() == ' ') || (cs.IsTabCharacter()))
+                        this->SubLines.leftAlignament = cs.GetNextXOffset();
+                    else
+                        computeAlignament = false;
+                    break;
+                default:
+                    computeAlignament = false;
+                    break;
+                }
             }
         }
         if (cs.GetCurrentBufferPos() > bufPos)
@@ -443,7 +465,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
                 const auto& sl   = this->SubLines.entries[startSL];
                 l->lineNo        = start;
                 l->offset        = sl.relativeOffset + lineInfo.offset;
-                l->xStart        = 0;
+                l->xStart        = startSL == 0 ? 0 : this->SubLines.leftAlignament;
                 l->size          = sl.size;
                 l->lineCharIndex = sl.relativeCharIndex;
                 l++;
@@ -471,7 +493,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
         {
             auto lineInfo = GetLineInfo(start);
             ComputeSubLineIndexes(start);
-            ViewPort.Start.lineNo    = start;
+            ViewPort.Start.lineNo = start;
             if (resetSL)
                 startSL = static_cast<uint32>(this->SubLines.entries.size() - 1); // default value
             ViewPort.Start.subLineNo = startSL;
@@ -480,7 +502,7 @@ void Instance::CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction 
                 const auto& sl   = this->SubLines.entries[startSL];
                 l->lineNo        = start;
                 l->offset        = sl.relativeOffset + lineInfo.offset;
-                l->xStart        = 0;
+                l->xStart        = startSL == 0 ? 0 : this->SubLines.leftAlignament;
                 l->size          = sl.size;
                 l->lineCharIndex = sl.relativeCharIndex;
                 l--;
@@ -677,7 +699,7 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
         while (true)
         {
             ComputeSubLineIndexes(lineNo);
-            const auto dif     = std::min<>(noOfTimes, slIndex);
+            const auto dif = std::min<>(noOfTimes, slIndex);
             noOfTimes -= dif;
             slIndex -= dif;
             if (noOfTimes > 0)
@@ -711,7 +733,6 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
             MoveTo(lineNo, currentSL.relativeCharIndex, select);
         else
             MoveTo(lineNo, currentSL.relativeCharIndex + std::min<>(currentSL.charsCount - 1, charIndexDif), select);
-
     }
     else
     {
@@ -888,7 +909,7 @@ void Instance::DrawLine(uint32 y, Graphics::Renderer& renderer, ControlState sta
         auto bufPos = cs.GetCurrentBufferPos();
         while ((cs.Next()) && (lastC < c_end))
         {
-            auto c = this->chars + (cs.GetXOffset() - xScroll);
+            auto c = this->chars + (cs.GetXOffset() + vd->xStart - xScroll);
             if (c >= c_end) // safety check
                 break;
             // fill in the spaces
@@ -1078,8 +1099,8 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             this->settings->wrapMethod = WrapMethod::None;
             break;
         }
-        this->ViewPort.scrollX   = 0;
-        this->SubLines.lineNo    = INVALID_LINE_NUMBER;
+        this->ViewPort.scrollX = 0;
+        this->SubLines.lineNo  = INVALID_LINE_NUMBER;
         this->ViewPort.Reset();
         this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
         this->UpdateViewPort();
