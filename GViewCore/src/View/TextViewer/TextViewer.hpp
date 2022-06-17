@@ -143,7 +143,7 @@ namespace View
 
             inline bool HasWordWrap() const
             {
-                return this->settings->wordWrap;
+                return this->settings->wrapMethod != WrapMethod::None;
             }
 
           public:

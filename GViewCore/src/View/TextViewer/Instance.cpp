@@ -296,7 +296,7 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
     CharacterStream cs(buf, 0, this->settings.ToReference());
     // process
 
-    if (this->settings->wordWrap)
+    if (this->settings->wrapMethod != WrapMethod::None)
     {
         while (cs.Next())
         {
@@ -689,7 +689,7 @@ void Instance::MoveUp(uint32 noOfTimes, bool select)
                     // move one line up
                     lineNo--;
                     ComputeSubLineIndexes(lineNo);
-                    slIndex = this->SubLines.entries.size() - 1;
+                    slIndex = static_cast<uint32>(this->SubLines.entries.size()) - 1;
                     noOfTimes--;
                     if (noOfTimes == 0)
                         break;
@@ -956,10 +956,21 @@ void Instance::Paint(Graphics::Renderer& renderer)
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    if (this->settings->wordWrap)
-        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:ON", CMD_ID_WORD_WRAP);
-    else
-        commandBar.SetCommand(config.Keys.WordWrap, "WordWrap:OFF", CMD_ID_WORD_WRAP);
+    switch (this->settings->wrapMethod)
+    {
+    case WrapMethod::None:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:OFF", CMD_ID_WORD_WRAP);
+        break;
+    case WrapMethod::LeftMargin:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:LeftMargin", CMD_ID_WORD_WRAP);
+        break;
+    case WrapMethod::Padding:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Padding", CMD_ID_WORD_WRAP);
+        break;
+    case WrapMethod::Bullets:
+        commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Bullets", CMD_ID_WORD_WRAP);
+        break;
+    }
 
     return false;
 }
@@ -1049,7 +1060,24 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     switch (ID)
     {
     case CMD_ID_WORD_WRAP:
-        this->settings->wordWrap = !this->settings->wordWrap;
+        switch (this->settings->wrapMethod)
+        {
+        case WrapMethod::None:
+            this->settings->wrapMethod = WrapMethod::LeftMargin;
+            break;
+        case WrapMethod::LeftMargin:
+            this->settings->wrapMethod = WrapMethod::Padding;
+            break;
+        case WrapMethod::Padding:
+            this->settings->wrapMethod = WrapMethod::Bullets;
+            break;
+        case WrapMethod::Bullets:
+            this->settings->wrapMethod = WrapMethod::None;
+            break;
+        default:
+            this->settings->wrapMethod = WrapMethod::None;
+            break;
+        }
         this->ViewPort.scrollX   = 0;
         this->SubLines.lineNo    = INVALID_LINE_NUMBER;
         this->ViewPort.Reset();
