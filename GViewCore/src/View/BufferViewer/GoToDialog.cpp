@@ -7,7 +7,7 @@ constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BTN_ID_CANCEL = 2;
 
 GoToDialog::GoToDialog(Reference<SettingsData> _settings, uint64 currentPos, uint64 sz)
-    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::None), settings(_settings), maxSize(sz)
+    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::ProcessReturn), settings(_settings), maxSize(sz)
 {
     resultedPos = GView::Utils::INVALID_OFFSET;
     LocalString<128> tmp;
