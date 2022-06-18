@@ -5,84 +5,67 @@ using namespace AppCUI::Input;
 
 constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BTN_ID_CANCEL = 2;
+constexpr int32 RB_GROUP_ID   = 123;
 
-GoToDialog::GoToDialog(Reference<SettingsData> _settings, uint64 currentPos, uint64 sz)
-    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::None), settings(_settings), maxSize(sz)
+GoToDialog::GoToDialog(uint64 currentPos, uint64 sz, uint32 currentLine, uint32 _maxLines)
+    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::None), maxSize(sz), maxLines(_maxLines)
 {
-    resultedPos = GView::Utils::INVALID_OFFSET;
     LocalString<128> tmp;
-    if (this->settings->translationMethodsCount == 0)
-    {
-        tmp.Set("FileOffset");
-    }
-    else
-    {
-        for (uint32 tr = 0; tr < settings->translationMethodsCount; tr++)
-        {
-            if (tr > 0)
-                tmp.AddChar(',');
-            tmp.Add(settings->translationMethods[tr].name);
-        }
-    }
-    Factory::Label::Create(this, "&Address", "x:1,y:1,w:8");
-    Factory::Label::Create(this, "&Type", "x:1,y:3,w:8");
-    txOffset  = Factory::TextField::Create(this, "", "x:10,y:1,w:46");
-    cbOfsType = Factory::ComboBox::Create(this, "x:10,y:3,w:46", tmp.ToStringView());
-    txOffset->SetHotKey('A');
-    txOffset->SetText(tmp.Format("0x%llX", currentPos));
-    cbOfsType->SetHotKey('T');
-    cbOfsType->SetCurentItemIndex(0);
+    resultedPos = GView::Utils::INVALID_OFFSET;
+
+    rbLineNumber = Factory::RadioBox::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:16", RB_GROUP_ID);
+    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:20,y:1,w:20");
+
+    rbFileOffset = Factory::RadioBox::Create(this, tmp.Format("&File offset (0..%llu)", sz), "x:1,y:3,w:16", RB_GROUP_ID);
+    txFileOffset = Factory::TextField::Create(this, tmp.Format("%llu", currentPos), "x:20,y:3,w:20");
 
     Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
-    
-    txOffset->SetFocus();
 }
 void GoToDialog::Validate()
 {
     LocalString<128> tmp;
     LocalString<256> error;
-    NumberParseFlags flags = NumberParseFlags::BaseAuto;
+    Reference<TextField> input = rbLineNumber->IsChecked() ? txLineNumber : txFileOffset;
+    NumberParseFlags flags     = NumberParseFlags::BaseAuto;
 
-    if (tmp.Set(txOffset->GetText()) == false)
+    if (tmp.Set(input->GetText()) == false)
     {
-        Dialogs::MessageBox::ShowError("Error", "Invalid number (expecting ascii characters) for offset !");
-        txOffset->SetFocus();
+        Dialogs::MessageBox::ShowError("Error", "Fail to get the value of the numerical field !");
+        input->SetFocus();
         return;
     }
     auto ofs = Number::ToUInt64(tmp, flags);
     if (!ofs.has_value())
     {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%s` is not a valid UInt64 number !", tmp.GetText()));
-        txOffset->SetFocus();
+        Dialogs::MessageBox::ShowError("Error", error.Format("Value `%s` is not a valid number !", tmp.GetText()));
+        input->SetFocus();
         return;
     }
 
     // all good
     auto newPos = ofs.value();
-    // convert to FileOffset
-    if (settings->offsetTranslateCallback.IsValid())
+
+    // checks in boundery
+    if (rbLineNumber->IsChecked())
     {
-        auto result = settings->offsetTranslateCallback->TranslateToFileOffset(newPos, cbOfsType->GetCurrentItemIndex());
-        if (result == GView::Utils::INVALID_OFFSET)
+        if ((newPos > maxLines) || (newPos < 1))
         {
-            Dialogs::MessageBox::ShowError(
-                  "Error",
-                  error.Format(
-                        "Offset `%llu` is not a valid '%s' value !",
-                        newPos,
-                        settings->translationMethods[cbOfsType->GetCurrentItemIndex()].name.GetText()));
-            txOffset->SetFocus();
+            Dialogs::MessageBox::ShowError("Error", error.Format("Valid line number are between 1 and %u", maxLines));
+            input->SetFocus();
             return;
         }
-        newPos = result;
     }
-    if (newPos >= maxSize)
+    else
     {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%llu` is bigger than the offset size: `%llu`", newPos, maxSize));
-        txOffset->SetFocus();
-        return;
+        if (newPos >= maxSize)
+        {
+            Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%llu` is bigger than the offset size: `%llu`", newPos, maxSize));
+            input->SetFocus();
+            return;
+        }
     }
+    // convert to FileOffset
     resultedPos = newPos;
     Exit(Dialogs::Result::Ok);
 }

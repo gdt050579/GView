@@ -1145,6 +1145,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             break;
         }
         return true;
+    case CMD_ID_GOTO:
+        ShowGoToDialog();
+        return true;
     }
     return false;
 }
@@ -1164,6 +1167,15 @@ bool Instance::GoTo(uint64 offset)
 bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
+}
+void Instance::ShowGoToDialog()
+{
+    auto li = this->GetLineInfo(this->Cursor.lineNo);
+    GoToDialog dlg(li.offset, this->obj->GetData().GetSize(), this->Cursor.lineNo, static_cast<uint32>(this->lines.size()));
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+       // MoveTo(dlg.GetResultedPos(), false);
+    }
 }
 std::string_view Instance::GetName()
 {

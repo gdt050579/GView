@@ -161,6 +161,7 @@ namespace View
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual std::string_view GetName() override;
 
+            void ShowGoToDialog();
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // property interface
@@ -172,16 +173,19 @@ namespace View
         };
         class GoToDialog : public Window
         {
-            Reference<SettingsData> settings;
-            Reference<TextField> txOffset;
-            Reference<ComboBox> cbOfsType;
+            Reference<RadioBox> rbLineNumber;
+            Reference<TextField> txLineNumber;
+            Reference<RadioBox> rbFileOffset;
+            Reference<TextField> txFileOffset;
             uint64 maxSize;
+            uint32 maxLines;
             uint64 resultedPos;
+            
 
             void Validate();
 
           public:
-            GoToDialog(Reference<SettingsData> settings, uint64 currentPos, uint64 size);
+            GoToDialog(uint64 currentPos, uint64 size, uint32 currentLine, uint32 maxLines);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline uint64 GetResultedPos() const
