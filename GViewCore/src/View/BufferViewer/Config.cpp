@@ -20,7 +20,7 @@ void Config::Initialize()
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
     {
-        auto sect                        = ini->GetSection("BufferView");
+        auto sect                        = ini->GetSection("View.Buffer");
         this->Keys.ChangeColumnsNumber   = sect.GetValue("Key.ChangeColumnsCount").ToKey(Key::F6);
         this->Keys.ChangeValueFormatOrCP = sect.GetValue("Key.ChangeValueFormatOrCP").ToKey(Key::F2);
         this->Keys.ChangeAddressMode     = sect.GetValue("Key.ChangeAddressMode").ToKey(Key::F3);

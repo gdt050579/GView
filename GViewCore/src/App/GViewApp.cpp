@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "TextViewer.hpp"
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
@@ -64,7 +65,8 @@ bool GView::App::ResetConfiguration()
     // for AppCUI
     AppCUI::Application::UpdateAppCUISettings(ini, true);
     // for viewers
-    GView::View::BufferViewer::Config::Update(ini["BufferView"]);
+    GView::View::BufferViewer::Config::Update(ini["View.Buffer"]);
+    GView::View::TextViewer::Config::Update(ini["View.Text"]);
     GView::View::ImageViewer::Config::Update(ini["ImageView"]);
     GView::View::GridViewer::Config::Update(ini["GridView"]);
     GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
