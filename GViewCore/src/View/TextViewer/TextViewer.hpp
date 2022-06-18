@@ -146,7 +146,7 @@ namespace View
             {
                 return this->settings->wrapMethod != WrapMethod::None;
             }
-
+            void SetWrapMethod(WrapMethod method);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 

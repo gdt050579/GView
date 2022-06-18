@@ -1127,29 +1127,33 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         switch (this->settings->wrapMethod)
         {
         case WrapMethod::None:
-            this->settings->wrapMethod = WrapMethod::LeftMargin;
+            SetWrapMethod(WrapMethod::LeftMargin);
             break;
         case WrapMethod::LeftMargin:
-            this->settings->wrapMethod = WrapMethod::Padding;
+            SetWrapMethod(WrapMethod::Padding);
             break;
         case WrapMethod::Padding:
-            this->settings->wrapMethod = WrapMethod::Bullets;
+            SetWrapMethod(WrapMethod::Bullets);
             break;
         case WrapMethod::Bullets:
-            this->settings->wrapMethod = WrapMethod::None;
+            SetWrapMethod(WrapMethod::None);
             break;
         default:
-            this->settings->wrapMethod = WrapMethod::None;
+            SetWrapMethod(WrapMethod::None);
             break;
         }
-        this->ViewPort.scrollX = 0;
-        this->SubLines.lineNo  = INVALID_LINE_NUMBER;
-        this->ViewPort.Reset();
-        this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
-        this->UpdateViewPort();
         return true;
     }
     return false;
+}
+void Instance::SetWrapMethod(WrapMethod method)
+{
+    this->settings->wrapMethod = method;
+    this->ViewPort.scrollX     = 0;
+    this->SubLines.lineNo      = INVALID_LINE_NUMBER;
+    this->ViewPort.Reset();
+    this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
+    this->UpdateViewPort();
 }
 bool Instance::GoTo(uint64 offset)
 {
@@ -1222,7 +1226,7 @@ enum class PropertyID : uint32
     HasBOM,
     HighlightCurrentLine,
     TabSize,
-    ShowTabCharacter
+    ShowTabCharacter,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1231,7 +1235,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
-        value = this->HasWordWrap();
+        value = static_cast<uint64>(this->settings->wrapMethod);
         return true;
     case PropertyID::Encoding:
         value = static_cast<uint32>(this->settings->encoding);
@@ -1257,6 +1261,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
+        SetWrapMethod(static_cast<WrapMethod>(std::get<uint64>(value)));
         return true;
     case PropertyID::HighlightCurrentLine:
         this->settings->highlightCurrentLine = std::get<bool>(value);
@@ -1290,7 +1295,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     switch (static_cast<PropertyID>(propertyID))
     {
-    case PropertyID::WordWrap:
     case PropertyID::Encoding:
     case PropertyID::HasBOM:
         return true;
@@ -1301,7 +1305,7 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
+        { BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
         { BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         { BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
         { BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
