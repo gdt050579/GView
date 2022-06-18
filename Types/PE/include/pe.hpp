@@ -823,10 +823,13 @@ namespace Type
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
+                Reference<AppCUI::Controls::ImageView> imageView;
+                bool hasIcon = false;
 
                 void UpdateGeneralInformation();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
+                void SetIcon(const PEFile::ResourceInformation& ri);
 
               public:
                 Information(Reference<Object> _object, Reference<GView::Type::PE::PEFile> pe);

@@ -1,19 +1,22 @@
 #include "pe.hpp"
 
-using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 
-Panels::Information::Information(Reference<Object> _object, Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
+namespace GView::Type::PE::Panels
+{
+Information::Information(Reference<Object> _object, Reference<GView::Type::PE::PEFile> _pe) : TabPage("Informa&Tion")
 {
     object = _object;
     pe     = _pe;
 
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
-    issues  = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
+    general   = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:30", "n:Value,w:100" }, ListViewFlags::None);
+    issues    = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
+    imageView = Factory::ImageView::Create(this, "Icon", "x:0,y:11,w:100%,h:16", ViewerFlags::Border);
 
-    this->Update();
+    Update();
 }
-void Panels::Information::UpdateGeneralInformation()
+
+void Information::UpdateGeneralInformation()
 {
     ListViewItem item;
     LocalString<256> tempStr;
@@ -23,7 +26,7 @@ void Panels::Information::UpdateGeneralInformation()
     item = general->AddItem("PE Info");
     item.SetType(ListViewItem::Type::Category);
     general->AddItem({ "File", object->GetName() });
-    // general->SetItemText(poz++, 1, (char*) pe->obj->GetData().GetFileName(true));
+
     //  size
     general->AddItem(
           { "Size",
@@ -126,19 +129,78 @@ void Panels::Information::UpdateGeneralInformation()
             itemID.SetText(1, pe->Ver.GetValue(tr)->ToStringView());
         }
     }
+
+    bool has32 = false;
+    bool has64 = false;
+    for (auto& r : pe->res)
+    {
+        if (r.Type != ResourceType::Icon)
+            continue;
+
+        if (r.Image.type != PEFile::ImageType::DIB)
+            continue;
+
+        if (r.Image.width == 32 && r.Image.height == 32)
+        {
+            has32 = true;
+        }
+
+        if (r.Image.width == 64 && r.Image.height == 64)
+        {
+            has64 = true;
+        }
+    }
+
+    this->imageView->SetVisible(false);
+    const auto iconIndex = -1;
+    for (auto& r : pe->res)
+    {
+        if (r.Type != ResourceType::Icon)
+            continue;
+
+        if (r.Image.type != PEFile::ImageType::DIB)
+            continue;
+
+        this->hasIcon = true;
+
+        if (has32 == false && has64 == false)
+        {
+            SetIcon(r);
+            break;
+        }
+
+        if (r.Image.width == 32 && r.Image.height == 32 && has64 == false)
+        {
+            SetIcon(r);
+            break;
+        }
+
+        if (r.Image.width == 64 && r.Image.height == 64)
+        {
+            SetIcon(r);
+            break;
+        }
+    }
 }
-void Panels::Information::UpdateIssues()
+
+void Information::UpdateIssues()
 {
     pe->errList.PopulateListView(this->issues);
-    // hide if no issues
     issues->SetVisible(!pe->errList.Empty());
 }
-void Panels::Information::RecomputePanelsPositions()
+
+void Information::RecomputePanelsPositions()
 {
     int py   = 0;
     int last = 0;
     int w    = this->GetWidth();
     int h    = this->GetHeight();
+
+    int iconSize = 0;
+    if (hasIcon)
+    {
+        iconSize = imageView->GetHeight();
+    }
 
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;
@@ -149,19 +211,19 @@ void Panels::Information::RecomputePanelsPositions()
     // resize
     if (last == 0)
     {
-        this->general->Resize(w, h - py);
+        this->general->Resize(w, std::min<>(h - py - iconSize, (int32) this->general->GetItemsCount() + 3));
     }
     else
     {
         if (this->general->GetItemsCount() > 15)
         {
             this->general->Resize(w, 18);
-            py += 18;
+            py += 18 + iconSize;
         }
         else
         {
             this->general->Resize(w, this->general->GetItemsCount() + 3);
-            py += (this->general->GetItemsCount() + 3);
+            py += (this->general->GetItemsCount() + 3) + iconSize;
         }
     }
 
@@ -186,10 +248,27 @@ void Panels::Information::RecomputePanelsPositions()
             }
         }
     }
+
+    if (this->imageView && hasIcon)
+    {
+        this->imageView->MoveTo(this->general->GetX(), this->general->GetHeight());
+    }
 }
-void Panels::Information::Update()
+
+void Information::Update()
 {
     UpdateGeneralInformation();
     UpdateIssues();
     RecomputePanelsPositions();
 }
+
+void Information::SetIcon(const PEFile::ResourceInformation& ri)
+{
+    AppCUI::Graphics::Image img;
+    if (pe->LoadIcon(ri, img))
+    {
+        this->imageView->SetImage(img, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
+        this->imageView->SetVisible(true);
+    }
+}
+} // namespace GView::Type::PE::Panels
