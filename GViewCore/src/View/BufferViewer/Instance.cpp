@@ -40,7 +40,7 @@ constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl(true)
 {
     this->obj  = _obj;
     this->name = _name;
@@ -1788,6 +1788,18 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
     }
 
     return false;
+}
+
+// =====================================================================[SCROLLBAR]===========================
+void Instance::OnUpdateScrollBars()
+{
+    if (this->obj->GetData().GetSize() > 0)
+    {
+        const auto noLines     = this->obj->GetData().GetSize() / this->Layout.charactersPerLine;
+        const auto currentLine = (this->Cursor.currentPos + 1) / this->Layout.charactersPerLine;
+
+        this->UpdateVScrollBar(currentLine, noLines);
+    }
 }
 
 //======================================================================[PROPERTY]============================
