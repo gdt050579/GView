@@ -1794,13 +1794,7 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 // =====================================================================[SCROLLBAR]===========================
 void Instance::OnUpdateScrollBars()
 {
-    if (this->obj->GetData().GetSize() > 0)
-    {
-        const auto noLines     = this->obj->GetData().GetSize() / this->Layout.charactersPerLine;
-        const auto currentLine = (this->Cursor.currentPos + 1) / this->Layout.charactersPerLine;
-
-        this->UpdateVScrollBar(currentLine, noLines);
-    }
+    this->UpdateVScrollBar(this->Cursor.currentPos + 1, this->obj->GetData().GetSize());
 }
 
 //======================================================================[PROPERTY]============================
