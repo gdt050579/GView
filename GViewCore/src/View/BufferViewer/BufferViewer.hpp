@@ -202,6 +202,9 @@ namespace View
             virtual bool OnMouseLeave() override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
 
+            // scrollbar data
+            virtual void OnUpdateScrollBars() override;
+
             // property interface
             bool GetPropertyValue(uint32 id, PropertyValue& value) override;
             bool SetPropertyValue(uint32 id, const PropertyValue& value, String& error) override;
