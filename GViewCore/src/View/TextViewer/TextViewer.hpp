@@ -170,6 +170,25 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        class GoToDialog : public Window
+        {
+            Reference<SettingsData> settings;
+            Reference<TextField> txOffset;
+            Reference<ComboBox> cbOfsType;
+            uint64 maxSize;
+            uint64 resultedPos;
+
+            void Validate();
+
+          public:
+            GoToDialog(Reference<SettingsData> settings, uint64 currentPos, uint64 size);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint64 GetResultedPos() const
+            {
+                return resultedPos;
+            }
+        };
 
     } // namespace TextViewer
 } // namespace View
