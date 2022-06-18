@@ -35,9 +35,8 @@ constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
 constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
 constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
-constexpr int BUFFERVIEW_CMD_GOTO              = 0xBF05;
-constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF06;
-constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF07;
+constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
+constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 
 Config Instance::config;
 
@@ -330,13 +329,14 @@ void Instance::MoveToZone(bool startOfZone, bool select)
     }
 }
 
-void Instance::ShowGoToDialog()
+bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
     }
+    return true;
 }
 
 void Instance::ResetStringInfo()
@@ -1101,9 +1101,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     // Entry point
     commandBar.SetCommand(config.Keys.GoToEntryPoint, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
 
-    // Generic goto
-    commandBar.SetCommand(config.Keys.GoToAddress, "GoTo", BUFFERVIEW_CMD_GOTO);
-
     // Selection
     if (this->selection.IsSingleSelectionEnabled())
         commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Single", BUFFERVIEW_CMD_CHANGESELECTION);
@@ -1351,9 +1348,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         {
             this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
         }
-        return true;
-    case BUFFERVIEW_CMD_GOTO:
-        ShowGoToDialog();
         return true;
     }
     return false;
@@ -1829,8 +1823,6 @@ enum class PropertyID : uint32
     GoToEntryPoint,
     ChangeSelectionType,
     ShowHideStrings,
-    GoToAddress
-
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1912,9 +1904,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::ShowHideStrings:
         value = config.Keys.ShowHideStrings;
-        return true;
-    case PropertyID::GoToAddress:
-        value = config.Keys.GoToAddress;
         return true;
     case PropertyID::AddressType:
         value = this->currentAdrressMode;
@@ -2017,9 +2006,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowHideStrings:
         config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
         return true;
-    case PropertyID::GoToAddress:
-        config.Keys.GoToAddress = std::get<AppCUI::Input::Key>(value);
-        return true;
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
         return true;
@@ -2105,8 +2091,6 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
         { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
         { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
-        { BT(PropertyID::GoToAddress), "Shortcuts", "Go To Address", PropertyType::Key },
-
     };
 }
 #undef BT

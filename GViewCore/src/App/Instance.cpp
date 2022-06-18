@@ -66,11 +66,14 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
 
 Instance::Instance()
 {
-    this->defaultCacheSize = DEFAULT_CACHE_SIZE; // 1 MB
-    this->keyToChangeViews = Key::F4;
-    this->mnuWindow        = nullptr;
-    this->mnuHelp          = nullptr;
-    this->mnuFile          = nullptr;
+    this->defaultCacheSize  = DEFAULT_CACHE_SIZE; // 1 MB
+    this->Keys.changeViews  = Key::F4;
+    this->Keys.find         = Key::Alt | Key::F7;
+    this->Keys.switchToView = Key::Alt | Key::F;
+    this->Keys.goTo         = Key::F5;
+    this->mnuWindow         = nullptr;
+    this->mnuHelp           = nullptr;
+    this->mnuFile           = nullptr;
 }
 bool Instance::LoadSettings()
 {
@@ -113,8 +116,10 @@ bool Instance::LoadSettings()
     // read instance settings
     auto sect               = ini->GetSection("GView");
     this->defaultCacheSize  = std::min<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-    this->keyToChangeViews  = sect.GetValue("ChangeView").ToKey(Key::F4);
-    this->keyToSwitchToView = sect.GetValue("SwitchToView").ToKey(Key::F | Key::Alt);
+    this->Keys.changeViews  = sect.GetValue("Key.ChangeView").ToKey(Key::F4);
+    this->Keys.switchToView = sect.GetValue("Key.SwitchToView").ToKey(Key::F | Key::Alt);
+    this->Keys.find         = sect.GetValue("Key.Find").ToKey(Key::F7 | Key::Alt);
+    this->Keys.goTo         = sect.GetValue("Key.GoTo").ToKey(Key::F5);
 
     return true;
 }

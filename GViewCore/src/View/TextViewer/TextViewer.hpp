@@ -146,7 +146,7 @@ namespace View
             {
                 return this->settings->wrapMethod != WrapMethod::None;
             }
-
+            void SetWrapMethod(WrapMethod method);
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -159,8 +159,10 @@ namespace View
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
+            virtual bool ShowGoToDialog() override;
             virtual std::string_view GetName() override;
 
+            
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // property interface
@@ -169,6 +171,37 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+        };
+        class GoToDialog : public Window
+        {
+            Reference<RadioBox> rbLineNumber;
+            Reference<TextField> txLineNumber;
+            Reference<RadioBox> rbFileOffset;
+            Reference<TextField> txFileOffset;
+            uint64 maxSize;
+            uint32 maxLines;
+            uint64 resultedPos;
+            bool gotoLine;
+            
+            void UpdateEnableStatus();
+            void Validate();
+
+          public:
+            GoToDialog(uint64 currentPos, uint64 size, uint32 currentLine, uint32 maxLines);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint64 GetFileOffset() const
+            {
+                return resultedPos;
+            }
+            inline uint32 GetLine() const
+            {
+                return static_cast<uint32>(resultedPos - 1);
+            }
+            inline bool ShouldGoToLine() const
+            {
+                return gotoLine;
+            }
         };
 
     } // namespace TextViewer

@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.27.0"
+#define GVIEW_VERSION "0.30.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -500,6 +500,7 @@ namespace View
       public:
         virtual bool GoTo(uint64 offset)                                                                       = 0;
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
+        virtual bool ShowGoToDialog()                                                                          = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 

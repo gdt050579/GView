@@ -13,6 +13,8 @@ constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
+constexpr int CMD_GOTO                   = 30012346;
+constexpr int CMD_FIND                   = 30012347;
 
 class CursorInformation : public UserControl
 {
@@ -137,7 +139,7 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == gviewApp->GetKeyToSwitchToView())
+    if (keyCode == gviewApp->GetSwitchToViewKey())
     {
         if (!view->HasFocus())
             view->SetFocus();
@@ -163,6 +165,14 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             this->view->GoToNextTabPage();
             return true;
         }
+        if (ID == CMD_GOTO)
+        {
+            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog()==false)
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
+            }
+            return true;
+        }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
             horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
@@ -185,7 +195,9 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(
-          this->gviewApp->GetKeyToChangeViewes(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+          this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
+    commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
     // add all generic plugins
     this->gviewApp->UpdateCommandBar(commandBar);
     return true;

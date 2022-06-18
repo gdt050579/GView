@@ -62,6 +62,11 @@ bool Instance::Select(uint64 offset, uint64 size)
     return true;
 }
 
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
 {
     if (height == 1)

@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "TextViewer.hpp"
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
@@ -64,8 +65,9 @@ bool GView::App::ResetConfiguration()
     // for AppCUI
     AppCUI::Application::UpdateAppCUISettings(ini, true);
     // for viewers
-    GView::View::BufferViewer::Config::Update(ini["BufferView"]);
-    GView::View::ImageViewer::Config::Update(ini["ImageView"]);
+    GView::View::BufferViewer::Config::Update(ini["View.Buffer"]);
+    GView::View::TextViewer::Config::Update(ini["View.Text"]);
+    GView::View::ImageViewer::Config::Update(ini["View.Image"]);
     GView::View::GridViewer::Config::Update(ini["GridView"]);
     GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
 
@@ -90,9 +92,11 @@ bool GView::App::ResetConfiguration()
     }
 
     // generic GView settings
-    ini["GView"]["CacheSize"]    = 0x100000;
-    ini["GView"]["ChangeView"]   = Key::F4;
-    ini["GView"]["SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["CacheSize"]        = 0x100000;
+    ini["GView"]["Key.ChangeView"]   = Key::F4;
+    ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["Key.GoTo"]         = Key::F5;
+    ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());

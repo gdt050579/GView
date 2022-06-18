@@ -1035,7 +1035,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Bullets", CMD_ID_WORD_WRAP);
         break;
     }
-
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
@@ -1127,37 +1126,75 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         switch (this->settings->wrapMethod)
         {
         case WrapMethod::None:
-            this->settings->wrapMethod = WrapMethod::LeftMargin;
+            SetWrapMethod(WrapMethod::LeftMargin);
             break;
         case WrapMethod::LeftMargin:
-            this->settings->wrapMethod = WrapMethod::Padding;
+            SetWrapMethod(WrapMethod::Padding);
             break;
         case WrapMethod::Padding:
-            this->settings->wrapMethod = WrapMethod::Bullets;
+            SetWrapMethod(WrapMethod::Bullets);
             break;
         case WrapMethod::Bullets:
-            this->settings->wrapMethod = WrapMethod::None;
+            SetWrapMethod(WrapMethod::None);
             break;
         default:
-            this->settings->wrapMethod = WrapMethod::None;
+            SetWrapMethod(WrapMethod::None);
             break;
         }
-        this->ViewPort.scrollX = 0;
-        this->SubLines.lineNo  = INVALID_LINE_NUMBER;
-        this->ViewPort.Reset();
-        this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
-        this->UpdateViewPort();
         return true;
     }
     return false;
 }
+void Instance::SetWrapMethod(WrapMethod method)
+{
+    this->settings->wrapMethod = method;
+    this->ViewPort.scrollX     = 0;
+    this->SubLines.lineNo      = INVALID_LINE_NUMBER;
+    this->ViewPort.Reset();
+    this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo, Direction::TopToBottom);
+    this->UpdateViewPort();
+}
 bool Instance::GoTo(uint64 offset)
 {
-    return false;
+    auto lineNo = 0U;
+    for (lineNo = 0U; lineNo < this->lines.size(); lineNo++)
+    {
+        if (offset < this->lines[lineNo].offset)
+            break;
+    }
+    if (lineNo > 0)
+        lineNo--;
+    auto li     = GetLineInfo(lineNo);
+    auto cIndex = 0U;
+    CharacterStream cs(this->obj->GetData().Get(li.offset, li.size, false), 0, this->settings.ToReference());
+    while (cs.Next())
+    {
+        cIndex = cs.GetCharIndex();
+        if ((cs.GetCurrentBufferPos() + li.offset) > offset)
+            break;
+    }
+    MoveTo(lineNo, cIndex, false);
+    return true;
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
+}
+bool Instance::ShowGoToDialog()
+{
+    GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        if (dlg.ShouldGoToLine())
+        {
+            MoveTo(dlg.GetLine(), 0, false);
+        }
+        else
+        {
+            GoTo(dlg.GetFileOffset());
+        }
+    }
+    return true;
 }
 std::string_view Instance::GetName()
 {
@@ -1222,7 +1259,8 @@ enum class PropertyID : uint32
     HasBOM,
     HighlightCurrentLine,
     TabSize,
-    ShowTabCharacter
+    ShowTabCharacter,
+    WrapMethodKey,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1231,7 +1269,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
-        value = this->HasWordWrap();
+        value = static_cast<uint64>(this->settings->wrapMethod);
         return true;
     case PropertyID::Encoding:
         value = static_cast<uint32>(this->settings->encoding);
@@ -1248,6 +1286,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ShowTabCharacter:
         value = this->settings->showTabCharacter;
         return true;
+    case PropertyID::WrapMethodKey:
+        value = this->config.Keys.WordWrap;
+        return true;
     }
     return false;
 }
@@ -1257,6 +1298,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::WordWrap:
+        SetWrapMethod(static_cast<WrapMethod>(std::get<uint64>(value)));
         return true;
     case PropertyID::HighlightCurrentLine:
         this->settings->highlightCurrentLine = std::get<bool>(value);
@@ -1279,6 +1321,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowTabCharacter:
         this->settings->showTabCharacter = std::get<bool>(value);
         return true;
+    case PropertyID::WrapMethodKey:
+        config.Keys.WordWrap = std::get<AppCUI::Input::Key>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1290,7 +1335,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     switch (static_cast<PropertyID>(propertyID))
     {
-    case PropertyID::WordWrap:
     case PropertyID::Encoding:
     case PropertyID::HasBOM:
         return true;
@@ -1301,12 +1345,14 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        { BT(PropertyID::WordWrap), "General", "Word Wrap", PropertyType::Boolean },
+        { BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
         { BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         { BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
         { BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
+        // shortcuts
+        { BT(PropertyID::WrapMethodKey), "Shortcuts", "Change wrap method", PropertyType::Key },
     };
 }
 #undef BT
