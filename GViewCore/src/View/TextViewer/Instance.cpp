@@ -1162,7 +1162,25 @@ void Instance::SetWrapMethod(WrapMethod method)
 }
 bool Instance::GoTo(uint64 offset)
 {
-    return false;
+    auto lineNo = 0U;
+    for (lineNo = 0U; lineNo < this->lines.size(); lineNo++)
+    {
+        if (offset < this->lines[lineNo].offset)
+            break;
+    }
+    if (lineNo > 0)
+        lineNo--;
+    auto li     = GetLineInfo(lineNo);
+    auto cIndex = 0U;
+    CharacterStream cs(this->obj->GetData().Get(li.offset, li.size, false), 0, this->settings.ToReference());
+    while (cs.Next())
+    {
+        cIndex = cs.GetCharIndex();
+        if ((cs.GetCurrentBufferPos() + li.offset) > offset)
+            break;
+    }
+    MoveTo(lineNo, cIndex, false);
+    return true;
 }
 bool Instance::Select(uint64 offset, uint64 size)
 {
@@ -1170,7 +1188,7 @@ bool Instance::Select(uint64 offset, uint64 size)
 }
 void Instance::ShowGoToDialog()
 {
-    GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo+1U, static_cast<uint32>(this->lines.size()));
+    GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         if (dlg.ShouldGoToLine())
