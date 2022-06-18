@@ -7,7 +7,6 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
-constexpr int32 CMD_ID_GOTO          = 0xBF01;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
 enum class BulletParserState : uint8
@@ -1036,8 +1035,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.WordWrap, "Wrap:Bullets", CMD_ID_WORD_WRAP);
         break;
     }
-    // Generic goto
-    commandBar.SetCommand(Input::Key::F5, "GoTo", CMD_ID_GOTO);
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
@@ -1144,9 +1141,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             SetWrapMethod(WrapMethod::None);
             break;
         }
-        return true;
-    case CMD_ID_GOTO:
-        ShowGoToDialog();
         return true;
     }
     return false;

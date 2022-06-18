@@ -64,7 +64,6 @@ namespace View
                 AppCUI::Input::Key ChangeAddressMode;
                 AppCUI::Input::Key GoToEntryPoint;
                 AppCUI::Input::Key ChangeSelectionType;
-                AppCUI::Input::Key GoToAddress;
                 AppCUI::Input::Key ShowHideStrings;
             } Keys;
             bool Loaded;
