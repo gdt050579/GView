@@ -1170,11 +1170,17 @@ bool Instance::Select(uint64 offset, uint64 size)
 }
 void Instance::ShowGoToDialog()
 {
-    auto li = this->GetLineInfo(this->Cursor.lineNo);
-    GoToDialog dlg(li.offset, this->obj->GetData().GetSize(), this->Cursor.lineNo, static_cast<uint32>(this->lines.size()));
+    GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo+1U, static_cast<uint32>(this->lines.size()));
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
-       // MoveTo(dlg.GetResultedPos(), false);
+        if (dlg.ShouldGoToLine())
+        {
+            MoveTo(dlg.GetLine(), 0, false);
+        }
+        else
+        {
+            GoTo(dlg.GetFileOffset());
+        }
     }
 }
 std::string_view Instance::GetName()

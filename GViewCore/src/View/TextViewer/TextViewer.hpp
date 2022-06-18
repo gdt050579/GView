@@ -180,17 +180,26 @@ namespace View
             uint64 maxSize;
             uint32 maxLines;
             uint64 resultedPos;
+            bool gotoLine;
             
-
+            void UpdateEnableStatus();
             void Validate();
 
           public:
             GoToDialog(uint64 currentPos, uint64 size, uint32 currentLine, uint32 maxLines);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            inline uint64 GetResultedPos() const
+            inline uint64 GetFileOffset() const
             {
                 return resultedPos;
+            }
+            inline uint32 GetLine() const
+            {
+                return static_cast<uint32>(resultedPos - 1);
+            }
+            inline bool ShouldGoToLine() const
+            {
+                return gotoLine;
             }
         };
 

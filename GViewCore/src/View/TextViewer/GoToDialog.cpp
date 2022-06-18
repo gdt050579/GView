@@ -3,24 +3,37 @@
 using namespace GView::View::TextViewer;
 using namespace AppCUI::Input;
 
-constexpr int32 BTN_ID_OK     = 1;
-constexpr int32 BTN_ID_CANCEL = 2;
-constexpr int32 RB_GROUP_ID   = 123;
+constexpr int32 BTN_ID_OK        = 1;
+constexpr int32 BTN_ID_CANCEL    = 2;
+constexpr int32 RB_GROUP_ID      = 123;
 
 GoToDialog::GoToDialog(uint64 currentPos, uint64 sz, uint32 currentLine, uint32 _maxLines)
-    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::None), maxSize(sz), maxLines(_maxLines)
+    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::ProcessReturn), maxSize(sz), maxLines(_maxLines)
 {
     LocalString<128> tmp;
     resultedPos = GView::Utils::INVALID_OFFSET;
+    gotoLine    = true;
 
-    rbLineNumber = Factory::RadioBox::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:16", RB_GROUP_ID);
-    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:20,y:1,w:20");
+    rbLineNumber = Factory::RadioBox::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:38", RB_GROUP_ID);
+    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:40,y:1,w:16");
 
-    rbFileOffset = Factory::RadioBox::Create(this, tmp.Format("&File offset (0..%llu)", sz), "x:1,y:3,w:16", RB_GROUP_ID);
-    txFileOffset = Factory::TextField::Create(this, tmp.Format("%llu", currentPos), "x:20,y:3,w:20");
+    rbFileOffset = Factory::RadioBox::Create(this, tmp.Format("&File offset (0..%llu)", sz), "x:1,y:3,w:38", RB_GROUP_ID);
+    txFileOffset = Factory::TextField::Create(this, tmp.Format("%llu", currentPos), "x:40,y:3,w:16");
 
     Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
+
+    rbLineNumber->SetChecked(true);    
+    UpdateEnableStatus();
+}
+void GoToDialog::UpdateEnableStatus()
+{
+    txLineNumber->SetEnabled(rbLineNumber->IsChecked());
+    txFileOffset->SetEnabled(rbFileOffset->IsChecked());
+    if (txLineNumber->IsEnabled())
+        txLineNumber->SetFocus();
+    if (txFileOffset->IsEnabled())
+        txFileOffset->SetFocus();
 }
 void GoToDialog::Validate()
 {
@@ -45,7 +58,7 @@ void GoToDialog::Validate()
 
     // all good
     auto newPos = ofs.value();
-
+    gotoLine    = rbLineNumber->IsChecked();
     // checks in boundery
     if (rbLineNumber->IsChecked())
     {
@@ -72,8 +85,9 @@ void GoToDialog::Validate()
 
 bool GoToDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
-    if (eventType == Event::ButtonClicked)
+    switch (eventType)
     {
+    case Event::ButtonClicked:
         switch (ID)
         {
         case BTN_ID_CANCEL:
@@ -83,10 +97,10 @@ bool GoToDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
             Validate();
             return true;
         }
-    }
-
-    switch (eventType)
-    {
+        break;
+    case Event::CheckedStatusChanged:
+        UpdateEnableStatus();
+        return true;
     case Event::WindowAccept:
         Validate();
         return true;
