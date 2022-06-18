@@ -28,7 +28,7 @@ static std::string_view peDirsNames[15] = { "Export",      "Import",       "Reso
                                             "Base Reloc",  "Debug",        "Architecture", "Global Ptr",        "TLS",
                                             "Load Config", "Bound Import", "IAT",          "Delay Import Desc", "COM+ Runtime" };
 
-static std::map<uint32_t, std::string_view> languageCode = {
+static std::map<uint32, std::string_view> languageCode = {
     { 0, "None" },
     { 1025, "Arabic (Saudi Arabia)" },
     { 1026, "Bulgarian" },
@@ -1215,8 +1215,25 @@ bool PEFile::BuildDebugData()
 void PEFile::CopySectionName(uint32 index, String& name)
 {
     name.Clear();
-    if (index >= nrSections)
+    // else if ((uint16) index == IMAGE_SYM_UNDEFINED)
+    // {
+    //     name.Set("UNDEFINED");
+    //     return;
+    // }
+    if ((uint16) index == IMAGE_SYM_ABSOLUTE)
+    {
+        name.Set("ABSOLUTE");
         return;
+    }
+    else if ((uint16) index == IMAGE_SYM_DEBUG)
+    {
+        name.Set("DEBUG");
+        return;
+    }
+    else if (index >= nrSections)
+    {
+        return;
+    }
 
     GetSectionName(index, name);
 }
@@ -1654,6 +1671,96 @@ bool PEFile::Update()
 
     if (hasTLS)
         ADD_PANEL(Panels::IDs::TLS);
+
+    if (this->hdr64)
+    {
+        if (nth64.FileHeader.PointerToSymbolTable != 0)
+        {
+            ADD_PANEL(Panels::IDs::Symbols);
+            BuildSymbols();
+        }
+    }
+    else
+    {
+        if (nth32.FileHeader.PointerToSymbolTable != 0)
+        {
+            ADD_PANEL(Panels::IDs::Symbols);
+            BuildSymbols();
+        }
+    }
+
+    return true;
+}
+
+bool PEFile::BuildSymbols()
+{
+    auto offset    = 0ULL;
+    auto symbolsNo = 0ULL;
+
+    if (this->hdr64)
+    {
+        offset    = nth64.FileHeader.PointerToSymbolTable;
+        symbolsNo = nth64.FileHeader.NumberOfSymbols;
+    }
+    else
+    {
+        offset    = nth32.FileHeader.PointerToSymbolTable;
+        symbolsNo = nth32.FileHeader.NumberOfSymbols;
+    }
+
+    CHECK(offset != 0, false, "");
+    CHECK(symbolsNo != 0, false, "");
+
+    const auto size          = symbolsNo * IMAGE_SIZEOF_SYMBOL;
+    const auto symbolsBuffer = this->obj->GetData().CopyToBuffer(offset, (uint32) size);
+    CHECK(symbolsBuffer.IsValid(), false, "");
+    const auto endSymbolsBuffer = ((uint64) symbolsBuffer.GetData()) + offset + size;
+
+    const auto strTableOffset = offset + symbolsNo * PE::IMAGE_SIZEOF_SYMBOL;
+    uint32 strTableSize       = 0;
+    CHECK(obj->GetData().Copy(strTableOffset, strTableSize), false, "");
+    CHECK(strTableSize != 0, false, "");
+    const auto stringsBuffer = this->obj->GetData().CopyToBuffer(strTableOffset, strTableSize);
+
+    this->symbols.reserve(symbolsNo);
+    for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++)
+    {
+        const auto is = (ImageSymbol*) (symbolsBuffer.GetData() + i * IMAGE_SIZEOF_SYMBOL);
+        CHECKBK((uint64) (is) < endSymbolsBuffer - IMAGE_SIZEOF_SYMBOL, "");
+        if (is->StorageClass == IMAGE_SYM_CLASS_NULL)
+        {
+            continue;
+        }
+
+        auto& s = this->symbols.emplace_back(SymbolInformation{ { /* symbol name */ }, *is });
+
+        if (is->N.Name.Short != 0)
+        {
+            CHECK(s.name.Set((char*) is->N.ShortName, sizeof(is->N.ShortName) / sizeof(is->N.ShortName[0])), false, "");
+        }
+        else if (is->N.Name.Long >= sizeof(strTableSize) && is->N.Name.Long < strTableSize)
+        {
+            const auto name     = std::string_view{ (char*) (stringsBuffer.GetData() + is->N.Name.Long) };
+            const auto dolarPos = name.find_first_of('$');
+            if (dolarPos != std::string::npos)
+            {
+                const auto fname = std::string_view{ name.data() + dolarPos + 1, name.size() - 1 - dolarPos };
+                String sName;
+                if (GView::Utils::Demangle(fname.data(), sName))
+                {
+                    s.name.Format("[%.*s]: %s", dolarPos, name.data(), sName.GetText());
+                }
+                else
+                {
+                    s.name.Format("[%.*s]: %.*s", dolarPos, name.data(), name.size() - dolarPos + 1, name.data() + dolarPos + 1);
+                }
+            }
+            else if (GView::Utils::Demangle(name.data(), s.name) == false)
+            {
+                s.name = name.data();
+            }
+        }
+    }
 
     return true;
 }

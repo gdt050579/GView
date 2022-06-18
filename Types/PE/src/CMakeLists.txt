@@ -10,4 +10,5 @@ target_sources(PE PRIVATE
 	PanelExports.cpp
 	PanelResources.cpp
 	PanelIcons.cpp
-	PanelHeaders.cpp)
+	PanelHeaders.cpp
+	PanelSymbols.cpp)

@@ -32,6 +32,7 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
 
     Update();
 }
+
 std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 {
     if (Base == 10)
@@ -39,18 +40,21 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
     else
         return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
 }
+
 void Panels::Sections::GoToSelectedSection()
 {
     auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
+
 void Panels::Sections::SelectCurrentSection()
 {
     auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
 }
+
 void Panels::Sections::Update()
 {
     LocalString<128> temp;

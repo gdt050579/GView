@@ -713,12 +713,18 @@ enum class N_STAB_TYPE : uint8
     MAIN    = 0x2a, // main function name
     BNSYM   = 0x2e, // begin nsect sym: 0,,n_sect,0,address
     PC      = 0x30, // global Pascal symbol
+    NSYMS   = 0x32, // Number of symbols (according to Ultrix V4.0)
+    NOMAP   = 0x34, // no DST map for sym (according to Ultrix V4.0)
     OPT     = 0x3c, // emitted with gcc2_compiled and in gcc source
     RSYM    = 0x40, // register variable
+    M2C     = 0x42, // Modula-2 compilation unit
     SLINE   = 0x44, // text segment line number
     ENSYM   = 0x4e, // end nsect sym: 0,,n_sect,0,address
     DSLINE  = 0x46, // data segment line number
     BSLINE  = 0x48, // bss segment line number
+    DEFD    = 0x4A, // bss segment line number
+    MOD2    = 0x50, // Modula2 info "for imc" (according to Ultrix V4.0)
+    CATCH   = 0x54, // GNU C++ "catch" clause
     SSYM    = 0x60, // structure/union element
     SO      = 0x64, // main source file name
     OSO     = 0x66, // object file name: name,,0,0,st_mtime
@@ -728,16 +734,22 @@ enum class N_STAB_TYPE : uint8
     PARAMS  = 0x86, // compiler parameters: name,,NO_SECT,0,0
     VERSION = 0x88, // compiler version: name,,NO_SECT,0,0
     OLEVEL  = 0x8A, // compiler -O level: name,,NO_SECT,0,0
-    PSYM    = 0xa0, // parameter variable
-    EINCL   = 0xa2, // include file end
-    ENTRY   = 0xa4, // alternate entry point
-    LBRAC   = 0xc0, // left bracket
-    EXCL    = 0xc2, // deleted include file
-    RBRAC   = 0xe0, // right bracket
-    BCOMM   = 0xe2, // begin common
-    ECOMM_  = 0xe4, // end common
-    ECOML   = 0xe8, // end common (local name)
-    LENG    = 0xfe  // length of preceding entry
+    PSYM    = 0xA0, // parameter variable
+    EINCL   = 0xA2, // include file end
+    ENTRY   = 0xA4, // alternate entry point
+    LBRAC   = 0xC0, // left bracket
+    EXCL    = 0xC2, // deleted include file
+    SCOPE   = 0xC4, // Modula2 scope information (Sun linker)
+    RBRAC   = 0xE0, // right bracket
+    BCOMM   = 0xE2, // begin common
+    ECOMM_  = 0xE4, // end common
+    ECOML   = 0xE8, // end common (local name)
+    NBTEXT  = 0xF0, // used on Gould systems for non-base registers syms, values assigned at random, need real info from Gould.
+    NBDATA  = 0xF2, // used on Gould systems for non-base registers syms, values assigned at random, need real info from Gould.
+    NBBSS   = 0xF4, // used on Gould systems for non-base registers syms, values assigned at random, need real info from Gould.
+    NBSTS   = 0xF6, // used on Gould systems for non-base registers syms, values assigned at random, need real info from Gould.
+    NBLCS   = 0xF8, // used on Gould systems for non-base registers syms, values assigned at random, need real info from Gould.
+    LENG    = 0xFE  // length of preceding entry
 };
 
 enum class PlatformType : uint8

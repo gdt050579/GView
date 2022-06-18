@@ -162,7 +162,7 @@ extern "C"
         settings.SetColumns({
               "n:&Name,a:l,w:80",
               "n:&Size,a:r,w:20",
-              "n:&Created,a:r,2:25",
+              "n:&Created,a:r,w:25",
               "n:&OffsetInFile,a:r,w:20",
               "n:&Flags,a:r,w:25",
         });

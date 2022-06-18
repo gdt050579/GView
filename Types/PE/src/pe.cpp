@@ -23,10 +23,12 @@ extern "C"
             return false;
         return nth32->Signature == PE::Constants::IMAGE_NT_SIGNATURE;
     }
+
     PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
         return new PE::PEFile();
     }
+
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
     {
         LocalString<128> tempStr;
@@ -91,6 +93,45 @@ extern "C"
         else
             settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
 
+        if (pe->hdr64)
+        {
+            if (pe->nth64.FileHeader.PointerToSymbolTable > 0)
+            {
+                settings.AddZone(
+                      pe->nth64.FileHeader.PointerToSymbolTable,
+                      (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
+                      pe->peCols.colSectDef,
+                      "SymbolTable");
+
+                const auto strTableOffset =
+                      pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+
+                uint32 strTableSize = 0;
+                pe->obj->GetData().Copy(strTableOffset, strTableSize);
+
+                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
+            }
+        }
+        else
+        {
+            if (pe->nth32.FileHeader.PointerToSymbolTable > 0)
+            {
+                settings.AddZone(
+                      pe->nth32.FileHeader.PointerToSymbolTable,
+                      (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
+                      pe->peCols.colSectDef,
+                      "SymbolTable");
+
+                const auto strTableOffset =
+                      pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+
+                uint32 strTableSize = 0;
+                pe->obj->GetData().Copy(strTableOffset, strTableSize);
+
+                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
+            }
+        }
+
         win->CreateViewer("BufferView", settings);
     }
 
@@ -125,8 +166,11 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Resources(pe, win)), false);
         if (pe->HasPanel(PE::Panels::IDs::Icons))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Icons(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Symbols))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Symbols(pe, win)), false);
         return true;
     }
+
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect.UpdateValue("Pattern", "MZ", false);

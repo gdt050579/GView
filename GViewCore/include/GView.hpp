@@ -514,8 +514,8 @@ namespace View
     {
         struct BufferColor
         {
-            uint64_t start;
-            uint64_t end;
+            uint64 start;
+            uint64 end;
             ColorPair color;
             constexpr inline void Reset()
             {
@@ -532,12 +532,12 @@ namespace View
         };
         struct CORE_EXPORT PositionToColorInterface
         {
-            virtual bool GetColorForBuffer(uint64_t offset, BufferView buf, BufferColor& result) = 0;
+            virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
         struct CORE_EXPORT OffsetTranslateInterface
         {
-            virtual uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) = 0;
-            virtual uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) = 0;
+            virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;
+            virtual uint64_t TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) = 0;
         };
 
         struct CORE_EXPORT Settings

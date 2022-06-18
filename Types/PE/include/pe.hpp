@@ -93,8 +93,8 @@ namespace Type
     {
         namespace Constants
         {
-            constexpr uint16_t IMAGE_DOS_SIGNATURE = 0x5A4D;
-            constexpr uint32_t IMAGE_NT_SIGNATURE  = 0x00004550;
+            constexpr uint16 IMAGE_DOS_SIGNATURE = 0x5A4D;
+            constexpr uint32 IMAGE_NT_SIGNATURE  = 0x00004550;
         }; // namespace Constants
         namespace Panels
         {
@@ -109,6 +109,7 @@ namespace Type
                 Icons,
                 Imports,
                 TLS,
+                Symbols,
             };
         };
         class VersionInformation
@@ -116,32 +117,32 @@ namespace Type
 #pragma pack(push, 1)
             struct VersionString
             {
-                uint16_t wLength;
-                uint16_t wValueLength;
-                uint16_t wType;
-                uint16_t Key[1];
+                uint16 wLength;
+                uint16 wValueLength;
+                uint16 wType;
+                uint16 Key[1];
             };
             struct VS_FIXEDFILEINFO
             {
-                uint32_t dwSignature;
-                uint32_t dwStrucVersion;
-                uint32_t dwFileVersionMS;
-                uint32_t dwFileVersionLS;
-                uint32_t dwProductVersionMS;
-                uint32_t dwProductVersionLS;
-                uint32_t dwFileFlagsMask;
-                uint32_t dwFileFlags;
-                uint32_t dwFileOS;
-                uint32_t dwFileType;
-                uint32_t dwFileSubtype;
-                uint32_t dwFileDateMS;
-                uint32_t dwFileDateLS;
+                uint32 dwSignature;
+                uint32 dwStrucVersion;
+                uint32 dwFileVersionMS;
+                uint32 dwFileVersionLS;
+                uint32 dwProductVersionMS;
+                uint32 dwProductVersionLS;
+                uint32 dwFileFlagsMask;
+                uint32 dwFileFlags;
+                uint32 dwFileOS;
+                uint32 dwFileType;
+                uint32 dwFileSubtype;
+                uint32 dwFileDateMS;
+                uint32 dwFileDateLS;
             };
 #pragma pack(pop)
             struct VersionPair
             {
                 String Key, Value;
-                uint16_t Unicode[MAX_VERSION_UNICODE];
+                uint16 Unicode[MAX_VERSION_UNICODE];
             };
             VersionPair Pairs[MAX_VERION_PAIRS];
             int nrPairs;
@@ -166,90 +167,90 @@ namespace Type
             {
                 return &Pairs[index].Value;
             }
-            uint16_t* GetUnicode(int index)
+            uint16* GetUnicode(int index)
             {
                 return &Pairs[index].Unicode[0];
             }
         };
         struct Guid
         {
-            uint32_t Data1;
-            uint16_t Data2;
-            uint16_t Data3;
-            uint8_t Data4[8];
+            uint32 Data1;
+            uint16 Data2;
+            uint16 Data3;
+            uint8 Data4[8];
         };
 
 #pragma pack(push, 4)
 
         struct ImageTLSDirectory32
         {
-            uint32_t StartAddressOfRawData;
-            uint32_t EndAddressOfRawData;
-            uint32_t AddressOfIndex;     // PDWORD
-            uint32_t AddressOfCallBacks; // PIMAGE_TLS_CALLBACK *
-            uint32_t SizeOfZeroFill;
+            uint32 StartAddressOfRawData;
+            uint32 EndAddressOfRawData;
+            uint32 AddressOfIndex;     // PDWORD
+            uint32 AddressOfCallBacks; // PIMAGE_TLS_CALLBACK *
+            uint32 SizeOfZeroFill;
             union
             {
-                uint32_t Characteristics;
+                uint32 Characteristics;
                 struct
                 {
-                    uint32_t Reserved0 : 20;
-                    uint32_t Alignment : 4;
-                    uint32_t Reserved1 : 8;
+                    uint32 Reserved0 : 20;
+                    uint32 Alignment : 4;
+                    uint32 Reserved1 : 8;
                 };
             };
         };
 
         struct ImageDebugDirectory
         {
-            uint32_t Characteristics;
-            uint32_t TimeDateStamp;
-            uint16_t MajorVersion;
-            uint16_t MinorVersion;
-            uint32_t Type;
-            uint32_t SizeOfData;
-            uint32_t AddressOfRawData;
-            uint32_t PointerToRawData;
+            uint32 Characteristics;
+            uint32 TimeDateStamp;
+            uint16 MajorVersion;
+            uint16 MinorVersion;
+            uint32 Type;
+            uint32 SizeOfData;
+            uint32 AddressOfRawData;
+            uint32 PointerToRawData;
         };
 
         struct ImageExportDirectory
         {
-            uint32_t Characteristics;
-            uint32_t TimeDateStamp;
-            uint16_t MajorVersion;
-            uint16_t MinorVersion;
-            uint32_t Name;
-            uint32_t Base;
-            uint32_t NumberOfFunctions;
-            uint32_t NumberOfNames;
-            uint32_t AddressOfFunctions;    // RVA from base of image
-            uint32_t AddressOfNames;        // RVA from base of image
-            uint32_t AddressOfNameOrdinals; // RVA from base of image
+            uint32 Characteristics;
+            uint32 TimeDateStamp;
+            uint16 MajorVersion;
+            uint16 MinorVersion;
+            uint32 Name;
+            uint32 Base;
+            uint32 NumberOfFunctions;
+            uint32 NumberOfNames;
+            uint32 AddressOfFunctions;    // RVA from base of image
+            uint32 AddressOfNames;        // RVA from base of image
+            uint32 AddressOfNameOrdinals; // RVA from base of image
         };
 
 #pragma pack(push, 2)
 
         struct ImageDOSHeader
         {
-            uint16_t e_magic;    // Magic number
-            uint16_t e_cblp;     // Bytes on last page of file
-            uint16_t e_cp;       // Pages in file
-            uint16_t e_crlc;     // Relocations
-            uint16_t e_cparhdr;  // Size of header in paragraphs
-            uint16_t e_minalloc; // Minimum extra paragraphs needed
-            uint16_t e_maxalloc; // Maximum extra paragraphs needed
-            uint16_t e_ss;       // Initial (relative) SS value
-            uint16_t e_sp;       // Initial SP value
-            uint16_t e_csum;     // Checksum
-            uint16_t e_ip;       // Initial IP value
-            uint16_t e_cs;       // Initial (relative) CS value
-            uint16_t e_lfarlc;   // File address of relocation table
-            uint16_t e_ovno;     // Overlay number
-            uint16_t e_res[4];   // Reserved words
-            uint16_t e_oemid;    // OEM identifier (for e_oeminfo)
-            uint16_t e_oeminfo;  // OEM information; e_oemid specific
-            uint16_t e_res2[10]; // Reserved words
-            uint32_t e_lfanew;   // File address of new exe header
+            uint16 e_magic;    // Magic number
+            uint16 e_cblp;     // Bytes on last page of file
+            uint16 e_cp;       // Pages in file
+            uint16 e_crlc;     // Relocations
+            uint16 e_cparhdr;  // Size of header in paragraphs
+            uint16 e_minalloc; // Minimum extra paragraphs needed
+            uint16 e_maxalloc; // Maximum extra paragraphs needed
+            uint16 e_ss;       // Initial (relative) SS value
+            uint16 e_sp;       // Initial SP value
+            uint16 e_csum;     // Checksum
+            uint16 e_ip;       // Initial IP value
+            uint16 e_cs;       // Initial (relative) CS value
+            uint16 e_lfarlc;   // File address of relocation table
+            uint16 e_ovno;     // Overlay number
+            uint16 e_res[4];   // Reserved words
+            uint16 e_oemid;    // OEM identifier (for e_oeminfo)
+            uint16 e_oeminfo;  // OEM information; e_oemid specific
+            uint16 e_res2[10]; // Reserved words
+            uint32 e_lfanew;   // File address of new exe header
         };
 
 #pragma pack(pop) // Back to 4 byte packing.
@@ -391,10 +392,10 @@ namespace Type
 
         struct ImageResourceDataEntry
         {
-            uint32_t OffsetToData;
-            uint32_t Size;
-            uint32_t CodePage;
-            uint32_t Reserved;
+            uint32 OffsetToData;
+            uint32 Size;
+            uint32 CodePage;
+            uint32 Reserved;
         };
 
         struct ImageResourceDirectory
@@ -466,6 +467,46 @@ namespace Type
         constexpr auto IMAGE_SIZEOF_SYMBOL = 18U;
         static_assert(sizeof(ImageSymbol) == IMAGE_SIZEOF_SYMBOL, "");
 
+        constexpr auto SYM_NOT_A_FUNCTION = 0;
+        constexpr auto SYM_FUNCTION       = 0x20;
+
+        constexpr auto IMAGE_SYM_UNDEFINED      = (uint16) 0;  // Symbol is undefined or is common.
+        constexpr auto IMAGE_SYM_ABSOLUTE       = (uint16) -1; // Symbol is an absolute value.
+        constexpr auto IMAGE_SYM_DEBUG          = (uint16) -2; // Symbol is a special debug item.
+        constexpr auto IMAGE_SYM_SECTION_MAX    = 0xFEFF;      // Values 0xFF00-0xFFFF are special
+        constexpr auto MAXLONG                  = 0x7fffffff;
+        constexpr auto IMAGE_SYM_SECTION_MAX_EX = MAXLONG;
+
+        // Storage classes.
+        constexpr auto IMAGE_SYM_CLASS_END_OF_FUNCTION  = (uint8) -1;
+        constexpr auto IMAGE_SYM_CLASS_NULL             = 0x0000;
+        constexpr auto IMAGE_SYM_CLASS_AUTOMATIC        = 0x0001;
+        constexpr auto IMAGE_SYM_CLASS_EXTERNAL         = 0x0002;
+        constexpr auto IMAGE_SYM_CLASS_STATIC           = 0x0003;
+        constexpr auto IMAGE_SYM_CLASS_REGISTER         = 0x0004;
+        constexpr auto IMAGE_SYM_CLASS_EXTERNAL_DEF     = 0x0005;
+        constexpr auto IMAGE_SYM_CLASS_LABEL            = 0x0006;
+        constexpr auto IMAGE_SYM_CLASS_UNDEFINED_LABEL  = 0x0007;
+        constexpr auto IMAGE_SYM_CLASS_MEMBER_OF_STRUCT = 0x0008;
+        constexpr auto IMAGE_SYM_CLASS_ARGUMENT         = 0x0009;
+        constexpr auto IMAGE_SYM_CLASS_STRUCT_TAG       = 0x000A;
+        constexpr auto IMAGE_SYM_CLASS_MEMBER_OF_UNION  = 0x000B;
+        constexpr auto IMAGE_SYM_CLASS_UNION_TAG        = 0x000C;
+        constexpr auto IMAGE_SYM_CLASS_TYPE_DEFINITION  = 0x000D;
+        constexpr auto IMAGE_SYM_CLASS_UNDEFINED_STATIC = 0x000E;
+        constexpr auto IMAGE_SYM_CLASS_ENUM_TAG         = 0x000F;
+        constexpr auto IMAGE_SYM_CLASS_MEMBER_OF_ENUM   = 0x0010;
+        constexpr auto IMAGE_SYM_CLASS_REGISTER_PARAM   = 0x0011;
+        constexpr auto IMAGE_SYM_CLASS_BIT_FIELD        = 0x0012;
+        constexpr auto IMAGE_SYM_CLASS_FAR_EXTERNAL     = 0x0044;
+        constexpr auto IMAGE_SYM_CLASS_BLOCK            = 0x0064;
+        constexpr auto IMAGE_SYM_CLASS_FUNCTION         = 0x0065;
+        constexpr auto IMAGE_SYM_CLASS_END_OF_STRUCT    = 0x0066;
+        constexpr auto IMAGE_SYM_CLASS_FILE             = 0x0067;
+        constexpr auto IMAGE_SYM_CLASS_SECTION          = 0x0068;
+        constexpr auto IMAGE_SYM_CLASS_WEAK_EXTERNAL    = 0x0069;
+        constexpr auto IMAGE_SYM_CLASS_CLR_TOKEN        = 0x006B;
+
 #pragma pack(push, 8)
 
         struct ImageThunkData64
@@ -514,7 +555,7 @@ namespace Type
             VA         = 2
         };
 
-        enum class MachineType : uint16_t
+        enum class MachineType : uint16
         {
             Unknown   = 0,
             I386      = 0x014c, // Intel 386.
@@ -547,7 +588,7 @@ namespace Type
             CEE       = 0xC0EE,
         };
 
-        enum class SubsystemType : uint16_t
+        enum class SubsystemType : uint16
         {
             Unknown                = 0,  // Unknown subsystem.
             Native                 = 1,  // Image doesn't require a subsystem.
@@ -564,7 +605,7 @@ namespace Type
             XBOX                   = 14,
             WindowsBootApplication = 16,
         };
-        enum class DirectoryType : uint8_t
+        enum class DirectoryType : uint8
         {
             Export        = 0,
             Import        = 1,
@@ -582,7 +623,7 @@ namespace Type
             DelayImport   = 13,
             COMDescriptor = 14
         };
-        enum class ResourceType : uint32_t
+        enum class ResourceType : uint32
         {
             Cursor       = 1,
             Bitmap       = 2,
@@ -609,8 +650,8 @@ namespace Type
 
         struct X86_X64_ColorBuffer : public GView::View::BufferViewer::PositionToColorInterface
         {
-            uint64_t memStartOffset, memEndOffset;
-            bool GetColorForBuffer(uint64_t offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+            uint64 memStartOffset, memEndOffset;
+            bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
         };
 
         class PEFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
@@ -628,7 +669,7 @@ namespace Type
                 ColorPair colSect;
                 ColorPair colDir[15];
             };
-            enum class ImageType : uint8_t
+            enum class ImageType : uint8
             {
                 DIB = 0,
                 PNG,
@@ -672,6 +713,12 @@ namespace Type
                 SHOW_INT3   = 32
             };
 
+            struct SymbolInformation
+            {
+                String name; // this can be either short or long name that needs to be located
+                ImageSymbol is;
+            };
+
           public:
             // PE informations
             ImageDOSHeader dos;
@@ -696,6 +743,7 @@ namespace Type
             std::vector<ImportDllInformation> impDLL;
             std::vector<ImageDebugDirectory> debugData;
             std::vector<ImportFunctionInformation> impFunc;
+            std::vector<SymbolInformation> symbols;
 
             ImageTLSDirectory32 tlsDir;
             PEColors peCols;
@@ -710,7 +758,7 @@ namespace Type
             bool isMetroApp;
             bool hasTLS;
 
-            std::string_view ReadString(uint32_t RVA, uint32 maxSize);
+            std::string_view ReadString(uint32 RVA, uint32 maxSize);
             bool ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxSize);
 
           public:
@@ -723,30 +771,31 @@ namespace Type
 
             constexpr inline ImageDataDirectory& GetDirectory(DirectoryType dirType)
             {
-                return dirs[(uint8_t) dirType];
+                return dirs[(uint8) dirType];
             }
 
             std::string_view GetMachine();
             std::string_view GetSubsystem();
-            uint64_t RVAtoFilePointer(uint64_t RVA);
-            int RVAToSectionIndex(uint64_t RVA);
-            uint64_t FilePointerToRVA(uint64_t fileAddress);
-            uint64_t FilePointerToVA(uint64_t fileAddress);
+            uint64 RVAtoFilePointer(uint64 RVA);
+            int RVAToSectionIndex(uint64 RVA);
+            uint64 FilePointerToRVA(uint64 fileAddress);
+            uint64 FilePointerToVA(uint64 fileAddress);
 
-            uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) override;
-            uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) override;
+            uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
+            uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
 
-            uint64_t ConvertAddress(uint64_t address, AddressType fromAddressType, AddressType toAddressType);
+            uint64 ConvertAddress(uint64 address, AddressType fromAddressType, AddressType toAddressType);
             bool BuildExport();
             void BuildVersionInfo();
             bool ProcessResourceImageInformation(ResourceInformation& res);
-            bool ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* resName);
-            bool ProcessResourceDirTable(uint64_t relAddress, uint64_t startRes, uint32_t* level, uint32_t indexLevel, char* parentName);
+            bool ProcessResourceDataEntry(uint64 relAddress, uint64 startRes, uint32* level, uint32 indexLevel, char* resName);
+            bool ProcessResourceDirTable(uint64 relAddress, uint64 startRes, uint32* level, uint32 indexLevel, char* parentName);
             bool BuildResources();
-            bool BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD);
+            bool BuildImportDLLFunctions(uint32 index, ImageImportDescriptor* impD);
             bool BuildImport();
             bool BuildTLS();
             bool BuildDebugData();
+            bool BuildSymbols();
 
             bool HasPanel(Panels::IDs id);
 
@@ -762,9 +811,10 @@ namespace Type
             }
 
             static std::string_view ResourceIDToName(ResourceType resType);
-            static std::string_view LanguageIDToName(uint32_t langID);
-            static std::string_view DirectoryIDToName(uint32_t dirID);
+            static std::string_view LanguageIDToName(uint32 langID);
+            static std::string_view DirectoryIDToName(uint32 dirID);
         };
+
         namespace Panels
         {
             class Information : public AppCUI::Controls::TabPage
@@ -847,6 +897,25 @@ namespace Type
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
+            class Symbols : public TabPage
+            {
+                Reference<GView::Type::PE::PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+                int Base;
+
+                std::string_view GetValue(NumericFormatter& n, uint32 value);
+
+                void GetSymbolType(uint32 sectionNumber, String& name);
+                void GetStorageClass(uint16 storageclass, String& name);
+
+              public:
+                Symbols(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
             class Resources : public TabPage
             {
                 Reference<GView::Type::PE::PEFile> pe;
@@ -886,7 +955,7 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> list;
 
                 void AddHeader(std::string_view name);
-                void AddNumber(std::string_view name, uint32_t value);
+                void AddNumber(std::string_view name, uint32 value);
                 void AddMagic(uint8* offset, uint32 size);
                 void AddItem(std::string_view name, std::string_view value);
 
