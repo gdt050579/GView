@@ -507,7 +507,7 @@ namespace View
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
-        ViewControl(bool verticalScrollBar = false) : UserControl("d:c", verticalScrollBar), Cfg(this->GetConfig())
+        ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
         {
         }
     };

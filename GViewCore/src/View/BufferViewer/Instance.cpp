@@ -40,7 +40,8 @@ constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl(true)
+Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj  = _obj;
     this->name = _name;
