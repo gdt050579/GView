@@ -165,6 +165,14 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             this->view->GoToNextTabPage();
             return true;
         }
+        if (ID == CMD_GOTO)
+        {
+            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog()==false)
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
+            }
+            return true;
+        }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
             horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
