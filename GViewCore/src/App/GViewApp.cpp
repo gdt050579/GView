@@ -68,7 +68,7 @@ bool GView::App::ResetConfiguration()
     GView::View::BufferViewer::Config::Update(ini["View.Buffer"]);
     GView::View::TextViewer::Config::Update(ini["View.Text"]);
     GView::View::ImageViewer::Config::Update(ini["View.Image"]);
-    GView::View::GridViewer::Config::Update(ini["GridView"]);
+    GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
 
     // parse types and add specs
