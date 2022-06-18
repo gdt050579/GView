@@ -1260,6 +1260,7 @@ enum class PropertyID : uint32
     HighlightCurrentLine,
     TabSize,
     ShowTabCharacter,
+    WrapMethodKey,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1284,6 +1285,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::ShowTabCharacter:
         value = this->settings->showTabCharacter;
+        return true;
+    case PropertyID::WrapMethodKey:
+        value = this->config.Keys.WordWrap;
         return true;
     }
     return false;
@@ -1317,6 +1321,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowTabCharacter:
         this->settings->showTabCharacter = std::get<bool>(value);
         return true;
+    case PropertyID::WrapMethodKey:
+        config.Keys.WordWrap = std::get<AppCUI::Input::Key>(value);
+        return true;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
@@ -1344,6 +1351,8 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
         { BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
         { BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
+        // shortcuts
+        { BT(PropertyID::WrapMethodKey), "Shortcuts", "Change wrap method", PropertyType::Key },
     };
 }
 #undef BT
