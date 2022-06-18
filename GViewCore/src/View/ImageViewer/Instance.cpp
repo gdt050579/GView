@@ -168,6 +168,10 @@ bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
 }
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
 std::string_view Instance::GetName()
 {
     return this->name;

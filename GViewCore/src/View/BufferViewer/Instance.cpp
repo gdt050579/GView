@@ -329,13 +329,14 @@ void Instance::MoveToZone(bool startOfZone, bool select)
     }
 }
 
-void Instance::ShowGoToDialog()
+bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
     }
+    return true;
 }
 
 void Instance::ResetStringInfo()

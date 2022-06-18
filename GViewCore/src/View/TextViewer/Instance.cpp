@@ -1180,7 +1180,7 @@ bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
 }
-void Instance::ShowGoToDialog()
+bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
     if (dlg.Show() == (int) Dialogs::Result::Ok)
@@ -1194,6 +1194,7 @@ void Instance::ShowGoToDialog()
             GoTo(dlg.GetFileOffset());
         }
     }
+    return true;
 }
 std::string_view Instance::GetName()
 {
