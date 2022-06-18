@@ -90,9 +90,11 @@ bool GView::App::ResetConfiguration()
     }
 
     // generic GView settings
-    ini["GView"]["CacheSize"]    = 0x100000;
-    ini["GView"]["ChangeView"]   = Key::F4;
-    ini["GView"]["SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["CacheSize"]        = 0x100000;
+    ini["GView"]["Key.ChangeView"]   = Key::F4;
+    ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["Key.GoTo"]         = Key::F5;
+    ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());

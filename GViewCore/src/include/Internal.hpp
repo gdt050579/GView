@@ -306,7 +306,13 @@ namespace App
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
-        AppCUI::Input::Key keyToChangeViews, keyToSwitchToView;
+        struct
+        {
+            AppCUI::Input::Key changeViews;
+            AppCUI::Input::Key switchToView;
+            AppCUI::Input::Key goTo;
+            AppCUI::Input::Key find;
+        } Keys;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -333,13 +339,21 @@ namespace App
         {
             return this->defaultCacheSize;
         }
-        constexpr inline AppCUI::Input::Key GetKeyToChangeViewes() const
+        constexpr inline AppCUI::Input::Key GetChangeViewesKey() const
         {
-            return this->keyToChangeViews;
+            return this->Keys.changeViews;
         }
-        constexpr inline AppCUI::Input::Key GetKeyToSwitchToView() const
+        constexpr inline AppCUI::Input::Key GetSwitchToViewKey() const
         {
-            return this->keyToSwitchToView;
+            return this->Keys.switchToView;
+        }
+        constexpr inline AppCUI::Input::Key GetGoToKey() const
+        {
+            return this->Keys.goTo;
+        }
+        constexpr inline AppCUI::Input::Key GetFindKey() const
+        {
+            return this->Keys.find;
         }
 
         // property interface
