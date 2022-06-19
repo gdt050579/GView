@@ -96,7 +96,7 @@ namespace View
             }
             uint32 GetSelectedImageIndex() const
             {
-                return this->gotoImageIndex;
+                return static_cast<uint32>(resultedPos);                
             }
             uint64 GetFileOffset() const
             {

@@ -16,11 +16,11 @@ GoToDialog::GoToDialog(Reference<SettingsData> settings, uint32 currentImageInde
 
     for (uint32 idx = 0; idx < settings->imgList.size(); idx++)
     {
-        tmp.AddFormat("%d. %u bytes,", idx + 1, static_cast<uint32)(settings->imgList[idx].end - settings->imgList[idx].start)));
+        tmp.AddFormat("%d. %u bytes,", idx + 1, static_cast<uint32>(settings->imgList[idx].end - settings->imgList[idx].start));
     }
 
-    rbImageIndex = Factory::RadioBox::Create(this, "Select &image", "x:1,y:1,w:38", RB_GROUP_ID);
-    cbImageList  = Factory::ComboBox::Create(this, "x:40,y:1,w:16", tmp.GetText());
+    rbImageIndex = Factory::RadioBox::Create(this, "Select &image", "x:1,y:1,w:18", RB_GROUP_ID);
+    cbImageList  = Factory::ComboBox::Create(this, "x:20,y:1,w:36", tmp.GetText());
 
     rbFileOffset = Factory::RadioBox::Create(this, tmp.Format("&File offset (0..%llu)", size), "x:1,y:3,w:38", RB_GROUP_ID);
     txFileOffset = Factory::TextField::Create(this, "0", "x:40,y:3,w:16");
@@ -28,6 +28,7 @@ GoToDialog::GoToDialog(Reference<SettingsData> settings, uint32 currentImageInde
     Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
 
+    cbImageList->SetCurentItemIndex(currentImageIndex);
     rbImageIndex->SetChecked(true);
     UpdateEnableStatus();
 }
@@ -45,47 +46,40 @@ void GoToDialog::Validate()
 {
     LocalString<128> tmp;
     LocalString<256> error;
-    Reference<TextField> input = rbLineNumber->IsChecked() ? txLineNumber : txFileOffset;
-    NumberParseFlags flags     = NumberParseFlags::BaseAuto;
+    NumberParseFlags flags = NumberParseFlags::BaseAuto;
 
-    if (tmp.Set(input->GetText()) == false)
+    if (rbFileOffset->IsChecked())
     {
-        Dialogs::MessageBox::ShowError("Error", "Fail to get the value of the numerical field !");
-        input->SetFocus();
-        return;
-    }
-    auto ofs = Number::ToUInt64(tmp, flags);
-    if (!ofs.has_value())
-    {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Value `%s` is not a valid number !", tmp.GetText()));
-        input->SetFocus();
-        return;
-    }
-
-    // all good
-    auto newPos = ofs.value();
-    gotoLine    = rbLineNumber->IsChecked();
-    // checks in boundery
-    if (rbLineNumber->IsChecked())
-    {
-        if ((newPos > maxLines) || (newPos < 1))
+        if (tmp.Set(txFileOffset->GetText()) == false)
         {
-            Dialogs::MessageBox::ShowError("Error", error.Format("Valid line number are between 1 and %u", maxLines));
-            input->SetFocus();
+            Dialogs::MessageBox::ShowError("Error", "Fail to get the value of the numerical field !");
+            txFileOffset->SetFocus();
             return;
         }
-    }
-    else
-    {
+        auto ofs = Number::ToUInt64(tmp, flags);
+        if (!ofs.has_value())
+        {
+            Dialogs::MessageBox::ShowError("Error", error.Format("Value `%s` is not a valid number !", tmp.GetText()));
+            txFileOffset->SetFocus();
+            return;
+        }
+
+        // all good
+        auto newPos = ofs.value();
         if (newPos >= maxSize)
         {
             Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%llu` is bigger than the offset size: `%llu`", newPos, maxSize));
-            input->SetFocus();
+            txFileOffset->SetFocus();
             return;
         }
+        gotoImageIndex = false;
+        resultedPos    = newPos;
     }
-    // convert to FileOffset
-    resultedPos = newPos;
+    else
+    {
+        gotoImageIndex = true;
+        resultedPos    = cbImageList->GetCurrentItemIndex();
+    }
     Exit(Dialogs::Result::Ok);
 }
 
