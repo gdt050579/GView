@@ -624,7 +624,7 @@ bool PEFile::BuildExport()
         item.Ordinal = exportOrdinal;
         if (GView::Utils::Demangle(exportName, item.Name) == false)
         {
-            item.Name.Set(exportName.data(), exportName.size());
+            item.Name.Set(exportName.data(), (uint32) exportName.size());
         }
     }
 
