@@ -774,6 +774,7 @@ namespace Type
             bool hdr64;
             bool isMetroApp;
             bool hasTLS;
+            bool hasOverlay;
 
             std::string_view ReadString(uint32 RVA, uint32 maxSize);
             bool ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxSize);

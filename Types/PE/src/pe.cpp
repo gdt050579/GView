@@ -9,6 +9,8 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+constexpr auto OVERLAY_BOOKMARK_VALUE = 0;
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
@@ -39,8 +41,13 @@ extern "C"
         if (pe->nrSections > 0)
             settings.AddZone(pe->sectStart, pe->nrSections * sizeof(PE::ImageSectionHeader), pe->peCols.colSectDef, "SectDef");
 
+        if (pe->hasOverlay)
+        {
+            settings.AddBookmark(OVERLAY_BOOKMARK_VALUE, pe->computedSize);
+        }
+
         // sections
-        for (uint32_t tr = 0; tr < pe->nrSections; tr++)
+        for (uint32 tr = 0; tr < pe->nrSections; tr++)
         {
             if ((pe->sect[tr].PointerToRawData != 0) && (pe->sect[tr].SizeOfRawData > 0))
             {
@@ -57,7 +64,7 @@ extern "C"
         {
             if ((dr->VirtualAddress > 0) && (dr->Size > 0))
             {
-                if (tr == (uint8_t) PE::DirectoryType::Security)
+                if (tr == (uint8) PE::DirectoryType::Security)
                 {
                     settings.AddZone(dr->VirtualAddress, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
                 }

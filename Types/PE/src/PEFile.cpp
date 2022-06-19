@@ -1647,6 +1647,8 @@ bool PEFile::Update()
         }
     }
 
+    hasOverlay = computedSize < obj->GetData().GetSize();
+
     // Default panels
     ADD_PANEL(Panels::IDs::Information);
     ADD_PANEL(Panels::IDs::Directories);
