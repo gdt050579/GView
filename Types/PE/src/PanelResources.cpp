@@ -24,7 +24,7 @@ Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<G
                 "n:File &Ofs,a:r,w:10",
                 "n:&Size,a:r,w:10",
                 "n:&CodePage,w:10",
-                "n:&Language,w:18",
+                "n:&Language,w:30",
           },
           ListViewFlags::None);
 
