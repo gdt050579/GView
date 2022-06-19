@@ -172,6 +172,23 @@ namespace Type
                 return &Pairs[index].Unicode[0];
             }
         };
+
+        struct WinCertificate
+        {
+            uint32 dwLength;
+            uint16 wRevision;
+            uint16 wCertificateType; // WIN_CERT_TYPE_xxx
+            uint8 bCertificate[__ANYSIZE_ARRAY];
+        };
+
+        constexpr auto __WIN_CERT_REVISION_1_0 = 0x0100;
+        constexpr auto __WIN_CERT_REVISION_2_0 = 0x0200;
+
+        constexpr auto __WIN_CERT_TYPE_X509             = 0x0001; // bCertificate contains an X.509 Certificate
+        constexpr auto __WIN_CERT_TYPE_PKCS_SIGNED_DATA = 0x0002; // bCertificate contains a PKCS SignedData structure
+        constexpr auto __WIN_CERT_TYPE_RESERVED_1       = 0x0003; // Reserved
+        constexpr auto __WIN_CERT_TYPE_TS_STACK_SIGNED  = 0x0004; // Terminal Server Protocol Stack Certificate signing
+
         struct Guid
         {
             uint32 Data1;
@@ -610,7 +627,7 @@ namespace Type
             Export        = 0,
             Import        = 1,
             Resource      = 2,
-            Excption      = 3,
+            Exception     = 3,
             Security      = 4,
             BaseRelloc    = 5,
             Debug         = 6,
@@ -827,6 +844,7 @@ namespace Type
                 int32 iconSize = 0;
 
                 void UpdateGeneralInformation();
+                void SetCertificate();
                 void ChooseIcon();
                 void UpdateIssues();
                 void RecomputePanelsPositions();

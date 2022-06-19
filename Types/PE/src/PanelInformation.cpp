@@ -20,7 +20,7 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::PE::P
 void Information::UpdateGeneralInformation()
 {
     ListViewItem item;
-    LocalString<256> tempStr;
+    LocalString<256> tmp;
     NumericFormatter n;
 
     general->DeleteAllItems();
@@ -28,22 +28,17 @@ void Information::UpdateGeneralInformation()
     item.SetType(ListViewItem::Type::Category);
     general->AddItem({ "File", object->GetName() });
 
-    //  size
     general->AddItem(
-          { "Size",
-            tempStr.Format("%s bytes", n.ToString(pe->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
-    // computed
-    general->AddItem({ "Computed", tempStr.Format("%llu (0x%llX) bytes", pe->computedSize, pe->computedSize) });
-    // cert
-    general->AddItem({ "Computed(Cert)", tempStr.Format("%llu (0x%llX) bytes", pe->computedWithCertificate, pe->computedWithCertificate) });
-    // memory
-    general->AddItem({ "Memory", tempStr.Format("%llu (0x%llX) bytes", pe->virtualComputedSize, pe->virtualComputedSize) });
+          { "Size", tmp.Format("%s bytes", n.ToString(pe->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
+    general->AddItem({ "Computed", tmp.Format("%llu (0x%llX) bytes", pe->computedSize, pe->computedSize) });
+    general->AddItem({ "Computed(Cert)", tmp.Format("%llu (0x%llX) bytes", pe->computedWithCertificate, pe->computedWithCertificate) });
+    general->AddItem({ "Memory", tmp.Format("%llu (0x%llX) bytes", pe->virtualComputedSize, pe->virtualComputedSize) });
 
     if (pe->computedSize < pe->obj->GetData().GetSize()) // overlay
     {
         const auto sz = pe->obj->GetData().GetSize() - pe->computedSize;
         item          = general->AddItem(
-              { "Overlay", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
+              { "Overlay", tmp.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
         item.SetXOffset(2);
         item.SetType(ListViewItem::Type::WarningInformation);
     }
@@ -51,18 +46,18 @@ void Information::UpdateGeneralInformation()
     {
         const auto sz = pe->computedSize - pe->obj->GetData().GetSize();
         item          = general->AddItem(
-              { "Missing", tempStr.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
+              { "Missing", tmp.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
         item.SetXOffset(2);
         item.SetType(ListViewItem::Type::ErrorInformation);
     }
 
     // type
     if (pe->isMetroApp)
-        general->AddItem({ "Type", tempStr.Format("Metro APP (%s)", pe->GetSubsystem().data()) });
+        general->AddItem({ "Type", tmp.Format("Metro APP (%s)", pe->GetSubsystem().data()) });
     else if ((pe->nth32.FileHeader.Characteristics & __IMAGE_FILE_DLL) != 0)
-        general->AddItem({ "Type", tempStr.Format("DLL (%s)", pe->GetSubsystem().data()) });
+        general->AddItem({ "Type", tmp.Format("DLL (%s)", pe->GetSubsystem().data()) });
     else
-        general->AddItem({ "Type", tempStr.Format("EXE (%s)", pe->GetSubsystem().data()) });
+        general->AddItem({ "Type", tmp.Format("EXE (%s)", pe->GetSubsystem().data()) });
 
     // machine
     general->AddItem({ "Machine", pe->GetMachine() });
@@ -88,38 +83,7 @@ void Information::UpdateGeneralInformation()
         }
     }
 
-    // certificat
-    // if ((pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].Size > sizeof(WinCertificate)) &&
-    //    (pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress > 0))
-    //{
-    //    WinCertificate cert;
-    //    if (pe->obj->GetData().CopyToBuffer(pe->dirs[__IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress, sizeof(cert), &cert))
-    //    {
-    //        switch (cert.wCertificateType)
-    //        {
-    //        case __WIN_CERT_TYPE_X509:
-    //            tempStr.Set("X.509");
-    //            break;
-    //        case __WIN_CERT_TYPE_PKCS_SIGNED_DATA:
-    //            tempStr.Set("PKCS SignedData");
-    //            break;
-    //        case __WIN_CERT_TYPE_RESERVED_1:
-    //            tempStr.Set("Reserved");
-    //            break;
-    //        case __WIN_CERT_TYPE_TS_STACK_SIGNED:
-    //            tempStr.Set("Terminal Server Protocol Stack");
-    //            break;
-    //        default:
-    //            tempStr.Set("Unknown !!");
-    //            break;
-    //        };
-    //        // tempStr.AddFormatedEx(" (0x%X), Revision:0x%X", cert.wCertificateType, cert.wRevision);
-    //        tempStr.AddFormatedEx(" (0x%{uint16,hex}), Revision:0x%{uint16,hex}", cert.wCertificateType, cert.wRevision);
-    //        general->AddItem("Certificate");
-    //        general->SetItemColor(poz, SC(3 + 8, 0) | GLib::Constants::Colors::TransparentBackground);
-    //        general->SetItemText(poz++, 1, tempStr.GetText());
-    //    }
-    //}
+    SetCertificate();
 
     if (pe->Ver.GetNrItems() > 0)
     {
@@ -133,6 +97,43 @@ void Information::UpdateGeneralInformation()
     }
 
     ChooseIcon();
+}
+
+void Information::SetCertificate()
+{
+    LocalString<256> tmp;
+    NumericFormatter n;
+
+    const auto secVA = pe->dirs[(uint8) DirectoryType::Security].VirtualAddress;
+    if ((pe->dirs[(uint8) DirectoryType::Security].Size > sizeof(WinCertificate)) && (secVA > 0))
+    {
+        WinCertificate cert{};
+        if (pe->obj->GetData().Copy<WinCertificate>(secVA, cert))
+        {
+            switch (cert.wCertificateType)
+            {
+            case __WIN_CERT_TYPE_X509:
+                tmp.Set("X.509");
+                break;
+            case __WIN_CERT_TYPE_PKCS_SIGNED_DATA:
+                tmp.Set("PKCS SignedData");
+                break;
+            case __WIN_CERT_TYPE_RESERVED_1:
+                tmp.Set("Reserved");
+                break;
+            case __WIN_CERT_TYPE_TS_STACK_SIGNED:
+                tmp.Set("Terminal Server Protocol Stack");
+                break;
+            default:
+                tmp.Set("Unknown !!");
+                break;
+            };
+
+            tmp.AddFormat(" (0x%s)", n.ToString(cert.wCertificateType, { NumericFormatFlags::None, 10, 3, ',' }).data());
+            tmp.AddFormat(", Revision: 0x%s", n.ToString(cert.wRevision, { NumericFormatFlags::None, 10, 3, ',' }).data());
+            general->AddItem({ "Certificate", tmp }).SetType(ListViewItem::Type::Emphasized_1);
+        }
+    }
 }
 
 void Information::ChooseIcon()
