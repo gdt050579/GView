@@ -173,6 +173,14 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             }
             return true;
         }
+        if (ID == CMD_FIND)
+        {
+            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
+            }
+            return true;
+        }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
             horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
