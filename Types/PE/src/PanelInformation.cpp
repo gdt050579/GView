@@ -10,9 +10,9 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::PE::P
     pe     = _pe;
 
     general   = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:30", "n:Value,w:100" }, ListViewFlags::None);
-    issues    = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
     imageView = Factory::ImageView::Create(this, "Icon", "x:0,y:11,w:100%,h:16", ViewerFlags::Border);
     imageView->SetVisible(false);
+    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     Update();
 }
@@ -65,7 +65,7 @@ void Information::UpdateGeneralInformation()
     {
         format = "EXE (%s)";
     }
-    general->AddItem({ "Type", tmp.Format(format.data(), pe->GetSubsystem().data())});
+    general->AddItem({ "Type", tmp.Format(format.data(), pe->GetSubsystem().data()) });
 
     general->AddItem({ "Machine", pe->GetMachine() });
 
@@ -155,7 +155,7 @@ void Information::ChooseIcon()
         if (r.Image.type != PEFile::ImageType::DIB)
             continue;
 
-        if (r.Image.width <= 64 && r.Image.height <= 64)
+        if (r.Image.width >= 20 && r.Image.width <= 64 && r.Image.height >= 20 && r.Image.height <= 64)
         {
             resources.push_back(&r);
         }
@@ -173,12 +173,12 @@ void Information::ChooseIcon()
                       return a->Image.bitsPerPixel < b->Image.bitsPerPixel;
                   }
 
-                  return a->Image.width > b->Image.width;
+                  return a->Image.width < b->Image.width;
               });
 
         const auto r = resources.at(0);
         SetIcon(*r);
-        iconSize = std::min<>(imageView->GetHeight() * 2, (int32) r->Image.height / 2);
+        iconSize = std::min<>(imageView->GetHeight() * 2 - (int32) (issues.IsValid() ? 6 : 0), (int32) r->Image.height / 2);
         imageView->SetVisible(true);
     }
     else
@@ -192,7 +192,7 @@ void Information::ChooseIcon()
                 continue;
 
             SetIcon(r);
-            iconSize = std::min<>(imageView->GetHeight() * 2, (int32) r.Image.height / 2);
+            iconSize = std::min<>(imageView->GetHeight() * 2 - (int32) (issues.IsValid() ? 6 : 0), (int32) r.Image.height / 2);
             imageView->SetVisible(true);
             break;
         }
