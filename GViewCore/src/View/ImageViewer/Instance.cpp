@@ -170,7 +170,20 @@ bool Instance::Select(uint64 offset, uint64 size)
 }
 bool Instance::ShowGoToDialog()
 {
-    NOT_IMPLEMENTED(false);
+    GoToDialog dlg(this->settings.get(), this->currentImageIndex, this->obj->GetData().GetSize());
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        if (dlg.ShouldGoToImage())
+        {
+            this->currentImageIndex = dlg.GetSelectedImageIndex();
+            LoadImage();
+        }
+        else
+        {
+            GoTo(dlg.GetFileOffset());
+        }
+    }
+    return true;
 }
 std::string_view Instance::GetName()
 {

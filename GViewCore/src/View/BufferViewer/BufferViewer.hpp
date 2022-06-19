@@ -185,7 +185,7 @@ namespace View
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-
+            
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
