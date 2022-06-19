@@ -1148,8 +1148,18 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 }
 void Instance::OnUpdateScrollBars()
 {
-    //this->UpdateVScrollBar(static_cast<uint64>(this->Cursor.lineNo+1U), static_cast<uint64>(this->lines.size()));
-    this->UpdateVScrollBar(this->Cursor.pos + 1, this->obj->GetData().GetSize());
+    if (this->lines.size()>0)
+    {
+        const auto& fistLine = this->lines[0];
+        const auto& lastLine = this->lines[this->lines.size() - 1];
+        const auto maxOfs    = lastLine.offset + lastLine.size;
+        auto pos             = std::max<>(this->Cursor.pos, fistLine.offset);        
+        this->UpdateVScrollBar(std::min<>(pos, maxOfs), maxOfs);
+    }
+    else
+    {
+        this->UpdateVScrollBar(0, 0);
+    }
 }
 void Instance::SetWrapMethod(WrapMethod method)
 {
