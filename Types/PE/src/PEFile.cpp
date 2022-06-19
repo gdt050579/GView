@@ -267,7 +267,9 @@ std::string_view PEFile::ReadString(uint32 RVA, uint32 maxSize)
     auto p = buf.begin();
     auto e = buf.end();
     while ((p < e) && (*p))
+    {
         p++;
+    }
     return std::string_view{ reinterpret_cast<const char*>(buf.GetData()), static_cast<size_t>(p - buf.GetData()) };
 }
 
@@ -617,7 +619,9 @@ bool PEFile::BuildExport()
         auto& item   = exp.emplace_back();
         item.RVA     = export_RVA;
         item.Ordinal = exportOrdinal;
-        if (GView::Utils::Demangle(exportName.data(), item.Name) == false)
+        String sanitizedName;
+        CHECK(sanitizedName.Set(exportName.data(), exportName.size()), false, "");
+        if (GView::Utils::Demangle(sanitizedName.GetText(), item.Name) == false)
         {
             item.Name = exportName.data();
         }
