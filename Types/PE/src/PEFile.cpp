@@ -4,19 +4,19 @@ using namespace GView::Type::PE;
 
 struct CV_INFO_PDB20
 {
-    uint32_t CvSignature;   // NBxx
-    uint32_t Offset;        // Always 0 for NB10
-    uint32_t Signature;     // seconds since 01.01.1970
-    uint32_t Age;           // an always-incrementing value
-    uint8_t PdbFileName[1]; // zero terminated string with the name of the PDB file
+    uint32 CvSignature;   // NBxx
+    uint32 Offset;        // Always 0 for NB10
+    uint32 Signature;     // seconds since 01.01.1970
+    uint32 Age;           // an always-incrementing value
+    uint8 PdbFileName[1]; // zero terminated string with the name of the PDB file
 };
 
 struct CV_INFO_PDB70
 {
-    uint32_t CvSignature;
-    Guid Signature;         // unique identifier
-    uint32_t Age;           // an always-incrementing value
-    uint8_t PdbFileName[1]; // zero terminated string with the name of the PDB file
+    uint32 CvSignature;
+    Guid Signature;       // unique identifier
+    uint32 Age;           // an always-incrementing value
+    uint8 PdbFileName[1]; // zero terminated string with the name of the PDB file
 };
 
 #define CV_SIGNATURE_NB10 '01BN'
@@ -285,37 +285,43 @@ bool PEFile::ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxS
     return true;
 }
 
-uint64_t PEFile::RVAtoFilePointer(uint64_t RVA)
+uint64 PEFile::RVAtoFilePointer(uint64 RVA)
 {
-    // uint64_t	sStart;
-    // uint64_t	tr,sectSize;
-    // int		min_sect=-1;
-
-    uint64_t tr;
-    uint64_t fi = 0;
     if (RVA < sect[0].VirtualAddress)
         return PE_INVALID_ADDRESS;
+
+    if (nrSections == 0)
+        return PE_INVALID_ADDRESS;
+
+    uint64 tr;
+    uint64 fi = 0;
     for (tr = 0; tr < nrSections; tr++)
     {
-        if ((RVA < sect[tr].VirtualAddress) && (tr > 0))
+        if (RVA < sect[tr].VirtualAddress && tr > 0)
         {
-            fi = sect[tr - 1].PointerToRawData + (RVA - sect[tr - 1].VirtualAddress);
+            fi = (uint64) sect[tr - 1].PointerToRawData + (RVA - (uint64) sect[tr - 1].VirtualAddress);
             break;
         };
     }
+
     if (tr == nrSections)
-        fi = sect[tr - 1].PointerToRawData + (RVA - sect[tr - 1].VirtualAddress);
+    {
+        fi = (uint64) sect[tr - 1].PointerToRawData + ((uint64) RVA - (uint64) sect[tr - 1].VirtualAddress);
+    }
+
     return fi;
 }
 
-int PEFile::RVAToSectionIndex(uint64_t RVA)
+int32 PEFile::RVAToSectionIndex(uint64 RVA)
 {
-    uint32_t tr;
-    for (tr = 0; tr < nrSections; tr++)
+    for (auto tr = 0U; tr < nrSections; tr++)
     {
-        if ((RVA >= sect[tr].VirtualAddress) && (RVA < sect[tr].VirtualAddress + sect[tr].Misc.VirtualSize))
+        if ((RVA >= sect[tr].VirtualAddress) && (RVA < (uint64) sect[tr].VirtualAddress + sect[tr].Misc.VirtualSize))
+        {
             return tr;
+        }
     }
+
     return -1;
 }
 
@@ -1136,76 +1142,71 @@ bool PEFile::BuildImport()
 
 bool PEFile::BuildDebugData()
 {
-    uint64_t faddr;
-    uint32_t tr, size, bufSize;
-    ImageDebugDirectory imgd;
-    uint8_t buf[MAX_PDB_NAME + 64];
-    CV_INFO_PDB20* pdb20;
-    CV_INFO_PDB70* pdb70;
-
     debugData.clear();
-    pdb20 = (CV_INFO_PDB20*) &buf[0];
-    pdb70 = (CV_INFO_PDB70*) &buf[0];
     pdbName.Clear();
-    memset(buf, 0, MAX_PDB_NAME + 64);
 
-    auto& dirDebug = dirs[(uint8_t) DirectoryType::Debug];
+    auto& dirDebug = dirs[(uint8) DirectoryType::Debug];
+    CHECK(dirDebug.VirtualAddress != 0, false, "");
 
-    if (dirDebug.VirtualAddress == 0)
-        return false;
+    uint64 faddr;
     if ((faddr = RVAtoFilePointer(dirDebug.VirtualAddress)) == PE_INVALID_ADDRESS)
     {
-        errList.AddError("Invalid RVA for Debug directory (0x%X)", (uint32_t) dirDebug.VirtualAddress);
+        errList.AddError("Invalid RVA for Debug directory (0x%X)", (uint32) dirDebug.VirtualAddress);
         return false;
     }
-    size = dirDebug.Size / sizeof(ImageDebugDirectory);
+
+    const auto size = dirDebug.Size / sizeof(ImageDebugDirectory);
     if (((dirDebug.Size % sizeof(ImageDebugDirectory)) != 0) || (size == 0) || (size > 14))
     {
-        errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32_t) dirDebug.Size);
+        errList.AddWarning("Invalid alignament for Debug directory (0x%X)", (uint32) dirDebug.Size);
     }
-    for (tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory))
+
+    for (auto tr = 0; tr < size; tr++, faddr += sizeof(ImageDebugDirectory))
     {
+        ImageDebugDirectory imgd;
         if (obj->GetData().Copy<ImageDebugDirectory>(faddr, imgd) == false)
         {
-            errList.AddError("Unable to read Debug structure from (0x%X)", (uint32_t) faddr);
+            errList.AddError("Unable to read Debug structure from (0x%X)", (uint32) faddr);
             return false;
         }
+
         if (imgd.Type == __IMAGE_DEBUG_TYPE_CODEVIEW)
         {
+            uint32 bufSize;
             if (imgd.SizeOfData > (MAX_PDB_NAME + 64))
+            {
                 bufSize = (MAX_PDB_NAME + 64);
+            }
             else
+            {
                 bufSize = imgd.SizeOfData;
+            }
 
             auto buf = obj->GetData().Get(imgd.PointerToRawData, bufSize, false);
-            if (buf.GetLength() >= 5) // at least the first 32 bytes
+            if (buf.IsValid() && buf.GetLength() >= 5) // at least the first 32 bytes
             {
-                const char* nm = nullptr;
-                switch (*(uint32_t*) buf.GetData())
+                std::string_view name = "";
+                switch (*(uint32*) buf.GetData())
                 {
                 case CV_SIGNATURE_NB10:
-                    nm = (const char*) pdb20->PdbFileName;
+                    name = std::string_view{ (const char*) ((CV_INFO_PDB20*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
                     break;
                 case CV_SIGNATURE_RSDS:
-                    nm = (const char*) pdb70->PdbFileName;
+                    name = std::string_view{ (const char*) ((CV_INFO_PDB70*) buf.GetData())->PdbFileName, MAX_PDB_NAME };
                     break;
                 default:
-                    errList.AddWarning("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", (*(uint32_t*) buf.GetData()));
+                    errList.AddWarning("Unknwon signature in IMAGE_DEBUG_TYPE_CODEVIEW => %08X", (*(uint32*) buf.GetData()));
                     break;
                 }
-                if (nm)
+
+                if (name.size() > 0)
                 {
-                    const char* e = (const char*) buf.end();
-                    auto* p       = nm;
-                    while ((p < e) && (*p))
-                        p++;
-                    pdbName = std::string_view{ nm, static_cast<size_t>(p - nm) };
+                    pdbName.Set(std::string_view{ name.data(), name.find_first_of('\0') });
                 }
             }
             else
             {
-                errList.AddError(
-                      "Unable to read IMAGE_DEBUG_TYPE_CODEVIEW (%d bytes) from (0x%X)", bufSize, (uint32_t) imgd.PointerToRawData);
+                errList.AddError("Unable to read IMAGE_DEBUG_TYPE_CODEVIEW (%d bytes) from (0x%X)", bufSize, imgd.PointerToRawData);
             }
         }
     }

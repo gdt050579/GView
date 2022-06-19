@@ -2,12 +2,12 @@
 
 #include "GView.hpp"
 
-#define MAX_NR_SECTIONS    256
-#define MAX_DLL_NAME       64
-#define MAX_PDB_NAME       128
-#define MAX_EXPORTFNC_SIZE 128
-#define MAX_IMPORTFNC_SIZE 128
-#define MAX_RES_NAME       64
+constexpr auto MAX_NR_SECTIONS    = 256;
+constexpr auto MAX_DLL_NAME       = 64;
+constexpr auto MAX_PDB_NAME       = 128;
+constexpr auto MAX_EXPORTFNC_SIZE = 128;
+constexpr auto MAX_IMPORTFNC_SIZE = 128;
+constexpr auto MAX_RES_NAME       = 64;
 
 #define MAX_DESCRIPTION_SIZE 256
 #define MAX_VERNAME_SIZE     64
@@ -750,7 +750,7 @@ namespace Type
             uint64 rvaEntryPoint;
             uint64 fileAlign;
             FixSizeString<61> dllName;
-            FixSizeString<125> pdbName;
+            FixSizeString<MAX_PDB_NAME> pdbName;
             ImageSectionHeader sect[MAX_NR_SECTIONS];
             ImageExportDirectory exportDir;
             ImageDataDirectory* dirs;
@@ -794,7 +794,7 @@ namespace Type
             std::string_view GetMachine();
             std::string_view GetSubsystem();
             uint64 RVAtoFilePointer(uint64 RVA);
-            int RVAToSectionIndex(uint64 RVA);
+            int32 RVAToSectionIndex(uint64 RVA);
             uint64 FilePointerToRVA(uint64 fileAddress);
             uint64 FilePointerToVA(uint64 fileAddress);
 

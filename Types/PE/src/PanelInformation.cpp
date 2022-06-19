@@ -40,8 +40,9 @@ void Information::UpdateGeneralInformation()
         item          = general->AddItem(
               { "Overlay", tmp.Format("%lld (0x%llX) [%3d%%] bytes", sz, sz, (uint64_t) ((sz * 100) / pe->obj->GetData().GetSize())) });
         item.SetXOffset(2);
-        item.SetType(ListViewItem::Type::WarningInformation);
+        item.SetType(ListViewItem::Type::Emphasized_1);
     }
+
     if (pe->computedSize > pe->obj->GetData().GetSize()) // Missing
     {
         const auto sz = pe->computedSize - pe->obj->GetData().GetSize();
@@ -51,26 +52,31 @@ void Information::UpdateGeneralInformation()
         item.SetType(ListViewItem::Type::ErrorInformation);
     }
 
-    // type
+    std::string_view format;
     if (pe->isMetroApp)
-        general->AddItem({ "Type", tmp.Format("Metro APP (%s)", pe->GetSubsystem().data()) });
+    {
+        format = "Metro APP (%s)";
+    }
     else if ((pe->nth32.FileHeader.Characteristics & __IMAGE_FILE_DLL) != 0)
-        general->AddItem({ "Type", tmp.Format("DLL (%s)", pe->GetSubsystem().data()) });
+    {
+        format = "DLL (%s)";
+    }
     else
-        general->AddItem({ "Type", tmp.Format("EXE (%s)", pe->GetSubsystem().data()) });
+    {
+        format = "EXE (%s)";
+    }
+    general->AddItem({ "Type", tmp.Format(format.data(), pe->GetSubsystem().data())});
 
-    // machine
     general->AddItem({ "Machine", pe->GetMachine() });
 
-    // export Name
     if (pe->dllName)
     {
         general->AddItem({ "ExportName", pe->dllName }).SetType(ListViewItem::Type::Emphasized_1);
     }
-    // pdb folder
+
     if (pe->pdbName)
     {
-        general->AddItem({ "PDB File", pe->pdbName });
+        general->AddItem({ "PDB File", pe->pdbName }).SetColor(ColorPair{ Color::Pink, Color::Transparent });
     }
 
     // verific si language-ul
