@@ -36,6 +36,7 @@ void Panels::Resources::Update()
     NumericFormatter n;
 
     list->DeleteAllItems();
+
     for (auto& r : pe->res)
     {
         auto nm = PEFile::ResourceIDToName(r.Type).data();

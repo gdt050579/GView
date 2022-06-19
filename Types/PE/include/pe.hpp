@@ -824,9 +824,10 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
                 Reference<AppCUI::Controls::ImageView> imageView;
-                bool hasIcon = false;
+                int32 iconSize = 0;
 
                 void UpdateGeneralInformation();
+                void ChooseIcon();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
                 void SetIcon(const PEFile::ResourceInformation& ri);

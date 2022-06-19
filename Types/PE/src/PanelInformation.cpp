@@ -12,6 +12,7 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::PE::P
     general   = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:30", "n:Value,w:100" }, ListViewFlags::None);
     issues    = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
     imageView = Factory::ImageView::Create(this, "Icon", "x:0,y:11,w:100%,h:16", ViewerFlags::Border);
+    imageView->SetVisible(false);
 
     Update();
 }
@@ -119,6 +120,7 @@ void Information::UpdateGeneralInformation()
     //        general->SetItemText(poz++, 1, tempStr.GetText());
     //    }
     //}
+
     if (pe->Ver.GetNrItems() > 0)
     {
         general->AddItem("Version").SetType(ListViewItem::Type::Category);
@@ -130,8 +132,14 @@ void Information::UpdateGeneralInformation()
         }
     }
 
-    bool has32 = false;
-    bool has64 = false;
+    ChooseIcon();
+}
+
+void Information::ChooseIcon()
+{
+    CHECKRET(imageView.IsValid() && imageView->IsVisible() == false, "");
+
+    std::vector<PEFile::ResourceInformation*> resources;
     for (auto& r : pe->res)
     {
         if (r.Type != ResourceType::Icon)
@@ -140,44 +148,45 @@ void Information::UpdateGeneralInformation()
         if (r.Image.type != PEFile::ImageType::DIB)
             continue;
 
-        if (r.Image.width == 32 && r.Image.height == 32)
+        if (r.Image.width <= 64 && r.Image.height <= 64)
         {
-            has32 = true;
-        }
-
-        if (r.Image.width == 64 && r.Image.height == 64)
-        {
-            has64 = true;
+            resources.push_back(&r);
         }
     }
 
-    this->imageView->SetVisible(false);
-    const auto iconIndex = -1;
-    for (auto& r : pe->res)
+    if (resources.empty() == false)
     {
-        if (r.Type != ResourceType::Icon)
-            continue;
+        std::sort(
+              resources.begin(),
+              resources.end(),
+              [](PEFile::ResourceInformation* a, PEFile::ResourceInformation* b)
+              {
+                  if (a->Image.width == b->Image.width)
+                  {
+                      return a->Image.bitsPerPixel < b->Image.bitsPerPixel;
+                  }
 
-        if (r.Image.type != PEFile::ImageType::DIB)
-            continue;
+                  return a->Image.width > b->Image.width;
+              });
 
-        this->hasIcon = true;
-
-        if (has32 == false && has64 == false)
+        const auto r = resources.at(0);
+        SetIcon(*r);
+        iconSize = std::min<>(imageView->GetHeight() * 2, (int32) r->Image.height / 2);
+        imageView->SetVisible(true);
+    }
+    else
+    {
+        for (auto& r : pe->res)
         {
-            SetIcon(r);
-            break;
-        }
+            if (r.Type != ResourceType::Icon)
+                continue;
 
-        if (r.Image.width == 32 && r.Image.height == 32 && has64 == false)
-        {
-            SetIcon(r);
-            break;
-        }
+            if (r.Image.type != PEFile::ImageType::DIB)
+                continue;
 
-        if (r.Image.width == 64 && r.Image.height == 64)
-        {
             SetIcon(r);
+            iconSize = std::min<>(imageView->GetHeight() * 2, (int32) r.Image.height / 2);
+            imageView->SetVisible(true);
             break;
         }
     }
@@ -191,22 +200,20 @@ void Information::UpdateIssues()
 
 void Information::RecomputePanelsPositions()
 {
-    int py   = 0;
-    int last = 0;
-    int w    = this->GetWidth();
-    int h    = this->GetHeight();
-
-    int iconSize = 0;
-    if (hasIcon)
-    {
-        iconSize = imageView->GetHeight();
-    }
+    int32 py   = 0;
+    int32 last = 0;
+    int32 w    = this->GetWidth();
+    int32 h    = this->GetHeight();
 
     if ((!general.IsValid()) || (!issues.IsValid()))
+    {
         return;
+    }
+
     if (this->issues->IsVisible())
+    {
         last = 1;
-    // if (InfoPanelCtx.pnlIcon->IsVisible()) last = 3;
+    }
 
     // resize
     if (last == 0)
@@ -249,8 +256,9 @@ void Information::RecomputePanelsPositions()
         }
     }
 
-    if (this->imageView && hasIcon)
+    if (imageView.IsValid() && imageView->IsVisible())
     {
+        imageView->Resize(imageView->GetWidth(), iconSize);
         this->imageView->MoveTo(this->general->GetX(), this->general->GetHeight());
     }
 }
