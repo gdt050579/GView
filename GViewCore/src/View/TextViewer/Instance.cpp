@@ -111,7 +111,8 @@ class CharacterStream
     }
 };
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj  = _obj;
     this->name = _name;
@@ -1144,6 +1145,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     }
     return false;
+}
+void Instance::OnUpdateScrollBars()
+{
+    this->UpdateVScrollBar(static_cast<uint64>(this->Cursor.lineNo+1U), static_cast<uint64>(this->lines.size()));
 }
 void Instance::SetWrapMethod(WrapMethod method)
 {

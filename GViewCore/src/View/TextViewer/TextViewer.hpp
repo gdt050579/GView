@@ -156,6 +156,7 @@ namespace View
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             virtual void OnStart() override;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
+            virtual void OnUpdateScrollBars() override;
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
