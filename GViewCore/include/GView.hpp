@@ -134,7 +134,7 @@ namespace Utils
         Itanium,
         Rust,
     };
-    CORE_EXPORT bool Demangle(const char* input, String& output, DemangleKind format = DemangleKind::Auto);
+    CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
 } // namespace Utils
 

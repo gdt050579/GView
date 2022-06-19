@@ -262,14 +262,17 @@ std::string_view PEFile::ReadString(uint32 RVA, uint32 maxSize)
     const auto fa = RVAtoFilePointer(RVA);
     auto buf      = obj->GetData().Get(fa, maxSize, true);
     if (buf.IsValid() == false || buf.Empty())
+    {
         return std::string_view{};
+    }
 
-    auto p = buf.begin();
-    auto e = buf.end();
-    while ((p < e) && (*p))
+    auto p       = buf.begin();
+    const auto e = buf.end();
+    while ((p < e) && (*p) && isprint(*p) != 0)
     {
         p++;
     }
+
     return std::string_view{ reinterpret_cast<const char*>(buf.GetData()), static_cast<size_t>(p - buf.GetData()) };
 }
 
@@ -619,11 +622,9 @@ bool PEFile::BuildExport()
         auto& item   = exp.emplace_back();
         item.RVA     = export_RVA;
         item.Ordinal = exportOrdinal;
-        String sanitizedName;
-        CHECK(sanitizedName.Set(exportName.data(), exportName.size()), false, "");
-        if (GView::Utils::Demangle(sanitizedName.GetText(), item.Name) == false)
+        if (GView::Utils::Demangle(exportName, item.Name) == false)
         {
-            item.Name = exportName.data();
+            item.Name.Set(exportName.data(), exportName.size());
         }
     }
 
