@@ -4,7 +4,6 @@ using namespace GView::Type::PE;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-
 Panels::Icons::Icons(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("I&cons")
 {
     pe  = _pe;
@@ -18,6 +17,7 @@ Panels::Icons::Icons(Reference<GView::Type::PE::PEFile> _pe, Reference<GView::Vi
     UpdateCurrentIcon();
     this->iconsList->SetFocus();
 }
+
 void Panels::Icons::Update()
 {
     LocalString<128> temp;
@@ -29,25 +29,27 @@ void Panels::Icons::Update()
     {
         if (r.Type != ResourceType::Icon)
             continue;
-        if (pe->GetResourceImageInformation(r,temp))
-            this->iconsList->AddItem<PEFile::ResourceInformation>(temp, &r);        
+        if (pe->GetResourceImageInformation(r, temp))
+            this->iconsList->AddItem<PEFile::ResourceInformation>(temp, &r);
     }
 }
+
 void Panels::Icons::UpdateCurrentIcon()
 {
     if (this->iconsList->GetCurrentItemIndex() != AppCUI::Controls::ComboBox::NO_ITEM_SELECTED)
     {
         auto res = this->iconsList->GetCurrentItemUserData<PEFile::ResourceInformation>();
         AppCUI::Graphics::Image img;
-        if (pe->LoadIcon(res,img))
+        if (pe->LoadIcon(res, img))
         {
-            this->imageView->SetImage(img, ImageRenderingMethod::PixelTo16ColorsSmallBlock,ImageScaleMethod::NoScale);
+            this->imageView->SetImage(img, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
             this->imageView->SetVisible(true);
             return;
         }
     }
     this->imageView->SetVisible(false);
 }
+
 bool Panels::Icons::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))

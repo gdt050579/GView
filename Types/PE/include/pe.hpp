@@ -2,12 +2,12 @@
 
 #include "GView.hpp"
 
-#define MAX_NR_SECTIONS    256
-#define MAX_DLL_NAME       64
-#define MAX_PDB_NAME       128
-#define MAX_EXPORTFNC_SIZE 128
-#define MAX_IMPORTFNC_SIZE 128
-#define MAX_RES_NAME       64
+constexpr auto MAX_NR_SECTIONS    = 256;
+constexpr auto MAX_DLL_NAME       = 64;
+constexpr auto MAX_PDB_NAME       = 128;
+constexpr auto MAX_EXPORTFNC_SIZE = 128;
+constexpr auto MAX_IMPORTFNC_SIZE = 128;
+constexpr auto MAX_RES_NAME       = 64;
 
 #define MAX_DESCRIPTION_SIZE 256
 #define MAX_VERNAME_SIZE     64
@@ -172,6 +172,23 @@ namespace Type
                 return &Pairs[index].Unicode[0];
             }
         };
+
+        struct WinCertificate
+        {
+            uint32 dwLength;
+            uint16 wRevision;
+            uint16 wCertificateType; // WIN_CERT_TYPE_xxx
+            uint8 bCertificate[__ANYSIZE_ARRAY];
+        };
+
+        constexpr auto __WIN_CERT_REVISION_1_0 = 0x0100;
+        constexpr auto __WIN_CERT_REVISION_2_0 = 0x0200;
+
+        constexpr auto __WIN_CERT_TYPE_X509             = 0x0001; // bCertificate contains an X.509 Certificate
+        constexpr auto __WIN_CERT_TYPE_PKCS_SIGNED_DATA = 0x0002; // bCertificate contains a PKCS SignedData structure
+        constexpr auto __WIN_CERT_TYPE_RESERVED_1       = 0x0003; // Reserved
+        constexpr auto __WIN_CERT_TYPE_TS_STACK_SIGNED  = 0x0004; // Terminal Server Protocol Stack Certificate signing
+
         struct Guid
         {
             uint32 Data1;
@@ -610,7 +627,7 @@ namespace Type
             Export        = 0,
             Import        = 1,
             Resource      = 2,
-            Excption      = 3,
+            Exception     = 3,
             Security      = 4,
             BaseRelloc    = 5,
             Debug         = 6,
@@ -733,7 +750,7 @@ namespace Type
             uint64 rvaEntryPoint;
             uint64 fileAlign;
             FixSizeString<61> dllName;
-            FixSizeString<125> pdbName;
+            FixSizeString<MAX_PDB_NAME> pdbName;
             ImageSectionHeader sect[MAX_NR_SECTIONS];
             ImageExportDirectory exportDir;
             ImageDataDirectory* dirs;
@@ -757,6 +774,7 @@ namespace Type
             bool hdr64;
             bool isMetroApp;
             bool hasTLS;
+            bool hasOverlay;
 
             std::string_view ReadString(uint32 RVA, uint32 maxSize);
             bool ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxSize);
@@ -777,7 +795,7 @@ namespace Type
             std::string_view GetMachine();
             std::string_view GetSubsystem();
             uint64 RVAtoFilePointer(uint64 RVA);
-            int RVAToSectionIndex(uint64 RVA);
+            int32 RVAToSectionIndex(uint64 RVA);
             uint64 FilePointerToRVA(uint64 fileAddress);
             uint64 FilePointerToVA(uint64 fileAddress);
 
@@ -823,10 +841,15 @@ namespace Type
                 Reference<GView::Type::PE::PEFile> pe;
                 Reference<AppCUI::Controls::ListView> general;
                 Reference<AppCUI::Controls::ListView> issues;
+                Reference<AppCUI::Controls::ImageView> imageView;
+                int32 iconSize = 0;
 
                 void UpdateGeneralInformation();
+                void SetCertificate();
+                void ChooseIcon();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
+                void SetIcon(const PEFile::ResourceInformation& ri);
 
               public:
                 Information(Reference<Object> _object, Reference<GView::Type::PE::PEFile> pe);
