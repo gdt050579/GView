@@ -87,6 +87,10 @@ bool Instance::ShowGoToDialog()
 {
     NOT_IMPLEMENTED(false);
 }
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
 
 std::string_view Instance::GetName()
 {
