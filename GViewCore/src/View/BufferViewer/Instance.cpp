@@ -339,6 +339,10 @@ bool Instance::ShowGoToDialog()
     }
     return true;
 }
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
 
 void Instance::ResetStringInfo()
 {
