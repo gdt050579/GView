@@ -1724,6 +1724,7 @@ bool PEFile::BuildSymbols()
     CHECK(obj->GetData().Copy(strTableOffset, strTableSize), false, "");
     CHECK(strTableSize != 0, false, "");
     const auto stringsBuffer = this->obj->GetData().CopyToBuffer(strTableOffset, strTableSize);
+    CHECK(stringsBuffer.IsValid(), false, "");
 
     this->symbols.reserve(symbolsNo);
     for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++)
