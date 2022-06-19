@@ -257,11 +257,13 @@ PEFile::PEFile()
     panelsMask = 0;
 }
 
-std::string_view PEFile::ReadString(uint32_t RVA, uint32 maxSize)
+std::string_view PEFile::ReadString(uint32 RVA, uint32 maxSize)
 {
-    auto buf = obj->GetData().Get(RVAtoFilePointer(RVA), maxSize, false);
-    if (buf.Empty())
+    const auto fa = RVAtoFilePointer(RVA);
+    auto buf      = obj->GetData().Get(fa, maxSize, true);
+    if (buf.IsValid() == false || buf.Empty())
         return std::string_view{};
+
     auto p = buf.begin();
     auto e = buf.end();
     while ((p < e) && (*p))
