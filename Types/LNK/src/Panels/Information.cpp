@@ -90,7 +90,8 @@ void Information::UpdateGeneralInformation()
         lusb.Set(data);
         std::string path;
         lusb.ToString(path);
-        general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) });
+        size_t n = std::count(path.begin(), path.end(), '\n');
+        general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) }).SetHeight((uint32) n + 1);
     }
 }
 
@@ -102,7 +103,13 @@ void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
-    general->Resize(GetWidth(), std::min<>(this->GetHeight(), (int) general->GetItemsCount() + 3));
+    auto height = 0;
+    for (auto i = 0U; i < general->GetItemsCount(); i++)
+    {
+        height += general->GetItem(i).GetHeight();
+    }
+
+    general->Resize(GetWidth(), std::min<>(this->GetHeight(), (int) height + 3));
 
     // CHECKRET(general.IsValid() & issues.IsValid(), "");
     // issues->SetVisible(issues->GetItemsCount() > 0);
