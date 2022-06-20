@@ -13,27 +13,28 @@ enum class CommandID
 struct CommandInfo
 {
     CommandID ID;
+#ifdef BUILD_FOR_WINDOWS
+    std::u16string_view name;
+#else
     std::string_view name;
+#endif
 };
 
-struct CommandInfoU16
-{
-    CommandID ID;
-    std::u16string_view name;
-};
+// clang-format off
+#ifdef BUILD_FOR_WINDOWS
+#    define _U(x) (u#x)
+#    define _CHAR16_FROM_WCHAR(x) ((char16*)x)
+#else
+#    define _U(x) (#x)
+#    define _CHAR16_FROM_WCHAR(x) (x)
+#endif
+// clang-format on
 
 CommandInfo commands[] = {
-    { CommandID::Help, "help" },
-    { CommandID::Open, "open" },
-    { CommandID::Reset, "reset" },
-    { CommandID::UpdateConfig, "updateconfig" },
-};
-
-CommandInfoU16 commandsU16[] = {
-    { CommandID::Help, u"help" },
-    { CommandID::Open, u"open" },
-    { CommandID::Reset, u"reset" },
-    { CommandID::UpdateConfig, u"updateconfig" },
+    { CommandID::Help, _U(help) },
+    { CommandID::Open, _U(open) },
+    { CommandID::Reset, _U(reset) },
+    { CommandID::UpdateConfig, _U(updateconfig) },
 };
 
 std::string_view help = R"HELP(
@@ -65,25 +66,13 @@ void ShowHelp()
     std::cout << help << std::endl;
 }
 
-CommandID GetCommandID(const char* name)
+template <typename T>
+CommandID GetCommandID(T name)
 {
     auto cnt = ARRAY_LEN(commands);
     for (size_t idx = 0; idx < cnt; idx++)
     {
-        if (String::Equals(name, commands[idx].name.data()))
-            return commands[idx].ID;
-    }
-
-    // if nothing is recognize
-    return CommandID::Unknown;
-}
-
-CommandID GetCommandID(const wchar_t* name)
-{
-    auto cnt = ARRAY_LEN(commands);
-    for (size_t idx = 0; idx < cnt; idx++)
-    {
-        if (commandsU16[idx].name == (char16*) name)
+        if (commands[idx].name == _CHAR16_FROM_WCHAR(name))
             return commands[idx].ID;
     }
 
