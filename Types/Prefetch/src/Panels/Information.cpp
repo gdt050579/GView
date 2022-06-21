@@ -71,7 +71,7 @@ void Information::UpdateHeader()
             break;
         }
     }
-    auto size = std::min<>(nullOffset, maxSize);
+    auto size = std::min<uint64>(nullOffset, maxSize);
     u16sv     = u16string_view{ (char16_t*) &prefetch->header.executableName, size / 2 };
     general->AddItem({ "Executable", u16sv }).SetType(ListViewItem::Type::Emphasized_3);
     general->AddItem({ "Executable Path", prefetch->exePath.c_str() }).SetType(ListViewItem::Type::Emphasized_1);
