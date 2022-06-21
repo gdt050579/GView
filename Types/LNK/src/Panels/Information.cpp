@@ -88,10 +88,9 @@ void Information::UpdateGeneralInformation()
     {
         const auto& typeName = LNK::DataStringTypesNames.at(type);
         lusb.Set(data);
-        std::string path;
-        lusb.ToString(path);
-        size_t n = std::count(path.begin(), path.end(), '\n');
-        general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) }).SetHeight((uint32) n + 1);
+        const auto u16sv    = lusb.ToStringView();
+        size_t newLineCount = std::count(u16sv.begin(), u16sv.end(), u'\n');
+        general->AddItem({ typeName.data(), data }).SetHeight((uint32) newLineCount + 1);
     }
 }
 
