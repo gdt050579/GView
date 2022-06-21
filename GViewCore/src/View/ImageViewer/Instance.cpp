@@ -13,6 +13,8 @@ constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
+    imgView->SetVScrollBarTopMargin(4);
+    imgView->SetHScrollBarLeftMarging(4);
 
     this->obj               = _obj;
     this->name              = _name;
