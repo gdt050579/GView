@@ -9,36 +9,26 @@ CSVFile::CSVFile() : panelsMask(0)
 
 std::string_view CSVFile::CSVFile::GetTypeName()
 {
-    if (separator[0] == ',')
-    {
-        return "CSV";
-    }
-    else if (separator[0] == '\t')
-    {
-        return "TSV";
-    }
-
-    return "Unknown";
+    return "CSV/TSV";
 }
 
-bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
+bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> _obj)
 {
-    this->obj = obj; //GDT: this is already set up
+    this->obj = _obj;
 
     if (this->obj->GetName().ends_with(u".tsv"))
     {
         separator[0] = '\t';
-    }
-    else if (this->obj->GetName().ends_with(u".csv"))
-    {
-        separator[0] = ',';
-    }
-    else
-    {
-        return false;
+        return true;
     }
 
-    return true;
+    if (this->obj->GetName().ends_with(u".csv"))
+    {
+        separator[0] = ',';
+        return true;
+    }
+
+    return false;
 }
 
 bool GView::Type::CSV::CSVFile::HasPanel(Panels::IDs id)
