@@ -656,6 +656,9 @@ void Instance::MoveRight(bool select)
     else
         MoveToStartOfLine(this->Cursor.lineNo + 1, select);
 }
+void Instance::MoveToNextWord(bool select)
+{
+}
 void Instance::MoveDown(uint32 noOfTimes, bool select)
 {
     if (this->lines.size() == 0)
@@ -1053,6 +1056,12 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Right | Key::Shift:
         MoveRight(true);
+        return true;
+    case Key::Right | Key::Ctrl:
+        MoveToNextWord(false);
+        return true;
+    case Key::Right | Key::Ctrl | Key::Shift:
+        MoveToNextWord(true);
         return true;
     case Key::Up:
         MoveUp(1, false);
