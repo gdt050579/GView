@@ -11,22 +11,22 @@ using namespace GView::View;
 using namespace GView::Type::MachO;
 using namespace MAC;
 
-constexpr string_view FAT_ICON = "......................"  // 1
-                                 "......................"  // 2
-                                 "......................"  // 3
-                                 "......................"  // 4
-                                 "WWWWWW.WWWWWWW.WWWWWWW"  // 5
-                                 "WW.....W.....W....W..."  // 6
-                                 "WW.....W.....W....W..."  // 7
-                                 "WWWWWW.WWWWWWW....W..."  // 8
-                                 "WW.....W.....W....W..."  // 9
-                                 "WW.....W.....W....W..."  // 10
-                                 "WW.....W.....W....W..."  // 11
-                                 "......................"  // 12
-                                 "......................"  // 13
-                                 "......................"  // 14
-                                 "......................"  // 15
-                                 "......................"; // 16
+constexpr string_view FAT_ICON = "................"  // 1
+                                 "................"  // 2
+                                 "................"  // 3
+                                 "................"  // 4
+                                 "WWWW.WWWWW.WWWWW"  // 5
+                                 "W....W...W...W.."  // 6
+                                 "W....W...W...W.."  // 7
+                                 "WWWW.WWWWW...W.."  // 8
+                                 "W....W...W...W.."  // 9
+                                 "W....W...W...W.."  // 10
+                                 "W....W...W...W.."  // 11
+                                 "................"  // 12
+                                 "................"  // 13
+                                 "................"  // 14
+                                 "................"  // 15
+                                 "................"; // 16
 
 extern "C"
 {
@@ -35,8 +35,8 @@ extern "C"
         auto dword = buf.GetObject<uint32>();
         CHECK(dword != nullptr, false, "");
         const uint32 magic = dword;
-        const bool isMacho   = magic == MH_MAGIC || magic == MH_CIGAM || magic == MH_MAGIC_64 || magic == MH_CIGAM_64;
-        const bool isFat     = magic == FAT_MAGIC || magic == FAT_CIGAM || magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64;
+        const bool isMacho = magic == MH_MAGIC || magic == MH_CIGAM || magic == MH_MAGIC_64 || magic == MH_CIGAM_64;
+        const bool isFat   = magic == FAT_MAGIC || magic == FAT_CIGAM || magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64;
         CHECK(isMacho || isFat, false, "Magic is [%u]!", magic);
 
         if (isFat)

@@ -88,9 +88,9 @@ void Information::UpdateGeneralInformation()
     {
         const auto& typeName = LNK::DataStringTypesNames.at(type);
         lusb.Set(data);
-        std::string path;
-        lusb.ToString(path);
-        general->AddItem({ typeName.data(), ls.Format("%s", path.c_str()) });
+        const auto u16sv    = lusb.ToStringView();
+        size_t newLineCount = std::count(u16sv.begin(), u16sv.end(), u'\n');
+        general->AddItem({ typeName.data(), data }).SetHeight((uint32) newLineCount + 1);
     }
 }
 
@@ -102,7 +102,13 @@ void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
-    general->Resize(GetWidth(), std::min<>(this->GetHeight(), (int) general->GetItemsCount() + 3));
+    auto height = 0;
+    for (auto i = 0U; i < general->GetItemsCount(); i++)
+    {
+        height += general->GetItem(i).GetHeight();
+    }
+
+    general->Resize(GetWidth(), std::min<>(this->GetHeight(), (int) height + 3));
 
     // CHECKRET(general.IsValid() & issues.IsValid(), "");
     // issues->SetVisible(issues->GetItemsCount() > 0);
