@@ -512,9 +512,9 @@ enum class ClassTypeIndicators : uint8
     Unknown2                  = 0x17,
     CLSID_ShellDesktop_       = 0x1E, // Not seen in wild but reason to believe it exists.
     CLSID_ShellDesktop        = 0x1F, // Root folder shell item
-    CLSID_MyComputer          = 0x20, // Volume shell item -> 0x20 – 0x2f
-    CLSID_ShellFSFolder       = 0x30, // File entry shell item -> 0x30 – 0x3f
-    CLSID_NetworkRoot         = 0x40, // Network location shell item -> 0x40 – 0x4f
+    CLSID_MyComputer          = 0x20, // Volume shell item -> 0x20 ï¿½ 0x2f
+    CLSID_ShellFSFolder       = 0x30, // File entry shell item -> 0x30 ï¿½ 0x3f
+    CLSID_NetworkRoot         = 0x40, // Network location shell item -> 0x40 ï¿½ 0x4f
     CompressedFolderShellItem = 0x52, // Compressed Folder Shell Item
     CLSID_Internet            = 0x61, // URI shell item
     ControlPanel_             = 0x70, // Not seen in wild but reason to believe it exists. Item has no item data at offset 0x04.
@@ -1191,6 +1191,7 @@ struct DataString
 
 enum class ExtraDataSignatures : uint32
 {
+    Unknown                          = 0xA0000000,
     EnvironmentVariablesLocation     = 0xA0000001,
     ConsoleProperties                = 0xA0000002,
     DistributedLinkTrackerProperties = 0xA0000003,
@@ -1205,6 +1206,7 @@ enum class ExtraDataSignatures : uint32
 };
 
 static const std::map<ExtraDataSignatures, std::string_view> ExtraDataSignaturesNames{
+    GET_PAIR_FROM_ENUM(ExtraDataSignatures::Unknown),
     GET_PAIR_FROM_ENUM(ExtraDataSignatures::EnvironmentVariablesLocation),
     GET_PAIR_FROM_ENUM(ExtraDataSignatures::ConsoleProperties),
     GET_PAIR_FROM_ENUM(ExtraDataSignatures::DistributedLinkTrackerProperties),
