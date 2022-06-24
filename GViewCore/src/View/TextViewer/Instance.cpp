@@ -9,6 +9,13 @@ Config Instance::config;
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
+enum class CharType: uint8
+{
+    Letter,
+    Space,
+    Operators,
+    Unknown
+};
 enum class BulletParserState : uint8
 {
     FirstPadding,
@@ -18,7 +25,7 @@ enum class BulletParserState : uint8
 
 class CharacterStream
 {
-    char16 ch;
+    char16 ch, rawCharCode;
     const uint8* start;
     const uint8* pos;
     const uint8* end;
@@ -30,7 +37,23 @@ class CharacterStream
     bool charIsTab;
 
   public:
+    CharacterStream(Reference<SettingsData> _settings)
+    {
+        this->pos           = nullptr;
+        this->start         = this->pos;
+        this->end           = nullptr;
+        this->xPos          = 0;
+        this->nextPos       = 0;
+        this->charIndex     = 0;
+        this->nextCharIndex = 0;
+        this->settings      = _settings;
+    }
     CharacterStream(BufferView buf, uint32 characterIndex, Reference<SettingsData> _settings)
+    {
+        this->settings      = _settings;
+        Init(buf, characterIndex);
+    }
+    void Init(BufferView buf, uint32 characterIndex)
     {
         this->pos           = buf.begin();
         this->start         = this->pos;
@@ -39,7 +62,6 @@ class CharacterStream
         this->nextPos       = 0;
         this->charIndex     = characterIndex;
         this->nextCharIndex = characterIndex;
-        this->settings      = _settings;
     }
     bool Next()
     {
@@ -49,6 +71,7 @@ class CharacterStream
         {
             this->decodingError = false;
             this->ch            = this->ec.GetChar();
+            this->rawCharCode   = this->ch;
             this->charIsTab     = ch == '\t';
             this->pos += this->ec.Length();
             this->xPos      = this->nextPos;
@@ -66,6 +89,7 @@ class CharacterStream
             // conversion error
             this->decodingError = true;
             this->ch            = *this->pos; // binary character
+            this->rawCharCode   = this->ch;
             this->charIsTab     = false;
             this->pos++;
             this->xPos      = this->nextPos++;
@@ -97,6 +121,10 @@ class CharacterStream
     {
         return this->ch;
     }
+    inline char16 GetRawCharCode() const
+    {
+        return this->rawCharCode;
+    }
     inline bool IsTabCharacter() const
     {
         return this->charIsTab;
@@ -110,6 +138,79 @@ class CharacterStream
         return this->decodingError;
     }
 };
+
+class UnicodeLine
+{
+    char16* chars;
+    uint32 count, allocated;
+
+  public:
+    UnicodeLine() : chars(nullptr), count(0), allocated(0)
+    {
+    }
+    bool Create(BufferView buf, Reference<SettingsData> _settings)
+    {
+        // make sure we have enough space
+        if (buf.GetLength()>allocated)
+        {
+            if (chars)
+                delete chars;
+            count                   = 0;
+            allocated               = 0;
+            uint32 newAllocatedSize = (buf.GetLength() & 0xFF) + 1;
+            try
+            {
+                chars = new char16[newAllocatedSize];
+                allocated = newAllocatedSize;
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+        CharacterStream cs(buf, 0, _settings);
+        while (cs.Next())
+        {
+            chars[count++] = cs.GetRawCharCode();
+        }
+        return true;
+    }
+    inline char16 operator[](size_t index) const
+    {
+        return chars[index];
+    }
+    inline uint32 GetCount() const
+    {
+        return count;
+    }
+};
+
+class DataCharacterStream
+{
+    GView::Utils::DataCache& dataCache;
+    std::vector<LineInfo>& lines;
+    Reference<SettingsData> settings;
+    UnicodeLine& cLine;
+    uint32 linesCount;
+
+
+  public:
+    DataCharacterStream(std::vector<LineInfo>& li, Reference<SettingsData> _settings, GView::Utils::DataCache& cache, UnicodeLine& _cLine)
+        : settings(_settings), dataCache(cache), lines(li), cLine(_cLine)
+    {
+        linesCount = static_cast<uint32>(li.size());
+    } 
+    bool Init(uint32 lineNo, uint32 charIndex)
+    {
+        CHECK(lineNo < linesCount, false, "");
+        auto buf = dataCache.Get(lines[lineNo].offset, lines[lineNo].size, false);
+        CHECK(buf.IsValid(), false, "");
+        CHECK(cLine.Create(buf, settings), false, "");
+        return true;
+    }
+};
+
+
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
@@ -658,6 +759,10 @@ void Instance::MoveRight(bool select)
 }
 void Instance::MoveToNextWord(bool select)
 {
+    //DataCharacterStream dcs(this->lines, this->settings.get(), this->obj->GetData());
+    //if (dcs.Init(this->Cursor.lineNo, this->Cursor.charIndex) == false)
+    //    return;
+    
 }
 void Instance::MoveDown(uint32 noOfTimes, bool select)
 {
@@ -1157,12 +1262,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 }
 void Instance::OnUpdateScrollBars()
 {
-    if (this->lines.size()>0)
+    if (this->lines.size() > 0)
     {
         const auto& fistLine = this->lines[0];
         const auto& lastLine = this->lines[this->lines.size() - 1];
         const auto maxOfs    = lastLine.offset + lastLine.size;
-        auto pos             = std::max<>(this->Cursor.pos, fistLine.offset);        
+        auto pos             = std::max<>(this->Cursor.pos, fistLine.offset);
         this->UpdateVScrollBar(std::min<>(pos, maxOfs), maxOfs);
     }
     else
