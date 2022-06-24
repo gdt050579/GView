@@ -9,13 +9,6 @@ Config Instance::config;
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
-enum class CharType: uint8
-{
-    Letter,
-    Space,
-    Operators,
-    Unknown
-};
 enum class BulletParserState : uint8
 {
     FirstPadding,
@@ -50,7 +43,7 @@ class CharacterStream
     }
     CharacterStream(BufferView buf, uint32 characterIndex, Reference<SettingsData> _settings)
     {
-        this->settings      = _settings;
+        this->settings = _settings;
         Init(buf, characterIndex);
     }
     void Init(BufferView buf, uint32 characterIndex)
@@ -150,17 +143,18 @@ class UnicodeLine
     }
     bool Create(BufferView buf, Reference<SettingsData> _settings)
     {
+        count = 0;
         // make sure we have enough space
-        if (buf.GetLength()>allocated)
+        if (buf.GetLength() > allocated)
         {
             if (chars)
                 delete chars;
-            count                   = 0;
+
             allocated               = 0;
-            uint32 newAllocatedSize = (buf.GetLength() & 0xFF) + 1;
+            uint32 newAllocatedSize = (buf.GetLength() | 0xFF) + 1;
             try
             {
-                chars = new char16[newAllocatedSize];
+                chars     = new char16[newAllocatedSize];
                 allocated = newAllocatedSize;
             }
             catch (...)
@@ -185,32 +179,92 @@ class UnicodeLine
     }
 };
 
+UnicodeLine tempLine;
+
+uint8 CharsGroups[128] = { 0, 2, 2, 2, 2, 2, 2,  2,  2,  0,  0,  2,  2,  0,  2,  2,  2,  2,  2,  2,   2,   2,   2,   2,  2, 2,
+                           2, 2, 2, 2, 2, 2, 0,  33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 1,   46,  47,  1,   1,  1, 1,
+                           1, 1, 1, 1, 1, 1, 58, 59, 60, 61, 62, 63, 64, 1,  1,  1,  1,  1,  1,  1,   1,   1,   1,   1,  1, 1,
+                           1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1,  91, 92, 93, 94, 1,  96, 1,   1,   1,   1,   1,  1, 1,
+                           1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  123, 124, 125, 126, 127 };
+uint8 GetCharGroup(char16 ch)
+{
+    if ((ch >= 128) || (ch < 0))
+        return 1; // group for letters
+    return CharsGroups[static_cast<uint8>(ch)];
+}
+
 class DataCharacterStream
 {
     GView::Utils::DataCache& dataCache;
     std::vector<LineInfo>& lines;
     Reference<SettingsData> settings;
-    UnicodeLine& cLine;
     uint32 linesCount;
+    uint32 charIndex;
+    uint32 currentLine;
 
-
-  public:
-    DataCharacterStream(std::vector<LineInfo>& li, Reference<SettingsData> _settings, GView::Utils::DataCache& cache, UnicodeLine& _cLine)
-        : settings(_settings), dataCache(cache), lines(li), cLine(_cLine)
-    {
-        linesCount = static_cast<uint32>(li.size());
-    } 
-    bool Init(uint32 lineNo, uint32 charIndex)
+    bool ConvertLine(uint32 lineNo)
     {
         CHECK(lineNo < linesCount, false, "");
         auto buf = dataCache.Get(lines[lineNo].offset, lines[lineNo].size, false);
-        CHECK(buf.IsValid(), false, "");
-        CHECK(cLine.Create(buf, settings), false, "");
+        CHECK(tempLine.Create(buf, settings), false, "");
+        currentLine = lineNo;
         return true;
     }
+
+  public:
+    DataCharacterStream(std::vector<LineInfo>& li, Reference<SettingsData> _settings, GView::Utils::DataCache& cache)
+        : settings(_settings), dataCache(cache), lines(li)
+    {
+        linesCount  = static_cast<uint32>(li.size());
+        currentLine = 0;
+        charIndex   = 0;
+    }
+    bool Init(uint32 lineNo, uint32 chIndex)
+    {
+        CHECK(ConvertLine(lineNo), false, "");
+        charIndex = chIndex;
+        return true;
+    }
+    char16 GetChar() const
+    {
+        if (charIndex >= tempLine.GetCount())
+            return 0;
+        return tempLine[charIndex];
+    }
+    bool Next()
+    {
+        charIndex++;
+        if (charIndex >= tempLine.GetCount())
+        {
+            // go to next line
+            CHECK(ConvertLine(currentLine + 1), false, "");
+            charIndex = 0;
+        }
+        return true;
+    }
+    bool Previous()
+    {
+        if (charIndex == 0)
+        {
+            CHECK(currentLine > 0, false, "");
+            CHECK(ConvertLine(currentLine - 1), false, "");
+            charIndex = tempLine.GetCount();
+        }
+        else
+        {
+            charIndex--;
+        }
+        return true;
+    }
+    inline uint32 GetLineNumber() const
+    {
+        return this->currentLine;
+    }
+    inline uint32 GetCharIndex() const
+    {
+        return this->charIndex;
+    }
 };
-
-
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
@@ -759,10 +813,15 @@ void Instance::MoveRight(bool select)
 }
 void Instance::MoveToNextWord(bool select)
 {
-    //DataCharacterStream dcs(this->lines, this->settings.get(), this->obj->GetData());
-    //if (dcs.Init(this->Cursor.lineNo, this->Cursor.charIndex) == false)
-    //    return;
-    
+    DataCharacterStream dcs(this->lines, this->settings.get(), this->obj->GetData());
+    if (!dcs.Init(this->Cursor.lineNo, this->Cursor.charIndex))
+        return;
+    auto group = GetCharGroup(dcs.GetChar());
+    auto res   = false;
+    while ((res = dcs.Next()) && (GetCharGroup(dcs.GetChar()) == group))
+    {
+    }
+    MoveTo(dcs.GetLineNumber(), dcs.GetCharIndex(), select);
 }
 void Instance::MoveDown(uint32 noOfTimes, bool select)
 {
