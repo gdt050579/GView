@@ -138,6 +138,7 @@ namespace View
             void MoveDown(uint32 noOfTimes, bool select);
             void MoveUp(uint32 noOfTimes, bool select);
             void MoveScrollDown();
+            void MoveScrollUp();
 
             void UpdateCursor_NoWrap();
             void UpdateCursor_Wrap();

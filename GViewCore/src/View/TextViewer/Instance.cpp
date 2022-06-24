@@ -920,6 +920,36 @@ void Instance::MoveScrollDown()
 
     this->UpdateViewPort();
 }
+void Instance::MoveScrollUp()
+{
+    if (this->HasWordWrap())
+    {
+        if ((this->ViewPort.Start.lineNo == 0) && (this->ViewPort.Start.subLineNo == 0))
+            return;
+        ComputeSubLineIndexes(this->ViewPort.End.lineNo);
+        if ((this->Cursor.lineNo == this->ViewPort.End.lineNo) && (this->Cursor.sublineNo == this->ViewPort.End.subLineNo))
+            MoveUp(1, false);
+        if (this->ViewPort.Start.subLineNo > 0)
+            this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo - 1U, Direction::TopToBottom);
+        else
+        {
+            ComputeSubLineIndexes(this->ViewPort.Start.lineNo - 1);
+            this->ComputeViewPort(
+                  this->ViewPort.Start.lineNo - 1, static_cast<uint32>(this->SubLines.entries.size() - 1), Direction::TopToBottom);
+        }
+    }
+    else
+    {
+        if (this->ViewPort.Start.lineNo > 0)
+        {
+            if (this->Cursor.lineNo == this->ViewPort.End.lineNo)
+                MoveUp(1, false);
+            this->ComputeViewPort(this->ViewPort.Start.lineNo - 1, 0, Direction::TopToBottom);
+        }
+    }
+
+    this->UpdateViewPort();
+}
 void Instance::MoveToPreviousWord(bool select)
 {
     DataCharacterStream dcs(this->lines, this->settings.get(), this->obj->GetData());
@@ -1274,6 +1304,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Up | Key::Shift:
         MoveUp(1, true);
+        return true;
+    case Key::Up | Key::Ctrl:
+        MoveScrollUp();
         return true;
     case Key::Down:
         MoveDown(1, false);
