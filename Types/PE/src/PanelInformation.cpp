@@ -76,7 +76,7 @@ void Information::UpdateGeneralInformation()
 
     if (pe->pdbName)
     {
-        general->AddItem({ "PDB File", pe->pdbName }).SetColor(ColorPair{ Color::Pink, Color::Transparent });
+        general->AddItem({ "PDB File", pe->pdbName }).SetType(ListViewItem::Type::Emphasized_3);
     }
 
     // verific si language-ul

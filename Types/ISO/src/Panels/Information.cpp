@@ -8,9 +8,7 @@ Panels::Information::Information(Reference<Object> _object, Reference<GView::Typ
     iso     = _iso;
     object  = _object;
     general = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:10",
-          std::initializer_list<ConstString>{ "n:Field,w:24","n:Value,w:100" },
-          ListViewFlags::None);
+          "x:0,y:0,w:100%,h:100%", std::initializer_list<ConstString>{ "n:Field,w:24", "n:Value,w:100" }, ListViewFlags::None);
 
     Update();
 }
@@ -183,7 +181,7 @@ void Panels::Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
-    general->Resize(GetWidth(), general->GetItemsCount());
+    general->Resize(GetWidth(), std::min<int32>(general->GetHeight(), (int32) general->GetItemsCount() + 3));
 
     // CHECKRET(general.IsValid() & issues.IsValid(), "");
     // issues->SetVisible(issues->GetItemsCount() > 0);

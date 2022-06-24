@@ -60,16 +60,21 @@ void Information::UpdateHeader()
         filesizeItem.SetType(ListViewItem::Type::ErrorInformation);
     }
 
-    std::string filename;
+    constexpr auto maxSize = sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0]);
+    auto u16sv             = u16string_view{ (char16_t*) &prefetch->header.executableName };
+    auto nullOffset        = 0ULL;
+    for (nullOffset = 0ULL; nullOffset < maxSize; nullOffset += 2)
     {
-        ConstString cs{ u16string_view{ (char16_t*) &prefetch->header.executableName,
-                                        sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0]) } };
-        LocalUnicodeStringBuilder<sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0])> lsub;
-        lsub.Set(cs);
-        lsub.ToString(filename);
+        const auto& c = ((char16_t*) prefetch->header.executableName)[nullOffset / 2];
+        if (c == u'\0')
+        {
+            break;
+        }
     }
-    general->AddItem({ "Executable", ls.Format("%s", filename.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
-    general->AddItem({ "Executable Path", ls.Format("%s", prefetch->exePath.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    auto size = std::min<uint64>(nullOffset, maxSize);
+    u16sv     = u16string_view{ (char16_t*) &prefetch->header.executableName, size / 2 };
+    general->AddItem({ "Executable", u16sv }).SetType(ListViewItem::Type::Emphasized_3);
+    general->AddItem({ "Executable Path", prefetch->exePath.c_str() }).SetType(ListViewItem::Type::Emphasized_1);
 
     ListViewItem hashItem{};
     {
