@@ -134,6 +134,7 @@ namespace View
             void MoveLeft(bool select);
             void MoveToNextWord(bool select);
             void MoveRight(bool select);
+            void MoveToPreviousWord(bool select);
             void MoveDown(uint32 noOfTimes, bool select);
             void MoveUp(uint32 noOfTimes, bool select);
 

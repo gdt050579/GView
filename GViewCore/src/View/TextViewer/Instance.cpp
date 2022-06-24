@@ -151,7 +151,9 @@ class UnicodeLine
                 delete chars;
 
             allocated               = 0;
-            uint32 newAllocatedSize = (buf.GetLength() | 0xFF) + 1;
+            uint32 newAllocatedSize = (static_cast<uint32>(buf.GetLength()) | 0xFF) + 1;
+            // sanity check
+            CHECK(newAllocatedSize >= buf.GetLength(), false, "");
             try
             {
                 chars     = new char16[newAllocatedSize];
@@ -896,6 +898,18 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
             MoveTo(std::min<>(lastLine, this->Cursor.lineNo + noOfTimes), this->Cursor.charIndex, select);
     }
 }
+void Instance::MoveToPreviousWord(bool select)
+{
+    DataCharacterStream dcs(this->lines, this->settings.get(), this->obj->GetData());
+    if (!dcs.Init(this->Cursor.lineNo, this->Cursor.charIndex))
+        return;
+    auto group = GetCharGroup(dcs.GetChar());
+    auto res   = false;
+    while ((res = dcs.Previous()) && (GetCharGroup(dcs.GetChar()) == group))
+    {
+    }
+    MoveTo(dcs.GetLineNumber(), dcs.GetCharIndex(), select);
+}
 void Instance::MoveUp(uint32 noOfTimes, bool select)
 {
     if (HasWordWrap())
@@ -1214,6 +1228,12 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Left | Key::Shift:
         MoveLeft(true);
+        return true;
+    case Key::Left | Key::Ctrl:
+        MoveToPreviousWord(false);
+        return true;
+    case Key::Left | Key::Ctrl | Key::Shift:
+        MoveToPreviousWord(true);
         return true;
     case Key::Right:
         MoveRight(false);
