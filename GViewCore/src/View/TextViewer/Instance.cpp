@@ -898,6 +898,28 @@ void Instance::MoveDown(uint32 noOfTimes, bool select)
             MoveTo(std::min<>(lastLine, this->Cursor.lineNo + noOfTimes), this->Cursor.charIndex, select);
     }
 }
+void Instance::MoveScrollDown()
+{
+    if (this->HasWordWrap())
+    {
+        ComputeSubLineIndexes(this->ViewPort.Start.lineNo);
+        if ((this->Cursor.lineNo == this->ViewPort.Start.lineNo) && (this->Cursor.sublineNo == this->ViewPort.Start.subLineNo))
+            MoveDown(1, false);
+        ComputeSubLineIndexes(this->ViewPort.Start.lineNo);
+        if (static_cast<size_t>(this->ViewPort.Start.subLineNo) + 1U < this->SubLines.entries.size())
+            this->ComputeViewPort(this->ViewPort.Start.lineNo, this->ViewPort.Start.subLineNo + 1U, Direction::TopToBottom);
+        else
+            this->ComputeViewPort(this->ViewPort.Start.lineNo + 1, 0, Direction::TopToBottom);
+    }
+    else
+    {
+        if (this->Cursor.lineNo == this->ViewPort.Start.lineNo)
+            MoveDown(1, false);
+        this->ComputeViewPort(this->ViewPort.Start.lineNo + 1, 0, Direction::TopToBottom);
+    }
+
+    this->UpdateViewPort();
+}
 void Instance::MoveToPreviousWord(bool select)
 {
     DataCharacterStream dcs(this->lines, this->settings.get(), this->obj->GetData());
@@ -1258,6 +1280,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Down | Key::Shift:
         MoveDown(1, true);
+        return true;
+    case Key::Down | Key::Ctrl:
+        MoveScrollDown();
         return true;
     case Key::PageUp:
         MoveUp(std::max<>(1, this->GetHeight()), false);

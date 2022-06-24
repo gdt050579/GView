@@ -137,6 +137,7 @@ namespace View
             void MoveToPreviousWord(bool select);
             void MoveDown(uint32 noOfTimes, bool select);
             void MoveUp(uint32 noOfTimes, bool select);
+            void MoveScrollDown();
 
             void UpdateCursor_NoWrap();
             void UpdateCursor_Wrap();
