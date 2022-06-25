@@ -13,14 +13,28 @@ enum class CommandID
 struct CommandInfo
 {
     CommandID ID;
+#ifdef BUILD_FOR_WINDOWS
+    std::u16string_view name;
+#else
     std::string_view name;
+#endif
 };
 
+// clang-format off
+#ifdef BUILD_FOR_WINDOWS
+#    define _U(x) (u#x)
+#    define _CHAR16_FROM_WCHAR(x) ((char16*)x)
+#else
+#    define _U(x) (#x)
+#    define _CHAR16_FROM_WCHAR(x) (x)
+#endif
+// clang-format on
+
 CommandInfo commands[] = {
-    { CommandID::Help, "help" },
-    { CommandID::Open, "open" },
-    { CommandID::Reset, "reset" },
-    { CommandID::UpdateConfig, "updateconfig" },
+    { CommandID::Help, _U(help) },
+    { CommandID::Open, _U(open) },
+    { CommandID::Reset, _U(reset) },
+    { CommandID::UpdateConfig, _U(updateconfig) },
 };
 
 std::string_view help = R"HELP(
@@ -48,39 +62,48 @@ void ShowHelp()
 {
     std::cout << "GView [A file/Process] viewer" << std::endl;
     std::cout << "Build on: " << __DATE__ << " " << __TIME__ << std::endl;
-    std::cout << "Version : " << "x.x.x" << std::endl;
+    std::cout << "Version : " << GVIEW_VERSION << std::endl;
     std::cout << help << std::endl;
 }
 
-CommandID GetCommandID(const char* name)
+template <typename T>
+CommandID GetCommandID(T name)
 {
     auto cnt = ARRAY_LEN(commands);
-    for (size_t idx = 0;idx<cnt;idx++)
+    for (size_t idx = 0; idx < cnt; idx++)
     {
-        if (AppCUI::Utils::String::Equals(name, commands[idx].name.data()))
+        if (commands[idx].name == _CHAR16_FROM_WCHAR(name))
             return commands[idx].ID;
     }
+
     // if nothing is recognize
     return CommandID::Unknown;
 }
 
-int ProcessOpenCommand(int argc, const char** argv, int start)
+template <typename T>
+int ProcessOpenCommand(int argc, T argv, int start)
 {
-    if (!GView::App::Init())
-        return 1;
-    while (start<argc)
+    CHECK(GView::App::Init(), 1, "");
+
+    while (start < argc)
     {
         GView::App::OpenFile(argv[start]);
         start++;
     }
+
     AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
     GView::App::Run();
+
     return 0;
 }
 
-int main(int argc,const char **argv)
+#ifdef BUILD_FOR_WINDOWS
+int wmain(int argc, const wchar_t** argv)
+#else
+int main(int argc, const char** argv)
+#endif
 {
-    if (argc<2)
+    if (argc < 2)
     {
         ShowHelp();
         return 0;
@@ -100,9 +123,13 @@ int main(int argc,const char **argv)
     case CommandID::Unknown:
         return ProcessOpenCommand(argc, argv, 1);
     default:
+#ifdef BUILD_FOR_WINDOWS
+        std::wcout << L"Unable to process command: " << argv[1] << std::endl;
+#else
         std::cout << "Unable to process command: " << argv[1] << std::endl;
+#endif
         return 1;
     }
-        
+
     return 0;
 }

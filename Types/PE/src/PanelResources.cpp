@@ -24,7 +24,7 @@ Panels::Resources::Resources(Reference<GView::Type::PE::PEFile> _pe, Reference<G
                 "n:File &Ofs,a:r,w:10",
                 "n:&Size,a:r,w:10",
                 "n:&CodePage,w:10",
-                "n:&Language,w:18",
+                "n:&Language,w:30",
           },
           ListViewFlags::None);
 
@@ -36,6 +36,7 @@ void Panels::Resources::Update()
     NumericFormatter n;
 
     list->DeleteAllItems();
+
     for (auto& r : pe->res)
     {
         auto nm = PEFile::ResourceIDToName(r.Type).data();
@@ -76,7 +77,7 @@ void Panels::Resources::SaveCurrentResource()
     auto res = AppCUI::Dialogs::FileDialog::ShowSaveFileWindow(tmp, "", "");
     if (res.has_value())
     {
-        auto buf = this->win->GetObject()->GetData().CopyToBuffer(r->Start, r->Size);
+        auto buf = this->win->GetObject()->GetData().CopyToBuffer(r->Start, (uint32) r->Size);
         if (AppCUI::OS::File::WriteContent(res.value(), BufferView{ buf }) == false)
         {
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");

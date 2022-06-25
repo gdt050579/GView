@@ -32,6 +32,7 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
 
     Update();
 }
+
 std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 {
     if (Base == 10)
@@ -39,18 +40,21 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
     else
         return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
 }
+
 void Panels::Sections::GoToSelectedSection()
 {
     auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
+
 void Panels::Sections::SelectCurrentSection()
 {
     auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
 }
+
 void Panels::Sections::Update()
 {
     LocalString<128> temp;
@@ -59,20 +63,23 @@ void Panels::Sections::Update()
 
     for (auto tr = 0U; tr < pe->nrSections; tr++)
     {
+        auto& sect = pe->sect[tr];
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
+
         item.SetData<PE::ImageSectionHeader>(pe->sect + tr);
-        item.SetText(1, GetValue(n, pe->sect[tr].PointerToRawData));
-        item.SetText(2, GetValue(n, pe->sect[tr].SizeOfRawData));
-        item.SetText(3, GetValue(n, pe->sect[tr].VirtualAddress));
-        item.SetText(4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
-        item.SetText(5, GetValue(n, pe->sect[tr].PointerToRelocations));
-        item.SetText(6, GetValue(n, pe->sect[tr].NumberOfRelocations));
-        item.SetText(7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
-        item.SetText(8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
+
+        item.SetText(1, GetValue(n, sect.PointerToRawData));
+        item.SetText(2, GetValue(n, sect.SizeOfRawData));
+        item.SetText(3, GetValue(n, sect.VirtualAddress));
+        item.SetText(4, GetValue(n, sect.Misc.VirtualSize));
+        item.SetText(5, GetValue(n, sect.PointerToRelocations));
+        item.SetText(6, GetValue(n, sect.NumberOfRelocations));
+        item.SetText(7, GetValue(n, sect.PointerToLinenumbers));
+        item.SetText(8, GetValue(n, sect.NumberOfLinenumbers));
 
         // caracteristics
-        const auto tmp = pe->sect[tr].Characteristics;
+        const auto tmp = sect.Characteristics;
         temp.SetFormat("0x%08X  [", tmp);
         if ((tmp & __IMAGE_SCN_MEM_READ) != 0)
             temp.AddChar('R');

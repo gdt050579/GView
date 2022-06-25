@@ -60,16 +60,21 @@ void Information::UpdateHeader()
         filesizeItem.SetType(ListViewItem::Type::ErrorInformation);
     }
 
-    std::string filename;
+    constexpr auto maxSize = sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0]);
+    auto u16sv             = u16string_view{ (char16_t*) &prefetch->header.executableName };
+    auto nullOffset        = 0ULL;
+    for (nullOffset = 0ULL; nullOffset < maxSize; nullOffset += 2)
     {
-        ConstString cs{ u16string_view{ (char16_t*) &prefetch->header.executableName,
-                                        sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0]) } };
-        LocalUnicodeStringBuilder<sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0])> lsub;
-        lsub.Set(cs);
-        lsub.ToString(filename);
+        const auto& c = ((char16_t*) prefetch->header.executableName)[nullOffset / 2];
+        if (c == u'\0')
+        {
+            break;
+        }
     }
-    general->AddItem({ "Executable", ls.Format("%s", filename.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
-    general->AddItem({ "Executable Path", ls.Format("%s", prefetch->exePath.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    auto size = std::min<uint64>(nullOffset, maxSize);
+    u16sv     = u16string_view{ (char16_t*) &prefetch->header.executableName, size / 2 };
+    general->AddItem({ "Executable", u16sv }).SetType(ListViewItem::Type::Emphasized_3);
+    general->AddItem({ "Executable Path", prefetch->exePath.c_str() }).SetType(ListViewItem::Type::Emphasized_1);
 
     ListViewItem hashItem{};
     {
@@ -92,7 +97,7 @@ void Information::UpdateHeader()
                 LocalUnicodeStringBuilder<sizeof(prefetch->header.executableName) / sizeof(prefetch->header.executableName[0])> lsub;
                 lsub.Set(cs);
                 lsub.ToString(hashFromName);
-                hashValue = std::stoul(hashFromName, 0, 16);
+                hashValue = std::stoul(hashFromName, nullptr, 16);
             }
 
             if (hashValue == prefetch->header.hash)
@@ -165,8 +170,8 @@ void Information::UpdateHeader()
     const auto h7Hex = nf2.ToString(prefetch->header.H7, hex);
     general->AddItem({ "H7", ls.Format("%-20s (%s)", h7.data(), h7Hex.data()) });
 
-    const auto fileInformationSize    = nf.ToString(prefetch->area.sectionA.offset - sizeof(prefetch->header), dec);
-    const auto fileInformationSizeHex = nf2.ToString(prefetch->area.sectionA.offset - sizeof(prefetch->header), hex);
+    const auto fileInformationSize    = nf.ToString((uint32) (prefetch->area.sectionA.offset - sizeof(prefetch->header)), dec);
+    const auto fileInformationSizeHex = nf2.ToString((uint32) (prefetch->area.sectionA.offset - sizeof(prefetch->header)), hex);
     general->AddItem({ "File Information Size", ls.Format("%-20s (%s)", fileInformationSize.data(), fileInformationSizeHex.data()) })
           .SetType(ListViewItem::Type::Highlighted);
 }

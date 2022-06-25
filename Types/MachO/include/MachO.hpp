@@ -20,15 +20,21 @@ namespace Panels
     };
 };
 
-class MachOFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+class MachOFile : public TypeInterface,
+                  public View::BufferViewer::OffsetTranslateInterface,
+                  public View::ContainerViewer::EnumerateInterface,
+                  public View::ContainerViewer::OpenItemInterface
 {
   public:
     struct Colors
     {
-        ColorPair header{ Color::Olive, Color::Transparent };
-        ColorPair loadCommand{ Color::Magenta, Color::Transparent };
-        ColorPair section{ Color::Silver, Color::Transparent };
-        ColorPair linkEdit{ Color::Teal, Color::Transparent };
+        const ColorPair header{ Color::Olive, Color::Transparent };
+        const ColorPair loadCommand{ Color::Magenta, Color::Transparent };
+        const ColorPair section{ Color::Silver, Color::Transparent };
+        const ColorPair linkEdit{ Color::Teal, Color::Transparent };
+        const ColorPair arch{ Color::Magenta, Color::Transparent };
+        const ColorPair objectName{ Color::DarkRed, Color::Transparent };
+        const ColorPair object{ Color::Silver, Color::Transparent };
     } colors;
 
     struct LoadCommand
@@ -138,6 +144,11 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     };
 
   public:
+    /* Universal/Fat*/
+    MAC::fat_header fatHeader;
+    std::vector<MAC::Arch> archs;
+
+    /* MachO */
     MAC::mach_header header;
     std::vector<LoadCommand> loadCommands;
     std::vector<Segment> segments;
@@ -150,15 +161,18 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     std::vector<MAC::linkedit_data_command> linkEditDatas;
     std::optional<CodeSignature> codeSignature;
     std::optional<MAC::version_min_command> versionMin;
+    bool isMacho;
+    bool isFat;
     bool shouldSwapEndianess;
     bool is64;
 
-    uint64_t panelsMask;
+    uint64 panelsMask;
+    uint32 currentItemIndex;
 
   public:
     // OffsetTranslateInterface
-    uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) override;
-    uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) override;
+    uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
+    uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
 
     // TypeInterface
     std::string_view GetTypeName() override
@@ -174,9 +188,9 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
 
     bool HasPanel(Panels::IDs id);
 
-    bool SetArchitectureAndEndianess(uint64_t& offset);
-    bool SetHeader(uint64_t& offset);
-    bool SetLoadCommands(uint64_t& offset);
+    bool SetHeaderInfo(uint64& offset);
+    bool SetHeader(uint64& offset);
+    bool SetLoadCommands(uint64& offset);
     bool SetSegmentsAndTheirSections();
     bool SetDyldInfo();
     bool SetIdDylibs();
@@ -187,6 +201,10 @@ class MachOFile : public TypeInterface, public GView::View::BufferViewer::Offset
     bool SetLinkEditData();
     bool SetCodeSignature();
     bool SetVersionMin();
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
   private:
     bool ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const;
@@ -209,6 +227,8 @@ namespace Panels
         void UpdateUUID();
         void UpdateVersionMin();
         void RecomputePanelsPositions();
+
+        void UpdateFatInfo();
 
       public:
         Information(Reference<Object> _object, Reference<MachOFile> _machO);

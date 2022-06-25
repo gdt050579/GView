@@ -5,5 +5,5 @@ file(GLOB sources_panels Panels/*.cpp Panels/*.h)
 
 source_group("Panels" ${sources_panels})
 
-target_sources(UniversalMachO PRIVATE ${sources_all})
+target_sources(ELF PRIVATE ${sources_all})
 

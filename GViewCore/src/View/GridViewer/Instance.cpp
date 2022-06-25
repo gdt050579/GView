@@ -38,7 +38,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
               "d:c,w:100%,h:100%",
               static_cast<uint32>(settings->cols),
               static_cast<uint32>(settings->rows),
-              AppCUI::Controls::GridFlags::Sort | AppCUI::Controls::GridFlags::Filter);
+              AppCUI::Controls::GridFlags::Sort | AppCUI::Controls::GridFlags::Filter | GridFlags::DisableDuplicates);
 
         grid->SetSeparator(settings->separator);
     }
@@ -60,6 +60,16 @@ bool Instance::GoTo(uint64 offset)
 bool Instance::Select(uint64 offset, uint64 size)
 {
     return true;
+}
+
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
 }
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
@@ -104,7 +114,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         PaintCursorInformationSelection(renderer, x5, y1);
     }
 }
-
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

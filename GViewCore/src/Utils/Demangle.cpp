@@ -6,33 +6,36 @@ using namespace llvm;
 
 namespace GView::Utils
 {
-bool Demangle(const char* input, String& output, DemangleKind format)
+bool Demangle(std::string_view input, String& output, DemangleKind format)
 {
+    LocalString<1024> temp;
+    CHECK(temp.Set(input.data(), (uint32) input.size()), false, "");
+
     unique_ptr<char, decltype(free)*> result(nullptr, free);
     switch (format)
     {
     case DemangleKind::Itanium:
-        result.reset(itaniumDemangle(input, nullptr, nullptr, nullptr));
+        result.reset(itaniumDemangle(temp.GetText(), nullptr, nullptr, nullptr));
         break;
     case DemangleKind::Microsoft:
-        result.reset(microsoftDemangle(input, nullptr, nullptr, nullptr, nullptr));
+        result.reset(microsoftDemangle(temp.GetText(), nullptr, nullptr, nullptr, nullptr));
         break;
     case DemangleKind::Rust:
-        result.reset(rustDemangle(input, nullptr, nullptr, nullptr));
+        result.reset(rustDemangle(temp.GetText(), nullptr, nullptr, nullptr));
         break;
     case DemangleKind::Auto:
     {
-        auto result = demangle(input);
-        if (result == input)
-            return false;
-        output.Add(result);
+        const auto sResult = demangle(temp.GetText());
+        CHECK(sResult != temp.GetText(), false, "");
+        CHECK(output.Add(sResult), false, "");
+
         return true;
     }
     }
-    if (result == nullptr)
-        return false;
 
-    output.Add(&*result);
+    CHECK(result != nullptr, false, "");
+    CHECK(output.Add(&*result), false, "");
+
     return true;
 }
 } // namespace GView::Utils

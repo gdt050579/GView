@@ -16,7 +16,7 @@ const std::string_view unsigned_dec_header =
 bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false, true,  true,  true,  true,  true,  true,
-    false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
     true,  true,  false, false, true,  false, false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
     true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, true,  false, false,
     true,  false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
@@ -35,13 +35,13 @@ constexpr int BUFFERVIEW_CMD_CHANGEBASE        = 0xBF01;
 constexpr int BUFFERVIEW_CMD_CHANGEADDRESSMODE = 0xBF02;
 constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
-constexpr int BUFFERVIEW_CMD_GOTO              = 0xBF05;
-constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF06;
-constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF07;
+constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
+constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->obj  = _obj;
     this->name = _name;
@@ -100,7 +100,7 @@ void Instance::OpenCurrentSelection()
     {
         LocalString<128> temp;
         temp.Format("Buffer_%llx_%llx", start, end);
-        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start));
+        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
         if (buf.IsValid() == false)
         {
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
@@ -330,13 +330,18 @@ void Instance::MoveToZone(bool startOfZone, bool select)
     }
 }
 
-void Instance::ShowGoToDialog()
+bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
     }
+    return true;
+}
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
 }
 
 void Instance::ResetStringInfo()
@@ -379,18 +384,18 @@ void Instance::UpdateStringInfo(uint64 offset)
     // check for unicode
     if (this->StringInfo.showUnicode)
     {
-        auto* s = (char16_t*) buf.GetData();
+        auto* s = (char16*) buf.GetData();
         auto* e = s + buf.GetLength() / 2;
         if ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
         {
             while ((s < e) && ((*s) < 256) && (StringInfo.AsciiMask[*s]))
                 s++;
-            if (s - (char16_t*) buf.GetData() >= StringInfo.minCount)
+            if (s - (char16*) buf.GetData() >= StringInfo.minCount)
             {
                 // ascii string found
                 StringInfo.start  = offset;
                 StringInfo.end    = offset + ((const uint8*) s - buf.GetData());
-                StringInfo.middle = offset + (s - (char16_t*) buf.GetData());
+                StringInfo.middle = offset + (s - (char16*) buf.GetData());
                 StringInfo.type   = StringType::Unicode;
                 return;
             }
@@ -1101,9 +1106,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     // Entry point
     commandBar.SetCommand(config.Keys.GoToEntryPoint, "EntryPoint", BUFFERVIEW_CMD_GOTOEP);
 
-    // Generic goto
-    commandBar.SetCommand(config.Keys.GoToAddress, "GoTo", BUFFERVIEW_CMD_GOTO);
-
     // Selection
     if (this->selection.IsSingleSelectionEnabled())
         commandBar.SetCommand(config.Keys.ChangeSelectionType, "Select:Single", BUFFERVIEW_CMD_CHANGESELECTION);
@@ -1178,11 +1180,11 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveTo(this->Cursor.currentPos + 1, select);
         return true;
     case Key::PageDown:
-        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLine * this->Layout.visibleRows, select);
+        MoveTo(this->Cursor.currentPos + (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows, select);
         return true;
     case Key::PageUp:
-        if (this->Cursor.currentPos > this->Layout.charactersPerLine * this->Layout.visibleRows)
-            MoveTo(this->Cursor.currentPos - (this->Layout.charactersPerLine * this->Layout.visibleRows), select);
+        if (this->Cursor.currentPos > (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows)
+            MoveTo(this->Cursor.currentPos - ((uint64) this->Layout.charactersPerLine * this->Layout.visibleRows), select);
         else
             MoveTo(0, select);
         return true;
@@ -1351,9 +1353,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         {
             this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
         }
-        return true;
-    case BUFFERVIEW_CMD_GOTO:
-        ShowGoToDialog();
         return true;
     }
     return false;
@@ -1796,6 +1795,12 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
     return false;
 }
 
+// =====================================================================[SCROLLBAR]===========================
+void Instance::OnUpdateScrollBars()
+{
+    this->UpdateVScrollBar(this->Cursor.currentPos + 1, this->obj->GetData().GetSize());
+}
+
 //======================================================================[PROPERTY]============================
 enum class PropertyID : uint32
 {
@@ -1829,8 +1834,6 @@ enum class PropertyID : uint32
     GoToEntryPoint,
     ChangeSelectionType,
     ShowHideStrings,
-    GoToAddress
-
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1912,9 +1915,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::ShowHideStrings:
         value = config.Keys.ShowHideStrings;
-        return true;
-    case PropertyID::GoToAddress:
-        value = config.Keys.GoToAddress;
         return true;
     case PropertyID::AddressType:
         value = this->currentAdrressMode;
@@ -2017,9 +2017,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowHideStrings:
         config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
         return true;
-    case PropertyID::GoToAddress:
-        config.Keys.GoToAddress = std::get<AppCUI::Input::Key>(value);
-        return true;
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
         return true;
@@ -2105,8 +2102,6 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
         { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
         { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
-        { BT(PropertyID::GoToAddress), "Shortcuts", "Go To Address", PropertyType::Key },
-
     };
 }
 #undef BT

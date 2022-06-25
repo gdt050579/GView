@@ -58,6 +58,8 @@ namespace View
 
             bool GoTo(uint64 offset) override;
             bool Select(uint64 offset, uint64 size) override;
+            virtual bool ShowGoToDialog() override;
+            virtual bool ShowFindDialog() override;
             std::string_view GetName() override;
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
 

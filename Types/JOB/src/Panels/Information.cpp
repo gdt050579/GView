@@ -65,7 +65,7 @@ void Information::UpdateGeneralInformation()
     AddDecAndHexElement("Exit Code", "%-20s (%s)", job->fixedLengthData.exitCode);
 
     const auto& statusName      = JOB::StatusNames.at(job->fixedLengthData.status);
-    const auto statusVersionHex = nf2.ToString((uint16) job->fixedLengthData.status, hex);
+    const auto statusVersionHex = nf2.ToString((uint32) job->fixedLengthData.status, hex);
     general->AddItem({ "Status", ls.Format("%-20s (%s)", statusName.data(), statusVersionHex.data()) })
           .SetType(ListViewItem::Type::Emphasized_1);
 
@@ -158,7 +158,7 @@ void Information::UpdateGeneralInformation()
             std::u16string_view{ (char16*) job->variableSizeDataSection.workingDirectory.GetData(), job->workingDirectorySize } });
     general->AddItem({ "Author", std::u16string_view{ (char16*) job->variableSizeDataSection.author.GetData(), job->authorSize } });
     general->AddItem({ "Comment", std::u16string_view{ (char16*) job->variableSizeDataSection.comment.GetData(), job->commentSize } });
-    AddDecAndHexElement("User Data Size", "%-20s (%s)", job->variableSizeDataSection.userData.GetLength());
+    AddDecAndHexElement("User Data Size", "%-20s (%s)", (uint32) job->variableSizeDataSection.userData.GetLength());
     AddDecAndHexElement("Reserved Data Size", "%-20s (%s)", job->variableSizeDataSection.reservedData.size);
     if (job->variableSizeDataSection.reservedData.size > 0)
     {

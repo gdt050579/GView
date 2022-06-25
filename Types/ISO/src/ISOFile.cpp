@@ -142,7 +142,7 @@ bool ISOFile::PopulateItem(TreeViewItem item)
     const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
     const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    const auto& currentObject = objects[currentItemIndex];
+    const auto& currentObject = objects.at(currentItemIndex);
     item.SetText(std::string_view{ currentObject.fileIdentifier, currentObject.lengthOfFileIdentifier });
 
     if (currentObject.fileFlags & ECMA_119_FileFlags::Directory)
@@ -192,6 +192,12 @@ void ISOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     const auto length = (uint32) data->dataLength.LSB;
     const auto name   = std::string_view{ data->fileIdentifier, data->lengthOfFileIdentifier };
 
+    std::string_view extension{ "" };
+    if (const auto pos = name.find_last_of('.'); pos != std::string::npos)
+    {
+        extension = std::string_view{ data->fileIdentifier + pos, data->lengthOfFileIdentifier - pos };
+    }
+
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    GView::App::OpenBuffer(buffer, name);
+    GView::App::OpenBuffer(buffer, name, extension);
 }

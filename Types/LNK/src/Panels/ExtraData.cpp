@@ -24,6 +24,9 @@ void ExtraData::UpdateGeneralInformation()
     {
         switch (extraData->signature)
         {
+        case ExtraDataSignatures::Unknown:
+            UpdateExtraDataBase(extraData); // TODO: what is this?
+            break;
         case ExtraDataSignatures::EnvironmentVariablesLocation:
             UpdateExtraData_EnvironmentVariablesLocation((ExtraData_EnvironmentVariablesLocation*) extraData);
             break;

@@ -1,5 +1,7 @@
 #include "PCAP.hpp"
 
+#include <array>
+
 using namespace AppCUI;
 using namespace AppCUI::OS;
 using namespace AppCUI::Utils;
@@ -31,7 +33,7 @@ extern "C"
 
     static constexpr auto DarkGreenBlue = ColorPair{ Color::DarkGreen, Color::DarkBlue };
     static constexpr auto DarkRedBlue   = ColorPair{ Color::DarkRed, Color::DarkBlue };
-    constexpr static auto colors        = std::initializer_list{ DarkGreenBlue, DarkRedBlue };
+    constexpr static auto colors        = std::array<ColorPair, 2>{ DarkGreenBlue, DarkRedBlue };
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PCAP::PCAPFile> pcap)
     {

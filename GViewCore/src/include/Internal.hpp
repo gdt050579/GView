@@ -97,11 +97,11 @@ namespace Utils
     {
         enum class Encoding : uint8
         {
-            Binary,
-            Ascii,
-            UTF8,
-            Unicode16LE,
-            Unicode16BE
+            Binary      = 0,
+            Ascii       = 1,
+            UTF8        = 2,
+            Unicode16LE = 3,
+            Unicode16BE = 4
         };
         class ExpandedCharacter
         {
@@ -181,7 +181,7 @@ namespace Utils
         };
 
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
-    }; // namespace StringEncoding
+    }; // namespace CharacterEncoding
 } // namespace Utils
 
 namespace Generic
@@ -306,7 +306,13 @@ namespace App
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
-        AppCUI::Input::Key keyToChangeViews, keyToSwitchToView;
+        struct
+        {
+            AppCUI::Input::Key changeViews;
+            AppCUI::Input::Key switchToView;
+            AppCUI::Input::Key goTo;
+            AppCUI::Input::Key find;
+        } Keys;
 
         bool BuildMainMenus();
         bool LoadSettings();
@@ -333,13 +339,21 @@ namespace App
         {
             return this->defaultCacheSize;
         }
-        constexpr inline AppCUI::Input::Key GetKeyToChangeViewes() const
+        constexpr inline AppCUI::Input::Key GetChangeViewesKey() const
         {
-            return this->keyToChangeViews;
+            return this->Keys.changeViews;
         }
-        constexpr inline AppCUI::Input::Key GetKeyToSwitchToView() const
+        constexpr inline AppCUI::Input::Key GetSwitchToViewKey() const
         {
-            return this->keyToSwitchToView;
+            return this->Keys.switchToView;
+        }
+        constexpr inline AppCUI::Input::Key GetGoToKey() const
+        {
+            return this->Keys.goTo;
+        }
+        constexpr inline AppCUI::Input::Key GetFindKey() const
+        {
+            return this->Keys.find;
         }
 
         // property interface

@@ -9,9 +9,9 @@ constexpr Key KEY_TOGGLE_VERTICAL_LINES       = Key::V;
 
 void Config::Update(IniSection sect)
 {
-    sect.UpdateValue("ReplaceHeaderWith1stRow", KEY_REPLACE_HEADER_WITH_1ST_ROW, true);
-    sect.UpdateValue("ToggleHorizontalLines", KEY_TOGGLE_HORIZONTAL_LINES, true);
-    sect.UpdateValue("ToggleVerticalLines", KEY_TOGGLE_VERTICAL_LINES, true);
+    sect.UpdateValue("Key.ReplaceHeaderWith1stRow", KEY_REPLACE_HEADER_WITH_1ST_ROW, true);
+    sect.UpdateValue("Key.ToggleHorizontalLines", KEY_TOGGLE_HORIZONTAL_LINES, true);
+    sect.UpdateValue("Key.ToggleVerticalLines", KEY_TOGGLE_VERTICAL_LINES, true);
 }
 
 void Config::Initialize()
@@ -19,10 +19,10 @@ void Config::Initialize()
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
     {
-        auto sect                          = ini->GetSection("GridView");
-        this->keys.replaceHeaderWith1stRow = sect.GetValue("ReplaceHeaderWith1stRow").ToKey(KEY_REPLACE_HEADER_WITH_1ST_ROW);
-        this->keys.toggleHorizontalLines   = sect.GetValue("ToggleHorizontalLines").ToKey(KEY_TOGGLE_HORIZONTAL_LINES);
-        this->keys.toggleVerticalLines     = sect.GetValue("ToggleVerticalLines").ToKey(KEY_TOGGLE_VERTICAL_LINES);
+        auto sect                          = ini->GetSection("View.Grid");
+        this->keys.replaceHeaderWith1stRow = sect.GetValue("Key.ReplaceHeaderWith1stRow").ToKey(KEY_REPLACE_HEADER_WITH_1ST_ROW);
+        this->keys.toggleHorizontalLines   = sect.GetValue("Key.ToggleHorizontalLines").ToKey(KEY_TOGGLE_HORIZONTAL_LINES);
+        this->keys.toggleVerticalLines     = sect.GetValue("Key.ToggleVerticalLines").ToKey(KEY_TOGGLE_VERTICAL_LINES);
     }
     else
     {

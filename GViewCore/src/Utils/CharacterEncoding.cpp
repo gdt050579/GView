@@ -121,7 +121,7 @@ Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOML
             countUnknown++;
         }
         auto total = countUnknown + countAscii + countUTF8;
-        if ((((countAscii+countUTF8)* 100U)/total)>=75)
+        if ((total>0) && ((((countAscii+countUTF8)* 100U)/total)>=75))
         {
             // if at least 75% of the characters are in ascii or UTF8 format
             if (countUTF8 > 0)

@@ -83,6 +83,15 @@ bool Instance::Select(uint64 offset, uint64 size)
     return true;
 }
 
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
 std::string_view Instance::GetName()
 {
     return "DissasmView";

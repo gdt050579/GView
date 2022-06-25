@@ -49,7 +49,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     for (uint32 idx = 0; idx < settings->columnsCount; idx++)
     {
         const auto& col = settings->columns[idx];
-        this->items->AddColumn(col.Name, col.Align, col.Width);
+        std::string layout; // TODO: GRX - unicode layout parsing seems to be having an issue
+        col.layout.ToString(layout);
+        this->items->AddColumn(layout);
     }
     for (uint32 idx = 0; idx < settings->propertiesCount; idx++)
     {
@@ -64,7 +66,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         this->root = this->items->AddItem("/", true);
         this->root.Unfold();
     }
-    this->items->Sort(0, true);
+    this->items->Sort(0, SortDirection::Ascendent);
     this->items->SetFocus();
     UpdatePathForItem(this->items->GetCurrentItem());
 }
@@ -152,6 +154,14 @@ bool Instance::GoTo(uint64 offset)
 bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
+}
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
 }
 std::string_view Instance::GetName()
 {

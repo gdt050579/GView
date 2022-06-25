@@ -1,5 +1,8 @@
 #pragma once
 
+// Version MUST be in the following format <Major>.<Minor>.<Patch>
+#define GVIEW_VERSION "0.48.0"
+
 #include <AppCUI/include/AppCUI.hpp>
 
 using namespace AppCUI::Controls;
@@ -131,7 +134,7 @@ namespace Utils
         Itanium,
         Rust,
     };
-    CORE_EXPORT bool Demangle(const char* input, String& output, DemangleKind format = DemangleKind::Auto);
+    CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
 } // namespace Utils
 
@@ -449,7 +452,7 @@ class CORE_EXPORT Object
 
   public:
     Object(Type objType, Utils::DataCache&& dataCache, TypeInterface* contType, ConstString objName, ConstString objFilePath, uint32 pid)
-        : cache(std::move(dataCache)), objectType(objType), name(objName), filePath(objFilePath), PID(pid), contentType(contType)
+        : cache(std::move(dataCache)), contentType(contType), name(objName), filePath(objFilePath), PID(pid), objectType(objType)
     {
         if (contentType)
             contentType->obj = this;
@@ -497,12 +500,15 @@ namespace View
       public:
         virtual bool GoTo(uint64 offset)                                                                       = 0;
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
+        virtual bool ShowGoToDialog()                                                                          = 0;
+        virtual bool ShowFindDialog()                                                                          = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
-        ViewControl() : UserControl("d:c"), Cfg(this->GetConfig())
+
+        ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
         {
         }
     };
@@ -510,8 +516,8 @@ namespace View
     {
         struct BufferColor
         {
-            uint64_t start;
-            uint64_t end;
+            uint64 start;
+            uint64 end;
             ColorPair color;
             constexpr inline void Reset()
             {
@@ -528,12 +534,12 @@ namespace View
         };
         struct CORE_EXPORT PositionToColorInterface
         {
-            virtual bool GetColorForBuffer(uint64_t offset, BufferView buf, BufferColor& result) = 0;
+            virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
         struct CORE_EXPORT OffsetTranslateInterface
         {
-            virtual uint64_t TranslateToFileOffset(uint64_t value, uint32 fromTranslationIndex) = 0;
-            virtual uint64_t TranslateFromFileOffset(uint64_t value, uint32 toTranslationIndex) = 0;
+            virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;
+            virtual uint64_t TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) = 0;
         };
 
         struct CORE_EXPORT Settings
@@ -584,7 +590,7 @@ namespace View
             bool SetIcon(string_view imageStringFormat16x16);
             bool SetPathSeparator(char16 separator);
             bool AddProperty(string_view name, const ConstString& value, ListViewItem::Type itemType = ListViewItem::Type::Normal);
-            void SetColumns(std::initializer_list<AppCUI::Controls::ColumnBuilder> columns);
+            void SetColumns(std::initializer_list<ConstString> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
             void SetOpenItemCallback(Reference<OpenItemInterface> callback);
         };
@@ -592,17 +598,22 @@ namespace View
 
     namespace TextViewer
     {
-        struct CORE_EXPORT LoadImageInterface
+        enum class WrapMethod : uint8
         {
-            virtual bool LoadImageToObject(Image& img, uint32 index) = 0;
+            None       = 0,
+            LeftMargin = 1,
+            Padding    = 2,
+            Bullets    = 3,
         };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
-            void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
-            void AddImage(uint64 offset, uint64 size);
+            void SetWrapMethod(WrapMethod method);
+            void SetTabSize(uint32 tabSize);
+            void ShowTabCharacter(bool show);
+            void HightlightCurrentLine(bool highlight);
         };
     }; // namespace TextViewer
 

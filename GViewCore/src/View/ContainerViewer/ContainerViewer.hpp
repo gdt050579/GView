@@ -16,9 +16,7 @@ namespace View
             static constexpr uint32 MAX_PROPERTIES = 32;
             struct
             {
-                FixSizeUnicode<29> Name;
-                TextAlignament Align;
-                uint32 Width;
+                LocalUnicodeStringBuilder<256> layout;
             } columns[MAX_COLUMNS];
             uint32 columnsCount;
             struct
@@ -72,6 +70,8 @@ namespace View
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
+            virtual bool ShowGoToDialog() override;
+            virtual bool ShowFindDialog() override;
             virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;

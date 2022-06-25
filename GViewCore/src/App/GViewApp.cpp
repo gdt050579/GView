@@ -1,5 +1,6 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "TextViewer.hpp"
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
@@ -64,9 +65,10 @@ bool GView::App::ResetConfiguration()
     // for AppCUI
     AppCUI::Application::UpdateAppCUISettings(ini, true);
     // for viewers
-    GView::View::BufferViewer::Config::Update(ini["BufferView"]);
-    GView::View::ImageViewer::Config::Update(ini["ImageView"]);
-    GView::View::GridViewer::Config::Update(ini["GridView"]);
+    GView::View::BufferViewer::Config::Update(ini["View.Buffer"]);
+    GView::View::TextViewer::Config::Update(ini["View.Text"]);
+    GView::View::ImageViewer::Config::Update(ini["View.Image"]);
+    GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
 
     // parse types and add specs
@@ -90,19 +92,39 @@ bool GView::App::ResetConfiguration()
     }
 
     // generic GView settings
-    ini["GView"]["CacheSize"]    = 0x100000;
-    ini["GView"]["ChangeView"]   = Key::F4;
-    ini["GView"]["SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["CacheSize"]        = 0x100000;
+    ini["GView"]["Key.ChangeView"]   = Key::F4;
+    ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["Key.GoTo"]         = Key::F5;
+    ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
+
 void GView::App::OpenFile(const std::filesystem::path& path)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddFileWindow(path);
+    {
+        try
+        {
+            if (path.is_absolute())
+            {
+                gviewAppInstance->AddFileWindow(path);
+            }
+            else
+            {
+                const auto absPath = std::filesystem::canonical(path);
+                gviewAppInstance->AddFileWindow(absPath);
+            }
+        }
+        catch (std::filesystem::filesystem_error /* e */)
+        {
+            gviewAppInstance->AddFileWindow(path);
+        }
+    }
 }
-void GView::App::OpenBuffer(BufferView buf, const ConstString& name,string_view typeExtension)
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension)
 {
     if (gviewAppInstance)
         gviewAppInstance->AddBufferWindow(buf, name, typeExtension);
