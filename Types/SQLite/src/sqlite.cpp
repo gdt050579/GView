@@ -28,18 +28,13 @@ extern "C"
     {
         return new SQLite::SQLiteFile();
     }
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<SQLite::SQLiteFile> bmp)
-    {
-        BufferViewer::Settings settings;
-
-        win->CreateViewer("BufferView", settings);
-    }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto sqlite = win->GetObject()->GetContentType<SQLite::SQLiteFile>();
         sqlite->Update();
 
-        CreateBufferView(win, sqlite);
+        BufferViewer::Settings settings;
+        win->CreateViewer("BufferView", settings);
 
         win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Information(sqlite)), true);
 

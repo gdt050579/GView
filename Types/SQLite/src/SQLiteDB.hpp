@@ -10,6 +10,11 @@ using namespace AppCUI::Utils;
 
 namespace GView::Type::SQLite
 {
+struct Blob
+{
+    const uint8* data;
+    int32 size;
+};
 struct Column
 {
     enum class Type
@@ -22,8 +27,65 @@ struct Column
     };
 
     Type type;
-    const char* name = nullptr;
-    std::vector<std::variant<AppCUI::int64, double, const char*, const AppCUI::uint8*, void*>> values;
+    std::string name;
+    std::vector<std::variant<AppCUI::int64, double, std::string*, Blob*, void*>> values;
+
+    AppCUI::Utils::String ValueToString(uint32 index)
+    {
+        AppCUI::Utils::String str;
+
+        if (type == Type::Null)
+        {
+            str = "NULL";
+            return str;
+        }
+
+        // TODO: out of bounds check?
+        auto& value = values[index];
+
+        switch (type)
+        {
+        case Type::Integer:
+            str.SetFormat("%lld", std::get<int64>(value));
+            break;
+        case Type::Float:
+            str.SetFormat("%f", std::get<double>(value));
+            break;
+        case Type::Text:
+            str.Set(*std::get<std::string*>(value));
+            break;
+        case Type::Blob:
+        {
+            auto blob = std::get<Blob*>(value);
+            for (int32 i = 0; i < blob->size; ++i)
+            {
+                str.AddFormat("%02x", blob->data[i]);
+            }
+            break;
+        }
+        case Type::Null:
+            str = "NULL";
+            break;
+        }
+
+        return str;
+    }
+
+    ~Column()
+    {
+        for (auto& value : values)
+        {
+            switch (type)
+            {
+            case Type::Text:
+                delete std::get<std::string*>(value);
+                break;
+            case Type::Blob:
+                delete std::get<Blob*>(value);
+                break;
+            }
+        }
+    }
 };
 
 class Statement
@@ -142,9 +204,8 @@ class Statement
                     auto ptr  = sqlite3_column_text(handle, i);
                     auto size = sqlite3_column_bytes(handle, i);
 
-                    // TODO: This strdup is ugly, replace it with something else?
-                    // (also, this could cause a memory leak, so check if it's actually freed)
-                    result[i].values.push_back((const char*) strdup((const char*) ptr));
+                    // TODO: Don't forget to free this everywhere
+                    result[i].values.push_back(new std::string((const char*) ptr, size));
                     break;
                 }
                 case Column::Type::Blob:
@@ -152,12 +213,15 @@ class Statement
                     auto ptr  = sqlite3_column_blob(handle, i);
                     auto size = sqlite3_column_bytes(handle, i);
 
-                    result[i].values.push_back((const uint8_t*) ptr);
+                    result[i].values.push_back(new Blob{(const uint8*) ptr, size});
                     break;
                 }
                 case Column::Type::Null:
                 {
-                    result[i].values.push_back((const char*) nullptr);
+                    // When retrieving the name and SQL query for a specific table,
+                    // the columns are expected to have the string type. Therefore,
+                    // return nullptr of type string
+                    result[i].values.push_back((std::string*) nullptr);
                     break;
                 }
                 }
@@ -215,7 +279,7 @@ class DB
         other.handle = nullptr;
     }
 
-    std::vector<const char*> GetTables()
+    std::vector<std::string> GetTables()
     {
         if (!handle)
         {
@@ -223,17 +287,17 @@ class DB
         }
 
         auto columns = Exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC;");
-        std::vector<const char*> result;
+        std::vector<std::string> result;
 
         for (auto str : columns[0].values)
         {
-            result.push_back(std::get<const char*>(str));
+            result.push_back(std::move(*std::get<std::string*>(str)));
         }
 
         return result;
     }
 
-    std::vector<std::pair<const char*, const char*>> GetTableData()
+    std::vector<std::pair<std::string, std::string>> GetTableInfo()
     {
         if (!handle)
         {
@@ -241,24 +305,73 @@ class DB
         }
 
         auto columns = Exec("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name ASC;");
-        std::vector<std::pair<const char*, const char*>> result;
+        std::vector<std::pair<std::string, std::string>> result;
 
         for (int i = 0; i < columns[0].values.size(); ++i)
         {
-            auto name = std::get<const char*>(columns[0].values[i]);
-            auto sql  = std::get<const char*>(columns[1].values[i]);
+            auto namePtr = std::get<std::string*>(columns[0].values[i]);
+            auto sqlPtr  = std::get<std::string*>(columns[1].values[i]);
 
-            if (!name)
+            std::string name;
+            std::string sql;
+
+            if (!namePtr)
             {
                 name = "NULL";
             }
+            else
+            {
+                name = std::move(*namePtr);
+            }
 
-            if (!sql)
+            if (!sqlPtr)
             {
                 sql = "NULL";
             }
+            else
+            {
+                sql = std::move(*sqlPtr);
+            }
 
             result.push_back(std::make_pair(name, sql));
+        }
+
+        return result;
+    }
+
+    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> GetTableData(std::string_view name)
+    {
+        if (!handle)
+        {
+            return {};
+        }
+
+        AppCUI::Utils::String query;
+
+        query.SetFormat("SELECT * FROM %.*s;", name.size(), name.data());
+
+        auto columns = Exec(query.GetText());
+
+        std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> result;
+
+        if (columns.empty())
+        {
+            return result;
+        }
+
+        for (int i = 0; i < columns.size(); ++i)
+        {
+            result.first.push_back(std::move(columns[i].name));
+        }
+
+        for (int i = 0; i < columns[0].values.size(); ++i)
+        {
+            result.second.emplace_back();
+
+            for (int j = 0; j < columns.size(); ++j)
+            {
+                result.second[i].emplace_back(columns[j].ValueToString(i));
+            }
         }
 
         return result;

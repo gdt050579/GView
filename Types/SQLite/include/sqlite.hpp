@@ -11,8 +11,9 @@ namespace Type
     namespace SQLite
     {
         constexpr uint8_t SQLITE3_MAGIC[] = "SQLite format 3";
+        constexpr char BUFFER_VIEW_SEPARATOR[] = ",";
 
-        class SQLiteFile : public TypeInterface
+        class SQLiteFile : public TypeInterface, public AppCUI::Controls::Handlers::OnListViewItemPressedInterface
         {
           public:
             DB db;
@@ -25,6 +26,10 @@ namespace Type
             bool Update();
 
             std::string_view GetTypeName() override;
+
+            virtual void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
+
+            void InitListView(Reference<Controls::ListView> lv);
         };
         namespace Panels
         {

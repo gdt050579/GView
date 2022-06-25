@@ -7,6 +7,7 @@ Panels::Information::Information(Reference<GView::Type::SQLite::SQLiteFile> _sql
 {
     sqlite = _sqlite;
     tables = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Name,w:20", "n:Original SQL,w:100" }, ListViewFlags::None);
+    sqlite->InitListView(tables);
 
     this->Update();
 }
@@ -17,9 +18,9 @@ void Panels::Information::UpdateTableInformation()
 
     tables->DeleteAllItems();
 
-    auto data = sqlite->db.GetTableData();
+    auto data = sqlite->db.GetTableInfo();
 
-    for (auto table : data)
+    for (auto& table : data)
     {
         tables->AddItem({ table.first, table.second });
     }
