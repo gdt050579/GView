@@ -1471,6 +1471,76 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
+//======================================================================[Mouse coords]==================
+void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)
+{
+    if ((y >= 0) && (y <= (int) ViewPort.linesCount))
+    {
+        const auto vd = this->ViewPort.Lines + y;
+        if (vd->size > 0)
+        {
+            CharacterStream cs(this->obj->GetData().Get(vd->offset, vd->size, false), 0, this->settings.ToReference());
+            auto xScroll = 0U;
+
+            if (ViewPort.scrollX > 0)
+            {
+                while (cs.Next())
+                {
+                    if (cs.GetNextXOffset() >= ViewPort.scrollX)
+                    {
+                        xScroll = ViewPort.scrollX;
+                        break;
+                    }
+                }
+            }
+            auto bufPos  = cs.GetCurrentBufferPos();
+            auto bestDif = 0xFFFFFF; // a large number
+            lineNo       = vd->lineNo;
+            while (cs.Next())
+            {
+                const int charXPos = (cs.GetXOffset() + vd->xStart - xScroll) + 1 + this->lineNumberWidth;
+                const int dif      = std::abs(x - charXPos);
+                if (dif >= bestDif)
+                    break; // no need to go further
+                bestDif   = dif;
+                charIndex = cs.GetCharIndex();
+            }
+            charIndex += vd->lineCharIndex;
+        }
+        else
+        {
+            // empty line --> go to the start of the line
+            lineNo    = vd->lineNo;
+            charIndex = 0;
+        }
+    }
+    else
+    {
+        // we need to scroll
+        lineNo    = 0; // temporary values --> should be changed with values from scrolling
+        charIndex = 0;
+    }
+}
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+{
+    uint32 lineNo, chIndex;
+    MousePosToTextOffset(x, y, lineNo, chIndex);
+    MoveTo(lineNo, chIndex, false);
+}
+void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
+{
+}
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+{
+    uint32 lineNo, chIndex;
+    MousePosToTextOffset(x, y, lineNo, chIndex);
+    MoveTo(lineNo, chIndex, true);
+    return true;
+}
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+{
+    NOT_IMPLEMENTED(false);
+}
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
 {

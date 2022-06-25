@@ -151,6 +151,9 @@ namespace View
                 return this->settings->wrapMethod != WrapMethod::None;
             }
             void SetWrapMethod(WrapMethod method);
+
+            void MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex);
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -168,7 +171,12 @@ namespace View
             virtual bool ShowFindDialog() override;
             virtual std::string_view GetName() override;
 
-            
+            // mouse events
+            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;            
+
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // property interface
