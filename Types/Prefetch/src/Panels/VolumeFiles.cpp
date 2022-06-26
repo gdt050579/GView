@@ -26,7 +26,7 @@ VolumeFiles::VolumeFiles(Reference<PrefetchFile> _prefetch, Reference<GView::Vie
                 "n:MFT entry index,a:r,w:20",
                 "n:Sequence number,a:r,w:20",
           },
-          ListViewFlags::None);
+          ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }

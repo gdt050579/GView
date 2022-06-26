@@ -17,9 +17,6 @@ ExtraData::ExtraData(Reference<Object> _object, Reference<GView::Type::LNK::LNKF
 
 void ExtraData::UpdateGeneralInformation()
 {
-    LocalString<1024> ls;
-    LocalString<1024> ls2;
-
     for (const auto& extraData : lnk->extraDataBases)
     {
         switch (extraData->signature)
