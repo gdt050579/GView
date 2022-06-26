@@ -295,6 +295,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->SubLines.lineNo  = INVALID_LINE_NUMBER;
     this->ViewPort.scrollX = 0;
     this->ViewPort.Reset();
+    this->mouseStatus = MouseStatus::None;
 
     this->settings->encoding = CharacterEncoding::AnalyzeBufferForEncoding(this->obj->GetData().Get(0, 4096, false), true, this->sizeOfBOM);
     this->MoveTo(0, 0, false);
@@ -1525,10 +1526,41 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
     uint32 lineNo, chIndex;
     MousePosToTextOffset(x, y, lineNo, chIndex);
-    MoveTo(lineNo, chIndex, false);
+    if (x<=this->lineNumberWidth)
+    {
+        this->mouseStatus = MouseStatus::Border;
+        chIndex           = 0; // start of the line
+    }
+    else
+    {
+        this->mouseStatus = MouseStatus::Text;
+    }
+    if ((button & MouseButton::DoubleClicked) != MouseButton::None)
+    {
+        if (this->mouseStatus == MouseStatus::Border)
+        {
+            MoveTo(lineNo, 0, false);
+            auto li = GetLineInfo(lineNo);
+            MoveTo(lineNo, li.charsCount, true);
+        }
+        else
+        {
+            // try to select a word
+            MoveTo(lineNo, chIndex, false);
+            MoveToPreviousWord(false);
+            MoveRight(false);
+            MoveToNextWord(true);
+            MoveLeft(true);
+        }
+    }
+    else
+    {
+        MoveTo(lineNo, chIndex, false);
+    }
 }
 void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
 {
+    this->mouseStatus = MouseStatus::None;
 }
 bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
 {

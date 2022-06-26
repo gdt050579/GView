@@ -60,6 +60,17 @@ namespace View
         };
         class Instance : public View::ViewControl
         {
+            enum class Direction
+            {
+                TopToBottom,
+                BottomToTop
+            };
+            enum class MouseStatus
+            {
+                None,
+                Text,
+                Border
+            };
             std::vector<LineInfo> lines;      
             Utils::Selection selection;
             Pointer<SettingsData> settings;
@@ -68,12 +79,9 @@ namespace View
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
             uint32 sizeOfBOM;
+            MouseStatus mouseStatus;
 
-            enum class Direction
-            {
-                TopToBottom,
-                BottomToTop
-            };
+
             struct
             {
                 std::vector<SubLineInfo> entries;
