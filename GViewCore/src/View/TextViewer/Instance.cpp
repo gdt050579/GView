@@ -1539,7 +1539,15 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
 }
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 {
-    NOT_IMPLEMENTED(false);
+    switch (direction)
+    {
+    case MouseWheel::Up:
+        return OnKeyEvent(Key::Up | Key::Ctrl, false);
+    case MouseWheel::Down:
+        return OnKeyEvent(Key::Down | Key::Ctrl, false);
+    }
+
+    return false;
 }
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
