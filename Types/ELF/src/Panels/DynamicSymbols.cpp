@@ -22,7 +22,7 @@ DynamicSymbols::DynamicSymbols(Reference<ELFFile> _elf, Reference<GView::View::W
           this,
           "d:c",
           { "n:#,a:r,w:6",
-            "n:Name,a:r,w:40",
+            "n:Name,a:l,w:40",
             "n:Name Index,a:r,w:12",
             "n:Value,a:r,w:10",
             "n:Size,a:r,w:8",

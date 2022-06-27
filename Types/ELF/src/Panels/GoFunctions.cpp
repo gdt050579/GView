@@ -23,7 +23,7 @@ GoFunctions::GoFunctions(Reference<ELFFile> _elf, Reference<GView::View::WindowI
           "d:c",
           { "n:#,a:r,w:6",
             "n:Entry,a:r,w:16",
-            "n:Name,a:r,w:40",
+            "n:Name,a:l,w:40",
             "n:Name Offset,a:r,w:14",
             "n:Args,a:r,w:10",
             "n:Frame,a:r,w:8",
