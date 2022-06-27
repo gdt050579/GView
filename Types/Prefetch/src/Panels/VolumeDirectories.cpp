@@ -20,7 +20,7 @@ VolumeDirectories::VolumeDirectories(Reference<PrefetchFile> _prefetch, Referenc
     base     = 16;
 
     list = Factory::ListView::Create(
-          this, "d:c", { "n:Volume #,a:r,w:14", "n:Path Length,a:r,w:14", "n:Path,a:r,w:160" }, ListViewFlags::AllowMultipleItemsSelection);
+          this, "d:c", { "n:Volume #,a:r,w:14", "n:Path Length,a:r,w:14", "n:Path,a:l,w:160" }, ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }

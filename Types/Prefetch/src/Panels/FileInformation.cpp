@@ -20,7 +20,7 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
     base     = 16;
 
     auto columns = std::initializer_list<ConstString>{ "n:Start Time,a:r,w:12",    "n:Duration,a:r,w:10", "n:Filename Offset,a:r,w:18",
-                                                       "n:Filename Size,a:r,w:16", "n:Unknown,a:r,w:10",  "n:Path,a:r,w:140" };
+                                                       "n:Filename Size,a:r,w:16", "n:Unknown,a:r,w:10",  "n:Path,a:l,w:140" };
 
     switch (prefetch->header.version)
     {
@@ -30,7 +30,7 @@ FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Re
     case Magic::WIN_8:
     case Magic::WIN_10:
         columns = { "n:Start Time,a:r,w:12",    "n:Duration,a:r,w:10", "n:Average Duration,a:r,w:20",    "n:Filename Offset,a:r,w:18",
-                    "n:Filename Size,a:r,w:16", "n:Unknown,a:r,w:10",  "n:NTFS File Reference,a:r,w:24", "n:Path,a:r,w:100" };
+                    "n:Filename Size,a:r,w:16", "n:Unknown,a:r,w:10",  "n:NTFS File Reference,a:r,w:24", "n:Path,a:l,w:100" };
         break;
     default:
         break;
