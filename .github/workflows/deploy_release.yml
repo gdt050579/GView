@@ -8,6 +8,11 @@ on:
         required: true
         default: true 
         type: boolean
+      isprerelease:
+        description: 'Is the build pre release?'     
+        required: true
+        default: true 
+        type: boolean
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
