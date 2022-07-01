@@ -66,7 +66,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: D:/a/GView/GView/bin/Release
+        path: /Users/runner/work/GView/GView/build/Release
         # retention-days: 1
         
   build-ubuntu:
@@ -93,7 +93,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: linux_artifacts
-        path: D:/a/GView/GView/bin/Release
+        path: /home/runner/work/GView/GView/build/Release
         # retention-days: 1     
       
   publish_job:
