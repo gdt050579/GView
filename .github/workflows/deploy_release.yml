@@ -1,6 +1,9 @@
 name: "Deploy release"
 
 on:
+  push:
+    branches:
+      - build_artefacts
   workflow_dispatch:
     inputs:
       isPreRelease:
