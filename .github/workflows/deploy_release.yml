@@ -42,9 +42,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: windows_artifacts
-        path: |
-          D:/a/GView/GView/bin/Release
-          artifacts
+        path: D:/a/GView/GView/bin/Release
         # retention-days: 1
        
   build-macos:
@@ -64,6 +62,13 @@ jobs:
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
+    - name: Store Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: apple_artifacts
+        path: D:/a/GView/GView/bin/Release
+        # retention-days: 1
+        
   build-ubuntu:
     runs-on: [ubuntu-latest]
     env:
@@ -82,7 +87,14 @@ jobs:
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}     
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    
+    - name: Store Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux_artifacts
+        path: D:/a/GView/GView/bin/Release
+        # retention-days: 1     
       
   publish_job:
     name: "Publish to release"
