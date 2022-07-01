@@ -43,7 +43,7 @@ jobs:
       with:
         name: build-output
         path: |
-          windows_artifacts/
+          D:/a/GView/GView/bin/Release
           artifacts
         # retention-days: 1
        
