@@ -37,6 +37,15 @@ jobs:
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    
+    - name: Store Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-output
+        path: |
+          windows_artifacts/
+          artifacts
+        # retention-days: 1
        
   build-macos:
     runs-on: [macos-latest]
