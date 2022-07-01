@@ -41,7 +41,7 @@ jobs:
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: build-output
+        name: windows_artifacts
         path: |
           D:/a/GView/GView/bin/Release
           artifacts
