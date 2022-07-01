@@ -83,7 +83,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Add tag data to enviroment
-      run: python .github/workflows/get_version.py
+      run: python .github/workflows/get_version.py GViewCore/include/GView.hpp ${{ github.event.inputs.versionToUpdate }}
 
     - uses: actions/download-artifact@v2
       with:
