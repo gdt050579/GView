@@ -3,20 +3,10 @@ name: "Deploy release"
 on:
   push:
     branches:
+      - build_artefacts
       - main
   workflow_dispatch:
     inputs:
-      tag-version:
-        description: "Release Tag Version"
-        required: true
-      git-ref:
-        description: "Release Git Ref"
-        required: true
-        default: "master"
-      is-draft:
-        description: 'Draft Release?'
-        required: true
-        default: "true"
       isPreRelease:
         description: 'Is the build pre release?'     
         required: true
@@ -56,7 +46,13 @@ jobs:
       
     - name: Create archive
       run: |
-        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
+        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.exe)
+        echo "$output"
+        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.dll)
+        echo "$output"
+        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.tpl)
+        echo "$output"
+        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.gpl)
         echo "$output"
     
     - name: Store Artifacts
