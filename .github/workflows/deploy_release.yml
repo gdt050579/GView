@@ -48,12 +48,22 @@ jobs:
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+      
+    - name: Add tag data to enviroment
+      run: |
+        $output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+        echo "GVIEW_VERSION=$output" | Out-File -FilePath $env:GITHUB_ENV -Append
+      
+    - name: Create archive
+      run: |
+        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
+        echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: windows_artifacts
-        path: D:/a/GView/GView/bin/Release
+        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
      
   build-macos:
@@ -72,15 +82,25 @@ jobs:
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      
+        
+    - name: Add tag data to enviroment
+      run: |
+        output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+        echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
+ 
     - name: List Files
-      run: ls -R /Users/runner/work/GView/GView
+      run: ls -R /Users/runner/work/GView/GView/bin/Release
+      
+    - name: Create archive
+      run: |
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
+        echo "$output"
 
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: /Users/runner/work/GView/GView/bin/Release
+        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
         
   build-ubuntu:
@@ -112,13 +132,15 @@ jobs:
       run: ls -R /home/runner/work/GView/GView/bin/Release
       
     - name: Create archive
-      run: zip -r "GView-${{env.GVIEW_VERSION}}.zip" /home/runner/work/GView/GView/bin/Release
+      run: |
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
+        echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: linux_artifacts
-        path: "GView-${{env.GVIEW_VERSION}}.zip"
+        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
       
   publish_job:
