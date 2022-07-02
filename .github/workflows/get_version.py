@@ -17,7 +17,7 @@ with open(header_location, 'r') as f:
             version = line.split('#define GVIEW_VERSION ')[1].strip(' \r\n\t\"')
             break
 
-if version is not None:
+if version is None:
     print("Failed to find GVIEW_VERSION")
     exit(1)
 
