@@ -12,7 +12,8 @@ enum class Action : int32
     ChangeBase = 4
 };
 
-VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win) : TabPage("&DSection")
+VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win)
+    : TabPage("&DSection (Volume Paths)")
 {
     prefetch = _prefetch;
     win      = _win;
@@ -27,7 +28,7 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               {
                     "n:Path Offset,a:r,w:14",
                     "n:Path Length,a:r,w:14",
-                    "n:Path,a:r,w:40",
+                    "n:Path,a:l,w:40",
                     "n:Creation Time,a:r,w:20",
                     "n:Serial Number,a:r,w:16",
                     "n:File References Offset,a:r,w:30",
@@ -47,7 +48,7 @@ VolumeInformation::VolumeInformation(Reference<PrefetchFile> _prefetch, Referenc
               {
                     "n:Path Offset,a:r,w:14",
                     "n:Path Length,a:r,w:14",
-                    "n:Path,a:r,w:40",
+                    "n:Path,a:l,w:40",
                     "n:Creation Time,a:r,w:20",
                     "n:Serial Number,a:r,w:16",
                     "n:File References Offset,a:r,w:30",
@@ -101,11 +102,8 @@ void VolumeInformation::Update_17()
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
 
-        const auto path = std::u16string_view{
-            (char16_t*) (((uint8*) prefetch->bufferSectionD.GetData() + sizeof(VolumeInformationEntry_30) * i) + entry->devicePathOffset),
-            entry->devicePathLength
-        };
-        item.SetText(2, ls.Format("%.*ls", path.size(), path.data()));
+        const auto& path = prefetch->volumeEntries.at(i).name;
+        item.SetText(2, ls.Format("%.*s", path.size(), path.data()));
 
         AppCUI::OS::DateTime dt;
         dt.CreateFromFileTime(entry->creationTime);
@@ -135,11 +133,8 @@ void VolumeInformation::Update_23_26()
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
 
-        const auto path = std::u16string_view{
-            (char16_t*) (((uint8*) prefetch->bufferSectionD.GetData() + sizeof(VolumeInformationEntry_30) * i) + entry->devicePathOffset),
-            entry->devicePathLength
-        };
-        item.SetText(2, ls.Format("%.*ls", path.size(), path.data()));
+        const auto& path = prefetch->volumeEntries.at(i).name;
+        item.SetText(2, ls.Format("%.*s", path.size(), path.data()));
 
         AppCUI::OS::DateTime dt;
         dt.CreateFromFileTime(entry->creationTime);
@@ -173,11 +168,8 @@ void VolumeInformation::Update_30()
         auto item = list->AddItem({ ls.Format("%s", GetValue(nf, entry->devicePathOffset).data()) });
         item.SetText(1, ls.Format("%s", GetValue(nf, entry->devicePathLength).data()));
 
-        const auto path = std::u16string_view{
-            (char16_t*) (((uint8*) prefetch->bufferSectionD.GetData() + sizeof(VolumeInformationEntry_30) * i) + entry->devicePathOffset),
-            entry->devicePathLength
-        };
-        item.SetText(2, ls.Format("%.*ls", path.size(), path.data()));
+        const auto& path = prefetch->volumeEntries.at(i).name;
+        item.SetText(2, ls.Format("%.*s", path.size(), path.data()));
 
         AppCUI::OS::DateTime dt;
         dt.CreateFromFileTime(entry->creationTime);

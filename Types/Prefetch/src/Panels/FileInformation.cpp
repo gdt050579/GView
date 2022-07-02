@@ -13,46 +13,30 @@ enum class Action : int32
 };
 
 FileInformationEntry::FileInformationEntry(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win)
-    : TabPage("&ASection")
+    : TabPage("&ASection (FileInformation)")
 {
     prefetch = _prefetch;
     win      = _win;
     base     = 16;
 
+    auto columns = std::initializer_list<ConstString>{ "n:Start Time,a:r,w:12",    "n:Duration,a:r,w:10", "n:Filename Offset,a:r,w:18",
+                                                       "n:Filename Size,a:r,w:16", "n:Unknown,a:r,w:10",  "n:Path,a:l,w:140" };
+
     switch (prefetch->header.version)
     {
     case Magic::WIN_XP_2003:
-        list = Factory::ListView::Create(
-              this,
-              "d:c",
-              { "n:Start Time,a:r,w:12",
-                "n:Duration,a:r,w:10",
-                "n:Filename Offset,a:r,w:18",
-                "n:Filename Size,a:r,w:16",
-                "n:Unknown,a:r,w:10",
-                "n:Path,a:r,w:140" },
-              ListViewFlags::None);
-
         break;
     case Magic::WIN_VISTA_7:
     case Magic::WIN_8:
     case Magic::WIN_10:
-        list = Factory::ListView::Create(
-              this,
-              "d:c",
-              { "n:Start Time,a:r,w:12",
-                "n:Duration,a:r,w:10",
-                "n:Average Duration,a:r,w:20",
-                "n:Filename Offset,a:r,w:18",
-                "n:Filename Size,a:r,w:16",
-                "n:Unknown,a:r,w:10",
-                "n:NTFS File Reference,a:r,w:24",
-                "n:Path,a:r,w:100" },
-              ListViewFlags::None);
+        columns = { "n:Start Time,a:r,w:12",    "n:Duration,a:r,w:10", "n:Average Duration,a:r,w:20",    "n:Filename Offset,a:r,w:18",
+                    "n:Filename Size,a:r,w:16", "n:Unknown,a:r,w:10",  "n:NTFS File Reference,a:r,w:24", "n:Path,a:l,w:100" };
         break;
     default:
         break;
     }
+
+    list = Factory::ListView::Create(this, "d:c", columns, ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }

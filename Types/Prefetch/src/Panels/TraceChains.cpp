@@ -12,42 +12,35 @@ enum class Action : int32
     ChangeBase = 4
 };
 
-TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win) : TabPage("&BSection")
+TraceChains::TraceChains(Reference<PrefetchFile> _prefetch, Reference<GView::View::WindowInterface> _win) : TabPage("&BSection (TraceChains)")
 {
     prefetch = _prefetch;
     win      = _win;
     base     = 16;
+
+    auto columns = std::initializer_list<ConstString>{
+        "n:Next Entry Index,a:r,w:14", "n:Blocks Fetched,a:r,w:10", "n:Unknown,a:r,w:18", "n:Duration,a:r,w:10", "n:Unknown2,a:r,w:18"
+    };
 
     switch (prefetch->header.version)
     {
     case Magic::WIN_XP_2003:
     case Magic::WIN_VISTA_7:
     case Magic::WIN_8:
-        list = Factory::ListView::Create(
-              this,
-              "d:c",
-              { "n:Next Entry Index,a:r,w:14",
-                "n:Blocks Fetched,a:r,w:10",
-                "n:Unknown,a:r,w:18",
-                "n:Duration,a:r,w:10",
-                "n:Unknown2,a:r,w:18" },
-              ListViewFlags::None);
         break;
     case Magic::WIN_10:
-        list = Factory::ListView::Create(
-              this,
-              "d:c",
-              {
-                    "n:Next Entry Index,a:r,w:14",
-                    "n:Unknown0,a:r,w:18",
-                    "n:Unknown1,a:r,w:18",
-                    "n:Unknown2,a:r,w:18",
-              },
-              ListViewFlags::None);
+        columns = {
+            "n:Next Entry Index,a:r,w:14",
+            "n:Unknown0,a:r,w:18",
+            "n:Unknown1,a:r,w:18",
+            "n:Unknown2,a:r,w:18",
+        };
         break;
     default:
         break;
     }
+
+    list = Factory::ListView::Create(this, "d:c", columns, ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }

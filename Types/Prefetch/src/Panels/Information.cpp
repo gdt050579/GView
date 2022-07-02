@@ -38,7 +38,13 @@ void Information::UpdateHeader()
     NumericFormatter nf2;
 
     general->AddItem("Header").SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Version", MagicNames.at(prefetch->header.version) }).SetType(ListViewItem::Type::Highlighted);
+    general
+          ->AddItem({ "Version",
+                      ls.Format(
+                            "%s (%s)",
+                            MagicNames.at(prefetch->header.version).data(),
+                            nf2.ToString((uint32) prefetch->header.version, hex).data()) })
+          .SetType(ListViewItem::Type::Highlighted);
     general->AddItem({ "Signature", ls.Format("%.*s", 4, (char*) &prefetch->header.signature) });
 
     const auto h3    = nf.ToString(prefetch->header.H3, dec);

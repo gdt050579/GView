@@ -23,7 +23,7 @@ Sections::Sections(Reference<ELFFile> _elf, Reference<GView::View::WindowInterfa
           "d:c",
           { "n:#,a:r,w:6",
             "n:Segment,a:r,w:16",
-            "n:Name,a:r,w:16",
+            "n:Name,a:l,w:16",
             "n:Name Index,a:r,w:12",
             "n:Type,a:r,w:16",
             "n:Flags,a:r,w:40",

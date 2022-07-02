@@ -236,6 +236,7 @@ bool PrefetchFile::AddVolumeEntry(
         LocalUnicodeStringBuilder<1024> lsub;
         CHECK(lsub.Set(cs), false, "");
         lsub.ToString(ve.name);
+        ve.name.resize(devicePathLength);
     }
 
     const auto fOffset = area.sectionD.offset + fileReferencesOffset;
