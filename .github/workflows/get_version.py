@@ -11,6 +11,7 @@ if not os.path.exists(header_location):
     exit(1)
 
 found_version = False
+version = None
 with open(header_location, 'r') as f:
     for line in f:
         if line.startswith('#define GVIEW_VERSION '):
@@ -24,4 +25,5 @@ if not found_version:
     print("Failed to find GVIEW_VERSION")
     exit(1)
 
+print(version)
 exit(0)
