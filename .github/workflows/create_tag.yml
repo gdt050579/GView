@@ -18,6 +18,9 @@ jobs:
         
       - name: Add tag data to enviroment
         run: python .github/workflows/get_version.py GViewCore/include/GView.hpp
+        
+      - name: Show Version
+        run: echo "${{ env.GVIEW_VERSION }}"
 
       - name: Create Tag
         uses: negz/create-tag@v1
