@@ -51,7 +51,7 @@ jobs:
       
     - name: Add tag data to enviroment
       run: |
-        output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+        output=$(py -3 .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
       
     - name: Create archive
@@ -93,7 +93,7 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" ./Users/runner/work/GView/GView)
+        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" /Users/runner/work/GView/GView)
         echo "$output"
 
     - name: Store Artifacts
@@ -133,7 +133,7 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" ./home/runner/work/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" /home/runner/work/GView/GView/bin/Release)
         echo "$output"
     
     - name: Store Artifacts
