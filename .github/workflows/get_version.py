@@ -10,18 +10,16 @@ if not os.path.exists(header_location):
     print("Path {} does not exists!".format(header_location))
     exit(1)
 
-found_version = False
+version = None
 with open(header_location, 'r') as f:
     for line in f:
         if line.startswith('#define GVIEW_VERSION '):
-            version = line.split('#define GVIEW_VERSION ')[
-                1].strip(' \r\n\t\"')
-            found_version = True
-            os.putenv('GVIEW_VERSION', version)
+            version = line.split('#define GVIEW_VERSION ')[1].strip(' \r\n\t\"')
             break
 
-if not found_version:
+if version is None:
     print("Failed to find GVIEW_VERSION")
     exit(1)
 
+print(version)
 exit(0)
