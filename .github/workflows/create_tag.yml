@@ -3,12 +3,10 @@ name: Tag
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Release version'
-        required: true
       message:
         description: 'Tag message'
         required: true
+        default: "Unknown"
 
 jobs:
   create-tag:
@@ -17,10 +15,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+        
+      - name: Add tag data to enviroment
+        run: python .github/workflows/get_version.py GViewCore/include/GView.hpp
 
       - name: Create Tag
         uses: negz/create-tag@v1
         with:
-          version: ${{ github.event.inputs.version }}
+          version: ${{ env.GVIEW_VERSION }}
           message: ${{ github.event.inputs.message }}
           token: ${{ secrets.GITHUB_TOKEN }}
