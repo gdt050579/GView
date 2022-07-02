@@ -1475,21 +1475,26 @@ std::string_view Instance::GetName()
 //======================================================================[Mouse coords]==================
 void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)
 {
-    if ((y >= 0) && (y <= (int) ViewPort.linesCount))
+    if ((y >= 0) && (y < (int) ViewPort.linesCount))
     {
         const auto vd = this->ViewPort.Lines + y;
         if (vd->size > 0)
         {
             CharacterStream cs(this->obj->GetData().Get(vd->offset, vd->size, false), 0, this->settings.ToReference());
             auto xScroll = 0U;
+            auto vsX     = ViewPort.scrollX;
 
-            if (ViewPort.scrollX > 0)
+            if (x <= (int32)this->lineNumberWidth)
+            {                
+                vsX = static_cast<uint32>(std::max<>(0, (int) vsX + x - (int32) this->lineNumberWidth));
+            }
+            if (vsX > 0)
             {
                 while (cs.Next())
                 {
-                    if (cs.GetNextXOffset() >= ViewPort.scrollX)
+                    if (cs.GetNextXOffset() >= vsX)
                     {
-                        xScroll = ViewPort.scrollX;
+                        xScroll = vsX;
                         break;
                     }
                 }
@@ -1517,16 +1522,31 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
     }
     else
     {
-        // we need to scroll
-        lineNo    = 0; // temporary values --> should be changed with values from scrolling
-        charIndex = 0;
+        if (y < 0)
+        {
+            while (y < 0)
+            {
+                MoveScrollUp();
+                y++;
+            }
+            MousePosToTextOffset(x, 0, lineNo, charIndex);
+        }
+        else
+        {
+            while (y >= (int) ViewPort.linesCount)
+            {
+                MoveScrollDown();
+                y--;
+            }
+            MousePosToTextOffset(x, y, lineNo, charIndex);
+        }
     }
 }
 void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
     uint32 lineNo, chIndex;
     MousePosToTextOffset(x, y, lineNo, chIndex);
-    if (x<=this->lineNumberWidth)
+    if (x <= (int) this->lineNumberWidth)
     {
         this->mouseStatus = MouseStatus::Border;
         chIndex           = 0; // start of the line
