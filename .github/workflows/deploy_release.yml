@@ -56,7 +56,7 @@ jobs:
       
     - name: Create archive
       run: |
-        $output=$(7z -zip "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
+        $output=$(7z "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
         echo "$output"
     
     - name: Store Artifacts
