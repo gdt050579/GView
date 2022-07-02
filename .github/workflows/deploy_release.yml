@@ -36,6 +36,7 @@ jobs:
       SDL2_TTF_URL: "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-devel-2.0.15-VC.zip"
       SDL2_PATH: "C:\\SDL"
     steps:
+    - uses: actions/setup-python@v4
     - uses: actions/checkout@v2
       with:
         submodules: recursive
@@ -51,7 +52,7 @@ jobs:
       
     - name: Add tag data to enviroment
       run: |
-        output=$(python3 .github/workflows/get_version.py GViewCore/include/GView.hpp)
+        output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
       
     - name: Create archive
