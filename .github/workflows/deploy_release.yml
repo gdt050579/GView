@@ -141,7 +141,7 @@ jobs:
     - uses: "marvinpinto/action-automatic-releases@latest"
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "${{env.GVIEW_VERSION}}"
+        automatic_release_tag: "latest" # "${{env.GVIEW_VERSION}}"
         prerelease: ${{ github.event.inputs.isPreRelease }}
         title: Build ${{env.GVIEW_VERSION}}
         files: |
