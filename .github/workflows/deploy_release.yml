@@ -37,6 +37,8 @@ jobs:
       SDL2_PATH: "C:\\SDL"
     steps:
     - uses: actions/setup-python@v4
+      with:
+        python-version: "3.9"
     - uses: actions/checkout@v2
       with:
         submodules: recursive
