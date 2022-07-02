@@ -56,7 +56,7 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" D:/a/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ steps.system-info.outputs.release }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
         echo "$output"
     
     - name: Store Artifacts
@@ -89,11 +89,11 @@ jobs:
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
  
     - name: List Files
-      run: ls -R /Users/runner/work/GView/GView
+      run: ls -R /Users/runner/work/GView/GView/bin/Release
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" /Users/runner/work/GView/GView)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ steps.system-info.outputs.release }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
         echo "$output"
 
     - name: Store Artifacts
@@ -133,7 +133,7 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" /home/runner/work/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ steps.system-info.outputs.release }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
         echo "$output"
     
     - name: Store Artifacts
