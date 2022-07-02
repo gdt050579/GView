@@ -52,7 +52,7 @@ jobs:
     - name: Add tag data to enviroment
       run: |
         $output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
+        echo "GVIEW_VERSION=$output" | Out-File -FilePath $env:GITHUB_ENV -Append
       
     - name: Create archive
       run: |
