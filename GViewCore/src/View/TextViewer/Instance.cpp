@@ -1482,14 +1482,19 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
         {
             CharacterStream cs(this->obj->GetData().Get(vd->offset, vd->size, false), 0, this->settings.ToReference());
             auto xScroll = 0U;
+            auto vsX     = ViewPort.scrollX;
 
-            if (ViewPort.scrollX > 0)
+            if (x <= (int32)this->lineNumberWidth)
+            {                
+                vsX = static_cast<uint32>(std::max<>(0, (int) vsX + x - (int32) this->lineNumberWidth));
+            }
+            if (vsX > 0)
             {
                 while (cs.Next())
                 {
-                    if (cs.GetNextXOffset() >= ViewPort.scrollX)
+                    if (cs.GetNextXOffset() >= vsX)
                     {
-                        xScroll = ViewPort.scrollX;
+                        xScroll = vsX;
                         break;
                     }
                 }
