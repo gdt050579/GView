@@ -36,9 +36,6 @@ jobs:
       SDL2_TTF_URL: "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-devel-2.0.15-VC.zip"
       SDL2_PATH: "C:\\SDL"
     steps:
-    - uses: actions/setup-python@v4
-      with:
-        python-version: "3.9"
     - uses: actions/checkout@v2
       with:
         submodules: recursive
@@ -59,14 +56,14 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ steps.system-info.outputs.release }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release)
         echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: windows_artifacts
-        path: "GView-${{env.GVIEW_VERSION}}.zip"
+        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
      
   build-macos:
@@ -96,14 +93,14 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ steps.system-info.outputs.release }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
         echo "$output"
 
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: "GView-${{env.GVIEW_VERSION}}.zip"
+        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
         
   build-ubuntu:
@@ -136,14 +133,14 @@ jobs:
       
     - name: Create archive
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ steps.system-info.outputs.release }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
         echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: linux_artifacts
-        path: "GView-${{env.GVIEW_VERSION}}.zip"
+        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
       
   publish_job:
