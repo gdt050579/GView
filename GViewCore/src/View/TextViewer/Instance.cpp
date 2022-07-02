@@ -1475,7 +1475,7 @@ std::string_view Instance::GetName()
 //======================================================================[Mouse coords]==================
 void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)
 {
-    if ((y >= 0) && (y <= (int) ViewPort.linesCount))
+    if ((y >= 0) && (y < (int) ViewPort.linesCount))
     {
         const auto vd = this->ViewPort.Lines + y;
         if (vd->size > 0)
@@ -1517,16 +1517,31 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
     }
     else
     {
-        // we need to scroll
-        lineNo    = 0; // temporary values --> should be changed with values from scrolling
-        charIndex = 0;
+        if (y < 0)
+        {
+            while (y < 0)
+            {
+                MoveScrollUp();
+                y++;
+            }
+            MousePosToTextOffset(x, 0, lineNo, charIndex);
+        }
+        else
+        {
+            while (y >= (int) ViewPort.linesCount)
+            {
+                MoveScrollDown();
+                y--;
+            }
+            MousePosToTextOffset(x, y, lineNo, charIndex);
+        }
     }
 }
 void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
     uint32 lineNo, chIndex;
     MousePosToTextOffset(x, y, lineNo, chIndex);
-    if (x<=this->lineNumberWidth)
+    if (x <= (int) this->lineNumberWidth)
     {
         this->mouseStatus = MouseStatus::Border;
         chIndex           = 0; // start of the line
