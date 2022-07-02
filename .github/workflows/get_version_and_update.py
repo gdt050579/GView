@@ -24,13 +24,12 @@ if len(sys.argv) > 2:
 reset_lower_versions = True
 
 header_output_location = header_location+'.new'
-found_version = False
+version = None
 with open(header_location, 'r') as f:
     with open(header_output_location, 'w') as g:
         for line in f:
             if line.startswith('#define GVIEW_VERSION '):
-                version = line.split('#define GVIEW_VERSION ')[
-                    1].strip(' \r\n\t\"')
+                version = line.split('#define GVIEW_VERSION ')[1].strip(' \r\n\t\"')
 
                 version_array = version.split('.')
 
@@ -43,13 +42,13 @@ with open(header_location, 'r') as f:
                 version = "{}.{}.{}".format(
                     version_array[0], version_array[1], version_array[2])
                 line = '#define GVIEW_VERSION "{}"\n'.format(version)
-                found_version = True
-                os.putenv('GVIEW_VERSION', version)
             g.write(line)
 
-if not found_version:
+if version is None:
     print("Failed to find GVIEW_VERSION")
     exit(1)
 
 shutil.move(header_output_location, header_location)
+
+print(version)
 exit(0)
