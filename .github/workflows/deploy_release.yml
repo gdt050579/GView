@@ -48,12 +48,17 @@ jobs:
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+      
+    - name: Create archive
+      run: |
+        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" D:/a/GView/GView/bin/Release)
+        echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: windows_artifacts
-        path: D:/a/GView/GView/bin/Release
+        path: "GView-${{env.GVIEW_VERSION}}.zip"
         retention-days: 1
      
   build-macos:
@@ -75,12 +80,17 @@ jobs:
       
     - name: List Files
       run: ls -R /Users/runner/work/GView/GView
+      
+    - name: Create archive
+      run: |
+        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" ./Users/runner/work/GView/GView)
+        echo "$output"
 
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: /Users/runner/work/GView/GView/bin/Release
+        path: "GView-${{env.GVIEW_VERSION}}.zip"
         retention-days: 1
         
   build-ubuntu:
@@ -112,7 +122,9 @@ jobs:
       run: ls -R /home/runner/work/GView/GView/bin/Release
       
     - name: Create archive
-      run: zip -r "GView-${{env.GVIEW_VERSION}}.zip" /home/runner/work/GView/GView/bin/Release
+      run: |
+        output=$(zip -9 -r "GView-${{env.GVIEW_VERSION}}.zip" ./home/runner/work/GView/GView/bin/Release)
+        echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
