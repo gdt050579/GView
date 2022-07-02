@@ -6,6 +6,17 @@ on:
       - build_artefacts
   workflow_dispatch:
     inputs:
+      tag-version:
+        description: "Release Tag Version"
+        required: true
+      git-ref:
+        description: "Release Git Ref"
+        required: true
+        default: "master"
+      is-draft:
+        description: 'Draft Release?'
+        required: true
+        default: "true"
       isPreRelease:
         description: 'Is the build pre release?'     
         required: true
@@ -110,7 +121,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Add tag data to enviroment
-      run: python .github/workflows/get_version.py GViewCore/include/GView.hpp ${{ github.event.inputs.versionToUpdate }}
+      run: python .github/workflows/get_version.py GViewCore/include/GView.hpp
 
     - uses: actions/download-artifact@v2
       with:
@@ -130,8 +141,8 @@ jobs:
     - uses: "marvinpinto/action-automatic-releases@latest"
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: ${{env.GVIEW_VERSION}}
-        prerelease: ${{ github.event.inputs.isPreRelease }}
+        automatic_release_tag: "latest" # "${{env.GVIEW_VERSION}}"
+        prerelease: true # ${{ github.event.inputs.isPreRelease }}
         title: Build ${{env.GVIEW_VERSION}}
         files: |
             artifacts/*.zip
