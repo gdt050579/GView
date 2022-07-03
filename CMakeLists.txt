@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.13)
 
 project(GView VERSION 1.0)
 
+# versioning
+file(READ "GViewCore/include/GView.hpp" GView_content)
+string(REGEX MATCH "#define GVIEW_VERSION \"([0-9]+.[0-9]+.[0-9]+)\"" _ ${GView_content})
+set(GVIEW_VERSION ${CMAKE_MATCH_1})
+message("${PROJECT_NAME} version: ${GVIEW_VERSION}")
+
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
