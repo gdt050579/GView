@@ -87,16 +87,9 @@ jobs:
       run: ls -R /Users/runner/work/GView/GView/bin/Release
       
     - name: Create archive
+      working-directory: /Users/runner/work/GView/GView/bin/Release
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*.*)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*/*.gpl)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*/*.tpl)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" .)
         echo "$output"
 
     - name: Store Artifacts
@@ -135,16 +128,9 @@ jobs:
       run: ls -R /home/runner/work/GView/GView/bin/Release
       
     - name: Create archive
+      working-directory: /home/runner/work/GView/GView/bin/Release
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*.*)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*/*.gpl)
-        echo "$output"
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*/*.tpl)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" .)
         echo "$output"
     
     - name: Store Artifacts
