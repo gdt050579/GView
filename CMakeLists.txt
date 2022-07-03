@@ -2,6 +2,16 @@ cmake_minimum_required(VERSION 3.13)
 
 project(GView VERSION 1.0)
 
+include(CheckIPOSupported)
+check_ipo_supported(RESULT supported OUTPUT error)
+
+if( supported )
+	message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+	message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
+endif()
+
 # versioning
 file(READ "GViewCore/include/GView.hpp" GView_content)
 string(REGEX MATCH "#define GVIEW_VERSION \"([0-9]+.[0-9]+.[0-9]+)\"" _ ${GView_content})
@@ -105,13 +115,3 @@ add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-
-include(CheckIPOSupported)
-check_ipo_supported(RESULT supported OUTPUT error)
-
-if( supported )
-	message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
-	set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-else()
-	message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
-endif()

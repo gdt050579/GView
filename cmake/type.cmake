@@ -1,6 +1,16 @@
 function (create_type type_name)
 
-	set(PROJECT_NAME ${type_name})
+	set(PROJECT_NAME ${type_name})	
+
+	include(CheckIPOSupported)
+	check_ipo_supported(RESULT supported OUTPUT error)
+	
+	if( supported )
+		message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
+		set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+	else()
+		message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
+	endif()
 	
 	include_directories(../../GViewCore/include)
 	
@@ -29,16 +39,6 @@ function (create_type type_name)
 
 	file(GLOB_RECURSE PROJECT_HEADERS include/*.hpp)
 	target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_HEADERS})
-	
-	include(CheckIPOSupported)
-	check_ipo_supported(RESULT supported OUTPUT error)
-	
-	if( supported )
-		message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
-		set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-	else()
-		message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
-	endif()
 
 	add_dependencies(${PROJECT_NAME} GViewCore)
 	add_dependencies(${PROJECT_NAME} AppCUI)
@@ -59,9 +59,13 @@ function (create_type type_name)
 	get_target_property(F ${PROJECT_NAME} FOLDER)
 	get_target_property(RODD ${PROJECT_NAME} RUNTIME_OUTPUT_DIRECTORY_DEBUG)
 	get_target_property(RODR ${PROJECT_NAME} RUNTIME_OUTPUT_DIRECTORY_RELEASE)
+	get_target_property(AOD ${PROJECT_NAME} ARCHIVE_OUTPUT_DIRECTORY)
+	get_target_property(LOD ${PROJECT_NAME} LIBRARY_OUTPUT_DIRECTORY)
 	
 	message(STATUS "${PROJECT_NAME} => FOLDER = ${F}")
 	message(STATUS "${PROJECT_NAME} => RUNTIME_OUTPUT_DIRECTORY_DEBUG = ${RODD}")
 	message(STATUS "${PROJECT_NAME} => RUNTIME_OUTPUT_DIRECTORY_RELEASE = ${RODR}")
+	message(STATUS "${PROJECT_NAME} => ARCHIVE_OUTPUT_DIRECTORY = ${AOD}")
+	message(STATUS "${PROJECT_NAME} => LIBRARY_OUTPUT_DIRECTORY = ${LOD}")
 endfunction()
 

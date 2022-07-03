@@ -1,6 +1,16 @@
 function (create_generic_plugin generic_plugin_name)
 
 	set(PROJECT_NAME ${generic_plugin_name})
+
+	include(CheckIPOSupported)
+	check_ipo_supported(RESULT supported OUTPUT error)
+	
+	if( supported )
+		message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
+		set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+	else()
+		message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
+	endif()
 	
 	include_directories(../../GViewCore/include)
 	
@@ -29,16 +39,6 @@ function (create_generic_plugin generic_plugin_name)
 
 	file(GLOB_RECURSE PROJECT_HEADERS include/*.hpp)
 	target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_HEADERS})
-
-        include(CheckIPOSupported)
-        check_ipo_supported(RESULT supported OUTPUT error)
-
-	if( supported )
-		message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
-		set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-	else()
-		message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
-	endif()
 
 	add_dependencies(${PROJECT_NAME} GViewCore)
 	add_dependencies(${PROJECT_NAME} AppCUI)
