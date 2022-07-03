@@ -1,0 +1,32 @@
+name: Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Tag message'
+        required: true
+        default: "Unknown"
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-18.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        
+      - name: Add tag data to enviroment
+        run: |
+          output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+          echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
+        
+      - name: Show Version
+        run: echo "${{ env.GVIEW_VERSION }}"
+
+      - name: Create Tag
+        uses: negz/create-tag@v1
+        with:
+          version: ${{ env.GVIEW_VERSION }}
+          message: ${{ github.event.inputs.message }}
+          token: ${{ secrets.GITHUB_TOKEN }}
