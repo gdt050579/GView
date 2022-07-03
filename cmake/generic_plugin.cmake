@@ -24,6 +24,17 @@ function (create_generic_plugin generic_plugin_name)
 	file(GLOB_RECURSE PROJECT_HEADERS include/*.hpp)
 	target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_HEADERS})
 
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT supported OUTPUT error)
+
+	if( supported )
+		message(STATUS "IPO / LTO enabled for ${PROJECT_NAME}")
+		set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+	else()
+		message(STATUS "IPO / LTO not supported for ${PROJECT_NAME}: <${error}>")
+	endif()
+
+
 	add_dependencies(${PROJECT_NAME} GViewCore)
 	add_dependencies(${PROJECT_NAME} AppCUI)
 	target_link_libraries(${PROJECT_NAME} PRIVATE GViewCore)
@@ -33,7 +44,8 @@ function (create_generic_plugin generic_plugin_name)
 	set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".gpl")
 	set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG}/GenericPlugins")
 	set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}/GenericPlugins")
-	# message(STATUS "Debug folder = ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG}")
-	# message(STATUS "Release folder = ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}")
+	
+	message(STATUS "Debug folder = ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG}")
+	message(STATUS "Release folder = ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}")
 endfunction()
 

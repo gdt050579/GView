@@ -92,4 +92,14 @@ add_subdirectory(Types/ELF)
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
 
-target_link_libraries(GView PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT supported OUTPUT error)
+
+if( supported )
+	message(STATUS "IPO / LTO enabled for ${PROJECT_NAME}")
+	set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+	message(STATUS "IPO / LTO not supported for ${PROJECT_NAME}: <${error}>")
+endif()
