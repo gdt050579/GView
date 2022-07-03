@@ -96,7 +96,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
         
   build-ubuntu:
@@ -137,7 +137,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: linux_artifacts
-        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
       
   publish_job:
