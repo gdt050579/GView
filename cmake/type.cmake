@@ -1,16 +1,6 @@
 function (create_type type_name)
 
 	set(PROJECT_NAME ${type_name})	
-
-	include(CheckIPOSupported)
-	check_ipo_supported(RESULT supported OUTPUT error)
-	
-	if( supported )
-		message(STATUS "${PROJECT_NAME} => IPO / LTO enabled")
-		set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-	else()
-		message(STATUS "${PROJECT_NAME} => IPO / LTO not supported: <${error}>")
-	endif()
 	
 	include_directories(../../GViewCore/include)
 	
