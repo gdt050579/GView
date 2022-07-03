@@ -90,6 +90,14 @@ jobs:
       run: |
         output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
         echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*.*)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*/*.gpl)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release/*/*.tpl)
+        echo "$output"
 
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
@@ -129,6 +137,14 @@ jobs:
     - name: Create archive
       run: |
         output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*.*)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*/*.gpl)
+        echo "$output"
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release/*/*.tpl)
         echo "$output"
     
     - name: Store Artifacts
