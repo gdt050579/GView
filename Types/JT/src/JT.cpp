@@ -33,9 +33,9 @@ extern "C"
 
     static constexpr auto MagentaDarkBlue = ColorPair{ Color::Magenta, Color::DarkBlue };
     static constexpr auto DarkGreenBlue   = ColorPair{ Color::DarkGreen, Color::DarkBlue };
-
-    static constexpr auto AquaBlue = ColorPair{ Color::Aqua, Color::DarkBlue };
-    static constexpr auto TealBlue = ColorPair{ Color::Yellow, Color::DarkBlue };
+    static constexpr auto AquaBlue        = ColorPair{ Color::Aqua, Color::DarkBlue };
+    static constexpr auto YellowBlue      = ColorPair{ Color::Yellow, Color::DarkBlue };
+    static constexpr auto DataColors      = { AquaBlue, YellowBlue };
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<JT::JTFile> jt)
     {
@@ -48,21 +48,24 @@ extern "C"
         settings.AddZone(offset, sizeof(jt->tc.entryCount) + jt->tc.entries.size() * sizeof(JT::TOCEntry), DarkGreenBlue, "TOC");
         offset += sizeof(jt->tc) + jt->tc.entries.size() * sizeof(JT::TOCEntry);
 
-        LocalString<1024> ls;
-        auto i            = 0U;
-        const auto colors = { AquaBlue, TealBlue };
-
-        // ofc this is not fast
-        auto entriesCopy = jt->tc.entries;
-        std::sort(
-              entriesCopy.begin(),
-              entriesCopy.end(),
-              [](const JT::TOCEntry& e1, const JT::TOCEntry& e2) { return e1.segmentOffset < e2.segmentOffset; });
-
-        for (const auto& e : entriesCopy)
+        std::vector<const JT::TOCEntry*> pEntries;
+        for (const auto& e : jt->tc.entries)
         {
-            const auto iFound = std::abs(std::distance(std::find(jt->tc.entries.begin(), jt->tc.entries.end(), e), jt->tc.entries.begin()));
-            settings.AddZone(e.segmentOffset, e.segmentLength, *(colors.begin() + (i % 2)), ls.Format("(#%u) Data Entry", iFound));
+            pEntries.emplace_back(&e);
+        }
+
+        std::sort(
+              pEntries.begin(),
+              pEntries.end(),
+              [](const JT::TOCEntry* e1, const JT::TOCEntry* e2) { return e1->segmentOffset < e2->segmentOffset; });
+
+        auto i = 0U;
+        LocalString<1024> ls;
+        for (auto e : pEntries)
+        {
+            const auto realIndex =
+                  std::abs(std::distance(std::find(jt->tc.entries.begin(), jt->tc.entries.end(), *e), jt->tc.entries.begin()));
+            settings.AddZone(e->segmentOffset, e->segmentLength, *(DataColors.begin() + (i % 2)), ls.Format("(#%u)Data Entry", realIndex));
             i++;
         }
 
