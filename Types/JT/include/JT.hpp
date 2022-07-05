@@ -98,5 +98,24 @@ namespace Panels
         bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
     };
+
+    class Segments : public AppCUI::Controls::TabPage
+    {
+        Reference<JTFile> jt;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        Segments(Reference<JTFile> _jt, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
 }; // namespace Panels
 } // namespace GView::Type::JT

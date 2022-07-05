@@ -65,7 +65,7 @@ extern "C"
         {
             const auto realIndex =
                   std::abs(std::distance(std::find(jt->tc.entries.begin(), jt->tc.entries.end(), *e), jt->tc.entries.begin()));
-            settings.AddZone(e->segmentOffset, e->segmentLength, *(DataColors.begin() + (i % 2)), ls.Format("(#%u)Data Entry", realIndex));
+            settings.AddZone(e->segmentOffset, e->segmentLength, *(DataColors.begin() + (i % 2)), ls.Format("(#%u) Data Entry", realIndex));
             i++;
         }
 
@@ -82,6 +82,7 @@ extern "C"
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new JT::Panels::Information(win->GetObject(), lnk)), true);
+        win->AddPanel(Pointer<TabPage>(new JT::Panels::Segments(lnk, win)), false);
 
         return true;
     }
