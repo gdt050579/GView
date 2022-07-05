@@ -29,6 +29,7 @@ void Information::UpdateGeneralInformation()
     general->AddItem("File header").SetType(ListViewItem::Type::Category);
     general->AddItem({ "Version", ls.Format("%s", jt->fh.version) }).SetType(ListViewItem::Type::Emphasized_1);
     AddDecAndHexElement("Byte Order", "%-20s (%s)", jt->fh.byteOrder);
+    general->AddItem({ "", jt->fh.byteOrder == 0 ? "LSB" : "MSB" }).SetType(ListViewItem::Type::Emphasized_1);
     AddDecAndHexElement("Empty Field", "%-20s (%s)", jt->fh.emptyField);
     AddDecAndHexElement("TOC Offset", "%-20s (%s)", jt->fh.tocOffset);
     AddGUIDElement(general, "LSG Segment ID", jt->fh.lsgSegmentId);
