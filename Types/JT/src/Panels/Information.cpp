@@ -5,7 +5,7 @@ using namespace GView::Type::JT::Panels;
 using namespace AppCUI::Controls;
 using namespace AppCUI::OS;
 
-Information::Information(Reference<Object> _object, Reference<GView::Type::JT::JTFile> _jt) : TabPage("Informa&tion")
+Information::Information(Reference<Object> _object, Reference<JT::JTFile> _jt) : TabPage("Informa&tion")
 {
     jt      = _jt;
     object  = _object;
@@ -64,7 +64,7 @@ void Information::RecomputePanelsPositions()
     //}
 }
 
-bool Information::OnUpdateCommandBar(Application::CommandBar& commandBar)
+bool Information::OnUpdateCommandBar(CommandBar& commandBar)
 {
     // commandBar.SetCommand(AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10, "placeholder_name", CMD_ID);
     return true;

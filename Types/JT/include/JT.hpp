@@ -2,6 +2,13 @@
 
 #include "Internal.hpp"
 
+using namespace AppCUI;
+using namespace AppCUI::OS;
+using namespace AppCUI::Controls;
+using namespace AppCUI::Application;
+using namespace GView::Type;
+using namespace GView::View;
+
 namespace GView::Type::JT
 {
 class JTFile : public TypeInterface
@@ -26,7 +33,7 @@ class JTFile : public TypeInterface
 
 namespace Panels
 {
-    static ListViewItem AddGUIDElement(Reference<AppCUI::Controls::ListView> list, std::string_view name, MyGUID& guid)
+    static ListViewItem AddGUIDElement(Reference<ListView> list, std::string_view name, MyGUID& guid)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 
@@ -50,12 +57,12 @@ namespace Panels
         return element;
     }
 
-    class Information : public AppCUI::Controls::TabPage
+    class Information : public TabPage
     {
         Reference<Object> object;
-        Reference<GView::Type::JT::JTFile> jt;
-        Reference<AppCUI::Controls::ListView> general;
-        Reference<AppCUI::Controls::ListView> issues;
+        Reference<JT::JTFile> jt;
+        Reference<ListView> general;
+        Reference<ListView> issues;
 
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
         inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
@@ -68,7 +75,7 @@ namespace Panels
         {
             LocalString<1024> ls;
             NumericFormatter nf;
-            AppCUI::OS::DateTime dt;
+            DateTime dt;
             dt.CreateFromFileTime(value);
             const auto valueHex = nf.ToString(value, hex);
             general->AddItem({ name, ls.Format(format.data(), dt.GetStringRepresentation().data(), valueHex.data()) })
@@ -88,22 +95,22 @@ namespace Panels
         }
 
       public:
-        Information(Reference<Object> _object, Reference<GView::Type::JT::JTFile> _jt);
+        Information(Reference<Object> _object, Reference<JT::JTFile> _jt);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override
         {
             RecomputePanelsPositions();
         }
-        bool OnUpdateCommandBar(Application::CommandBar& commandBar) override;
+        bool OnUpdateCommandBar(CommandBar& commandBar) override;
         bool OnEvent(Reference<Control> ctrl, Event evnt, int controlID) override;
     };
 
-    class Segments : public AppCUI::Controls::TabPage
+    class Segments : public TabPage
     {
         Reference<JTFile> jt;
-        Reference<GView::View::WindowInterface> win;
-        Reference<AppCUI::Controls::ListView> list;
+        Reference<WindowInterface> win;
+        Reference<ListView> list;
         int32 Base;
 
         std::string_view GetValue(NumericFormatter& n, uint64 value);
@@ -111,10 +118,10 @@ namespace Panels
         void SelectCurrentSection();
 
       public:
-        Segments(Reference<JTFile> _jt, Reference<GView::View::WindowInterface> win);
+        Segments(Reference<JTFile> _jt, Reference<WindowInterface> win);
 
         void Update();
-        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnUpdateCommandBar(CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 }; // namespace Panels

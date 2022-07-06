@@ -2,8 +2,9 @@
 
 namespace GView::Type::JT::Panels
 {
-using namespace AppCUI::Controls;
+using namespace AppCUI::Application;
 using namespace AppCUI::Endian;
+using namespace AppCUI::Input;
 using namespace AppCUI::Input;
 
 enum class ObjectAction : int32
@@ -96,7 +97,7 @@ void Segments::Update()
     }
 }
 
-bool Segments::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+bool Segments::OnUpdateCommandBar(CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", static_cast<int32_t>(ObjectAction::GoTo));
     commandBar.SetCommand(Key::F9, "Select", static_cast<int32_t>(ObjectAction::Select));

@@ -12,7 +12,7 @@ using namespace GView::View;
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
     {
         CHECK(buf.GetLength() > sizeof(JT::FileHeader), false, "");
 
@@ -37,7 +37,7 @@ extern "C"
     static constexpr auto YellowBlue      = ColorPair{ Color::Yellow, Color::DarkBlue };
     static constexpr auto DataColors      = { AquaBlue, YellowBlue };
 
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<JT::JTFile> jt)
+    void CreateBufferView(Reference<WindowInterface> win, Reference<JT::JTFile> jt)
     {
         BufferViewer::Settings settings;
 
@@ -72,7 +72,7 @@ extern "C"
         win->CreateViewer("BufferView", settings);
     }
 
-    PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
+    PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
         auto lnk = win->GetObject()->GetContentType<JT::JTFile>();
         lnk->Update();
