@@ -205,6 +205,6 @@ struct TOCSegment
 };
 #pragma pack(pop)
 
-static_assert(sizeof(TOCSegment) == 4 + 32);
+static_assert(sizeof(TOCSegment::entryCount) == sizeof(uint32));
 
 } // namespace GView::Type::JT
