@@ -136,6 +136,27 @@ namespace Utils
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
+    class CORE_EXPORT GenericLexer
+    {
+        const char16* text;
+        uint32 size;
+
+      public:
+        GenericLexer(const char16* text, uint32 size);
+        GenericLexer(u16string_view text);
+
+        inline uint32 Len() const
+        {
+            return size;
+        }
+        inline char16 operator[](uint32 index) const
+        {
+            if (index < size)
+                return text[index];
+            return 0;
+        }
+    };
+
 } // namespace Utils
 
 namespace Hashes
