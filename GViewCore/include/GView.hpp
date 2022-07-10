@@ -135,28 +135,33 @@ namespace Utils
         Rust,
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
-
-    class CORE_EXPORT GenericLexer
+    namespace Tokenizer
     {
-        const char16* text;
-        uint32 size;
 
-      public:
-        GenericLexer(const char16* text, uint32 size);
-        GenericLexer(u16string_view text);
-
-        inline uint32 Len() const
+        class CORE_EXPORT GenericLexer
         {
-            return size;
-        }
-        inline char16 operator[](uint32 index) const
-        {
-            if (index < size)
-                return text[index];
-            return 0;
-        }
-    };
+            const char16* text;
+            uint32 size;
 
+          public:
+            GenericLexer(const char16* text, uint32 size);
+            GenericLexer(u16string_view text);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline char16 operator[](uint32 index) const
+            {
+                if (index < size)
+                    return text[index];
+                return 0;
+            }
+            uint32 ParseTillNextLine(uint32 index);
+            uint32 Parse(uint32 index, bool (*validate)(char16 character));
+            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
+        };
+    } // namespace Tokenizer
 } // namespace Utils
 
 namespace Hashes

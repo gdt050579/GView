@@ -1,6 +1,6 @@
 #include <GView.hpp>
 
-namespace GView::Utils
+namespace GView::Utils::Tokenizer
 {
 GenericLexer::GenericLexer(const char16* _text, uint32 _size)
 {
@@ -32,6 +32,46 @@ GenericLexer::GenericLexer(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-
+uint32 GenericLexer::ParseTillNextLine(uint32 index)
+{
+    if (index >= size)
+        return size;
+    auto* p = text + index;
+    while ((index < size) && ((*p) != '\n') && ((*p) != '\r'))
+    {
+        index++;
+        p++;
+    }
+    return index;
+}
+uint32 GenericLexer::Parse(uint32 index, bool (*validate)(char16 character))
+{
+    if (index >= size)
+        return size;
+    if (validate == nullptr)
+        return index;
+    auto* p = text + index;
+    while ((index < size) && (validate(*p)))
+    {
+        index++;
+        p++;
+    }
+    return index;
+}
+uint32 GenericLexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character))
+{
+    if (index >= size)
+        return size;
+    if (charToGroupID == nullptr)
+        return index;
+    auto* p = text + index;
+    auto id = charToGroupID(*p);
+    while ((index < size) && (charToGroupID(*p) == id))
+    {
+        index++;
+        p++;
+    }
+    return index;
+}
 
 } // namespace GView::Utils
