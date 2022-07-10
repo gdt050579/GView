@@ -137,7 +137,14 @@ namespace Utils
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
     namespace Tokenizer
     {
-
+        enum class SpaceType: uint8
+        {
+            All = 0,
+            NewLine = 1,
+            Space = 2,
+            Tabs = 3,
+            SpaceAndTabs = 4,
+        };
         class CORE_EXPORT GenericLexer
         {
             const char16* text;
@@ -160,6 +167,7 @@ namespace Utils
             uint32 ParseTillNextLine(uint32 index);
             uint32 Parse(uint32 index, bool (*validate)(char16 character));
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
+            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs);
         };
     } // namespace Tokenizer
 } // namespace Utils

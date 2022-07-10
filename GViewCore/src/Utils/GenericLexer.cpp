@@ -73,5 +73,49 @@ uint32 GenericLexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char
     }
     return index;
 }
-
-} // namespace GView::Utils
+uint32 GenericLexer::ParseSpace(uint32 index, SpaceType type)
+{
+    if (index >= size)
+        return size;
+    auto* p = text + index;
+    switch (type)
+    {
+    case SpaceType::Space:
+        while ((index < size) && ((*p) == ' '))
+        {
+            index++;
+            p++;
+        }
+        break;
+    case SpaceType::Tabs:
+        while ((index < size) && ((*p) == '\t'))
+        {
+            index++;
+            p++;
+        }
+        break;
+    case SpaceType::SpaceAndTabs:
+        while ((index < size) && (((*p) == '\t') || ((*p) == ' ')))
+        {
+            index++;
+            p++;
+        }
+        break;
+    case SpaceType::NewLine:
+        while ((index < size) && (((*p) == '\n') || ((*p) == '\r')))
+        {
+            index++;
+            p++;
+        }
+        break;
+    case SpaceType::All:
+        while ((index < size) && (((*p) == '\n') || ((*p) == '\r') || ((*p) == ' ') || ((*p) == '\t')))
+        {
+            index++;
+            p++;
+        }
+        break;
+    }
+    return index;
+}
+} // namespace GView::Utils::Tokenizer
