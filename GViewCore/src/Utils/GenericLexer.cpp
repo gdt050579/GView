@@ -2,6 +2,8 @@
 
 namespace GView::Utils::Tokenizer
 {
+#define HAS_FLAG(value, flag) (((value) & (flag)) == (flag))
+
 Lexer::Lexer(const char16* _text, uint32 _size)
 {
     this->text = _text;
@@ -121,6 +123,61 @@ uint32 Lexer::ParseSpace(uint32 index, SpaceType type)
 
 uint32 Lexer::ParseString(uint32 index, StringFormat format)
 {
-    NOT_IMPLEMENTED(index);
+    if (index >= size)
+        return size;
+    auto ch = text[index];
+    while (true)
+    {
+        if ((ch == '"') && (HAS_FLAG(format, StringFormat::DoubleQuotes)))
+            break;
+        if ((ch == '\'') && (HAS_FLAG(format, StringFormat::SingleQuotes)))
+            break;
+        // string does not starts with a valid string character
+        return size;
+    }
+    // check if a tri-quotes string
+    const auto supportsTripleQuoted  = HAS_FLAG(format, StringFormat::TripleQuotes);
+    const auto allowEscapeChars      = HAS_FLAG(format, StringFormat::AllowEscapeSequences);
+    const auto forbidMultiLine        = !(HAS_FLAG(format, StringFormat::MultiLine));
+    const auto searchForTripleQuotes = (supportsTripleQuoted && (index + 3 < size) && (text[index + 1] == ch) && (text[index + 2] == ch));
+    index                            = searchForTripleQuotes ? index + 3 : index + 1;
+    auto validString                 = false;
+    while (index < size)
+    {
+        const auto currentChar = text[index];
+        if (currentChar == ch)
+        {
+            if (searchForTripleQuotes)
+            {
+                if ((index + 3 < size) && (text[index + 1] == ch) && (text[index + 2] == ch))
+                {
+                    validString = true;
+                    index += 3;
+                    break;
+                }
+            }
+            else
+            {
+                index++;
+                validString = true;
+                break;
+            }
+        }
+        if ((currentChar == '\\') && (allowEscapeChars))
+        {
+            index++;
+        }
+        else
+        {
+            if (((currentChar == '\n') || (currentChar == '\r')) && (forbidMultiLine))
+                break;  // invalid string (ended too fast)
+        }
+        // else --> move to next character
+        index++;
+    }
+
+    return index;
 }
+
+#undef HAS_FLAG
 } // namespace GView::Utils::Tokenizer

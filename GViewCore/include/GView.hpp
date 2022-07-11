@@ -147,13 +147,12 @@ namespace Utils
         };
         enum class StringFormat : uint32
         {
-            SingleQuotes          = 0x00000001, // "..."
-            DoubleQuotes          = 0x00000002, // '...'
-            TripleSingleQuotes    = 0x00000004, // '''...'''
-            TripleDoubleQuotes    = 0x00000008, // """..."""
-            AllowEscapedSequemces = 0x00000010, // "...\n..."
-            MultiLine             = 0x00000020, // string accross mulitple lines
-            All                   = 0xFFFFFFFF, // all possible forms of strings
+            SingleQuotes         = 0x00000001, // "..."
+            DoubleQuotes         = 0x00000002, // '...'
+            TripleQuotes         = 0x00000004, // '''...''' or """..."""
+            AllowEscapeSequences = 0x00000008, // "...\n..."
+            MultiLine            = 0x00000010, // string accross mulitple lines
+            All                  = 0xFFFFFFFF, // all possible forms of strings
         };
         class CORE_EXPORT Lexer
         {
@@ -767,6 +766,5 @@ namespace App
     uint32 CORE_EXPORT GetObjectsCount();
 }; // namespace App
 }; // namespace GView
-
 
 ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::StringFormat, AppCUI::uint32);
