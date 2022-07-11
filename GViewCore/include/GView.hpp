@@ -137,22 +137,32 @@ namespace Utils
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
     namespace Tokenizer
     {
-        enum class SpaceType: uint8
+        enum class SpaceType : uint8
         {
-            All = 0,
-            NewLine = 1,
-            Space = 2,
-            Tabs = 3,
+            All          = 0,
+            NewLine      = 1,
+            Space        = 2,
+            Tabs         = 3,
             SpaceAndTabs = 4,
         };
-        class CORE_EXPORT GenericLexer
+        enum class StringFormat : uint32
+        {
+            SingleQuotes          = 0x00000001, // "..."
+            DoubleQuotes          = 0x00000002, // '...'
+            TripleSingleQuotes    = 0x00000004, // '''...'''
+            TripleDoubleQuotes    = 0x00000008, // """..."""
+            AllowEscapedSequemces = 0x00000010, // "...\n..."
+            MultiLine             = 0x00000020, // string accross mulitple lines
+            All                   = 0xFFFFFFFF, // all possible forms of strings
+        };
+        class CORE_EXPORT Lexer
         {
             const char16* text;
             uint32 size;
 
           public:
-            GenericLexer(const char16* text, uint32 size);
-            GenericLexer(u16string_view text);
+            Lexer(const char16* text, uint32 size);
+            Lexer(u16string_view text);
 
             inline uint32 Len() const
             {
@@ -168,6 +178,7 @@ namespace Utils
             uint32 Parse(uint32 index, bool (*validate)(char16 character));
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs);
+            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All);
         };
     } // namespace Tokenizer
 } // namespace Utils
@@ -756,3 +767,6 @@ namespace App
     uint32 CORE_EXPORT GetObjectsCount();
 }; // namespace App
 }; // namespace GView
+
+
+ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::StringFormat, AppCUI::uint32);

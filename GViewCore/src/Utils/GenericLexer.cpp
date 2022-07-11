@@ -2,14 +2,14 @@
 
 namespace GView::Utils::Tokenizer
 {
-GenericLexer::GenericLexer(const char16* _text, uint32 _size)
+Lexer::Lexer(const char16* _text, uint32 _size)
 {
     this->text = _text;
     this->size = _size;
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-GenericLexer::GenericLexer(u16string_view _text)
+Lexer::Lexer(u16string_view _text)
 {
     if (_text.empty())
     {
@@ -32,7 +32,7 @@ GenericLexer::GenericLexer(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-uint32 GenericLexer::ParseTillNextLine(uint32 index)
+uint32 Lexer::ParseTillNextLine(uint32 index)
 {
     if (index >= size)
         return size;
@@ -44,7 +44,7 @@ uint32 GenericLexer::ParseTillNextLine(uint32 index)
     }
     return index;
 }
-uint32 GenericLexer::Parse(uint32 index, bool (*validate)(char16 character))
+uint32 Lexer::Parse(uint32 index, bool (*validate)(char16 character))
 {
     if (index >= size)
         return size;
@@ -58,7 +58,7 @@ uint32 GenericLexer::Parse(uint32 index, bool (*validate)(char16 character))
     }
     return index;
 }
-uint32 GenericLexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character))
+uint32 Lexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character))
 {
     if (index >= size)
         return size;
@@ -73,7 +73,7 @@ uint32 GenericLexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char
     }
     return index;
 }
-uint32 GenericLexer::ParseSpace(uint32 index, SpaceType type)
+uint32 Lexer::ParseSpace(uint32 index, SpaceType type)
 {
     if (index >= size)
         return size;
@@ -117,5 +117,10 @@ uint32 GenericLexer::ParseSpace(uint32 index, SpaceType type)
         break;
     }
     return index;
+}
+
+uint32 Lexer::ParseString(uint32 index, StringFormat format)
+{
+    NOT_IMPLEMENTED(index);
 }
 } // namespace GView::Utils::Tokenizer
