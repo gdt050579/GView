@@ -154,6 +154,16 @@ namespace Utils
             MultiLine            = 0x00000010, // string accross mulitple lines
             All                  = 0xFFFFFFFF, // all possible forms of strings
         };
+        enum class NumberFormat : uint32
+        {
+            DecimalOnly           = 0,
+            HexFormat0x           = 0x00000001,
+            BinFormat0b           = 0x00000002,
+            FloatingPoint         = 0x00000004,
+            AllowSignBeforeNumber = 0x00000008,
+            AllowUnderline        = 0x00000010,
+            All                   = 0xFFFFFFFF, // all possible forms of numbers
+        };
         class CORE_EXPORT Lexer
         {
             const char16* text;
@@ -178,6 +188,7 @@ namespace Utils
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs);
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All);
+            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All);
         };
     } // namespace Tokenizer
 } // namespace Utils
@@ -768,3 +779,4 @@ namespace App
 }; // namespace GView
 
 ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::StringFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::NumberFormat, AppCUI::uint32);

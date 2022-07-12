@@ -138,7 +138,7 @@ uint32 Lexer::ParseString(uint32 index, StringFormat format)
     // check if a tri-quotes string
     const auto supportsTripleQuoted  = HAS_FLAG(format, StringFormat::TripleQuotes);
     const auto allowEscapeChars      = HAS_FLAG(format, StringFormat::AllowEscapeSequences);
-    const auto forbidMultiLine        = !(HAS_FLAG(format, StringFormat::MultiLine));
+    const auto forbidMultiLine       = !(HAS_FLAG(format, StringFormat::MultiLine));
     const auto searchForTripleQuotes = (supportsTripleQuoted && (index + 3 < size) && (text[index + 1] == ch) && (text[index + 2] == ch));
     index                            = searchForTripleQuotes ? index + 3 : index + 1;
     auto validString                 = false;
@@ -170,7 +170,7 @@ uint32 Lexer::ParseString(uint32 index, StringFormat format)
         else
         {
             if (((currentChar == '\n') || (currentChar == '\r')) && (forbidMultiLine))
-                break;  // invalid string (ended too fast)
+                break; // invalid string (ended too fast)
         }
         // else --> move to next character
         index++;
@@ -178,6 +178,117 @@ uint32 Lexer::ParseString(uint32 index, StringFormat format)
 
     return index;
 }
+uint32 Lexer::ParseNumber(uint32 index, NumberFormat format)
+{
+    if (index >= size)
+        return size;
 
+    if (HAS_FLAG(format, NumberFormat::AllowSignBeforeNumber))
+    {
+        if ((text[index] == '-') || (text[index] == '+'))
+        {
+            if (index + 1 >= size)
+                return index;
+            index++;
+        }
+    }
+    uint8 base = 10;
+    if ((index + 2 < size) && (text[index] == '0'))
+    {
+        switch (text[index + 1])
+        {
+        case 'x':
+        case 'X':
+            if (HAS_FLAG(format, NumberFormat::HexFormat0x))
+            {
+                base = 16;
+                index += 2;
+            }
+            break;
+        case 'b':
+        case 'B':
+            if (HAS_FLAG(format, NumberFormat::BinFormat0b))
+            {
+                base = 2;
+                index += 2;
+            }
+            break;
+        }
+    }
+    auto* p                   = text + index;
+    const auto allowUnderline = HAS_FLAG(format, NumberFormat::AllowUnderline);
+    bool validCharacter       = false;
+    switch (base)
+    {
+    case 2:
+        while (index < size)
+        {
+            validCharacter = (((*p) == '0') || ((*p) == '1'));
+            if (((*p) == '_') && allowUnderline)
+                validCharacter = true;
+
+            if (validCharacter)
+            {
+                p++;
+                index++;
+                continue;
+            }
+            break;
+        }
+        break;
+    case 16:
+        while (index < size)
+        {
+            validCharacter = ((((*p) >= '0') && ((*p) <= '9')) || (((*p) >= 'a') && ((*p) <= 'f')) || (((*p) >= 'A') && ((*p) <= 'F')));
+            if (((*p) == '_') && allowUnderline)
+                validCharacter = true;
+
+            if (validCharacter)
+            {
+                p++;
+                index++;
+                continue;
+            }
+            break;
+        }
+        break;
+    case 10:
+        while (index < size)
+        {
+            validCharacter = (((*p) >= '0') && ((*p) <= '9'));
+            if (((*p) == '_') && allowUnderline)
+                validCharacter = true;
+
+            if (validCharacter)
+            {
+                p++;
+                index++;
+                continue;
+            }
+            break;
+        }
+        if ((index < size) && ((*p) == '.') && (HAS_FLAG(format, NumberFormat::FloatingPoint)))
+        {
+            index++;
+            p++;
+            while (index < size)
+            {
+                validCharacter = (((*p) >= '0') && ((*p) <= '9'));
+                if (((*p) == '_') && allowUnderline)
+                    validCharacter = true;
+
+                if (validCharacter)
+                {
+                    p++;
+                    index++;
+                    continue;
+                }
+                break;
+            }
+        }
+        break;
+    }
+    return index;
+}
 #undef HAS_FLAG
 } // namespace GView::Utils::Tokenizer
