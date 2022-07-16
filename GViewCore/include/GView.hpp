@@ -672,6 +672,17 @@ namespace View
         };
     }; // namespace TextViewer
 
+    namespace LexicalViewer
+    {
+        struct CORE_EXPORT Settings
+        {
+            void* data;
+
+            Settings();
+            void SetParserCallback();
+        };
+    }; // namespace LexicalViewer
+
     namespace GridViewer
     {
         struct CORE_EXPORT Settings
@@ -684,7 +695,6 @@ namespace View
         };
     }; // namespace GridViewer
 
-    // namespace ImageViewer
     namespace DissasmViewer // StructureViewer
     {
         using TypeID = uint32;
@@ -753,6 +763,7 @@ namespace View
             Settings();
         };
     }; // namespace DissasmViewer
+
     struct CORE_EXPORT WindowInterface
     {
         virtual Reference<Object> GetObject()                                                        = 0;
@@ -763,6 +774,7 @@ namespace View
         virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings)   = 0;
         virtual bool CreateViewer(const std::string_view& name, TextViewer::Settings& settings)      = 0;
         virtual bool CreateViewer(const std::string_view& name, ContainerViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(const std::string_view& name, LexicalViewer::Settings& settings)   = 0;
         virtual Reference<ViewControl> GetCurrentView()                                              = 0;
     };
 }; // namespace View

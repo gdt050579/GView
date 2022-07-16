@@ -4,6 +4,7 @@
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
+#include "LexicalViewer.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -70,6 +71,7 @@ bool GView::App::ResetConfiguration()
     GView::View::ImageViewer::Config::Update(ini["View.Image"]);
     GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
+    GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
 
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();
