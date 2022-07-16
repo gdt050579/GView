@@ -13,6 +13,8 @@ Welcome to GView's documentation!
    description
    usage
    architecture
+   global_plugins
+   specific_plugins
    development
    contributing
 
