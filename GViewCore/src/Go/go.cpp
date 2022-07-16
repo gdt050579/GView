@@ -34,7 +34,7 @@ struct GoPclntab112Context
     uint8* filetab{ nullptr };
     uint32 nfiletab{ 0 };
 
-    std::map<uint64, std::string_view> files;
+    std::vector<std::string_view> files;
     std::vector<FstEntry32*> entries32;
     std::vector<FstEntry64*> entries64;
     std::vector<Function> functions;
@@ -83,17 +83,22 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     goContext->filetab     = goContext->filetab + goContext->nfiletab * 4;
 
     {
+        goContext->files.reserve(goContext->nfiletab);
+
         uint32 offset = 0;
         for (uint32 i = 0; i < goContext->nfiletab - 1; i++)
         {
-            auto fname                 = (char*) (goContext->filetab + offset);
-            const auto& [pair, result] = goContext->files.emplace(std::pair<uint32, std::string_view>{ i, fname });
-            offset += (uint32) pair->second.size() + 2;
+            auto fname      = (char*) (goContext->filetab + offset);
+            const auto& res = goContext->files.emplace_back(fname);
+            offset += (uint32) res.size() + 2;
         }
     }
 
     if (arch == Architecture::x86)
     {
+        goContext->entries32.reserve(goContext->nfunctab);
+        goContext->functions.reserve(goContext->nfunctab);
+
         auto entries = (Golang::FstEntry32*) goContext->functab;
         for (auto i = 0U; i < goContext->nfunctab; i++)
         {
@@ -116,6 +121,9 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     }
     else if (arch == Architecture::x64)
     {
+        goContext->entries64.reserve(goContext->nfunctab);
+        goContext->functions.reserve(goContext->nfunctab);
+
         auto entries = (Golang::FstEntry64*) goContext->functab;
         for (auto i = 0U; i < goContext->nfunctab; i++)
         {
