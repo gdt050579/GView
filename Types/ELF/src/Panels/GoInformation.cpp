@@ -15,22 +15,23 @@ GoInformation::GoInformation(Reference<Object> _object, Reference<GView::Type::E
 
 void GoInformation::UpdateGoInformation()
 {
-    CHECKRET(elf->pclntab112.header != nullptr, "");
+    const auto goHeader = elf->pclntab112.GetHeader();
+    CHECKRET(goHeader != nullptr, "");
     list->AddItem("Info").SetType(ListViewItem::Type::Category);
 
     LocalString<1024> ls;
     NumericFormatter nf;
     NumericFormatter nf2;
 
-    const auto magicName = ELF::Go::GetNameForGoMagic(elf->pclntab112.header->magic);
-    const auto magicHex  = nf.ToString((uint32) elf->pclntab112.header->magic, hex);
-    list->AddItem({ "Magic", ls.Format(format.data(), magicName.data(), magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
+    const auto magicName = Golang::GetNameForGoMagic(goHeader->magic);
+    const auto magicHex  = nf.ToString((uint32) goHeader->magic, hex);
+    list->AddItem({ "Magic", ls.Format(format.data(), magicName, magicHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
-    AddDecAndHexElement("Padding", format, elf->pclntab112.header->padding);
-    AddDecAndHexElement("Instruction Size Quantum", format, elf->pclntab112.header->instructionSizeQuantum);
-    AddDecAndHexElement("Size Of UIntPtr", format, elf->pclntab112.header->sizeOfUintptr);
+    AddDecAndHexElement("Padding", format, goHeader->padding);
+    AddDecAndHexElement("Instruction Size Quantum", format, goHeader->instructionSizeQuantum);
+    AddDecAndHexElement("Size Of UIntPtr", format, goHeader->sizeOfUintptr);
 
-    const auto entriesNo = elf->is64 ? elf->entries64.size() : elf->entries32.size();
+    const auto entriesNo = elf->pclntab112.GetEntriesCount();
     AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);
 
     list->AddItem("Note").SetType(ListViewItem::Type::Category);
@@ -38,9 +39,15 @@ void GoInformation::UpdateGoInformation()
     AddDecAndHexElement("Name Size", format, elf->nameSize);
     AddDecAndHexElement("Value Size", format, elf->valSize);
     AddDecAndHexElement("Tag", format, elf->tag);
-    list->AddItem({ "Note Name", ls.Format("%s", elf->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
-    list->AddItem({ "Build ID", ls.Format("%s", elf->buildId.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
-    list->AddItem({ "GNU String", ls.Format("%s", elf->gnuString.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    if (elf->noteName.empty() == false)
+        list->AddItem({ "Note Name", ls.Format("%s", elf->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    if (elf->buildId.empty() == false)
+        list->AddItem({ "Build ID", ls.Format("%s", elf->buildId.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+
+    if (elf->gnuString.empty() == false)
+        list->AddItem({ "GNU String", ls.Format("%s", elf->gnuString.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void GoInformation::Update()
