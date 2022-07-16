@@ -96,6 +96,7 @@ add_subdirectory(3rdPartyLibs/LLVMDemangle)
 
 add_subdirectory(AppCUI)
 add_subdirectory(GViewCore)
+add_subdirectory(Libs)
 add_subdirectory(GView)
 
 # Types supported by GView
