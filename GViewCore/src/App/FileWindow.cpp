@@ -5,6 +5,7 @@
 #include "DissasmViewer.hpp"
 #include "TextViewer.hpp"
 #include "ContainerViewer.hpp"
+#include "LexicalViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
@@ -122,6 +123,11 @@ bool FileWindow::CreateViewer(const std::string_view& name, View::ContainerViewe
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
+          .IsValid();
+}
+bool FileWindow::CreateViewer(const std::string_view& name, GView::View::LexicalViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
           .IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
