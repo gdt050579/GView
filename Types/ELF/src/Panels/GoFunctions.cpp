@@ -23,8 +23,8 @@ GoFunctions::GoFunctions(Reference<ELFFile> _elf, Reference<GView::View::WindowI
           "d:c",
           { "n:#,a:r,w:6",
             "n:Entry,a:r,w:16",
-            "n:Name,a:l,w:40",
-            "n:Name Offset,a:r,w:14",
+            "n:Name,a:l,w:60",
+            "n:Name Offset,a:r,w:20",
             "n:Args,a:r,w:10",
             "n:Frame,a:r,w:8",
             "n:Pcsp,a:r,w:12",
@@ -52,41 +52,24 @@ void GoFunctions::GoToSelectedSection()
     auto i = list->GetCurrentItem().GetData(-1);
     CHECKRET(i != -1, "");
 
-    auto offset = 0ULL;
-    if (elf->is64)
-    {
-        const auto& record = elf->functions64.at(i);
-        offset             = elf->VAToFileOffset(record.entry);
-    }
-    else
-    {
-        const auto& record = elf->functions32.at(i);
-        offset             = elf->VAToFileOffset(record.entry);
-    }
+    Golang::Function f{};
+    CHECKRET(elf->pclntab112.GetFunction(i, f), "");
 
-    win->GetCurrentView()->GoTo(offset);
+    win->GetCurrentView()->GoTo(f.func.entry);
 }
 
 void GoFunctions::SelectCurrentSection()
 {
-    auto offset = 0ULL;
-    auto size   = 0ULL;
-
     auto i = list->GetCurrentItem().GetData(-1);
     CHECKRET(i != -1, "");
 
-    if (elf->is64)
-    {
-        const auto& record = elf->functions64.at(i);
-        offset             = elf->VAToFileOffset(record.entry);
-        size               = elf->functions64.at(i + 1).entry - record.entry;
-    }
-    else
-    {
-        const auto& record = elf->functions32.at(i);
-        offset             = elf->VAToFileOffset(record.entry);
-        size               = (uint64) elf->functions32.at(i + 1).entry - record.entry;
-    }
+    Golang::Function f1{};
+    CHECKRET(elf->pclntab112.GetFunction(i, f1), "");
+    const auto offset = elf->VAToFileOffset(f1.func.entry);
+
+    Golang::Function f2{};
+    CHECKRET(elf->pclntab112.GetFunction(i + 1, f2), "");
+    const auto size = offset - f2.func.entry;
 
     win->GetCurrentView()->Select(offset, size);
 }
@@ -99,53 +82,26 @@ void GoFunctions::Update()
     NumericFormatter n;
     NumericFormatter n2;
 
-    if (elf->is64)
+    for (auto i = 0ULL; i < elf->pclntab112.GetFunctionsCount(); i++)
     {
-        for (auto i = 0ULL; i < elf->functions64.size(); i++)
-        {
-            const auto& record = elf->functions64[i];
-            auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
+        Golang::Function f{};
+        CHECKRET(elf->pclntab112.GetFunction(i, f), "");
+        auto item = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
-            item.SetText(1, tmp.Format("%s", GetValue(n, record.entry).data()));
+        item.SetText(1, tmp.Format("%s", GetValue(n, f.func.entry).data()));
 
-            const auto& name = elf->functionsNames.at(i);
-            item.SetText(2, tmp.Format("%s", name.c_str()));
+        item.SetText(2, tmp.Format("%s", f.name));
 
-            item.SetText(3, tmp.Format("%s", GetValue(n, record.name).data()));
-            item.SetText(4, tmp.Format("%s", GetValue(n, record.args).data()));
-            item.SetText(5, tmp.Format("%s", GetValue(n, record.frame).data()));
-            item.SetText(6, tmp.Format("%s", GetValue(n, record.pcsp).data()));
-            item.SetText(7, tmp.Format("%s", GetValue(n, record.pcfile).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.pcln).data()));
-            item.SetText(9, tmp.Format("%s", GetValue(n, record.nfuncdata).data()));
-            item.SetText(10, tmp.Format("%s", GetValue(n, record.npcdata).data()));
+        item.SetText(3, tmp.Format("%s", GetValue(n, f.func.name).data()));
+        item.SetText(4, tmp.Format("%s", GetValue(n, f.func.args).data()));
+        item.SetText(5, tmp.Format("%s", GetValue(n, f.func.frame).data()));
+        item.SetText(6, tmp.Format("%s", GetValue(n, f.func.pcsp).data()));
+        item.SetText(7, tmp.Format("%s", GetValue(n, f.func.pcfile).data()));
+        item.SetText(8, tmp.Format("%s", GetValue(n, f.func.pcln).data()));
+        item.SetText(9, tmp.Format("%s", GetValue(n, f.func.nfuncdata).data()));
+        item.SetText(10, tmp.Format("%s", GetValue(n, f.func.npcdata).data()));
 
-            item.SetData(i);
-        }
-    }
-    else
-    {
-        for (auto i = 0ULL; i < elf->functions32.size(); i++)
-        {
-            const auto& record = elf->functions32[i];
-            auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
-
-            item.SetText(1, tmp.Format("%s", GetValue(n, record.entry).data()));
-
-            const auto& name = elf->functionsNames.at(i);
-            item.SetText(2, tmp.Format("%s", name.c_str()));
-
-            item.SetText(3, tmp.Format("%s", GetValue(n, record.name).data()));
-            item.SetText(4, tmp.Format("%s", GetValue(n, record.args).data()));
-            item.SetText(5, tmp.Format("%s", GetValue(n, record.frame).data()));
-            item.SetText(6, tmp.Format("%s", GetValue(n, record.pcsp).data()));
-            item.SetText(7, tmp.Format("%s", GetValue(n, record.pcfile).data()));
-            item.SetText(8, tmp.Format("%s", GetValue(n, record.pcln).data()));
-            item.SetText(9, tmp.Format("%s", GetValue(n, record.nfuncdata).data()));
-            item.SetText(10, tmp.Format("%s", GetValue(n, record.npcdata).data()));
-
-            item.SetData(i);
-        }
+        item.SetData(i);
     }
 }
 
