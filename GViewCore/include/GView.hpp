@@ -776,6 +776,13 @@ namespace View
         virtual bool CreateViewer(const std::string_view& name, ContainerViewer::Settings& settings) = 0;
         virtual bool CreateViewer(const std::string_view& name, LexicalViewer::Settings& settings)   = 0;
         virtual Reference<ViewControl> GetCurrentView()                                              = 0;
+
+        template <typename T>
+        inline bool CreateViewer(const std::string_view& name)
+        {
+            T settings;
+            return CreateViewer(name, settings);
+        }
     };
 }; // namespace View
 namespace App
