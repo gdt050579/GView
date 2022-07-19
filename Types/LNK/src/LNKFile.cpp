@@ -115,7 +115,7 @@ bool LNKFile::Update()
             {
                 std::string_view sv{ (char*) buf, ds->charsCount };
                 dataStrings.emplace(std::pair<DataStringTypes, ConstString>{ dst, ConstString{ sv } });
-                dataStringBufferOffset += (ds->charsCount + 1ULL);
+                dataStringBufferOffset += (ds->charsCount + 2ULL) * sizeof(char8);
             }
         }
     }

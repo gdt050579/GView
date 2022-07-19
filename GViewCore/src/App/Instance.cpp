@@ -225,19 +225,27 @@ void Instance::ShowErrors()
 }
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
-    if (std::filesystem::is_directory(path))
+    try
     {
-        return AddFolder(path);
-    }
-    else
-    {
-        auto f = std::make_unique<AppCUI::OS::File>();
-        if (f->OpenRead(path) == false)
+        if (std::filesystem::is_directory(path))
         {
-            errList.AddError("Fail to open file: %s", path.u8string().c_str());
-            RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+            return AddFolder(path);
         }
-        return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
+        else
+        {
+            auto f = std::make_unique<AppCUI::OS::File>();
+            if (f->OpenRead(path) == false)
+            {
+                errList.AddError("Fail to open file: %s", path.u8string().c_str());
+                RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+            }
+            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
+        }
+    }
+    catch (std::filesystem::filesystem_error /* e */)
+    {
+        errList.AddError("Fail to open file: %s", path.u8string().c_str());
+        RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
 }
 bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension)

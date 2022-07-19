@@ -10,9 +10,9 @@ name: Microsoft C++ Code Analysis
 
 on:
   push:
-    branches: [ main ]
+    branches: [ release, main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ release, main, dev ]
     
 env:
   # Path to the CMake build directory.

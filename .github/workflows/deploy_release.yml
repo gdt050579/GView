@@ -87,15 +87,16 @@ jobs:
       run: ls -R /Users/runner/work/GView/GView/bin/Release
       
     - name: Create archive
+      working-directory: /Users/runner/work/GView/GView/bin/Release
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /Users/runner/work/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" .)
         echo "$output"
 
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
         
   build-ubuntu:
@@ -127,15 +128,16 @@ jobs:
       run: ls -R /home/runner/work/GView/GView/bin/Release
       
     - name: Create archive
+      working-directory: /home/runner/work/GView/GView/bin/Release
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" /home/runner/work/GView/GView/bin/Release)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" .)
         echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: linux_artifacts
-        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
       
   publish_job:
