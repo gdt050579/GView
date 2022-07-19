@@ -13,7 +13,6 @@ extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
-
         // all good
         return true;
     }
@@ -26,8 +25,10 @@ extern "C"
         auto ini = win->GetObject()->GetContentType<INI::INIFile>();
         ini->Update();
 
-        win->CreateViewer<TextViewer::Settings>("TextView");
-        win->CreateViewer<BufferViewer::Settings>("BufferView");
+        LexicalViewer::Settings settings;
+        win->CreateViewer("Lex Viewer", settings);
+        win->CreateViewer<TextViewer::Settings>("Text View");
+        win->CreateViewer<BufferViewer::Settings>("Buffer View");
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new INI::Panels::Information(ini)), true);
@@ -36,7 +37,7 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]  = "BM";
+        sect["Extension"] = { "ini", "toml" };
         sect["Priority"] = 1;
     }
 }
