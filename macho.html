@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GView Specific Plugin Mach-O &mdash; GView  documentation</title><link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+        <script src="_static/language_data.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Global Plugins Prefetch" href="prefetch.html" />
+    <link rel="prev" title="GView Specific Plugins" href="specific_plugins.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> GView
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="specific_plugins.html#specific-plugins">Specific Plugins</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">GView Specific Plugin Mach-O</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#mach-o">Mach-O</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="prefetch.html">Global Plugins Prefetch</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GView</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="specific_plugins.html">GView Specific Plugins</a> &raquo;</li>
+      <li>GView Specific Plugin Mach-O</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/macho.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <div class="section" id="gview-specific-plugin-mach-o">
+<h1>GView Specific Plugin Mach-O<a class="headerlink" href="#gview-specific-plugin-mach-o" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="mach-o">
+<h2>Mach-O<a class="headerlink" href="#mach-o" title="Permalink to this headline">¶</a></h2>
+<p><a class="reference external" href="https://opensource.apple.com/source/llvmCore/llvmCore-3425.0.36/tools/llvm-objdump/MachODump.cpp.auto.html">https://opensource.apple.com/source/llvmCore/llvmCore-3425.0.36/tools/llvm-objdump/MachODump.cpp.auto.html</a>
+<a class="reference external" href="https://stackoverflow.com/questions/54134172/where-is-the-source-code-of-llvm-otool-mac">https://stackoverflow.com/questions/54134172/where-is-the-source-code-of-llvm-otool-mac</a>
+<a class="reference external" href="https://cdmana.com/2022/01/202201291147523264.html">https://cdmana.com/2022/01/202201291147523264.html</a>
+<a class="reference external" href="http://xelz.info/blog/2019/01/11/ios-code-signature">http://xelz.info/blog/2019/01/11/ios-code-signature</a>
+<a class="reference external" href="https://opensource.apple.com/source/Security/Security-59754.80.3/SecurityTool/sharedTool/codesign.c.auto.html">https://opensource.apple.com/source/Security/Security-59754.80.3/SecurityTool/sharedTool/codesign.c.auto.html</a>
+<a class="reference external" href="https://opensource.apple.com/source/Security">https://opensource.apple.com/source/Security</a>
+<a class="reference external" href="https://github.com/apple-opensource/Security/search?l=C&amp;p=6&amp;q=CFDataCreate">https://github.com/apple-opensource/Security/search?l=C&amp;p=6&amp;q=CFDataCreate</a>
+<a class="reference external" href="https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/OSX/libsecurity_codesigning/lib/CSCommonPriv.h">https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/OSX/libsecurity_codesigning/lib/CSCommonPriv.h</a>
+<a class="reference external" href="https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/codesign_wrapper/check_entitlements.c">https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/codesign_wrapper/check_entitlements.c</a>
+<a class="reference external" href="https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/SecurityTool/sharedTool/codesign.c">https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/SecurityTool/sharedTool/codesign.c</a>
+<a class="reference external" href="https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/OSX/libsecurity_utilities/lib/blob.h">https://github.com/apple-opensource/Security/blob/a070b704ca4d37793326cdc9be14fe157fde602b/OSX/libsecurity_utilities/lib/blob.h</a>
+<a class="reference external" href="https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/Makefile">https://github.com/opensource-apple/cctools/blob/fdb4825f303fd5c0751be524babd32958181b3ed/Makefile</a>
+<a class="reference external" href="https://github.com/opensource-apple/cctools/blob/master/otool/ofile_print.c">https://github.com/opensource-apple/cctools/blob/master/otool/ofile_print.c</a>
+<a class="reference external" href="http://newosxbook.com/tools/jtool.html">http://newosxbook.com/tools/jtool.html</a>
+<a class="reference external" href="https://llvm.org/doxygen/BinaryFormat_2MachO_8h_source.html">https://llvm.org/doxygen/BinaryFormat_2MachO_8h_source.html</a>
+<a class="reference external" href="https://reviews.llvm.org/rGaaf00f3f19c1be69ce10d53236f824c2580c2139">https://reviews.llvm.org/rGaaf00f3f19c1be69ce10d53236f824c2580c2139</a>
+<a class="reference external" href="https://cdmana.com/2022/01/202201291147523264.html">https://cdmana.com/2022/01/202201291147523264.html</a>
+<a class="reference external" href="https://gist.github.com/laanwj/a0e00bcd3fe4cd2aa1c0803e91310495#file-validate_macho_sig-py">https://gist.github.com/laanwj/a0e00bcd3fe4cd2aa1c0803e91310495#file-validate_macho_sig-py</a>
+<a class="reference external" href="https://macholib.readthedocs.io/en/latest">https://macholib.readthedocs.io/en/latest</a>
+<a class="reference external" href="https://github.com/ronaldoussoren/macholib/tree/master/macholib">https://github.com/ronaldoussoren/macholib/tree/master/macholib</a>
+<a class="reference external" href="https://opensource.apple.com/source/Security/Security-59754.80.3/OSX/libsecurity_codesigning/lib">https://opensource.apple.com/source/Security/Security-59754.80.3/OSX/libsecurity_codesigning/lib</a>
+<a class="reference external" href="https://opensource.apple.com/source/Security/Security-59754.80.3/codesign_wrapper">https://opensource.apple.com/source/Security/Security-59754.80.3/codesign_wrapper</a>
+<a class="reference external" href="https://opensource.apple.com/source/Security/Security-59754.80.3/CMS">https://opensource.apple.com/source/Security/Security-59754.80.3/CMS</a>
+<a class="reference external" href="https://stackoverflow.com/questions/29598313/checking-code-integrity-in-ios">https://stackoverflow.com/questions/29598313/checking-code-integrity-in-ios</a>
+<a class="reference external" href="https://github.com/toriningen/apple-security-framework/blob/master/OSX/libsecurity_codesigning/lib/codedirectory.cpp">https://github.com/toriningen/apple-security-framework/blob/master/OSX/libsecurity_codesigning/lib/codedirectory.cpp</a>
+<a class="reference external" href="https://qa.1r1g.com/sf/ask/2071881941">https://qa.1r1g.com/sf/ask/2071881941</a>
+<a class="reference external" href="https://opensource.apple.com/source/Security/Security-57740.1.18/OSX/libsecurity_codesigning/lib/codedirectory.cpp.auto.html">https://opensource.apple.com/source/Security/Security-57740.1.18/OSX/libsecurity_codesigning/lib/codedirectory.cpp.auto.html</a>
+<a class="reference external" href="https://blacktop.github.io/ipsw/docs/commands/macho/#macho-info---fileset-entry">https://blacktop.github.io/ipsw/docs/commands/macho/#macho-info—fileset-entry</a>
+<a class="reference external" href="https://github.com/blacktop/ipsw/blob/412077d8da1420277938a047d397fbaaee098193/pkg/dyld/closure.go">https://github.com/blacktop/ipsw/blob/412077d8da1420277938a047d397fbaaee098193/pkg/dyld/closure.go</a>
+<a class="reference external" href="https://github.com/blacktop/go-macho/blob/master/export.go">https://github.com/blacktop/go-macho/blob/master/export.go</a>
+<a class="reference external" href="https://redmaple.tech/blogs/macho-files">https://redmaple.tech/blogs/macho-files</a>
+<a class="reference external" href="https://github.com/zhlynn/zsign/blob/44f15cae53e4a5a000fa7486dd72f472a4c75ee4/openssl.cpp#L11">https://github.com/zhlynn/zsign/blob/44f15cae53e4a5a000fa7486dd72f472a4c75ee4/openssl.cpp#L11</a>
+<a class="reference external" href="https://github.com/CM4all/libcommon/blob/2b7a8fbdd653d23ce44300d1298e560200aedc50/src/lib/openssl/LoadFile.cxx">https://github.com/CM4all/libcommon/blob/2b7a8fbdd653d23ce44300d1298e560200aedc50/src/lib/openssl/LoadFile.cxx</a>
+<a class="reference external" href="https://github.com/zhlynn/zsign/blob/master/signing.cpp">https://github.com/zhlynn/zsign/blob/master/signing.cpp</a>
+<a class="reference external" href="https://github.com/zhlynn/zsign">https://github.com/zhlynn/zsign</a>
+<a class="reference external" href="https://llvm.org/doxygen/BinaryFormat_2MachO_8h_source.html">https://llvm.org/doxygen/BinaryFormat_2MachO_8h_source.html</a>
+<a class="reference external" href="https://llvm.org/doxygen/namespacellvm_1_1MachO.html#a16655d8dcb288f8b3bdc27c0ed3bdc69">https://llvm.org/doxygen/namespacellvm_1_1MachO.html#a16655d8dcb288f8b3bdc27c0ed3bdc69</a>
+<a class="reference external" href="https://www.nextop.de/NeXTstep_3.3_Developer_Documentation/DevTools/14_MachO/MachO.htmld/index.html">https://www.nextop.de/NeXTstep_3.3_Developer_Documentation/DevTools/14_MachO/MachO.htmld/index.html</a>
+<a class="reference external" href="https://github.com/kazzmir/decompiler/blob/master/disassembler/mach/usr/include/mach-o/nlist.h">https://github.com/kazzmir/decompiler/blob/master/disassembler/mach/usr/include/mach-o/nlist.h</a>
+<a class="reference external" href="https://github.com/aidansteele/osx-abi-macho-file-format-reference/blob/master/README.md">https://github.com/aidansteele/osx-abi-macho-file-format-reference/blob/master/README.md</a>
+<a class="reference external" href="https://github.com/llvm/llvm-project/blob/ce2ae381246df89e560c0dfd0a7fdf275f266d9e/lld/MachO/SymbolTable.cpp">https://github.com/llvm/llvm-project/blob/ce2ae381246df89e560c0dfd0a7fdf275f266d9e/lld/MachO/SymbolTable.cpp</a>
+<a class="reference external" href="https://github.com/llvm/llvm-project/blob/ce2ae381246df89e560c0dfd0a7fdf275f266d9e/lld/MachO/InputFiles.cpp">https://github.com/llvm/llvm-project/blob/ce2ae381246df89e560c0dfd0a7fdf275f266d9e/lld/MachO/InputFiles.cpp</a>
+<a class="reference external" href="https://github.com/hdoc/llvm-project/blob/release/13.x/llvm/include/llvm/BinaryFormat/MachO.h#L1401">https://github.com/hdoc/llvm-project/blob/release/13.x/llvm/include/llvm/BinaryFormat/MachO.h#L1401</a>
+<a class="reference external" href="https://opensource.apple.com/source/xnu/xnu-2050.18.24/EXTERNAL_HEADERS/mach-o/stab.h">https://opensource.apple.com/source/xnu/xnu-2050.18.24/EXTERNAL_HEADERS/mach-o/stab.h</a>
+<a class="reference external" href="https://github.com/frnext/MacDependency/blob/f9a9a3b9f60c0e1a7a0d8850bfe5697a38703ade/MachO/symboltableentry.cpp">https://github.com/frnext/MacDependency/blob/f9a9a3b9f60c0e1a7a0d8850bfe5697a38703ade/MachO/symboltableentry.cpp</a>
+<a class="reference external" href="https://github.com/lief-project/LIEF/blob/77328b0071c7254567d9e8383ea0f5f876f9da17/src/MachO/Symbol.cpp">https://github.com/lief-project/LIEF/blob/77328b0071c7254567d9e8383ea0f5f876f9da17/src/MachO/Symbol.cpp</a>
+<a class="reference external" href="https://github.com/search?l=C%2B%2B&amp;q=%22N_PEXT%22&amp;type=Code">https://github.com/search?l=C%2B%2B&amp;q=%22N_PEXT%22&amp;type=Code</a>
+<a class="reference external" href="https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/nlist.h">https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/nlist.h</a>
+<a class="reference external" href="https://opensource.apple.com/source/xnu/xnu-201/EXTERNAL_HEADERS/mach-o/nlist.h.auto.html">https://opensource.apple.com/source/xnu/xnu-201/EXTERNAL_HEADERS/mach-o/nlist.h.auto.html</a>
+<a class="reference external" href="https://llvm.org/doxygen/BinaryFormat_2MachO_8h_source.html">https://llvm.org/doxygen/BinaryFormat_2MachO_8h_source.html</a>
+<a class="reference external" href="https://opensource.apple.com/source/dyld/dyld-45.1/src/ImageLoader.cpp.auto.html">https://opensource.apple.com/source/dyld/dyld-45.1/src/ImageLoader.cpp.auto.html</a>
+<a class="reference external" href="https://opensource.apple.com/source/dyld/dyld-852.2/src/ImageLoaderMachO.cpp.auto.html">https://opensource.apple.com/source/dyld/dyld-852.2/src/ImageLoaderMachO.cpp.auto.html</a>
+<a class="reference external" href="https://opensource.apple.com/source/dyld/dyld-43/src/ImageLoaderMachO.cpp.auto.html">https://opensource.apple.com/source/dyld/dyld-43/src/ImageLoaderMachO.cpp.auto.html</a>
+<a class="reference external" href="https://opensource.apple.com/source/dyld/dyld-239.3/src/ImageLoaderMachO.cpp">https://opensource.apple.com/source/dyld/dyld-239.3/src/ImageLoaderMachO.cpp</a>
+<a class="reference external" href="https://github.com/llvm/llvm-project/blob/93d1a623cecb6f732db7900baf230a13e6ac6c6a/llvm/test/ObjectYAML/MachO/dylib_dylinker_command.yaml">https://github.com/llvm/llvm-project/blob/93d1a623cecb6f732db7900baf230a13e6ac6c6a/llvm/test/ObjectYAML/MachO/dylib_dylinker_command.yaml</a>
+<a class="reference external" href="https://opensource.apple.com/source/dyld/dyld-852.2">https://opensource.apple.com/source/dyld/dyld-852.2</a>
+<a class="reference external" href="https://oscourse-tsinghua.gitbook.io/ucore-analysis/ucore/kern/debug/stab_h">https://oscourse-tsinghua.gitbook.io/ucore-analysis/ucore/kern/debug/stab_h</a>
+<a class="reference external" href="https://android.googlesource.com/platform/external/lcc/+/f401a679882f0a0dc05b91ab8f507a09305803d4/src/stab.h">https://android.googlesource.com/platform/external/lcc/+/f401a679882f0a0dc05b91ab8f507a09305803d4/src/stab.h</a>
+<a class="reference external" href="https://github.com/llvm/llvm-project/blob/bbaeb1ee0ee03ffd5161f1414c8b36d7d7fcdbb7/llvm/include/llvm/BinaryFormat/MachO.h">https://github.com/llvm/llvm-project/blob/bbaeb1ee0ee03ffd5161f1414c8b36d7d7fcdbb7/llvm/include/llvm/BinaryFormat/MachO.h</a>
+<a class="reference external" href="https://github.com/Tenloy/tenloy.github.io/blob/5ac4c70b91c80723b3e20560830d083fd8ae1dfb/source/_posts/2021-09-23-(%E4%BA%8C)%20Mach-O%20%E6%96%87%E4%BB%B6%E7%BB%93%E6%9E%84.md">https://github.com/Tenloy/tenloy.github.io/blob/5ac4c70b91c80723b3e20560830d083fd8ae1dfb/source/_posts/2021-09-23-(%E4%BA%8C)%20Mach-O%20%E6%96%87%E4%BB%B6%E7%BB%93%E6%9E%84.md</a>
+<a class="reference external" href="https://reviews.llvm.org/D34668">https://reviews.llvm.org/D34668</a>
+<a class="reference external" href="https://redmaple.tech/blogs/macho-files">https://redmaple.tech/blogs/macho-files</a>
+<a class="reference external" href="http://www.newosxbook.com/articles/CodeSigning.pdf">http://www.newosxbook.com/articles/CodeSigning.pdf</a>
+<a class="reference external" href="https://opensource.apple.com/source/libsecurity_codesigning/libsecurity_codesigning-55032/lib/codedirectory.h.auto.html">https://opensource.apple.com/source/libsecurity_codesigning/libsecurity_codesigning-55032/lib/codedirectory.h.auto.html</a>
+<a class="reference external" href="https://opensource.apple.com/source/dyld/dyld-655.1.1/dyld3/MachOLoaded.cpp.auto.html">https://opensource.apple.com/source/dyld/dyld-655.1.1/dyld3/MachOLoaded.cpp.auto.html</a></p>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="specific_plugins.html" class="btn btn-neutral float-left" title="GView Specific Plugins" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="prefetch.html" class="btn btn-neutral float-right" title="Global Plugins Prefetch" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Gavriluț Dragoș, Mutu Gheorghiță, Andrei Damian, Raul Zaharia.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
