@@ -405,6 +405,8 @@ namespace App
         bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
+
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
