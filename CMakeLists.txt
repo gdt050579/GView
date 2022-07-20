@@ -58,6 +58,21 @@ elseif (UNIX)
     add_compile_options(-W)
 endif()
 
+if (MSVC)
+    add_definitions(-DBUILD_FOR_WINDOWS)
+    add_compile_options(-W3 /MP)
+elseif (APPLE)
+    add_definitions(-DBUILD_FOR_OSX)
+    if (DEBUG_BUILD)
+        add_compile_options(-g)
+        add_compile_options(-W)
+    endif()
+elseif (UNIX)
+    add_definitions(-DBUILD_FOR_UNIX)
+    add_compile_options(-g)
+    add_compile_options(-W)
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
      add_compile_options(-Wall -Wextra
              -Wno-switch
@@ -119,3 +134,4 @@ add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(${PROJECT_NAME} PRIVATE GViewCore)
