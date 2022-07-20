@@ -17,49 +17,49 @@ env:
   BUILD_TYPE: Release
   
 jobs:
-  build-win:
-    runs-on: [windows-latest]
-    env:
-      VCPKGRS_DYNAMIC: 1
-      SDL2_URL: "https://www.libsdl.org/release/SDL2-devel-2.0.14-VC.zip"
-      SDL2_TTF_URL: "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-devel-2.0.15-VC.zip"
-      SDL2_PATH: "C:\\SDL"
-    steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: recursive
-    - name: Install requests
-      run: pip install requests
-    - name: Install SDL2
-      run: python .github/workflows/win_sdl2.py
-    - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-      
-    - name: Add tag data to enviroment
-      run: |
-        $output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
-        echo "GVIEW_VERSION=$output" | Out-File -FilePath $env:GITHUB_ENV -Append
-      
-    - name: Create archive
-      run: |
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.exe)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.dll)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.tpl)
-        echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.gpl)
-        echo "$output"
-    
-    - name: Store Artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: windows_artifacts
-        path: "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
-        retention-days: 1
+  # build-win:
+  #   runs-on: [windows-latest]
+  #   env:
+  #     VCPKGRS_DYNAMIC: 1
+  #     SDL2_URL: "https://www.libsdl.org/release/SDL2-devel-2.0.14-VC.zip"
+  #     SDL2_TTF_URL: "https://www.libsdl.org/projects/SDL_ttf/release/SDL2_ttf-devel-2.0.15-VC.zip"
+  #     SDL2_PATH: "C:\\SDL"
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #     with:
+  #       submodules: recursive
+  #   - name: Install requests
+  #     run: pip install requests
+  #   - name: Install SDL2
+  #     run: python .github/workflows/win_sdl2.py
+  #   - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+  #   - name: Configure CMake
+  #     run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
+  #   - name: Build
+  #     run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+  #     
+  #   - name: Add tag data to enviroment
+  #     run: |
+  #       $output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
+  #       echo "GVIEW_VERSION=$output" | Out-File -FilePath $env:GITHUB_ENV -Append
+  #     
+  #   - name: Create archive
+  #     run: |
+  #       $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.exe)
+  #       echo "$output"
+  #       $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.dll)
+  #       echo "$output"
+  #       $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.tpl)
+  #       echo "$output"
+  #       $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.gpl)
+  #       echo "$output"
+  #   
+  #   - name: Store Artifacts
+  #     uses: actions/upload-artifact@v3
+  #     with:
+  #       name: windows_artifacts
+  #       path: "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
+  #       retention-days: 1
      
   build-macos:
     runs-on: [macos-latest]
@@ -149,7 +149,7 @@ jobs:
   publish_job:
     name: "Publish to release"
     runs-on: [ubuntu-latest]
-    needs: [build-win, build-ubuntu, build-macos]
+    needs: [build-ubuntu, build-macos]
     steps:
     - uses: actions/checkout@v2
 
