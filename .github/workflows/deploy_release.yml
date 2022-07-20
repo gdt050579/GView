@@ -45,20 +45,20 @@ jobs:
       
     - name: Create archive
       run: |
-        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.exe)
+        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.exe)
         echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.dll)
+        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*.dll)
         echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.tpl)
+        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.tpl)
         echo "$output"
-        $output=$(7z a "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.gpl)
+        $output=$(7z a "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" D:/a/GView/GView/bin/Release/*/*.gpl)
         echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: windows_artifacts
-        path: "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
      
   build-macos:
@@ -89,14 +89,14 @@ jobs:
     - name: Create archive
       working-directory: /Users/runner/work/GView/GView/bin/Release
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" .)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" .)
         echo "$output"
 
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: apple_artifacts
-        path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "/Users/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1
         
   build-ubuntu:
@@ -108,12 +108,18 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: recursive
-    - name: Update
+        
+    - name: Update OS
       run: sudo apt-get update -y
-    - name: Install SDL2
-      run: sudo apt-get install libsdl2-dev -y
-    - name: Install SDL2ttf
-      run: sudo apt-get install libsdl2-ttf-dev -y
+      
+    - name: Install SDL2 & SD2ttf
+      run: | 
+        sudo apt-get install libsdl2-dev -y
+        sudo apt-get install libsdl2-ttf-dev -y
+        
+    - name: GCC & G++ multilib
+      run: sudo apt-get install g++-multilib gcc-multilib -y
+      
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
     - name: Build
@@ -130,14 +136,14 @@ jobs:
     - name: Create archive
       working-directory: /home/runner/work/GView/GView/bin/Release
       run: |
-        output=$(zip -9 -r "GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip" .)
+        output=$(zip -9 -r "GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip" .)
         echo "$output"
     
     - name: Store Artifacts
       uses: actions/upload-artifact@v3
       with:
         name: linux_artifacts
-        path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{ env.GVIEW_VERSION }}.zip"
+        path: "/home/runner/work/GView/GView/bin/Release/GView-${{ runner.os }}-${{runner.arch}}-${{ env.GVIEW_VERSION }}.zip"
         retention-days: 1     
       
   publish_job:
