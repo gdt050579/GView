@@ -112,10 +112,10 @@ jobs:
     - name: Update OS
       run: sudo apt-get update -y
       
-    - name: Install SDL2 & SD2ttf
-      run: | 
-        sudo apt-get install libsdl2-dev -y
-        sudo apt-get install libsdl2-ttf-dev -y
+    # - name: Install SDL2 & SD2ttf
+    #   run: | 
+    #     sudo apt-get install libsdl2-dev -y
+    #     sudo apt-get install libsdl2-ttf-dev -y
         
     - name: GCC & G++ multilib
       run: sudo apt-get install g++-multilib gcc-multilib -y
