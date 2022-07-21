@@ -58,7 +58,13 @@ elseif (APPLE)
     SET(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
     SET(CMAKE_INSTALL_RPATH @executable_path)
     message(STATUS "CMAKE_INSTALL_RPATH => ${CMAKE_INSTALL_RPATH}")
-        
+    
+    # find_package(Curses REQUIRED)
+    include_directories("/usr/local/opt/ncurses/include")
+    link_directories("/usr/local/opt/ncurses/lib")
+    set(CURSES_LIBRARY "/usr/local/opt/ncurses/lib")
+    set(CURSES_INCLUDE_PATH "/usr/local/opt/ncurses/include")   
+    
     set(CURSES_NEED_WIDE "TRUE")
     set(CURSES_NEED_NCURSES "TRUE")
     find_package(Curses REQUIRED)
