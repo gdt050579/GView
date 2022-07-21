@@ -73,6 +73,13 @@ jobs:
     #   run: brew install sdl2_ttf
     - name: Install updated ncurses
       run: brew install ncurses
+      
+    - name: List NCurses Files Lib
+      run: ls -R /usr/local/opt/ncurses/lib
+      
+    - name: List NCurses Files Include
+      run: ls -R /usr/local/opt/ncurses/include"
+      
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
     - name: Build
@@ -83,7 +90,7 @@ jobs:
         output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
  
-    - name: List Files
+    - name: List Release Files
       run: ls -R /Users/runner/work/GView/GView/bin/Release
  
     - name: List OpenSSL files
