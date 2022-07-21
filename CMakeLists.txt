@@ -53,7 +53,7 @@ elseif (APPLE)
         add_compile_options(-W)
     endif()
     
-    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
+    set(CMAKE_MACOSX_RPATH OFF)
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
