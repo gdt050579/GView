@@ -58,6 +58,8 @@ elseif (APPLE)
     SET(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
     SET(CMAKE_INSTALL_RPATH @executable_path)
     message(STATUS "CMAKE_INSTALL_RPATH => ${CMAKE_INSTALL_RPATH}")
+    
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
