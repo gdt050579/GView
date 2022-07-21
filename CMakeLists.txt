@@ -52,8 +52,9 @@ elseif (APPLE)
         add_compile_options(-g)
         add_compile_options(-W)
     endif()
-    
-    SET(CMAKE_INSTALL_NAME_DIR @executable_path)
+   
+    SET(CMAKE_INSTALL_NAME_DIR @executable_path/.)
+    message(STATUS "CMAKE_INSTALL_NAME_DIR => ${CMAKE_INSTALL_NAME_DIR}")
     SET(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
