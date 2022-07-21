@@ -87,10 +87,10 @@ jobs:
       run: ls -R /Users/runner/work/GView/GView/bin/Release
  
     - name: List OpenSSL files
-      run: ls -R /usr/local/opt/openssl@1.1/lib/
+      run: ls /usr/local/opt/openssl@1.1/lib/
       
     - name: Copy OpenSSL libs
-      run: cp -R /usr/local/opt/openssl@1.1/lib/ /Users/runner/work/GView/GView/bin/Release/
+      run: cp /usr/local/opt/openssl@1.1/lib/*.dylib /Users/runner/work/GView/GView/bin/Release/
       
     - name: Create archive
       working-directory: /Users/runner/work/GView/GView/bin/Release
