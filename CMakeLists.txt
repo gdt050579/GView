@@ -59,8 +59,18 @@ elseif (APPLE)
     SET(CMAKE_INSTALL_RPATH @executable_path)
     message(STATUS "CMAKE_INSTALL_RPATH => ${CMAKE_INSTALL_RPATH}")
     
-    include_directories(/usr/local/opt/ncurses/include)
-    link_directories(/usr/local/opt/ncurses/lib)
+    # find_package(Curses REQUIRED)
+    # include_directories("/usr/local/opt/ncurses/include")
+    # link_directories(/usr/local/opt/ncurses/lib)
+    
+    find_package(Curses REQUIRED)
+    if(NOT TARGET Curses::NCurses)
+        add_library(Curses::NCurses UNKNOWN IMPORTED)
+        set_target_properties(Curses::NCurses PROPERTIES
+            IMPORTED_LOCATION "${CURSES_NCURSES_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${CURSES_INCLUDE_DIR}"
+        )
+    endif()
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
