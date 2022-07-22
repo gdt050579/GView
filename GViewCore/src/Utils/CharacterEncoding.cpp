@@ -121,7 +121,7 @@ Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOML
             countUnknown++;
         }
         auto total = countUnknown + countAscii + countUTF8;
-        if ((total>0) && ((((countAscii+countUTF8)* 100U)/total)>=75))
+        if ((total > 0) && ((((countAscii + countUTF8) * 100U) / total) >= 75))
         {
             // if at least 75% of the characters are in ascii or UTF8 format
             if (countUTF8 > 0)
@@ -133,4 +133,34 @@ Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOML
     // 3. if no encoding was matched --> return binary
     return Encoding::Binary;
 }
-} // namespace GView::Utils::StringEncoding
+char16* ConvertToUnicode16(BufferView buf, size_t& length)
+{
+    length = 0;
+    if (buf.Empty())
+        return nullptr;
+    uint32 bomLength;
+    auto enc    = AnalyzeBufferForEncoding(buf, true, bomLength);
+    char16* ptr = new char16[buf.GetLength()];
+    auto pos    = ptr;
+    auto start  = buf.begin() + bomLength;
+    auto end    = buf.end();
+
+    ExpandedCharacter ch;
+    while (start<end)
+    {
+        if (ch.FromEncoding(enc,start,end))
+        {
+            *pos = ch.GetChar();
+            start += ch.Length();
+        }
+        else
+        {
+            *pos = *start;
+            start++;
+        }
+        pos++;
+    }
+    length = pos - ptr;
+    return ptr;
+}
+} // namespace GView::Utils::CharacterEncoding
