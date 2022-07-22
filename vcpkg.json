@@ -6,7 +6,12 @@
             "name": "openssl",        
             "version>=": "1.1.1n",
             "platform": "(x64 & windows) | (x64 & osx) | (arm64 & osx)"
-        }       
+        },
+        {
+            "name": "ncurses",        
+            "version>=": "6.3",
+            "platform": "(x64 & osx) | (arm64 & osx)"
+        } 
     ],                        
     "overrides": [
         { "name": "openssl", "version-string": "1.1.1n" }  
