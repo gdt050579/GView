@@ -68,6 +68,8 @@ elseif (APPLE)
     	# target_link_libraries(${PROJECT_NAME} PRIVATE lib external)
     endif()
     
+    install(TARGETS ${CURSES_LIBRARIES} LIBRARY DESTINATION "." NAMELINK_ONLY)
+    
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
@@ -137,3 +139,6 @@ add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+install(TARGETS OpenSSL::SSL LIBRARY DESTINATION "." NAMELINK_ONLY)
+install(TARGETS OpenSSL::Crypto LIBRARY DESTINATION "." NAMELINK_ONLY)
+
