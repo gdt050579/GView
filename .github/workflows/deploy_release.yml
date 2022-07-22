@@ -81,9 +81,6 @@ jobs:
     - name: Bootstrap vcpkg  
       run: "$HOME/vcpkg/bootstrap-vcpkg.sh"
       
-    - name: Install vcpkg  
-      run: "$HOME/vcpkg/vcpkg integrate install"
-           
     - name: Export vcpkg  
       run: export VCPKG_ROOT="$HOME/vcpkg"
       
