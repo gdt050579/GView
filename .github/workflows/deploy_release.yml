@@ -77,11 +77,11 @@ jobs:
     # - name: Install vcpkg  
     #   run: brew install vcpkg
       
-    - name: List NCurses Files Lib
-      run: ls -R /usr/local/opt/ncurses/lib
-      
-    - name: List NCurses Files Include
-      run: ls -R /usr/local/opt/ncurses/include
+    # - name: List NCurses Files Lib
+    #   run: ls -R /usr/local/opt/ncurses/lib
+    #   
+    # - name: List NCurses Files Include
+    #   run: ls -R /usr/local/opt/ncurses/include
       
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
