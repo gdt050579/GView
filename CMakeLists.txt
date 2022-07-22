@@ -139,6 +139,5 @@ add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-install(TARGETS OpenSSL::SSL LIBRARY DESTINATION "." NAMELINK_ONLY)
-install(TARGETS OpenSSL::Crypto LIBRARY DESTINATION "." NAMELINK_ONLY)
+install(TARGETS OpenSSL LIBRARY DESTINATION "." NAMELINK_ONLY)
 
