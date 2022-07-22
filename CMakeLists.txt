@@ -46,6 +46,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_B
 if (MSVC)
     add_definitions(-DBUILD_FOR_WINDOWS)
     add_compile_options(-W3 /MP)
+    
 elseif (APPLE)
     add_definitions(-DBUILD_FOR_OSX)
     if (DEBUG_BUILD)
@@ -58,6 +59,15 @@ elseif (APPLE)
     SET(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
     SET(CMAKE_INSTALL_RPATH @executable_path)
     message(STATUS "CMAKE_INSTALL_RPATH => ${CMAKE_INSTALL_RPATH}")
+    
+    if(CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED)
+        message(STATUS "${PROJECT_NAME} => CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED")
+    	target_link_libraries(${PROJECT_NAME} PRIVATE "$<LINK_LIBRARY:weak_library,lib,external>")
+    else()
+        message(STATUS "${PROJECT_NAME} => NOT CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED")
+    	# target_link_libraries(${PROJECT_NAME} PRIVATE lib external)
+    endif()
+    
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
