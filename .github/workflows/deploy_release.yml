@@ -73,24 +73,21 @@ jobs:
     #   run: brew install sdl2_ttf
     # - name: Install updated ncurses
     #   run: brew install ncurses
-    
-    # - name: Rmdir VCPKG
-    #   run: rmdir -p /usr/local/bin/vcpkg   
       
     - name: Install vcpkg  
-      run: brew install --overwrite vcpkg
+      run: git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
+     
+    - name: Export vcpkg  
+      run: export VCPKG_ROOT="$HOME/vcpkg"
       
     # - name: List NCurses Files Lib
     #   run: ls -R /usr/local/opt/ncurses/lib
     #   
     # - name: List NCurses Files Include
     #   run: ls -R /usr/local/opt/ncurses/include
-    
-    - name: List VCPKG
-      run: ls -R /usr/local/Cellar/vcpkg/
       
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_TOOLCHAIN_FILE=/usr/local/Cellar/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
         
