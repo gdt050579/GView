@@ -78,7 +78,7 @@ jobs:
     #   run: rmdir -p /usr/local/bin/vcpkg   
       
     - name: Install vcpkg  
-      run: brew --overwrite install vcpkg
+      run: brew install --overwrite vcpkg
       
     # - name: List NCurses Files Lib
     #   run: ls -R /usr/local/opt/ncurses/lib
