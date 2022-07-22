@@ -82,9 +82,12 @@ jobs:
     #   
     # - name: List NCurses Files Include
     #   run: ls -R /usr/local/opt/ncurses/include
+    
+    - name: List VCPKG
+      run: ls -R /usr/local/bin/vcpkg
       
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_TOOLCHAIN_FILE="$HOME"/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_TOOLCHAIN_FILE=/usr/local/bin/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DOPENSSL_LIBRARIES=/usr/local/opt/openssl/lib
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
         
