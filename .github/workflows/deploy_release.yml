@@ -74,8 +74,8 @@ jobs:
     # - name: Install updated ncurses
     #   run: brew install ncurses
       
-    - name: Install vcpkg  
-      run: brew install vcpkg
+    # - name: Install vcpkg  
+    #   run: brew install vcpkg
       
     - name: List NCurses Files Lib
       run: ls -R /usr/local/opt/ncurses/lib
