@@ -73,9 +73,12 @@ jobs:
     #   run: brew install sdl2_ttf
     # - name: Install updated ncurses
     #   run: brew install ncurses
+    
+    - name: Rmdir VCPKG
+      run: rmdir -r /usr/local/bin/vcpkg   
       
-    # - name: Install vcpkg  
-    #   run: brew install vcpkg
+    - name: Install vcpkg  
+      run: brew install vcpkg
       
     # - name: List NCurses Files Lib
     #   run: ls -R /usr/local/opt/ncurses/lib
