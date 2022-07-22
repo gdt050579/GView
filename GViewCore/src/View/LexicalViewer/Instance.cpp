@@ -9,7 +9,6 @@ Config Instance::config;
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
-
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
@@ -31,11 +30,14 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
+    // load the entire data into a file
+    auto buf         = obj->GetData().GetEntireFile();
+    uint32 bomLength = 0;
+    auto encoding    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLength);
 }
 
 void Instance::Paint(Graphics::Renderer& renderer)
 {
-
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
@@ -45,7 +47,6 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     switch (keyCode)
     {
-
     }
 
     return false;
@@ -67,7 +68,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 }
 void Instance::OnUpdateScrollBars()
 {
-
 }
 bool Instance::GoTo(uint64 offset)
 {
@@ -80,12 +80,12 @@ bool Instance::Select(uint64 offset, uint64 size)
 bool Instance::ShowGoToDialog()
 {
     NOT_IMPLEMENTED(false);
-    //GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
-    //if (dlg.Show() == (int) Dialogs::Result::Ok)
+    // GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
+    // if (dlg.Show() == (int) Dialogs::Result::Ok)
     //{
 
     //}
-    //return true;
+    // return true;
 }
 bool Instance::ShowFindDialog()
 {
@@ -98,7 +98,6 @@ std::string_view Instance::GetName()
 //======================================================================[Mouse coords]==================
 void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
-
 }
 void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
 {
@@ -120,7 +119,7 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
     return false;
 }
 //======================================================================[Cursor information]==================
-//int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
+// int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
 //{
 //    //uint64 start, end;
 //    //bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
@@ -142,31 +141,31 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 //}
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
-    //LocalString<128> tmp;
-    //auto xPoz = 0;
-    //if (height == 1)
+    // LocalString<128> tmp;
+    // auto xPoz = 0;
+    // if (height == 1)
     //{
-    //    xPoz = PrintSelectionInfo(0, 0, 0, 16, r);
-    //    if (this->selection.IsMultiSelectionEnabled())
-    //    {
-    //        xPoz = PrintSelectionInfo(1, xPoz, 0, 16, r);
-    //        xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
-    //        xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
-    //    }
-    //    xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
-    //    xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
-    //    xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
-    //}
-    //else
+    //     xPoz = PrintSelectionInfo(0, 0, 0, 16, r);
+    //     if (this->selection.IsMultiSelectionEnabled())
+    //     {
+    //         xPoz = PrintSelectionInfo(1, xPoz, 0, 16, r);
+    //         xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
+    //         xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
+    //     }
+    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
+    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
+    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
+    // }
+    // else
     //{
-    //    PrintSelectionInfo(0, 0, 0, 16, r);
-    //    xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
-    //    PrintSelectionInfo(1, xPoz, 0, 16, r);
-    //    xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
-    //    this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
-    //    xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
-    //    xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
-    //}
+    //     PrintSelectionInfo(0, 0, 0, 16, r);
+    //     xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
+    //     PrintSelectionInfo(1, xPoz, 0, 16, r);
+    //     xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
+    //     this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
+    //     xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
+    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
+    // }
 }
 
 //======================================================================[PROPERTY]============================
@@ -187,7 +186,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (static_cast<PropertyID>(id))
     {
-
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;

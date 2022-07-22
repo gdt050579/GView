@@ -10,3 +10,7 @@ bool INIFile::Update()
 {
     return true;
 }
+
+void INIFile::ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex)
+{
+}

@@ -10,4 +10,8 @@ Settings::Settings()
 {
     this->data = new SettingsData();
 }
+void Settings::SetParser(Reference<ParseInterface> _parser)
+{
+    ((SettingsData*) (this->data))->parser = _parser;
+}
 

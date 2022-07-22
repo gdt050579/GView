@@ -13,6 +13,7 @@ namespace View
 
         struct SettingsData
         {
+            Reference<ParseInterface> parser;
             SettingsData();
         };
 
@@ -33,6 +34,7 @@ namespace View
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
+            char16* unicodeData;
 
 
             static Config config;

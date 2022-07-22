@@ -674,12 +674,16 @@ namespace View
 
     namespace LexicalViewer
     {
+        struct CORE_EXPORT ParseInterface
+        {
+            virtual void ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex) = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
-            void SetParserCallback();
+            void SetParser(Reference<ParseInterface> parser);
         };
     }; // namespace LexicalViewer
 

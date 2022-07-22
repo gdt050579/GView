@@ -20,13 +20,14 @@ extern "C"
     {
         return new INI::INIFile();
     }
-    PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
+    PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
         auto ini = win->GetObject()->GetContentType<INI::INIFile>();
         ini->Update();
 
         LexicalViewer::Settings settings;
-        win->CreateViewer("Lex Viewer", settings);
+        settings.SetParser(ini.ToObjectRef<LexicalViewer::ParseInterface>());
+
         win->CreateViewer<TextViewer::Settings>("Text View");
         win->CreateViewer<BufferViewer::Settings>("Buffer View");
 
@@ -38,7 +39,7 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect["Extension"] = { "ini", "toml" };
-        sect["Priority"] = 1;
+        sect["Priority"]  = 1;
     }
 }
 
