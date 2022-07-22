@@ -34,7 +34,7 @@ Lexer::Lexer(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-uint32 Lexer::ParseTillNextLine(uint32 index)
+uint32 Lexer::ParseTillNextLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -46,7 +46,7 @@ uint32 Lexer::ParseTillNextLine(uint32 index)
     }
     return index;
 }
-uint32 Lexer::Parse(uint32 index, bool (*validate)(char16 character))
+uint32 Lexer::Parse(uint32 index, bool (*validate)(char16 character)) const
 {
     if (index >= size)
         return size;
@@ -60,7 +60,7 @@ uint32 Lexer::Parse(uint32 index, bool (*validate)(char16 character))
     }
     return index;
 }
-uint32 Lexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character))
+uint32 Lexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character)) const
 {
     if (index >= size)
         return size;
@@ -75,7 +75,7 @@ uint32 Lexer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 char
     }
     return index;
 }
-uint32 Lexer::ParseSpace(uint32 index, SpaceType type)
+uint32 Lexer::ParseSpace(uint32 index, SpaceType type) const
 {
     if (index >= size)
         return size;
@@ -121,7 +121,7 @@ uint32 Lexer::ParseSpace(uint32 index, SpaceType type)
     return index;
 }
 
-uint32 Lexer::ParseString(uint32 index, StringFormat format)
+uint32 Lexer::ParseString(uint32 index, StringFormat format) const
 {
     if (index >= size)
         return size;
@@ -178,7 +178,7 @@ uint32 Lexer::ParseString(uint32 index, StringFormat format)
 
     return index;
 }
-uint32 Lexer::ParseNumber(uint32 index, NumberFormat format)
+uint32 Lexer::ParseNumber(uint32 index, NumberFormat format) const
 {
     if (index >= size)
         return size;

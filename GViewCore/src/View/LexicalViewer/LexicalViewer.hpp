@@ -34,6 +34,9 @@ namespace View
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
+            char16* text;
+            uint32 textLength;
+
 
             static Config config;
 

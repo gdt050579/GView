@@ -183,12 +183,12 @@ namespace Utils
                     return text[index];
                 return 0;
             }
-            uint32 ParseTillNextLine(uint32 index);
-            uint32 Parse(uint32 index, bool (*validate)(char16 character));
-            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
-            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs);
-            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All);
-            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All);
+            uint32 ParseTillNextLine(uint32 index) const;
+            uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
+            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
+            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
+            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
         };
     } // namespace Tokenizer
 } // namespace Utils

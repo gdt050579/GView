@@ -13,4 +13,5 @@ bool INIFile::Update()
 
 void INIFile::ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex)
 {
+    auto len = lex.Len();
 }

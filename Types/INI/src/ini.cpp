@@ -27,6 +27,7 @@ extern "C"
 
         LexicalViewer::Settings settings;
         settings.SetParser(ini.ToObjectRef<LexicalViewer::ParseInterface>());
+        win->CreateViewer("Lexical", settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
         win->CreateViewer<BufferViewer::Settings>("Buffer View");
