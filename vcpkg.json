@@ -9,13 +9,13 @@
         },
         {
             "name": "ncurses",        
-            "version>=": "6.3",
+            "version>=": "6.2",
             "platform": "(x64 & osx) | (arm64 & osx)"
         } 
     ],                        
     "overrides": [
         { "name": "openssl", "version-string": "1.1.1n" },
-        { "name": "ncurses", "version": "6.3" }
+        { "name": "ncurses", "version": "6.2" }
     ],
     "builtin-baseline": "6e024e744e7717c06ddacd5089401109c6298553"
 }
