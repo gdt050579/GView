@@ -53,6 +53,8 @@ elseif (APPLE)
         add_compile_options(-g)
         add_compile_options(-W)
     endif()
+    
+    include_directories("$ENV{HOME}/vcpkg/installed/x64-osx/include")
    
     SET(CMAKE_INSTALL_NAME_DIR @executable_path)
     message(STATUS "CMAKE_INSTALL_NAME_DIR => ${CMAKE_INSTALL_NAME_DIR}")
