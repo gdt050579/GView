@@ -14,7 +14,8 @@
         } 
     ],                        
     "overrides": [
-        { "name": "openssl", "version-string": "1.1.1n" }  
+        { "name": "openssl", "version-string": "1.1.1n" },
+        { "name": "ncurses", "version": "6.3" }
     ],
     "builtin-baseline": "6e024e744e7717c06ddacd5089401109c6298553"
 }
