@@ -88,6 +88,12 @@ jobs:
     - name: List NCurses Files
       run: ls -R /usr/local/opt/ncurses
       
+    - name: Find NCurses CMake (CursesConfig)
+      run: find / -name "CursesConfig.cmake"
+      
+    - name: Find NCurses CMake (curses-config)
+      run: find / -name "curses-config.cmake"    
+      
     # - name: Install vcpkg
     #   run: git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
     #   
