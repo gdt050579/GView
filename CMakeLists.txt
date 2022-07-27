@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.15)
 
 project(GView VERSION 1.0)
 
@@ -52,10 +52,14 @@ elseif (APPLE)
         add_compile_options(-g)
         add_compile_options(-W)
     endif()
+    
+    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
     add_compile_options(-W)
+    
+    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -112,6 +116,7 @@ add_subdirectory(Types/JOB)
 add_subdirectory(Types/PCAP)
 add_subdirectory(Types/ELF)
 add_subdirectory(Types/JT)
+add_subdirectory(Types/INI)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
