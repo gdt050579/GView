@@ -851,7 +851,9 @@ namespace Type
                 int32 iconSize = 0;
 
                 void UpdateGeneralInformation();
+                void SetLanguage();
                 void SetCertificate();
+                void SetStringTable();
                 void ChooseIcon();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
