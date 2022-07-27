@@ -76,7 +76,7 @@ void Information::UpdateGeneralInformation()
 
     if (pe->pdbName)
     {
-        general->AddItem({ "PDB File", pe->pdbName }).SetType(ListViewItem::Type::Emphasized_3);
+        general->AddItem({ "PDB File", (char8_t*) pe->pdbName.GetText() }).SetType(ListViewItem::Type::Emphasized_3);
     }
 
     // verific si language-ul
@@ -98,7 +98,7 @@ void Information::UpdateGeneralInformation()
         for (int tr = 0; tr < pe->Ver.GetNrItems(); tr++)
         {
             auto itemID = general->AddItem(pe->Ver.GetKey(tr)->ToStringView());
-            itemID.SetText(1, pe->Ver.GetValue(tr)->ToStringView());
+            itemID.SetText(1, u16string_view{ (char16_t*) pe->Ver.GetUnicode(tr) });
         }
     }
 
