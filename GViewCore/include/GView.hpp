@@ -674,9 +674,57 @@ namespace View
 
     namespace LexicalViewer
     {
+        enum class TokenAlignament
+        {
+            None,
+            /*
+            Alignament
+                New Block -> incepe un nou bloc
+                End Block -> s-a terminat block-ul vechi
+                New Line -> se trece la linia urmatoare
+                CursorSkip -> cursorul nu va ajunge pe acel block (il va sari implicit)
+                HorizontalAlignamentWithinBlock -> acel token va fi aliniat orizontal pe aceeasi pozitie in cadrul blockului
+                HozizontalAlignament -> acel token va fi aliniat orizonatl pe aceeasi pozitie in cadrul intregului program
+                AddSpaceToLeft -> adauga un spatiu la stanga
+                AddSpaceToRight -> adauga un spatiu in dreapta
+            */
+        };
+        enum class TokenType
+        {
+            Comment,
+            Number,
+            String,
+            Operator,
+            Keyword,
+            Constant,
+            Word,
+            Macro,
+            Preprocesor,
+            Unknown
+        };
+        class CORE_EXPORT Token
+        {
+            void* data;
+            uint32 index;
+
+          public:
+            inline bool IsValid() const
+            {
+                return data != nullptr;
+            }
+        };
+        class CORE_EXPORT TokensList
+        {
+            void* data;
+
+          public:
+            Token operator[](uint32 index) const;
+            uint32 Len() const;
+            Token Add(TokenType type, uint32 start, uint32 end, TokenAlignament alig = TokenAlignament::None);
+        };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex) = 0;
+            virtual void ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex, TokensList& tokensList) = 0;
         };
         struct CORE_EXPORT Settings
         {

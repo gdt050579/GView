@@ -10,6 +10,8 @@ namespace Type
     {
         class INIFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+
+            void ParseSections(const GView::Utils::Tokenizer::Lexer& lex, uint32 pos);
           public:
             INIFile();
             virtual ~INIFile()
