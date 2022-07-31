@@ -54,6 +54,7 @@ namespace View
 
             static Config config;
 
+          public:
             std::vector<TokenObject> tokens;
             
           public:

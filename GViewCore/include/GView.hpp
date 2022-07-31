@@ -689,7 +689,6 @@ namespace View
         };
         enum class TokenType: uint8
         {
-            None,
             Comment,
             Number,
             String,
@@ -707,6 +706,12 @@ namespace View
             uint32 index;
 
           public:
+            Token(void* _data, uint32 _idx) : data(_data), index(_idx)
+            {
+            }
+            Token() : data(nullptr), index(0)
+            {
+            }
             inline bool IsValid() const
             {
                 return data != nullptr;
