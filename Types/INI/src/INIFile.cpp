@@ -13,19 +13,86 @@ enum class ParserState
 };
 namespace CharType
 {
-    constexpr uint32 Word                = 0;
-    constexpr uint32 SpaceOrNewLine      = 1;
-    constexpr uint32 Comma               = 2;
-    constexpr uint32 Equal               = 3;
-    constexpr uint32 String              = 4;
-    constexpr uint32 Comment             = 5;
-    constexpr uint32 SectionOrArrayStart = 6;
-    constexpr uint32 SectionOrArrayEnd   = 7;
-    constexpr uint32 Other               = 8;
+    constexpr uint8 Word                = 0;
+    constexpr uint8 SpaceOrNewLine      = 1;
+    constexpr uint8 Comma               = 2;
+    constexpr uint8 Equal               = 3;
+    constexpr uint8 String              = 4;
+    constexpr uint8 Comment             = 5;
+    constexpr uint8 SectionOrArrayStart = 6;
+    constexpr uint8 SectionOrArrayEnd   = 7;
+    constexpr uint8 Invalid             = 8;
+
+    uint8 Ini_Groups_IDs[] = { Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        SpaceOrNewLine,
+                               SpaceOrNewLine, Invalid,
+                               Invalid,        SpaceOrNewLine,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               Invalid,        Invalid,
+                               SpaceOrNewLine, Word,
+                               String,         Comment,
+                               Word,           Word,
+                               Word,           String,
+                               Word,           Word,
+                               Word,           Word,
+                               Comma,          Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Equal,          Comment,
+                               Word,           Equal,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           SectionOrArrayStart,
+                               Word,           SectionOrArrayEnd,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word,
+                               Word,           Word };
 
     inline uint32 GetCharType(char16 c)
     {
-        return Other;
+        if (c < ARRAY_LEN(Ini_Groups_IDs))
+            return Ini_Groups_IDs[c];
+        return Word;
     }
 } // namespace CharType
 
@@ -55,7 +122,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            // Add coment
+            tokenList.Add(TokenType::Comment, pos, next);
             pos = next;
             break;
         case CharType::SectionOrArrayStart:
@@ -82,9 +149,9 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             // add comma
             pos++;
             break;
-        case CharType::Other:
+        case CharType::Invalid:
             next = text.ParseSameGroupID(pos, CharType::GetCharType);
-            // add other --> with error
+            tokenList.Add(TokenType::Unknown, pos, next);
             pos = next;
             break;
         case CharType::SectionOrArrayEnd:
