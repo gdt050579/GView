@@ -37,7 +37,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     textLength = (uint32)sz;
 
     if (this->settings->parser)
-        this->settings->parser->ExtractTokens(GView::Utils::Tokenizer::Lexer(this->text,this->textLength));
+        this->settings->parser->AnalyzeText(Tokenizer(this->text,this->textLength),);
 }
 
 void Instance::Paint(Graphics::Renderer& renderer)

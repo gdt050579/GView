@@ -2,7 +2,7 @@
 
 namespace GView::Type::INI
 {
-using namespace GView::Utils;
+using namespace GView::View::LexicalViewer;
 
 enum class ParserState
 {
@@ -38,11 +38,7 @@ bool INIFile::Update()
     return true;
 }
 
-void INIFile::ParseSections(const GView::Utils::Tokenizer::Lexer& lex, uint32 pos)
-{
-
-}
-void INIFile::ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex)
+void INIFile::AnalyzeText(const Tokenizer& lex, TokensList& tokenList)
 {
     const auto len = lex.Len();
     auto state     = ParserState::ExpectKeyValueOrSection;
@@ -55,7 +51,7 @@ void INIFile::ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex)
         switch (chType)
         {
         case CharType::SpaceOrNewLine:
-            pos = lex.ParseSpace(pos, Tokenizer::SpaceType::All);
+            pos = lex.ParseSpace(pos, SpaceType::All);
             break;
         case CharType::Comment:
             next = lex.ParseTillNextLine(pos);

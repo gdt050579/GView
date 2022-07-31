@@ -135,62 +135,7 @@ namespace Utils
         Rust,
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
-    namespace Tokenizer
-    {
-        enum class SpaceType : uint8
-        {
-            All          = 0,
-            NewLine      = 1,
-            Space        = 2,
-            Tabs         = 3,
-            SpaceAndTabs = 4,
-        };
-        enum class StringFormat : uint32
-        {
-            SingleQuotes         = 0x00000001, // "..."
-            DoubleQuotes         = 0x00000002, // '...'
-            TripleQuotes         = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences = 0x00000008, // "...\n..."
-            MultiLine            = 0x00000010, // string accross mulitple lines
-            All                  = 0xFFFFFFFF, // all possible forms of strings
-        };
-        enum class NumberFormat : uint32
-        {
-            DecimalOnly           = 0,
-            HexFormat0x           = 0x00000001,
-            BinFormat0b           = 0x00000002,
-            FloatingPoint         = 0x00000004,
-            AllowSignBeforeNumber = 0x00000008,
-            AllowUnderline        = 0x00000010,
-            All                   = 0xFFFFFFFF, // all possible forms of numbers
-        };
-        class CORE_EXPORT Lexer
-        {
-            const char16* text;
-            uint32 size;
 
-          public:
-            Lexer(const char16* text, uint32 size);
-            Lexer(u16string_view text);
-
-            inline uint32 Len() const
-            {
-                return size;
-            }
-            inline char16 operator[](uint32 index) const
-            {
-                if (index < size)
-                    return text[index];
-                return 0;
-            }
-            uint32 ParseTillNextLine(uint32 index) const;
-            uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
-            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
-            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
-            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
-            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
-        };
-    } // namespace Tokenizer
 } // namespace Utils
 
 namespace Hashes
@@ -674,6 +619,59 @@ namespace View
 
     namespace LexicalViewer
     {
+        enum class SpaceType : uint8
+        {
+            All          = 0,
+            NewLine      = 1,
+            Space        = 2,
+            Tabs         = 3,
+            SpaceAndTabs = 4,
+        };
+        enum class StringFormat : uint32
+        {
+            SingleQuotes         = 0x00000001, // "..."
+            DoubleQuotes         = 0x00000002, // '...'
+            TripleQuotes         = 0x00000004, // '''...''' or """..."""
+            AllowEscapeSequences = 0x00000008, // "...\n..."
+            MultiLine            = 0x00000010, // string accross mulitple lines
+            All                  = 0xFFFFFFFF, // all possible forms of strings
+        };
+        enum class NumberFormat : uint32
+        {
+            DecimalOnly           = 0,
+            HexFormat0x           = 0x00000001,
+            BinFormat0b           = 0x00000002,
+            FloatingPoint         = 0x00000004,
+            AllowSignBeforeNumber = 0x00000008,
+            AllowUnderline        = 0x00000010,
+            All                   = 0xFFFFFFFF, // all possible forms of numbers
+        };
+        class CORE_EXPORT Tokenizer
+        {
+            const char16* text;
+            uint32 size;
+
+          public:
+            Tokenizer(const char16* text, uint32 size);
+            Tokenizer(u16string_view text);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline char16 operator[](uint32 index) const
+            {
+                if (index < size)
+                    return text[index];
+                return 0;
+            }
+            uint32 ParseTillNextLine(uint32 index) const;
+            uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
+            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
+            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
+            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
+        };
         enum class TokenAlignament
         {
             None,
@@ -689,8 +687,9 @@ namespace View
                 AddSpaceToRight -> adauga un spatiu in dreapta
             */
         };
-        enum class TokenType
+        enum class TokenType: uint8
         {
+            None,
             Comment,
             Number,
             String,
@@ -712,6 +711,10 @@ namespace View
             {
                 return data != nullptr;
             }
+            inline uint32 GetIndex() const
+            {
+                return index;
+            }
         };
         class CORE_EXPORT TokensList
         {
@@ -720,11 +723,11 @@ namespace View
           public:
             Token operator[](uint32 index) const;
             uint32 Len() const;
-            Token Add(TokenType type, uint32 start, uint32 end, TokenAlignament alig = TokenAlignament::None);
+            Token Add(TokenType type, uint32 start, uint32 end);
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void ExtractTokens(const GView::Utils::Tokenizer::Lexer& lex, TokensList& tokensList) = 0;
+            virtual void AnalyzeText(const Tokenizer tokenizer, TokensList& tokensList) = 0;
         };
         struct CORE_EXPORT Settings
         {
@@ -849,5 +852,5 @@ namespace App
 }; // namespace App
 }; // namespace GView
 
-ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::StringFormat, AppCUI::uint32);
-ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::NumberFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
