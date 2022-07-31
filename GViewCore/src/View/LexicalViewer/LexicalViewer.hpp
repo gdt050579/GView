@@ -60,6 +60,15 @@ namespace View
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
+            inline uint32 GetUnicodeTextLen() const
+            {
+                return textLength;
+            }
+            inline char16* GetUnicodeText() const
+            {
+                return text;
+            }
+
             virtual void Paint(Graphics::Renderer& renderer) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
@@ -88,6 +97,7 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+
         };
         class GoToDialog : public Window
         {
