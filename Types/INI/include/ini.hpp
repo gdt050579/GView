@@ -24,7 +24,7 @@ namespace Type
             }
 
             virtual void AnalyzeText(
-                  const GView::View::LexicalViewer::Tokenizer& lex, GView::View::LexicalViewer::TokensList& list) override;
+                  const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& list) override;
         };
         namespace Panels
         {

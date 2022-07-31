@@ -646,14 +646,14 @@ namespace View
             AllowUnderline        = 0x00000010,
             All                   = 0xFFFFFFFF, // all possible forms of numbers
         };
-        class CORE_EXPORT Tokenizer
+        class CORE_EXPORT TextParser
         {
             const char16* text;
             uint32 size;
 
           public:
-            Tokenizer(const char16* text, uint32 size);
-            Tokenizer(u16string_view text);
+            TextParser(const char16* text, uint32 size);
+            TextParser(u16string_view text);
 
             inline uint32 Len() const
             {
@@ -718,8 +718,12 @@ namespace View
         };
         class CORE_EXPORT TokensList
         {
+          protected:
             void* data;
 
+            TokensList() : data(nullptr)
+            {
+            }
           public:
             Token operator[](uint32 index) const;
             uint32 Len() const;
@@ -727,7 +731,7 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void AnalyzeText(const Tokenizer tokenizer, TokensList& tokensList) = 0;
+            virtual void AnalyzeText(const TextParser& text, TokensList& tokensList) = 0;
         };
         struct CORE_EXPORT Settings
         {

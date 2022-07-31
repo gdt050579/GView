@@ -11,6 +11,20 @@ namespace View
         using namespace AppCUI;
         using namespace GView::Utils;
 
+        class TokensListBuilder: public TokensList
+        {
+          public:
+            TokensListBuilder(void* _data)
+            {
+                this->data = _data;
+            }
+        };
+        struct TokenObject
+        {
+            uint32 start, end;
+            TokenType type;
+        };
+
         struct SettingsData
         {
             Reference<ParseInterface> parser;
@@ -40,6 +54,7 @@ namespace View
 
             static Config config;
 
+            std::vector<TokenObject> tokens;
             
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);

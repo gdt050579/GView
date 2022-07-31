@@ -38,38 +38,38 @@ bool INIFile::Update()
     return true;
 }
 
-void INIFile::AnalyzeText(const Tokenizer& lex, TokensList& tokenList)
+void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
-    const auto len = lex.Len();
+    const auto len = text.Len();
     auto state     = ParserState::ExpectKeyValueOrSection;
     uint32 next    = 0;
     uint32 pos     = 0;
 
     while (pos < len)
     {
-        auto chType = CharType::GetCharType(lex[pos]);
+        auto chType = CharType::GetCharType(text[pos]);
         switch (chType)
         {
         case CharType::SpaceOrNewLine:
-            pos = lex.ParseSpace(pos, SpaceType::All);
+            pos = text.ParseSpace(pos, SpaceType::All);
             break;
         case CharType::Comment:
-            next = lex.ParseTillNextLine(pos);
+            next = text.ParseTillNextLine(pos);
             // Add coment
             pos = next;
             break;
         case CharType::SectionOrArrayStart:
-            next = lex.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
+            next = text.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
             // add section (pos,nex)
             pos = next;
             break;
         case CharType::String:
-            next = lex.ParseString(pos);
+            next = text.ParseString(pos);
             // add string
             pos = next;
             break;
         case CharType::Word:
-            next = lex.Parse(
+            next = text.Parse(
                   pos,
                   [](char16 ch) {
                       return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != ',') && (ch != '=') &&
@@ -83,7 +83,7 @@ void INIFile::AnalyzeText(const Tokenizer& lex, TokensList& tokenList)
             pos++;
             break;
         case CharType::Other:
-            next = lex.ParseSameGroupID(pos, CharType::GetCharType);
+            next = text.ParseSameGroupID(pos, CharType::GetCharType);
             // add other --> with error
             pos = next;
             break;

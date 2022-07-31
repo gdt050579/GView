@@ -1,1 +1,1 @@
-target_sources(GViewCore PRIVATE Tokenizer.cpp LexicalViewer.hpp Config.cpp GoToDialog.cpp Instance.cpp Settings.cpp)
+target_sources(GViewCore PRIVATE TextParser.cpp LexicalViewer.hpp Config.cpp GoToDialog.cpp Instance.cpp Settings.cpp)

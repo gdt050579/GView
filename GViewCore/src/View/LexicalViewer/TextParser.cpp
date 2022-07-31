@@ -4,14 +4,14 @@ namespace GView::View::LexicalViewer
 {
 #define HAS_FLAG(value, flag) (((value) & (flag)) == (flag))
 
-Tokenizer::Tokenizer(const char16* _text, uint32 _size)
+TextParser::TextParser(const char16* _text, uint32 _size)
 {
     this->text = _text;
     this->size = _size;
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-Tokenizer::Tokenizer(u16string_view _text)
+TextParser::TextParser(u16string_view _text)
 {
     if (_text.empty())
     {
@@ -34,7 +34,7 @@ Tokenizer::Tokenizer(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-uint32 Tokenizer::ParseTillNextLine(uint32 index) const
+uint32 TextParser::ParseTillNextLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -46,7 +46,7 @@ uint32 Tokenizer::ParseTillNextLine(uint32 index) const
     }
     return index;
 }
-uint32 Tokenizer::Parse(uint32 index, bool (*validate)(char16 character)) const
+uint32 TextParser::Parse(uint32 index, bool (*validate)(char16 character)) const
 {
     if (index >= size)
         return size;
@@ -60,7 +60,7 @@ uint32 Tokenizer::Parse(uint32 index, bool (*validate)(char16 character)) const
     }
     return index;
 }
-uint32 Tokenizer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character)) const
+uint32 TextParser::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character)) const
 {
     if (index >= size)
         return size;
@@ -75,7 +75,7 @@ uint32 Tokenizer::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 
     }
     return index;
 }
-uint32 Tokenizer::ParseSpace(uint32 index, SpaceType type) const
+uint32 TextParser::ParseSpace(uint32 index, SpaceType type) const
 {
     if (index >= size)
         return size;
@@ -121,7 +121,7 @@ uint32 Tokenizer::ParseSpace(uint32 index, SpaceType type) const
     return index;
 }
 
-uint32 Tokenizer::ParseString(uint32 index, StringFormat format) const
+uint32 TextParser::ParseString(uint32 index, StringFormat format) const
 {
     if (index >= size)
         return size;
@@ -178,7 +178,7 @@ uint32 Tokenizer::ParseString(uint32 index, StringFormat format) const
 
     return index;
 }
-uint32 Tokenizer::ParseNumber(uint32 index, NumberFormat format) const
+uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
 {
     if (index >= size)
         return size;
@@ -291,4 +291,4 @@ uint32 Tokenizer::ParseNumber(uint32 index, NumberFormat format) const
     return index;
 }
 #undef HAS_FLAG
-} // namespace GView::Utils::Tokenizer
+} // namespace GView::Utils::TextParser
