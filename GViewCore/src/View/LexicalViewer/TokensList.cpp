@@ -37,4 +37,13 @@ Token TokensList::Add(TokenType type, uint32 start, uint32 end)
     cToken.end   = end;
     return Token(this->data, itemsCount);
 }
+Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
+{
+    auto tok = Add(TokenType::Error, start, end);
+    if (tok.IsValid())
+    {
+        // add error
+    }
+    return tok;
+}
 }; // namespace GView::View::LexicalViewer
