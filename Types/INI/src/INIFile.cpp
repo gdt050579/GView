@@ -328,6 +328,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
                 break;
             case ParserState::ExpectCommaOrEndOfArray:
                 p.ParseForCommaOrEndOfArray(chType);
+                break;
             default:
                 // force exit
                 p.pos = p.len;
