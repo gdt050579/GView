@@ -667,6 +667,7 @@ namespace View
             }
             uint32 ParseTillNextLine(uint32 index) const;
             uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
@@ -698,7 +699,7 @@ namespace View
             Word,
             Macro,
             Preprocesor,
-            Unknown
+            Error,
         };
         class CORE_EXPORT Token
         {
@@ -733,6 +734,7 @@ namespace View
             Token operator[](uint32 index) const;
             uint32 Len() const;
             Token Add(TokenType type, uint32 start, uint32 end);
+            Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         struct CORE_EXPORT ParseInterface
         {

@@ -10,6 +10,7 @@ namespace Type
     {
         class INIFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+
           public:
             INIFile();
             virtual ~INIFile()

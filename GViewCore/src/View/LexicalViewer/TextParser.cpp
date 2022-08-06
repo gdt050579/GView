@@ -60,6 +60,22 @@ uint32 TextParser::Parse(uint32 index, bool (*validate)(char16 character)) const
     }
     return index;
 }
+uint32 TextParser::ParseBackwards(uint32 index, bool (*validate)(char16 character)) const
+{
+    if (index == 0)
+        return 0;
+    if (index >= size)
+        return size;
+    if (validate == nullptr)
+        return index;
+    auto* p = text + index;
+    while ((index > 0) && (validate(*p)))
+    {
+        index--;
+        p--;
+    }
+    return index;
+}
 uint32 TextParser::ParseSameGroupID(uint32 index, uint32 (*charToGroupID)(char16 character)) const
 {
     if (index >= size)
