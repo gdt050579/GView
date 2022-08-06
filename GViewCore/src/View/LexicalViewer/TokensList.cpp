@@ -31,7 +31,7 @@ Token TokensList::Add(TokenType type, uint32 start, uint32 end)
             return Token();
         }
     }
-    auto cToken  = INSTANCE->tokens.emplace_back();
+    auto & cToken  = INSTANCE->tokens.emplace_back();
     cToken.type  = type;
     cToken.start = start;
     cToken.end   = end;

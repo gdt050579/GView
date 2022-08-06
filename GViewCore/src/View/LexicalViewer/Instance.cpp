@@ -34,17 +34,73 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     auto buf   = obj->GetData().GetEntireFile();
     size_t sz  = 0;
     this->text = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf, sz);
-    textLength = (uint32)sz;
+    textLength = (uint32) sz;
 
     if (this->settings->parser)
     {
         TokensListBuilder tokensList(this);
         this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
+        ComputeOriginalPositions();
+    }
+}
+
+void Instance::ComputeOriginalPositions()
+{
+    int32 x         = 0;
+    int32 y         = 0;
+    const char16* p = this->text;
+    const char16* e = this->text + this->textLength;
+    uint32 pos      = 0;
+    uint32 idx      = 0;
+    uint32 tknCount = (uint32) this->tokens.size();
+    uint32 tknOffs   = tknCount > 0 ? this->tokens[0].start : 0xFFFFFFFF;
+
+    while (p < e)
+    {
+        if ((*p) == '\t')
+            x = ((x + 3) / 4) * 4;
+        // asign position
+        if (pos == tknOffs)
+        {
+            this->tokens[idx].x = x;
+            this->tokens[idx].y = y;
+            idx++;
+            if (idx >= tknCount)
+                break;
+            tknOffs = this->tokens[idx].start;
+        }
+        if (((*p) == '\n') || ((*p) == '\r'))
+        {
+            x = 0;
+            y++;
+            if (((p + 1) < e) && ((p[1] == '\n') || (p[1] == '\r')) && (p[1] != (*p)))
+            {
+                p+=2;
+                pos+=2;
+            }
+            else
+            {
+                p++;
+                pos++;
+            }
+        }
+        else
+        {
+            x++;
+            p++;
+            pos++;
+        }
     }
 }
 
 void Instance::Paint(Graphics::Renderer& renderer)
 {
+    u16string_view txt;
+    for (auto& t: this->tokens)
+    {
+        txt = { this->text + t.start, (size_t) (t.end - t.start) };
+        renderer.WriteSingleLineText(t.x, t.y, txt, this->Cfg.Text.Normal);
+    }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

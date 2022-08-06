@@ -130,6 +130,8 @@ struct ParserData
             break;
         case CharType::SectionOrArrayStart:
             next = text.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
+            if (text[next] == ']')
+                next++;
             tokenList.Add(TokenType::Keyword, pos, next);
             pos = next;
             break;

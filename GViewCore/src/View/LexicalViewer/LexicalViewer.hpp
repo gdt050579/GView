@@ -23,6 +23,7 @@ namespace View
         {
             uint32 start, end;
             TokenType type;
+            int32 x, y;
         };
 
         struct SettingsData
@@ -56,7 +57,7 @@ namespace View
 
           public:
             std::vector<TokenObject> tokens;
-            
+            void ComputeOriginalPositions();
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
