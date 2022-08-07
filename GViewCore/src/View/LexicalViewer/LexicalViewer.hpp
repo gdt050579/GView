@@ -22,8 +22,10 @@ namespace View
         struct TokenObject
         {
             uint32 start, end;
-            TokenType type;
             int32 x, y;
+            uint8 maxWidth, maxHeight, width, height;
+            TokenType type;
+            
         };
 
         struct SettingsData
@@ -51,13 +53,22 @@ namespace View
             Reference<GView::Object> obj;
             char16* text;
             uint32 textLength;
+            uint32 currentTokenIndex;
+
+            struct
+            {
+                int32 x, y;
+            } Scroll;
 
 
             static Config config;
 
+            void ComputeOriginalPositions();
+            void EnsureCurrentItemIsVisible();
+            void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
           public:
             std::vector<TokenObject> tokens;
-            void ComputeOriginalPositions();
+            
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 

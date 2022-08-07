@@ -31,10 +31,15 @@ Token TokensList::Add(TokenType type, uint32 start, uint32 end)
             return Token();
         }
     }
-    auto & cToken  = INSTANCE->tokens.emplace_back();
-    cToken.type  = type;
-    cToken.start = start;
-    cToken.end   = end;
+    auto& cToken     = INSTANCE->tokens.emplace_back();
+    cToken.type      = type;
+    cToken.start     = start;
+    cToken.end       = end;
+    cToken.height    = 1;
+    cToken.maxWidth  = 0;
+    cToken.maxHeight = 0;
+    cToken.width     = (uint8) (std::min(end - start, (uint32)0xFE));
+
     return Token(this->data, itemsCount);
 }
 Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)

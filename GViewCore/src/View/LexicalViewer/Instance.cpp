@@ -30,17 +30,22 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
-    // load the entire data into a filet
-    auto buf   = obj->GetData().GetEntireFile();
-    size_t sz  = 0;
-    this->text = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf, sz);
-    textLength = (uint32) sz;
+
+    // load the entire data into a file
+    auto buf                = obj->GetData().GetEntireFile();
+    size_t sz               = 0;
+    this->text              = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf, sz);
+    textLength              = (uint32) sz;
+    this->Scroll.x          = 0;
+    this->Scroll.y          = 0;
+    this->currentTokenIndex = 0;
 
     if (this->settings->parser)
     {
         TokensListBuilder tokensList(this);
         this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
         ComputeOriginalPositions();
+        EnsureCurrentItemIsVisible();
     }
 }
 
@@ -53,7 +58,7 @@ void Instance::ComputeOriginalPositions()
     uint32 pos      = 0;
     uint32 idx      = 0;
     uint32 tknCount = (uint32) this->tokens.size();
-    uint32 tknOffs   = tknCount > 0 ? this->tokens[0].start : 0xFFFFFFFF;
+    uint32 tknOffs  = tknCount > 0 ? this->tokens[0].start : 0xFFFFFFFF;
 
     while (p < e)
     {
@@ -75,8 +80,8 @@ void Instance::ComputeOriginalPositions()
             y++;
             if (((p + 1) < e) && ((p[1] == '\n') || (p[1] == '\r')) && (p[1] != (*p)))
             {
-                p+=2;
-                pos+=2;
+                p += 2;
+                pos += 2;
             }
             else
             {
@@ -92,14 +97,31 @@ void Instance::ComputeOriginalPositions()
         }
     }
 }
+void Instance::EnsureCurrentItemIsVisible()
+{
+}
 
+void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
+{
+    u16string_view txt = { this->text + tok.start, (size_t) (tok.end - tok.start) };
+    auto col           = onCursor ? this->Cfg.Cursor.Normal : this->Cfg.Text.Normal;
+    renderer.WriteSingleLineText(tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
+}
 void Instance::Paint(Graphics::Renderer& renderer)
 {
-    u16string_view txt;
-    for (auto& t: this->tokens)
+    const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
+    const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
+    uint32 idx                = 0;
+    for (auto& t : this->tokens)
     {
-        txt = { this->text + t.start, (size_t) (t.end - t.start) };
-        renderer.WriteSingleLineText(t.x, t.y, txt, this->Cfg.Text.Normal);
+        const auto onCursor  = idx == currentTokenIndex;
+        const auto tk_right  = t.x + (int32) t.width - 1;
+        const auto tk_bottom = t.y + (int32) t.height - 1;
+        idx++;
+        // if token not in visible screen => skip it
+        if ((t.x > scroll_right) || (t.y > scroll_bottom) || (tk_right < Scroll.x) || (tk_bottom < Scroll.y))
+            continue;
+        PaintToken(renderer, t, onCursor);
     }
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
