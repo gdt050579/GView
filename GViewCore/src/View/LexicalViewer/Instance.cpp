@@ -128,10 +128,62 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     return false;
 }
+void Instance::MoveLeft(bool selected)
+{
+}
+void Instance::MoveRight(bool selected)
+{
+}
+void Instance::MoveUp(uint32 times, bool selected)
+{
+}
+void Instance::MoveDown(uint32 times, bool selected)
+{
+}
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     switch (keyCode)
     {
+    case Key::Up:
+        MoveUp(1, false);
+        return true;
+    case Key::Up | Key::Shift:
+        MoveUp(1, true);
+        return true;
+    case Key::Down:
+        MoveDown(1, false);
+        return true;
+    case Key::Down | Key::Shift:
+        MoveDown(1, true);
+        return true;
+    case Key::Left:
+        MoveLeft(false);
+        return true;
+    case Key::Left | Key::Shift:
+        MoveLeft(true);
+        return true;
+    case Key::Right:
+        MoveRight(false);
+        return true;
+    case Key::Right | Key::Shift:
+        MoveRight(true);
+        return true;
+
+    // view-port scroll
+    case Key::Left | Key::Ctrl:
+        if (Scroll.x > 0)
+            Scroll.x--;
+        return true;
+    case Key::Right | Key::Ctrl:
+        Scroll.x++;
+        return true;
+    case Key::Up | Key::Ctrl:
+        if (Scroll.y > 0)
+            Scroll.y--;
+        return true;
+    case Key::Down | Key::Ctrl:
+        Scroll.y++;
+        return true;
     }
 
     return false;

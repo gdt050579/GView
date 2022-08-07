@@ -66,6 +66,10 @@ namespace View
             void ComputeOriginalPositions();
             void EnsureCurrentItemIsVisible();
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
+            void MoveLeft(bool selected);
+            void MoveRight(bool selected);
+            void MoveUp(uint32 times, bool selected);
+            void MoveDown(uint32 times, bool selected);
           public:
             std::vector<TokenObject> tokens;
             
