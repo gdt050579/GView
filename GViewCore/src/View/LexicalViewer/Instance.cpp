@@ -91,7 +91,7 @@ void Instance::ComputeOriginalPositions()
     while (p < e)
     {
         if ((*p) == '\t')
-            x = ((x + 3) / 4) * 4;
+            x = ((x / 4) + 1) * 4;
         // asign position
         if (pos == tknOffs)
         {
@@ -208,7 +208,7 @@ void Instance::MoveRight(bool selected)
         return;
     if (this->tokens[currentTokenIndex + 1].y != this->tokens[currentTokenIndex].y)
         return;
-    MoveToToken(currentTokenIndex + 1, selected);    
+    MoveToToken(currentTokenIndex + 1, selected);
 }
 void Instance::MoveUp(uint32 times, bool selected)
 {
