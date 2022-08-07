@@ -156,7 +156,7 @@ void Instance::MoveRight(bool selected)
         return;
     if (this->tokens[currentTokenIndex + 1].y != this->tokens[currentTokenIndex].y)
         return;
-    MoveToToken(currentTokenIndex - 1, selected);
+    MoveToToken(currentTokenIndex + 1, selected);
     EnsureCurrentItemIsVisible();
 }
 void Instance::MoveUp(uint32 times, bool selected)
