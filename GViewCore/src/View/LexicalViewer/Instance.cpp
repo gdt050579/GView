@@ -190,6 +190,7 @@ void Instance::MoveToToken(uint32 index, bool selected)
         return;
     index                   = std::min(index, (uint32) (this->tokens.size() - 1));
     this->currentTokenIndex = index;
+    EnsureCurrentItemIsVisible();
 }
 void Instance::MoveLeft(bool selected)
 {
@@ -207,8 +208,7 @@ void Instance::MoveRight(bool selected)
         return;
     if (this->tokens[currentTokenIndex + 1].y != this->tokens[currentTokenIndex].y)
         return;
-    MoveToToken(currentTokenIndex + 1, selected);
-    EnsureCurrentItemIsVisible();
+    MoveToToken(currentTokenIndex + 1, selected);    
 }
 void Instance::MoveUp(uint32 times, bool selected)
 {
