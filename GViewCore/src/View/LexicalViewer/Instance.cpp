@@ -9,6 +9,11 @@ Config Instance::config;
 constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
+inline int32 ComputeXDist(int32 x1, int32 x2)
+{
+    return x1 > x2 ? x1 - x2 : x2 - x1;
+}
+
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
@@ -128,17 +133,116 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     return false;
 }
+void Instance::MoveToToken(uint32 index, bool selected)
+{
+    if (this->tokens.size() == 0)
+        return;
+    index                   = std::min(index, (uint32) (this->tokens.size() - 1));
+    this->currentTokenIndex = index;
+}
 void Instance::MoveLeft(bool selected)
 {
+    if (this->currentTokenIndex == 0)
+        return;
+    if (this->tokens[currentTokenIndex - 1].y != this->tokens[currentTokenIndex].y)
+        return;
+    MoveToToken(currentTokenIndex - 1, selected);
 }
 void Instance::MoveRight(bool selected)
 {
+    if (this->tokens.size() == 0)
+        return;
+    if (this->currentTokenIndex + 1 >= this->tokens.size())
+        return;
+    if (this->tokens[currentTokenIndex + 1].y != this->tokens[currentTokenIndex].y)
+        return;
+    MoveToToken(currentTokenIndex - 1, selected);
+    EnsureCurrentItemIsVisible();
 }
 void Instance::MoveUp(uint32 times, bool selected)
 {
+    if ((this->tokens.size() == 0) || (times == 0))
+        return;
+    if (this->currentTokenIndex == 0)
+        return;
+    uint32 idx = this->currentTokenIndex - 1;
+    auto lastY = this->tokens[this->currentTokenIndex].y;
+    auto posX  = this->tokens[this->currentTokenIndex].x;
+    while (times > 0)
+    {
+        while ((idx > 0) && (this->tokens[idx].y == lastY))
+            idx--;
+        if ((idx == 0) && (this->tokens[idx].y == lastY))
+        {
+            // already on the first line --> move to first token
+            MoveToToken(0, selected);
+            return;
+        }
+        lastY = this->tokens[idx].y;
+        times--;
+    }
+    // found the line that I am interested in --> now search the closest token in terms of position
+    auto found     = idx;
+    auto best_dist = ComputeXDist(this->tokens[found].x, posX);
+    while ((idx > 0) && (this->tokens[idx].y == lastY) && (best_dist > 0))
+    {
+        auto dist = ComputeXDist(this->tokens[idx].x, posX);
+        if (dist < best_dist)
+        {
+            found     = idx;
+            best_dist = dist;
+        }
+        idx--;
+    }
+    if (idx == 0)
+    {
+        // it is possible that the first token is the closest --> so test this
+        auto dist = ComputeXDist(this->tokens[idx].x, posX);
+        if (dist < best_dist)
+        {
+            found     = idx;
+            best_dist = dist;
+        }        
+    }
+    MoveToToken(found, selected);
 }
 void Instance::MoveDown(uint32 times, bool selected)
 {
+    if ((this->tokens.size() == 0) || (times == 0))
+        return;
+    uint32 cnt = (uint32) this->tokens.size();
+    uint32 idx = this->currentTokenIndex + 1;
+    auto lastY = this->tokens[this->currentTokenIndex].y;
+    auto posX  = this->tokens[this->currentTokenIndex].x;
+    if (idx >= cnt)
+        return;
+    while (times > 0)
+    {
+        while ((idx < cnt) && (this->tokens[idx].y == lastY))
+            idx++;
+        if (idx >= cnt)
+        {
+            // already on the last line --> move to last token
+            MoveToToken(cnt-1, selected);
+            return;
+        }
+        lastY = this->tokens[idx].y;
+        times--;
+    }
+    // found the line that I am interested in --> now search the closest token in terms of position
+    auto found     = idx;
+    auto best_dist = ComputeXDist(this->tokens[found].x, posX);    
+    while ((idx < cnt) && (this->tokens[idx].y == lastY) && (best_dist>0))
+    {
+        auto dist = ComputeXDist(this->tokens[idx].x, posX);
+        if (dist < best_dist)
+        {
+            found     = idx;
+            best_dist = dist;
+        }
+        idx++;
+    }
+    MoveToToken(found, selected);
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
