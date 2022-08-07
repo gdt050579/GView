@@ -63,6 +63,7 @@ namespace View
 
             static Config config;
 
+            void ComputeMultiLineTokens();
             void ComputeOriginalPositions();
             void EnsureCurrentItemIsVisible();
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);

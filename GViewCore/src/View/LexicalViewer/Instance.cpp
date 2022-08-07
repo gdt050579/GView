@@ -49,11 +49,34 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     {
         TokensListBuilder tokensList(this);
         this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
+        ComputeMultiLineTokens();
         ComputeOriginalPositions();
         EnsureCurrentItemIsVisible();
     }
 }
 
+void Instance::ComputeMultiLineTokens()
+{
+    for (auto& tok : this->tokens)
+    {
+        const char16* p = this->text + tok.start;
+        const char16* e = this->text + tok.end;
+        auto nrLines    = 1U;
+        while (p < e)
+        {
+            if (((*p) == '\n') || ((*p) == '\r'))
+            {
+                nrLines++;
+                auto c = *p;
+                p++;
+                if ((p < e) && (((*p) == '\n') || ((*p) == '\r')) && ((*p) != c))
+                    p++; // auto detect \n\r or \r\n
+            }
+            p++;
+        }
+        tok.height = nrLines;
+    }
+}
 void Instance::ComputeOriginalPositions()
 {
     int32 x         = 0;
@@ -110,7 +133,18 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
 {
     u16string_view txt = { this->text + tok.start, (size_t) (tok.end - tok.start) };
     auto col           = onCursor ? this->Cfg.Cursor.Normal : this->Cfg.Text.Normal;
-    renderer.WriteSingleLineText(tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
+    if (tok.height > 1)
+    {
+        WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
+        params.X     = tok.x - Scroll.x;
+        params.Y     = tok.y - Scroll.y;
+        params.Color = col;
+        renderer.WriteText(txt, params);
+    }
+    else
+    {
+        renderer.WriteSingleLineText(tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
+    }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
@@ -202,7 +236,7 @@ void Instance::MoveUp(uint32 times, bool selected)
         {
             found     = idx;
             best_dist = dist;
-        }        
+        }
     }
     MoveToToken(found, selected);
 }
@@ -223,7 +257,7 @@ void Instance::MoveDown(uint32 times, bool selected)
         if (idx >= cnt)
         {
             // already on the last line --> move to last token
-            MoveToToken(cnt-1, selected);
+            MoveToToken(cnt - 1, selected);
             return;
         }
         lastY = this->tokens[idx].y;
@@ -231,8 +265,8 @@ void Instance::MoveDown(uint32 times, bool selected)
     }
     // found the line that I am interested in --> now search the closest token in terms of position
     auto found     = idx;
-    auto best_dist = ComputeXDist(this->tokens[found].x, posX);    
-    while ((idx < cnt) && (this->tokens[idx].y == lastY) && (best_dist>0))
+    auto best_dist = ComputeXDist(this->tokens[found].x, posX);
+    while ((idx < cnt) && (this->tokens[idx].y == lastY) && (best_dist > 0))
     {
         auto dist = ComputeXDist(this->tokens[idx].x, posX);
         if (dist < best_dist)
