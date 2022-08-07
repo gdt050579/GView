@@ -127,6 +127,23 @@ void Instance::ComputeOriginalPositions()
 }
 void Instance::EnsureCurrentItemIsVisible()
 {
+    const auto& tok    = this->tokens[this->currentTokenIndex];
+    auto tk_right      = tok.x + (int32) tok.width - 1;
+    auto tk_bottom     = tok.y + (int32) tok.height - 1;
+    auto scroll_right  = Scroll.x + this->GetWidth() - 1;
+    auto scroll_bottom = Scroll.y + this->GetHeight() - 1;
+
+    // if already in current view -> return;
+    if ((tok.x >= Scroll.x) && (tok.y >= Scroll.y) && (tk_right <= scroll_right) && (tk_bottom <= scroll_bottom))
+        return;
+    if (tk_right > scroll_right)
+        Scroll.x += (tk_right - scroll_right);
+    if (tk_bottom > scroll_bottom)
+        Scroll.y += (tk_bottom - scroll_bottom);
+    if (tok.x < Scroll.x)
+        Scroll.x = tok.x;
+    if (tok.y < Scroll.y)
+        Scroll.y = tok.y;
 }
 
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
