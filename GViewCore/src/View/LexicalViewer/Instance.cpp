@@ -149,7 +149,32 @@ void Instance::EnsureCurrentItemIsVisible()
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
 {
     u16string_view txt = { this->text + tok.start, (size_t) (tok.end - tok.start) };
-    auto col           = onCursor ? this->Cfg.Cursor.Normal : this->Cfg.Text.Normal;
+    ColorPair col;
+    if (onCursor)
+    {
+        col = Cfg.Cursor.Normal;
+    }
+    else
+    {
+        switch (tok.type)
+        {
+        case TokenType::Comment:
+            col = Cfg.Text.Inactive;
+            break;
+        case TokenType::Operator:
+            col = Cfg.Text.Normal;
+            break;
+        case TokenType::Word:
+            col = Cfg.Text.Highlighted;
+            break;
+        case TokenType::Keyword:
+            col = Cfg.Text.Focused;
+            break;
+        default:
+            col = Cfg.Text.Normal;
+            break;
+        }
+    }
     if (tok.height > 1)
     {
         WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
