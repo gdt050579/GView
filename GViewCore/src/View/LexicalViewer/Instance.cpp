@@ -156,18 +156,18 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     }
     else
     {
-        switch (tok.type)
+        switch (tok.color)
         {
-        case TokenType::Comment:
+        case TokenColor::Comment:
             col = Cfg.Text.Inactive;
             break;
-        case TokenType::Operator:
+        case TokenColor::Operator:
             col = Cfg.Text.Normal;
             break;
-        case TokenType::Word:
+        case TokenColor::Word:
             col = Cfg.Text.Highlighted;
             break;
-        case TokenType::Keyword:
+        case TokenColor::Keyword:
             col = Cfg.Text.Focused;
             break;
         default:
