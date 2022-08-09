@@ -170,6 +170,9 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         case TokenColor::Keyword:
             col = Cfg.Text.Focused;
             break;
+        case TokenColor::String:
+            col = Cfg.Text.Emphasized1;
+            break;
         default:
             col = Cfg.Text.Normal;
             break;
