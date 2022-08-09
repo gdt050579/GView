@@ -688,7 +688,7 @@ namespace View
                 AddSpaceToRight -> adauga un spatiu in dreapta
             */
         };
-        enum class TokenType: uint8
+        enum class TokenColor: uint8
         {
             Comment,
             Number,
@@ -721,6 +721,9 @@ namespace View
             {
                 return index;
             }
+            uint32 GetTypeID() const;
+            u16string_view GetText() const;
+
         };
         class CORE_EXPORT TokensList
         {
@@ -733,7 +736,7 @@ namespace View
           public:
             Token operator[](uint32 index) const;
             uint32 Len() const;
-            Token Add(TokenType type, uint32 start, uint32 end);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         struct CORE_EXPORT ParseInterface

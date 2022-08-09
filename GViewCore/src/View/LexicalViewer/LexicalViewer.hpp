@@ -21,10 +21,10 @@ namespace View
         };
         struct TokenObject
         {
-            uint32 start, end;
+            uint32 start, end, type;
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
-            TokenType type;
+            TokenColor color;
             
         };
 
