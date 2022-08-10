@@ -10,7 +10,6 @@ namespace View
     {
         using namespace AppCUI;
         using namespace GView::Utils;
-
         class TokensListBuilder: public TokensList
         {
           public:
@@ -20,8 +19,9 @@ namespace View
             }
         };
         struct TokenObject
-        {
+        {           
             uint32 start, end, type;
+            uint32 blockLink; // for blocks
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
             TokenColor color;

@@ -710,7 +710,7 @@ namespace View
             Token(void* _data, uint32 _idx) : data(_data), index(_idx)
             {
             }
-            Token() : data(nullptr), index(0)
+            Token() : data(nullptr), index(INVALID_INDEX)
             {
             }
             inline bool IsValid() const
@@ -724,6 +724,8 @@ namespace View
             uint32 GetTypeID() const;
             u16string_view GetText() const;
 
+
+            constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
         };
         class CORE_EXPORT TokensList
         {
@@ -738,6 +740,7 @@ namespace View
             uint32 Len() const;
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+            bool CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker);
         };
         struct CORE_EXPORT ParseInterface
         {

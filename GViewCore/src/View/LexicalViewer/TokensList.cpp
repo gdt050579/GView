@@ -61,6 +61,7 @@ Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color)
     cToken.maxHeight = 0;
     cToken.color     = color;
     cToken.width     = (uint8) (std::min(end - start, (uint32) 0xFE));
+    cToken.blockLink = Token::INVALID_INDEX;
 
     return Token(this->data, itemsCount);
 }
@@ -72,5 +73,20 @@ Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
         // add error
     }
     return tok;
+}
+bool TokensList::CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker)
+{
+    uint32 itemsCount = INSTANCE->tokens.size();
+    CHECK(start < itemsCount, false, "Invalid token index (start=%u), should be less than %u", start, itemsCount);
+    CHECK(end < itemsCount, false, "Invalid token index (end=%u), should be less than %u", end, itemsCount);
+    CHECK(start < end, false, "Start token index(%u) should be smaller than end token index(%u)", start, end);
+
+    // link the two tokens
+    INSTANCE->tokens[start].blockLink = end;
+    INSTANCE->tokens[end].blockLink   = start;
+    
+    // set token flags
+
+    return true;
 }
 }; // namespace GView::View::LexicalViewer

@@ -346,5 +346,30 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             }
         }
     }
+
+    // semantic process
+    // search for a section and fold it :)
+    uint32 len = tokenList.Len();
+    uint32 idx = 0;
+    while (idx < len)
+    {
+        while ((idx < len) && (tokenList[idx].GetTypeID() != TokenType::Section))
+            idx++;
+        if (idx < len)
+        {
+            // we have found a section
+            uint32 next = idx + 1;
+            while ((next < len) && (tokenList[next].GetTypeID() != TokenType::Section))
+                next++;
+            if (next < len)
+            {
+                // we have found another section
+                tokenList.CreateBlock(idx, next - 1, false);
+                // within each block --> search for arrays and create a block for them as well
+                // TODO
+            }
+            idx = next;
+        }
+    }
 }
 } // namespace GView::Type::INI
