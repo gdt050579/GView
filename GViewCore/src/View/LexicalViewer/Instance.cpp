@@ -417,7 +417,7 @@ void Instance::MoveUp(uint32 times, bool selected)
 }
 void Instance::MoveDown(uint32 times, bool selected)
 {
-    if ((this->tokens.size() == 0) || (times == 0))
+    if ((noItemsVisible) || (times == 0))
         return;
     uint32 cnt = (uint32) this->tokens.size();
     uint32 idx = this->currentTokenIndex + 1;
@@ -427,12 +427,12 @@ void Instance::MoveDown(uint32 times, bool selected)
         return;
     while (times > 0)
     {
-        while ((idx < cnt) && (this->tokens[idx].y == lastY))
+        while ((idx < cnt) && ((!this->tokens[idx].IsVisible()) || (this->tokens[idx].y == lastY)))
             idx++;
         if (idx >= cnt)
         {
             // already on the last line --> move to last token
-            MoveToToken(cnt - 1, selected);
+            MoveToClosestVisibleToken(cnt - 1, selected);
             return;
         }
         lastY = this->tokens[idx].y;
@@ -441,8 +441,15 @@ void Instance::MoveDown(uint32 times, bool selected)
     // found the line that I am interested in --> now search the closest token in terms of position
     auto found     = idx;
     auto best_dist = ComputeXDist(this->tokens[found].x, posX);
-    while ((idx < cnt) && (this->tokens[idx].y == lastY) && (best_dist > 0))
+    while ((idx < cnt) && (best_dist > 0))
     {
+        if (this->tokens[idx].IsVisible() == false)
+        {
+            idx--;
+            continue;
+        }
+        if (this->tokens[idx].y != lastY)
+            break;
         auto dist = ComputeXDist(this->tokens[idx].x, posX);
         if (dist < best_dist)
         {
