@@ -52,6 +52,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         ComputeMultiLineTokens();
         ShowHideMetaData(false);
         RecomputeTokenPositions();
+        MoveToClosestVisibleToken(0);
     }
 }
 
@@ -82,6 +83,45 @@ void Instance::ComputeMultiLineTokens()
         tok.height = nrLines;
     }
 }
+void Instance::MoveToClosestVisibleToken(uint32 startIndex)
+{
+    if (startIndex >= this->tokens.size())
+        return;
+    if (this->tokens[startIndex].IsVisible())
+        MoveToToken(startIndex, false);
+    else
+    {
+        auto beforeIndex = Token::INVALID_INDEX;
+        auto afterIndex  = Token::INVALID_INDEX;
+        // find closest from top
+        if (startIndex > 0)
+        {
+            auto idx = startIndex - 1;
+            while ((idx > 0) && (!this->tokens[idx].IsVisible()))
+                idx--;
+            if (this->tokens[idx].IsVisible())
+                beforeIndex = idx;
+        }
+        // find the coloset from the end
+        if (startIndex + 1 < this->tokens.size())
+        {
+            auto idx = startIndex + 1;
+            while ((idx < this->tokens.size()) && (!this->tokens[idx].IsVisible()))
+                idx++;
+            if (idx < this->tokens.size())
+                afterIndex = idx;
+        }
+        // find the closest
+        uint32 difBefore = beforeIndex == Token::INVALID_INDEX ? 0xFFFFFFFF : startIndex - beforeIndex;
+        uint32 difAfter  = afterIndex == Token::INVALID_INDEX ? 0xFFFFFFFF : afterIndex - startIndex;
+        if (difAfter < difBefore)
+            MoveToToken(afterIndex, false);
+        else if (difBefore < difAfter)
+            MoveToToken(beforeIndex, false);
+        else if (difBefore != 0xFFFFFFFF)
+            MoveToToken(beforeIndex, false);
+    }
+}
 void Instance::ComputeOriginalPositions()
 {
     int32 x         = 0;
@@ -91,11 +131,11 @@ void Instance::ComputeOriginalPositions()
     uint32 pos      = 0;
     uint32 idx      = 0;
     uint32 tknCount = (uint32) this->tokens.size();
-    uint32 tknOffs  = tknCount > 0 ? this->tokens[0].start : 0xFFFFFFFF;
-    
+
     // skip to the first visible
     while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
         idx++;
+    uint32 tknOffs = tknCount > 0 ? this->tokens[idx].start : 0xFFFFFFFF;
     while (p < e)
     {
         if ((*p) == '\t')
@@ -137,7 +177,7 @@ void Instance::ComputeOriginalPositions()
 }
 void Instance::ShowHideMetaData(bool show)
 {
-    for (auto& t: this->tokens)
+    for (auto& t : this->tokens)
     {
         if (t.dataType == TokenDataType::MetaInformation)
         {
@@ -220,7 +260,10 @@ void Instance::Paint(Graphics::Renderer& renderer)
     for (auto& t : this->tokens)
     {
         if (!t.IsVisible())
+        {
+            idx++;
             continue;
+        }
         const auto onCursor  = idx == currentTokenIndex;
         const auto tk_right  = t.x + (int32) t.width - 1;
         const auto tk_bottom = t.y + (int32) t.height - 1;
@@ -237,7 +280,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 }
 void Instance::MoveToToken(uint32 index, bool selected)
 {
-    if (this->tokens.size() == 0)
+    if ((this->tokens.size() == 0) || (index == this->currentTokenIndex))
         return;
     index                   = std::min(index, (uint32) (this->tokens.size() - 1));
     this->currentTokenIndex = index;
@@ -247,19 +290,47 @@ void Instance::MoveLeft(bool selected)
 {
     if (this->currentTokenIndex == 0)
         return;
-    if (this->tokens[currentTokenIndex - 1].y != this->tokens[currentTokenIndex].y)
-        return;
-    MoveToToken(currentTokenIndex - 1, selected);
+
+    auto idx          = this->currentTokenIndex - 1;
+    auto yPos         = this->tokens[currentTokenIndex].y;
+    auto lastValidIdx = this->currentTokenIndex;
+    while (idx > 0)
+    {
+        if (this->tokens[idx].IsVisible() == false)
+        {
+            idx--;
+            continue;
+        }
+        if (this->tokens[idx].y != yPos)
+            break;
+        lastValidIdx = idx;
+        break;
+    }
+    if ((idx == 0) && (this->tokens[0].IsVisible()) && (this->tokens[0].y == yPos))
+        lastValidIdx = 0;
+    MoveToToken(lastValidIdx, selected);
 }
 void Instance::MoveRight(bool selected)
 {
     if (this->tokens.size() == 0)
         return;
-    if (this->currentTokenIndex + 1 >= this->tokens.size())
-        return;
-    if (this->tokens[currentTokenIndex + 1].y != this->tokens[currentTokenIndex].y)
-        return;
-    MoveToToken(currentTokenIndex + 1, selected);
+    auto idx          = this->currentTokenIndex + 1;
+    auto yPos         = this->tokens[currentTokenIndex].y;
+    auto lastValidIdx = this->currentTokenIndex;
+    auto count        = this->tokens.size();
+    while (idx < count)
+    {
+        if (this->tokens[idx].IsVisible() == false)
+        {
+            idx++;
+            continue;
+        }
+        if (this->tokens[idx].y != yPos)
+            break;
+        lastValidIdx = idx;
+        break;
+    }
+    MoveToToken(lastValidIdx, selected);
 }
 void Instance::MoveUp(uint32 times, bool selected)
 {

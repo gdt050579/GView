@@ -91,6 +91,7 @@ namespace View
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
             void ShowHideMetaData(bool show);
+            void MoveToClosestVisibleToken(uint32 startIndex);
 
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
 
