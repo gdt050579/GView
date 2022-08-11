@@ -10,7 +10,13 @@ namespace View
     {
         using namespace AppCUI;
         using namespace GView::Utils;
-        class TokensListBuilder: public TokensList
+        enum class TokenStatus : uint8
+        {
+            None    = 0,
+            Visible = 0x01,
+            Folded  = 0x02,
+        };
+        class TokensListBuilder : public TokensList
         {
           public:
             TokensListBuilder(void* _data)
@@ -19,13 +25,14 @@ namespace View
             }
         };
         struct TokenObject
-        {           
+        {
             uint32 start, end, type;
             uint32 blockLink; // for blocks
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
+            TokenAlignament align;
             TokenColor color;
-            
+            TokenDataType dataType;
         };
 
         struct SettingsData
@@ -47,7 +54,7 @@ namespace View
         };
         class Instance : public View::ViewControl
         {
-            FixSizeString<29> name;    
+            FixSizeString<29> name;
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
@@ -59,7 +66,6 @@ namespace View
             {
                 int32 x, y;
             } Scroll;
-
 
             static Config config;
 
@@ -73,9 +79,10 @@ namespace View
             void MoveRight(bool selected);
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
+
           public:
             std::vector<TokenObject> tokens;
-            
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -106,7 +113,7 @@ namespace View
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;            
+            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
@@ -116,7 +123,6 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
-
         };
         class GoToDialog : public Window
         {
@@ -128,7 +134,7 @@ namespace View
             uint32 maxLines;
             uint64 resultedPos;
             bool gotoLine;
-            
+
             void UpdateEnableStatus();
             void Validate();
 
@@ -150,7 +156,7 @@ namespace View
             }
         };
 
-    } // namespace TextViewer
+    } // namespace LexicalViewer
 } // namespace View
 
 }; // namespace GView

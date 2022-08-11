@@ -673,22 +673,24 @@ namespace View
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
             uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
         };
-        enum class TokenAlignament
+        enum class TokenDataType : uint8
         {
             None,
-            /*
-            Alignament
-                New Block -> incepe un nou bloc
-                End Block -> s-a terminat block-ul vechi
-                New Line -> se trece la linia urmatoare
-                CursorSkip -> cursorul nu va ajunge pe acel block (il va sari implicit)
-                HorizontalAlignamentWithinBlock -> acel token va fi aliniat orizontal pe aceeasi pozitie in cadrul blockului
-                HozizontalAlignament -> acel token va fi aliniat orizonatl pe aceeasi pozitie in cadrul intregului program
-                AddSpaceToLeft -> adauga un spatiu la stanga
-                AddSpaceToRight -> adauga un spatiu in dreapta
-            */
+            String,
+            Number,
+            MetaInformation,
+            Boolean
         };
-        enum class TokenColor: uint8
+        enum class TokenAlignament : uint16
+        {
+            None                            = 0,
+            SpaceOnLeft                     = 0x0001,
+            SpaceOnRight                    = 0x0002,
+            NewLineAfter                    = 0x0004,
+            HorizontalAlignament            = 0x0008,
+            HorizontalAlignamentWithinBlock = 0x0010,
+        };
+        enum class TokenColor : uint8
         {
             Comment,
             Number,
@@ -724,7 +726,6 @@ namespace View
             uint32 GetTypeID() const;
             u16string_view GetText() const;
 
-
             constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
         };
         class CORE_EXPORT TokensList
@@ -735,6 +736,7 @@ namespace View
             TokensList() : data(nullptr)
             {
             }
+
           public:
             Token operator[](uint32 index) const;
             uint32 Len() const;
