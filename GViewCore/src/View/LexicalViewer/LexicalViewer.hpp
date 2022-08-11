@@ -78,6 +78,7 @@ namespace View
             char16* text;
             uint32 textLength;
             uint32 currentTokenIndex;
+            bool noItemsVisible;
 
             struct
             {

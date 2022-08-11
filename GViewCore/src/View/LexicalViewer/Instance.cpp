@@ -44,6 +44,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->Scroll.x          = 0;
     this->Scroll.y          = 0;
     this->currentTokenIndex = 0;
+    this->noItemsVisible    = true;
 
     if (this->settings->parser)
     {
@@ -58,6 +59,15 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
 void Instance::RecomputeTokenPositions()
 {
+    this->noItemsVisible = true;
+    for (auto& tok : this->tokens)
+    {
+        if (tok.IsVisible())
+        {
+            this->noItemsVisible = false;
+            break;
+        }
+    }
     ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
 }
@@ -254,6 +264,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
+    if (noItemsVisible)
+        return;
     const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
@@ -288,7 +300,7 @@ void Instance::MoveToToken(uint32 index, bool selected)
 }
 void Instance::MoveLeft(bool selected)
 {
-    if (this->currentTokenIndex == 0)
+    if ((this->currentTokenIndex == 0) || (noItemsVisible))
         return;
 
     auto idx          = this->currentTokenIndex - 1;
@@ -312,7 +324,7 @@ void Instance::MoveLeft(bool selected)
 }
 void Instance::MoveRight(bool selected)
 {
-    if (this->tokens.size() == 0)
+    if (noItemsVisible)        
         return;
     auto idx          = this->currentTokenIndex + 1;
     auto yPos         = this->tokens[currentTokenIndex].y;
