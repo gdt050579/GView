@@ -134,13 +134,13 @@ void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
 }
 void Instance::ComputeOriginalPositions()
 {
-    int32 x         = 0;
-    int32 y         = 0;
-    const char16* p = this->text;
-    const char16* e = this->text + this->textLength;
-    uint32 pos      = 0;
-    uint32 idx      = 0;
-    uint32 tknCount = (uint32) this->tokens.size();
+    int32 x                            = 0;
+    int32 y                            = 0;
+    const char16* p                    = this->text;
+    const char16* e                    = this->text + this->textLength;
+    uint32 pos                         = 0;
+    uint32 idx                         = 0;
+    uint32 tknCount                    = (uint32) this->tokens.size();
 
     // skip to the first visible
     while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
@@ -153,11 +153,22 @@ void Instance::ComputeOriginalPositions()
         // asign position
         if (pos == tknOffs)
         {
-            this->tokens[idx].x = x;
-            this->tokens[idx].y = y;
+            if (!this->tokens[idx].IsVisible())
+            {
+                this->tokens[idx].x = 0;
+                this->tokens[idx].y = 0;
+                p += (this->tokens[idx].end - this->tokens[idx].start);
+                pos += (this->tokens[idx].end - this->tokens[idx].start);
+                if (p >= e)
+                    break;
+            }
+            else
+            {
+                this->tokens[idx].x = x;
+                this->tokens[idx].y = y;
+            }
+
             idx++;
-            while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
-                idx++;
             if (idx >= tknCount)
                 break;
             tknOffs = this->tokens[idx].start;
