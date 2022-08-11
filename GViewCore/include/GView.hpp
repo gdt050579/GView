@@ -741,6 +741,9 @@ namespace View
             Token operator[](uint32 index) const;
             uint32 Len() const;
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
             bool CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker);
         };
@@ -873,3 +876,4 @@ namespace App
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint16);

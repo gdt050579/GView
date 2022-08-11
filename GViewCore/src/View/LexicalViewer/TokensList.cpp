@@ -36,6 +36,18 @@ Token TokensList::operator[](uint32 index) const
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color)
 {
+    return Add(typeID, start, end, color, TokenDataType::None, TokenAlignament::None);
+}
+Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType)
+{
+    return Add(typeID, start, end, color, dataType, TokenAlignament::None);
+}
+Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align)
+{
+    return Add(typeID, start, end, color, TokenDataType::None, align);
+}
+Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align)
+{
     uint32 itemsCount = INSTANCE->tokens.size();
     uint32 len        = INSTANCE->GetUnicodeTextLen();
     if ((start >= end) || (start >= len) || (end > (len + 1)))
@@ -62,6 +74,9 @@ Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color)
     cToken.color     = color;
     cToken.width     = (uint8) (std::min(end - start, (uint32) 0xFE));
     cToken.blockLink = Token::INVALID_INDEX;
+    cToken.status    = TokenStatus::Visible;
+    cToken.align     = align;
+    cToken.dataType  = dataType;
 
     return Token(this->data, itemsCount);
 }

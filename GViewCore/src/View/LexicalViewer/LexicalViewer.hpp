@@ -14,7 +14,7 @@ namespace View
         {
             None    = 0,
             Visible = 0x01,
-            Folded  = 0x02,
+            Folded  = 0x02, // only for blocks
         };
         class TokensListBuilder : public TokensList
         {
@@ -33,6 +33,16 @@ namespace View
             TokenAlignament align;
             TokenColor color;
             TokenDataType dataType;
+            TokenStatus status;
+
+            inline bool IsVisible() const
+            {
+                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::Visible)) != 0;
+            }
+            inline bool IsFolded() const
+            {
+                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::Folded)) != 0;
+            }
         };
 
         struct SettingsData
