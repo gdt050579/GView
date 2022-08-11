@@ -445,7 +445,7 @@ void Instance::MoveDown(uint32 times, bool selected)
     {
         if (this->tokens[idx].IsVisible() == false)
         {
-            idx--;
+            idx++;
             continue;
         }
         if (this->tokens[idx].y != lastY)
