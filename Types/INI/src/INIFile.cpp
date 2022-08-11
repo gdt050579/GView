@@ -136,7 +136,7 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment);
+            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
             pos = next;
             break;
         case CharType::SectionOrArrayStart:
@@ -167,7 +167,7 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment);
+            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -206,7 +206,7 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment);
+            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -230,7 +230,7 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment);
+            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
             pos = next;
             break;
         case CharType::Comma:
@@ -260,7 +260,7 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment);
+            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
             pos = next;
             break;
         case CharType::String:

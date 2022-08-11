@@ -50,11 +50,16 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         TokensListBuilder tokensList(this);
         this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
         ComputeMultiLineTokens();
-        ComputeOriginalPositions();
-        EnsureCurrentItemIsVisible();
+        ShowHideMetaData(false);
+        RecomputeTokenPositions();
     }
 }
 
+void Instance::RecomputeTokenPositions()
+{
+    ComputeOriginalPositions();
+    EnsureCurrentItemIsVisible();
+}
 void Instance::ComputeMultiLineTokens()
 {
     for (auto& tok : this->tokens)
@@ -87,7 +92,10 @@ void Instance::ComputeOriginalPositions()
     uint32 idx      = 0;
     uint32 tknCount = (uint32) this->tokens.size();
     uint32 tknOffs  = tknCount > 0 ? this->tokens[0].start : 0xFFFFFFFF;
-
+    
+    // skip to the first visible
+    while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
+        idx++;
     while (p < e)
     {
         if ((*p) == '\t')
@@ -98,6 +106,8 @@ void Instance::ComputeOriginalPositions()
             this->tokens[idx].x = x;
             this->tokens[idx].y = y;
             idx++;
+            while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
+                idx++;
             if (idx >= tknCount)
                 break;
             tknOffs = this->tokens[idx].start;
@@ -125,6 +135,17 @@ void Instance::ComputeOriginalPositions()
         }
     }
 }
+void Instance::ShowHideMetaData(bool show)
+{
+    for (auto& t: this->tokens)
+    {
+        if (t.dataType == TokenDataType::MetaInformation)
+        {
+            t.SetVisible(false);
+        }
+    }
+}
+
 void Instance::EnsureCurrentItemIsVisible()
 {
     const auto& tok    = this->tokens[this->currentTokenIndex];
@@ -198,6 +219,8 @@ void Instance::Paint(Graphics::Renderer& renderer)
     uint32 idx                = 0;
     for (auto& t : this->tokens)
     {
+        if (!t.IsVisible())
+            continue;
         const auto onCursor  = idx == currentTokenIndex;
         const auto tk_right  = t.x + (int32) t.width - 1;
         const auto tk_bottom = t.y + (int32) t.height - 1;

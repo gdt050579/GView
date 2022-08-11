@@ -43,6 +43,13 @@ namespace View
             {
                 return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::Folded)) != 0;
             }
+            inline void SetVisible(bool value)
+            {
+                if (value)
+                    status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::Visible));
+                else
+                    status = static_cast<TokenStatus>(static_cast<uint8>(status) & (!static_cast<uint8>(TokenStatus::Visible)));
+            }
         };
 
         struct SettingsData
@@ -82,6 +89,9 @@ namespace View
             void ComputeMultiLineTokens();
             void ComputeOriginalPositions();
             void EnsureCurrentItemIsVisible();
+            void RecomputeTokenPositions();
+            void ShowHideMetaData(bool show);
+
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
 
             void MoveToToken(uint32 index, bool selected);
