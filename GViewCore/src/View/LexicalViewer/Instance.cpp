@@ -53,7 +53,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         ComputeMultiLineTokens();
         ShowHideMetaData(false);
         RecomputeTokenPositions();
-        MoveToClosestVisibleToken(0);
+        MoveToClosestVisibleToken(0, false);
     }
 }
 
@@ -93,7 +93,7 @@ void Instance::ComputeMultiLineTokens()
         tok.height = nrLines;
     }
 }
-void Instance::MoveToClosestVisibleToken(uint32 startIndex)
+void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
 {
     if (startIndex >= this->tokens.size())
         return;
@@ -292,7 +292,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 }
 void Instance::MoveToToken(uint32 index, bool selected)
 {
-    if ((this->tokens.size() == 0) || (index == this->currentTokenIndex))
+    if ((noItemsVisible) || (index == this->currentTokenIndex))
         return;
     index                   = std::min(index, (uint32) (this->tokens.size() - 1));
     this->currentTokenIndex = index;
@@ -324,7 +324,7 @@ void Instance::MoveLeft(bool selected)
 }
 void Instance::MoveRight(bool selected)
 {
-    if (noItemsVisible)        
+    if (noItemsVisible)
         return;
     auto idx          = this->currentTokenIndex + 1;
     auto yPos         = this->tokens[currentTokenIndex].y;
@@ -346,7 +346,7 @@ void Instance::MoveRight(bool selected)
 }
 void Instance::MoveUp(uint32 times, bool selected)
 {
-    if ((this->tokens.size() == 0) || (times == 0))
+    if ((noItemsVisible) || (times == 0))
         return;
     if (this->currentTokenIndex == 0)
         return;
@@ -357,11 +357,28 @@ void Instance::MoveUp(uint32 times, bool selected)
     {
         while ((idx > 0) && (this->tokens[idx].y == lastY))
             idx--;
-        if ((idx == 0) && (this->tokens[idx].y == lastY))
+
+        while ((idx > 0) && ((!this->tokens[idx].IsVisible()) || (this->tokens[idx].y == lastY)))
+            idx--;
+
+        if (idx == 0)
         {
-            // already on the first line --> move to first token
-            MoveToToken(0, selected);
-            return;
+            if (this->tokens[0].IsVisible())
+            {
+                if (this->tokens[idx].y == lastY)
+                {
+                    // already on the first line --> move to first token
+                    MoveToToken(0, selected);
+                    return;
+                }
+                // otherwise do nothing --> just decrease the times count
+            }
+            else
+            {
+                // move to first visible item
+                MoveToClosestVisibleToken(0, selected);
+                return;
+            }
         }
         lastY = this->tokens[idx].y;
         times--;
@@ -369,8 +386,15 @@ void Instance::MoveUp(uint32 times, bool selected)
     // found the line that I am interested in --> now search the closest token in terms of position
     auto found     = idx;
     auto best_dist = ComputeXDist(this->tokens[found].x, posX);
-    while ((idx > 0) && (this->tokens[idx].y == lastY) && (best_dist > 0))
+    while ((idx > 0) && (best_dist > 0))
     {
+        if (this->tokens[idx].IsVisible() == false)
+        {
+            idx--;
+            continue;
+        }
+        if (this->tokens[idx].y != lastY)
+            break;
         auto dist = ComputeXDist(this->tokens[idx].x, posX);
         if (dist < best_dist)
         {
@@ -379,7 +403,7 @@ void Instance::MoveUp(uint32 times, bool selected)
         }
         idx--;
     }
-    if (idx == 0)
+    if ((idx == 0) && (this->tokens[idx].IsVisible()))
     {
         // it is possible that the first token is the closest --> so test this
         auto dist = ComputeXDist(this->tokens[idx].x, posX);
