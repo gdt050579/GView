@@ -97,8 +97,8 @@ namespace View
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
 
             void MoveToToken(uint32 index, bool selected);
-            void MoveLeft(bool selected);
-            void MoveRight(bool selected);
+            void MoveLeft(bool selected, bool stopAfterFirst);
+            void MoveRight(bool selected, bool stopAfterFirst);
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
 

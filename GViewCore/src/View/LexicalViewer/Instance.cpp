@@ -51,7 +51,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         TokensListBuilder tokensList(this);
         this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
         ComputeMultiLineTokens();
-        ShowHideMetaData(false);
+        // ShowHideMetaData(false);
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
     }
@@ -134,13 +134,13 @@ void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
 }
 void Instance::ComputeOriginalPositions()
 {
-    int32 x                            = 0;
-    int32 y                            = 0;
-    const char16* p                    = this->text;
-    const char16* e                    = this->text + this->textLength;
-    uint32 pos                         = 0;
-    uint32 idx                         = 0;
-    uint32 tknCount                    = (uint32) this->tokens.size();
+    int32 x         = 0;
+    int32 y         = 0;
+    const char16* p = this->text;
+    const char16* e = this->text + this->textLength;
+    uint32 pos      = 0;
+    uint32 idx      = 0;
+    uint32 tknCount = (uint32) this->tokens.size();
 
     // skip to the first visible
     while ((idx < tknCount) && (!this->tokens[idx].IsVisible()))
@@ -309,7 +309,7 @@ void Instance::MoveToToken(uint32 index, bool selected)
     this->currentTokenIndex = index;
     EnsureCurrentItemIsVisible();
 }
-void Instance::MoveLeft(bool selected)
+void Instance::MoveLeft(bool selected, bool stopAfterFirst)
 {
     if ((this->currentTokenIndex == 0) || (noItemsVisible))
         return;
@@ -327,13 +327,17 @@ void Instance::MoveLeft(bool selected)
         if (this->tokens[idx].y != yPos)
             break;
         lastValidIdx = idx;
-        break;
+        if (stopAfterFirst)
+            break;
+        else
+            idx--;
     }
     if ((idx == 0) && (this->tokens[0].IsVisible()) && (this->tokens[0].y == yPos))
         lastValidIdx = 0;
     MoveToToken(lastValidIdx, selected);
 }
-void Instance::MoveRight(bool selected)
+
+void Instance::MoveRight(bool selected, bool stopAfterFirst)
 {
     if (noItemsVisible)
         return;
@@ -351,10 +355,14 @@ void Instance::MoveRight(bool selected)
         if (this->tokens[idx].y != yPos)
             break;
         lastValidIdx = idx;
-        break;
+        if (stopAfterFirst)
+            break;
+        else
+            idx++;
     }
     MoveToToken(lastValidIdx, selected);
 }
+
 void Instance::MoveUp(uint32 times, bool selected)
 {
     if ((noItemsVisible) || (times == 0))
@@ -488,16 +496,28 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         MoveDown(1, true);
         return true;
     case Key::Left:
-        MoveLeft(false);
+        MoveLeft(false, true);
         return true;
     case Key::Left | Key::Shift:
-        MoveLeft(true);
+        MoveLeft(true, true);
         return true;
     case Key::Right:
-        MoveRight(false);
+        MoveRight(false, true);
         return true;
     case Key::Right | Key::Shift:
-        MoveRight(true);
+        MoveRight(true, true);
+        return true;
+    case Key::Home:
+        MoveLeft(false, false);
+        return true;
+    case Key::Home | Key::Shift:
+        MoveLeft(true, false);
+        return true;
+    case Key::End:
+        MoveRight(false, false);
+        return true;
+    case Key::End | Key::Shift:
+        MoveRight(true, false);
         return true;
 
     // view-port scroll
