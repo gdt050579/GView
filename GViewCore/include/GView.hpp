@@ -687,6 +687,7 @@ namespace View
             SpaceOnLeft                     = 0x0001,
             SpaceOnRight                    = 0x0002,
             NewLineAfter                    = 0x0004,
+            NewLineBefore                   = 0x0008,
             HorizontalAlignament            = 0x0008,
             HorizontalAlignamentWithinBlock = 0x0010,
         };

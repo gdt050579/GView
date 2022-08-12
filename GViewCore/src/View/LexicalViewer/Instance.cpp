@@ -68,7 +68,8 @@ void Instance::RecomputeTokenPositions()
             break;
         }
     }
-    ComputeOriginalPositions();
+    PrettyFormat();
+    //ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
 }
 void Instance::ComputeMultiLineTokens()
@@ -195,6 +196,41 @@ void Instance::ComputeOriginalPositions()
             pos++;
         }
     }
+}
+void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
+{
+    auto x   = leftMargin;
+    auto y   = topMargin;
+    auto idx = idxStart;
+    // skip to the first visible
+    for (; idx < idxEnd; idx++)
+    {
+        auto& tok = this->tokens[idx];
+        if (tok.IsVisible() == false)
+            continue;
+        if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
+        {
+            x = leftMargin;
+            y++;
+        }
+        if (((tok.align & TokenAlignament::SpaceOnLeft) != TokenAlignament::None) && (x > leftMargin))
+            x++;
+        tok.x = x;
+        tok.y = y;
+        x += tok.width;
+        y += tok.height - 1;
+        if ((tok.align & TokenAlignament::SpaceOnRight) != TokenAlignament::None)
+            x++;
+        if ((tok.align & TokenAlignament::NewLineAfter) != TokenAlignament::None)
+        {
+            x = leftMargin;
+            y++;
+        }
+    }
+}
+void Instance::PrettyFormat()
+{
+    PrettyFormatForBlock(0, (uint32) this->tokens.size(), 0, 0);
 }
 void Instance::ShowHideMetaData(bool show)
 {
@@ -336,7 +372,6 @@ void Instance::MoveLeft(bool selected, bool stopAfterFirst)
         lastValidIdx = 0;
     MoveToToken(lastValidIdx, selected);
 }
-
 void Instance::MoveRight(bool selected, bool stopAfterFirst)
 {
     if (noItemsVisible)
@@ -362,7 +397,6 @@ void Instance::MoveRight(bool selected, bool stopAfterFirst)
     }
     MoveToToken(lastValidIdx, selected);
 }
-
 void Instance::MoveUp(uint32 times, bool selected)
 {
     if ((noItemsVisible) || (times == 0))
