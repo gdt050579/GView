@@ -154,7 +154,11 @@ struct ParserData
             break;
         case CharType::Word:
             next = text.Parse(
-                  pos, [](char16 ch) { return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != '=') && (ch != ':'); });
+                  pos,
+                  [](char16 ch) {
+                      return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != '=') && (ch != ':') && (ch != ' ') &&
+                             (ch != '\t');
+                  });
             tokenList.Add(TokenType::Key, pos, next, TokenColor::Word, TokenAlignament::StartsOnNewLine);
             pos   = next;
             state = ParserState::ExpectEqual;
@@ -229,7 +233,8 @@ struct ParserData
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::Equal:
-            tokenList.Add(TokenType::Equal, pos, pos + 1, TokenColor::Operator);
+            tokenList.Add(
+                  TokenType::Equal, pos, pos + 1, TokenColor::Operator, TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
             pos++;
             state = ParserState::ExpectValueOrArray;
             break;
