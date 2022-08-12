@@ -136,20 +136,26 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
+            tokenList.Add(
+                  TokenType::Comment,
+                  pos,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             pos = next;
             break;
         case CharType::SectionOrArrayStart:
             next = text.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
             if (text[next] == ']')
                 next++;
-            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword);
+            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::StartsOnNewLine);
             pos = next;
             break;
         case CharType::Word:
             next = text.Parse(
                   pos, [](char16 ch) { return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != '=') && (ch != ':'); });
-            tokenList.Add(TokenType::Key, pos, next, TokenColor::Word);
+            tokenList.Add(TokenType::Key, pos, next, TokenColor::Word, TokenAlignament::StartsOnNewLine);
             pos   = next;
             state = ParserState::ExpectEqual;
             break;
@@ -167,7 +173,13 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
+            tokenList.Add(
+                  TokenType::Comment,
+                  pos,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -206,7 +218,13 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
+            tokenList.Add(
+                  TokenType::Comment,
+                  pos,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -230,7 +248,13 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
+            tokenList.Add(
+                  TokenType::Comment,
+                  pos,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             pos = next;
             break;
         case CharType::Comma:
@@ -260,7 +284,13 @@ struct ParserData
         {
         case CharType::Comment:
             next = text.ParseTillNextLine(pos);
-            tokenList.Add(TokenType::Comment, pos, next, TokenColor::Comment, TokenDataType::MetaInformation);
+            tokenList.Add(
+                  TokenType::Comment,
+                  pos,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             pos = next;
             break;
         case CharType::String:

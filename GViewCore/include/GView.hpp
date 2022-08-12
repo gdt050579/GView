@@ -683,13 +683,12 @@ namespace View
         };
         enum class TokenAlignament : uint16
         {
-            None                            = 0,
-            SpaceOnLeft                     = 0x0001,
-            SpaceOnRight                    = 0x0002,
-            NewLineAfter                    = 0x0004,
-            NewLineBefore                   = 0x0008,
-            HorizontalAlignament            = 0x0008,
-            HorizontalAlignamentWithinBlock = 0x0010,
+            None            = 0,
+            SpaceOnLeft     = 0x0001,
+            SpaceOnRight    = 0x0002,
+            NewLineAfter    = 0x0004,
+            NewLineBefore   = 0x0008,
+            StartsOnNewLine = 0x0010,
         };
         enum class TokenColor : uint8
         {

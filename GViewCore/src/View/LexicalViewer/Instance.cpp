@@ -213,6 +213,11 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             x = leftMargin;
             y++;
         }
+        if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x>leftMargin))
+        {
+            x = leftMargin;
+            y++;
+        }
         if (((tok.align & TokenAlignament::SpaceOnLeft) != TokenAlignament::None) && (x > leftMargin))
             x++;
         tok.x = x;
