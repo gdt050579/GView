@@ -739,6 +739,7 @@ namespace View
 
           public:
             Token operator[](uint32 index) const;
+            Token GetLastToken() const;
             uint32 Len() const;
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);

@@ -34,6 +34,14 @@ Token TokensList::operator[](uint32 index) const
         return Token();
     return Token(this->data, index);
 }
+Token TokensList::GetLastToken() const
+{
+    uint32 count = (uint32)INSTANCE->tokens.size();
+    if (count>0)
+        return Token(this->data, count-1);
+    else
+        return Token();
+}
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color)
 {
     return Add(typeID, start, end, color, TokenDataType::None, TokenAlignament::None);

@@ -132,6 +132,7 @@ struct ParserData
     void ParseForExpectKeyValueOrSection(uint8 chType)
     {
         uint32 next;
+        
         switch (chType)
         {
         case CharType::Comment:
@@ -149,7 +150,7 @@ struct ParserData
             next = text.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
             if (text[next] == ']')
                 next++;
-            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::StartsOnNewLine);
+            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::NewLineBefore);            
             pos = next;
             break;
         case CharType::Word:
