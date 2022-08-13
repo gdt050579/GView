@@ -114,10 +114,12 @@ struct ParserData
     ParserState state;
     uint32 len;
     uint32 pos;
+    int32 arrayLevel;
     ParserData(const TextParser& _text, TokensList& _tokenList)
         : text(_text), tokenList(_tokenList), pos(0), state(ParserState::ExpectKeyValueOrSection)
     {
-        len = text.Len();
+        len        = text.Len();
+        arrayLevel = 0;
     }
     void AddValue(uint32 start, uint32 end)
     {
@@ -132,7 +134,7 @@ struct ParserData
     void ParseForExpectKeyValueOrSection(uint8 chType)
     {
         uint32 next;
-        
+
         switch (chType)
         {
         case CharType::Comment:
@@ -150,7 +152,7 @@ struct ParserData
             next = text.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
             if (text[next] == ']')
                 next++;
-            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::NewLineBefore);            
+            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::NewLineBefore);
             pos = next;
             break;
         case CharType::Word:
@@ -203,6 +205,7 @@ struct ParserData
         case CharType::SectionOrArrayStart:
             tokenList.Add(TokenType::ArrayStart, pos, pos + 1, TokenColor::Operator);
             state = ParserState::ExpectArrayValue;
+            this->arrayLevel++;
             pos++;
             break;
         default:
@@ -270,8 +273,10 @@ struct ParserData
             break;
         case CharType::SectionOrArrayEnd:
             tokenList.Add(TokenType::ArrayEnd, pos, pos + 1, TokenColor::Operator);
-            state = ParserState::ExpectKeyValueOrSection;
+            this->arrayLevel--;
+            state = this->arrayLevel > 0 ? ParserState::ExpectCommaOrEndOfArray : ParserState::ExpectKeyValueOrSection;
             pos++;
+            break;
         default:
             next = text.Parse(
                   pos, [](char16 ch) { return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != ',') && (ch != ']'); });
@@ -313,12 +318,14 @@ struct ParserData
             break;
         case CharType::SectionOrArrayEnd:
             tokenList.Add(TokenType::ArrayEnd, pos, pos + 1, TokenColor::Operator);
-            state = ParserState::ExpectArrayValue;
+            this->arrayLevel--;
+            state = this->arrayLevel > 0 ? ParserState::ExpectCommaOrEndOfArray : ParserState::ExpectKeyValueOrSection;
             pos++;
             break;
         case CharType::SectionOrArrayStart:
             tokenList.Add(TokenType::ArrayStart, pos, pos + 1, TokenColor::Operator);
             state = ParserState::ExpectArrayValue;
+            this->arrayLevel++;
             pos++;
             break;
         default:
@@ -331,6 +338,43 @@ struct ParserData
             AddValue(pos, next);
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
+        }
+    }
+    void Tokenize()
+    {
+        this->arrayLevel = 0;
+        while (this->pos < this->len)
+        {
+            auto chType = CharType::GetCharType(text[this->pos]);
+            if (chType == CharType::SpaceOrNewLine)
+            {
+                this->pos = text.ParseSpace(this->pos, SpaceType::All);
+            }
+            else
+            {
+                switch (this->state)
+                {
+                case ParserState::ExpectKeyValueOrSection:
+                    this->ParseForExpectKeyValueOrSection(chType);
+                    break;
+                case ParserState::ExpectValueOrArray:
+                    this->ParseForExpectValueOrArray(chType);
+                    break;
+                case ParserState::ExpectEqual:
+                    this->ParseForExpectEqual(chType);
+                    break;
+                case ParserState::ExpectArrayValue:
+                    this->ParseForExpectArrayValue(chType);
+                    break;
+                case ParserState::ExpectCommaOrEndOfArray:
+                    this->ParseForCommaOrEndOfArray(chType);
+                    break;
+                default:
+                    // force exit
+                    this->pos = this->len;
+                    break;
+                }
+            }
         }
     }
 };
@@ -349,39 +393,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
     ParserData p(text, tokenList);
 
     // Tokenization
-    while (p.pos < p.len)
-    {
-        auto chType = CharType::GetCharType(text[p.pos]);
-        if (chType == CharType::SpaceOrNewLine)
-        {
-            p.pos = text.ParseSpace(p.pos, SpaceType::All);
-        }
-        else
-        {
-            switch (p.state)
-            {
-            case ParserState::ExpectKeyValueOrSection:
-                p.ParseForExpectKeyValueOrSection(chType);
-                break;
-            case ParserState::ExpectValueOrArray:
-                p.ParseForExpectValueOrArray(chType);
-                break;
-            case ParserState::ExpectEqual:
-                p.ParseForExpectEqual(chType);
-                break;
-            case ParserState::ExpectArrayValue:
-                p.ParseForExpectArrayValue(chType);
-                break;
-            case ParserState::ExpectCommaOrEndOfArray:
-                p.ParseForCommaOrEndOfArray(chType);
-                break;
-            default:
-                // force exit
-                p.pos = p.len;
-                break;
-            }
-        }
-    }
+    p.Tokenize();
 
     // semantic process
     // search for a section and fold it :)
@@ -397,13 +409,10 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             uint32 next = idx + 1;
             while ((next < len) && (tokenList[next].GetTypeID() != TokenType::Section))
                 next++;
-            if (next < len)
-            {
-                // we have found another section
-                tokenList.CreateBlock(idx, next - 1, false);
-                // within each block --> search for arrays and create a block for them as well
-                // TODO
-            }
+            // we have found another section
+            tokenList.CreateBlock(idx, next - 1, false);
+            // within each block --> search for arrays and create a block for them as well
+            // TODO
             idx = next;
         }
     }

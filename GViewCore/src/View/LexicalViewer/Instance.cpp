@@ -250,6 +250,9 @@ void Instance::ShowHideMetaData(bool show)
 
 void Instance::EnsureCurrentItemIsVisible()
 {
+    if (this->noItemsVisible)
+        return;
+
     const auto& tok    = this->tokens[this->currentTokenIndex];
     auto tk_right      = tok.x + (int32) tok.width - 1;
     auto tk_bottom     = tok.y + (int32) tok.height - 1;
