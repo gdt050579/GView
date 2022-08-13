@@ -69,7 +69,7 @@ void Instance::RecomputeTokenPositions()
         }
     }
     PrettyFormat();
-    //ComputeOriginalPositions();
+    // ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
 }
 void Instance::ComputeMultiLineTokens()
@@ -213,7 +213,7 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             x = leftMargin;
             y++;
         }
-        if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x>leftMargin))
+        if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x > leftMargin))
         {
             x = leftMargin;
             y++;
@@ -299,6 +299,34 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         default:
             col = Cfg.Text.Normal;
             break;
+        }
+    }
+    if ((tok.blockLink != Token::INVALID_INDEX) && (onCursor))
+    {
+        const auto& link     = this->tokens[tok.blockLink];
+        const auto rightPos  = link.x + link.width - 1;
+        const auto bottomPos = link.y + link.height - 1;
+        if (tok.IsFolded() == false)
+        {
+            if (bottomPos > tok.y)
+            {
+                // multi-line block
+                bool fillEntireRect = ((size_t) tok.blockLink + (size_t) 1 < tokens.size()) ? (tokens[tok.blockLink + 1].y != link.y) : true;
+                if (fillEntireRect)
+                {
+                    renderer.FillRect(tok.x, tok.y, this->GetWidth(), bottomPos, ' ', Cfg.Editor.Focused);
+                }
+                else
+                {
+                    // partial rect (the last line of the block contains some elements that are not part of the block
+                    renderer.FillRect(tok.x, tok.y, this->GetWidth(), bottomPos - 1, ' ', Cfg.Editor.Focused);
+                    renderer.FillHorizontalLine(tok.x, bottomPos, rightPos, ' ', Cfg.Editor.Focused);
+                }
+            }
+            else
+            {
+                renderer.FillHorizontalLine(tok.x, tok.y, rightPos, ' ', Cfg.Editor.Focused);
+            }
         }
     }
     if (tok.height > 1)
