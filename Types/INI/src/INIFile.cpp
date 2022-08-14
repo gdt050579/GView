@@ -377,6 +377,27 @@ struct ParserData
             }
         }
     }
+    uint32 CreateArrayBlock(uint32 start, uint32 end)
+    {
+        // starts points to an array '['...']'
+        uint32 idx = start + 1;
+        while (idx<end)
+        {
+            switch (tokenList[idx].GetTypeID())
+            {
+            case TokenType::ArrayStart:
+                idx = CreateArrayBlock(idx, end);
+                break;
+            case TokenType::ArrayEnd:
+                this->tokenList.CreateBlock(start, idx, true);
+                return idx + 1;
+            default:
+                idx++;
+                break;
+            }
+        }
+        return end;
+    }
 };
 
 INIFile::INIFile()
@@ -412,7 +433,13 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             // we have found another section
             tokenList.CreateBlock(idx, next - 1, false);
             // within each block --> search for arrays and create a block for them as well
-            // TODO
+            while (idx < next)
+            {
+                if (tokenList[idx].GetTypeID() == TokenType::ArrayStart)
+                    idx = p.CreateArrayBlock(idx, next);
+                else
+                    idx++;
+            }
             idx = next;
         }
     }
