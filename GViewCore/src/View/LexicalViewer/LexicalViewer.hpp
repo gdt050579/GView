@@ -12,9 +12,10 @@ namespace View
         using namespace GView::Utils;
         enum class TokenStatus : uint8
         {
-            None    = 0,
-            Visible = 0x01,
-            Folded  = 0x02, // only for blocks
+            None       = 0,
+            Visible    = 0x01,
+            Folded     = 0x02, // only for blocks
+            BlockStart = 0x04,
         };
         class TokensListBuilder : public TokensList
         {
@@ -24,10 +25,15 @@ namespace View
                 this->data = _data;
             }
         };
+        struct BlockObject
+        {
+            static constexpr uint32 INVALID_ID = 0xFFFFFFFF;
+            uint32 tokenStart, tokenEnd;
+        };
         struct TokenObject
         {
             uint32 start, end, type;
-            uint32 blockLink; // for blocks
+            uint32 blockID; // for blocks
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
             TokenAlignament align;
@@ -43,12 +49,20 @@ namespace View
             {
                 return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::Folded)) != 0;
             }
+            inline bool IsBlockStarter() const
+            {
+                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::BlockStart)) != 0;
+            }
             inline void SetVisible(bool value)
             {
                 if (value)
                     status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::Visible));
                 else
                     status = static_cast<TokenStatus>(static_cast<uint8>(status) & (!static_cast<uint8>(TokenStatus::Visible)));
+            }
+            inline void SetBlockStartFlag()
+            {
+                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::BlockStart));
             }
         };
 
@@ -106,6 +120,7 @@ namespace View
 
           public:
             std::vector<TokenObject> tokens;
+            std::vector<BlockObject> blocks;
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);

@@ -36,9 +36,9 @@ Token TokensList::operator[](uint32 index) const
 }
 Token TokensList::GetLastToken() const
 {
-    uint32 count = (uint32)INSTANCE->tokens.size();
-    if (count>0)
-        return Token(this->data, count-1);
+    uint32 count = (uint32) INSTANCE->tokens.size();
+    if (count > 0)
+        return Token(this->data, count - 1);
     else
         return Token();
 }
@@ -56,7 +56,7 @@ Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color,
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align)
 {
-    uint32 itemsCount = INSTANCE->tokens.size();
+    uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     uint32 len        = INSTANCE->GetUnicodeTextLen();
     if ((start >= end) || (start >= len) || (end > (len + 1)))
     {
@@ -81,7 +81,7 @@ Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color,
     cToken.maxHeight = 0;
     cToken.color     = color;
     cToken.width     = (uint8) (std::min(end - start, (uint32) 0xFE));
-    cToken.blockLink = Token::INVALID_INDEX;
+    cToken.blockID   = BlockObject::INVALID_ID;
     cToken.status    = TokenStatus::Visible;
     cToken.align     = align;
     cToken.dataType  = dataType;
@@ -99,16 +99,20 @@ Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
 }
 bool TokensList::CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker)
 {
-    uint32 itemsCount = INSTANCE->tokens.size();
+    uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     CHECK(start < itemsCount, false, "Invalid token index (start=%u), should be less than %u", start, itemsCount);
     CHECK(end < itemsCount, false, "Invalid token index (end=%u), should be less than %u", end, itemsCount);
     CHECK(start < end, false, "Start token index(%u) should be smaller than end token index(%u)", start, end);
 
-    // link the two tokens
-    INSTANCE->tokens[start].blockLink = end;
-    INSTANCE->tokens[end].blockLink   = start;
-    
+    // create a block
+    auto& block      = INSTANCE->blocks.emplace_back();
+    uint32 blockID   = (uint32) (INSTANCE->blocks.size() - 1);
+    block.tokenStart = start;
+    block.tokenEnd   = end;
+
     // set token flags
+    INSTANCE->tokens[start].SetBlockStartFlag();
+    INSTANCE->tokens[start].blockID = blockID;
 
     return true;
 }

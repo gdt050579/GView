@@ -304,17 +304,19 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
             break;
         }
     }
-    if ((tok.blockLink != Token::INVALID_INDEX) && (onCursor))
+    if (tok.IsBlockStarter() && onCursor)
     {
-        const auto& link     = this->tokens[tok.blockLink];
-        const auto rightPos  = link.x + link.width - 1;
-        const auto bottomPos = link.y + link.height - 1;
+        const auto& block    = this->blocks[tok.blockID];
+        const auto& tknEnd   = this->tokens[block.tokenEnd];
+        const auto rightPos  = tknEnd.x + tknEnd.width - 1;
+        const auto bottomPos = tknEnd.y + tknEnd.height - 1;
         if (tok.IsFolded() == false)
         {
             if (bottomPos > tok.y)
             {
                 // multi-line block
-                bool fillEntireRect = ((size_t) tok.blockLink + (size_t) 1 < tokens.size()) ? (tokens[tok.blockLink + 1].y != link.y) : true;
+                bool fillEntireRect =
+                      ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
                 if (fillEntireRect)
                 {
                     renderer.FillRect(tok.x, tok.y, this->GetWidth(), bottomPos, ' ', Cfg.Editor.Focused);
