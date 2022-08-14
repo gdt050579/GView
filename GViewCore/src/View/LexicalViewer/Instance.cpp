@@ -6,7 +6,7 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_WORD_WRAP     = 0xBF00;
+constexpr int32 CMD_ID_SHOW_METADATA = 0xBF00;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
 inline int32 ComputeXDist(int32 x1, int32 x2)
@@ -60,14 +60,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 void Instance::RecomputeTokenPositions()
 {
     this->noItemsVisible = true;
-    for (auto& tok : this->tokens)
-    {
-        if (tok.IsVisible())
-        {
-            this->noItemsVisible = false;
-            break;
-        }
-    }
+    UpdateVisibilityStatus(0, (uint32)this->tokens.size(), true);
     PrettyFormat();
     // ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
@@ -237,14 +230,30 @@ void Instance::PrettyFormat()
 {
     PrettyFormatForBlock(0, (uint32) this->tokens.size(), 0, 0);
 }
-void Instance::ShowHideMetaData(bool show)
+void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
 {
-    for (auto& t : this->tokens)
+    auto pos = start;
+    while (pos < end)
     {
-        if (t.dataType == TokenDataType::MetaInformation)
+        auto& tok       = this->tokens[pos];
+        bool showStatus = visible;
+        if ((tok.dataType == TokenDataType::MetaInformation) && (this->showMetaData == false))
+            showStatus = false;
+            
+        if (tok.IsBlockStarter())
         {
-            t.SetVisible(false);
+            if (tok.IsFolded())
+                showStatus = false;
+            auto& block = this->blocks[tok.blockID];
+            UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd, showStatus);
+            pos = block.tokenEnd;
         }
+        else
+        {
+            pos++;
+        }
+        tok.SetVisible(showStatus);
+        this->noItemsVisible &= (!showStatus);
     }
 }
 
@@ -373,6 +382,10 @@ void Instance::Paint(Graphics::Renderer& renderer)
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
+    if (this->showMetaData)
+        commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:ON", CMD_ID_SHOW_METADATA);
+    else
+        commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:OFF", CMD_ID_SHOW_METADATA);
     return false;
 }
 void Instance::MoveToToken(uint32 index, bool selected)
@@ -623,6 +636,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
+    case CMD_ID_SHOW_METADATA:
+        this->showMetaData = !this->showMetaData;
+        this->RecomputeTokenPositions();
+        return true;
     }
     return false;
 }

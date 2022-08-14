@@ -76,7 +76,7 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key WordWrap;
+                AppCUI::Input::Key showMetaData;
             } Keys;
             bool Loaded;
 
@@ -93,6 +93,7 @@ namespace View
             uint32 textLength;
             uint32 currentTokenIndex;
             bool noItemsVisible;
+            bool showMetaData;
 
             struct
             {
@@ -107,7 +108,7 @@ namespace View
             void PrettyFormat();
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
-            void ShowHideMetaData(bool show);
+            void UpdateVisibilityStatus(uint32 start, uint32 end, bool visible);
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
