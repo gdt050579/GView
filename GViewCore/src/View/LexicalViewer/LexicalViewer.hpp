@@ -77,6 +77,7 @@ namespace View
             struct
             {
                 AppCUI::Input::Key showMetaData;
+                AppCUI::Input::Key prettyFormat;
             } Keys;
             bool Loaded;
 
@@ -94,6 +95,7 @@ namespace View
             uint32 currentTokenIndex;
             bool noItemsVisible;
             bool showMetaData;
+            bool prettyFormat;
 
             struct
             {

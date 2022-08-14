@@ -7,6 +7,7 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 constexpr int32 CMD_ID_SHOW_METADATA = 0xBF00;
+constexpr int32 CMD_ID_PRETTY_FORMAT = 0xBF01;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
 inline int32 ComputeXDist(int32 x1, int32 x2)
@@ -45,13 +46,13 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->Scroll.y          = 0;
     this->currentTokenIndex = 0;
     this->noItemsVisible    = true;
+    this->prettyFormat      = true;
 
     if (this->settings->parser)
     {
         TokensListBuilder tokensList(this);
         this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
         ComputeMultiLineTokens();
-        // ShowHideMetaData(false);
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
     }
@@ -61,8 +62,10 @@ void Instance::RecomputeTokenPositions()
 {
     this->noItemsVisible = true;
     UpdateVisibilityStatus(0, (uint32)this->tokens.size(), true);
-    PrettyFormat();
-    // ComputeOriginalPositions();
+    if (this->prettyFormat)
+        PrettyFormat();
+    else
+        ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
 }
 void Instance::ComputeMultiLineTokens()
@@ -386,6 +389,11 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:ON", CMD_ID_SHOW_METADATA);
     else
         commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:OFF", CMD_ID_SHOW_METADATA);
+
+    if (this->prettyFormat)
+        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Pretty", CMD_ID_PRETTY_FORMAT);
+    else
+        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Original", CMD_ID_PRETTY_FORMAT);
     return false;
 }
 void Instance::MoveToToken(uint32 index, bool selected)
@@ -638,6 +646,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     {
     case CMD_ID_SHOW_METADATA:
         this->showMetaData = !this->showMetaData;
+        this->RecomputeTokenPositions();
+        return true;
+    case CMD_ID_PRETTY_FORMAT:
+        this->prettyFormat = !this->prettyFormat;
         this->RecomputeTokenPositions();
         return true;
     }
