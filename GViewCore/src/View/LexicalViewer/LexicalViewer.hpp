@@ -108,6 +108,7 @@ namespace View
             char16* text;
             uint32 textLength;
             uint32 currentTokenIndex;
+            int32 lineNrWidth, lastLineNumber;
             bool noItemsVisible;
             bool showMetaData;
             bool prettyFormat;
@@ -130,6 +131,7 @@ namespace View
 
             void FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& tok);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
+            void PaintLineNumbers(Graphics::Renderer& renderer);
 
             void MoveToToken(uint32 index, bool selected);
             void MoveLeft(bool selected, bool stopAfterFirst);

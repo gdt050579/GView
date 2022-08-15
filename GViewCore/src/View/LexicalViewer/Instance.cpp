@@ -45,6 +45,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->Scroll.x          = 0;
     this->Scroll.y          = 0;
     this->currentTokenIndex = 0;
+    this->lineNrWidth       = 0;
+    this->lastLineNumber    = 0;
     this->noItemsVisible    = true;
     this->prettyFormat      = true;
 
@@ -67,6 +69,27 @@ void Instance::RecomputeTokenPositions()
     else
         ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
+    this->lineNrWidth    = 0;
+    this->lastLineNumber = 0;
+    if (this->noItemsVisible == false)
+    {
+        // find the last visible
+        auto idx = (uint32) (this->tokens.size() - 1);
+        while ((idx > 0) && (this->tokens[idx].IsVisible() == false))
+            idx--;
+        // worst case, the fist item should be visible (if none is tham noItemsVisible can not be false)
+        this->lastLineNumber = tokens[idx].y + tokens[idx].height;
+        if (lastLineNumber < 100)
+            this->lineNrWidth = 4;
+        else if (lastLineNumber < 1000)
+            this->lineNrWidth = 5;
+        else if (lastLineNumber < 10000)
+            this->lineNrWidth = 6;
+        else if (lastLineNumber < 100000)
+            this->lineNrWidth = 7;
+        else
+            this->lineNrWidth = 8;
+    }
 }
 void Instance::ComputeMultiLineTokens()
 {
@@ -245,7 +268,7 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
 
         tok.SetVisible(showStatus);
         this->noItemsVisible &= (!showStatus);
-        
+
         // check block status
         if (tok.IsBlockStarter())
         {
@@ -305,36 +328,60 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& t
                 // in pretty format mode --> all blocks are left-alligend
                 if (fillEntireRect)
                 {
-                    renderer.FillRect(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
+                    renderer.FillRect(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
                 }
                 else
                 {
                     // partial rect (the last line of the block contains some elements that are not part of the block
-                    renderer.FillRect(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
-                    renderer.FillHorizontalLine(tok.x - Scroll.x, bottomPos - Scroll.y, rightPos - Scroll.x, ' ', col);
+                    renderer.FillRect(
+                          lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                    renderer.FillHorizontalLine(
+                          lineNrWidth + tok.x - Scroll.x, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
                 }
             }
             else
             {
                 // blocks are not left alligend
                 // first draw the first line
-                renderer.FillHorizontalLine(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
+                renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
                 // second draw the rest of the bloc
                 if (fillEntireRect)
                 {
-                    renderer.FillRect(0, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
+                    renderer.FillRect(lineNrWidth, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
                 }
                 else
                 {
-                    renderer.FillRect(0, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
-                    renderer.FillHorizontalLine(0, bottomPos - Scroll.y, rightPos - Scroll.x, ' ', col);
+                    renderer.FillRect(lineNrWidth, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                    renderer.FillHorizontalLine(lineNrWidth, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
                 }
             }
         }
         else
         {
-            renderer.FillHorizontalLine(tok.x - Scroll.x, tok.y - Scroll.y, rightPos - Scroll.x, ' ', col);
+            renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
         }
+    }
+}
+void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
+{
+    auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
+    auto lineSepColor    = Cfg.Lines.GetColor(state);
+    auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
+
+    renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
+    renderer.DrawVerticalLine(this->lineNrWidth - 1, 0, this->GetHeight(), lineSepColor);
+    NumericFormatter num;
+    WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
+    params.Width = lineNrWidth - 2;
+    params.Color = lineMarkerColor;
+    params.X     = params.Width;
+    params.Align = TextAlignament::Right;
+    auto height  = this->GetHeight();
+
+    for (auto i = 0, value = Scroll.y + 1; (i < height) && (value<=this->lastLineNumber); i++,value++)
+    {
+        params.Y = i;
+        renderer.WriteText(num.ToDec(value), params);
     }
 }
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
@@ -374,14 +421,14 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     if (tok.height > 1)
     {
         WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
-        params.X     = tok.x - Scroll.x;
+        params.X     = lineNrWidth + tok.x - Scroll.x;
         params.Y     = tok.y - Scroll.y;
         params.Color = col;
         renderer.WriteText(txt, params);
     }
     else
     {
-        renderer.WriteSingleLineText(tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
+        renderer.WriteSingleLineText(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
     }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
@@ -407,6 +454,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
             continue;
         PaintToken(renderer, t, onCursor);
     }
+    PaintLineNumbers(renderer);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
