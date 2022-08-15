@@ -61,7 +61,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 void Instance::RecomputeTokenPositions()
 {
     this->noItemsVisible = true;
-    UpdateVisibilityStatus(0, (uint32)this->tokens.size(), true);
+    UpdateVisibilityStatus(0, (uint32) this->tokens.size(), true);
     if (this->prettyFormat)
         PrettyFormat();
     else
@@ -242,7 +242,7 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         bool showStatus = visible;
         if ((tok.dataType == TokenDataType::MetaInformation) && (this->showMetaData == false))
             showStatus = false;
-            
+
         if (tok.IsBlockStarter())
         {
             if (tok.IsFolded())
@@ -284,6 +284,57 @@ void Instance::EnsureCurrentItemIsVisible()
         Scroll.y = tok.y;
 }
 
+void Instance::FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& tok)
+{
+    const auto& block    = this->blocks[tok.blockID];
+    const auto& tknEnd   = this->tokens[block.tokenEnd];
+    const auto rightPos  = tknEnd.x + tknEnd.width - 1;
+    const auto bottomPos = tknEnd.y + tknEnd.height - 1;
+    const auto col       = Cfg.Editor.Focused;
+    if (tok.IsFolded() == false)
+    {
+        if (bottomPos > tok.y)
+        {
+            // multi-line block
+            bool fillEntireRect =
+                  ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
+            if (this->prettyFormat)
+            {
+                // in pretty format mode --> all blocks are left-alligend
+                if (fillEntireRect)
+                {
+                    renderer.FillRect(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
+                }
+                else
+                {
+                    // partial rect (the last line of the block contains some elements that are not part of the block
+                    renderer.FillRect(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                    renderer.FillHorizontalLine(tok.x - Scroll.x, bottomPos - Scroll.y, rightPos - Scroll.x, ' ', col);
+                }
+            }
+            else
+            {
+                // blocks are not left alligend
+                // first draw the first line
+                renderer.FillHorizontalLine(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
+                // second draw the rest of the bloc
+                if (fillEntireRect)
+                {
+                    renderer.FillRect(0, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
+                }
+                else
+                {
+                    renderer.FillRect(0, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                    renderer.FillHorizontalLine(0, bottomPos - Scroll.y, rightPos - Scroll.x, ' ', col);
+                }
+            }
+        }
+        else
+        {
+            renderer.FillHorizontalLine(tok.x - Scroll.x, tok.y - Scroll.y, rightPos - Scroll.x, ' ', col);
+        }
+    }
+}
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
 {
     u16string_view txt = { this->text + tok.start, (size_t) (tok.end - tok.start) };
@@ -317,36 +368,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         }
     }
     if (tok.IsBlockStarter() && onCursor)
-    {
-        const auto& block    = this->blocks[tok.blockID];
-        const auto& tknEnd   = this->tokens[block.tokenEnd];
-        const auto rightPos  = tknEnd.x + tknEnd.width - 1;
-        const auto bottomPos = tknEnd.y + tknEnd.height - 1;
-        if (tok.IsFolded() == false)
-        {
-            if (bottomPos > tok.y)
-            {
-                // multi-line block
-                bool fillEntireRect =
-                      ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
-                if (fillEntireRect)
-                {
-                    renderer.FillRect(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', Cfg.Editor.Focused);
-                }
-                else
-                {
-                    // partial rect (the last line of the block contains some elements that are not part of the block
-                    renderer.FillRect(
-                          tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', Cfg.Editor.Focused);
-                    renderer.FillHorizontalLine(tok.x - Scroll.x, bottomPos - Scroll.y, rightPos - Scroll.x, ' ', Cfg.Editor.Focused);
-                }
-            }
-            else
-            {
-                renderer.FillHorizontalLine(tok.x - Scroll.x, tok.y - Scroll.y, rightPos - Scroll.x, ' ', Cfg.Editor.Focused);
-            }
-        }
-    }
+        FillBlockSpace(renderer, tok);
     if (tok.height > 1)
     {
         WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);

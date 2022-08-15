@@ -113,6 +113,7 @@ namespace View
             void UpdateVisibilityStatus(uint32 start, uint32 end, bool visible);
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
+            void FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& tok);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
 
             void MoveToToken(uint32 index, bool selected);
