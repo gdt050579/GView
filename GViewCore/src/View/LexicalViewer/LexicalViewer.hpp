@@ -10,6 +10,14 @@ namespace View
     {
         using namespace AppCUI;
         using namespace GView::Utils;
+
+        enum class FoldStatus: uint32
+        {
+            Folded,
+            Expanded,
+            Reverse
+        };
+
         enum class TokenStatus : uint8
         {
             None       = 0,
@@ -58,11 +66,18 @@ namespace View
                 if (value)
                     status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::Visible));
                 else
-                    status = static_cast<TokenStatus>(static_cast<uint8>(status) & (!static_cast<uint8>(TokenStatus::Visible)));
+                    status = static_cast<TokenStatus>(static_cast<uint8>(status) & (~static_cast<uint8>(TokenStatus::Visible)));
             }
             inline void SetBlockStartFlag()
             {
                 status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::BlockStart));
+            }
+            inline void SetFolded(bool value)
+            {
+                if (value)
+                    status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::Folded));
+                else
+                    status = static_cast<TokenStatus>(static_cast<uint8>(status) & (~static_cast<uint8>(TokenStatus::Folded)));
             }
         };
 
@@ -121,6 +136,7 @@ namespace View
             void MoveRight(bool selected, bool stopAfterFirst);
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
+            void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
 
           public:
             std::vector<TokenObject> tokens;

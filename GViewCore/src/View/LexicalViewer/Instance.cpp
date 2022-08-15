@@ -243,6 +243,10 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         if ((tok.dataType == TokenDataType::MetaInformation) && (this->showMetaData == false))
             showStatus = false;
 
+        tok.SetVisible(showStatus);
+        this->noItemsVisible &= (!showStatus);
+        
+        // check block status
         if (tok.IsBlockStarter())
         {
             if (tok.IsFolded())
@@ -255,8 +259,6 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         {
             pos++;
         }
-        tok.SetVisible(showStatus);
-        this->noItemsVisible &= (!showStatus);
     }
 }
 
@@ -595,6 +597,19 @@ void Instance::MoveDown(uint32 times, bool selected)
     }
     MoveToToken(found, selected);
 }
+void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive)
+{
+    if (this->noItemsVisible)
+        return;
+    if ((size_t) this->currentTokenIndex >= this->tokens.size())
+        return;
+    auto& tok = this->tokens[this->currentTokenIndex];
+    if (!tok.IsBlockStarter())
+        return;
+    bool foldValue = foldStatus == FoldStatus::Folded ? true : (foldStatus == FoldStatus::Expanded ? false : (!tok.IsFolded()));
+    tok.SetFolded(foldValue);
+    RecomputeTokenPositions();
+}
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     switch (keyCode)
@@ -650,6 +665,11 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Down | Key::Ctrl:
         Scroll.y++;
+        return true;
+
+    // fold -> unfold
+    case Key::Space:
+        SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, false);
         return true;
     }
 
