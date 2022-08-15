@@ -331,18 +331,19 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
                       ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
                 if (fillEntireRect)
                 {
-                    renderer.FillRect(tok.x, tok.y, this->GetWidth(), bottomPos, ' ', Cfg.Editor.Focused);
+                    renderer.FillRect(tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', Cfg.Editor.Focused);
                 }
                 else
                 {
                     // partial rect (the last line of the block contains some elements that are not part of the block
-                    renderer.FillRect(tok.x, tok.y, this->GetWidth(), bottomPos - 1, ' ', Cfg.Editor.Focused);
-                    renderer.FillHorizontalLine(tok.x, bottomPos, rightPos, ' ', Cfg.Editor.Focused);
+                    renderer.FillRect(
+                          tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', Cfg.Editor.Focused);
+                    renderer.FillHorizontalLine(tok.x - Scroll.x, bottomPos - Scroll.y, rightPos - Scroll.x, ' ', Cfg.Editor.Focused);
                 }
             }
             else
             {
-                renderer.FillHorizontalLine(tok.x, tok.y, rightPos, ' ', Cfg.Editor.Focused);
+                renderer.FillHorizontalLine(tok.x - Scroll.x, tok.y - Scroll.y, rightPos - Scroll.x, ' ', Cfg.Editor.Focused);
             }
         }
     }
