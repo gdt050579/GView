@@ -218,9 +218,10 @@ void Instance::ComputeOriginalPositions()
 }
 void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
 {
-    auto x   = leftMargin;
-    auto y   = topMargin;
-    auto idx = idxStart;
+    auto x     = leftMargin;
+    auto y     = topMargin;
+    auto lastY = topMargin;
+    auto idx   = idxStart;
     // skip to the first visible
     for (; idx < idxEnd; idx++)
     {
@@ -230,7 +231,10 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
         if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
         {
             x = leftMargin;
-            y++;
+            if (y == lastY)
+                y += 2;
+            else
+                y++;            
         }
         if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x > leftMargin))
         {
@@ -241,6 +245,7 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             x++;
         tok.x = x;
         tok.y = y;
+        lastY = y;
         x += tok.width;
         y += tok.height - 1;
         if ((tok.align & TokenAlignament::SpaceOnRight) != TokenAlignament::None)
@@ -378,7 +383,7 @@ void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
     params.Align = TextAlignament::Right;
     auto height  = this->GetHeight();
 
-    for (auto i = 0, value = Scroll.y + 1; (i < height) && (value<=this->lastLineNumber); i++,value++)
+    for (auto i = 0, value = Scroll.y + 1; (i < height) && (value <= this->lastLineNumber); i++, value++)
     {
         params.Y = i;
         renderer.WriteText(num.ToDec(value), params);
