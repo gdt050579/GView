@@ -794,11 +794,11 @@ namespace View
         enum class TokenAlignament : uint16
         {
             None            = 0,
-            SpaceOnLeft     = 0x0001,
-            SpaceOnRight    = 0x0002,
-            NewLineAfter    = 0x0004,
-            NewLineBefore   = 0x0008,
-            StartsOnNewLine = 0x0010,
+            SpaceOnLeft     = 0x0001, // adds a space on left (except when current token is already at left-most position)
+            SpaceOnRight    = 0x0002, // adds a space on right of the current token
+            NewLineAfter    = 0x0004, // adds a new line after the current token 
+            NewLineBefore   = 0x0008, // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x0010, // makes sure that current token starts on new line. If already on new line, nothing happens. otherwise adds a new line.
         };
         enum class TokenColor : uint8
         {
