@@ -199,7 +199,7 @@ void ExtraData::UpdateExtraData_DarwinProperties(ExtraData_DarwinProperties* dat
 
     general->AddItem({ "Unicode Darwin Application Identifier",
                        ls.Format(
-                             "%.*S",
+                             "%.*ls",
                              sizeof(data->unicodeDarwinApplicationIdentifier) / sizeof(data->unicodeDarwinApplicationIdentifier[0]),
                              data->unicodeDarwinApplicationIdentifier) });
 }
@@ -212,7 +212,7 @@ void ExtraData::UpdateExtraData_IconLocation(ExtraData_IconLocation* data)
 
     general->AddItem({ "Location ASCII", ls.Format("%.*s", sizeof(data->location) / sizeof(data->location[0]), data->location) });
     general->AddItem({ "Location Unicode",
-                       ls.Format("%.*S", sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0]), data->unicodeLocation) });
+                       ls.Format("%.*ls", sizeof(data->unicodeLocation) / sizeof(data->unicodeLocation[0]), data->unicodeLocation) });
 }
 
 void ExtraData::UpdateExtraData_ShimLayer(ExtraData_ShimLayer* data)

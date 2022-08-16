@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.63.0"
+#define GVIEW_VERSION "0.77.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -412,6 +412,116 @@ namespace DigitalSignature
     CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
     CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
 } // namespace DigitalSignature
+
+namespace Golang
+{
+    constexpr auto ELF_GO_BUILD_ID_TAG = 4U;
+    constexpr auto GNU_BUILD_ID_TAG    = 3U;
+
+    constexpr auto ELF_GO_NOTE  = std::string_view("Go\x00\x00", 4);
+    constexpr auto ELF_GNU_NOTE = std::string_view("GNU\x00", 4);
+
+    // version of the pclntab (Program Counter Line Table) -: https://go.dev/src/debug/gosym/pclntab.go
+    enum class PclntabVersion : int32
+    {
+        Unknown = -1,
+        _11     = 0,
+        _12     = 1,
+        _116    = 2,
+        _118    = 3,
+    };
+
+    enum class GoMagic : uint32 // https://go.dev/src/debug/gosym/pclntab.go
+    {
+        _12  = 0xfffffffb,
+        _116 = 0xfffffffa,
+        _118 = 0xfffffff0,
+    };
+
+    struct CORE_EXPORT GoFunctionHeader
+    {
+        GoMagic magic;
+        uint16 padding;
+        uint8 instructionSizeQuantum; // (1 for x86, 4 for ARM)
+        uint8 sizeOfUintptr;          // in bytes
+    };
+
+    enum class Architecture : uint8
+    {
+        Unknown = 0,
+        x86     = 1,
+        x64     = 2
+    };
+
+    struct CORE_EXPORT FstEntry32
+    {
+        uint32 pc;
+        uint32 functionOffset;
+    };
+
+    struct FstEntry64
+    {
+        uint64 pc;
+        uint32 functionOffset;
+    };
+
+    struct CORE_EXPORT Func32
+    {
+        uint32 entry;    // start pc
+        int32 name;      // name (offset to C string)
+        int32 args;      // size of arguments passed to function
+        int32 frame;     // size of function frame, including saved caller PC
+        int32 pcsp;      // pcsp table (offset to pcvalue table)
+        int32 pcfile;    // pcfile table (offset to pcvalue table)
+        int32 pcln;      // pcln table (offset to pcvalue table)
+        int32 nfuncdata; // number of entries in funcdata list
+        int32 npcdata;   // number of entries in pcdata list
+    };
+
+    struct CORE_EXPORT Func64
+    {
+        uint64 entry;    // start pc
+        int32 name;      // name (offset to C string)
+        int32 args;      // size of arguments passed to function
+        int32 frame;     // size of function frame, including saved caller PC
+        int32 pcsp;      // pcsp table (offset to pcvalue table)
+        int32 pcfile;    // pcfile table (offset to pcvalue table)
+        int32 pcln;      // pcln table (offset to pcvalue table)
+        int32 nfuncdata; // number of entries in funcdata list
+        int32 npcdata;   // number of entries in pcdata list
+    };
+
+    struct CORE_EXPORT Function
+    {
+        char* name{ nullptr };
+        Func64 func;
+    };
+
+    struct CORE_EXPORT GoPclntab112
+    {
+      private:
+        void* context{ nullptr };
+        void Reset();
+
+      public:
+        GoPclntab112();
+        ~GoPclntab112();
+        bool Process(const Buffer& buffer, Architecture arch);
+        GoFunctionHeader* GetHeader() const;
+        uint64 GetFilesCount() const;
+        bool GetFile(uint64 index, std::string_view& file) const;
+        uint64 GetFunctionsCount() const;
+        bool GetFunction(uint64 index, Function& func) const;
+        uint64 GetEntriesCount() const;
+    };
+
+    CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
+} // namespace Golang
+
+namespace Pyc
+{
+
+}
 
 namespace Compression
 {

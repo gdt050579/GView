@@ -179,12 +179,14 @@ bool ELFFile::ParseGoData()
         noteName = std::string((char*) noteBuffer.GetData() + 12, 4);
 
         std::string_view noteNameView{ (char*) noteBuffer.GetData() + 12, 4 };
-        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Go::ELF_GO_BUILD_ID_TAG && noteNameView == Go::ELF_GO_NOTE)
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
+            noteNameView == Golang::ELF_GO_NOTE)
         {
             buildId = std::string((char*) noteBuffer.GetData() + 16, valSize);
         }
 
-        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Go::GNU_BUILD_ID_TAG && noteNameView == Go::ELF_GNU_NOTE)
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&
+            noteNameView == Golang::ELF_GNU_NOTE)
         {
             gnuString = std::string((char*) noteBuffer.GetData() + 16, valSize);
         }
@@ -198,113 +200,23 @@ bool ELFFile::ParseGoData()
         {
             panelsMask |= (1ULL << (uint8) Panels::IDs::GoInformation);
 
+            uint64 bufferOffset       = 0;
+            uint64 bufferSize         = 0;
+            Golang::Architecture arch = is64 ? Golang::Architecture::x64 : Golang::Architecture::x86;
             if (is64)
             {
                 const auto& section = sections64.at(i);
-                pclntab112.buffer   = obj->GetData().CopyToBuffer(section.sh_offset, (uint32) section.sh_size);
-                pclntab112.header   = (Go::GoFunctionHeader*) pclntab112.buffer.GetData();
-
-                pclntab112.nfunctab    = *(uint32*) (pclntab112.buffer.GetData() + sizeof(Go::GoFunctionHeader));
-                pclntab112.funcdata    = pclntab112.buffer.GetData();
-                pclntab112.funcnametab = pclntab112.buffer.GetData();
-                pclntab112.functab     = pclntab112.buffer.GetData() + 8 + pclntab112.header->sizeOfUintptr;
-                pclntab112.pctab       = pclntab112.buffer.GetData();
-                pclntab112.functabsize =
-                      (pclntab112.nfunctab * 2 + 1) * pclntab112.header->sizeOfUintptr; // TODO: version >= 1.18 size is fixed to 4
-                pclntab112.fileoff  = *(uint32*) (pclntab112.functab + pclntab112.functabsize);
-                pclntab112.filetab  = pclntab112.buffer.GetData() + pclntab112.fileoff;
-                pclntab112.nfiletab = *(uint32*) pclntab112.filetab;
-                pclntab112.filetab  = pclntab112.filetab + pclntab112.nfiletab * 4;
-
-                uint32 offset         = 0;
-                auto currentAddress   = (uint64) pclntab112.filetab;
-                const auto endAddress = (uint64) pclntab112.buffer.GetData() + pclntab112.buffer.GetLength();
-                for (uint32 i = 0; i < pclntab112.nfiletab - 1 && (uint64) currentAddress <= (uint64) endAddress; i++)
-                {
-                    auto fname                 = (char*) (pclntab112.filetab + offset);
-                    const auto& [pair, result] = pclntab112.files.emplace(std::pair<uint32, std::string_view>{ i, fname });
-                    offset += (uint32) pair->second.size() + 2;
-                    currentAddress = (uint64) pclntab112.filetab + offset;
-                }
-
-                offset         = 0U;
-                currentAddress = (uint64) pclntab112.functab;
-                auto count     = 0U;
-                while (count <= pclntab112.nfunctab && (uint64) currentAddress <= (uint64) endAddress)
-                {
-                    auto entry64 = *((Go::FstEntry64*) pclntab112.functab + count);
-                    entries64.emplace_back(entry64);
-                    offset += sizeof(Go::FstEntry64);
-                    count++;
-                }
-
-                for (const auto& entry : entries64)
-                {
-                    const auto& func = functions64.emplace_back(*(Go::Func64*) (pclntab112.buffer.GetData() + entry.functionOffset));
-                    functionsNames.emplace_back((char*) pclntab112.funcnametab + func.name);
-                }
-
-                if (functions64.empty() == false)
-                {
-                    functions64.pop_back();
-                    functionsNames.pop_back();
-                }
+                bufferOffset        = section.sh_offset;
+                bufferSize          = section.sh_size;
             }
             else
             {
                 const auto& section = sections32.at(i);
-                pclntab112.buffer   = obj->GetData().CopyToBuffer(section.sh_offset, section.sh_size);
-                pclntab112.header   = (Go::GoFunctionHeader*) pclntab112.buffer.GetData();
-
-                pclntab112.nfunctab    = *(uint32*) (pclntab112.buffer.GetData() + sizeof(Go::GoFunctionHeader));
-                pclntab112.funcdata    = pclntab112.buffer.GetData();
-                pclntab112.funcnametab = pclntab112.buffer.GetData();
-                pclntab112.functab     = pclntab112.buffer.GetData() + 8 + pclntab112.header->sizeOfUintptr;
-                pclntab112.pctab       = pclntab112.buffer.GetData();
-                pclntab112.functabsize =
-                      (pclntab112.nfunctab * 2 + 1) * pclntab112.header->sizeOfUintptr; // TODO: version >= 1.18 size is fixed to 4
-                pclntab112.fileoff  = *(uint32*) (pclntab112.functab + pclntab112.functabsize);
-                pclntab112.filetab  = pclntab112.buffer.GetData() + pclntab112.fileoff;
-                pclntab112.nfiletab = *(uint32*) pclntab112.filetab;
-                pclntab112.filetab  = pclntab112.filetab + pclntab112.nfiletab * 4;
-
-                uint32 offset         = 0;
-                auto currentAddress   = (uint64) pclntab112.filetab;
-                const auto endAddress = (uint64) pclntab112.buffer.GetData() + pclntab112.buffer.GetLength();
-                for (uint32 i = 0; i < pclntab112.nfiletab - 1 && (uint64) currentAddress <= (uint64) endAddress; i++)
-                {
-                    auto fname = (char*) (pclntab112.filetab + offset);
-                    const auto& [pair, result] =
-                          pclntab112.files.emplace(std::pair<uint32, std::string_view>{ pclntab112.nfiletab - i - 1, fname });
-                    offset += (uint32) pair->second.size() + 2;
-                    currentAddress = (uint64) pclntab112.filetab + offset;
-                }
-
-                offset         = 0U;
-                currentAddress = (uint64) pclntab112.functab;
-                auto count     = 0U;
-                while (count <= pclntab112.nfunctab && (uint64) currentAddress <= (uint64) endAddress)
-                {
-                    auto entry32 = *((Go::FstEntry32*) pclntab112.functab + count);
-                    entries32.emplace_back(entry32);
-                    offset += sizeof(Go::FstEntry32);
-                    count++;
-                }
-
-                for (const auto& entry : entries32)
-                {
-                    const auto& func = functions32.emplace_back(*(Go::Func32*) (pclntab112.buffer.GetData() + entry.functionOffset));
-                    functionsNames.emplace_back((char*) pclntab112.funcnametab + func.name);
-                }
-
-                if (functions32.empty() == false)
-                {
-                    functions32.pop_back();
-                    functionsNames.pop_back();
-                }
+                bufferOffset        = section.sh_offset;
+                bufferSize          = section.sh_size;
             }
 
-            goPlcntabSectionIndex = i;
+            CHECK(pclntab112.Process(obj->GetData().CopyToBuffer(bufferOffset, (uint32) bufferSize), arch), false, "");
             break;
         }
     }

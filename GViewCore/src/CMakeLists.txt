@@ -6,6 +6,8 @@ add_subdirectory(View)
 add_subdirectory(Hashes)
 add_subdirectory(DigitalSignature)
 add_subdirectory(Compression)
+add_subdirectory(Go)
+add_subdirectory(Pyc)
 target_sources(GViewCore PRIVATE main.cpp)
 
 
