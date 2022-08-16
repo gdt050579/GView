@@ -117,6 +117,7 @@ add_subdirectory(Types/PCAP)
 add_subdirectory(Types/ELF)
 add_subdirectory(Types/JT)
 add_subdirectory(Types/INI)
+add_subdirectory(Types/CPP)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
