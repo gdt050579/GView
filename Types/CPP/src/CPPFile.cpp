@@ -87,7 +87,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
-    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word);
+    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word, TokenAlignament::SpaceOnRight);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
