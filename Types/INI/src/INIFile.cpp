@@ -138,7 +138,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -167,7 +167,7 @@ struct ParserData
             state = ParserState::ExpectEqual;
             break;
         default:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a key or a section)");
             pos = next;
             break;
@@ -179,7 +179,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -197,7 +197,7 @@ struct ParserData
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::Invalid:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a avlue or an array)");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
@@ -225,7 +225,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -243,7 +243,7 @@ struct ParserData
             state = ParserState::ExpectValueOrArray;
             break;
         default:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.AddErrorToken(pos, next, "Invalid character (expecting either ':' or '=')");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
@@ -256,7 +256,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -294,7 +294,7 @@ struct ParserData
         switch (chType)
         {
         case CharType::Comment:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.Add(
                   TokenType::Comment,
                   pos,
@@ -311,7 +311,7 @@ struct ParserData
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
         case CharType::Invalid:
-            next = text.ParseTillNextLine(pos);
+            next = text.ParseTillEndOfLine(pos);
             tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a avlue or an array)");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
