@@ -4,6 +4,14 @@ namespace GView::View::LexicalViewer
 {
 #define HAS_FLAG(value, flag) (((value) & (flag)) == (flag))
 
+const uint8 lower_case_table[128] = { 0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,  16,  17,  18,
+                                      19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,  37,
+                                      38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,
+                                      57,  58,  59,  60,  61,  62,  63,  64,  97,  98,  99,  100, 101, 102, 103, 104, 105, 106, 107,
+                                      108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 91,  92,  93,  94,
+                                      95,  96,  97,  98,  99,  100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113,
+                                      114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127 };
+
 TextParser::TextParser(const char16* _text, uint32 _size)
 {
     this->text = _text;
@@ -136,7 +144,60 @@ uint32 TextParser::ParseSpace(uint32 index, SpaceType type) const
     }
     return index;
 }
+uint32 TextParser::ParseTillText(uint32 index, string_view textToFind, bool ignoreCase) const
+{
+    if (index >= size)
+        return size;
+    if (textToFind.size() + index > size)
+        return size;
+    if (textToFind.size() == 0)
+        return index;
+    const char16* p        = this->text;
+    const char16* e        = (this->text + (size_t) size) - textToFind.size();
+    const uint8* txt_start = (const uint8*) textToFind.data();
+    const uint8* txt_end   = txt_start + textToFind.size();
 
+    if (ignoreCase)
+    {
+        while (p < e)
+        {
+            if (((*p) < 128) && (lower_case_table[*p] == lower_case_table[*txt_start]))
+            {
+                const auto* t = txt_start;
+                const auto* c = p;
+                for (; (t < txt_end) && ((*c) < 128) && (lower_case_table[*c] == lower_case_table[*t]); t++, c++)
+                    ;
+                if (t == txt_end)
+                {
+                    // found one
+                    return (uint32) (c - this->text);
+                }
+            }
+            p++;
+        }
+    }
+    else
+    {
+        while (p < e)
+        {
+            if ((*p) == (*txt_start))
+            {
+                const auto* t = txt_start;
+                const auto* c = p;
+                for (; (t < txt_end) && ((*c) == (*t)); t++, c++)
+                    ;
+                if (t == txt_end)
+                {
+                    // found one
+                    return (uint32) (c - this->text);
+                }
+            }
+            p++;
+        }
+    }
+    // return end of the text
+    return size;
+}
 uint32 TextParser::ParseString(uint32 index, StringFormat format) const
 {
     if (index >= size)
@@ -307,4 +368,4 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
     return index;
 }
 #undef HAS_FLAG
-} // namespace GView::Utils::TextParser
+} // namespace GView::View::LexicalViewer

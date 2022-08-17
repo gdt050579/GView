@@ -782,6 +782,7 @@ namespace View
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
             uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
+            uint32 ParseTillText(uint32 index, string_view textToFind, bool ignoreCase) const;
         };
         enum class TokenDataType : uint8
         {
