@@ -844,14 +844,23 @@ namespace View
         {
           protected:
             void* data;
+            uint32 lastTokenID;
 
-            TokensList() : data(nullptr)
+            TokensList() : data(nullptr), lastTokenID(0xFFFFFFFF)
             {
             }
 
           public:
+            void ResetLastTokenID(uint32 value)
+            {
+                lastTokenID = value;
+            }
             Token operator[](uint32 index) const;
             Token GetLastToken() const;
+            uint32 GetLastTokenID() const
+            {
+                return lastTokenID;
+            }
             uint32 Len() const;
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);

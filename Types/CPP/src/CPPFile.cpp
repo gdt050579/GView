@@ -19,6 +19,7 @@ namespace TokenType
     constexpr uint32 Preprocess      = 11;
     constexpr uint32 Word            = 12;
     constexpr uint32 Operator        = 13;
+    constexpr uint32 None            = 0xFFFFFFFF;
 
 } // namespace TokenType
 
@@ -192,7 +193,8 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx = next;
             break;
         case CharType::Comma:
-            tokenList.Add(TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::SpaceOnLeft|TokenAlignament::SpaceOnRight);
+            tokenList.Add(
+                  TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
             idx++;
             break;
         case CharType::Semicolumn:
@@ -225,6 +227,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
 }
 void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
+    tokenList.ResetLastTokenID(TokenType::None);
     Tokenize(text, tokenList);
 }
 } // namespace GView::Type::CPP

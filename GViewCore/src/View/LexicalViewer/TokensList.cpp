@@ -86,6 +86,8 @@ Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color,
     cToken.align     = align;
     cToken.dataType  = dataType;
 
+    this->lastTokenID = typeID;
+
     return Token(this->data, itemsCount);
 }
 Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
