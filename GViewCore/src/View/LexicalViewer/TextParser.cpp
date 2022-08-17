@@ -173,7 +173,7 @@ uint32 TextParser::ParseTillText(uint32 index, string_view textToFind, bool igno
         return size;
     if (textToFind.size() == 0)
         return index;
-    const char16* p        = this->text;
+    const char16* p        = this->text + index;
     const char16* e        = (this->text + (size_t) size) - textToFind.size();
     const uint8* txt_start = (const uint8*) textToFind.data();
     const uint8* txt_end   = txt_start + textToFind.size();

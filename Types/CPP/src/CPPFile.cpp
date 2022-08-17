@@ -87,7 +87,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
-    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word, TokenAlignament::SpaceOnRight);
+    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -153,7 +153,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx = next;
             break;
         case CharType::Comment:
-            next = std::max<>(text.ParseTillText(idx, "*/", false) + 2U /*size of "\*\/" */, len);
+            next = std::min<>(text.ParseTillText(idx, "*/", false) + 2U /*size of "\*\/" */, len);
             tokenList.Add(TokenType::Comment, idx, next, TokenColor::Comment, TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
             idx = next;
             break;
@@ -192,7 +192,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx = next;
             break;
         case CharType::Comma:
-            tokenList.Add(TokenType::Comma, idx, idx + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::SpaceOnLeft|TokenAlignament::SpaceOnRight);
             idx++;
             break;
         case CharType::Semicolumn:
