@@ -10,7 +10,12 @@ namespace Type
     {
         class CPPFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
-
+            uint32 TokenizeWord(
+                  const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
+            uint32 TokenizeOperator(
+                  const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
+            uint32 TokenizePreprocessDirective(const GView::View::LexicalViewer::TextParser& text, uint32 pos);
+            void Tokenize(const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& list);
           public:
             CPPFile();
             virtual ~CPPFile()
