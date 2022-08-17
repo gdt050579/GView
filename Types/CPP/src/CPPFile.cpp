@@ -101,14 +101,14 @@ uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::Te
     auto next = text.ParseTillEndOfLine(pos);
 
     // check for multi-line format
-    if ((next > 0) && (text[next - 1] == '/'))
+    if ((next > 0) && (text[next - 1] == '\\'))
     {
         pos = text.ParseTillStartOfNextLine(next); // skip CR, CRLF, LF or LFCRif any
         // repeat the flow
         while (true)
         {
             next = text.ParseTillEndOfLine(next);
-            if ((next > 0) && (text[next - 1] == '/'))
+            if ((next > 0) && (text[next - 1] == '\\'))
             {
                 next = text.ParseTillStartOfNextLine(next);
                 continue;
