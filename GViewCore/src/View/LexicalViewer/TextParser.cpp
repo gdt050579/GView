@@ -42,7 +42,7 @@ TextParser::TextParser(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-uint32 TextParser::ParseTillNextLine(uint32 index) const
+uint32 TextParser::ParseTillEndOfLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -51,6 +51,27 @@ uint32 TextParser::ParseTillNextLine(uint32 index) const
     {
         index++;
         p++;
+    }
+    return index;
+}
+uint32 TextParser::ParseTillStartOfNextLine(uint32 index) const
+{
+    if (index >= size)
+        return size;
+    auto* p = text + index;
+    while ((index < size) && ((*p) != '\n') && ((*p) != '\r'))
+    {
+        index++;
+        p++;
+    }
+    // skip new line
+    if ((index < size) && (((*p == '\n')) || ((*p) == '\r')))
+    {
+        auto current = *p;
+        index++;
+        p++;
+        if ((index < size) && (((*p == '\n')) || ((*p) == '\r')) && ((*p) != current))
+            index++; // CRLF or LFCR cases
     }
     return index;
 }

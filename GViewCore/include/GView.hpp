@@ -775,7 +775,8 @@ namespace View
                     return text[index];
                 return 0;
             }
-            uint32 ParseTillNextLine(uint32 index) const;
+            uint32 ParseTillEndOfLine(uint32 index) const;
+            uint32 ParseTillStartOfNextLine(uint32 index) const;
             uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
