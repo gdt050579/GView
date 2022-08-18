@@ -88,7 +88,10 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
-    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word);
+    auto align = TokenAlignament::None;
+    if (tokenList.GetLastTokenID() == TokenType::Word)
+        align = TokenAlignament::SpaceOnLeft;
+    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word, align);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -150,12 +153,24 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::SingleLineComment:
             next = text.ParseTillEndOfLine(idx);
-            tokenList.Add(TokenType::Comment, idx, next, TokenColor::Comment, TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+            tokenList.Add(
+                  TokenType::Comment,
+                  idx,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             idx = next;
             break;
         case CharType::Comment:
             next = std::min<>(text.ParseTillText(idx, "*/", false) + 2U /*size of "\*\/" */, len);
-            tokenList.Add(TokenType::Comment, idx, next, TokenColor::Comment, TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
+            tokenList.Add(
+                  TokenType::Comment,
+                  idx,
+                  next,
+                  TokenColor::Comment,
+                  TokenDataType::MetaInformation,
+                  TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
             idx = next;
             break;
         case CharType::ArrayOpen:
@@ -208,6 +223,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx,
                   next,
                   TokenColor::Preprocesor,
+                  TokenDataType::MetaInformation,
                   TokenAlignament::NewLineAfter | TokenAlignament::NewLineBefore);
             idx = next;
             break;
