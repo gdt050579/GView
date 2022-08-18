@@ -7,7 +7,7 @@ def GetCharType(ch):
 		return "Space"
 	if ch=='#':
 		return "Preprocess"
-	if ch in "!%+-=^&|*:?~\/":
+	if ch in "!%+-=^&|*:?~\/><":
 		return "Operator"
 	if ch == '{':
 		return "BlockOpen"

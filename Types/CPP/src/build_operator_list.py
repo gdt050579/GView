@@ -25,7 +25,7 @@ op = {
 	"?"	:"CONDITION",
 	":"	:"TWO_POINTS",
 	"::"	:"NAMESPACE",
-	"+="	:"PLUS_EQ'",
+	"+="	:"PLUS_EQ",
 	"-="	:"MINUS_EQ",
 	"*="	:"MUL_EQ",
 	"/="	:"DIV_EQ",
@@ -72,19 +72,21 @@ def ComputeHashes():
 def CreateHashTable():
 	global op
 	devider = ComputeHashes()
-	l = ["Invalid"]*devider
+	l = ["None"]*devider
 	s = ""
 	op_id = 100
 	for k in op:
 		l[ComputeHash(k,devider)] = "Operator"+op[k]	
 		s += "constexpr uint32 Operator"+op[k]+" = "+str(op_id)+";\n"
 		op_id+=1
-		                                                	
+		        
+	s+="namespace Operators {\n"                                        	
 	s+= "constexpr uint32 HASH_DEVIDER = "+str(devider)+";\n"
 	s+= "uint32 operator_hash_table[HASH_DEVIDER] = {";
 	for k in l:
-		s+=k+","
-	s = s[:-1]+"];\n"
+		s+="TokenType::"+k+","
+	s = s[:-1]+"};\n"	
+	s+="}\n"
 	print(s)
 	
 CreateHashTable()
