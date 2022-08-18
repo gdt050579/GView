@@ -775,6 +775,12 @@ namespace View
                     return text[index];
                 return 0;
             }
+            inline u16string_view GetSubString(uint32 start, uint32 end) const
+            {
+                if ((start < end) && (end <= size))
+                    return u16string_view{ text + start, (size_t)(end-start) };
+                return u16string_view();
+            }
             uint32 ParseTillEndOfLine(uint32 index) const;
             uint32 ParseTillStartOfNextLine(uint32 index) const;
             uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
