@@ -340,19 +340,19 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
 }
 uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::TextParser& text, uint32 pos)
 {
-    auto next = text.ParseTillEndOfLine(pos);
+    auto next = text.ParseUntillEndOfLine(pos);
 
     // check for multi-line format
     if ((next > 0) && (text[next - 1] == '\\'))
     {
-        pos = text.ParseTillStartOfNextLine(next); // skip CR, CRLF, LF or LFCRif any
+        pos = text.ParseUntillStartOfNextLine(next); // skip CR, CRLF, LF or LFCRif any
         // repeat the flow
         while (true)
         {
-            next = text.ParseTillEndOfLine(next);
+            next = text.ParseUntillEndOfLine(next);
             if ((next > 0) && (text[next - 1] == '\\'))
             {
-                next = text.ParseTillStartOfNextLine(next);
+                next = text.ParseUntillStartOfNextLine(next);
                 continue;
             }
             break;
@@ -390,7 +390,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx = text.ParseSpace(idx, SpaceType::All);
             break;
         case CharType::SingleLineComment:
-            next = text.ParseTillEndOfLine(idx);
+            next = text.ParseUntillEndOfLine(idx);
             tokenList.Add(
                   TokenType::Comment,
                   idx,
@@ -401,7 +401,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx = next;
             break;
         case CharType::Comment:
-            next = std::min<>(text.ParseTillText(idx, "*/", false) + 2U /*size of "\*\/" */, len);
+            next = text.ParseUntilNextCharacterAfterText(idx, "*/", false);
             tokenList.Add(
                   TokenType::Comment,
                   idx,
