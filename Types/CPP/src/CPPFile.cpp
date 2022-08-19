@@ -62,7 +62,7 @@ namespace OperatorType
     constexpr uint32 RightShiftEQ = 36;
     constexpr uint32 LeftShiftEQ  = 37;
     constexpr uint32 Spaceship    = 38;
-}
+} // namespace OperatorType
 namespace Operators
 {
     constexpr uint32 HASH_DEVIDER            = 134;
@@ -244,6 +244,54 @@ namespace Operators
         return false; // invalid operator
     }
 }; // namespace Operators
+struct HashText
+{
+    uint32 hash;
+    uint32 id;
+};
+HashText* BinarySearch(uint32 hash, HashText* list, int32 elementsCount)
+{
+    if (elementsCount <= 0)
+        return nullptr;
+    auto start = 0;
+    auto end   = elementsCount - 1;
+    while (start<=end)
+    {
+        auto mij   = (start + end) >> 1;
+        auto h_mij = list[mij].hash;
+        if (hash<h_mij)
+        {
+            end = mij - 1;
+            continue;
+        }
+        if (hash>h_mij)
+        {
+            start = mij + 1;
+            continue;
+        }
+        return list + mij;
+    }
+    return nullptr;
+}
+
+namespace KeywordsType
+{
+    constexpr uint32 While = 0;
+    constexpr uint32 If    = 1;
+    constexpr uint32 Do    = 2;
+} // namespace KeywordsType
+namespace Keyword
+{
+    HashText list[] = {
+        { 0x0DC628CE, KeywordsType::While },
+        { 0x39386E06, KeywordsType::If },
+        { 0x621CD814, KeywordsType::Do },
+    };
+    HashText* TextToKeywordID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
+    {
+        return BinarySearch(text.ComputeHash32(start, end, true), list, 3);
+    };
+} // namespace Keyword
 
 namespace CharType
 {
@@ -323,10 +371,10 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
     uint32 tokenType, sz;
     if (Operators::TextToOperatorID(txt.data(), (uint32) txt.size(), tokenType, sz))
     {
-        TokenAlignament align = TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight;        
+        TokenAlignament align = TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight;
         auto opType           = tokenType >> 16;
-        if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) ||
-            (opType == OperatorType::MemberAccess) || (opType == OperatorType::TWO_POINTS))
+        if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
+            (opType == OperatorType::TWO_POINTS))
             align = TokenAlignament::None;
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, align);
         return pos + sz;
@@ -433,7 +481,11 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::BlockClose:
             tokenList.Add(
-                  TokenType::BlockClose, idx, idx + 1, TokenColor::Operator, TokenAlignament::StartsOnNewLine|TokenAlignament::NewLineAfter);
+                  TokenType::BlockClose,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter);
             idx++;
             break;
         case CharType::Number:
