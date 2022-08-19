@@ -218,10 +218,11 @@ void Instance::ComputeOriginalPositions()
 }
 void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
 {
-    auto x     = leftMargin;
-    auto y     = topMargin;
-    auto lastY = topMargin;
-    auto idx   = idxStart;
+    auto x          = leftMargin;
+    auto y          = topMargin;
+    auto lastY      = topMargin;
+    auto idx        = idxStart;
+    auto spaceAdded = true;
     // skip to the first visible
     for (; idx < idxEnd; idx++)
     {
@@ -230,29 +231,54 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             continue;
         if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
         {
-            x = leftMargin;
+            x          = leftMargin;
+            spaceAdded = true;
             if (y == lastY)
                 y += 2;
             else
-                y++;            
+                y++;
         }
         if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x > leftMargin))
         {
-            x = leftMargin;
+            x          = leftMargin;
+            spaceAdded = true;
             y++;
         }
-        if (((tok.align & TokenAlignament::SpaceOnLeft) != TokenAlignament::None) && (x > leftMargin))
+        if ((tok.align & TokenAlignament::ImediatellyAfterPreviousToken) != TokenAlignament::None)
+        {
+            if (y == lastY)
+            {
+                if ((spaceAdded) && (x > leftMargin))
+                    x--;
+            }
+            else
+            {
+                if (idx>idxStart)
+                {
+                    auto& previous = tokens[idx - 1];
+                    y              = previous.y + previous.height - 1;
+                    x              = previous.x + previous.width;
+                }
+            }
+        }
+        if (((tok.align & TokenAlignament::SpaceOnLeft) != TokenAlignament::None) && (!spaceAdded))
             x++;
+
         tok.x = x;
         tok.y = y;
         lastY = y;
         x += tok.width;
         y += tok.height - 1;
+        spaceAdded = false;
         if ((tok.align & TokenAlignament::SpaceOnRight) != TokenAlignament::None)
+        {
             x++;
+            spaceAdded = true;
+        }
         if ((tok.align & TokenAlignament::NewLineAfter) != TokenAlignament::None)
         {
-            x = leftMargin;
+            x          = leftMargin;
+            spaceAdded = true;
             y++;
         }
     }

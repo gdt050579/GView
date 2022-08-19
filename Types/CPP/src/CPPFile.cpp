@@ -585,7 +585,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         else
         {
             tokColor = TokenColor::Constant;
-            align    = TokenAlignament::SpaceOnRight|TokenAlignament::SpaceOnLeft;
+            align    = TokenAlignament::SpaceOnLeft;
         }
     }
     else
@@ -593,8 +593,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         tokColor = TokenColor::Keyword;
         align    = TokenAlignament::SpaceOnRight | TokenAlignament::SpaceOnLeft;
     }
-    if (tokenList.GetLastTokenID() == TokenType::Word)
-        align = TokenAlignament::SpaceOnLeft;
+
     tokenList.Add(tokType, pos, next, tokColor, align);
     return next;
 }
@@ -610,6 +609,8 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
         if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
             (opType == OperatorType::TWO_POINTS))
             align = TokenAlignament::None;
+        if (opType == OperatorType::Pointer)
+            align = TokenAlignament::ImediatellyAfterPreviousToken;
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, align);
         return pos + sz;
     }
@@ -710,7 +711,8 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx++;
             break;
         case CharType::BlockOpen:
-            tokenList.Add(TokenType::BlockOpen, idx, idx + 1, TokenColor::Operator, TokenAlignament::NewLineAfter);
+            tokenList.Add(
+                  TokenType::BlockOpen, idx, idx + 1, TokenColor::Operator, TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
             idx++;
             break;
         case CharType::BlockClose:
@@ -738,7 +740,12 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx++;
             break;
         case CharType::Semicolumn:
-            tokenList.Add(TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::NewLineAfter);
+            tokenList.Add(
+                  TokenType::Comma,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenAlignament::NewLineAfter | TokenAlignament::ImediatellyAfterPreviousToken);
             idx++;
             break;
         case CharType::Preprocess:
