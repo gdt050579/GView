@@ -19,82 +19,85 @@ namespace TokenType
     constexpr uint32 Semicolumn      = 10;
     constexpr uint32 Preprocess      = 11;
     constexpr uint32 Word            = 12;
-    // Operators
-    constexpr uint32 OperatorBIGGER         = 100;
-    constexpr uint32 OperatorSMALLER        = 101;
-    constexpr uint32 OperatorASSIGN         = 102;
-    constexpr uint32 OperatorBIGGER_EQ      = 103;
-    constexpr uint32 OperatorSMALLER_EQ     = 104;
-    constexpr uint32 OperatorEQUAL          = 105;
-    constexpr uint32 OperatorDIFFERENT      = 106;
-    constexpr uint32 OperatorPLUS           = 107;
-    constexpr uint32 OperatorMINUS          = 108;
-    constexpr uint32 OperatorMULTIPLY       = 109;
-    constexpr uint32 OperatorDIVISION       = 110;
-    constexpr uint32 OperatorMODULO         = 111;
-    constexpr uint32 OperatorMEMBER         = 112;
-    constexpr uint32 OperatorPOINTER        = 113;
-    constexpr uint32 OperatorINCREMENT      = 114;
-    constexpr uint32 OperatorDECREMENT      = 115;
-    constexpr uint32 OperatorLOGIC_AND      = 116;
-    constexpr uint32 OperatorLOGIC_OR       = 117;
-    constexpr uint32 OperatorAND            = 118;
-    constexpr uint32 OperatorOR             = 119;
-    constexpr uint32 OperatorXOR            = 120;
-    constexpr uint32 OperatorLOGIC_NOT      = 121;
-    constexpr uint32 OperatorNOT            = 122;
-    constexpr uint32 OperatorCONDITION      = 123;
-    constexpr uint32 OperatorTWO_POINTS     = 124;
-    constexpr uint32 OperatorNAMESPACE      = 125;
-    constexpr uint32 OperatorPLUS_EQ        = 126;
-    constexpr uint32 OperatorMINUS_EQ       = 127;
-    constexpr uint32 OperatorMUL_EQ         = 128;
-    constexpr uint32 OperatorDIV_EQ         = 129;
-    constexpr uint32 OperatorMODULO_EQ      = 130;
-    constexpr uint32 OperatorAND_EQ         = 131;
-    constexpr uint32 OperatorOR_EQ          = 132;
-    constexpr uint32 OperatorXOR_EQ         = 133;
-    constexpr uint32 OperatorLEFT_SHIFT     = 134;
-    constexpr uint32 OperatorRIGHT_SHIFT    = 135;
-    constexpr uint32 OperatorRIGHT_SHIFT_EQ = 136;
-    constexpr uint32 OperatorLEFT_SHIFT_EQ  = 137;
-    constexpr uint32 OperatorSPACESHIP      = 138;
+    constexpr uint32 Operator        = 13;
 } // namespace TokenType
+namespace OperatorType
+{
+    constexpr uint32 Bigger       = 0;
+    constexpr uint32 Smaller      = 1;
+    constexpr uint32 Assign       = 2;
+    constexpr uint32 BiggerOrEq   = 3;
+    constexpr uint32 SmallerOrEQ  = 4;
+    constexpr uint32 Equal        = 5;
+    constexpr uint32 Different    = 6;
+    constexpr uint32 Plus         = 7;
+    constexpr uint32 Minus        = 8;
+    constexpr uint32 Multiply     = 9;
+    constexpr uint32 Division     = 10;
+    constexpr uint32 Modulo       = 11;
+    constexpr uint32 MemberAccess = 12;
+    constexpr uint32 Pointer      = 13;
+    constexpr uint32 Increment    = 14;
+    constexpr uint32 Decrement    = 15;
+    constexpr uint32 LogicAND     = 16;
+    constexpr uint32 LogicOR      = 17;
+    constexpr uint32 AND          = 18;
+    constexpr uint32 OR           = 19;
+    constexpr uint32 XOR          = 20;
+    constexpr uint32 LogicNOT     = 21;
+    constexpr uint32 NOT          = 22;
+    constexpr uint32 Condition    = 23;
+    constexpr uint32 TWO_POINTS   = 24;
+    constexpr uint32 Namespace    = 25;
+    constexpr uint32 PlusEQ       = 26;
+    constexpr uint32 MinusEQ      = 27;
+    constexpr uint32 MupliplyEQ   = 28;
+    constexpr uint32 DivisionEQ   = 29;
+    constexpr uint32 ModuloEQ     = 30;
+    constexpr uint32 AndEQ        = 31;
+    constexpr uint32 OrEQ         = 32;
+    constexpr uint32 XorEQ        = 33;
+    constexpr uint32 LeftShift    = 34;
+    constexpr uint32 RightShift   = 35;
+    constexpr uint32 RightShiftEQ = 36;
+    constexpr uint32 LeftShiftEQ  = 37;
+    constexpr uint32 Spaceship    = 38;
+}
 namespace Operators
 {
     constexpr uint32 HASH_DEVIDER            = 134;
     uint32 operator_hash_table[HASH_DEVIDER] = { TokenType::None,
-                                                 TokenType::OperatorLOGIC_NOT,
+                                                 TokenType::Operator | (OperatorType::LogicNOT << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorXOR_EQ,
+                                                 TokenType::Operator | (OperatorType::XorEQ << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorMODULO,
-                                                 TokenType::OperatorAND,
+                                                 TokenType::Operator | (OperatorType::Modulo << 16),
+                                                 TokenType::Operator | (OperatorType::AND << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorMULTIPLY,
-                                                 TokenType::OperatorPLUS,
+                                                 TokenType::Operator | (OperatorType::Multiply << 16),
+                                                 TokenType::Operator | (OperatorType::Plus << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorMINUS,
-                                                 TokenType::OperatorMEMBER,
-                                                 TokenType::OperatorDIVISION,
-                                                 TokenType::OperatorSPACESHIP,
+                                                 TokenType::Operator | (OperatorType::Minus << 16),
+                                                 TokenType::Operator | (OperatorType::MemberAccess << 16),
+                                                 TokenType::Operator | (OperatorType::Division << 16),
+                                                 TokenType::Operator | (OperatorType::Spaceship << 16),
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorEQUAL,
+                                                 TokenType::Operator | (OperatorType::Equal << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorOR_EQ,
-                                                 TokenType::OperatorTWO_POINTS,
-                                                 TokenType::OperatorDECREMENT,
-                                                 TokenType::OperatorSMALLER,
-                                                 TokenType::OperatorASSIGN,
-                                                 TokenType::OperatorBIGGER,
-                                                 TokenType::OperatorCONDITION,
+                                                 TokenType::Operator | (OperatorType::OrEQ << 16),
+                                                 TokenType::Operator | (OperatorType::TWO_POINTS << 16),
+                                                 TokenType::Operator | (OperatorType::Decrement << 16),
+                                                 TokenType::Operator | (OperatorType::Smaller << 16),
+                                                 TokenType::Operator | (OperatorType::Assign << 16),
+                                                 TokenType::Operator | (OperatorType::Bigger << 16),
+                                                 TokenType::Operator | (OperatorType::Condition << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
@@ -106,28 +109,28 @@ namespace Operators
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorMINUS_EQ,
-                                                 TokenType::OperatorPOINTER,
+                                                 TokenType::Operator | (OperatorType::MinusEQ << 16),
+                                                 TokenType::Operator | (OperatorType::Pointer << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorBIGGER_EQ,
-                                                 TokenType::OperatorRIGHT_SHIFT,
+                                                 TokenType::Operator | (OperatorType::BiggerOrEq << 16),
+                                                 TokenType::Operator | (OperatorType::RightShift << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorNAMESPACE,
-                                                 TokenType::OperatorMODULO_EQ,
+                                                 TokenType::Operator | (OperatorType::Namespace << 16),
+                                                 TokenType::Operator | (OperatorType::ModuloEQ << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorDIFFERENT,
-                                                 TokenType::OperatorXOR,
+                                                 TokenType::Operator | (OperatorType::Different << 16),
+                                                 TokenType::Operator | (OperatorType::XOR << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorLOGIC_AND,
+                                                 TokenType::Operator | (OperatorType::LogicAND << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
@@ -144,21 +147,21 @@ namespace Operators
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorMUL_EQ,
+                                                 TokenType::Operator | (OperatorType::MupliplyEQ << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorRIGHT_SHIFT_EQ,
+                                                 TokenType::Operator | (OperatorType::RightShiftEQ << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorAND_EQ,
-                                                 TokenType::OperatorLOGIC_OR,
+                                                 TokenType::Operator | (OperatorType::AndEQ << 16),
+                                                 TokenType::Operator | (OperatorType::LogicOR << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorOR,
+                                                 TokenType::Operator | (OperatorType::OR << 16),
                                                  TokenType::None,
-                                                 TokenType::OperatorNOT,
-                                                 TokenType::OperatorINCREMENT,
+                                                 TokenType::Operator | (OperatorType::NOT << 16),
+                                                 TokenType::Operator | (OperatorType::Increment << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
@@ -170,21 +173,21 @@ namespace Operators
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorDIV_EQ,
+                                                 TokenType::Operator | (OperatorType::DivisionEQ << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorPLUS_EQ,
+                                                 TokenType::Operator | (OperatorType::PlusEQ << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorLEFT_SHIFT_EQ,
+                                                 TokenType::Operator | (OperatorType::LeftShiftEQ << 16),
                                                  TokenType::None,
                                                  TokenType::None,
-                                                 TokenType::OperatorLEFT_SHIFT,
-                                                 TokenType::OperatorSMALLER_EQ,
+                                                 TokenType::Operator | (OperatorType::LeftShift << 16),
+                                                 TokenType::Operator | (OperatorType::SmallerOrEQ << 16),
                                                  TokenType::None,
                                                  TokenType::None,
                                                  TokenType::None,
@@ -318,11 +321,12 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
     auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
     auto txt  = text.GetSubString(pos, next);
     uint32 tokenType, sz;
-    if (Operators::TextToOperatorID(txt.data(),(uint32)txt.size(),tokenType,sz))
+    if (Operators::TextToOperatorID(txt.data(), (uint32) txt.size(), tokenType, sz))
     {
-        TokenAlignament align = TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight;
-        if ((tokenType == TokenType::OperatorNAMESPACE) || (tokenType == TokenType::OperatorPOINTER) ||
-            (tokenType == TokenType::OperatorMEMBER) || (tokenType == TokenType::OperatorTWO_POINTS))
+        TokenAlignament align = TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight;        
+        auto opType           = tokenType >> 16;
+        if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) ||
+            (opType == OperatorType::MemberAccess) || (opType == OperatorType::TWO_POINTS))
             align = TokenAlignament::None;
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, align);
         return pos + sz;

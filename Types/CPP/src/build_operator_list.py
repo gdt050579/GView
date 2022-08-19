@@ -1,43 +1,43 @@
 op = {
-	">"	:"BIGGER",
-	"<"	:"SMALLER",
-	"="	:"ASSIGN",
-	">="	:"BIGGER_EQ",
-	"<="	:"SMALLER_EQ",
-	"=="	:"EQUAL",
-	"!="	:"DIFFERENT",
-	"+"	:"PLUS",
-	"-"	:"MINUS",
-	"*"	:"MULTIPLY",
-	"/"	:"DIVISION",
-	"%"	:"MODULO",
-	"."	:"MEMBER",
-	"->"	:"POINTER",
-	"++"	:"INCREMENT",
-	"--"	:"DECREMENT",
-	"&&"	:"LOGIC_AND",
-	"||"	:"LOGIC_OR",
+	">"	:"Bigger",
+	"<"	:"Smaller",
+	"="	:"Assign",
+	">="	:"BiggerOrEq",
+	"<="	:"SmallerOrEQ",
+	"=="	:"Equal",
+	"!="	:"Different",
+	"+"	:"Plus",
+	"-"	:"Minus",
+	"*"	:"Multiply",
+	"/"	:"Division",
+	"%"	:"Modulo",
+	"."	:"MemberAccess",
+	"->"	:"Pointer",
+	"++"	:"Increment",
+	"--"	:"Decrement",
+	"&&"	:"LogicAND",
+	"||"	:"LogicOR",
 	"&"	:"AND",
 	"|"	:"OR",
 	"^"	:"XOR",
-	"!"	:"LOGIC_NOT",
+	"!"	:"LogicNOT",
 	"~"	:"NOT",
-	"?"	:"CONDITION",
+	"?"	:"Condition",
 	":"	:"TWO_POINTS",
-	"::"	:"NAMESPACE",
-	"+="	:"PLUS_EQ",
-	"-="	:"MINUS_EQ",
-	"*="	:"MUL_EQ",
-	"/="	:"DIV_EQ",
-	"%="	:"MODULO_EQ",
-	"&="	:"AND_EQ",
-	"|="	:"OR_EQ",
-	"^="	:"XOR_EQ",
-	"<<"	:"LEFT_SHIFT",
-	">>"	:"RIGHT_SHIFT",
-	">>="	:"RIGHT_SHIFT_EQ",
-	"<<="	:"LEFT_SHIFT_EQ",
-	"<=>"	:"SPACESHIP"
+	"::"	:"Namespace",
+	"+="	:"PlusEQ",
+	"-="	:"MinusEQ",
+	"*="	:"MupliplyEQ",
+	"/="	:"DivisionEQ",
+	"%="	:"ModuloEQ",
+	"&="	:"AndEQ",
+	"|="	:"OrEQ",
+	"^="	:"XorEQ",
+	"<<"	:"LeftShift",
+	">>"	:"RightShift",
+	">>="	:"RightShiftEQ",
+	"<<="	:"LeftShiftEQ",
+	"<=>"	:"Spaceship"
 }
 
 
@@ -73,18 +73,21 @@ def CreateHashTable():
 	global op
 	devider = ComputeHashes()
 	l = ["None"]*devider
-	s = ""
-	op_id = 100
+	s = "namespace OperatorType {\n"
+	op_id = 0
 	for k in op:
-		l[ComputeHash(k,devider)] = "Operator"+op[k]	
-		s += "constexpr uint32 Operator"+op[k]+" = "+str(op_id)+";\n"
+		l[ComputeHash(k,devider)] = op[k]	
+		s += "constexpr uint32 "+op[k]+" = "+str(op_id)+";\n"
 		op_id+=1
-		        
+	s+="}\n"		        
 	s+="namespace Operators {\n"                                        	
 	s+= "constexpr uint32 HASH_DEVIDER = "+str(devider)+";\n"
 	s+= "uint32 operator_hash_table[HASH_DEVIDER] = {";
 	for k in l:
-		s+="TokenType::"+k+","
+		if k=="None":
+			s+="TokenType::None,"
+		else:
+			s+="TokenType::Operator | (OperatorType::"+k+"<<16),"
 	s = s[:-1]+"};\n"	
 	s+="}\n"
 	print(s)
