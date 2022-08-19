@@ -432,7 +432,8 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx++;
             break;
         case CharType::BlockClose:
-            tokenList.Add(TokenType::BlockClose, idx, idx + 1, TokenColor::Operator, TokenAlignament::NewLineAfter);
+            tokenList.Add(
+                  TokenType::BlockClose, idx, idx + 1, TokenColor::Operator, TokenAlignament::StartsOnNewLine|TokenAlignament::NewLineAfter);
             idx++;
             break;
         case CharType::Number:
