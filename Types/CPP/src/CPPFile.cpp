@@ -21,6 +21,7 @@ namespace TokenType
     constexpr uint32 Word            = 12;
     constexpr uint32 Operator        = 13;
     constexpr uint32 Keyword         = 14;
+    constexpr uint32 Constant        = 15;
 } // namespace TokenType
 namespace OperatorType
 {
@@ -403,7 +404,31 @@ namespace Keyword
             return TokenType::None;
         return TokenType::Keyword | (res->id << 16);
     };
+} // namespace Keyword
+namespace ConstantsType
+{
+    constexpr uint32 False   = 0;
+    constexpr uint32 Nullptr = 1;
+    constexpr uint32 True    = 2;
+    constexpr uint32 Null    = 3;
+} // namespace ConstantsType
+namespace Constant
+{
+    HashText list[] = {
+        { 0x0B069958, ConstantsType::False },
+        { 0x0BBDE79E, ConstantsType::Nullptr },
+        { 0x4DB211E5, ConstantsType::True },
+        { 0x77074BA4, ConstantsType::Null },
+    };
+    uint32 TextToConstantID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
+    {
+        auto* res = BinarySearch(text.ComputeHash32(start, end, true), list, 4);
+        if (res == nullptr)
+            return TokenType::None;
+        return TokenType::Constant | (res->id << 16);
+    };
 }
+
 
 
 
@@ -474,11 +499,25 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
           });
     auto tokColor = TokenColor::Word;
     auto tokType  = Keyword::TextToKeywordID(text, pos, next);
+    auto align    = TokenAlignament::None;
     if (tokType == TokenType::None)
-        tokType = TokenType::Word;
+    {
+        tokType = Constant::TextToConstantID(text, pos, next);
+        if (tokType == TokenType::None)
+        {
+            tokType = TokenType::Word;
+        }
+        else
+        {
+            tokColor = TokenColor::Constant;
+            align    = TokenAlignament::SpaceOnRight|TokenAlignament::SpaceOnLeft;
+        }
+    }
     else
+    {
         tokColor = TokenColor::Keyword;
-    auto align = TokenAlignament::None;
+        align    = TokenAlignament::SpaceOnRight | TokenAlignament::SpaceOnLeft;
+    }
     if (tokenList.GetLastTokenID() == TokenType::Word)
         align = TokenAlignament::SpaceOnLeft;
     tokenList.Add(tokType, pos, next, tokColor, align);
