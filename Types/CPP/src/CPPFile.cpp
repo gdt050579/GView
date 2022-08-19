@@ -20,6 +20,7 @@ namespace TokenType
     constexpr uint32 Preprocess      = 11;
     constexpr uint32 Word            = 12;
     constexpr uint32 Operator        = 13;
+    constexpr uint32 Keyword         = 14;
 } // namespace TokenType
 namespace OperatorType
 {
@@ -255,16 +256,16 @@ HashText* BinarySearch(uint32 hash, HashText* list, int32 elementsCount)
         return nullptr;
     auto start = 0;
     auto end   = elementsCount - 1;
-    while (start<=end)
+    while (start <= end)
     {
         auto mij   = (start + end) >> 1;
         auto h_mij = list[mij].hash;
-        if (hash<h_mij)
+        if (hash < h_mij)
         {
             end = mij - 1;
             continue;
         }
-        if (hash>h_mij)
+        if (hash > h_mij)
         {
             start = mij + 1;
             continue;
@@ -276,22 +277,135 @@ HashText* BinarySearch(uint32 hash, HashText* list, int32 elementsCount)
 
 namespace KeywordsType
 {
-    constexpr uint32 While = 0;
-    constexpr uint32 If    = 1;
-    constexpr uint32 Do    = 2;
+    constexpr uint32 Atomic_commit            = 0;
+    constexpr uint32 While                    = 1;
+    constexpr uint32 Import                   = 2;
+    constexpr uint32 Reinterpret_cast         = 3;
+    constexpr uint32 Asm                      = 4;
+    constexpr uint32 Final                    = 5;
+    constexpr uint32 Typename                 = 6;
+    constexpr uint32 Protected                = 7;
+    constexpr uint32 Typedef                  = 8;
+    constexpr uint32 New                      = 9;
+    constexpr uint32 Register                 = 10;
+    constexpr uint32 If                       = 11;
+    constexpr uint32 Mutable                  = 12;
+    constexpr uint32 Catch                    = 13;
+    constexpr uint32 Const_cast               = 14;
+    constexpr uint32 Reflexpr                 = 15;
+    constexpr uint32 Constexpr                = 16;
+    constexpr uint32 Virtual                  = 17;
+    constexpr uint32 Noexcept                 = 18;
+    constexpr uint32 Do                       = 19;
+    constexpr uint32 Private                  = 20;
+    constexpr uint32 Const                    = 21;
+    constexpr uint32 Dynamic_cast             = 22;
+    constexpr uint32 Delete                   = 23;
+    constexpr uint32 Explicit                 = 24;
+    constexpr uint32 Template                 = 25;
+    constexpr uint32 Using                    = 26;
+    constexpr uint32 Sizeof                   = 27;
+    constexpr uint32 Throw                    = 28;
+    constexpr uint32 Enum                     = 29;
+    constexpr uint32 Return                   = 30;
+    constexpr uint32 Extern                   = 31;
+    constexpr uint32 Auto                     = 32;
+    constexpr uint32 Struct                   = 33;
+    constexpr uint32 Default                  = 34;
+    constexpr uint32 Switch                   = 35;
+    constexpr uint32 Volatile                 = 36;
+    constexpr uint32 Case                     = 37;
+    constexpr uint32 Requires                 = 38;
+    constexpr uint32 Transaction_safe         = 39;
+    constexpr uint32 Concept                  = 40;
+    constexpr uint32 Transaction_safe_dynamic = 41;
+    constexpr uint32 Static_cast              = 42;
+    constexpr uint32 Typeid                   = 43;
+    constexpr uint32 Class                    = 44;
+    constexpr uint32 Try                      = 45;
+    constexpr uint32 For                      = 46;
+    constexpr uint32 Continue                 = 47;
+    constexpr uint32 Else                     = 48;
+    constexpr uint32 Compl                    = 49;
+    constexpr uint32 Decltype                 = 50;
+    constexpr uint32 Inline                   = 51;
+    constexpr uint32 Override                 = 52;
+    constexpr uint32 Consteval                = 53;
+    constexpr uint32 Alignof                  = 54;
+    constexpr uint32 Break                    = 55;
+    constexpr uint32 Namespace                = 56;
+    constexpr uint32 Friend                   = 57;
+    constexpr uint32 Public                   = 58;
+    constexpr uint32 Thread_local             = 59;
+    constexpr uint32 Co_return                = 60;
+    constexpr uint32 Static                   = 61;
+    constexpr uint32 Co_await                 = 62;
+    constexpr uint32 Module                   = 63;
+    constexpr uint32 Atomic_cancel            = 64;
+    constexpr uint32 This                     = 65;
+    constexpr uint32 Union                    = 66;
+    constexpr uint32 Alignas                  = 67;
+    constexpr uint32 Synchronized             = 68;
+    constexpr uint32 Goto                     = 69;
+    constexpr uint32 Constinit                = 70;
+    constexpr uint32 Co_yield                 = 71;
+    constexpr uint32 Export                   = 72;
+    constexpr uint32 Atomic_noexcept          = 73;
+    constexpr uint32 Static_assert            = 74;
+    constexpr uint32 Operator                 = 75;
 } // namespace KeywordsType
 namespace Keyword
 {
     HashText list[] = {
-        { 0x0DC628CE, KeywordsType::While },
-        { 0x39386E06, KeywordsType::If },
-        { 0x621CD814, KeywordsType::Do },
+        { 0x049E68E4, KeywordsType::Atomic_commit }, { 0x0DC628CE, KeywordsType::While },
+        { 0x112A90D4, KeywordsType::Import },        { 0x13251E95, KeywordsType::Reinterpret_cast },
+        { 0x1472C0A0, KeywordsType::Asm },           { 0x159AC2B7, KeywordsType::Final },
+        { 0x19A9984E, KeywordsType::Typename },      { 0x1E54727D, KeywordsType::Protected },
+        { 0x221EDE24, KeywordsType::Typedef },       { 0x28999611, KeywordsType::New },
+        { 0x2D6871C0, KeywordsType::Register },      { 0x39386E06, KeywordsType::If },
+        { 0x3B0333A9, KeywordsType::Mutable },       { 0x4288E94C, KeywordsType::Catch },
+        { 0x44E4E5F2, KeywordsType::Const_cast },    { 0x4ED2A4FD, KeywordsType::Reflexpr },
+        { 0x5AA35603, KeywordsType::Constexpr },     { 0x5D967EBC, KeywordsType::Virtual },
+        { 0x61338257, KeywordsType::Noexcept },      { 0x621CD814, KeywordsType::Do },
+        { 0x62CB0D0C, KeywordsType::Private },       { 0x664FD1D4, KeywordsType::Const },
+        { 0x676A80DC, KeywordsType::Dynamic_cast },  { 0x67C2444A, KeywordsType::Delete },
+        { 0x68E79149, KeywordsType::Explicit },      { 0x694AAA0B, KeywordsType::Template },
+        { 0x69CE1407, KeywordsType::Using },         { 0x6EE13AFD, KeywordsType::Sizeof },
+        { 0x7A78762F, KeywordsType::Throw },         { 0x816CB000, KeywordsType::Enum },
+        { 0x85EE37BF, KeywordsType::Return },        { 0x9087DDB7, KeywordsType::Extern },
+        { 0x923FA396, KeywordsType::Auto },          { 0x92C2BE20, KeywordsType::Struct },
+        { 0x933B5BDE, KeywordsType::Default },       { 0x93E05F71, KeywordsType::Switch },
+        { 0x94E1036D, KeywordsType::Volatile },      { 0x9B2538B1, KeywordsType::Case },
+        { 0x9B8CAA55, KeywordsType::Requires },      { 0xA01A5581, KeywordsType::Transaction_safe },
+        { 0xA3383D13, KeywordsType::Concept },       { 0xA4F6AD07, KeywordsType::Transaction_safe_dynamic },
+        { 0xA7226423, KeywordsType::Static_cast },   { 0xA8953BD8, KeywordsType::Typeid },
+        { 0xAB3E0BFF, KeywordsType::Class },         { 0xAC1DB00E, KeywordsType::Try },
+        { 0xACF38390, KeywordsType::For },           { 0xB1727E44, KeywordsType::Continue },
+        { 0xBDBF5BF0, KeywordsType::Else },          { 0xBEEDB7F2, KeywordsType::Compl },
+        { 0xBEF43EA5, KeywordsType::Decltype },      { 0xC2CB5034, KeywordsType::Inline },
+        { 0xC4B95C3D, KeywordsType::Override },      { 0xC9101B72, KeywordsType::Consteval },
+        { 0xC919731F, KeywordsType::Alignof },       { 0xC9648178, KeywordsType::Break },
+        { 0xCACE7AA0, KeywordsType::Namespace },     { 0xCBA09F8D, KeywordsType::Friend },
+        { 0xCC909380, KeywordsType::Public },        { 0xCD3C1AA1, KeywordsType::Thread_local },
+        { 0xD27D73DE, KeywordsType::Co_return },     { 0xD290C23B, KeywordsType::Static },
+        { 0xD34FD592, KeywordsType::Co_await },      { 0xD79F909D, KeywordsType::Module },
+        { 0xD994FC43, KeywordsType::Atomic_cancel }, { 0xDA2BD281, KeywordsType::This },
+        { 0xDBDED6F4, KeywordsType::Union },         { 0xEC3C3C7A, KeywordsType::Alignas },
+        { 0xF112B61B, KeywordsType::Synchronized },  { 0xF5A30FE6, KeywordsType::Goto },
+        { 0xF6522276, KeywordsType::Constinit },     { 0xF874CA49, KeywordsType::Co_yield },
+        { 0xFB080CB3, KeywordsType::Export },        { 0xFB60E40F, KeywordsType::Atomic_noexcept },
+        { 0xFB9673DE, KeywordsType::Static_assert }, { 0xFBD4EEFD, KeywordsType::Operator },
     };
-    HashText* TextToKeywordID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
+    uint32 TextToKeywordID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
     {
-        return BinarySearch(text.ComputeHash32(start, end, true), list, 3);
+        auto* res = BinarySearch(text.ComputeHash32(start, end, true), list, 76);
+        if (res == nullptr)
+            return TokenType::None;
+        return TokenType::Keyword | (res->id << 16);
     };
-} // namespace Keyword
+}
+
+
 
 namespace CharType
 {
@@ -358,10 +472,16 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
+    auto tokColor = TokenColor::Word;
+    auto tokType  = Keyword::TextToKeywordID(text, pos, next);
+    if (tokType == TokenType::None)
+        tokType = TokenType::Word;
+    else
+        tokColor = TokenColor::Keyword;
     auto align = TokenAlignament::None;
     if (tokenList.GetLastTokenID() == TokenType::Word)
         align = TokenAlignament::SpaceOnLeft;
-    tokenList.Add(TokenType::Word, pos, next, TokenColor::Word, align);
+    tokenList.Add(tokType, pos, next, tokColor, align);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
