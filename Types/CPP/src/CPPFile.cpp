@@ -22,6 +22,7 @@ namespace TokenType
     constexpr uint32 Operator        = 13;
     constexpr uint32 Keyword         = 14;
     constexpr uint32 Constant        = 15;
+    constexpr uint32 Datatype        = 16;
 } // namespace TokenType
 namespace OperatorType
 {
@@ -427,6 +428,71 @@ namespace Constant
             return TokenType::None;
         return TokenType::Constant | (res->id << 16);
     };
+} // namespace Constant
+namespace DatatypesType
+{
+    constexpr uint32 Unsigned       = 0;
+    constexpr uint32 Int16_t        = 1;
+    constexpr uint32 String         = 2;
+    constexpr uint32 String_view    = 3;
+    constexpr uint32 Uint8_t        = 4;
+    constexpr uint32 Int8_t         = 5;
+    constexpr uint32 Void           = 6;
+    constexpr uint32 Wstring_view   = 7;
+    constexpr uint32 Wstring        = 8;
+    constexpr uint32 Char8_t        = 9;
+    constexpr uint32 U16string      = 10;
+    constexpr uint32 Uint64_t       = 11;
+    constexpr uint32 U32string_view = 12;
+    constexpr uint32 Int64_t        = 13;
+    constexpr uint32 Size_t         = 14;
+    constexpr uint32 Char16_t       = 15;
+    constexpr uint32 U32string      = 16;
+    constexpr uint32 Int            = 17;
+    constexpr uint32 Uint16_t       = 18;
+    constexpr uint32 Double         = 19;
+    constexpr uint32 U16string_view = 20;
+    constexpr uint32 Float          = 21;
+    constexpr uint32 Char32_t       = 22;
+    constexpr uint32 Char           = 23;
+    constexpr uint32 Signed         = 24;
+    constexpr uint32 U8string       = 25;
+    constexpr uint32 Short          = 26;
+    constexpr uint32 Int32_t        = 27;
+    constexpr uint32 Long           = 28;
+    constexpr uint32 Wchar_t        = 29;
+    constexpr uint32 Bool           = 30;
+    constexpr uint32 Uint32_t       = 31;
+    constexpr uint32 U8string_view  = 32;
+} // namespace DatatypesType
+namespace Datatype
+{
+    HashText list[] = {
+        { 0x0C547726, DatatypesType::Unsigned },       { 0x0DFE5EDA, DatatypesType::Int16_t },
+        { 0x17C16538, DatatypesType::String },         { 0x210B6458, DatatypesType::String_view },
+        { 0x306340A8, DatatypesType::Uint8_t },        { 0x40FFA2F9, DatatypesType::Int8_t },
+        { 0x48B5725F, DatatypesType::Void },           { 0x504690E9, DatatypesType::Wstring_view },
+        { 0x50736EE7, DatatypesType::Wstring },        { 0x5807E43C, DatatypesType::Char8_t },
+        { 0x5C5F1A4A, DatatypesType::U16string },      { 0x682FE470, DatatypesType::Uint64_t },
+        { 0x7167ED94, DatatypesType::U32string_view }, { 0x7270198F, DatatypesType::Int64_t },
+        { 0x7C6A8FB7, DatatypesType::Size_t },         { 0x801A266D, DatatypesType::Char16_t },
+        { 0x86A803CC, DatatypesType::U32string },      { 0x95E97E5E, DatatypesType::Int },
+        { 0x96C45519, DatatypesType::Uint16_t },       { 0xA0EB0F08, DatatypesType::Double },
+        { 0xA6BB769A, DatatypesType::U16string_view }, { 0xA6C45D85, DatatypesType::Float },
+        { 0xA846FC93, DatatypesType::Char32_t },       { 0xA84C031D, DatatypesType::Char },
+        { 0xB5712015, DatatypesType::Signed },         { 0xB71DD581, DatatypesType::U8string },
+        { 0xBA226BD5, DatatypesType::Short },          { 0xC04A1FBC, DatatypesType::Int32_t },
+        { 0xC2ECDF53, DatatypesType::Long },           { 0xC523B9F1, DatatypesType::Wchar_t },
+        { 0xC894953D, DatatypesType::Bool },           { 0xE9B20787, DatatypesType::Uint32_t },
+        { 0xF277D373, DatatypesType::U8string_view },
+    };
+    uint32 TextToDatatypeID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
+    {
+        auto* res = BinarySearch(text.ComputeHash32(start, end, true), list, 33);
+        if (res == nullptr)
+            return TokenType::None;
+        return TokenType::Datatype | (res->id << 16);
+    };
 }
 
 
@@ -505,7 +571,16 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         tokType = Constant::TextToConstantID(text, pos, next);
         if (tokType == TokenType::None)
         {
-            tokType = TokenType::Word;
+            tokType = Datatype::TextToDatatypeID(text, pos, next);
+            if (tokType == TokenType::None)
+            {
+                tokType = TokenType::Word;
+            }
+            else
+            {
+                tokColor = TokenColor::Datatype;
+                align    = TokenAlignament::SpaceOnRight | TokenAlignament::SpaceOnLeft;
+            }
         }
         else
         {

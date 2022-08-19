@@ -7,7 +7,7 @@ keywords = ["alignas", "alignof", "asm", "atomic_cancel", "atomic_commit", "atom
             "static_cast", "struct", "switch", "synchronized", "template", "this", "thread_local", "throw", "try", "typedef", 
             "typeid", "typename", "union", "using","virtual","volatile","while", "final","override","transaction_safe","transaction_safe_dynamic","import","module"]
 
-data_type = ["bool","char","char8_t","char16_t", "char32_t", "double","float","int","long","short","signed","unsigned","void","wchar_t","size_t","wchar_t",
+data_type = ["bool","char","char8_t","char16_t", "char32_t", "double","float","int","long","short","signed","unsigned","void","size_t","wchar_t",
              "int8_t","int16_t","int32_t","int64_t","uint8_t","uint16_t","uint32_t","uint64_t",
              "string","wstring","u8string","u16string","u32string","string_view","wstring_view","u8string_view","u16string_view","u32string_view"]
 
@@ -48,5 +48,5 @@ def CreateList(l, name):
 	print(s)
 
 #CreateList(keywords,"Keyword")
-#CreateList(data_type,"Datatype")
-CreateList(constants,"Constant")
+CreateList(data_type,"Datatype")
+#CreateList(constants,"Constant")
