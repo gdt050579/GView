@@ -224,7 +224,7 @@ uint32 TextParser::ParseUntilNextCharacterAfterText(uint32 index, string_view te
     auto pos = ParseUntillText(index, textToFind, ignoreCase);
     if (pos >= size)
         return size;
-    return pos + (uint32)textToFind.size();
+    return pos + (uint32) textToFind.size();
 }
 uint32 TextParser::ParseString(uint32 index, StringFormat format) const
 {
@@ -395,21 +395,21 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
     }
     return index;
 }
-uint64 TextParser::ComputeHash64(uint32 start, uint32 end, bool ignoreCase)
+uint64 TextParser::ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
     if ((start >= end) || (end > size))
         return 0;
-    uint64 hash = 0xcbf29ce484222325ULL;
+    uint64 hash   = 0xcbf29ce484222325ULL;
     const auto* p = reinterpret_cast<const uint8*>(text + start);
     const auto* e = reinterpret_cast<const uint8*>(text + end);
     if (ignoreCase)
     {
-        for (;p<e;p++)
+        for (; p < e; p++)
         {
             if ((*p) == 0)
                 continue;
-            if ((*p)<128)
+            if ((*p) < 128)
                 hash = hash ^ (lower_case_table[*p]);
             else
                 hash = hash ^ (*p);
@@ -428,7 +428,7 @@ uint64 TextParser::ComputeHash64(uint32 start, uint32 end, bool ignoreCase)
     }
     return hash;
 }
-uint32 TextParser::ComputeHash32(uint32 start, uint32 end, bool ignoreCase)
+uint32 TextParser::ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
     if ((start >= end) || (end > size))

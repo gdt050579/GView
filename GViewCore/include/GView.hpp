@@ -791,8 +791,8 @@ namespace View
             uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
             uint32 ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const;
             uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
-            uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase);
-            uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase);
+            uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const;
+            uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
         };
         enum class TokenDataType : uint8
         {
