@@ -402,19 +402,31 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         switch (tok.color)
         {
         case TokenColor::Comment:
-            col = Cfg.Text.Inactive;
+            col = ColorPair(Color::Blue, Color::Transparent);
             break;
         case TokenColor::Operator:
-            col = Cfg.Text.Normal;
+            col = ColorPair(Color::Gray, Color::Transparent);
             break;
         case TokenColor::Word:
-            col = Cfg.Text.Highlighted;
+            col = ColorPair(Color::Silver, Color::Transparent);
             break;
         case TokenColor::Keyword:
-            col = Cfg.Text.Focused;
+            col = ColorPair(Color::Yellow, Color::Transparent);
             break;
         case TokenColor::String:
-            col = Cfg.Text.Emphasized1;
+            col = ColorPair(Color::Red, Color::Transparent);
+            break;
+        case TokenColor::Datatype:
+            col = ColorPair(Color::Green, Color::Transparent);
+            break;
+        case TokenColor::Constant:
+            col = ColorPair(Color::Pink, Color::Transparent);
+            break;
+        case TokenColor::Number:
+            col = ColorPair(Color::Teal, Color::Transparent);
+            break;
+        case TokenColor::Preprocesor:
+            col = ColorPair(Color::Olive, Color::Transparent);
             break;
         default:
             col = Cfg.Text.Normal;

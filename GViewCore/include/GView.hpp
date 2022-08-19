@@ -820,8 +820,8 @@ namespace View
             Keyword,
             Constant,
             Word,
-            Macro,
             Preprocesor,
+            Datatype,
             Error,
         };
         class CORE_EXPORT Token
