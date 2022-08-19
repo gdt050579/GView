@@ -42,7 +42,7 @@ TextParser::TextParser(u16string_view _text)
     if (this->text == nullptr)
         this->size = 0; // sanity check
 }
-uint32 TextParser::ParseTillEndOfLine(uint32 index) const
+uint32 TextParser::ParseUntillEndOfLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -54,7 +54,7 @@ uint32 TextParser::ParseTillEndOfLine(uint32 index) const
     }
     return index;
 }
-uint32 TextParser::ParseTillStartOfNextLine(uint32 index) const
+uint32 TextParser::ParseUntillStartOfNextLine(uint32 index) const
 {
     if (index >= size)
         return size;
@@ -165,7 +165,7 @@ uint32 TextParser::ParseSpace(uint32 index, SpaceType type) const
     }
     return index;
 }
-uint32 TextParser::ParseTillText(uint32 index, string_view textToFind, bool ignoreCase) const
+uint32 TextParser::ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const
 {
     if (index >= size)
         return size;
@@ -191,7 +191,7 @@ uint32 TextParser::ParseTillText(uint32 index, string_view textToFind, bool igno
                 if (t == txt_end)
                 {
                     // found one
-                    return (uint32) (c - this->text);
+                    return (uint32) (p - this->text);
                 }
             }
             p++;
@@ -210,7 +210,7 @@ uint32 TextParser::ParseTillText(uint32 index, string_view textToFind, bool igno
                 if (t == txt_end)
                 {
                     // found one
-                    return (uint32) (c - this->text);
+                    return (uint32) (p - this->text);
                 }
             }
             p++;
@@ -218,6 +218,13 @@ uint32 TextParser::ParseTillText(uint32 index, string_view textToFind, bool igno
     }
     // return end of the text
     return size;
+}
+uint32 TextParser::ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const
+{
+    auto pos = ParseUntillText(index, textToFind, ignoreCase);
+    if (pos >= size)
+        return size;
+    return pos + (uint32)textToFind.size();
 }
 uint32 TextParser::ParseString(uint32 index, StringFormat format) const
 {
@@ -387,6 +394,72 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
         break;
     }
     return index;
+}
+uint64 TextParser::ComputeHash64(uint32 start, uint32 end, bool ignoreCase)
+{
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    if ((start >= end) || (end > size))
+        return 0;
+    uint64 hash = 0xcbf29ce484222325ULL;
+    const auto* p = reinterpret_cast<const uint8*>(text + start);
+    const auto* e = reinterpret_cast<const uint8*>(text + end);
+    if (ignoreCase)
+    {
+        for (;p<e;p++)
+        {
+            if ((*p) == 0)
+                continue;
+            if ((*p)<128)
+                hash = hash ^ (lower_case_table[*p]);
+            else
+                hash = hash ^ (*p);
+            hash = hash * 0x00000100000001B3ULL;
+        }
+    }
+    else
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            hash = hash ^ (*p);
+            hash = hash * 0x00000100000001B3ULL;
+        }
+    }
+    return hash;
+}
+uint32 TextParser::ComputeHash32(uint32 start, uint32 end, bool ignoreCase)
+{
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    if ((start >= end) || (end > size))
+        return 0;
+    uint32 hash   = 0x811c9dc5;
+    const auto* p = reinterpret_cast<const uint8*>(text + start);
+    const auto* e = reinterpret_cast<const uint8*>(text + end);
+    if (ignoreCase)
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            if ((*p) < 128)
+                hash = hash ^ (lower_case_table[*p]);
+            else
+                hash = hash ^ (*p);
+            hash = hash * 0x01000193;
+        }
+    }
+    else
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            hash = hash ^ (*p);
+            hash = hash * 0x01000193;
+        }
+    }
+    return hash;
 }
 #undef HAS_FLAG
 } // namespace GView::View::LexicalViewer

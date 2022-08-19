@@ -781,15 +781,18 @@ namespace View
                     return u16string_view{ text + start, (size_t)(end-start) };
                 return u16string_view();
             }
-            uint32 ParseTillEndOfLine(uint32 index) const;
-            uint32 ParseTillStartOfNextLine(uint32 index) const;
+            uint32 ParseUntillEndOfLine(uint32 index) const;
+            uint32 ParseUntillStartOfNextLine(uint32 index) const;
             uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
             uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
             uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
             uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
             uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
-            uint32 ParseTillText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint32 ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase);
+            uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase);
         };
         enum class TokenDataType : uint8
         {
