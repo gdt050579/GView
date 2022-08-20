@@ -113,6 +113,7 @@ bool TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bo
     block.tokenEnd     = end;
     block.align        = align;
     block.hasEndMarker = hasBlockEndMarker;
+    block.leftMargin   = 0;
 
     // set token flags
     INSTANCE->tokens[start].SetBlockStartFlag();

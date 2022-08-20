@@ -286,7 +286,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         }
         if (tok.IsBlockStarter())
         {
-            const auto& block     = this->blocks[tok.blockID];
+            auto& block           = this->blocks[tok.blockID];
             auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
             int32 blockMarginTop  = 0;
             int32 blockMarginLeft = 0;
@@ -309,10 +309,11 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 blockMarginLeft = x;
                 break;
             }
-            auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
-            idx    = endToken;
-            x      = p.X;
-            y      = p.Y;
+            block.leftMargin = blockMarginLeft;
+            auto p           = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
+            idx              = endToken;
+            x                = p.X;
+            y                = p.Y;
         }
         else
         {
@@ -352,7 +353,7 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
             else
             {
                 UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd + 1, showStatus);
-                pos = block.tokenEnd+1;
+                pos = block.tokenEnd + 1;
             }
         }
         else
@@ -398,39 +399,22 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& t
         if (bottomPos > tok.y)
         {
             // multi-line block
-            bool fillEntireRect =
-                  ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
-            if (this->prettyFormat)
+            bool fillLastLine = ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
+            auto leftPos      = this->prettyFormat ? 0 : block.leftMargin;
+            // first draw the first line
+            renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
+            // draw the middle part
+            if (fillLastLine)
             {
-                // in pretty format mode --> all blocks are left-alligend
-                if (fillEntireRect)
-                {
-                    renderer.FillRect(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
-                }
-                else
-                {
-                    // partial rect (the last line of the block contains some elements that are not part of the block
-                    renderer.FillRect(
-                          lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
-                    renderer.FillHorizontalLine(
-                          lineNrWidth + tok.x - Scroll.x, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
-                }
+                renderer.FillRect(lineNrWidth + leftPos - Scroll.x, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
             }
             else
             {
-                // blocks are not left alligend
-                // first draw the first line
-                renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
-                // second draw the rest of the bloc
-                if (fillEntireRect)
-                {
-                    renderer.FillRect(lineNrWidth, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
-                }
-                else
-                {
-                    renderer.FillRect(lineNrWidth, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
-                    renderer.FillHorizontalLine(lineNrWidth, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
-                }
+                // partial rect (the last line of the block contains some elements that are not part of the block
+                renderer.FillRect(
+                      lineNrWidth + leftPos - Scroll.x, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                renderer.FillHorizontalLine(
+                      lineNrWidth + leftPos - Scroll.x, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
             }
         }
         else
