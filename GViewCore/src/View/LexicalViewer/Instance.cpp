@@ -270,6 +270,10 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         tok.x = x;
         tok.y = y;
         lastY = y;
+        if (tok.type == (13U | (12U<<16)))
+        {
+            spaceAdded = false;
+        }
         x += tok.width;
         y += tok.height - 1;
         spaceAdded = false;

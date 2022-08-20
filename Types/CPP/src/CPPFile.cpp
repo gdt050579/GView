@@ -522,7 +522,7 @@ namespace CharType
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Space,     Operator,       String,
                                Preprocess, Invalid,  Operator,   Operator,   String,    ExpressionOpen, ExpressionClose,
-                               Operator,   Operator, Comma,      Operator,   Invalid,   Operator,       Number,
+                               Operator,   Operator, Comma,      Operator,   Operator,  Operator,       Number,
                                Number,     Number,   Number,     Number,     Number,    Number,         Number,
                                Number,     Number,   Operator,   Semicolumn, Operator,  Operator,       Operator,
                                Operator,   Invalid,  Word,       Word,       Word,      Word,           Word,
@@ -592,12 +592,12 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
             align = TokenAlignament::None;
             break;
         case TokenType::Operator:
-            opID = lastTokenID >> 16;
+            opID  = lastTokenID >> 16;
             align = TokenAlignament::None;
             if ((opID != OperatorType::MemberAccess) && (opID != OperatorType::Namespace) && (opID != OperatorType::Pointer) &&
                 (opID != OperatorType::TWO_POINTS))
                 align = TokenAlignament::SpaceOnLeft;
-            
+
             break;
         default:
             align = TokenAlignament::SpaceOnLeft;
@@ -624,8 +624,6 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
         auto opType           = tokenType >> 16;
         if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
             (opType == OperatorType::TWO_POINTS))
-            align = TokenAlignament::None;
-        if (opType == OperatorType::Pointer)
             align = TokenAlignament::ImediatellyAfterPreviousToken;
         if (opType == OperatorType::Namespace)
         {
