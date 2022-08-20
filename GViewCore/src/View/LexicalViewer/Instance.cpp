@@ -264,7 +264,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 }
             }
         }
-        if (((tok.align & TokenAlignament::SpaceOnLeft) != TokenAlignament::None) && (!spaceAdded))
+        if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!spaceAdded))
             x++;
 
         tok.x = x;
@@ -277,7 +277,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         x += tok.width;
         y += tok.height - 1;
         spaceAdded = false;
-        if ((tok.align & TokenAlignament::SpaceOnRight) != TokenAlignament::None)
+        if ((tok.align & TokenAlignament::AddSpaceAfter) != TokenAlignament::None)
         {
             x++;
             spaceAdded = true;

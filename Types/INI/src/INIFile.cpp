@@ -146,7 +146,7 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             pos = next;
             break;
         case CharType::SectionOrArrayStart:
@@ -187,7 +187,7 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -233,13 +233,13 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::Equal:
             tokenList.Add(
-                  TokenType::Equal, pos, pos + 1, TokenColor::Operator, TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
+                  TokenType::Equal, pos, pos + 1, TokenColor::Operator, TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
             pos++;
             state = ParserState::ExpectValueOrArray;
             break;
@@ -264,7 +264,7 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             pos = next;
             break;
         case CharType::Comma:
@@ -302,7 +302,7 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             pos = next;
             break;
         case CharType::String:

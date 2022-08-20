@@ -596,18 +596,18 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
             align = TokenAlignament::None;
             if ((opID != OperatorType::MemberAccess) && (opID != OperatorType::Namespace) && (opID != OperatorType::Pointer) &&
                 (opID != OperatorType::TWO_POINTS))
-                align = TokenAlignament::SpaceOnLeft;
+                align = TokenAlignament::AddSpaceBefore;
 
             break;
         default:
-            align = TokenAlignament::SpaceOnLeft;
+            align = TokenAlignament::AddSpaceBefore;
             break;
         }
     }
     else
     {
         tokColor = TokenColor::Keyword;
-        align    = TokenAlignament::SpaceOnRight | TokenAlignament::SpaceOnLeft;
+        align    = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
     }
 
     tokenList.Add(tokType, pos, next, tokColor, align);
@@ -620,7 +620,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
     uint32 tokenType, sz;
     if (Operators::TextToOperatorID(txt.data(), (uint32) txt.size(), tokenType, sz))
     {
-        TokenAlignament align = TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight;
+        TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
         auto opType           = tokenType >> 16;
         if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
             (opType == OperatorType::TWO_POINTS))
@@ -716,7 +716,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             idx = next;
             break;
         case CharType::Comment:
@@ -727,7 +727,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
             idx = next;
             break;
         case CharType::ArrayOpen:
@@ -748,7 +748,11 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::BlockOpen:
             tokenList.Add(
-                  TokenType::BlockOpen, idx, idx + 1, TokenColor::Operator, TokenAlignament::NewLineAfter | TokenAlignament::SpaceOnLeft);
+                  TokenType::BlockOpen,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
             idx++;
             break;
         case CharType::BlockClose:
@@ -772,7 +776,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::Comma:
             tokenList.Add(
-                  TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::SpaceOnLeft | TokenAlignament::SpaceOnRight);
+                  TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
             idx++;
             break;
         case CharType::Semicolumn:
