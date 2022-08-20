@@ -23,7 +23,7 @@ namespace TokenType
     constexpr uint32 Keyword         = 14;
     constexpr uint32 Constant        = 15;
     constexpr uint32 Datatype        = 16;
-    
+
 } // namespace TokenType
 namespace OperatorType
 {
@@ -564,6 +564,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
     auto tokColor = TokenColor::Word;
     auto tokType  = Keyword::TextToKeywordID(text, pos, next);
     auto align    = TokenAlignament::None;
+    auto opID     = 0U;
     if (tokType == TokenType::None)
     {
         tokType = Constant::TextToConstantID(text, pos, next);
@@ -577,13 +578,30 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
             else
             {
                 tokColor = TokenColor::Datatype;
-                align    = TokenAlignament::SpaceOnRight | TokenAlignament::SpaceOnLeft;
             }
         }
         else
         {
             tokColor = TokenColor::Constant;
-            align    = TokenAlignament::SpaceOnLeft;
+        }
+        auto lastTokenID = tokenList.GetLastTokenID();
+        switch (lastTokenID & 0xFFFF)
+        {
+        case TokenType::ArrayOpen:
+        case TokenType::ExpressionOpen:
+            align = TokenAlignament::None;
+            break;
+        case TokenType::Operator:
+            opID = lastTokenID >> 16;
+            align = TokenAlignament::None;
+            if ((opID != OperatorType::MemberAccess) && (opID != OperatorType::Namespace) && (opID != OperatorType::Pointer) &&
+                (opID != OperatorType::TWO_POINTS))
+                align = TokenAlignament::SpaceOnLeft;
+            
+            break;
+        default:
+            align = TokenAlignament::SpaceOnLeft;
+            break;
         }
     }
     else
