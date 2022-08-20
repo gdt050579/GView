@@ -37,7 +37,7 @@ namespace View
         {
             static constexpr uint32 INVALID_ID = 0xFFFFFFFF;
             uint32 tokenStart, tokenEnd;
-            int32 leftMargin;
+            int32 leftHighlightMargin;
             BlockAlignament align;
             bool hasEndMarker;
         };

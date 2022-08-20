@@ -113,13 +113,13 @@ bool TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bo
     CHECK(start < end, false, "Start token index(%u) should be smaller than end token index(%u)", start, end);
 
     // create a block
-    auto& block        = INSTANCE->blocks.emplace_back();
-    uint32 blockID     = (uint32) (INSTANCE->blocks.size() - 1);
-    block.tokenStart   = start;
-    block.tokenEnd     = end;
-    block.align        = align;
-    block.hasEndMarker = hasBlockEndMarker;
-    block.leftMargin   = 0;
+    auto& block               = INSTANCE->blocks.emplace_back();
+    uint32 blockID            = (uint32) (INSTANCE->blocks.size() - 1);
+    block.tokenStart          = start;
+    block.tokenEnd            = end;
+    block.align               = align;
+    block.hasEndMarker        = hasBlockEndMarker;
+    block.leftHighlightMargin = 0;
 
     // set token flags
     INSTANCE->tokens[start].SetBlockStartFlag();

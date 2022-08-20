@@ -293,27 +293,30 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             switch (block.align)
             {
             case BlockAlignament::AsCurrentBlock:
-                blockMarginTop  = y;
-                blockMarginLeft = leftMargin;
+                blockMarginTop            = y;
+                blockMarginLeft           = leftMargin;
+                block.leftHighlightMargin = leftMargin;
                 break;
             case BlockAlignament::ToRightOfCurrentBlock:
-                blockMarginTop  = y;
-                blockMarginLeft = leftMargin + 4;
+                blockMarginTop            = y;
+                blockMarginLeft           = leftMargin + 4;
+                block.leftHighlightMargin = leftMargin;
                 break;
             case BlockAlignament::AsBlockStartToken:
-                blockMarginTop  = y;
-                blockMarginLeft = x;
+                blockMarginTop            = y;
+                blockMarginLeft           = x;
+                block.leftHighlightMargin = x;
                 break;
             default:
-                blockMarginTop  = y;
-                blockMarginLeft = x;
+                blockMarginTop            = y;
+                blockMarginLeft           = x;
+                block.leftHighlightMargin = 0;
                 break;
             }
-            block.leftMargin = blockMarginLeft;
-            auto p           = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
-            idx              = endToken;
-            x                = p.X == blockMarginLeft ? leftMargin : p.X;
-            y                = p.Y;
+            auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
+            idx    = endToken;
+            x      = p.X == blockMarginLeft ? leftMargin : p.X;
+            y      = p.Y;
         }
         else
         {
@@ -400,21 +403,19 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& t
         {
             // multi-line block
             bool fillLastLine = ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
-            auto leftPos      = this->prettyFormat ? 0 : block.leftMargin;
+            auto leftPos      = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
             // first draw the first line
             renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
             // draw the middle part
             if (fillLastLine)
             {
-                renderer.FillRect(lineNrWidth + leftPos - Scroll.x, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
+                renderer.FillRect(leftPos, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
             }
             else
             {
                 // partial rect (the last line of the block contains some elements that are not part of the block
-                renderer.FillRect(
-                      lineNrWidth + leftPos - Scroll.x, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
-                renderer.FillHorizontalLine(
-                      lineNrWidth + leftPos - Scroll.x, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
+                renderer.FillRect(leftPos, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                renderer.FillHorizontalLine(leftPos, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
             }
         }
         else
