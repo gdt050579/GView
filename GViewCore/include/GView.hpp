@@ -827,6 +827,12 @@ namespace View
             Datatype,
             Error,
         };
+        enum class BlockAlignament: uint8
+        {
+            AsCurrentBlock,
+            ToRightOfCurrentBlock,
+            AsBlockStartToken,
+        };
         class CORE_EXPORT Token
         {
             void* data;
@@ -879,7 +885,7 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
-            bool CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker);
+            bool CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
         };
         struct CORE_EXPORT ParseInterface
         {

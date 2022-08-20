@@ -99,7 +99,7 @@ Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
     }
     return tok;
 }
-bool TokensList::CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker)
+bool TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker)
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     CHECK(start < itemsCount, false, "Invalid token index (start=%u), should be less than %u", start, itemsCount);
@@ -107,10 +107,12 @@ bool TokensList::CreateBlock(uint32 start, uint32 end, bool hasBlockEndMarker)
     CHECK(start < end, false, "Start token index(%u) should be smaller than end token index(%u)", start, end);
 
     // create a block
-    auto& block      = INSTANCE->blocks.emplace_back();
-    uint32 blockID   = (uint32) (INSTANCE->blocks.size() - 1);
-    block.tokenStart = start;
-    block.tokenEnd   = end;
+    auto& block        = INSTANCE->blocks.emplace_back();
+    uint32 blockID     = (uint32) (INSTANCE->blocks.size() - 1);
+    block.tokenStart   = start;
+    block.tokenEnd     = end;
+    block.align        = align;
+    block.hasEndMarker = hasBlockEndMarker;
 
     // set token flags
     INSTANCE->tokens[start].SetBlockStartFlag();

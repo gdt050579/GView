@@ -224,11 +224,14 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
     auto idx        = idxStart;
     auto spaceAdded = true;
     // skip to the first visible
-    for (; idx < idxEnd; idx++)
+    while (idx < idxEnd)
     {
         auto& tok = this->tokens[idx];
         if (tok.IsVisible() == false)
+        {
+            idx++;
             continue;
+        }
         if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
         {
             x          = leftMargin;
@@ -253,7 +256,7 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             }
             else
             {
-                if (idx>idxStart)
+                if (idx > idxStart)
                 {
                     auto& previous = tokens[idx - 1];
                     y              = previous.y + previous.height - 1;
@@ -280,6 +283,38 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             x          = leftMargin;
             spaceAdded = true;
             y++;
+        }
+        if (tok.IsBlockStarter())
+        {
+            const auto& block     = this->blocks[tok.blockID];
+            auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            int32 blockMarginTop  = 0;
+            int32 blockMarginLeft = 0;
+            switch (block.align)
+            {
+            case BlockAlignament::AsCurrentBlock:
+                blockMarginTop  = y;
+                blockMarginLeft = leftMargin;
+                break;
+            case BlockAlignament::ToRightOfCurrentBlock:
+                blockMarginTop  = y;
+                blockMarginLeft = leftMargin + 4;
+                break;
+            case BlockAlignament::AsBlockStartToken:
+                blockMarginTop  = y;
+                blockMarginLeft = x;
+                break;
+            default:
+                blockMarginTop  = y;
+                blockMarginLeft = x;
+                break;
+            }
+            PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
+            idx = endToken;
+        }
+        else
+        {
+            idx++; // next token
         }
     }
 }

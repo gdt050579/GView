@@ -389,7 +389,7 @@ struct ParserData
                 idx = CreateArrayBlock(idx, end);
                 break;
             case TokenType::ArrayEnd:
-                this->tokenList.CreateBlock(start, idx, true);
+                this->tokenList.CreateBlock(start, idx, BlockAlignament::AsBlockStartToken, true);
                 return idx + 1;
             default:
                 idx++;
@@ -431,7 +431,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             while ((next < len) && (tokenList[next].GetTypeID() != TokenType::Section))
                 next++;
             // we have found another section
-            tokenList.CreateBlock(idx, next - 1, false);
+            tokenList.CreateBlock(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
             // within each block --> search for arrays and create a block for them as well
             while (idx < next)
             {
