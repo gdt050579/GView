@@ -312,7 +312,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             block.leftMargin = blockMarginLeft;
             auto p           = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
             idx              = endToken;
-            x                = p.X;
+            x                = p.X == blockMarginLeft ? leftMargin : p.X;
             y                = p.Y;
         }
         else
@@ -458,7 +458,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         switch (tok.color)
         {
         case TokenColor::Comment:
-            col = ColorPair(Color::Blue, Color::Transparent);
+            col = ColorPair(Color::DarkGreen, Color::Transparent);
             break;
         case TokenColor::Operator:
             col = ColorPair(Color::Gray, Color::Transparent);
