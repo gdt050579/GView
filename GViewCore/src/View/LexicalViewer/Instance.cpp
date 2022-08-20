@@ -370,7 +370,7 @@ void Instance::EnsureCurrentItemIsVisible()
     const auto& tok    = this->tokens[this->currentTokenIndex];
     auto tk_right      = tok.x + (int32) tok.width - 1;
     auto tk_bottom     = tok.y + (int32) tok.height - 1;
-    auto scroll_right  = Scroll.x + this->GetWidth() - 1;
+    auto scroll_right  = Scroll.x + this->GetWidth() - 1 - this->lineNrWidth;
     auto scroll_bottom = Scroll.y + this->GetHeight() - 1;
 
     // if already in current view -> return;
