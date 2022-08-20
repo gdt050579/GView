@@ -216,7 +216,7 @@ void Instance::ComputeOriginalPositions()
         }
     }
 }
-void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
+AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
 {
     auto x          = leftMargin;
     auto y          = topMargin;
@@ -309,14 +309,17 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                 blockMarginLeft = x;
                 break;
             }
-            PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
-            idx = endToken;
+            auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
+            idx    = endToken;
+            x      = p.X;
+            y      = p.Y;
         }
         else
         {
             idx++; // next token
         }
     }
+    return { x, y };
 }
 void Instance::PrettyFormat()
 {

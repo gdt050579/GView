@@ -124,7 +124,7 @@ namespace View
 
             void ComputeMultiLineTokens();
             void ComputeOriginalPositions();
-            void PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
+            AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
             void PrettyFormat();
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
