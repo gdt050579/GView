@@ -343,9 +343,17 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         {
             if (tok.IsFolded())
                 showStatus = false;
-            auto& block = this->blocks[tok.blockID];
-            UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd, showStatus);
-            pos = block.tokenEnd;
+            const auto& block = this->blocks[tok.blockID];
+            if (block.hasEndMarker)
+            {
+                UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd, showStatus);
+                pos = block.tokenEnd;
+            }
+            else
+            {
+                UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd + 1, showStatus);
+                pos = block.tokenEnd+1;
+            }
         }
         else
         {
