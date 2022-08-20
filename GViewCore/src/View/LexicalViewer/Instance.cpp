@@ -469,6 +469,9 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         case TokenColor::Keyword:
             col = ColorPair(Color::Yellow, Color::Transparent);
             break;
+        case TokenColor::Keyword2:
+            col = ColorPair(Color::Aqua, Color::Transparent);
+            break;
         case TokenColor::String:
             col = ColorPair(Color::Red, Color::Transparent);
             break;
@@ -479,7 +482,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
             col = ColorPair(Color::Pink, Color::Transparent);
             break;
         case TokenColor::Number:
-            col = ColorPair(Color::Aqua, Color::Transparent);
+            col = ColorPair(Color::Teal, Color::Transparent);
             break;
         case TokenColor::Preprocesor:
             col = ColorPair(Color::Olive, Color::Transparent);

@@ -11,10 +11,16 @@ namespace GView::View::LexicalViewer
     auto& tok = INSTANCE->tokens[this->index];
 
 // TOKEN methods
-uint32 Token::GetTypeID() const
+uint32 Token::GetTypeID(uint32 error) const
 {
-    CREATE_TOKENREF(0);
+    CREATE_TOKENREF(error);
     return tok.type;
+}
+bool Token::SetTokenColor(TokenColor col)
+{
+    CREATE_TOKENREF(false);
+    tok.color = col;
+    return true;
 }
 u16string_view Token::GetText() const
 {

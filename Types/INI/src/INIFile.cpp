@@ -13,6 +13,7 @@ namespace TokenType
     constexpr uint32 ArrayStart = 5;
     constexpr uint32 Comma      = 6;
     constexpr uint32 ArrayEnd   = 7;
+    constexpr uint32 Invalid    = 0xFFFFFFFF;
 
 } // namespace TokenType
 enum class ParserState
@@ -383,7 +384,7 @@ struct ParserData
         uint32 idx = start + 1;
         while (idx<end)
         {
-            switch (tokenList[idx].GetTypeID())
+            switch (tokenList[idx].GetTypeID(TokenType::Invalid))
             {
             case TokenType::ArrayStart:
                 idx = CreateArrayBlock(idx, end);
@@ -422,20 +423,20 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
     uint32 idx = 0;
     while (idx < len)
     {
-        while ((idx < len) && (tokenList[idx].GetTypeID() != TokenType::Section))
+        while ((idx < len) && (tokenList[idx].GetTypeID(TokenType::Invalid) != TokenType::Section))
             idx++;
         if (idx < len)
         {
             // we have found a section
             uint32 next = idx + 1;
-            while ((next < len) && (tokenList[next].GetTypeID() != TokenType::Section))
+            while ((next < len) && (tokenList[next].GetTypeID(TokenType::Invalid) != TokenType::Section))
                 next++;
             // we have found another section
             tokenList.CreateBlock(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
             // within each block --> search for arrays and create a block for them as well
             while (idx < next)
             {
-                if (tokenList[idx].GetTypeID() == TokenType::ArrayStart)
+                if (tokenList[idx].GetTypeID(TokenType::Invalid) == TokenType::ArrayStart)
                     idx = p.CreateArrayBlock(idx, next);
                 else
                     idx++;

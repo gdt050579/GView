@@ -821,6 +821,7 @@ namespace View
             String,
             Operator,
             Keyword,
+            Keyword2,
             Constant,
             Word,
             Preprocesor,
@@ -853,7 +854,8 @@ namespace View
             {
                 return index;
             }
-            uint32 GetTypeID() const;
+            uint32 GetTypeID(uint32 errorValue) const;
+            bool SetTokenColor(TokenColor col);
             u16string_view GetText() const;
 
             constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;

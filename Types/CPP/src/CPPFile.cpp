@@ -23,6 +23,7 @@ namespace TokenType
     constexpr uint32 Keyword         = 14;
     constexpr uint32 Constant        = 15;
     constexpr uint32 Datatype        = 16;
+    
 } // namespace TokenType
 namespace OperatorType
 {
@@ -608,6 +609,11 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
             align = TokenAlignament::None;
         if (opType == OperatorType::Pointer)
             align = TokenAlignament::ImediatellyAfterPreviousToken;
+        if (opType == OperatorType::Namespace)
+        {
+            if (tokenList.GetLastTokenID() == TokenType::Word)
+                tokenList.GetLastToken().SetTokenColor(TokenColor::Keyword2);
+        }
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, align);
         return pos + sz;
     }
@@ -649,7 +655,7 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
     auto len = list.Len();
     for (auto index = 0U; index < len; index++)
     {
-        auto typeID = list[index].GetTypeID();
+        auto typeID = list[index].GetTypeID(TokenType::None);
         switch (typeID)
         {
         case TokenType::BlockOpen:
