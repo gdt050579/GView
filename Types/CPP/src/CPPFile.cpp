@@ -493,10 +493,7 @@ namespace Datatype
             return TokenType::None;
         return TokenType::Datatype | (res->id << 16);
     };
-}
-
-
-
+} // namespace Datatype
 
 namespace CharType
 {
@@ -648,8 +645,21 @@ uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::Te
 }
 void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
 {
+    TokenIndexStack stBlocks;
     auto len = list.Len();
-
+    for (auto index=0U;index<len;index++)
+    {
+        auto typeID = list[index].GetTypeID();
+        switch (typeID)
+        {
+        case TokenType::BlockOpen:
+            stBlocks.Push(index);
+            break;
+        case TokenType::BlockClose:
+            list.CreateBlock(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, true);
+            break;
+        }
+    }
 }
 void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
 {
