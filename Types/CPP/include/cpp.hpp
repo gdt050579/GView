@@ -15,6 +15,7 @@ namespace Type
             uint32 TokenizeOperator(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             uint32 TokenizePreprocessDirective(const GView::View::LexicalViewer::TextParser& text, uint32 pos);
+            void BuildBlocks(GView::View::LexicalViewer::TokensList& list);
             void Tokenize(const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& list);
           public:
             CPPFile();

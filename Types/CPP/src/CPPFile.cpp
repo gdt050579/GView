@@ -646,7 +646,11 @@ uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::Te
     // check for #if...#endif (TODO)
     return next;
 }
+void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
+{
+    auto len = list.Len();
 
+}
 void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
 {
     auto len  = text.Len();
@@ -777,5 +781,6 @@ void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
     tokenList.ResetLastTokenID(TokenType::None);
     Tokenize(text, tokenList);
+    BuildBlocks(tokenList);
 }
 } // namespace GView::Type::CPP

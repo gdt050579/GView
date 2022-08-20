@@ -887,6 +887,23 @@ namespace View
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
             bool CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
         };
+        class CORE_EXPORT TokenIndexStack
+        {
+            constexpr static uint32 LOCAL_SIZE = 8;
+            uint32 count, allocated;
+            uint32* stack;
+            uint32 local[LOCAL_SIZE];
+
+          public:
+            TokenIndexStack();
+            ~TokenIndexStack();
+            bool Push(uint32 index);
+            uint32 Pop(uint32 errorValue = Token::INVALID_INDEX);
+            inline bool Empty() const
+            {
+                return count == 0;
+            }
+        };
         struct CORE_EXPORT ParseInterface
         {
             virtual void AnalyzeText(const TextParser& text, TokensList& tokensList) = 0;
