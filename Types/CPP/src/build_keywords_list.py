@@ -40,7 +40,7 @@ def CreateList(l, name):
 		s+="\t\t{0x%08X"%(k[0])+","+name+"sType::"+k[1][0].upper()+k[1][1:].lower()+"},\n"
 	s+="\t};\n"
 	s+="\tuint32 TextTo"+name+"ID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end) {\n"
-	s+="\t\tauto *res = BinarySearch(text.ComputeHash32(start,end,true),list,"+str(len(res))+");\n"
+	s+="\t\tauto *res = BinarySearch(text.ComputeHash32(start,end,false),list,"+str(len(res))+");\n"
 	s+="\t\tif (res == nullptr) return TokenType::None;\n"
 	s+="\t\treturn TokenType::"+name+" | (res->id << 16);\n"
 	s+="\t};\n"

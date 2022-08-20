@@ -400,7 +400,7 @@ namespace Keyword
     };
     uint32 TextToKeywordID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
     {
-        auto* res = BinarySearch(text.ComputeHash32(start, end, true), list, 76);
+        auto* res = BinarySearch(text.ComputeHash32(start, end, false), list, 76);
         if (res == nullptr)
             return TokenType::None;
         return TokenType::Keyword | (res->id << 16);
@@ -423,7 +423,7 @@ namespace Constant
     };
     uint32 TextToConstantID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
     {
-        auto* res = BinarySearch(text.ComputeHash32(start, end, true), list, 4);
+        auto* res = BinarySearch(text.ComputeHash32(start, end, false), list, 4);
         if (res == nullptr)
             return TokenType::None;
         return TokenType::Constant | (res->id << 16);
@@ -488,7 +488,7 @@ namespace Datatype
     };
     uint32 TextToDatatypeID(const GView::View::LexicalViewer::TextParser& text, uint32 start, uint32 end)
     {
-        auto* res = BinarySearch(text.ComputeHash32(start, end, true), list, 33);
+        auto* res = BinarySearch(text.ComputeHash32(start, end, false), list, 33);
         if (res == nullptr)
             return TokenType::None;
         return TokenType::Datatype | (res->id << 16);
@@ -647,7 +647,7 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
 {
     TokenIndexStack stBlocks;
     auto len = list.Len();
-    for (auto index=0U;index<len;index++)
+    for (auto index = 0U; index < len; index++)
     {
         auto typeID = list[index].GetTypeID();
         switch (typeID)
