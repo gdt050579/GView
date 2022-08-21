@@ -835,6 +835,32 @@ namespace View
             ToRightOfCurrentBlock,
             AsBlockStartToken,
         };
+        class CORE_EXPORT Token;
+        class CORE_EXPORT Block
+        {
+            void* data;
+            uint32 index;
+
+          public:
+            Block(void* _data, uint32 _idx) : data(_data), index(_idx)
+            {
+            }
+            Block() : data(nullptr), index(INVALID_INDEX)
+            {
+            }
+            inline bool IsValid() const
+            {
+                return data != nullptr;
+            }
+            inline uint32 GetIndex() const
+            {
+                return index;
+            }
+            Token GetStartToken() const;
+            Token GetEndToken() const;
+
+            constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
+        };
         class CORE_EXPORT Token
         {
             void* data;

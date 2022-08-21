@@ -10,6 +10,13 @@ namespace GView::View::LexicalViewer
         return (err);                                                                                                                      \
     auto& tok = INSTANCE->tokens[this->index];
 
+#define CREATE_BLOCKREF(err)                                                                                                               \
+    if (this->data == nullptr)                                                                                                             \
+        return (err);                                                                                                                      \
+    if ((size_t) this->index >= INSTANCE->blocks.size())                                                                                   \
+        return (err);                                                                                                                      \
+    auto& block = INSTANCE->blocks[this->index];
+
 // TOKEN methods
 uint32 Token::GetTypeID(uint32 error) const
 {
@@ -46,6 +53,17 @@ u16string_view Token::GetText() const
     return { INSTANCE->GetUnicodeText() + tok.start, (size_t) (tok.end - tok.start) };
 }
 
+// Block method
+Token Block::GetStartToken() const
+{
+    CREATE_BLOCKREF(Token());
+    return Token(this->data, block.tokenStart);
+}
+Token Block::GetEndToken() const
+{
+    CREATE_BLOCKREF(Token());
+    return Token(this->data, block.tokenEnd);
+}
 // TOKENLIST methods
 
 uint32 TokensList::Len() const

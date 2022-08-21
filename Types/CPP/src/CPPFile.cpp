@@ -825,10 +825,33 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
         }
     }
 }
+void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& list)
+{
+    auto len = list.Len();
+    auto idx = 0U;
+    while (idx < len)
+    {
+        auto typeID = list[idx].GetTypeID(TokenType::None);
+        if ((typeID == (TokenType::Keyword | (KeywordsType::If << 16))) || (typeID == (TokenType::Keyword | (KeywordsType::While << 16))) ||
+            (typeID == (TokenType::Keyword | (KeywordsType::For << 16))))
+        {
+            if (list[idx + 1].GetTypeID(TokenType::None)==TokenType::ExpressionOpen)
+            {
+                // find the block that coresponds to idx+1 item
+            }
+            idx++; // to be removed
+        }
+        else
+        {
+            idx++;
+        }
+    }
+}
 void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
     tokenList.ResetLastTokenID(TokenType::None);
     Tokenize(text, tokenList);
     BuildBlocks(tokenList);
+    IndentSimpleInstructions(tokenList);
 }
 } // namespace GView::Type::CPP
