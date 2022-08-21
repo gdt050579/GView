@@ -108,6 +108,11 @@ namespace CharType
         return Word;
     }
 } // namespace CharType
+namespace ConstantsHashes
+{
+    constexpr uint32 False = 0x0B069958;
+    constexpr uint32 True  = 0x4DB211E5;
+} // namespace ConstantsHashes
 struct ParserData
 {
     const TextParser& text;
@@ -129,7 +134,18 @@ struct ParserData
             pos = start + 1;
             return;
         }
-        pos = end; // move to next token
+        pos       = end; // move to next token
+        auto hash = text.ComputeHash32(start, end, true);
+        if ((hash == ConstantsHashes::True) || (hash == ConstantsHashes::False))
+        {
+            tokenList.Add(TokenType::Value, start, end, TokenColor::Constant, TokenDataType::Boolean);
+            return;
+        }
+        if (text.ParseNumber(start)==end)
+        {
+            tokenList.Add(TokenType::Value, start, end, TokenColor::Number, TokenDataType::Number);
+            return;
+        }
         tokenList.Add(TokenType::Value, start, end, TokenColor::Word);
     }
     void ParseForExpectKeyValueOrSection(uint8 chType)
@@ -154,11 +170,7 @@ struct ParserData
             if (text[next] == ']')
                 next++;
             tokenList.Add(
-                  TokenType::Section,
-                  pos,
-                  next,
-                  TokenColor::Keyword,
-                  TokenAlignament::NewLineBefore | TokenAlignament::NewLineAfter);
+                  TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::NewLineBefore | TokenAlignament::NewLineAfter);
             pos = next;
             break;
         case CharType::Word:
@@ -168,7 +180,7 @@ struct ParserData
                       return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != '=') && (ch != ':') && (ch != ' ') &&
                              (ch != '\t');
                   });
-            tokenList.Add(TokenType::Key, pos, next, TokenColor::Word, TokenAlignament::StartsOnNewLine);
+            tokenList.Add(TokenType::Key, pos, next, TokenColor::Keyword2, TokenAlignament::StartsOnNewLine);
             pos   = next;
             state = ParserState::ExpectEqual;
             break;
