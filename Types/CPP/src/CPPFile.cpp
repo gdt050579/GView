@@ -835,16 +835,37 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
         if ((typeID == (TokenType::Keyword | (KeywordsType::If << 16))) || (typeID == (TokenType::Keyword | (KeywordsType::While << 16))) ||
             (typeID == (TokenType::Keyword | (KeywordsType::For << 16))))
         {
-            if (list[idx + 1].GetTypeID(TokenType::None)==TokenType::ExpressionOpen)
+            if (list[idx + 1].GetTypeID(TokenType::None) == TokenType::ExpressionOpen)
             {
-                // find the block that coresponds to idx+1 item
+                auto block = list[idx + 1].GetBlock();
+                if (block.IsValid())
+                {
+                    auto endToken = block.GetEndToken();
+                    if (endToken.IsValid())
+                    {
+                        // we have the following format if|while|for follower by (...)
+                        auto nextTok = list[endToken.GetIndex() + 1];
+                        if ((nextTok.IsValid()) && (nextTok.GetTypeID(TokenType::None) != TokenType::BlockOpen))
+                        {
+                            nextTok.UpdateAlignament(TokenAlignament::StartsOnNewLineWithIndent);
+                        }
+                        // if the case is for
+                        if (typeID == (TokenType::Keyword | (KeywordsType::For << 16)))
+                        {
+                            // search for every ';' between (...) and remove any new line
+                            auto endTokID = endToken.GetIndex();
+                            for (auto tkIdx = idx+2;tkIdx<endTokID;tkIdx++)
+                            {
+                                auto currentTok = list[tkIdx];
+                                if (currentTok.GetTypeID(TokenType::None) == TokenType::Semicolumn)
+                                    currentTok.SetAlignament(TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore);
+                            }
+                        }
+                    }
+                }
             }
-            idx++; // to be removed
         }
-        else
-        {
-            idx++;
-        }
+        idx++;
     }
 }
 void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)

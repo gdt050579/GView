@@ -52,7 +52,13 @@ u16string_view Token::GetText() const
     CREATE_TOKENREF(u16string_view{});
     return { INSTANCE->GetUnicodeText() + tok.start, (size_t) (tok.end - tok.start) };
 }
-
+Block Token::GetBlock() const
+{
+    CREATE_TOKENREF(Block());
+    if (tok.blockID < INSTANCE->blocks.size())
+        return Block(this->data, tok.blockID);
+    return Block();
+}
 // Block method
 Token Block::GetStartToken() const
 {

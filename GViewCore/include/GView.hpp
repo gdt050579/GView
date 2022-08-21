@@ -889,6 +889,7 @@ namespace View
             bool SetTokenColor(TokenColor col);
 
             u16string_view GetText() const;
+            Block GetBlock() const;
 
             constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
         };
