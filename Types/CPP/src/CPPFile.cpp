@@ -608,6 +608,11 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
     {
         tokColor = TokenColor::Keyword;
         align    = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+        if (((tokType >> 16) == KeywordsType::Else) && (tokenList.GetLastTokenID() == TokenType::BlockClose))
+        {
+            // if (...) { ... } else ...
+            align = align | TokenAlignament::AfterPreviousToken;
+        }
     }
 
     tokenList.Add(tokType, pos, next, tokColor, align);
@@ -624,7 +629,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
         auto opType           = tokenType >> 16;
         if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
             (opType == OperatorType::TWO_POINTS))
-            align = TokenAlignament::ImediatellyAfterPreviousToken;
+            align = TokenAlignament::AfterPreviousToken;
         if (opType == OperatorType::Namespace)
         {
             if (tokenList.GetLastTokenID() == TokenType::Word)
@@ -785,7 +790,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx,
                   idx + 1,
                   TokenColor::Operator,
-                  TokenAlignament::NewLineAfter | TokenAlignament::ImediatellyAfterPreviousToken);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken);
             idx++;
             break;
         case CharType::Preprocess:

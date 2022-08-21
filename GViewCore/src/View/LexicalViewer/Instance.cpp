@@ -247,7 +247,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             spaceAdded = true;
             y++;
         }
-        if ((tok.align & TokenAlignament::ImediatellyAfterPreviousToken) != TokenAlignament::None)
+        if ((tok.align & TokenAlignament::AfterPreviousToken) != TokenAlignament::None)
         {
             if (y == lastY)
             {
@@ -263,6 +263,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                     x              = previous.x + previous.width;
                 }
             }
+            spaceAdded = false;
         }
         if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!spaceAdded))
             x++;
