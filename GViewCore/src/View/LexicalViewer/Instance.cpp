@@ -223,7 +223,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
     auto lastY      = topMargin;
     auto idx        = idxStart;
     auto spaceAdded = true;
-    // skip to the first visible
+    
     while (idx < idxEnd)
     {
         auto& tok = this->tokens[idx];
@@ -271,10 +271,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         tok.x = x;
         tok.y = y;
         lastY = y;
-        if (tok.type == (13U | (12U<<16)))
-        {
-            spaceAdded = false;
-        }
+
         x += tok.width;
         y += tok.height - 1;
         spaceAdded = false;
@@ -318,10 +315,14 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 block.leftHighlightMargin = 0;
                 break;
             }
-            auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
-            idx    = endToken;
-            x      = p.X == blockMarginLeft ? leftMargin : p.X;
-            y      = p.Y;
+            if ((idx + 1) < endToken)
+            {
+                // not an empty block
+                auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
+                x      = p.X == blockMarginLeft ? leftMargin : p.X;
+                y      = p.Y;
+            }
+            idx = endToken;
         }
         else
         {

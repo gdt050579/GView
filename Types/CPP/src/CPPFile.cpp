@@ -673,6 +673,7 @@ uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::Te
 void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
 {
     TokenIndexStack stBlocks;
+    TokenIndexStack exprBlocks;
     auto len = list.Len();
     for (auto index = 0U; index < len; index++)
     {
@@ -684,6 +685,12 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
             break;
         case TokenType::BlockClose:
             list.CreateBlock(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, true);
+            break;
+        case TokenType::ExpressionOpen:
+            exprBlocks.Push(index);
+            break;
+        case TokenType::ExpressionClose:
+            list.CreateBlock(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, true);
             break;
         }
     }
