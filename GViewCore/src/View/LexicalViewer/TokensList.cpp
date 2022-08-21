@@ -16,6 +16,24 @@ uint32 Token::GetTypeID(uint32 error) const
     CREATE_TOKENREF(error);
     return tok.type;
 }
+TokenAlignament Token::GetAlignament() const
+{
+    CREATE_TOKENREF(TokenAlignament::None);
+    return tok.align;
+}
+bool Token::SetAlignament(TokenAlignament align)
+{
+    CREATE_TOKENREF(false);
+    tok.align = align;
+    return true;
+}
+bool Token::UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove)
+{
+    CREATE_TOKENREF(false);
+    tok.align |= flagsToAdd;
+    tok.align = static_cast<TokenAlignament>(static_cast<uint16>(tok.align) & (~(static_cast<uint16>(flagsToRemove))));
+    return true;
+}
 bool Token::SetTokenColor(TokenColor col)
 {
     CREATE_TOKENREF(false);

@@ -855,8 +855,13 @@ namespace View
             {
                 return index;
             }
+            
             uint32 GetTypeID(uint32 errorValue) const;
+            TokenAlignament GetAlignament() const;
+            bool SetAlignament(TokenAlignament align);
+            bool UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove = TokenAlignament::None);
             bool SetTokenColor(TokenColor col);
+
             u16string_view GetText() const;
 
             constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
