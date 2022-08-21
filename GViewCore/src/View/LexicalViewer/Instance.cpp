@@ -218,12 +218,13 @@ void Instance::ComputeOriginalPositions()
 }
 AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
 {
-    auto x          = leftMargin;
-    auto y          = topMargin;
-    auto lastY      = topMargin;
-    auto idx        = idxStart;
-    auto spaceAdded = true;
-    
+    auto x                 = leftMargin;
+    auto y                 = topMargin;
+    auto lastY             = topMargin;
+    auto idx               = idxStart;
+    auto spaceAdded        = true;
+    auto partOfFoldedBlock = false;
+
     while (idx < idxEnd)
     {
         auto& tok = this->tokens[idx];
@@ -232,61 +233,77 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             idx++;
             continue;
         }
-        if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
+        if (!partOfFoldedBlock)
         {
-            x          = leftMargin;
-            spaceAdded = true;
-            if (y == lastY)
-                y += 2;
-            else
+            if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
+            {
+                x          = leftMargin;
+                spaceAdded = true;
+                if (y == lastY)
+                    y += 2;
+                else
+                    y++;
+            }
+            if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x > leftMargin))
+            {
+                x          = leftMargin;
+                spaceAdded = true;
                 y++;
-        }
-        if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x > leftMargin))
-        {
-            x          = leftMargin;
-            spaceAdded = true;
-            y++;
-        }
-        if ((tok.align & TokenAlignament::AfterPreviousToken) != TokenAlignament::None)
-        {
-            if (y == lastY)
-            {
-                if ((spaceAdded) && (x > leftMargin))
-                    x--;
             }
-            else
+            if ((tok.align & TokenAlignament::AfterPreviousToken) != TokenAlignament::None)
             {
-                if (idx > idxStart)
+                if (y == lastY)
                 {
-                    auto& previous = tokens[idx - 1];
-                    y              = previous.y + previous.height - 1;
-                    x              = previous.x + previous.width;
+                    if ((spaceAdded) && (x > leftMargin))
+                        x--;
                 }
+                else
+                {
+                    if (idx > idxStart)
+                    {
+                        auto& previous = tokens[idx - 1];
+                        y              = previous.y + previous.height - 1;
+                        x              = previous.x + previous.width;
+                    }
+                }
+                spaceAdded = false;
             }
-            spaceAdded = false;
+            if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!spaceAdded))
+                x++;
         }
-        if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!spaceAdded))
-            x++;
-
-        tok.x = x;
-        tok.y = y;
-        lastY = y;
-
-        x += tok.width;
-        y += tok.height - 1;
+        tok.x                   = x;
+        tok.y                   = y;
+        lastY                   = y;
+        const auto blockStarter = tok.IsBlockStarter();
+        const auto folded       = tok.IsFolded();
+        if ((blockStarter) && (folded))
+        {
+            const auto& block = this->blocks[tok.blockID];
+            x += tok.width + 3;
+            partOfFoldedBlock = true;
+        }
+        else
+        {
+            x += tok.width;
+            y += tok.height - 1;
+            partOfFoldedBlock = false;
+        }
         spaceAdded = false;
-        if ((tok.align & TokenAlignament::AddSpaceAfter) != TokenAlignament::None)
+        if (!partOfFoldedBlock)
         {
-            x++;
-            spaceAdded = true;
+            if ((tok.align & TokenAlignament::AddSpaceAfter) != TokenAlignament::None)
+            {
+                x++;
+                spaceAdded = true;
+            }
+            if ((tok.align & TokenAlignament::NewLineAfter) != TokenAlignament::None)
+            {
+                x          = leftMargin;
+                spaceAdded = true;
+                y++;
+            }
         }
-        if ((tok.align & TokenAlignament::NewLineAfter) != TokenAlignament::None)
-        {
-            x          = leftMargin;
-            spaceAdded = true;
-            y++;
-        }
-        if (tok.IsBlockStarter())
+        if (tok.IsBlockStarter() && (!partOfFoldedBlock))
         {
             auto& block           = this->blocks[tok.blockID];
             auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
@@ -315,9 +332,9 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 block.leftHighlightMargin = 0;
                 break;
             }
-            if ((idx + 1) < endToken)
+            if (((idx + 1) < endToken) && (tok.IsFolded() == false))
             {
-                // not an empty block
+                // not an empty block and not folded
                 auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
                 x      = p.X == blockMarginLeft ? leftMargin : p.X;
                 y      = p.Y;
@@ -499,7 +516,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
             break;
         }
     }
-    if (tok.IsBlockStarter() && onCursor)
+    const auto blockStarter = tok.IsBlockStarter();
+    if (blockStarter && onCursor)
         FillBlockSpace(renderer, tok);
     if (tok.height > 1)
     {
@@ -512,6 +530,12 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     else
     {
         renderer.WriteSingleLineText(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
+    }
+    if (blockStarter && tok.IsFolded())
+    {
+        auto x = lineNrWidth + tok.x + tok.width - Scroll.x;
+        auto y = tok.y + tok.height - 1 - Scroll.y;
+        renderer.WriteSingleLineText(x, y, "...", ColorPair(Color::Gray, Color::Black));
     }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
