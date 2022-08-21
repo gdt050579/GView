@@ -280,12 +280,19 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         {
             const auto& block = this->blocks[tok.blockID];
             x += tok.width + 3;
-            partOfFoldedBlock = true;
+            partOfFoldedBlock = block.hasEndMarker; // only limit the alignament for end marker
         }
         else
         {
             x += tok.width;
             y += tok.height - 1;
+            if (partOfFoldedBlock)
+            {
+                // make sure that next items start on a new line
+                x          = leftMargin;
+                spaceAdded = true;
+                y++;
+            }
             partOfFoldedBlock = false;
         }
         spaceAdded = false;
@@ -303,7 +310,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 y++;
             }
         }
-        if (tok.IsBlockStarter() && (!partOfFoldedBlock))
+        if (tok.IsBlockStarter())
         {
             auto& block           = this->blocks[tok.blockID];
             auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;

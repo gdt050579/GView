@@ -153,7 +153,12 @@ struct ParserData
             next = text.Parse(pos, [](char16 ch) { return (ch != ']') && (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10); });
             if (text[next] == ']')
                 next++;
-            tokenList.Add(TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::NewLineBefore|TokenAlignament::NewLineAfter);
+            tokenList.Add(
+                  TokenType::Section,
+                  pos,
+                  next,
+                  TokenColor::Keyword,
+                  TokenAlignament::NewLineBefore | TokenAlignament::NewLineAfter);
             pos = next;
             break;
         case CharType::Word:
@@ -382,7 +387,7 @@ struct ParserData
     {
         // starts points to an array '['...']'
         uint32 idx = start + 1;
-        while (idx<end)
+        while (idx < end)
         {
             switch (tokenList[idx].GetTypeID(TokenType::Invalid))
             {
