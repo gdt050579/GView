@@ -5,6 +5,8 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
+    this->indentWidth = 4;
+    this->parser      = nullptr;
 }
 Settings::Settings()
 {

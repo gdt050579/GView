@@ -87,6 +87,7 @@ namespace View
         struct SettingsData
         {
             Reference<ParseInterface> parser;
+            uint8 indentWidth;
             SettingsData();
         };
 

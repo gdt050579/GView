@@ -325,7 +325,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 break;
             case BlockAlignament::ToRightOfCurrentBlock:
                 blockMarginTop            = y;
-                blockMarginLeft           = leftMargin + 4;
+                blockMarginLeft           = leftMargin + this->settings->indentWidth;
                 block.leftHighlightMargin = leftMargin;
                 break;
             case BlockAlignament::AsBlockStartToken:
