@@ -250,6 +250,20 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 spaceAdded = true;
                 y++;
             }
+            if ((tok.align & TokenAlignament::StartsOnNewLineWithIndent) != TokenAlignament::None)
+            {
+                if (x == leftMargin)
+                {
+                    x          = leftMargin + settings->indentWidth;
+                    spaceAdded = true;
+                }
+                else if (x > leftMargin)
+                {
+                    x          = leftMargin + settings->indentWidth;
+                    spaceAdded = true;
+                    y++;
+                }
+            }
             if ((tok.align & TokenAlignament::AfterPreviousToken) != TokenAlignament::None)
             {
                 if (y == lastY)
