@@ -306,13 +306,6 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         {
             x += tok.width;
             y += tok.height - 1;
-            if (partOfFoldedBlock)
-            {
-                // make sure that next items start on a new line
-                x          = leftMargin;
-                spaceAdded = true;
-                y++;
-            }
             partOfFoldedBlock = false;
         }
         spaceAdded = false;
