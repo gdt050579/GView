@@ -90,10 +90,10 @@ jobs:
       run: ls /usr/local/opt/openssl@1.1/lib
       
     - name: NCurses OpenSSL
-      run: brew --cellar openssl
+      run: brew --cellar openssl@1.1
       
     - name: NCurses OpenSSL
-      run: brew --prefix openssl
+      run: brew --prefix openssl@1.1
             
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1 -DOPENSSL_LIBRARIES=/usr/local/opt/openssl@1.1/lib 
