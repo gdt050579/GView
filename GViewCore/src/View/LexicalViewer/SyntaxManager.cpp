@@ -197,7 +197,9 @@ Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
     }
     return tok;
 }
-Block TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker)
+
+// block list
+Block BlocksList::Add(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker)
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     CHECK(start < itemsCount, Block(), "Invalid token index (start=%u), should be less than %u", start, itemsCount);
@@ -222,11 +224,11 @@ Block TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, b
 
     return Block(this->data, blockID);
 }
-uint32 TokensList::GetBlocksCount() const
+uint32 BlocksList::Len() const
 {
     return static_cast<uint32>(INSTANCE->blocks.size());
 }
-Block TokensList::GetBlock(uint32 index) const
+Block BlocksList::operator[](uint32 index) const
 {
     if (index < INSTANCE->blocks.size())
         return Block(this->data, index);

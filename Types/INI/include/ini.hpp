@@ -10,7 +10,6 @@ namespace Type
     {
         class INIFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
-
           public:
             INIFile();
             virtual ~INIFile()
@@ -24,8 +23,7 @@ namespace Type
                 return "INI";
             }
 
-            virtual void AnalyzeText(
-                  const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& list) override;
+            virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager &syntax) override;
         };
         namespace Panels
         {

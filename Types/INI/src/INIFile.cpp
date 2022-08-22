@@ -395,7 +395,7 @@ struct ParserData
             }
         }
     }
-    uint32 CreateArrayBlock(uint32 start, uint32 end, bool firstArray)
+    uint32 CreateArrayBlock(uint32 start, uint32 end, bool firstArray, GView::View::LexicalViewer::BlocksList& blocks)
     {
         Block block;
         // starts points to an array '['...']'
@@ -405,10 +405,10 @@ struct ParserData
             switch (tokenList[idx].GetTypeID(TokenType::Invalid))
             {
             case TokenType::ArrayStart:
-                idx = CreateArrayBlock(idx, end, false);
+                idx = CreateArrayBlock(idx, end, false, blocks);
                 break;
             case TokenType::ArrayEnd:
-                block = this->tokenList.CreateBlock(start, idx, BlockAlignament::AsBlockStartToken, true);
+                block = blocks.Add(start, idx, BlockAlignament::AsBlockStartToken, true);
                 if ((start >= 2) && (tokenList[start - 2].GetTypeID(TokenType::Invalid) == TokenType::Key))
                 {
                     // make sure that key can also fold/unfold current block
@@ -433,21 +433,21 @@ bool INIFile::Update()
     return true;
 }
 
-void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
+void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     LocalString<64> tmp;
-    ParserData p(text, tokenList);
+    ParserData p(syntax.text, syntax.tokens);
 
     // Tokenization
     p.Tokenize();
 
     // semantic process
     // search for a section and create a block around it
-    uint32 len = tokenList.Len();
+    uint32 len = syntax.tokens.Len();
     uint32 idx = 0;
     while (idx < len)
     {
-        while ((idx < len) && (tokenList[idx].GetTypeID(TokenType::Invalid) != TokenType::Section))
+        while ((idx < len) && (syntax.tokens[idx].GetTypeID(TokenType::Invalid) != TokenType::Section))
             idx++;
         if (idx < len)
         {
@@ -456,7 +456,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             auto keyCount = 0;
             while (next < len)
             {
-                auto tokID = tokenList[next].GetTypeID(TokenType::Invalid);
+                auto tokID = syntax.tokens[next].GetTypeID(TokenType::Invalid);
                 if (tokID == TokenType::Section)
                     break;
                 if (tokID == TokenType::Key)
@@ -464,7 +464,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
                 next++;
             }
             // we have found another section
-            auto block = tokenList.CreateBlock(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
+            auto block = syntax.blocks.Add(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
             if (keyCount == 0)
                 block.SetFoldMessage("<Empty>");
             else
@@ -472,8 +472,8 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             // within each block --> search for arrays and create a block for them as well
             while (idx < next)
             {
-                if (tokenList[idx].GetTypeID(TokenType::Invalid) == TokenType::ArrayStart)
-                    idx = p.CreateArrayBlock(idx, next, true);
+                if (syntax.tokens[idx].GetTypeID(TokenType::Invalid) == TokenType::ArrayStart)
+                    idx = p.CreateArrayBlock(idx, next, true, syntax.blocks);
                 else
                     idx++;
             }

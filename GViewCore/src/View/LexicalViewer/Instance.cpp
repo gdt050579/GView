@@ -53,7 +53,10 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (this->settings->parser)
     {
         TokensListBuilder tokensList(this);
-        this->settings->parser->AnalyzeText(TextParser(this->text, this->textLength), tokensList);
+        BlocksListBuilder blockList(this);
+        TextParser textParser(this->text, this->textLength);
+        SyntaxManager syntax(textParser, tokensList, blockList);
+        this->settings->parser->AnalyzeText(syntax);
         ComputeMultiLineTokens();
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
@@ -803,7 +806,7 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
         if (recursive)
         {
             const auto& block = this->blocks[tok.blockID];
-            for (auto idx = block.tokenStart; idx<block.tokenEnd;idx++)
+            for (auto idx = block.tokenStart; idx < block.tokenEnd; idx++)
             {
                 auto& currentTok = this->tokens[idx];
                 if (currentTok.IsBlockStarter())

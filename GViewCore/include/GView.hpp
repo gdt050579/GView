@@ -927,10 +927,31 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
-            Block CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
-            uint32 GetBlocksCount() const;
-            Block GetBlock(uint32 index) const;
             
+        };
+        class CORE_EXPORT BlocksList
+        {
+          protected:
+            void* data;
+
+            BlocksList() : data(nullptr)
+            {
+            }
+
+          public:
+            uint32 Len() const;
+            Block operator[](uint32 index) const;
+            Block Add(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
+            Block Add(Token start, Token end, BlockAlignament align, bool hasBlockEndMarker);
+        };
+        struct SyntaxManager
+        {
+            const TextParser& text;
+            TokensList& tokens;
+            BlocksList& blocks;
+            SyntaxManager(const TextParser& _text, TokensList& _tokens, BlocksList& _blocks) : text(_text), tokens(_tokens), blocks(_blocks)
+            {
+            }
         };
         class CORE_EXPORT TokenIndexStack
         {
@@ -951,7 +972,7 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void AnalyzeText(const TextParser& text, TokensList& tokensList) = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax) = 0;
         };
         struct CORE_EXPORT Settings
         {

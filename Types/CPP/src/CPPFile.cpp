@@ -670,27 +670,27 @@ uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::Te
     // check for #if...#endif (TODO)
     return next;
 }
-void CPPFile::BuildBlocks(GView::View::LexicalViewer::TokensList& list)
+void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     TokenIndexStack stBlocks;
     TokenIndexStack exprBlocks;
-    auto len = list.Len();
+    auto len = syntax.tokens.Len();
     for (auto index = 0U; index < len; index++)
     {
-        auto typeID = list[index].GetTypeID(TokenType::None);
+        auto typeID = syntax.tokens[index].GetTypeID(TokenType::None);
         switch (typeID)
         {
         case TokenType::BlockOpen:
             stBlocks.Push(index);
             break;
         case TokenType::BlockClose:
-            list.CreateBlock(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, true);
+            syntax.blocks.Add(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, true);
             break;
         case TokenType::ExpressionOpen:
             exprBlocks.Push(index);
             break;
         case TokenType::ExpressionClose:
-            list.CreateBlock(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, true);
+            syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, true);
             break;
         }
     }
@@ -868,17 +868,17 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
         idx++;
     }
 }
-void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list)
+void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     /* Search for the following cases
      * for|if|while|switch (...) {...} and add collapse/expand on for|if and while
      * word (...) {...} or word (...) cons {...} and add collapse/expand on word
      * do {...} while (...) -> both do and while should compact the {...}
      */
-    auto len = list.GetBlocksCount();
+    auto len = syntax.blocks.Len();
     for (auto idx = 0U; idx < len; idx++)
     {
-        auto block = list.GetBlock(idx);
+        auto block = syntax.blocks[idx];
         // search for {...} blocks
         auto startToken = block.GetStartToken();
         if (startToken.GetTypeID(TokenType::None) != TokenType::BlockOpen)
@@ -924,12 +924,12 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list
         }
     }
 }
-void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
+void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
-    tokenList.ResetLastTokenID(TokenType::None);
-    Tokenize(text, tokenList);
-    BuildBlocks(tokenList);
-    IndentSimpleInstructions(tokenList);
-    CreateFoldUnfoldLinks(tokenList);
+    syntax.tokens.ResetLastTokenID(TokenType::None);
+    Tokenize(syntax.text, syntax.tokens);
+    BuildBlocks(syntax);
+    IndentSimpleInstructions(syntax.tokens);
+    CreateFoldUnfoldLinks(syntax);
 }
 } // namespace GView::Type::CPP

@@ -33,6 +33,14 @@ namespace View
                 this->data = _data;
             }
         };
+        class BlocksListBuilder: public BlocksList
+        {
+          public:
+            BlocksListBuilder(void* _data)
+            {
+                this->data = _data;
+            }
+        };
         struct BlockObject
         {
             static constexpr uint32 INVALID_ID = 0xFFFFFFFF;
