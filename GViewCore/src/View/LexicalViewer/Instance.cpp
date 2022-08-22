@@ -796,11 +796,23 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     case Key::Up | Key::Shift:
         MoveUp(1, true);
         return true;
+    case Key::PageUp:
+        MoveUp(this->GetHeight(), false);
+        return true;
+    case Key::PageUp | Key::Shift:
+        MoveUp(this->GetHeight(), true);
+        return true;
     case Key::Down:
         MoveDown(1, false);
         return true;
     case Key::Down | Key::Shift:
         MoveDown(1, true);
+        return true;
+    case Key::PageDown:
+        MoveDown(this->GetHeight(), false);
+        return true;
+    case Key::PageDown | Key::Shift:
+        MoveDown(this->GetHeight(), true);
         return true;
     case Key::Left:
         MoveLeft(false, true);
