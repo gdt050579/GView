@@ -71,8 +71,17 @@ jobs:
     - name: Brew prefix
       run: brew --prefix
     
-    # - name: Install brew ncurses
-    #   run: brew install ncurses 
+    - name: Install brew ncurses
+      run: brew install ncurses
+
+    - name: NCurses Cellar
+      run: brew --cellar ncurses
+      
+    - name: NCurses Prefix
+      run: brew --prefix ncurses
+
+    - name: List NCurses files
+      run: ls -R /usr/local/Cellar/ncurses
       
     - name: Install brew openssl@1.1
       run: brew install openssl@1.1
@@ -80,18 +89,15 @@ jobs:
     - name: List OpenSSL files
       run: ls /usr/local/opt/openssl@1.1/lib
       
-    # - name: List NCurses Files
-    #   run: ls -R /usr/local/opt/ncurses
-    #   
-    # - name: NCurses Cellar
-    #   run: brew --cellar ncurses
-    #   
-    # - name: NCurses Prefix
-    #   run: brew --prefix ncurses
+    - name: NCurses OpenSSL
+      run: brew --cellar openssl
+      
+    - name: NCurses OpenSSL
+      run: brew --prefix openssl
             
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1 -DOPENSSL_LIBRARIES=/usr/local/opt/openssl@1.1/lib 
-      # -DCMAKE_PREFIX_PATH=/usr/local/Cellar/ncurses/6.3
+      
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
         
