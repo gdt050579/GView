@@ -881,9 +881,9 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list
         auto block = list.GetBlock(idx);
         // search for {...} blocks
         auto startToken = block.GetStartToken();
-        if ((startToken.GetTypeID(TokenType::None) != TokenType::BlockOpen) || (startToken.GetIndex() < 1))
+        if (startToken.GetTypeID(TokenType::None) != TokenType::BlockOpen)
             continue;
-        auto precToken   = list[startToken.GetIndex() - 1];
+        auto precToken   = startToken.Precedent();
         auto precTokenID = precToken.GetTypeID(TokenType::None);
         if (precTokenID == (TokenType::Keyword | (KeywordsType::Else << 16)))
         {
@@ -899,7 +899,7 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list
             auto endToken = block.GetEndToken();
             if (endToken.GetTypeID(TokenType::None) == TokenType::BlockClose)
             {
-                auto nextToken = list[endToken.GetIndex() + 1];
+                auto nextToken = endToken.Next();
                 if (nextToken.GetTypeID(TokenType::None) == (TokenType::Keyword | (KeywordsType::While << 16)))
                 {
                     nextToken.SetBlock(block);
@@ -910,17 +910,12 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list
             continue;
         }
 
-        if ((precTokenID == (TokenType::Keyword | (KeywordsType::Const << 16))) && (startToken.GetIndex() > 1))
-            precToken = list[startToken.GetIndex() - 2];
+        if (precTokenID == (TokenType::Keyword | (KeywordsType::Const << 16)))
+            precToken = precToken.Precedent();
         // at this point precToken should be a (...) block
         if (precToken.GetTypeID(TokenType::None) != TokenType::ExpressionClose)
             continue;
-        auto exprToken = precToken.GetBlock().GetStartToken();
-        if ((exprToken.IsValid() == false) || (exprToken.GetIndex() == 0))
-            continue;
-        auto targetToken = list[exprToken.GetIndex() - 1];
-        if (targetToken.IsValid() == false)
-            continue;
+        auto targetToken = precToken.GetBlock().GetStartToken().Precedent();
         auto targetTokenID = targetToken.GetTypeID(TokenType::None);
         if ((targetTokenID == TokenType::Word) || ((targetTokenID & 0xFFFF) == TokenType::Keyword))
         {
