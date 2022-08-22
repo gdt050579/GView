@@ -141,7 +141,7 @@ struct ParserData
             tokenList.Add(TokenType::Value, start, end, TokenColor::Constant, TokenDataType::Boolean);
             return;
         }
-        if (text.ParseNumber(start)==end)
+        if (text.ParseNumber(start) == end)
         {
             tokenList.Add(TokenType::Value, start, end, TokenColor::Number, TokenDataType::Number);
             return;
@@ -429,13 +429,14 @@ bool INIFile::Update()
 
 void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
+    LocalString<64> tmp;
     ParserData p(text, tokenList);
 
     // Tokenization
     p.Tokenize();
 
     // semantic process
-    // search for a section and fold it :)
+    // search for a section and create a block around it
     uint32 len = tokenList.Len();
     uint32 idx = 0;
     while (idx < len)
@@ -445,11 +446,23 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
         if (idx < len)
         {
             // we have found a section
-            uint32 next = idx + 1;
-            while ((next < len) && (tokenList[next].GetTypeID(TokenType::Invalid) != TokenType::Section))
+            uint32 next   = idx + 1;
+            auto keyCount = 0;
+            while (next < len)
+            {
+                auto tokID = tokenList[next].GetTypeID(TokenType::Invalid);
+                if (tokID == TokenType::Section)
+                    break;
+                if (tokID == TokenType::Key)
+                    keyCount++;
                 next++;
+            }
             // we have found another section
-            tokenList.CreateBlock(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
+            auto block = tokenList.CreateBlock(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
+            if (keyCount == 0)
+                block.SetFoldMessage("<Empty>");
+            else
+                block.SetFoldMessage(tmp.Format("<Keys: %d>", keyCount));
             // within each block --> search for arrays and create a block for them as well
             while (idx < next)
             {
