@@ -59,6 +59,33 @@ Block Token::GetBlock() const
         return Block(this->data, tok.blockID);
     return Block();
 }
+bool Token::SetBlock(Block block)
+{
+    return SetBlock(block.GetIndex());
+}
+bool Token::SetBlock(uint32 blockIndex)
+{
+    CREATE_TOKENREF(false);
+    if (tok.IsBlockStarter())
+        return false; // already has a block
+    if (blockIndex >= INSTANCE->blocks.size())
+        return false; // invalid block index
+    const auto& block = INSTANCE->blocks[blockIndex];
+    // token index can not be inside pointed block
+    if (block.hasEndMarker)
+    {
+        if ((this->index >= block.tokenStart) && (this->index <= block.tokenEnd))
+            return false;
+    }
+    else
+    {
+        if ((this->index >= block.tokenStart) && (this->index < block.tokenEnd))
+            return false;
+    }
+    // all good --> link it
+    tok.blockID = blockIndex;
+    return true;
+}
 // Block method
 Token Block::GetStartToken() const
 {
