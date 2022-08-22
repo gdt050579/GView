@@ -200,6 +200,9 @@ Block TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, b
     INSTANCE->tokens[start].SetBlockStartFlag();
     INSTANCE->tokens[start].blockID = blockID;
 
+    if (hasBlockEndMarker)
+        INSTANCE->tokens[end].blockID = blockID;
+
     return Block(this->data, blockID);
 }
 uint32 TokensList::GetBlocksCount() const
