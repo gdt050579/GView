@@ -868,6 +868,14 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
         idx++;
     }
 }
+void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list)
+{
+    /* Search for the following cases
+    * for|if|while (...) {...} and add collapse/expand on for|if and while
+    * word (...) {...} or word (...) cons {...} and add collapse/expand on word
+    */
+
+}
 void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
     tokenList.ResetLastTokenID(TokenType::None);

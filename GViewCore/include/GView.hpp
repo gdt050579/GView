@@ -925,6 +925,9 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
             Block CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
+            uint32 GetBlocksCount() const;
+            Block GetBlock(uint32 index) const;
+            
         };
         class CORE_EXPORT TokenIndexStack
         {

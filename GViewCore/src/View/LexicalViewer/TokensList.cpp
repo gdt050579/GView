@@ -202,4 +202,14 @@ Block TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, b
 
     return Block(this->data, blockID);
 }
+uint32 TokensList::GetBlocksCount() const
+{
+    return static_cast<uint32>(INSTANCE->blocks.size());
+}
+Block TokensList::GetBlock(uint32 index) const
+{
+    if (index < INSTANCE->blocks.size())
+        return Block(this->data, index);
+    return Block();
+}
 }; // namespace GView::View::LexicalViewer

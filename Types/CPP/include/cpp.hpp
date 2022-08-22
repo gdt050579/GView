@@ -17,6 +17,7 @@ namespace Type
             uint32 TokenizePreprocessDirective(const GView::View::LexicalViewer::TextParser& text, uint32 pos);
             void BuildBlocks(GView::View::LexicalViewer::TokensList& list);
             void IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& list);
+            void CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list);
             void Tokenize(const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& list);
           public:
             CPPFile();
