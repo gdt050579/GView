@@ -800,6 +800,16 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
     {
         bool foldValue = foldStatus == FoldStatus::Folded ? true : (foldStatus == FoldStatus::Expanded ? false : (!tok.IsFolded()));
         tok.SetFolded(foldValue);
+        if (recursive)
+        {
+            const auto& block = this->blocks[tok.blockID];
+            for (auto idx = block.tokenStart; idx<block.tokenEnd;idx++)
+            {
+                auto& currentTok = this->tokens[idx];
+                if (currentTok.IsBlockStarter())
+                    currentTok.SetFolded(foldValue);
+            }
+        }
         RecomputeTokenPositions();
     }
     else
@@ -881,6 +891,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     // fold -> unfold
     case Key::Space:
         SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, false);
+        return true;
+    case Key::Space | Key::Ctrl:
+        SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, true);
         return true;
     }
 
