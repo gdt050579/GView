@@ -793,7 +793,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::Semicolumn:
             tokenList.Add(
-                  TokenType::Comma,
+                  TokenType::Semicolumn,
                   idx,
                   idx + 1,
                   TokenColor::Operator,
