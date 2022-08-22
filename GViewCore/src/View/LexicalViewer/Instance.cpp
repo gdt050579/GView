@@ -572,22 +572,31 @@ void Instance::Paint(Graphics::Renderer& renderer)
         return;
     const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
-    uint32 idx                = 0;
+
+    // paint token on cursor first (and show block highlight if needed)
+    if (this->currentTokenIndex < this->tokens.size())
+    {
+        auto& currentTok = this->tokens[this->currentTokenIndex];
+        if (currentTok.IsVisible())
+            PaintToken(renderer, currentTok, true);
+    }
+
+    uint32 idx = 0;
     for (auto& t : this->tokens)
     {
-        if (!t.IsVisible())
+        // skip hidden and current token
+        if ((!t.IsVisible()) || (idx == this->currentTokenIndex))
         {
             idx++;
             continue;
         }
-        const auto onCursor  = idx == currentTokenIndex;
         const auto tk_right  = t.x + (int32) t.width - 1;
         const auto tk_bottom = t.y + (int32) t.height - 1;
         idx++;
         // if token not in visible screen => skip it
         if ((t.x > scroll_right) || (t.y > scroll_bottom) || (tk_right < Scroll.x) || (tk_bottom < Scroll.y))
             continue;
-        PaintToken(renderer, t, onCursor);
+        PaintToken(renderer, t, false);
     }
     PaintLineNumbers(renderer);
 }
