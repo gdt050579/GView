@@ -854,7 +854,7 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
                         {
                             // search for every ';' between (...) and remove any new line
                             auto endTokID = endToken.GetIndex();
-                            for (auto tkIdx = idx+2;tkIdx<endTokID;tkIdx++)
+                            for (auto tkIdx = idx + 2; tkIdx < endTokID; tkIdx++)
                             {
                                 auto currentTok = list[tkIdx];
                                 if (currentTok.GetTypeID(TokenType::None) == TokenType::Semicolumn)
@@ -871,18 +871,62 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
 void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list)
 {
     /* Search for the following cases
-    * for|if|while|switch (...) {...} and add collapse/expand on for|if and while
-    * word (...) {...} or word (...) cons {...} and add collapse/expand on word
-    * do {...} while (...) -> both do and while should compact the {...}
-    */
+     * for|if|while|switch (...) {...} and add collapse/expand on for|if and while
+     * word (...) {...} or word (...) cons {...} and add collapse/expand on word
+     * do {...} while (...) -> both do and while should compact the {...}
+     */
     auto len = list.GetBlocksCount();
-    for (auto idx = 0U;idx<len;idx++)
+    for (auto idx = 0U; idx < len; idx++)
     {
         auto block = list.GetBlock(idx);
         // search for {...} blocks
-        if (block.GetStartToken().GetTypeID(TokenType::None) != TokenType::BlockOpen)
+        auto startToken = block.GetStartToken();
+        if ((startToken.GetTypeID(TokenType::None) != TokenType::BlockOpen) || (startToken.GetIndex() < 1))
             continue;
-        // GDT: ToDo --> need backwards links
+        auto precToken   = list[startToken.GetIndex() - 1];
+        auto precTokenID = precToken.GetTypeID(TokenType::None);
+        if (precTokenID == (TokenType::Keyword | (KeywordsType::Else << 16)))
+        {
+            // found else {...} case ==> make sure that else can fold/unfold the next block
+            precToken.SetBlock(block);
+            continue;
+        }
+        if (precTokenID == (TokenType::Keyword | (KeywordsType::Do << 16)))
+        {
+            // found else do {...} case ==> make sure that 'do' token can fold/unfold the next block
+            precToken.SetBlock(block);
+            // check for do {...} while
+            auto endToken = block.GetEndToken();
+            if (endToken.GetTypeID(TokenType::None) == TokenType::BlockClose)
+            {
+                auto nextToken = list[endToken.GetIndex() + 1];
+                if (nextToken.GetTypeID(TokenType::None) == (TokenType::Keyword | (KeywordsType::While << 16)))
+                {
+                    nextToken.SetBlock(block);
+                    nextToken.SetAlignament(
+                          TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter | TokenAlignament::AfterPreviousToken);
+                }
+            }
+            continue;
+        }
+
+        if ((precTokenID == (TokenType::Keyword | (KeywordsType::Const << 16))) && (startToken.GetIndex() > 1))
+            precToken = list[startToken.GetIndex() - 2];
+        // at this point precToken should be a (...) block
+        if (precToken.GetTypeID(TokenType::None) != TokenType::ExpressionClose)
+            continue;
+        auto exprToken = precToken.GetBlock().GetStartToken();
+        if ((exprToken.IsValid() == false) || (exprToken.GetIndex() == 0))
+            continue;
+        auto targetToken = list[exprToken.GetIndex() - 1];
+        if (targetToken.IsValid() == false)
+            continue;
+        auto targetTokenID = targetToken.GetTypeID(TokenType::None);
+        if ((targetTokenID == TokenType::Word) || ((targetTokenID & 0xFFFF) == TokenType::Keyword))
+        {
+            // all good
+            targetToken.SetBlock(block);
+        }
     }
 }
 void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
@@ -891,5 +935,6 @@ void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
     Tokenize(text, tokenList);
     BuildBlocks(tokenList);
     IndentSimpleInstructions(tokenList);
+    CreateFoldUnfoldLinks(tokenList);
 }
 } // namespace GView::Type::CPP
