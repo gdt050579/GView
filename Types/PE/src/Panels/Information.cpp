@@ -19,12 +19,11 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::PE::P
 
 void Information::UpdateGeneralInformation()
 {
-    ListViewItem item;
-    LocalString<256> tmp;
+    LocalString<1024> tmp;
     NumericFormatter n;
 
     general->DeleteAllItems();
-    item = general->AddItem("PE Info");
+    auto item = general->AddItem("PE Info");
     item.SetType(ListViewItem::Type::Category);
     general->AddItem({ "File", object->GetName() });
 
