@@ -86,6 +86,23 @@ bool Token::SetBlock(uint32 blockIndex)
     tok.blockID = blockIndex;
     return true;
 }
+Token Token::Next() const
+{
+    if (this->data == nullptr)
+        return Token();
+    if ((size_t) (this->index + 1) >= INSTANCE->tokens.size())
+        return Token();
+    return Token(this->data, this->index + 1);
+}
+Token Token::Precedent() const
+{
+    if ((this->data == nullptr) || (this->index == 0))
+        return Token();
+    if ((size_t) (this->index - 1) >= INSTANCE->tokens.size())
+        return Token();
+    return Token(this->data, this->index - 1);
+}
+
 // Block method
 Token Block::GetStartToken() const
 {

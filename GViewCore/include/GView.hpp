@@ -892,6 +892,9 @@ namespace View
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
 
+            Token Next() const;
+            Token Precedent() const;
+
             u16string_view GetText() const;
             Block GetBlock() const;
 
