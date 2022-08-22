@@ -296,7 +296,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             if (block.foldMessage.empty())
                 x += tok.width + 3; // for ...
             else
-                x += tok.width + (int32)block.foldMessage.size();
+                x += tok.width + (int32) block.foldMessage.size();
             partOfFoldedBlock = block.hasEndMarker; // only limit the alignament for end marker
         }
         else
@@ -437,9 +437,9 @@ void Instance::EnsureCurrentItemIsVisible()
         Scroll.y = tok.y;
 }
 
-void Instance::FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& tok)
+void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block)
 {
-    const auto& block    = this->blocks[tok.blockID];
+    const auto& tok      = this->tokens[block.tokenStart];
     const auto& tknEnd   = this->tokens[block.tokenEnd];
     const auto rightPos  = tknEnd.x + tknEnd.width - 1;
     const auto bottomPos = tknEnd.y + tknEnd.height - 1;
@@ -541,8 +541,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         }
     }
     const auto blockStarter = tok.IsBlockStarter();
-    if (blockStarter && onCursor)
-        FillBlockSpace(renderer, tok);
+    if ((onCursor) && (tok.HasBlock()))
+        FillBlockSpace(renderer, this->blocks[tok.blockID]);
     if (tok.height > 1)
     {
         WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
@@ -784,14 +784,21 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
 {
     if (this->noItemsVisible)
         return;
-    if ((size_t) this->currentTokenIndex >= this->tokens.size())
+    if ((size_t) index >= this->tokens.size())
         return;
-    auto& tok = this->tokens[this->currentTokenIndex];
-    if (!tok.IsBlockStarter())
-        return;
-    bool foldValue = foldStatus == FoldStatus::Folded ? true : (foldStatus == FoldStatus::Expanded ? false : (!tok.IsFolded()));
-    tok.SetFolded(foldValue);
-    RecomputeTokenPositions();
+    auto& tok = this->tokens[index];
+    if (tok.IsBlockStarter())
+    {
+        bool foldValue = foldStatus == FoldStatus::Folded ? true : (foldStatus == FoldStatus::Expanded ? false : (!tok.IsFolded()));
+        tok.SetFolded(foldValue);
+        RecomputeTokenPositions();
+    }
+    else
+    {
+        // if current token is not the block starter, but reference a block, fold that block
+        if (tok.HasBlock())
+            SetFoldStatus(this->blocks[tok.blockID].tokenStart, foldStatus, recursive);
+    }
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {

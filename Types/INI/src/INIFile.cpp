@@ -395,8 +395,9 @@ struct ParserData
             }
         }
     }
-    uint32 CreateArrayBlock(uint32 start, uint32 end)
+    uint32 CreateArrayBlock(uint32 start, uint32 end, bool firstArray)
     {
+        Block block;
         // starts points to an array '['...']'
         uint32 idx = start + 1;
         while (idx < end)
@@ -404,10 +405,15 @@ struct ParserData
             switch (tokenList[idx].GetTypeID(TokenType::Invalid))
             {
             case TokenType::ArrayStart:
-                idx = CreateArrayBlock(idx, end);
+                idx = CreateArrayBlock(idx, end, false);
                 break;
             case TokenType::ArrayEnd:
-                this->tokenList.CreateBlock(start, idx, BlockAlignament::AsBlockStartToken, true);
+                block = this->tokenList.CreateBlock(start, idx, BlockAlignament::AsBlockStartToken, true);
+                if ((start >= 2) && (tokenList[start - 2].GetTypeID(TokenType::Invalid) == TokenType::Key))
+                {
+                    // make sure that key can also fold/unfold current block
+                    tokenList[start - 2].SetBlock(block);
+                }
                 return idx + 1;
             default:
                 idx++;
@@ -467,7 +473,7 @@ void INIFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
             while (idx < next)
             {
                 if (tokenList[idx].GetTypeID(TokenType::Invalid) == TokenType::ArrayStart)
-                    idx = p.CreateArrayBlock(idx, next);
+                    idx = p.CreateArrayBlock(idx, next, true);
                 else
                     idx++;
             }

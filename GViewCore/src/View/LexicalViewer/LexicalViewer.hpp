@@ -83,6 +83,10 @@ namespace View
                 else
                     status = static_cast<TokenStatus>(static_cast<uint8>(status) & (~static_cast<uint8>(TokenStatus::Folded)));
             }
+            inline bool HasBlock() const
+            {
+                return blockID != BlockObject::INVALID_ID;
+            }
         };
 
         struct SettingsData
@@ -134,7 +138,7 @@ namespace View
             void UpdateVisibilityStatus(uint32 start, uint32 end, bool visible);
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
-            void FillBlockSpace(Graphics::Renderer& renderer, const TokenObject& tok);
+            void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
             void PaintLineNumbers(Graphics::Renderer& renderer);
 
