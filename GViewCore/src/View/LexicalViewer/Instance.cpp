@@ -293,7 +293,10 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         if ((blockStarter) && (folded))
         {
             const auto& block = this->blocks[tok.blockID];
-            x += tok.width + 3;
+            if (block.foldMessage.empty())
+                x += tok.width + 3; // for ...
+            else
+                x += tok.width + (int32)block.foldMessage.size();
             partOfFoldedBlock = block.hasEndMarker; // only limit the alignament for end marker
         }
         else
@@ -554,9 +557,13 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     }
     if (blockStarter && tok.IsFolded())
     {
-        auto x = lineNrWidth + tok.x + tok.width - Scroll.x;
-        auto y = tok.y + tok.height - 1 - Scroll.y;
-        renderer.WriteSingleLineText(x, y, "...", ColorPair(Color::Gray, Color::Black));
+        auto x            = lineNrWidth + tok.x + tok.width - Scroll.x;
+        auto y            = tok.y + tok.height - 1 - Scroll.y;
+        const auto& block = this->blocks[tok.blockID];
+        if (block.foldMessage.empty())
+            renderer.WriteSingleLineText(x, y, "...", ColorPair(Color::Gray, Color::Black));
+        else
+            renderer.WriteSingleLineText(x, y, block.foldMessage, ColorPair(Color::Gray, Color::Black));
     }
 }
 void Instance::Paint(Graphics::Renderer& renderer)

@@ -859,6 +859,8 @@ namespace View
             Token GetStartToken() const;
             Token GetEndToken() const;
 
+            bool SetFoldMessage(std::string_view message);
+
             constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
         };
         class CORE_EXPORT Token
@@ -920,7 +922,7 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
-            bool CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
+            Block CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
         };
         class CORE_EXPORT TokenIndexStack
         {

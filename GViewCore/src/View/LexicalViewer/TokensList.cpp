@@ -70,6 +70,12 @@ Token Block::GetEndToken() const
     CREATE_BLOCKREF(Token());
     return Token(this->data, block.tokenEnd);
 }
+bool Block::SetFoldMessage(std::string_view txt)
+{
+    CREATE_BLOCKREF(false);
+    block.foldMessage = txt;
+    return true;
+}
 // TOKENLIST methods
 
 uint32 TokensList::Len() const
@@ -147,12 +153,12 @@ Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
     }
     return tok;
 }
-bool TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker)
+Block TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker)
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
-    CHECK(start < itemsCount, false, "Invalid token index (start=%u), should be less than %u", start, itemsCount);
-    CHECK(end < itemsCount, false, "Invalid token index (end=%u), should be less than %u", end, itemsCount);
-    CHECK(start < end, false, "Start token index(%u) should be smaller than end token index(%u)", start, end);
+    CHECK(start < itemsCount, Block(), "Invalid token index (start=%u), should be less than %u", start, itemsCount);
+    CHECK(end < itemsCount, Block(), "Invalid token index (end=%u), should be less than %u", end, itemsCount);
+    CHECK(start < end, Block(), "Start token index(%u) should be smaller than end token index(%u)", start, end);
 
     // create a block
     auto& block               = INSTANCE->blocks.emplace_back();
@@ -167,6 +173,6 @@ bool TokensList::CreateBlock(uint32 start, uint32 end, BlockAlignament align, bo
     INSTANCE->tokens[start].SetBlockStartFlag();
     INSTANCE->tokens[start].blockID = blockID;
 
-    return true;
+    return Block(this->data, blockID);
 }
 }; // namespace GView::View::LexicalViewer
