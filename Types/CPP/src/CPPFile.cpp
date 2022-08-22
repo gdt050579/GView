@@ -871,10 +871,19 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
 void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::TokensList& list)
 {
     /* Search for the following cases
-    * for|if|while (...) {...} and add collapse/expand on for|if and while
+    * for|if|while|switch (...) {...} and add collapse/expand on for|if and while
     * word (...) {...} or word (...) cons {...} and add collapse/expand on word
+    * do {...} while (...) -> both do and while should compact the {...}
     */
-
+    auto len = list.GetBlocksCount();
+    for (auto idx = 0U;idx<len;idx++)
+    {
+        auto block = list.GetBlock(idx);
+        // search for {...} blocks
+        if (block.GetStartToken().GetTypeID(TokenType::None) != TokenType::BlockOpen)
+            continue;
+        // GDT: ToDo --> need backwards links
+    }
 }
 void CPPFile::AnalyzeText(const TextParser& text, TokensList& tokenList)
 {
