@@ -635,7 +635,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
             if (tokenList.GetLastTokenID() == TokenType::Word)
                 tokenList.GetLastToken().SetTokenColor(TokenColor::Keyword2);
         }
-        tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, align);
+        tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, true);
         return pos + sz;
     }
     else
@@ -728,7 +728,8 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             idx = next;
             break;
         case CharType::Comment:
@@ -739,23 +740,25 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
+                  true);
             idx = next;
             break;
         case CharType::ArrayOpen:
-            tokenList.Add(TokenType::ArrayOpen, idx, idx + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ArrayOpen, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             idx++;
             break;
         case CharType::ArrayClose:
-            tokenList.Add(TokenType::ArrayClose, idx, idx + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ArrayClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             idx++;
             break;
         case CharType::ExpressionOpen:
-            tokenList.Add(TokenType::ExpressionOpen, idx, idx + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ExpressionOpen, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             idx++;
             break;
         case CharType::ExpressionClose:
-            tokenList.Add(TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator);
+            tokenList.Add(
+                  TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             idx++;
             break;
         case CharType::BlockOpen:
@@ -764,7 +767,9 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx,
                   idx + 1,
                   TokenColor::Operator,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenDataType::None,
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             idx++;
             break;
         case CharType::BlockClose:
@@ -773,7 +778,9 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx,
                   idx + 1,
                   TokenColor::Operator,
-                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter);
+                  TokenDataType::None,
+                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter,
+                  true);
             idx++;
             break;
         case CharType::Number:
@@ -788,7 +795,13 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::Comma:
             tokenList.Add(
-                  TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
+                  TokenType::Comma,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenDataType::None,
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
+                  true);
             idx++;
             break;
         case CharType::Semicolumn:
@@ -797,7 +810,9 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx,
                   idx + 1,
                   TokenColor::Operator,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken);
+                  TokenDataType::None,
+                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken,
+                  true);
             idx++;
             break;
         case CharType::Preprocess:
@@ -808,7 +823,8 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   next,
                   TokenColor::Preprocesor,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::NewLineBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::NewLineBefore,
+                  true);
             idx = next;
             break;
         case CharType::Word:
@@ -915,7 +931,7 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& s
         // at this point precToken should be a (...) block
         if (precToken.GetTypeID(TokenType::None) != TokenType::ExpressionClose)
             continue;
-        auto targetToken = precToken.GetBlock().GetStartToken().Precedent();
+        auto targetToken   = precToken.GetBlock().GetStartToken().Precedent();
         auto targetTokenID = targetToken.GetTypeID(TokenType::None);
         if ((targetTokenID == TokenType::Word) || ((targetTokenID & 0xFFFF) == TokenType::Keyword))
         {
