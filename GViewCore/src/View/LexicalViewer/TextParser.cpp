@@ -3,7 +3,6 @@
 namespace GView::View::LexicalViewer
 {
 #define HAS_FLAG(value, flag) (((value) & (flag)) == (flag))
-
 const uint8 lower_case_table[128] = { 0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,  16,  17,  18,
                                       19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,  37,
                                       38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,
@@ -11,6 +10,64 @@ const uint8 lower_case_table[128] = { 0,   1,   2,   3,   4,   5,   6,   7,   8,
                                       108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 91,  92,  93,  94,
                                       95,  96,  97,  98,  99,  100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113,
                                       114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127 };
+uint32 TextParser_ComputeHash32(const uint8* p, const uint8* e, bool ignoreCase)
+{
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    uint32 hash = 0x811c9dc5;
+    if (ignoreCase)
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            if ((*p) < 128)
+                hash = hash ^ (lower_case_table[*p]);
+            else
+                hash = hash ^ (*p);
+            hash = hash * 0x01000193;
+        }
+    }
+    else
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            hash = hash ^ (*p);
+            hash = hash * 0x01000193;
+        }
+    }
+    return hash;
+}
+uint64 TextParser_ComputeHash64(const uint8* p, const uint8* e, bool ignoreCase)
+{
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    uint64 hash = 0xcbf29ce484222325ULL;
+    if (ignoreCase)
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            if ((*p) < 128)
+                hash = hash ^ (lower_case_table[*p]);
+            else
+                hash = hash ^ (*p);
+            hash = hash * 0x00000100000001B3ULL;
+        }
+    }
+    else
+    {
+        for (; p < e; p++)
+        {
+            if ((*p) == 0)
+                continue;
+            hash = hash ^ (*p);
+            hash = hash * 0x00000100000001B3ULL;
+        }
+    }
+    return hash;
+}
 
 TextParser::TextParser(const char16* _text, uint32 _size)
 {
@@ -400,66 +457,30 @@ uint64 TextParser::ComputeHash64(uint32 start, uint32 end, bool ignoreCase) cons
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
     if ((start >= end) || (end > size))
         return 0;
-    uint64 hash   = 0xcbf29ce484222325ULL;
-    const auto* p = reinterpret_cast<const uint8*>(text + start);
-    const auto* e = reinterpret_cast<const uint8*>(text + end);
-    if (ignoreCase)
-    {
-        for (; p < e; p++)
-        {
-            if ((*p) == 0)
-                continue;
-            if ((*p) < 128)
-                hash = hash ^ (lower_case_table[*p]);
-            else
-                hash = hash ^ (*p);
-            hash = hash * 0x00000100000001B3ULL;
-        }
-    }
-    else
-    {
-        for (; p < e; p++)
-        {
-            if ((*p) == 0)
-                continue;
-            hash = hash ^ (*p);
-            hash = hash * 0x00000100000001B3ULL;
-        }
-    }
-    return hash;
+    return TextParser_ComputeHash64(reinterpret_cast<const uint8*>(text + start), reinterpret_cast<const uint8*>(text + end), ignoreCase);
 }
 uint32 TextParser::ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
     if ((start >= end) || (end > size))
         return 0;
-    uint32 hash   = 0x811c9dc5;
-    const auto* p = reinterpret_cast<const uint8*>(text + start);
-    const auto* e = reinterpret_cast<const uint8*>(text + end);
-    if (ignoreCase)
-    {
-        for (; p < e; p++)
-        {
-            if ((*p) == 0)
-                continue;
-            if ((*p) < 128)
-                hash = hash ^ (lower_case_table[*p]);
-            else
-                hash = hash ^ (*p);
-            hash = hash * 0x01000193;
-        }
-    }
-    else
-    {
-        for (; p < e; p++)
-        {
-            if ((*p) == 0)
-                continue;
-            hash = hash ^ (*p);
-            hash = hash * 0x01000193;
-        }
-    }
-    return hash;
+    return TextParser_ComputeHash32(reinterpret_cast<const uint8*>(text + start), reinterpret_cast<const uint8*>(text + end), ignoreCase);
+}
+uint32 TextParser::ComputeHash32(u16string_view txt, bool ignoreCase)
+{
+    if (txt.empty())
+        return 0;
+    const uint8* p = reinterpret_cast<const uint8*>(txt.data());
+    const uint8* e = reinterpret_cast<const uint8*>(txt.data()+txt.size());
+    return TextParser_ComputeHash32(p, e, ignoreCase);
+}
+uint64 TextParser::ComputeHash64(u16string_view txt, bool ignoreCase)
+{
+    if (txt.empty())
+        return 0;
+    const uint8* p = reinterpret_cast<const uint8*>(txt.data());
+    const uint8* e = reinterpret_cast<const uint8*>(txt.data() + txt.size());
+    return TextParser_ComputeHash64(p, e, ignoreCase);
 }
 #undef HAS_FLAG
 } // namespace GView::View::LexicalViewer

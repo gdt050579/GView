@@ -793,6 +793,8 @@ namespace View
             uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
             uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const;
             uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
+            static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
+            static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
         };
         enum class TokenDataType : uint8
         {
