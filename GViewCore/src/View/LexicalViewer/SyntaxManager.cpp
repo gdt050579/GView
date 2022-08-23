@@ -102,6 +102,12 @@ Token Token::Precedent() const
         return Token();
     return Token(this->data, this->index - 1);
 }
+bool Token::DisableSimilartyHighlight()
+{
+    CREATE_TOKENREF(false);
+    tok.SetDisableSimilartyHighlightFlag();
+    return true;
+}
 
 // Block method
 Token Block::GetStartToken() const
@@ -142,17 +148,22 @@ Token TokensList::GetLastToken() const
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color)
 {
-    return Add(typeID, start, end, color, TokenDataType::None, TokenAlignament::None);
+    return Add(typeID, start, end, color, TokenDataType::None, TokenAlignament::None, false);
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType)
 {
-    return Add(typeID, start, end, color, dataType, TokenAlignament::None);
+    return Add(typeID, start, end, color, dataType, TokenAlignament::None, false);
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align)
 {
-    return Add(typeID, start, end, color, TokenDataType::None, align);
+    return Add(typeID, start, end, color, TokenDataType::None, align, false);
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align)
+{
+    return Add(typeID, start, end, color, dataType, align, false);
+}
+Token TokensList::Add(
+      uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, bool disableSimilartySearch)
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     uint32 len        = INSTANCE->GetUnicodeTextLen();
@@ -183,6 +194,9 @@ Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color,
     cToken.status    = TokenStatus::Visible;
     cToken.align     = align;
     cToken.dataType  = dataType;
+
+    if (disableSimilartySearch)
+        cToken.SetDisableSimilartyHighlightFlag();
 
     this->lastTokenID = typeID;
 

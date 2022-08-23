@@ -20,10 +20,11 @@ namespace View
 
         enum class TokenStatus : uint8
         {
-            None       = 0,
-            Visible    = 0x01,
-            Folded     = 0x02, // only for blocks
-            BlockStart = 0x04,
+            None                      = 0,
+            Visible                   = 0x01,
+            Folded                    = 0x02, // only for blocks
+            BlockStart                = 0x04,
+            DisableSimilartyHighlight = 0x08, // hash will not be computed for this token
         };
         class TokensListBuilder : public TokensList
         {
@@ -96,8 +97,17 @@ namespace View
             {
                 return blockID != BlockObject::INVALID_ID;
             }
+            inline void SetDisableSimilartyHighlightFlag()
+            {
+                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::DisableSimilartyHighlight));
+            }
             inline void UpdateHash(const char16* text, bool ignoreCase)
             {
+                if ((static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilartyHighlight)) != 0)
+                {
+                    this->hash = 0;
+                    return;
+                }
                 this->hash = TextParser::ComputeHash64({ text + start, (size_t) (end - start) }, ignoreCase);
             }
         };

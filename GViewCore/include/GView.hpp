@@ -885,7 +885,7 @@ namespace View
             {
                 return index;
             }
-            
+
             uint32 GetTypeID(uint32 errorValue) const;
             TokenAlignament GetAlignament() const;
             bool SetAlignament(TokenAlignament align);
@@ -893,6 +893,7 @@ namespace View
             bool SetTokenColor(TokenColor col);
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
+            bool DisableSimilartyHighlight();
 
             Token Next() const;
             Token Precedent() const;
@@ -928,8 +929,15 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
+            Token Add(
+                  uint32 typeID,
+                  uint32 start,
+                  uint32 end,
+                  TokenColor color,
+                  TokenDataType dataType,
+                  TokenAlignament align,
+                  bool disableSimilartySearch);
             Token AddErrorToken(uint32 start, uint32 end, ConstString error);
-            
         };
         class CORE_EXPORT BlocksList
         {
