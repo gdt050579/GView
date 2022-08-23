@@ -162,7 +162,8 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             pos = next;
             break;
         case CharType::SectionOrArrayStart:
@@ -170,7 +171,13 @@ struct ParserData
             if (text[next] == ']')
                 next++;
             tokenList.Add(
-                  TokenType::Section, pos, next, TokenColor::Keyword, TokenAlignament::NewLineBefore | TokenAlignament::NewLineAfter);
+                  TokenType::Section,
+                  pos,
+                  next,
+                  TokenColor::Keyword,
+                  TokenDataType::None,
+                  TokenAlignament::NewLineBefore | TokenAlignament::NewLineAfter,
+                  true);
             pos = next;
             break;
         case CharType::Word:
@@ -204,7 +211,8 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -221,7 +229,7 @@ struct ParserData
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::SectionOrArrayStart:
-            tokenList.Add(TokenType::ArrayStart, pos, pos + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ArrayStart, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             state = ParserState::ExpectArrayValue;
             this->arrayLevel++;
             pos++;
@@ -250,13 +258,20 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::Equal:
             tokenList.Add(
-                  TokenType::Equal, pos, pos + 1, TokenColor::Operator, TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter);
+                  TokenType::Equal,
+                  pos,
+                  pos + 1,
+                  TokenColor::Operator,
+                  TokenDataType::None,
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
+                  true);
             pos++;
             state = ParserState::ExpectValueOrArray;
             break;
@@ -281,16 +296,17 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             pos = next;
             break;
         case CharType::Comma:
-            tokenList.Add(TokenType::Comma, pos, pos + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::Comma, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             pos++;
             state = ParserState::ExpectArrayValue;
             break;
         case CharType::SectionOrArrayEnd:
-            tokenList.Add(TokenType::ArrayEnd, pos, pos + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ArrayEnd, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             this->arrayLevel--;
             state = this->arrayLevel > 0 ? ParserState::ExpectCommaOrEndOfArray : ParserState::ExpectKeyValueOrSection;
             pos++;
@@ -319,7 +335,8 @@ struct ParserData
                   next,
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore);
+                  TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
+                  true);
             pos = next;
             break;
         case CharType::String:
@@ -335,13 +352,13 @@ struct ParserData
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::SectionOrArrayEnd:
-            tokenList.Add(TokenType::ArrayEnd, pos, pos + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ArrayEnd, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             this->arrayLevel--;
             state = this->arrayLevel > 0 ? ParserState::ExpectCommaOrEndOfArray : ParserState::ExpectKeyValueOrSection;
             pos++;
             break;
         case CharType::SectionOrArrayStart:
-            tokenList.Add(TokenType::ArrayStart, pos, pos + 1, TokenColor::Operator);
+            tokenList.Add(TokenType::ArrayStart, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             state = ParserState::ExpectArrayValue;
             this->arrayLevel++;
             pos++;
