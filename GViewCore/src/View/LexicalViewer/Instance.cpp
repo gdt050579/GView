@@ -47,6 +47,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->currentTokenIndex = 0;
     this->lineNrWidth       = 0;
     this->lastLineNumber    = 0;
+    this->currentHash       = 0;
     this->noItemsVisible    = true;
     this->prettyFormat      = true;
 
@@ -119,7 +120,7 @@ void Instance::ComputeTokensInformation(const TextParser& textParser)
             p++;
         }
         tok.height = nrLines;
-        tok.hash   = textParser.ComputeHash64(tok.start, tok.end, settings->ignoreCase);
+        tok.UpdateHash(this->text, this->settings->ignoreCase);
     }
 }
 void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
@@ -541,6 +542,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
             col = Cfg.Text.Normal;
             break;
         }
+        if ((this->currentHash != 0) && (tok.hash == this->currentHash))
+            col = Cfg.Selection.SimilarText;
     }
     const auto blockStarter = tok.IsBlockStarter();
     if ((onCursor) && (tok.HasBlock()))
@@ -572,18 +575,25 @@ void Instance::Paint(Graphics::Renderer& renderer)
 {
     if (noItemsVisible)
         return;
-    const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
-    const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
 
     // paint token on cursor first (and show block highlight if needed)
     if (this->currentTokenIndex < this->tokens.size())
     {
         auto& currentTok = this->tokens[this->currentTokenIndex];
         if (currentTok.IsVisible())
+        {
+            this->currentHash = currentTok.hash;
             PaintToken(renderer, currentTok, true);
+        }
+    }
+    else
+    {
+        this->currentHash = 0;
     }
 
-    uint32 idx = 0;
+    const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
+    const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
+    uint32 idx                = 0;
     for (auto& t : this->tokens)
     {
         // skip hidden and current token

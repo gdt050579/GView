@@ -11,7 +11,7 @@ namespace View
         using namespace AppCUI;
         using namespace GView::Utils;
 
-        enum class FoldStatus: uint32
+        enum class FoldStatus : uint32
         {
             Folded,
             Expanded,
@@ -33,7 +33,7 @@ namespace View
                 this->data = _data;
             }
         };
-        class BlocksListBuilder: public BlocksList
+        class BlocksListBuilder : public BlocksList
         {
           public:
             BlocksListBuilder(void* _data)
@@ -96,6 +96,10 @@ namespace View
             {
                 return blockID != BlockObject::INVALID_ID;
             }
+            inline void UpdateHash(const char16* text, bool ignoreCase)
+            {
+                this->hash = TextParser::ComputeHash64({ text + start, (size_t) (end - start) }, ignoreCase);
+            }
         };
 
         struct SettingsData
@@ -124,6 +128,7 @@ namespace View
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
+            uint64 currentHash;
             char16* text;
             uint32 textLength;
             uint32 currentTokenIndex;
