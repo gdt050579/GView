@@ -894,6 +894,7 @@ namespace View
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
             bool DisableSimilartyHighlight();
+            bool SetText(const ConstString &text);
 
             Token Next() const;
             Token Precedent() const;

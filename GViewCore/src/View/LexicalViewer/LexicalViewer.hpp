@@ -53,6 +53,7 @@ namespace View
         };
         struct TokenObject
         {
+            UnicodeStringBuilder value;
             uint64 hash;
             uint32 start, end, type;
             uint32 blockID; // for blocks
@@ -108,7 +109,10 @@ namespace View
                     this->hash = 0;
                     return;
                 }
-                this->hash = TextParser::ComputeHash64({ text + start, (size_t) (end - start) }, ignoreCase);
+                if (this->value.Len() == 0)
+                    this->hash = TextParser::ComputeHash64({ text + start, (size_t) (end - start) }, ignoreCase);
+                else
+                    this->hash = TextParser::ComputeHash64(this->value.ToStringView(), ignoreCase);
             }
         };
 

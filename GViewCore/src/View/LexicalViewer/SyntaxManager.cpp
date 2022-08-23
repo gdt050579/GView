@@ -108,7 +108,11 @@ bool Token::DisableSimilartyHighlight()
     tok.SetDisableSimilartyHighlightFlag();
     return true;
 }
-
+bool Token::SetText(const ConstString &text)
+{
+    CREATE_TOKENREF(false);
+    return tok.value.Set(text);
+}
 // Block method
 Token Block::GetStartToken() const
 {
