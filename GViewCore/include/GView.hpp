@@ -980,6 +980,7 @@ namespace View
 
             Settings();
             void SetParser(Reference<ParseInterface> parser);
+            void SetCaseSensitivity(bool ignoreCase);
         };
     }; // namespace LexicalViewer
 

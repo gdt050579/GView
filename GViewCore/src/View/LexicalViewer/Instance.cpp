@@ -57,7 +57,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         TextParser textParser(this->text, this->textLength);
         SyntaxManager syntax(textParser, tokensList, blockList);
         this->settings->parser->AnalyzeText(syntax);
-        ComputeMultiLineTokens();
+        ComputeTokensInformation(textParser);
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
     }
@@ -94,8 +94,13 @@ void Instance::RecomputeTokenPositions()
             this->lineNrWidth = 8;
     }
 }
-void Instance::ComputeMultiLineTokens()
+void Instance::ComputeTokensInformation(const TextParser& textParser)
 {
+    /*
+    Computes:
+    - height
+    - hashing
+    */
     for (auto& tok : this->tokens)
     {
         const char16* p = this->text + tok.start;
@@ -114,6 +119,7 @@ void Instance::ComputeMultiLineTokens()
             p++;
         }
         tok.height = nrLines;
+        tok.hash   = textParser.ComputeHash64(tok.start, tok.end, settings->ignoreCase);
     }
 }
 void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)

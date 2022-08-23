@@ -52,6 +52,7 @@ namespace View
         };
         struct TokenObject
         {
+            uint64 hash;
             uint32 start, end, type;
             uint32 blockID; // for blocks
             int32 x, y;
@@ -101,6 +102,7 @@ namespace View
         {
             Reference<ParseInterface> parser;
             uint8 indentWidth;
+            bool ignoreCase;
             SettingsData();
         };
 
@@ -137,7 +139,7 @@ namespace View
 
             static Config config;
 
-            void ComputeMultiLineTokens();
+            void ComputeTokensInformation(const TextParser& text);
             void ComputeOriginalPositions();
             AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
             void PrettyFormat();
