@@ -3,6 +3,9 @@
 namespace GView::View::LexicalViewer
 {
 #define HAS_FLAG(value, flag) (((value) & (flag)) == (flag))
+#define VALIDATE_NUMBER_SEPARATOR                                                                                                          \
+    if ((((*p) == '_') && allowUnderline) || (((*p) == '\'') && allowSingleQuote))                                                         \
+        validCharacter = true;
 const uint8 lower_case_table[128] = { 0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,  16,  17,  18,
                                       19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,  37,
                                       38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,
@@ -377,17 +380,17 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
             break;
         }
     }
-    auto* p                   = text + index;
-    const auto allowUnderline = HAS_FLAG(format, NumberFormat::AllowUnderline);
-    bool validCharacter       = false;
+    auto* p                     = text + index;
+    const auto allowUnderline   = HAS_FLAG(format, NumberFormat::AllowUnderline);
+    const auto allowSingleQuote = HAS_FLAG(format, NumberFormat::AllowSingleQuote);
+    bool validCharacter         = false;
     switch (base)
     {
     case 2:
         while (index < size)
         {
             validCharacter = (((*p) == '0') || ((*p) == '1'));
-            if (((*p) == '_') && allowUnderline)
-                validCharacter = true;
+            VALIDATE_NUMBER_SEPARATOR;
 
             if (validCharacter)
             {
@@ -402,8 +405,7 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
         while (index < size)
         {
             validCharacter = ((((*p) >= '0') && ((*p) <= '9')) || (((*p) >= 'a') && ((*p) <= 'f')) || (((*p) >= 'A') && ((*p) <= 'F')));
-            if (((*p) == '_') && allowUnderline)
-                validCharacter = true;
+            VALIDATE_NUMBER_SEPARATOR;
 
             if (validCharacter)
             {
@@ -418,8 +420,7 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
         while (index < size)
         {
             validCharacter = (((*p) >= '0') && ((*p) <= '9'));
-            if (((*p) == '_') && allowUnderline)
-                validCharacter = true;
+            VALIDATE_NUMBER_SEPARATOR;
 
             if (validCharacter)
             {
@@ -436,8 +437,7 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
             while (index < size)
             {
                 validCharacter = (((*p) >= '0') && ((*p) <= '9'));
-                if (((*p) == '_') && allowUnderline)
-                    validCharacter = true;
+                VALIDATE_NUMBER_SEPARATOR;
 
                 if (validCharacter)
                 {
@@ -459,8 +459,7 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
                 while (index < size)
                 {
                     validCharacter = (((*p) >= '0') && ((*p) <= '9'));
-                    if (((*p) == '_') && allowUnderline)
-                        validCharacter = true;
+                    VALIDATE_NUMBER_SEPARATOR;
 
                     if (validCharacter)
                     {
@@ -507,4 +506,5 @@ uint64 TextParser::ComputeHash64(u16string_view txt, bool ignoreCase)
     return TextParser_ComputeHash64(p, e, ignoreCase);
 }
 #undef HAS_FLAG
+#undef VALIDATE_NUMBER_SEPARATOR
 } // namespace GView::View::LexicalViewer

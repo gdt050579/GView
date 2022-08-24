@@ -754,7 +754,8 @@ namespace View
             FloatingPoint         = 0x00000004,
             AllowSignBeforeNumber = 0x00000008,
             AllowUnderline        = 0x00000010,
-            ExponentFormat        = 0x00000020,
+            AllowSingleQuote      = 0x00000020,
+            ExponentFormat        = 0x00000040,
             All                   = 0xFFFFFFFF, // all possible forms of numbers
         };
         class CORE_EXPORT TextParser
