@@ -857,6 +857,11 @@ void Instance::EditCurrentToken()
     auto& tok = this->tokens[this->currentTokenIndex];
     if (!tok.IsVisible())
         return;
+    if (tok.CanChangeValue()==false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowNotification("Rename", "This type of token can not be modified/renamed !");
+        return;
+    }
 
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);

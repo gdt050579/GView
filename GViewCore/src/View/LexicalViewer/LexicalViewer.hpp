@@ -20,11 +20,11 @@ namespace View
 
         enum class TokenStatus : uint8
         {
-            None                      = 0,
-            Visible                   = 0x01,
-            Folded                    = 0x02, // only for blocks
-            BlockStart                = 0x04,
-            DisableSimilartyHighlight = 0x08, // hash will not be computed for this token
+            None                       = 0,
+            Visible                    = 0x01,
+            Folded                     = 0x02, // only for blocks
+            BlockStart                 = 0x04,
+            DisableSimilarityHighlight = 0x08, // hash will not be computed for this token
         };
         class TokensListBuilder : public TokensList
         {
@@ -85,6 +85,10 @@ namespace View
             {
                 return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::BlockStart)) != 0;
             }
+            inline bool CanChangeValue() const
+            {
+                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) == 0;
+            }
             inline void SetVisible(bool value)
             {
                 if (value)
@@ -109,12 +113,12 @@ namespace View
             }
             inline void SetDisableSimilartyHighlightFlag()
             {
-                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::DisableSimilartyHighlight));
+                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::DisableSimilarityHighlight));
             }
             void UpdateSizes(const char16* text);
             inline void UpdateHash(const char16* text, bool ignoreCase)
             {
-                if ((static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilartyHighlight)) != 0)
+                if ((static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) != 0)
                 {
                     this->hash = 0;
                     return;
