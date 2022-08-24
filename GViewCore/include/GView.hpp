@@ -754,6 +754,7 @@ namespace View
             FloatingPoint         = 0x00000004,
             AllowSignBeforeNumber = 0x00000008,
             AllowUnderline        = 0x00000010,
+            ExponentFormat        = 0x00000020,
             All                   = 0xFFFFFFFF, // all possible forms of numbers
         };
         class CORE_EXPORT TextParser
@@ -894,7 +895,7 @@ namespace View
             bool SetBlock(Block block);
             bool SetBlock(uint32 blockIndex);
             bool DisableSimilartyHighlight();
-            bool SetText(const ConstString &text);
+            bool SetText(const ConstString& text);
 
             Token Next() const;
             Token Precedent() const;

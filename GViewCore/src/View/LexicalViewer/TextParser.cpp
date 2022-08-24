@@ -447,6 +447,30 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
                 }
                 break;
             }
+            if ((index < size) && (((*p) | 0x20) == 'e') && (HAS_FLAG(format, NumberFormat::ExponentFormat)))
+            {
+                index++;
+                p++;
+                if ((index < size) && (((*p) == '+') || ((*p) == '-')))
+                {
+                    p++;
+                    index++;
+                }
+                while (index < size)
+                {
+                    validCharacter = (((*p) >= '0') && ((*p) <= '9'));
+                    if (((*p) == '_') && allowUnderline)
+                        validCharacter = true;
+
+                    if (validCharacter)
+                    {
+                        p++;
+                        index++;
+                        continue;
+                    }
+                    break;
+                }
+            }
         }
         break;
     }
@@ -471,7 +495,7 @@ uint32 TextParser::ComputeHash32(u16string_view txt, bool ignoreCase)
     if (txt.empty())
         return 0;
     const uint8* p = reinterpret_cast<const uint8*>(txt.data());
-    const uint8* e = reinterpret_cast<const uint8*>(txt.data()+txt.size());
+    const uint8* e = reinterpret_cast<const uint8*>(txt.data() + txt.size());
     return TextParser_ComputeHash32(p, e, ignoreCase);
 }
 uint64 TextParser::ComputeHash64(u16string_view txt, bool ignoreCase)
