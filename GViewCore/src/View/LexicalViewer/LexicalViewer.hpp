@@ -223,6 +223,12 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        class NameRefactorDialog: public Window
+        {
+          public:
+            NameRefactorDialog();
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+        };
         class GoToDialog : public Window
         {
             Reference<RadioBox> rbLineNumber;

@@ -120,7 +120,7 @@ void Instance::ComputeTokensInformation(const TextParser& textParser)
             p++;
         }
         tok.height = nrLines;
-        tok.UpdateHash(this->text, this->settings->ignoreCase);
+        tok.UpdateHash  (this->text, this->settings->ignoreCase);
     }
 }
 void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)

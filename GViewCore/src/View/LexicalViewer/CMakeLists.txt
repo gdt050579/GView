@@ -1,1 +1,10 @@
-target_sources(GViewCore PRIVATE TextParser.cpp SyntaxManager.cpp TokenIndexStack.cpp LexicalViewer.hpp Config.cpp GoToDialog.cpp Instance.cpp Settings.cpp)
+target_sources(GViewCore PRIVATE 
+	TextParser.cpp 
+	SyntaxManager.cpp 
+	TokenIndexStack.cpp 
+	LexicalViewer.hpp 
+	Config.cpp 
+	GoToDialog.cpp 
+	Instance.cpp 
+	NameRefactorDialog.cpp
+	Settings.cpp)
