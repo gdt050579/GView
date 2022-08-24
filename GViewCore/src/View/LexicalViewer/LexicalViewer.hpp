@@ -232,8 +232,9 @@ namespace View
         class NameRefactorDialog : public Window
         {
             TokenObject& tok;
-            Reference<TextArea> txNewValue;
+            Reference<TextField> txNewValue;
             Reference<RadioBox> rbApplyOnCurrent, rbApplyOnAll, rbApplyOnBlock, rbApplyOnSelection;
+            Reference<CheckBox> cbReparse;
 
           public:
             NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection);
