@@ -318,7 +318,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         if (tok.IsBlockStarter())
         {
             auto& block           = this->blocks[tok.blockID];
-            auto endToken         = block.GetEndIndex();
+            auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
             int32 blockMarginTop  = 0;
             int32 blockMarginLeft = 0;
             switch (block.align)
@@ -1044,7 +1044,7 @@ std::string_view Instance::GetName()
 {
     return this->name;
 }
-//======================================================================[Mouse coords]==================
+//======================================================================[Mouse coords]========================
 void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
 }
