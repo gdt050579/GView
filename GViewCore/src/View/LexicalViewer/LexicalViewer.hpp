@@ -190,6 +190,8 @@ namespace View
             void MoveDown(uint32 times, bool selected);
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
 
+            uint32 TokenToBlock(uint32 tokenIndex);
+
             void EditCurrentToken();
 
           public:
@@ -245,7 +247,16 @@ namespace View
             Reference<CheckBox> cbReparse;
 
           public:
-            NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection);
+            enum class ApplyMethod
+            {
+                CurrentToken,
+                EntireProgram,
+                Block,
+                Selection
+            };
+
+          public:
+            NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection, bool belongsToABlock);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
             inline bool ShouldReparse()
@@ -256,21 +267,16 @@ namespace View
             {
                 return txNewValue->GetText();
             }
-            inline bool ShouldApplyOnCurrentTokenAlone()
+            inline ApplyMethod GetApplyMethod()
             {
-                return rbApplyOnCurrent->IsChecked();
-            }
-            inline bool ShouldApplyOnAllTokens()
-            {
-                return rbApplyOnAll->IsChecked();
-            }
-            inline bool ShouldApplyOnBlock()
-            {
-                return rbApplyOnBlock->IsChecked();
-            }
-            inline bool ShouldApplyOnSelection()
-            {
-                return rbApplyOnSelection->IsChecked();
+                if (rbApplyOnAll->IsChecked())
+                    return ApplyMethod::EntireProgram;
+                if (rbApplyOnBlock->IsChecked())
+                    return ApplyMethod::Block;
+                if (rbApplyOnSelection->IsChecked())
+                    return ApplyMethod::Selection;
+                // default
+                return ApplyMethod::CurrentToken;
             }
         };
         class GoToDialog : public Window

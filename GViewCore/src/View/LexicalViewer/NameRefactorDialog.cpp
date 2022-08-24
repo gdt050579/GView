@@ -7,7 +7,7 @@ constexpr int32 BTN_ID_OK      = 1;
 constexpr int32 BTN_ID_CANCEL  = 2;
 constexpr int32 APPLY_GROUP_ID = 1;
 
-NameRefactorDialog::NameRefactorDialog(TokenObject& _tok, const char16* text, bool hasSelection)
+NameRefactorDialog::NameRefactorDialog(TokenObject& _tok, const char16* text, bool hasSelection, bool belongsToABlock)
     : Window("Rename", "d:c,w:70,h:21", WindowFlags::ProcessReturn), tok(_tok)
 {
     Factory::Label::Create(this, "Original text", "x:1,y:1,w:30");
@@ -24,15 +24,15 @@ NameRefactorDialog::NameRefactorDialog(TokenObject& _tok, const char16* text, bo
           Factory::RadioBox::Create(this, "Apply on all similar tokens from &selection", "x:1,y:12,w:60", APPLY_GROUP_ID);
     this->rbApplyOnAll = Factory::RadioBox::Create(this, "Apply on &all similar tokens from the program", "x:1,y:13,w:60", APPLY_GROUP_ID);
 
-    if (!hasSelection)
-    {
-        this->rbApplyOnSelection->SetEnabled(false);
-        this->rbApplyOnBlock->SetChecked(true);
-    }
-    else
-    {
+    this->rbApplyOnSelection->SetEnabled(hasSelection);
+    this->rbApplyOnBlock->SetEnabled(belongsToABlock);
+
+    if (hasSelection)
         this->rbApplyOnSelection->SetChecked(true);
-    }
+    else if (belongsToABlock)
+        this->rbApplyOnBlock->SetChecked(true);
+    else
+        this->rbApplyOnCurrent->SetChecked(true);
 
     this->cbReparse = Factory::CheckBox::Create(this, "&Reparse the entire content after rename is done", "x:1,y:15,w:60");
 

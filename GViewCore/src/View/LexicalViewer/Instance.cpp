@@ -105,7 +105,7 @@ void Instance::UpdateTokensInformation()
     for (auto& tok : this->tokens)
     {
         tok.UpdateSizes(this->text);
-        tok.UpdateHash  (this->text, this->settings->ignoreCase);
+        tok.UpdateHash(this->text, this->settings->ignoreCase);
     }
 }
 void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
@@ -400,7 +400,35 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         }
     }
 }
-
+uint32 Instance::TokenToBlock(uint32 tokenIndex)
+{
+    if ((size_t) tokenIndex >= tokens.size())
+        return BlockObject::INVALID_ID;
+    const auto blocksCount = static_cast<uint32>(blocks.size());
+    auto pos               = tokenIndex;
+    while (pos > 0)
+    {
+        const auto& tok = this->tokens[pos];
+        if ((tok.IsBlockStarter()) && (tok.blockID < blocksCount))
+        {
+            const auto& block = this->blocks[tok.blockID];
+            auto end          = block.hasEndMarker ? block.tokenEnd + 1 : block.tokenEnd;
+            if (tokenIndex < end)
+                return tok.blockID;
+        }
+        pos--;
+    }
+    const auto& tok = this->tokens[0];
+    if ((tok.IsBlockStarter()) && (tok.blockID < blocksCount))
+    {
+        const auto& block = this->blocks[tok.blockID];
+        auto end          = block.hasEndMarker ? block.tokenEnd + 1 : block.tokenEnd;
+        if (tokenIndex < end)
+            return tok.blockID;
+    }
+    // finally --> check the first position
+    return BlockObject::INVALID_ID;
+}
 void Instance::EnsureCurrentItemIsVisible()
 {
     if (this->noItemsVisible)
@@ -828,12 +856,16 @@ void Instance::EditCurrentToken()
         return;
 
     // all good -> edit the token
-    NameRefactorDialog dlg(tok, this->text, false);
-    if (dlg.Show() == (int)Dialogs::Result::Ok)
+    auto containerBlock = TokenToBlock(this->currentTokenIndex);
+    NameRefactorDialog dlg(tok, this->text, false, containerBlock != BlockObject::INVALID_ID);
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
-        if (dlg.ShouldApplyOnCurrentTokenAlone())
+        auto method = dlg.GetApplyMethod();
+        switch (method)
         {
+        case NameRefactorDialog::ApplyMethod::CurrentToken:
             tok.value = dlg.GetNewValue();
+            break;
         }
         UpdateTokensInformation();
         RecomputeTokenPositions();
