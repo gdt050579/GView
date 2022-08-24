@@ -55,13 +55,13 @@ bool NameRefactorDialog::OnEvent(Reference<Control> control, Event eventType, in
              Exit(Dialogs::Result::Cancel);
              return true;
          case BTN_ID_OK:
-             //Validate();
+             Exit(Dialogs::Result::Ok);
              return true;
          }
          break;
 
      case Event::WindowAccept:
-         //Validate();
+         Exit(Dialogs::Result::Ok);
          return true;
      case Event::WindowClose:
          Exit(Dialogs::Result::Cancel);

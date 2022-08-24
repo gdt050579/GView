@@ -118,6 +118,13 @@ namespace View
             {
                 return { text + start, (size_t) (end - start) };
             }
+            inline u16string_view GetText(const char16* text) const
+            {
+                if (this->value.Len() == 0)
+                    return { text + start, (size_t) (end - start) };
+                else
+                    return this->value.ToStringView();
+            }
         };
 
         struct SettingsData
@@ -162,7 +169,7 @@ namespace View
 
             static Config config;
 
-            void ComputeTokensInformation(const TextParser& text);
+            void UpdateTokensInformation();
             void ComputeOriginalPositions();
             AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
             void PrettyFormat();
@@ -239,6 +246,31 @@ namespace View
           public:
             NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+            inline bool ShouldReparse()
+            {
+                return cbReparse->IsChecked();
+            }
+            inline const CharacterBuffer& GetNewValue()
+            {
+                return txNewValue->GetText();
+            }
+            inline bool ShouldApplyOnCurrentTokenAlone()
+            {
+                return rbApplyOnCurrent->IsChecked();
+            }
+            inline bool ShouldApplyOnAllTokens()
+            {
+                return rbApplyOnAll->IsChecked();
+            }
+            inline bool ShouldApplyOnBlock()
+            {
+                return rbApplyOnBlock->IsChecked();
+            }
+            inline bool ShouldApplyOnSelection()
+            {
+                return rbApplyOnSelection->IsChecked();
+            }
         };
         class GoToDialog : public Window
         {

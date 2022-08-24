@@ -58,7 +58,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         TextParser textParser(this->text, this->textLength);
         SyntaxManager syntax(textParser, tokensList, blockList);
         this->settings->parser->AnalyzeText(syntax);
-        ComputeTokensInformation(textParser);
+        UpdateTokensInformation();
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
     }
@@ -95,7 +95,7 @@ void Instance::RecomputeTokenPositions()
             this->lineNrWidth = 8;
     }
 }
-void Instance::ComputeTokensInformation(const TextParser& textParser)
+void Instance::UpdateTokensInformation()
 {
     /*
     Computes:
@@ -498,7 +498,7 @@ void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
 }
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
 {
-    u16string_view txt = { this->text + tok.start, (size_t) (tok.end - tok.start) };
+    u16string_view txt = tok.GetText(this->text);
     ColorPair col;
     if (onCursor)
     {
@@ -846,6 +846,12 @@ void Instance::EditCurrentToken()
     NameRefactorDialog dlg(tok, this->text, false);
     if (dlg.Show() == (int)Dialogs::Result::Ok)
     {
+        if (dlg.ShouldApplyOnCurrentTokenAlone())
+        {
+            tok.value = dlg.GetNewValue();
+        }
+        UpdateTokensInformation();
+        RecomputeTokenPositions();
     }
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
