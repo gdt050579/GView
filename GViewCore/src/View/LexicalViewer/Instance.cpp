@@ -318,7 +318,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         if (tok.IsBlockStarter())
         {
             auto& block           = this->blocks[tok.blockID];
-            auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            auto endToken         = block.GetEndIndex();
             int32 blockMarginTop  = 0;
             int32 blockMarginLeft = 0;
             switch (block.align)
@@ -383,16 +383,8 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
             if (tok.IsFolded())
                 showStatus = false;
             const auto& block = this->blocks[tok.blockID];
-            if (block.hasEndMarker)
-            {
-                UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd, showStatus);
-                pos = block.tokenEnd;
-            }
-            else
-            {
-                UpdateVisibilityStatus(block.tokenStart + 1, block.tokenEnd + 1, showStatus);
-                pos = block.tokenEnd + 1;
-            }
+            UpdateVisibilityStatus(block.tokenStart + 1, block.GetEndIndex(), showStatus);
+            pos = block.GetEndIndex();
         }
         else
         {
@@ -412,8 +404,7 @@ uint32 Instance::TokenToBlock(uint32 tokenIndex)
         if ((tok.IsBlockStarter()) && (tok.blockID < blocksCount))
         {
             const auto& block = this->blocks[tok.blockID];
-            auto end          = block.hasEndMarker ? block.tokenEnd + 1 : block.tokenEnd;
-            if (tokenIndex < end)
+            if (tokenIndex < block.GetEndIndex())
                 return tok.blockID;
         }
         pos--;
@@ -422,13 +413,25 @@ uint32 Instance::TokenToBlock(uint32 tokenIndex)
     if ((tok.IsBlockStarter()) && (tok.blockID < blocksCount))
     {
         const auto& block = this->blocks[tok.blockID];
-        auto end          = block.hasEndMarker ? block.tokenEnd + 1 : block.tokenEnd;
-        if (tokenIndex < end)
+        if (tokenIndex < block.GetEndIndex())
             return tok.blockID;
     }
     // finally --> check the first position
     return BlockObject::INVALID_ID;
 }
+uint32 Instance::CountSimilarTokens(uint32 start, uint32 end, uint64 hash)
+{
+    if ((size_t) end > this->tokens.size())
+        return 0;
+    uint32 count = 0;
+    for (; start < end; start++)
+    {
+        if (tokens[start].hash == hash)
+            count++;
+    }
+    return count;
+}
+
 void Instance::EnsureCurrentItemIsVisible()
 {
     if (this->noItemsVisible)
@@ -861,12 +864,41 @@ void Instance::EditCurrentToken()
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
+        auto start  = 0U;
+        auto end    = 0U;
         switch (method)
         {
         case NameRefactorDialog::ApplyMethod::CurrentToken:
-            tok.value = dlg.GetNewValue();
+            start = this->currentTokenIndex;
+            end   = start + 1;
             break;
+        case NameRefactorDialog::ApplyMethod::Block:
+            start = blocks[containerBlock].GetStartIndex();
+            end   = blocks[containerBlock].GetEndIndex();
+            break;
+        case NameRefactorDialog::ApplyMethod::EntireProgram:
+            start = 0;
+            end   = static_cast<uint32>(tokens.size());
+            break;
+        default:
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Unknwon implementation for apply method !");
+            return;
         }
+        auto count = CountSimilarTokens(start, end, tok.hash);
+        if (count > 1)
+        {
+            LocalString<64> tmp;
+            if (AppCUI::Dialogs::MessageBox::ShowOkCancel("Rename", tmp.Format("Rename %u tokens ?", count)) != AppCUI::Dialogs::Result::Ok)
+                return;
+        }
+        for (auto idx = start;idx<end;idx++)
+        {
+            if (tokens[idx].hash == tok.hash)
+                tokens[idx].value = dlg.GetNewValue();
+        }
+        // Update the original as well
+        tok.value = dlg.GetNewValue();
+
         UpdateTokensInformation();
         RecomputeTokenPositions();
     }

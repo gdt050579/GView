@@ -50,6 +50,15 @@ namespace View
             std::string foldMessage;
             BlockAlignament align;
             bool hasEndMarker;
+
+            inline uint32 GetStartIndex() const
+            {
+                return tokenStart;
+            }
+            inline uint32 GetEndIndex() const
+            {
+                return hasEndMarker ? tokenEnd + 1 : tokenEnd;
+            }
         };
         struct TokenObject
         {
@@ -191,7 +200,7 @@ namespace View
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
 
             uint32 TokenToBlock(uint32 tokenIndex);
-
+            uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);
             void EditCurrentToken();
 
           public:
