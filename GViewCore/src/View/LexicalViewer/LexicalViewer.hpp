@@ -114,6 +114,10 @@ namespace View
                 else
                     this->hash = TextParser::ComputeHash64(this->value.ToStringView(), ignoreCase);
             }
+            inline u16string_view GetOriginalText(const char16* text) const
+            {
+                return { text + start, (size_t) (end - start) };
+            }
         };
 
         struct SettingsData
@@ -178,6 +182,8 @@ namespace View
             void MoveDown(uint32 times, bool selected);
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
 
+            void EditCurrentToken();
+
           public:
             std::vector<TokenObject> tokens;
             std::vector<BlockObject> blocks;
@@ -223,10 +229,14 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
-        class NameRefactorDialog: public Window
+        class NameRefactorDialog : public Window
         {
+            TokenObject& tok;
+            Reference<TextArea> txNewValue;
+            Reference<RadioBox> rbApplyOnCurrent, rbApplyOnAll, rbApplyOnBlock, rbApplyOnSelection;
+
           public:
-            NameRefactorDialog();
+            NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
         };
         class GoToDialog : public Window

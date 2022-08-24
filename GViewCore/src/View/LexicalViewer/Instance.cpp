@@ -831,6 +831,23 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
             SetFoldStatus(this->blocks[tok.blockID].tokenStart, foldStatus, recursive);
     }
 }
+void Instance::EditCurrentToken()
+{
+    // sanity checks
+    if (this->noItemsVisible)
+        return;
+    if ((size_t) this->currentTokenIndex >= this->tokens.size())
+        return;
+    auto& tok = this->tokens[this->currentTokenIndex];
+    if (!tok.IsVisible())
+        return;
+
+    // all good -> edit the token
+    NameRefactorDialog dlg(tok, this->text, false);
+    if (dlg.Show() == (int)Dialogs::Result::Ok)
+    {
+    }
+}
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
     switch (keyCode)
@@ -906,6 +923,10 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::Space | Key::Ctrl:
         SetFoldStatus(this->currentTokenIndex, FoldStatus::Reverse, true);
+        return true;
+
+    case Key::Enter:
+        EditCurrentToken();
         return true;
     }
 
