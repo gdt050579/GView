@@ -108,10 +108,44 @@ bool Token::DisableSimilartyHighlight()
     tok.SetDisableSimilartyHighlightFlag();
     return true;
 }
-bool Token::SetText(const ConstString &text)
+bool Token::SetText(const ConstString& text)
 {
     CREATE_TOKENREF(false);
     return tok.value.Set(text);
+}
+// Token Object
+void TokenObject::UpdateSizes(const char16* text)
+{
+    const char16* p = text + start;
+    const char16* e = text + end;
+    if (this->value.Len() > 0)
+    {
+        p = this->value.GetString();
+        e = this->value.GetString() + this->value.Len();
+    }
+    auto nrLines = 1U;
+    auto w       = 0U;
+    auto maxW    = 0U;
+    while (p < e)
+    {
+        if (((*p) == '\n') || ((*p) == '\r'))
+        {
+            nrLines++;
+            maxW   = std::max<>(maxW, w);
+            w      = 0;
+            auto c = *p;
+            p++;
+            if ((p < e) && (((*p) == '\n') || ((*p) == '\r')) && ((*p) != c))
+                p++; // auto detect \n\r or \r\n
+        }
+        else
+        {
+            p++;
+            w++;
+        }
+    }
+    this->height = nrLines;
+    this->width  = std::max<>(maxW, w);
 }
 // Block method
 Token Block::GetStartToken() const

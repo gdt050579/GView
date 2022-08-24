@@ -102,6 +102,7 @@ namespace View
             {
                 status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::DisableSimilartyHighlight));
             }
+            void UpdateSizes(const char16* text);
             inline void UpdateHash(const char16* text, bool ignoreCase)
             {
                 if ((static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilartyHighlight)) != 0)

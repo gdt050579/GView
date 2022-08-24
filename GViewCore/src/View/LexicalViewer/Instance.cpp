@@ -104,22 +104,7 @@ void Instance::UpdateTokensInformation()
     */
     for (auto& tok : this->tokens)
     {
-        const char16* p = this->text + tok.start;
-        const char16* e = this->text + tok.end;
-        auto nrLines    = 1U;
-        while (p < e)
-        {
-            if (((*p) == '\n') || ((*p) == '\r'))
-            {
-                nrLines++;
-                auto c = *p;
-                p++;
-                if ((p < e) && (((*p) == '\n') || ((*p) == '\r')) && ((*p) != c))
-                    p++; // auto detect \n\r or \r\n
-            }
-            p++;
-        }
-        tok.height = nrLines;
+        tok.UpdateSizes(this->text);
         tok.UpdateHash  (this->text, this->settings->ignoreCase);
     }
 }
