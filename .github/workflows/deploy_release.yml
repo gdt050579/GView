@@ -72,7 +72,7 @@ jobs:
       run: brew --prefix
     
     - name: Install brew ncurses
-      run: brew install ncurses
+      run: brew install --build-from-source --verbose --debug ncurses
 
     - name: NCurses Cellar
       run: brew --cellar ncurses
@@ -84,16 +84,16 @@ jobs:
       run: ls -R /usr/local/Cellar/ncurses
       
     - name: Install brew openssl@1.1
-      run: brew install openssl@1.1
+      run: brew install --build-from-source --verbose --debug openssl@1.1
       
-    - name: List OpenSSL files
-      run: ls /usr/local/opt/openssl@1.1/lib
-      
-    - name: NCurses OpenSSL
+    - name: OpenSSL Cellar
       run: brew --cellar openssl@1.1
       
-    - name: NCurses OpenSSL
+    - name: OpenSSL Prefix
       run: brew --prefix openssl@1.1
+      
+    - name: List OpenSSL files
+      run: ls -R /usr/local/opt/openssl@1.1/lib
             
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1 -DOPENSSL_LIBRARIES=/usr/local/opt/openssl@1.1/lib 
@@ -109,7 +109,10 @@ jobs:
     - name: List Release Files
       run: ls -R /Users/runner/work/GView/GView/bin/Release
       
-    - name: Copy OpenSSL libs
+    - name: Copy NCurses 6.3 libs (needs to be integrated into cmake)
+      run: cp /usr/local/Cellar/ncurses/6.3/lib/*.dylib /Users/runner/work/GView/GView/bin/Release/
+      
+    - name: Copy OpenSSL libs (needs to be integrated into cmake)
       run: cp /usr/local/opt/openssl@1.1/lib/*.dylib /Users/runner/work/GView/GView/bin/Release/
       
     - name: Create archive
