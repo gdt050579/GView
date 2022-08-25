@@ -10,6 +10,40 @@ constexpr int32 CMD_ID_SHOW_METADATA = 0xBF00;
 constexpr int32 CMD_ID_PRETTY_FORMAT = 0xBF01;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
+/*
+void TestTextEditor()
+{
+    TextEditorBuilder ted(nullptr, 0);
+    ted.Set(u"123456789");
+    ted.Add("x");
+    ted.InsertChar(0, '-');
+    ted.InsertChar(4, '-');
+    ted.Insert(0, u"XXX");
+    ted.Insert(8, "xxxxx");
+    ted.Insert(ted.Len(), "<END>");
+    ted.DeleteChar(5);
+    ted.Delete(3, 2);
+    ted.Delete(5, 100000);
+    ted.Add(u"ABCDEFG");
+    ted.Add("123");
+    ted.Set("0123456789                                                                                  ");
+    ted.Replace(3, 2, "xx");
+    ted.Set("0123456789");
+    ted.Replace(3, 2, "x");
+    ted.Set("0123456789");
+    ted.Replace(3, 2, u"xxxxxx");
+    ted.Set("                                     ");
+    ted.Set("0123456789");
+    ted.Replace(8, 100, u"ABC");
+    ted.Set("                                     ");
+    ted.Set("0123456789");
+    ted.Replace(12, 100, u"ABC");
+    ted.Set("                                     ");
+    ted.Set("0123456789");
+    ted.Replace(9, 1, u"ABC");
+}
+//*/
+
 inline int32 ComputeXDist(int32 x1, int32 x2)
 {
     return x1 > x2 ? x1 - x2 : x2 - x1;
