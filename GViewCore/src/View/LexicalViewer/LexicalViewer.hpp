@@ -42,6 +42,16 @@ namespace View
                 this->data = _data;
             }
         };
+        class TextEditorBuilder : public TextEditor
+        {
+          public:
+            TextEditorBuilder(char16* _text, uint32 _size) : TextEditor()
+            {
+                this->text      = _text;
+                this->size      = _size;
+                this->allocated = _size;
+            }
+        };
         struct BlockObject
         {
             static constexpr uint32 INVALID_ID = 0xFFFFFFFF;

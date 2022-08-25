@@ -104,11 +104,30 @@ bool TextEditor::InsertChar(uint32 offset, char16 ch)
     size++;
     return true;
 }
-bool TextEditor::Replace(uint32 offset, uint32 size, std::string_view newText)
+bool TextEditor::Replace(uint32 offset, uint32 count, std::string_view newText)
 {
-    NOT_IMPLEMENTED(false);
+    if (offset > size)
+        return false;
+    if (offset+count>=size)
+    {
+        this->size = offset;
+        return Add(newText);
+    }
+    if (newText.size() > (size_t) count)
+    {
+        GROW_TO(newText.size() - (size_t) count);
+        memmove(this->text + newText.size(), this->text + count, (this->size - (offset + count)) * sizeof(char16));
+        this->size += (uint32) (newText.size() - (size_t) count);
+    }
+    else if (newText.size() < (size_t) count)
+    {
+        memmove(this->text + newText.size(), this->text + count, (this->size - (offset + count)) * sizeof(char16));
+        this->size -= (uint32) ((size_t) count - newText.size());
+    }
+    COPY_ASCII(offset, newText.data(), newText.size());
+    return true;
 }
-bool TextEditor::Replace(uint32 offset, uint32 size, std::u16string_view newText)
+bool TextEditor::Replace(uint32 offset, uint32 count, std::u16string_view newText)
 {
     NOT_IMPLEMENTED(false);
 }
