@@ -181,6 +181,7 @@ namespace Utils
         };
 
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
+        char16* ConvertToUnicode16(BufferView buf,size_t& length);
     }; // namespace CharacterEncoding
 } // namespace Utils
 

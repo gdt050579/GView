@@ -5,7 +5,6 @@ target_sources(GViewCore PRIVATE
     DataCache.cpp
     Selection.cpp
     CharacterEncoding.cpp
-    GenericLexer.cpp
     Zone.cpp
     ZonesList.cpp)
 
