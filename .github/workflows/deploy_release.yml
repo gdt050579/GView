@@ -72,7 +72,7 @@ jobs:
       run: brew --prefix
     
     - name: Install brew ncurses
-      run: brew install ncurses
+      run: brew install --build-from-source --verbose --debug ncurses
 
     - name: NCurses Cellar
       run: brew --cellar ncurses
@@ -84,7 +84,7 @@ jobs:
       run: ls -R /usr/local/Cellar/ncurses
       
     - name: Install brew openssl@1.1
-      run: brew install openssl@1.1
+      run: brew install --build-from-source --verbose --debug openssl@1.1
       
     - name: OpenSSL Cellar
       run: brew --cellar openssl@1.1
