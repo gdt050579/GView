@@ -798,6 +798,40 @@ namespace View
             static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
             static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
         };
+        class CORE_EXPORT TextEditor
+        {
+            bool Grow(uint32 size);
+          protected:
+            char16* text;
+            uint32 size;
+            uint32 allocated;
+
+            TextEditor();
+
+          public:
+            bool Insert(uint32 offset, std::string_view text);
+            bool Insert(uint32 offset, std::u16string_view text);
+            bool Replace(uint32 offset, uint32 size, std::string_view text);
+            bool Replace(uint32 offset, uint32 size, std::u16string_view text);
+            bool DeleteChar(uint32 offset);
+            bool Delete(uint32 offset, uint32 size);
+            bool Add(std::string_view text);
+            bool Add(std::u16string_view text);
+            bool Set(std::string_view text);
+            bool Set(std::u16string_view text);
+            bool Resize(uint32 size, char16 fillChar = ' ');
+
+            char16& operator[](uint32 index);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline operator u16string_view() const
+            {
+                return { text, (size_t)size };
+            }
+        };
         enum class TokenDataType : uint8
         {
             None,

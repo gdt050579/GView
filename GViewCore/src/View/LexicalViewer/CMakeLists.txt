@@ -1,5 +1,6 @@
 target_sources(GViewCore PRIVATE 
 	TextParser.cpp 
+	TextEditor.cpp
 	SyntaxManager.cpp 
 	TokenIndexStack.cpp 
 	LexicalViewer.hpp 
