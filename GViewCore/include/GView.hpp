@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.77.0"
+#define GVIEW_VERSION "0.88.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -135,62 +135,7 @@ namespace Utils
         Rust,
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
-    namespace Tokenizer
-    {
-        enum class SpaceType : uint8
-        {
-            All          = 0,
-            NewLine      = 1,
-            Space        = 2,
-            Tabs         = 3,
-            SpaceAndTabs = 4,
-        };
-        enum class StringFormat : uint32
-        {
-            SingleQuotes         = 0x00000001, // "..."
-            DoubleQuotes         = 0x00000002, // '...'
-            TripleQuotes         = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences = 0x00000008, // "...\n..."
-            MultiLine            = 0x00000010, // string accross mulitple lines
-            All                  = 0xFFFFFFFF, // all possible forms of strings
-        };
-        enum class NumberFormat : uint32
-        {
-            DecimalOnly           = 0,
-            HexFormat0x           = 0x00000001,
-            BinFormat0b           = 0x00000002,
-            FloatingPoint         = 0x00000004,
-            AllowSignBeforeNumber = 0x00000008,
-            AllowUnderline        = 0x00000010,
-            All                   = 0xFFFFFFFF, // all possible forms of numbers
-        };
-        class CORE_EXPORT Lexer
-        {
-            const char16* text;
-            uint32 size;
 
-          public:
-            Lexer(const char16* text, uint32 size);
-            Lexer(u16string_view text);
-
-            inline uint32 Len() const
-            {
-                return size;
-            }
-            inline char16 operator[](uint32 index) const
-            {
-                if (index < size)
-                    return text[index];
-                return 0;
-            }
-            uint32 ParseTillNextLine(uint32 index);
-            uint32 Parse(uint32 index, bool (*validate)(char16 character));
-            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
-            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs);
-            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All);
-            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All);
-        };
-    } // namespace Tokenizer
 } // namespace Utils
 
 namespace Hashes
@@ -784,12 +729,307 @@ namespace View
 
     namespace LexicalViewer
     {
+        enum class SpaceType : uint8
+        {
+            All          = 0,
+            NewLine      = 1,
+            Space        = 2,
+            Tabs         = 3,
+            SpaceAndTabs = 4,
+        };
+        enum class StringFormat : uint32
+        {
+            SingleQuotes         = 0x00000001, // "..."
+            DoubleQuotes         = 0x00000002, // '...'
+            TripleQuotes         = 0x00000004, // '''...''' or """..."""
+            AllowEscapeSequences = 0x00000008, // "...\n..."
+            MultiLine            = 0x00000010, // string accross mulitple lines
+            All                  = 0xFFFFFFFF, // all possible forms of strings
+        };
+        enum class NumberFormat : uint32
+        {
+            DecimalOnly           = 0,
+            HexFormat0x           = 0x00000001,
+            BinFormat0b           = 0x00000002,
+            FloatingPoint         = 0x00000004,
+            AllowSignBeforeNumber = 0x00000008,
+            AllowUnderline        = 0x00000010,
+            AllowSingleQuote      = 0x00000020,
+            ExponentFormat        = 0x00000040,
+            All                   = 0xFFFFFFFF, // all possible forms of numbers
+        };
+        class CORE_EXPORT TextParser
+        {
+            const char16* text;
+            uint32 size;
+
+          public:
+            TextParser(const char16* text, uint32 size);
+            TextParser(u16string_view text);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline char16 operator[](uint32 index) const
+            {
+                if (index < size)
+                    return text[index];
+                return 0;
+            }
+            inline u16string_view GetSubString(uint32 start, uint32 end) const
+            {
+                if ((start < end) && (end <= size))
+                    return u16string_view{ text + start, (size_t) (end - start) };
+                return u16string_view();
+            }
+            uint32 ParseUntillEndOfLine(uint32 index) const;
+            uint32 ParseUntillStartOfNextLine(uint32 index) const;
+            uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
+            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
+            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
+            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
+            uint32 ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const;
+            uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
+            static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
+            static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
+        };
+        class CORE_EXPORT TextEditor
+        {
+            bool Grow(size_t size);
+          protected:
+            char16* text;
+            uint32 size;
+            uint32 allocated;
+
+            TextEditor();
+
+          public:
+            bool Insert(uint32 offset, std::string_view text);
+            bool Insert(uint32 offset, std::u16string_view text);
+            bool InsertChar(uint32 offset, char16 ch);
+            bool Replace(uint32 offset, uint32 size, std::string_view text);
+            bool Replace(uint32 offset, uint32 size, std::u16string_view text);
+            bool DeleteChar(uint32 offset);
+            bool Delete(uint32 offset, uint32 charactersCount);
+            bool Add(std::string_view text);
+            bool Add(std::u16string_view text);
+            bool Set(std::string_view text);
+            bool Set(std::u16string_view text);
+            bool Resize(uint32 charactersCount, char16 fillChar = ' ');
+            bool Reserve(uint32 charactersCount);
+
+            char16& operator[](uint32 index);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline operator u16string_view() const
+            {
+                return { text, (size_t)size };
+            }
+        };
+        enum class TokenDataType : uint8
+        {
+            None,
+            String,
+            Number,
+            MetaInformation,
+            Boolean
+        };
+        enum class TokenAlignament : uint16
+        {
+            None            = 0,
+            AddSpaceBefore  = 0x0001, // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x0002, // adds a space on right of the current token
+            NewLineAfter    = 0x0004, // adds a new line after the current token
+            NewLineBefore   = 0x0008, // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x0010, // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                      // otherwise adds a new line.
+            StartsOnNewLineWithIndent = 0x0020, // similar to StartsOnNewLine but adds an Indent (e.g. 4 spaces) on left before token
+            AfterPreviousToken        = 0x0040, // make sure that there any space or new line (within the block) between current token
+                                                // and previous token is removed. Both tokens are at on the same line.
+        };
+        enum class TokenColor : uint8
+        {
+            Comment,
+            Number,
+            String,
+            Operator,
+            Keyword,
+            Keyword2,
+            Constant,
+            Word,
+            Preprocesor,
+            Datatype,
+            Error,
+        };
+        enum class BlockAlignament : uint8
+        {
+            AsCurrentBlock,
+            ToRightOfCurrentBlock,
+            AsBlockStartToken,
+        };
+        class CORE_EXPORT Token;
+        class CORE_EXPORT Block
+        {
+            void* data;
+            uint32 index;
+
+          public:
+            Block(void* _data, uint32 _idx) : data(_data), index(_idx)
+            {
+            }
+            Block() : data(nullptr), index(INVALID_INDEX)
+            {
+            }
+            inline bool IsValid() const
+            {
+                return data != nullptr;
+            }
+            inline uint32 GetIndex() const
+            {
+                return index;
+            }
+            Token GetStartToken() const;
+            Token GetEndToken() const;
+
+            bool SetFoldMessage(std::string_view message);
+
+            constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
+        };
+        class CORE_EXPORT Token
+        {
+            void* data;
+            uint32 index;
+
+          public:
+            Token(void* _data, uint32 _idx) : data(_data), index(_idx)
+            {
+            }
+            Token() : data(nullptr), index(INVALID_INDEX)
+            {
+            }
+            inline bool IsValid() const
+            {
+                return data != nullptr;
+            }
+            inline uint32 GetIndex() const
+            {
+                return index;
+            }
+
+            uint32 GetTypeID(uint32 errorValue) const;
+            TokenAlignament GetAlignament() const;
+            bool SetAlignament(TokenAlignament align);
+            bool UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove = TokenAlignament::None);
+            bool SetTokenColor(TokenColor col);
+            bool SetBlock(Block block);
+            bool SetBlock(uint32 blockIndex);
+            bool DisableSimilartyHighlight();
+            bool SetText(const ConstString& text);
+
+            Token Next() const;
+            Token Precedent() const;
+
+            u16string_view GetText() const;
+            Block GetBlock() const;
+
+            constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
+        };
+        class CORE_EXPORT TokensList
+        {
+          protected:
+            void* data;
+            uint32 lastTokenID;
+
+            TokensList() : data(nullptr), lastTokenID(0xFFFFFFFF)
+            {
+            }
+
+          public:
+            void ResetLastTokenID(uint32 value)
+            {
+                lastTokenID = value;
+            }
+            Token operator[](uint32 index) const;
+            Token GetLastToken() const;
+            uint32 GetLastTokenID() const
+            {
+                return lastTokenID;
+            }
+            uint32 Len() const;
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
+            Token Add(
+                  uint32 typeID,
+                  uint32 start,
+                  uint32 end,
+                  TokenColor color,
+                  TokenDataType dataType,
+                  TokenAlignament align,
+                  bool disableSimilartySearch);
+            Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+        };
+        class CORE_EXPORT BlocksList
+        {
+          protected:
+            void* data;
+
+            BlocksList() : data(nullptr)
+            {
+            }
+
+          public:
+            uint32 Len() const;
+            Block operator[](uint32 index) const;
+            Block Add(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
+            Block Add(Token start, Token end, BlockAlignament align, bool hasBlockEndMarker);
+        };
+        struct SyntaxManager
+        {
+            const TextParser& text;
+            TokensList& tokens;
+            BlocksList& blocks;
+            SyntaxManager(const TextParser& _text, TokensList& _tokens, BlocksList& _blocks) : text(_text), tokens(_tokens), blocks(_blocks)
+            {
+            }
+        };
+        class CORE_EXPORT TokenIndexStack
+        {
+            constexpr static uint32 LOCAL_SIZE = 8;
+            uint32 count, allocated;
+            uint32* stack;
+            uint32 local[LOCAL_SIZE];
+
+          public:
+            TokenIndexStack();
+            ~TokenIndexStack();
+            bool Push(uint32 index);
+            uint32 Pop(uint32 errorValue = Token::INVALID_INDEX);
+            inline bool Empty() const
+            {
+                return count == 0;
+            }
+        };
+        struct CORE_EXPORT ParseInterface
+        {
+            virtual void AnalyzeText(SyntaxManager& syntax) = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
-            void SetParserCallback();
+            void SetParser(Reference<ParseInterface> parser);
+            void SetCaseSensitivity(bool ignoreCase);
         };
     }; // namespace LexicalViewer
 
@@ -907,5 +1147,6 @@ namespace App
 }; // namespace App
 }; // namespace GView
 
-ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::StringFormat, AppCUI::uint32);
-ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::NumberFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint16);

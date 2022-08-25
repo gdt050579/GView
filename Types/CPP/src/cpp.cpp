@@ -1,4 +1,4 @@
-#include "ini.hpp"
+#include "cpp.hpp"
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -18,28 +18,28 @@ extern "C"
     }
     PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new INI::INIFile();
+        return new CPP::CPPFile();
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        auto ini = win->GetObject()->GetContentType<INI::INIFile>();
-        ini->Update();
+        auto cpp = win->GetObject()->GetContentType<CPP::CPPFile>();
+        cpp->Update();
 
         LexicalViewer::Settings settings;
-        settings.SetParser(ini.ToObjectRef<LexicalViewer::ParseInterface>());
+        settings.SetParser(cpp.ToObjectRef<LexicalViewer::ParseInterface>());
         win->CreateViewer("Lexical", settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
         win->CreateViewer<BufferViewer::Settings>("Buffer View");
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new INI::Panels::Information(ini)), true);
+        win->AddPanel(Pointer<TabPage>(new CPP::Panels::Information(cpp)), true);
 
         return true;
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "ini", "toml" };
+        sect["Extension"] = { "cpp", "c", "h", "hpp" };
         sect["Priority"]  = 1;
     }
 }
