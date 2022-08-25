@@ -800,7 +800,7 @@ namespace View
         };
         class CORE_EXPORT TextEditor
         {
-            bool Grow(uint32 size);
+            bool Grow(size_t size);
           protected:
             char16* text;
             uint32 size;
@@ -811,15 +811,17 @@ namespace View
           public:
             bool Insert(uint32 offset, std::string_view text);
             bool Insert(uint32 offset, std::u16string_view text);
+            bool InsertChar(uint32 offset, char16 ch);
             bool Replace(uint32 offset, uint32 size, std::string_view text);
             bool Replace(uint32 offset, uint32 size, std::u16string_view text);
             bool DeleteChar(uint32 offset);
-            bool Delete(uint32 offset, uint32 size);
+            bool Delete(uint32 offset, uint32 charactersCount);
             bool Add(std::string_view text);
             bool Add(std::u16string_view text);
             bool Set(std::string_view text);
             bool Set(std::u16string_view text);
-            bool Resize(uint32 size, char16 fillChar = ' ');
+            bool Resize(uint32 charactersCount, char16 fillChar = ' ');
+            bool Reserve(uint32 charactersCount);
 
             char16& operator[](uint32 index);
 
