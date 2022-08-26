@@ -76,36 +76,13 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 
     // load the entire data into a file
-    auto buf                = obj->GetData().GetEntireFile();
-    this->text              = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
-    this->Scroll.x          = 0;
-    this->Scroll.y          = 0;
-    this->currentTokenIndex = 0;
-    this->lineNrWidth       = 0;
-    this->lastLineNumber    = 0;
-    this->currentHash       = 0;
-    this->noItemsVisible    = true;
-    this->prettyFormat      = true;
+    auto buf           = obj->GetData().GetEntireFile();
+    this->text         = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
+    this->prettyFormat = true;
 
-    if (this->settings->parser)
-    {
-        // step 1 (run the preprocessor)
-        TextEditorBuilder ted(this->text);
-        this->settings->parser->PreprocessText(ted);
-        this->text = ted.Release();
+    this->Parse();
 
-        // step 2 (run the analyzer)
-        TokensListBuilder tokensList(this);
-        BlocksListBuilder blockList(this);
-        TextParser textParser(this->text.text, this->text.size);
-        SyntaxManager syntax(textParser, tokensList, blockList);
-        this->settings->parser->AnalyzeText(syntax);
-        UpdateTokensInformation();
-        RecomputeTokenPositions();
-        MoveToClosestVisibleToken(0, false);
-    }
-    
-    //TestTextEditor();
+    // TestTextEditor();
 }
 
 void Instance::RecomputeTokenPositions()
@@ -500,6 +477,52 @@ void Instance::EnsureCurrentItemIsVisible()
     if (tok.y < Scroll.y)
         Scroll.y = tok.y;
 }
+void Instance::Parse()
+{
+    this->Scroll.x          = 0;
+    this->Scroll.y          = 0;
+    this->currentTokenIndex = 0;
+    this->lineNrWidth       = 0;
+    this->lastLineNumber    = 0;
+    this->currentHash       = 0;
+    this->noItemsVisible    = true;
+
+    this->tokens.clear();
+    this->blocks.clear();
+
+    if (this->settings->parser)
+    {
+        // step 1 (run the preprocessor)
+        TextEditorBuilder ted(this->text);
+        this->settings->parser->PreprocessText(ted);
+        this->text = ted.Release();
+
+        // step 2 (run the analyzer)
+        TokensListBuilder tokensList(this);
+        BlocksListBuilder blockList(this);
+        TextParser textParser(this->text.text, this->text.size);
+        SyntaxManager syntax(textParser, tokensList, blockList);
+        this->settings->parser->AnalyzeText(syntax);
+        UpdateTokensInformation();
+        RecomputeTokenPositions();
+        MoveToClosestVisibleToken(0, false);
+    }
+}
+bool Instance::RebuildTextFromTokens(TextEditor& editor)
+{
+    auto it  = this->tokens.crbegin();
+    auto end = this->tokens.crend();
+    while (it != end)
+    {
+        if (it->value.Len() > 0)
+        {
+            if (!editor.Replace(it->start, it->end - it->start, it->value.ToStringView()))
+                return false;
+        }
+        it++;
+    }
+    return true;
+}
 
 void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block)
 {
@@ -591,7 +614,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
             col = ColorPair{ Color::Green, Color::Transparent };
             break;
         case TokenColor::Constant:
-            col = ColorPair{Color::Pink, Color::Transparent };
+            col = ColorPair{ Color::Pink, Color::Transparent };
             break;
         case TokenColor::Number:
             col = ColorPair{ Color::Teal, Color::Transparent };
@@ -902,7 +925,7 @@ void Instance::EditCurrentToken()
     auto& tok = this->tokens[this->currentTokenIndex];
     if (!tok.IsVisible())
         return;
-    if (tok.CanChangeValue()==false)
+    if (tok.CanChangeValue() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowNotification("Rename", "This type of token can not be modified/renamed !");
         return;
@@ -941,16 +964,30 @@ void Instance::EditCurrentToken()
             if (AppCUI::Dialogs::MessageBox::ShowOkCancel("Rename", tmp.Format("Rename %u tokens ?", count)) != AppCUI::Dialogs::Result::Ok)
                 return;
         }
-        for (auto idx = start;idx<end;idx++)
+        for (auto idx = start; idx < end; idx++)
         {
             if (tokens[idx].hash == tok.hash)
                 tokens[idx].value = dlg.GetNewValue();
         }
         // Update the original as well
         tok.value = dlg.GetNewValue();
-
-        UpdateTokensInformation();
-        RecomputeTokenPositions();
+        if (dlg.ShouldReparse())
+        {
+            TextEditorBuilder ted(this->text);
+            auto res = RebuildTextFromTokens(ted);
+            this->text = ted.Release();
+            if (!res)
+            {
+                this->noItemsVisible = true; // hide all text
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to reparse current text !");
+            }
+            this->Parse();
+        }
+        else
+        {
+            UpdateTokensInformation();
+            RecomputeTokenPositions();
+        }
     }
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)

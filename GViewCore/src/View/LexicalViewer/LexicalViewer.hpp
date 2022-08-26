@@ -234,6 +234,9 @@ namespace View
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);
             void EditCurrentToken();
 
+            bool RebuildTextFromTokens(TextEditor& edidor);
+            void Parse();
+
           public:
             std::vector<TokenObject> tokens;
             std::vector<BlockObject> blocks;
