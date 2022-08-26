@@ -489,6 +489,7 @@ void Instance::Parse()
 
     this->tokens.clear();
     this->blocks.clear();
+    this->selection.Clear();
 
     if (this->settings->parser)
     {
@@ -580,13 +581,17 @@ void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
         renderer.WriteText(num.ToDec(value), params);
     }
 }
-void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
+void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index)
 {
     u16string_view txt = tok.GetText(this->text.text);
     ColorPair col;
+    bool onCursor    = index == this->currentTokenIndex;
+    bool onSelection = this->selection.Contains(index);
     if (onCursor)
     {
         col = Cfg.Cursor.Normal;
+        if (onSelection)
+            col = Cfg.Cursor.OverSelection;
     }
     else
     {
@@ -628,6 +633,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         }
         if ((this->currentHash != 0) && (tok.hash == this->currentHash))
             col = Cfg.Selection.SimilarText;
+        if (onSelection)
+            col = Cfg.Selection.Editor;
     }
     const auto blockStarter = tok.IsBlockStarter();
     if ((onCursor) && (tok.HasBlock()))
@@ -654,6 +661,21 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         else
             renderer.WriteSingleLineText(x, y, block.foldMessage, ColorPair{ Color::Gray, Color::Black });
     }
+    // check for selection precedence
+    if ((index > 0) && (onSelection) && (selection.Contains(index - 1)))
+    {
+        const auto& precTok = this->tokens[index - 1];
+        if (tok.y == precTok.y)
+        {
+            // fill in the space between them
+            renderer.FillHorizontalLine(
+                  lineNrWidth + precTok.x + precTok.width - Scroll.x,
+                  precTok.y,
+                  lineNrWidth + tok.x - 1 - Scroll.x,
+                  -1,
+                  Cfg.Selection.Editor);
+        }
+    }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
@@ -667,7 +689,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
         if (currentTok.IsVisible())
         {
             this->currentHash = currentTok.hash;
-            PaintToken(renderer, currentTok, true);
+            PaintToken(renderer, currentTok, this->currentTokenIndex);
         }
     }
     else
@@ -688,11 +710,15 @@ void Instance::Paint(Graphics::Renderer& renderer)
         }
         const auto tk_right  = t.x + (int32) t.width - 1;
         const auto tk_bottom = t.y + (int32) t.height - 1;
-        idx++;
+
         // if token not in visible screen => skip it
         if ((t.x > scroll_right) || (t.y > scroll_bottom) || (tk_right < Scroll.x) || (tk_bottom < Scroll.y))
+        {
+            idx++;
             continue;
-        PaintToken(renderer, t, false);
+        }
+        PaintToken(renderer, t, idx);
+        idx++;
     }
     PaintLineNumbers(renderer);
 }
@@ -713,9 +739,16 @@ void Instance::MoveToToken(uint32 index, bool selected)
 {
     if ((noItemsVisible) || (index == this->currentTokenIndex))
         return;
+    auto sidx = -1;
+    if (selected)
+        sidx = this->selection.BeginSelection(this->currentTokenIndex);
     index                   = std::min(index, (uint32) (this->tokens.size() - 1));
     this->currentTokenIndex = index;
     EnsureCurrentItemIsVisible();
+    if ((selected) && (sidx >= 0))
+    {
+        this->selection.UpdateSelection(sidx, this->currentTokenIndex);
+    }
 }
 void Instance::MoveLeft(bool selected, bool stopAfterFirst)
 {
@@ -974,7 +1007,7 @@ void Instance::EditCurrentToken()
         if (dlg.ShouldReparse())
         {
             TextEditorBuilder ted(this->text);
-            auto res = RebuildTextFromTokens(ted);
+            auto res   = RebuildTextFromTokens(ted);
             this->text = ted.Release();
             if (!res)
             {

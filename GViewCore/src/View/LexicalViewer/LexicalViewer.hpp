@@ -220,7 +220,7 @@ namespace View
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
-            void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
+            void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index);
             void PaintLineNumbers(Graphics::Renderer& renderer);
 
             void MoveToToken(uint32 index, bool selected);
