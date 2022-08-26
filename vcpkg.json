@@ -2,13 +2,7 @@
   "name": "GView",
   "version-string": "0.1.0",
   "dependencies": [
-        {
-            "name": "openssl",
-            "platform": "(windows | osx)"
-        },
-        {
-            "name": "ncurses",
-            "platform": "osx"
-        }
+        "openssl",
+		"ncurses"
     ]
 }
