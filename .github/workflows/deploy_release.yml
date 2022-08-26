@@ -68,35 +68,23 @@ jobs:
       with:
         submodules: recursive
         
-    - name: Brew prefix
-      run: brew --prefix
+    - name: Install vcpkg
+      run: git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
     
-    - name: Install brew ncurses
-      run: brew install --build-from-source --verbose --debug ncurses
+    - name: Export vcpkg root
+      run: export VCPKG_ROOT="$HOME/vcpkg"
+      
+    - name: Vcpkg root
+      run: echo $VCPKG_ROOT
+        
+    - name: Integrate install vcpkg
+      run: vcpkg integrate install    
 
-    - name: NCurses Cellar
-      run: brew --cellar ncurses
-      
-    - name: NCurses Prefix
-      run: brew --prefix ncurses
-
-    - name: List NCurses files
-      run: ls -R /usr/local/Cellar/ncurses
-      
-    - name: Install brew openssl@1.1
-      run: brew install --build-from-source --verbose --debug openssl@1.1
-      
-    - name: OpenSSL Cellar
-      run: brew --cellar openssl@1.1
-      
-    - name: OpenSSL Prefix
-      run: brew --prefix openssl@1.1
-      
-    - name: List OpenSSL files
-      run: ls -R /usr/local/opt/openssl@1.1/lib
-            
+    - name: List vcpkg installed lib files
+      run: ls -R "$HOME/vcpkg/installed/lib"
+             
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1 -DOPENSSL_LIBRARIES=/usr/local/opt/openssl@1.1/lib 
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
       
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
