@@ -133,11 +133,12 @@ Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOML
     // 3. if no encoding was matched --> return binary
     return Encoding::Binary;
 }
-char16* ConvertToUnicode16(BufferView buf, size_t& length)
+UnicodeString ConvertToUnicode16(BufferView buf)
 {
-    length = 0;
     if (buf.Empty())
-        return nullptr;
+        return UnicodeString();
+    if (buf.GetLength() > 0x80000000)
+        return UnicodeString(); // buffer too big to be converted
     uint32 bomLength;
     auto enc    = AnalyzeBufferForEncoding(buf, true, bomLength);
     char16* ptr = new char16[buf.GetLength()];
@@ -160,7 +161,6 @@ char16* ConvertToUnicode16(BufferView buf, size_t& length)
         }
         pos++;
     }
-    length = pos - ptr;
-    return ptr;
+    return UnicodeString(ptr, static_cast<uint32>(pos - ptr), static_cast<uint32>(buf.GetLength()));
 }
 } // namespace GView::Utils::CharacterEncoding

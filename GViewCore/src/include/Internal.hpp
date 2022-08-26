@@ -93,6 +93,20 @@ namespace Utils
         const Zone* OffsetToZone(uint64 offset);
     };
 
+    struct UnicodeString
+    {
+        char16* text;
+        uint32 size;
+        uint32 allocated;
+
+        UnicodeString() : text(nullptr), size(0), allocated(0)
+        {
+        }
+        UnicodeString(char16* txt, uint32 sz, uint32 alloc) : text(txt), size(sz), allocated(alloc)
+        {
+        }
+    };
+
     namespace CharacterEncoding
     {
         enum class Encoding : uint8
@@ -181,7 +195,7 @@ namespace Utils
         };
 
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
-        char16* ConvertToUnicode16(BufferView buf,size_t& length);
+        UnicodeString ConvertToUnicode16(BufferView buf);
     }; // namespace CharacterEncoding
 } // namespace Utils
 

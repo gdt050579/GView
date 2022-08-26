@@ -178,8 +178,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             uint64 currentHash;
-            char16* text;
-            uint32 textLength;
+            UnicodeString text;
             uint32 currentTokenIndex;
             int32 lineNrWidth, lastLineNumber;
             bool noItemsVisible;
@@ -226,11 +225,11 @@ namespace View
 
             inline uint32 GetUnicodeTextLen() const
             {
-                return textLength;
+                return text.size;
             }
             inline char16* GetUnicodeText() const
             {
-                return text;
+                return text.text;
             }
 
             virtual void Paint(Graphics::Renderer& renderer) override;

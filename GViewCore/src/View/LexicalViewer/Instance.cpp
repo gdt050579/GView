@@ -73,9 +73,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     // load the entire data into a file
     auto buf                = obj->GetData().GetEntireFile();
-    size_t sz               = 0;
-    this->text              = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf, sz);
-    textLength              = (uint32) sz;
+    this->text              = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
     this->Scroll.x          = 0;
     this->Scroll.y          = 0;
     this->currentTokenIndex = 0;
@@ -89,7 +87,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     {
         TokensListBuilder tokensList(this);
         BlocksListBuilder blockList(this);
-        TextParser textParser(this->text, this->textLength);
+        TextParser textParser(this->text.text, this->text.size);
         SyntaxManager syntax(textParser, tokensList, blockList);
         this->settings->parser->AnalyzeText(syntax);
         UpdateTokensInformation();
@@ -138,8 +136,8 @@ void Instance::UpdateTokensInformation()
     */
     for (auto& tok : this->tokens)
     {
-        tok.UpdateSizes(this->text);
-        tok.UpdateHash(this->text, this->settings->ignoreCase);
+        tok.UpdateSizes(this->text.text);
+        tok.UpdateHash(this->text.text, this->settings->ignoreCase);
     }
 }
 void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
@@ -185,8 +183,8 @@ void Instance::ComputeOriginalPositions()
 {
     int32 x         = 0;
     int32 y         = 0;
-    const char16* p = this->text;
-    const char16* e = this->text + this->textLength;
+    const char16* p = this->text.text;
+    const char16* e = this->text.text + this->text.size;
     uint32 pos      = 0;
     uint32 idx      = 0;
     uint32 tknCount = (uint32) this->tokens.size();
@@ -548,7 +546,7 @@ void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
 }
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor)
 {
-    u16string_view txt = tok.GetText(this->text);
+    u16string_view txt = tok.GetText(this->text.text);
     ColorPair col;
     if (onCursor)
     {
@@ -899,7 +897,7 @@ void Instance::EditCurrentToken()
 
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);
-    NameRefactorDialog dlg(tok, this->text, false, containerBlock != BlockObject::INVALID_ID);
+    NameRefactorDialog dlg(tok, this->text.text, false, containerBlock != BlockObject::INVALID_ID);
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
