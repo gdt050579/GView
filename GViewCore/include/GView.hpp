@@ -812,10 +812,10 @@ namespace View
             bool Insert(uint32 offset, std::string_view text);
             bool Insert(uint32 offset, std::u16string_view text);
             bool InsertChar(uint32 offset, char16 ch);
-            std::optional<uint32> Find(uint32 startOffset, std::string_view textToSearch, bool ignoreCase);
+            std::optional<uint32> Find(uint32 startOffset, std::string_view textToSearch, bool ignoreCase = false);
             bool Replace(uint32 offset, uint32 size, std::string_view text);
             bool Replace(uint32 offset, uint32 size, std::u16string_view text);       
-            bool ReplaceAll(std::string_view textToSearch, std::string_view textToReplaceWith, bool ignoreCase);
+            bool ReplaceAll(std::string_view textToSearch, std::string_view textToReplaceWith, bool ignoreCase = false);
             bool DeleteChar(uint32 offset);
             bool Delete(uint32 offset, uint32 charactersCount);
             bool Add(std::string_view text);

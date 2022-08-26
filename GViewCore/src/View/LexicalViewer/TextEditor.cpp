@@ -86,7 +86,7 @@ std::optional<uint32> TextEditor::Find(uint32 startOffset, std::string_view text
         return std::nullopt;
 
     const auto* p      = this->text + startOffset;
-    const auto* e      = this->text + size - textToSearch.size();
+    const auto* e      = this->text + size + 1 - textToSearch.size();
     const uint8* txt   = reinterpret_cast<const uint8*>(textToSearch.data());
     const uint8* txt_e = txt + textToSearch.size();
     auto firstChar     = *txt;
@@ -226,7 +226,7 @@ bool TextEditor::ReplaceAll(std::string_view textToSearch, std::string_view text
 
     auto pos = 0;
     auto len = static_cast<uint32>(textToSearch.size());
-    
+
     do
     {
         auto res = Find(pos, textToSearch, ignoreCase);

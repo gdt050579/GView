@@ -944,6 +944,11 @@ void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
 {
     // change alternate character set to their original character
     // https://en.cppreference.com/w/cpp/language/operator_alternative
+    editor.ReplaceAll("<%", "{");
+    editor.ReplaceAll("%>", "}");
+    editor.ReplaceAll("%:%:", "##");
+    editor.ReplaceAll("%:", "#");
+    editor.ReplaceAll(":>", "]");
 }
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {

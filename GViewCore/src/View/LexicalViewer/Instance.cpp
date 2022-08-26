@@ -41,6 +41,10 @@ void TestTextEditor()
     ted.Set("                                     ");
     ted.Set("0123456789");
     ted.Replace(9, 1, u"ABC");
+
+    ted.Set("                                     ");
+    ted.Set("0123456789");
+    ted.ReplaceAll("89", "abc");
 }
 //*/
 
@@ -100,6 +104,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
     }
+    
+    //TestTextEditor();
 }
 
 void Instance::RecomputeTokenPositions()
