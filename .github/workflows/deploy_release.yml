@@ -68,8 +68,8 @@ jobs:
       with:
         submodules: recursive
         
-    - name: Install vcpkg
-      run: git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
+    - name: Install vcpkg (it will be moved as submodule)
+      run: git clone https://github.com/gheorghitamutu/vcpkg.git "$HOME/vcpkg"
     
     - name: Export vcpkg root
       run: echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
