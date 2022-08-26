@@ -1,19 +1,14 @@
 {
-  "name": "test",
+  "name": "GView",
   "version-string": "0.1.0",
   "dependencies": [
         {
-            "name": "openssl",        
-            "version>=": "1.1.1n",
-            "platform": "(x64 & windows) | osx"
+            "name": "openssl",
+            "platform": "windows | osx"
         },
         {
             "name": "ncurses",
             "platform": "osx"
         }
-    ],                        
-    "overrides": [
-        { "name": "openssl", "version-string": "1.1.1n" }
-    ],
-    "builtin-baseline": "6e024e744e7717c06ddacd5089401109c6298553"
+    ]
 }
