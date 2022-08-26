@@ -96,15 +96,15 @@ jobs:
       run: |
         output=$(python .github/workflows/get_version.py GViewCore/include/GView.hpp)
         echo "GVIEW_VERSION=$output" >> $GITHUB_ENV
+        
+    - name: List VCPKG Lib Files
+      run: ls -R ${{ env.VCPKG_ROOT }}/installed
  
     - name: List Release Files
       run: ls -R /Users/runner/work/GView/GView/bin/Release
       
-    - name: Copy NCurses 6.3 libs (needs to be integrated into cmake)
-      run: cp /usr/local/Cellar/ncurses/6.3/lib/*.dylib /Users/runner/work/GView/GView/bin/Release/
-      
     - name: Copy OpenSSL libs (needs to be integrated into cmake)
-      run: cp /usr/local/opt/openssl@1.1/lib/*.dylib /Users/runner/work/GView/GView/bin/Release/
+      run: cp ${{ env.VCPKG_ROOT }}/installed/* /Users/runner/work/GView/GView/bin/Release/
       
     - name: Create archive
       working-directory: /Users/runner/work/GView/GView/bin/Release
