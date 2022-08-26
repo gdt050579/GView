@@ -944,11 +944,29 @@ void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
 {
     // change alternate character set to their original character
     // https://en.cppreference.com/w/cpp/language/operator_alternative
+    // very simplistic
     editor.ReplaceAll("<%", "{");
     editor.ReplaceAll("%>", "}");
     editor.ReplaceAll("%:%:", "##");
     editor.ReplaceAll("%:", "#");
     editor.ReplaceAll(":>", "]");
+    // check for < : case
+    auto pos = 0;
+    do
+    {
+        auto res = editor.Find(pos, "<:");
+        if (!res.has_value())
+            break;
+        pos = res.value() + 2;
+        if ((editor[pos] == ':') && ((editor[pos + 1] == '>') || (editor[pos + 1] == ':')))
+        {
+            // skip it
+        }
+        else
+        {
+            editor.Replace(res.value(), 2, "[");
+        }
+    } while (true);
 }
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
