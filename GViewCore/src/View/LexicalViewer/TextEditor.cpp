@@ -219,6 +219,25 @@ bool TextEditor::Replace(uint32 offset, uint32 count, std::u16string_view newTex
     COPY_UNICODE16(offset, newText.data(), newText.size());
     return true;
 }
+bool TextEditor::ReplaceAll(std::string_view textToSearch, std::string_view textToReplaceWith, bool ignoreCase)
+{
+    if ((textToSearch.empty()) || (this->size == 0))
+        return false;
+
+    auto pos = 0;
+    auto len = static_cast<uint32>(textToSearch.size());
+    
+    do
+    {
+        auto res = Find(pos, textToSearch, ignoreCase);
+        if (!res.has_value())
+            break;
+        if (Replace(res.value(), len, textToReplaceWith) == false)
+            return false;
+        pos += len;
+    } while (true);
+    return true;
+}
 bool TextEditor::DeleteChar(uint32 offset)
 {
     if (offset >= size)
