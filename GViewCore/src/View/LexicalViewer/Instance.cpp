@@ -525,34 +525,34 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         switch (tok.color)
         {
         case TokenColor::Comment:
-            col = ColorPair(Color::DarkGreen, Color::Transparent);
+            col = ColorPair{ Color::DarkGreen, Color::Transparent };
             break;
         case TokenColor::Operator:
-            col = ColorPair(Color::Gray, Color::Transparent);
+            col = ColorPair{ Color::Gray, Color::Transparent };
             break;
         case TokenColor::Word:
-            col = ColorPair(Color::Silver, Color::Transparent);
+            col = ColorPair{ Color::Silver, Color::Transparent };
             break;
         case TokenColor::Keyword:
-            col = ColorPair(Color::Yellow, Color::Transparent);
+            col = ColorPair{ Color::Yellow, Color::Transparent };
             break;
         case TokenColor::Keyword2:
-            col = ColorPair(Color::Aqua, Color::Transparent);
+            col = ColorPair{ Color::Aqua, Color::Transparent };
             break;
         case TokenColor::String:
-            col = ColorPair(Color::Red, Color::Transparent);
+            col = ColorPair{ Color::Red, Color::Transparent };
             break;
         case TokenColor::Datatype:
-            col = ColorPair(Color::Green, Color::Transparent);
+            col = ColorPair{ Color::Green, Color::Transparent };
             break;
         case TokenColor::Constant:
-            col = ColorPair(Color::Pink, Color::Transparent);
+            col = ColorPair{ Color::Pink, Color::Transparent };
             break;
         case TokenColor::Number:
-            col = ColorPair(Color::Teal, Color::Transparent);
+            col = ColorPair{ Color::Teal, Color::Transparent };
             break;
         case TokenColor::Preprocesor:
-            col = ColorPair(Color::Olive, Color::Transparent);
+            col = ColorPair{ Color::Olive, Color::Transparent };
             break;
         default:
             col = Cfg.Text.Normal;
@@ -582,9 +582,9 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         auto y            = tok.y + tok.height - 1 - Scroll.y;
         const auto& block = this->blocks[tok.blockID];
         if (block.foldMessage.empty())
-            renderer.WriteSingleLineText(x, y, "...", ColorPair(Color::Gray, Color::Black));
+            renderer.WriteSingleLineText(x, y, "...", ColorPair{ Color::Gray, Color::Black });
         else
-            renderer.WriteSingleLineText(x, y, block.foldMessage, ColorPair(Color::Gray, Color::Black));
+            renderer.WriteSingleLineText(x, y, block.foldMessage, ColorPair{ Color::Gray, Color::Black });
     }
 }
 void Instance::Paint(Graphics::Renderer& renderer)
