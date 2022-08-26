@@ -940,6 +940,10 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& s
         }
     }
 }
+void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
+{
+    // To be added
+}
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     syntax.tokens.ResetLastTokenID(TokenType::None);

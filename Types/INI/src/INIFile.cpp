@@ -450,6 +450,10 @@ bool INIFile::Update()
     return true;
 }
 
+void INIFile::PreprocessText(GView::View::LexicalViewer::TextEditor& )
+{
+    // nothing to do --> there is no pre-processing needed for an INI format
+}
 void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     LocalString<64> tmp;

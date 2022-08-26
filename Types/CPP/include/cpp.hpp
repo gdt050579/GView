@@ -32,7 +32,7 @@ namespace Type
             {
                 return "C++";
             }
-
+            virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
         };
         namespace Panels

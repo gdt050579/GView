@@ -1021,6 +1021,7 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
+            virtual void PreprocessText(TextEditor& editor) = 0;
             virtual void AnalyzeText(SyntaxManager& syntax) = 0;
         };
         struct CORE_EXPORT Settings

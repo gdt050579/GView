@@ -85,6 +85,12 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (this->settings->parser)
     {
+        // step 1 (run the preprocessor)
+        TextEditorBuilder ted(this->text);
+        this->settings->parser->PreprocessText(ted);
+        this->text = ted.Release();
+
+        // step 2 (run the analyzer)
         TokensListBuilder tokensList(this);
         BlocksListBuilder blockList(this);
         TextParser textParser(this->text.text, this->text.size);
