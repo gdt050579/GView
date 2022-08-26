@@ -942,7 +942,8 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& s
 }
 void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
 {
-    // To be added
+    // change alternate character set to their original character
+    // https://en.cppreference.com/w/cpp/language/operator_alternative
 }
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {

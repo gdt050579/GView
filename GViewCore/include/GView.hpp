@@ -812,8 +812,9 @@ namespace View
             bool Insert(uint32 offset, std::string_view text);
             bool Insert(uint32 offset, std::u16string_view text);
             bool InsertChar(uint32 offset, char16 ch);
+            std::optional<uint32> Find(uint32 startOffset, std::string_view text, bool ignoreCase);
             bool Replace(uint32 offset, uint32 size, std::string_view text);
-            bool Replace(uint32 offset, uint32 size, std::u16string_view text);
+            bool Replace(uint32 offset, uint32 size, std::u16string_view text);            
             bool DeleteChar(uint32 offset);
             bool Delete(uint32 offset, uint32 charactersCount);
             bool Add(std::string_view text);
@@ -833,6 +834,7 @@ namespace View
             {
                 return { text, (size_t)size };
             }
+            
         };
         enum class TokenDataType : uint8
         {
