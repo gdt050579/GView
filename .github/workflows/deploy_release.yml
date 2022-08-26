@@ -84,6 +84,8 @@ jobs:
       run: ls -R "$HOME/vcpkg"
              
     - name: Configure CMake
+      env:
+        VCPKG_ROOT: "$HOME/vcpkg"
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
       
     - name: Build
