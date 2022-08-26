@@ -19,7 +19,7 @@ namespace Type
             void IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& list);
             void CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& syntax);
             void Tokenize(const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& list);
-
+            void RemoveLineContinuityCharacter(GView::View::LexicalViewer::TextEditor& editor);
           public:
             CPPFile();
             virtual ~CPPFile()

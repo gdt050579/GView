@@ -757,8 +757,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx++;
             break;
         case CharType::ExpressionClose:
-            tokenList.Add(
-                  TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             idx++;
             break;
         case CharType::BlockOpen:
@@ -940,6 +939,32 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& s
         }
     }
 }
+void CPPFile::RemoveLineContinuityCharacter(TextEditor& editor)
+{
+    auto pos = 0;
+    do
+    {
+        auto res = editor.Find(pos, "\\");
+        if (!res.has_value())
+            break;
+        pos       = res.value() + 1;
+        auto next = editor[pos];
+        if ((next == '\n') || (next == '\r'))
+        {
+            auto nextAfterNext = editor[pos + 1];
+            if (((nextAfterNext == '\n') || (nextAfterNext == '\r')) && (nextAfterNext != next))
+            {
+                // case like \CRLF or \LFCR
+                editor.Delete(res.value(), 3);
+            }
+            else
+            {
+                // case line \CR or \LF
+                editor.Delete(res.value(), 2);
+            }
+        }
+    } while (true);
+}
 void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
 {
     // change alternate character set to their original character
@@ -967,6 +992,9 @@ void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
             editor.Replace(res.value(), 2, "[");
         }
     } while (true);
+    
+    // remove line continuity
+    RemoveLineContinuityCharacter(editor);
 }
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {

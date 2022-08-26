@@ -70,7 +70,7 @@ bool TextEditor::Grow(size_t newSize)
 char16& TextEditor::operator[](uint32 index)
 {
     if (index < size)
-        return text[size];
+        return text[index];
     else
     {
         indexOperatorTempChar = 0;
