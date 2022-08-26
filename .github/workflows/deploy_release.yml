@@ -83,8 +83,8 @@ jobs:
     - name: List vcpkg files
       run: ls -R ${{ env.VCPKG_ROOT }}
       
-    - name: Modify NCurses VCPKG port (enable wide option)
-      run: python .github/workflows/modify_ncurses_port.py
+    # - name: Modify NCurses VCPKG port (enable wide option)
+    #   run: python .github/workflows/modify_ncurses_port.py
              
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
