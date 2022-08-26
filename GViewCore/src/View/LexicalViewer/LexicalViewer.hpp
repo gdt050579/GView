@@ -51,6 +51,24 @@ namespace View
                 this->size      = _size;
                 this->allocated = _size;
             }
+            TextEditorBuilder(GView::Utils::UnicodeString& str) : TextEditor()
+            {
+                this->text      = str.text;
+                this->size      = str.size;
+                this->allocated = str.allocated;
+                // works like a move method --> similar to what RUST is doing
+                str.text      = nullptr;
+                str.size      = 0;
+                str.allocated = 0;
+            }
+            GView::Utils::UnicodeString Release()
+            {
+                GView::Utils::UnicodeString result(this->text, this->size, this->allocated);
+                this->text      = nullptr;
+                this->size      = 0;
+                this->allocated = 0;
+                return result;
+            }
         };
         struct BlockObject
         {
