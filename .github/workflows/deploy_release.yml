@@ -72,7 +72,7 @@ jobs:
       run: git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
     
     - name: Export vcpkg root
-      run: echo "VCPKG_ROOT="$HOME/vcpkg" >> $GITHUB_ENV
+      run: echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
       
     - name: Vcpkg root
       run: echo $VCPKG_ROOT
