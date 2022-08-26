@@ -427,8 +427,9 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
             if (tok.IsFolded())
                 showStatus = false;
             const auto& block = this->blocks[tok.blockID];
-            UpdateVisibilityStatus(block.tokenStart + 1, block.GetEndIndex(), showStatus);
-            pos = block.GetEndIndex();
+            auto endToken     = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            UpdateVisibilityStatus(block.tokenStart + 1, endToken, showStatus);
+            pos = endToken;
         }
         else
         {
