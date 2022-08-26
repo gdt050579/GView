@@ -72,7 +72,7 @@ jobs:
       run: git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
     
     - name: Export vcpkg root
-      run: export VCPKG_ROOT="$HOME/vcpkg"
+      run: echo "VCPKG_ROOT="$HOME/vcpkg" >> $GITHUB_ENV
       
     - name: Vcpkg root
       run: echo $VCPKG_ROOT
@@ -84,8 +84,6 @@ jobs:
       run: ls -R "$HOME/vcpkg"
              
     - name: Configure CMake
-      env:
-        VCPKG_ROOT: "$HOME/vcpkg"
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
       
     - name: Build
