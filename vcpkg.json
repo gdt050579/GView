@@ -4,7 +4,7 @@
   "dependencies": [
         {
             "name": "openssl",
-            "platform": "(windows | osx)"
+            "platform": "windows | osx"
         },
         {
             "name": "ncurses",
