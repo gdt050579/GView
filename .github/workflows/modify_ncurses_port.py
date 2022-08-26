@@ -11,10 +11,10 @@ with open(ncurses_port_filepath, 'r') as f:
         lines = f.readlines()
         print(lines)
 
-options_line_index = lines.index('set(OPTIONS\n')
+options_line_index = lines.index('set(OPTIONS\r\n')
 print('Options Line Index #{}'.format(options_line_index))
 
-lines.insert(options_line_index + 1, '    --enable-widec \n')
+lines.insert(options_line_index + 1, '    --enable-widec\r\n')
 print(lines)
 
 with open(ncurses_port_filepath, 'w') as f:
