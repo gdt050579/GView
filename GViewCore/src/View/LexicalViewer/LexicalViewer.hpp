@@ -192,6 +192,7 @@ namespace View
             {
                 AppCUI::Input::Key showMetaData;
                 AppCUI::Input::Key prettyFormat;
+                AppCUI::Input::Key changeSelectionType;
             } Keys;
             bool Loaded;
 

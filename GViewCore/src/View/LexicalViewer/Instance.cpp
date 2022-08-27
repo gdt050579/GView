@@ -6,10 +6,11 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 CMD_ID_SHOW_METADATA = 0xBF00;
-constexpr int32 CMD_ID_PRETTY_FORMAT = 0xBF01;
-constexpr int32 CMD_ID_DELETE        = 0xBF02;
-constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
+constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
+constexpr int32 CMD_ID_PRETTY_FORMAT    = 0xBF01;
+constexpr int32 CMD_ID_DELETE           = 0xBF02;
+constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
+constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
 
 /*
 void TestTextEditor()
@@ -781,6 +782,12 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
     if (this->noItemsVisible == false)
         commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
+
+    if (this->selection.IsSingleSelectionEnabled())
+        commandBar.SetCommand(config.Keys.changeSelectionType, "Select:Single", CMD_ID_CHANGE_SELECTION);
+    else
+        commandBar.SetCommand(config.Keys.changeSelectionType, "Select:Multiple", CMD_ID_CHANGE_SELECTION);
+
     return false;
 }
 void Instance::MoveToToken(uint32 index, bool selected)
@@ -1214,6 +1221,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case CMD_ID_DELETE:
         this->DeleteTokens();
         return true;
+    case CMD_ID_CHANGE_SELECTION:
+        this->selection.InvertMultiSelectionMode();
+        return true;
     }
     return false;
 }
@@ -1364,7 +1374,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         PrintSelectionInfo(1, 0, 1, 16, r);
         PrintSelectionInfo(2, 0, 2, 16, r);
         xPoz = PrintSelectionInfo(3, 0, 3, 16, r);
-        
+
         // second colum
         this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
         this->WriteCursorInfo(r, xPoz, 1, 20, "Col     : ", tmp.Format("%d", tok.x + 1));
