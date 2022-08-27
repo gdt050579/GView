@@ -467,6 +467,24 @@ void INIFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& s
     case TokenType::Key:
         str.Set("Key");
         break;
+    case TokenType::Value:
+        str.Set("Value");
+        break;
+    case TokenType::ArrayStart:
+        str.Set("Array start");
+        break;
+    case TokenType::ArrayEnd:
+        str.Set("Array end");
+        break;
+    case TokenType::Comma:
+        str.Set("Separator (comma)");
+        break;
+    case TokenType::Equal:
+        str.Set("Asignament");
+        break;
+    case TokenType::Invalid:
+        str.Set("Invalid/Error");
+        break;
     default:
         str.SetFormat("Unknwon: 0x%08X", id);
         break;
