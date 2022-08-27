@@ -261,6 +261,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
     auto spaceAdded        = true;
     auto partOfFoldedBlock = false;
     auto indent            = 0U;
+    auto firstOnNewLine    = true;
 
     while (idx < idxEnd)
     {
@@ -272,44 +273,32 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         }
         if (!partOfFoldedBlock)
         {
-            // indent flags
-            if ((tok.align & TokenAlignament::IncrementIndent) != TokenAlignament::None)
+            // indent flags (before)
+            if ((tok.align & TokenAlignament::IncrementIndentBeforePaint) != TokenAlignament::None)
                 indent++;
-            if (((tok.align & TokenAlignament::DecrementIndent) != TokenAlignament::None) && (indent > 0))
+            if (((tok.align & TokenAlignament::DecrementIndentBeforePaint) != TokenAlignament::None) && (indent > 0))
                 indent--;
-            if ((tok.align & TokenAlignament::ClearIndent) != TokenAlignament::None)
+            if ((tok.align & TokenAlignament::ClearIndentBeforePaint) != TokenAlignament::None)
                 indent = 0;
 
             // new line flags
             if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
             {
-                x          = leftMargin + indent * settings->indentWidth;
-                spaceAdded = true;
+                x              = leftMargin + indent * settings->indentWidth;
+                spaceAdded     = true;
+                firstOnNewLine = true;
                 if (y == lastY)
                     y += 2;
                 else
                     y++;
             }
-            if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (x > leftMargin))
+            if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (!firstOnNewLine))
             {
-                x          = leftMargin + indent * settings->indentWidth;
-                spaceAdded = true;
+                x              = leftMargin + indent * settings->indentWidth;
+                spaceAdded     = true;
+                firstOnNewLine = true;
                 y++;
             }
-            // if ((tok.align & TokenAlignament::StartsOnNewLineWithIndent) != TokenAlignament::None)
-            //{
-            //     if (x == leftMargin)
-            //     {
-            //         x          = leftMargin + settings->indentWidth;
-            //         spaceAdded = true;
-            //     }
-            //     else if (x > leftMargin)
-            //     {
-            //         x          = leftMargin + settings->indentWidth;
-            //         spaceAdded = true;
-            //         y++;
-            //     }
-            // }
             if ((tok.align & TokenAlignament::AfterPreviousToken) != TokenAlignament::None)
             {
                 if (y == lastY)
@@ -334,6 +323,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         tok.x                   = x;
         tok.y                   = y;
         lastY                   = y;
+        firstOnNewLine          = false;
         const auto blockStarter = tok.IsBlockStarter();
         const auto folded       = tok.IsFolded();
         if ((blockStarter) && (folded))
@@ -354,6 +344,14 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         spaceAdded = false;
         if (!partOfFoldedBlock)
         {
+            // indent
+            if ((tok.align & TokenAlignament::IncrementIndentAfterPaint) != TokenAlignament::None)
+                indent++;
+            if (((tok.align & TokenAlignament::DecrementIndentAfterPaint) != TokenAlignament::None) && (indent > 0))
+                indent--;
+            if ((tok.align & TokenAlignament::ClearIndentAfterPaint) != TokenAlignament::None)
+                indent = 0;
+
             if ((tok.align & TokenAlignament::AddSpaceAfter) != TokenAlignament::None)
             {
                 x++;
@@ -361,8 +359,9 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             }
             if ((tok.align & TokenAlignament::NewLineAfter) != TokenAlignament::None)
             {
-                x          = leftMargin + indent * settings->indentWidth;
-                spaceAdded = true;
+                x              = leftMargin + indent * settings->indentWidth;
+                spaceAdded     = true;
+                firstOnNewLine = true;
                 y++;
             }
         }
@@ -380,9 +379,9 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 block.leftHighlightMargin = leftMargin;
                 break;
             case BlockAlignament::ToRightOfCurrentBlock:
-                blockMarginTop  = y;
-                blockMarginLeft = leftMargin + (indent + 1) * settings->indentWidth;
-                block.leftHighlightMargin = leftMargin;
+                blockMarginTop            = y;
+                blockMarginLeft           = leftMargin + (indent + 1) * settings->indentWidth;
+                block.leftHighlightMargin = leftMargin + indent * settings->indentWidth;
                 break;
             case BlockAlignament::AsBlockStartToken:
                 blockMarginTop            = y;
@@ -399,7 +398,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             {
                 // not an empty block and not folded
                 auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
-                x      = p.X == blockMarginLeft ? leftMargin : p.X;
+                x      = p.X == blockMarginLeft ? leftMargin + indent * settings->indentWidth : p.X;
                 y      = p.Y;
             }
             idx = endToken;

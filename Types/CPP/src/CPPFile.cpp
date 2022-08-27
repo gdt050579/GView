@@ -778,7 +778,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter,
+                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter | TokenAlignament::ClearIndentAfterPaint,
                   true);
             idx++;
             break;
@@ -810,7 +810,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken | TokenAlignament::ClearIndent,
+                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken | TokenAlignament::ClearIndentAfterPaint,
                   true);
             idx++;
             break;
@@ -862,7 +862,7 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
                         auto nextTok = list[endToken.GetIndex() + 1];
                         if ((nextTok.IsValid()) && (nextTok.GetTypeID(TokenType::None) != TokenType::BlockOpen))
                         {
-                            nextTok.UpdateAlignament(TokenAlignament::IncrementIndent|TokenAlignament::StartsOnNewLine);
+                            nextTok.UpdateAlignament(TokenAlignament::IncrementIndentBeforePaint|TokenAlignament::StartsOnNewLine);
                         }
                         // if the case is for
                         if (typeID == (TokenType::Keyword | (KeywordsType::For << 16)))

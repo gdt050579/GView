@@ -857,9 +857,12 @@ namespace View
                                          // otherwise adds a new line.
             AfterPreviousToken = 0x0020, // make sure that there any space or new line (within the block) between current token
                                          // and previous token is removed. Both tokens are at on the same line.
-            IncrementIndent = 0x0040,    // increments the indent of the current line
-            DecrementIndent = 0x0080,    // decrement the indent of the current line
-            ClearIndent     = 0x0100,    // resets current indent to 0
+            IncrementIndentBeforePaint = 0x0040, // increments the indent of the current line (before painting the token)
+            DecrementIndentBeforePaint = 0x0080, // decrement the indent of the current line (before painting the token)
+            ClearIndentBeforePaint     = 0x0100, // resets current indent to 0 (before painting the token)
+            IncrementIndentAfterPaint  = 0x0200, // increments the indent of the current line (after painting the token)
+            DecrementIndentAfterPaint  = 0x0400, // decrement the indent of the current line (after painting the token)
+            ClearIndentAfterPaint      = 0x0800, // resets current indent to 0 (after painting the token)
 
         };
         enum class TokenColor : uint8
