@@ -992,12 +992,69 @@ void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
             editor.Replace(res.value(), 2, "[");
         }
     } while (true);
-    
+
     // remove line continuity
     RemoveLineContinuityCharacter(editor);
 }
 void CPPFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
 {
+    switch (id & 0xFFFF)
+    {
+    case TokenType::None:
+        str.Set("Unknwon/Error");
+        break;
+    case TokenType::Comment:
+        str.Set("Comment");
+        break;
+    case TokenType::ArrayOpen:
+        str.Set("Array (open)");
+        break;
+    case TokenType::ArrayClose:
+        str.Set("Array (close)");
+        break;
+    case TokenType::BlockOpen:
+        str.Set("Block (open)");
+        break;
+    case TokenType::BlockClose:
+        str.Set("Block (close)");
+        break;
+    case TokenType::ExpressionOpen:
+        str.Set("Expression (open)");
+        break;
+    case TokenType::ExpressionClose:
+        str.Set("Expression (close)");
+        break;
+    case TokenType::Number:
+        str.Set("Number constant");
+        break;
+    case TokenType::String:
+        str.Set("String");
+        break;
+    case TokenType::Comma:
+        str.Set("Separator (comma)");
+        break;
+    case TokenType::Semicolumn:
+        str.Set("Separator (semicolumn)");
+        break;
+    case TokenType::Preprocess:
+        str.Set("Preprocess directive");
+        break;
+    case TokenType::Word:
+        str.Set("Word");
+        break;
+    case TokenType::Operator:
+        str.Set("Operator");
+        break;
+    case TokenType::Keyword:
+        str.Set("Keyword");
+        break;
+    case TokenType::Constant:
+        str.Set("Constant");
+        break;
+    case TokenType::Datatype:
+        str.Set("Data type");
+        break;
+    }
 }
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
