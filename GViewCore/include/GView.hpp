@@ -849,15 +849,18 @@ namespace View
         enum class TokenAlignament : uint16
         {
             None            = 0,
-            AddSpaceBefore  = 0x0001, // adds a space on left (except when current token is already at left-most position)
-            AddSpaceAfter   = 0x0002, // adds a space on right of the current token
-            NewLineAfter    = 0x0004, // adds a new line after the current token
-            NewLineBefore   = 0x0008, // makes sure that there is a new (empty) line before previous token and current one
-            StartsOnNewLine = 0x0010, // makes sure that current token starts on new line. If already on new line, nothing happens.
-                                      // otherwise adds a new line.
-            StartsOnNewLineWithIndent = 0x0020, // similar to StartsOnNewLine but adds an Indent (e.g. 4 spaces) on left before token
-            AfterPreviousToken        = 0x0040, // make sure that there any space or new line (within the block) between current token
-                                                // and previous token is removed. Both tokens are at on the same line.
+            AddSpaceBefore  = 0x0001,    // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x0002,    // adds a space on right of the current token
+            NewLineAfter    = 0x0004,    // adds a new line after the current token
+            NewLineBefore   = 0x0008,    // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x0010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                         // otherwise adds a new line.
+            AfterPreviousToken = 0x0020, // make sure that there any space or new line (within the block) between current token
+                                         // and previous token is removed. Both tokens are at on the same line.
+            IncrementIndent = 0x0040,    // increments the indent of the current line
+            DecrementIndent = 0x0080,    // decrement the indent of the current line
+            ClearIndent     = 0x0100,    // resets current indent to 0
+
         };
         enum class TokenColor : uint8
         {
