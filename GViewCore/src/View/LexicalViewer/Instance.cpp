@@ -1281,7 +1281,7 @@ int Instance::PrintTokenTypeInfo(uint32 tokenTypeID, int x, int y, uint32 width,
         LocalString<64> tmp;
         tmp.Clear();
         this->settings->parser->GetTokenIDStringRepresentation(tokenTypeID, tmp);
-        this->WriteCursorInfo(r, x, y, width, "Token Type:", tmp.ToStringView());
+        this->WriteCursorInfo(r, x, y, width, "Token Type: ", tmp.ToStringView());
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
     return x + width + 1;
@@ -1320,7 +1320,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t)tokens.size()));
-        this->WriteCursorInfo(r, xPoz, 0, 30, "Token     :", tok.GetText(this->text.text));
+        this->WriteCursorInfo(r, xPoz, 0, 30, "Token     : ", tok.GetText(this->text.text));
         xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 30, r);
         break;
     case 3:
