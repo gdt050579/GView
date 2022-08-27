@@ -784,12 +784,12 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::Number:
             next = text.ParseNumber(idx);
-            tokenList.Add(TokenType::Number, idx, next, TokenColor::Number);
+            tokenList.Add(TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number);
             idx = next;
             break;
         case CharType::String:
             next = text.ParseString(idx, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::AllowEscapeSequences);
-            tokenList.Add(TokenType::String, idx, next, TokenColor::String);
+            tokenList.Add(TokenType::String, idx, next, TokenColor::String,TokenDataType::String);
             idx = next;
             break;
         case CharType::Comma:
