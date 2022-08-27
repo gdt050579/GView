@@ -1274,6 +1274,18 @@ int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width,
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
     return x + width + 1;
 }
+int Instance::PrintTokenTypeInfo(uint32 tokenTypeID, int x, int y, uint32 width, Renderer& r)
+{
+    if (this->settings->parser)
+    {
+        LocalString<64> tmp;
+        tmp.Clear();
+        this->settings->parser->GetTokenIDStringRepresentation(tokenTypeID, tmp);
+        this->WriteCursorInfo(r, x, y, width, "Token Type:", tmp.ToStringView());
+    }
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
+    return x + width + 1;
+}
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
     if (this->noItemsVisible)
@@ -1294,18 +1306,22 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
             xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
             xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
         }
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", tok.x + 1));
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Char ofs: ", tmp.Format("%u", tok.start));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 9, "Col:", tmp.Format("%d", tok.x + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs:", tmp.Format("%u", tok.start));
+        xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 0, 30, r);
         break;
     case 2:
         PrintSelectionInfo(0, 0, 0, 16, r);
         xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
         PrintSelectionInfo(1, xPoz, 0, 16, r);
         xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
-        this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
-        xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", tok.x + 1));
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Char ofs: ", tmp.Format("%u", tok.start));
+        this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
+        this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
+        xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t)tokens.size()));
+        this->WriteCursorInfo(r, xPoz, 0, 30, "Token     :", tok.GetText(this->text.text));
+        xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 30, r);
         break;
     case 3:
         break;
