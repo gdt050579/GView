@@ -1320,8 +1320,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t)tokens.size()));
-        this->WriteCursorInfo(r, xPoz, 0, 30, "Token     : ", tok.GetText(this->text.text));
-        xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 30, r);
+        this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
+        xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
         break;
     case 3:
         break;
