@@ -14,11 +14,11 @@ DeleteDialog::DeleteDialog(TokenObject& tok, const char16* text, bool hasSelecti
     Factory::TextField::Create(this, tok.GetText(text), "x:1,y:2,w:65", TextFieldFlags::Readonly);
 
     // apply methods
-    this->rbApplyOnCurrent = Factory::RadioBox::Create(this, "Apply on &current token alone", "x:1,y:4,w:60", APPLY_GROUP_ID);
+    this->rbApplyOnCurrent = Factory::RadioBox::Create(this, "Delete &current token alone", "x:1,y:4,w:60", APPLY_GROUP_ID);
     this->rbApplyOnBlock =
-          Factory::RadioBox::Create(this, "Apply on all similar tokens from current &block", "x:1,y:5,w:60", APPLY_GROUP_ID);
+          Factory::RadioBox::Create(this, "Delete the &block where current token resides", "x:1,y:5,w:60", APPLY_GROUP_ID);
     this->rbApplyOnSelection =
-          Factory::RadioBox::Create(this, "Apply on all similar tokens from &selection", "x:1,y:6,w:60", APPLY_GROUP_ID);
+          Factory::RadioBox::Create(this, "Delete &selection", "x:1,y:6,w:60", APPLY_GROUP_ID);
 
     this->rbApplyOnSelection->SetEnabled(hasSelection);
     this->rbApplyOnBlock->SetEnabled(belongsToABlock);
