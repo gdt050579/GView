@@ -1284,8 +1284,9 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     const auto& tok = this->tokens[this->currentTokenIndex];
     LocalString<128> tmp;
     auto xPoz = 0;
-    if (height == 1)
+    switch (height)
     {
+    case 1:
         xPoz = PrintSelectionInfo(0, 0, 0, 16, r);
         if (this->selection.IsMultiSelectionEnabled())
         {
@@ -1296,9 +1297,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", tok.x + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Char ofs: ", tmp.Format("%u", tok.start));
-    }
-    else
-    {
+        break;
+    case 2:
         PrintSelectionInfo(0, 0, 0, 16, r);
         xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
         PrintSelectionInfo(1, xPoz, 0, 16, r);
@@ -1306,7 +1306,13 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", tok.x + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Char ofs: ", tmp.Format("%u", tok.start));
+        break;
+    case 3:
+        break;
+    default:
+        break;
     }
+
 }
 
 //======================================================================[PROPERTY]============================
