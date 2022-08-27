@@ -996,6 +996,9 @@ void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
     // remove line continuity
     RemoveLineContinuityCharacter(editor);
 }
+void CPPFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
+{
+}
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     syntax.tokens.ResetLastTokenID(TokenType::None);

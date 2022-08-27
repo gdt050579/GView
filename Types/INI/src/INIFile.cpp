@@ -454,6 +454,24 @@ void INIFile::PreprocessText(GView::View::LexicalViewer::TextEditor& )
 {
     // nothing to do --> there is no pre-processing needed for an INI format
 }
+void INIFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
+{
+    switch (id)
+    {
+    case TokenType::Comment:
+        str.Set("Comment");
+        break;
+    case TokenType::Section:
+        str.Set("Section");
+        break;
+    case TokenType::Key:
+        str.Set("Key");
+        break;
+    default:
+        str.SetFormat("Unknwon: 0x%08X", id);
+        break;
+    }
+}
 void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     LocalString<64> tmp;

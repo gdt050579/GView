@@ -32,6 +32,7 @@ namespace Type
             {
                 return "C++";
             }
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
             virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
         };

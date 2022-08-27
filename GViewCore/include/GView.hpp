@@ -801,6 +801,7 @@ namespace View
         class CORE_EXPORT TextEditor
         {
             bool Grow(size_t size);
+
           protected:
             char16* text;
             uint32 size;
@@ -814,7 +815,7 @@ namespace View
             bool InsertChar(uint32 offset, char16 ch);
             std::optional<uint32> Find(uint32 startOffset, std::string_view textToSearch, bool ignoreCase = false);
             bool Replace(uint32 offset, uint32 size, std::string_view text);
-            bool Replace(uint32 offset, uint32 size, std::u16string_view text);       
+            bool Replace(uint32 offset, uint32 size, std::u16string_view text);
             bool ReplaceAll(std::string_view textToSearch, std::string_view textToReplaceWith, bool ignoreCase = false);
             bool DeleteChar(uint32 offset);
             bool Delete(uint32 offset, uint32 charactersCount);
@@ -833,9 +834,8 @@ namespace View
             }
             inline operator u16string_view() const
             {
-                return { text, (size_t)size };
+                return { text, (size_t) size };
             }
-            
         };
         enum class TokenDataType : uint8
         {
@@ -1025,8 +1025,9 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void PreprocessText(TextEditor& editor) = 0;
-            virtual void AnalyzeText(SyntaxManager& syntax) = 0;
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) = 0;
+            virtual void PreprocessText(TextEditor& editor)                                    = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
         };
         struct CORE_EXPORT Settings
         {
