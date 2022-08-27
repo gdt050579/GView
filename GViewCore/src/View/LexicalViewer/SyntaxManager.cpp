@@ -113,6 +113,12 @@ bool Token::SetText(const ConstString& text)
     CREATE_TOKENREF(false);
     return tok.value.Set(text);
 }
+bool Token::Delete()
+{
+    CREATE_TOKENREF(false);
+    tok.SetShouldDeleteFlag();
+    return true;
+}
 // Token Object
 void TokenObject::UpdateSizes(const char16* text)
 {

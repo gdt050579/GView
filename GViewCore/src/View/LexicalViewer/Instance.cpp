@@ -394,6 +394,8 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         bool showStatus = visible;
         if ((tok.dataType == TokenDataType::MetaInformation) && (this->showMetaData == false))
             showStatus = false;
+        if (tok.IsMarkForDeletion())
+            showStatus = false;
 
         tok.SetVisible(showStatus);
         this->noItemsVisible &= (!showStatus);

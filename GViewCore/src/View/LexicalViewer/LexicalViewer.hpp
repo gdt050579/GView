@@ -25,6 +25,7 @@ namespace View
             Folded                     = 0x02, // only for blocks
             BlockStart                 = 0x04,
             DisableSimilarityHighlight = 0x08, // hash will not be computed for this token
+            ShouldDelete               = 0x10, // token shoule be deleted on next reparse
         };
         class TokensListBuilder : public TokensList
         {
@@ -117,6 +118,10 @@ namespace View
             {
                 return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) == 0;
             }
+            inline bool IsMarkForDeletion() const
+            {
+                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::ShouldDelete)) != 0;
+            }
             inline void SetVisible(bool value)
             {
                 if (value)
@@ -127,6 +132,10 @@ namespace View
             inline void SetBlockStartFlag()
             {
                 status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::BlockStart));
+            }
+            inline void SetShouldDeleteFlag()
+            {
+                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::ShouldDelete));
             }
             inline void SetFolded(bool value)
             {

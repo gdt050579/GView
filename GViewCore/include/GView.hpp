@@ -936,6 +936,7 @@ namespace View
             bool SetBlock(uint32 blockIndex);
             bool DisableSimilartyHighlight();
             bool SetText(const ConstString& text);
+            bool Delete();
 
             Token Next() const;
             Token Precedent() const;
