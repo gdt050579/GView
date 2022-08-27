@@ -1252,53 +1252,61 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
     return false;
 }
 //======================================================================[Cursor information]==================
-// int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
-//{
-//    //uint64 start, end;
-//    //bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
-//    //if (show)
-//    //{
-//    //    if (this->selection.GetSelection(selectionID, start, end))
-//    //    {
-//    //        LocalString<32> tmp;
-//    //        tmp.Format("%X,%X", start, (end - start) + 1);
-//    //        r.WriteSingleLineText(x, y, width, tmp.GetText(), this->Cfg.Text.Normal);
-//    //    }
-//    //    else
-//    //    {
-//    //        r.WriteSingleLineText(x, y, width, "NO Selection", Cfg.Text.Inactive, TextAlignament::Center);
-//    //    }
-//    //}
-//    //r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
-//    return x + width + 1;
-//}
+int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
+{
+    uint64 start, end;
+    bool show = (selectionID == 0) || (this->selection.IsMultiSelectionEnabled());
+    if (show)
+    {
+        if (this->selection.GetSelection(selectionID, start, end))
+        {
+            LocalString<32> tmp;
+            auto ofsStart = tokens[static_cast<uint32>(start)].start;
+            auto ofsEnd   = tokens[static_cast<uint32>(end)].end;
+            tmp.Format("%X,%X", ofsStart, (ofsEnd - ofsStart) + 1);
+            r.WriteSingleLineText(x, y, width, tmp.GetText(), this->Cfg.Text.Normal);
+        }
+        else
+        {
+            r.WriteSingleLineText(x, y, width, "NO Selection", Cfg.Text.Inactive, TextAlignament::Center);
+        }
+    }
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
+    return x + width + 1;
+}
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
-    // LocalString<128> tmp;
-    // auto xPoz = 0;
-    // if (height == 1)
-    //{
-    //     xPoz = PrintSelectionInfo(0, 0, 0, 16, r);
-    //     if (this->selection.IsMultiSelectionEnabled())
-    //     {
-    //         xPoz = PrintSelectionInfo(1, xPoz, 0, 16, r);
-    //         xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
-    //         xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
-    //     }
-    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
-    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
-    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
-    // }
-    // else
-    //{
-    //     PrintSelectionInfo(0, 0, 0, 16, r);
-    //     xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
-    //     PrintSelectionInfo(1, xPoz, 0, 16, r);
-    //     xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
-    //     this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", Cursor.lineNo + 1, (uint32) lines.size()));
-    //     xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", Cursor.charIndex + 1));
-    //     xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "File ofs: ", tmp.Format("%llu", Cursor.pos));
-    // }
+    if (this->noItemsVisible)
+    {
+        r.WriteSingleLineText(0, 0, "No information available", Cfg.Text.Inactive);
+        return;
+    }
+    const auto& tok = this->tokens[this->currentTokenIndex];
+    LocalString<128> tmp;
+    auto xPoz = 0;
+    if (height == 1)
+    {
+        xPoz = PrintSelectionInfo(0, 0, 0, 16, r);
+        if (this->selection.IsMultiSelectionEnabled())
+        {
+            xPoz = PrintSelectionInfo(1, xPoz, 0, 16, r);
+            xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
+            xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
+        }
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 10, "Col:", tmp.Format("%d", tok.x + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Char ofs: ", tmp.Format("%u", tok.start));
+    }
+    else
+    {
+        PrintSelectionInfo(0, 0, 0, 16, r);
+        xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
+        PrintSelectionInfo(1, xPoz, 0, 16, r);
+        xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
+        this->WriteCursorInfo(r, xPoz, 0, 20, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 1, 20, "Col:", tmp.Format("%d", tok.x + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 20, "Char ofs: ", tmp.Format("%u", tok.start));
+    }
 }
 
 //======================================================================[PROPERTY]============================

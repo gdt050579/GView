@@ -249,6 +249,9 @@ namespace View
             void Parse();
             void Reparse(bool openInNewWindow);
 
+
+            int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
+
           public:
             std::vector<TokenObject> tokens;
             std::vector<BlockObject> blocks;
