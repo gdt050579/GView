@@ -53,6 +53,24 @@ inline int32 ComputeXDist(int32 x1, int32 x2)
 {
     return x1 > x2 ? x1 - x2 : x2 - x1;
 }
+inline std::string_view TokenDataTypeToString(TokenDataType dataType)
+{
+    switch (dataType)
+    {
+    case TokenDataType::Boolean:
+        return "Boolean";
+    case TokenDataType::String:
+        return "String";
+    case TokenDataType::MetaInformation:
+        return "Meta information";
+    case TokenDataType::Number:
+        return "Numeric value";
+    case TokenDataType::None:
+        return "N/A";
+    default:
+        return "???";
+    }
+}
 
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
     : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
@@ -1286,6 +1304,13 @@ int Instance::PrintTokenTypeInfo(uint32 tokenTypeID, int x, int y, uint32 width,
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
     return x + width + 1;
 }
+int Instance::PrintDataTypeInfo(TokenDataType dataType, int x, int y, uint32 width, Renderer& r)
+{
+    this->WriteCursorInfo(r, x, y, width, "Data Type : ", TokenDataTypeToString(dataType));
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
+    return x + width + 1;
+}
+
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
     if (this->noItemsVisible)
@@ -1319,16 +1344,24 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
-        xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t)tokens.size()));
+        xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
         xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
         break;
     case 3:
+        PrintSelectionInfo(0, 0, 0, 16, r);
+        PrintSelectionInfo(1, 0, 1, 16, r);
+        xPoz = PrintSelectionInfo(2, 0, 2, 16, r);
+        PrintSelectionInfo(3, xPoz, 0, 16, r);
+        this->WriteCursorInfo(r, xPoz, 1, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 2, 16, "Col : ", tmp.Format("%d", tok.x + 1));
+        this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
+        this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
+        xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 2, 35, r);
         break;
     default:
         break;
     }
-
 }
 
 //======================================================================[PROPERTY]============================

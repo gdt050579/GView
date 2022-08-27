@@ -252,6 +252,7 @@ namespace View
 
             int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
             int PrintTokenTypeInfo(uint32 tokenTypeID, int x, int y, uint32 width, Renderer& r);
+            int PrintDataTypeInfo(TokenDataType dataType, int x, int y, uint32 width, Renderer& r);
           public:
             std::vector<TokenObject> tokens;
             std::vector<BlockObject> blocks;
