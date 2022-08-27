@@ -966,7 +966,7 @@ void Instance::EditCurrentToken()
 
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);
-    NameRefactorDialog dlg(tok, this->text.text, false, containerBlock != BlockObject::INVALID_ID);
+    NameRefactorDialog dlg(tok, this->text.text, selection.HasSelection(0), containerBlock != BlockObject::INVALID_ID);
     if (dlg.Show() == (int) Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
@@ -981,6 +981,10 @@ void Instance::EditCurrentToken()
         case NameRefactorDialog::ApplyMethod::Block:
             start = blocks[containerBlock].GetStartIndex();
             end   = blocks[containerBlock].GetEndIndex();
+            break;
+        case NameRefactorDialog::ApplyMethod::Selection:
+            start = static_cast<uint32>(selection.GetSelectionStart(0));
+            end   = static_cast<uint32>(selection.GetSelectionEnd(0)) + 1;
             break;
         case NameRefactorDialog::ApplyMethod::EntireProgram:
             start = 0;

@@ -26,11 +26,36 @@ namespace Utils
         Selection();
         void Clear();
         bool Clear(int index);
+        inline constexpr bool HasSelection(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start != INVALID_OFFSET;
+            return false;
+        }
+        inline constexpr bool HasAnySelection() const
+        {
+            for (uint32 index = 0; index < MAX_SELECTION_ZONES; index++)
+                if (zones[index].start != INVALID_OFFSET)
+                    return true;
+            return false;
+        }
         inline constexpr uint32 GetCount() const
         {
             return Selection::MAX_SELECTION_ZONES;
         }
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
+        inline uint64 GetSelectionStart(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start;
+            return INVALID_OFFSET;
+        }
+        inline uint64 GetSelectionEnd(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].end;
+            return INVALID_OFFSET;
+        }
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
