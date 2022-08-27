@@ -1360,6 +1360,23 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 2, 35, r);
         break;
     default:
+        PrintSelectionInfo(0, 0, 0, 16, r);
+        PrintSelectionInfo(1, 0, 1, 16, r);
+        PrintSelectionInfo(2, 0, 2, 16, r);
+        xPoz = PrintSelectionInfo(3, 0, 3, 16, r);
+        
+        // second colum
+        this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 1, 20, "Col     : ", tmp.Format("%d", tok.x + 1));
+        this->WriteCursorInfo(r, xPoz, 2, 20, "Char ofs: ", tmp.Format("%u", tok.start));
+        xPoz = this->WriteCursorInfo(r, xPoz, 3, 20, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
+
+        // Third column
+        this->WriteCursorInfo(r, xPoz, 0, 40, "Token     : ", tok.GetText(this->text.text));
+        this->WriteCursorInfo(r, xPoz, 1, 40, "Original  : ", tok.GetOriginalText(this->text.text));
+        this->PrintTokenTypeInfo(tok.type, xPoz, 2, 40, r);
+        xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 3, 40, r);
+
         break;
     }
 }
