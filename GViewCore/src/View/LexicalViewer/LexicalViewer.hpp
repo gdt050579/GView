@@ -241,10 +241,13 @@ namespace View
 
             uint32 TokenToBlock(uint32 tokenIndex);
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);
+            
             void EditCurrentToken();
+            void DeleteTokens();
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();
+            void Reparse(bool openInNewWindow);
 
           public:
             std::vector<TokenObject> tokens;

@@ -8,17 +8,17 @@ constexpr int32 BTN_ID_CANCEL  = 2;
 constexpr int32 APPLY_GROUP_ID = 1;
 
 DeleteDialog::DeleteDialog(TokenObject& tok, const char16* text, bool hasSelection, bool belongsToABlock)
-    : Window("Delete", "d:c,w:70,h:10", WindowFlags::ProcessReturn)
+    : Window("Delete", "d:c,w:70,h:12", WindowFlags::ProcessReturn)
 {
     Factory::Label::Create(this, "Delete the following token (or block/selection) ?", "x:1,y:1,w:60");
     Factory::TextField::Create(this, tok.GetText(text), "x:1,y:2,w:65", TextFieldFlags::Readonly);
 
     // apply methods
-    this->rbApplyOnCurrent = Factory::RadioBox::Create(this, "Apply on &current token alone", "x:1,y:10,w:60", APPLY_GROUP_ID);
+    this->rbApplyOnCurrent = Factory::RadioBox::Create(this, "Apply on &current token alone", "x:1,y:4,w:60", APPLY_GROUP_ID);
     this->rbApplyOnBlock =
-          Factory::RadioBox::Create(this, "Apply on all similar tokens from current &block", "x:1,y:11,w:60", APPLY_GROUP_ID);
+          Factory::RadioBox::Create(this, "Apply on all similar tokens from current &block", "x:1,y:5,w:60", APPLY_GROUP_ID);
     this->rbApplyOnSelection =
-          Factory::RadioBox::Create(this, "Apply on all similar tokens from &selection", "x:1,y:12,w:60", APPLY_GROUP_ID);
+          Factory::RadioBox::Create(this, "Apply on all similar tokens from &selection", "x:1,y:6,w:60", APPLY_GROUP_ID);
 
     this->rbApplyOnSelection->SetEnabled(hasSelection);
     this->rbApplyOnBlock->SetEnabled(belongsToABlock);

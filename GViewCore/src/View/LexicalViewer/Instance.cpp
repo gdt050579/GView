@@ -8,6 +8,7 @@ Config Instance::config;
 
 constexpr int32 CMD_ID_SHOW_METADATA = 0xBF00;
 constexpr int32 CMD_ID_PRETTY_FORMAT = 0xBF01;
+constexpr int32 CMD_ID_DELETE        = 0xBF02;
 constexpr uint32 INVALID_LINE_NUMBER = 0xFFFFFFFF;
 
 /*
@@ -511,6 +512,25 @@ void Instance::Parse()
         MoveToClosestVisibleToken(0, false);
     }
 }
+void Instance::Reparse(bool openInNewWindow)
+{
+    if (openInNewWindow)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Open in a new window is not implemented yet !");
+    }
+    else
+    {
+        TextEditorBuilder ted(this->text);
+        auto res   = RebuildTextFromTokens(ted);
+        this->text = ted.Release();
+        if (!res)
+        {
+            this->noItemsVisible = true; // hide all text
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to reparse current text !");
+        }
+        this->Parse();
+    }
+}
 bool Instance::RebuildTextFromTokens(TextEditor& editor)
 {
     auto it  = this->tokens.crbegin();
@@ -735,6 +755,9 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.prettyFormat, "Format:Pretty", CMD_ID_PRETTY_FORMAT);
     else
         commandBar.SetCommand(config.Keys.prettyFormat, "Format:Original", CMD_ID_PRETTY_FORMAT);
+
+    if (this->noItemsVisible==false)
+        commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
     return false;
 }
 void Instance::MoveToToken(uint32 index, bool selected)
@@ -1012,21 +1035,53 @@ void Instance::EditCurrentToken()
         tok.value = dlg.GetNewValue();
         if (dlg.ShouldReparse())
         {
-            TextEditorBuilder ted(this->text);
-            auto res   = RebuildTextFromTokens(ted);
-            this->text = ted.Release();
-            if (!res)
-            {
-                this->noItemsVisible = true; // hide all text
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to reparse current text !");
-            }
-            this->Parse();
+            this->Reparse(false);
         }
         else
         {
             UpdateTokensInformation();
             RecomputeTokenPositions();
         }
+    }
+}
+void Instance::DeleteTokens()
+{
+    // sanity checks
+    if (this->noItemsVisible)
+        return;
+    if ((size_t) this->currentTokenIndex >= this->tokens.size())
+        return;
+    auto& tok = this->tokens[this->currentTokenIndex];
+
+    // all good -> edit the token
+    auto containerBlock = TokenToBlock(this->currentTokenIndex);
+    DeleteDialog dlg(tok, this->text.text, selection.HasSelection(0), containerBlock != BlockObject::INVALID_ID);
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        auto method = dlg.GetApplyMethod();
+        auto start  = 0U;
+        auto end    = 0U;
+        switch (method)
+        {
+        case ApplyMethod::CurrentToken:
+            start = this->currentTokenIndex;
+            end   = start + 1;
+            break;
+        case ApplyMethod::Block:
+            start = blocks[containerBlock].GetStartIndex();
+            end   = blocks[containerBlock].GetEndIndex();
+            break;
+        case ApplyMethod::Selection:
+            start = static_cast<uint32>(selection.GetSelectionStart(0));
+            end   = static_cast<uint32>(selection.GetSelectionEnd(0)) + 1;
+            break;
+        default:
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Unknwon implementation for apply method in delete dialog !");
+            return;
+        }
+        for (; start < end; start++)
+            this->tokens[start].SetShouldDeleteFlag();
+        this->Reparse(false);
     }
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
@@ -1133,6 +1188,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         this->prettyFormat = !this->prettyFormat;
         this->RecomputeTokenPositions();
         return true;
+    case CMD_ID_DELETE:
+        this->DeleteTokens();
+        return true;
+
     }
     return false;
 }
