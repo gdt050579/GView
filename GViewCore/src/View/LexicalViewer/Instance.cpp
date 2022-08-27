@@ -535,14 +535,19 @@ bool Instance::RebuildTextFromTokens(TextEditor& editor)
 {
     auto it  = this->tokens.crbegin();
     auto end = this->tokens.crend();
-    while (it != end)
+    for (; it != end; it++)
     {
+        if (it->IsMarkForDeletion())
+        {
+            editor.Delete(it->start, it->end - it->start);
+            continue;
+        }
         if (it->value.Len() > 0)
         {
             if (!editor.Replace(it->start, it->end - it->start, it->value.ToStringView()))
                 return false;
+            continue;
         }
-        it++;
     }
     return true;
 }
@@ -756,7 +761,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(config.Keys.prettyFormat, "Format:Original", CMD_ID_PRETTY_FORMAT);
 
-    if (this->noItemsVisible==false)
+    if (this->noItemsVisible == false)
         commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
     return false;
 }
@@ -1191,7 +1196,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case CMD_ID_DELETE:
         this->DeleteTokens();
         return true;
-
     }
     return false;
 }
