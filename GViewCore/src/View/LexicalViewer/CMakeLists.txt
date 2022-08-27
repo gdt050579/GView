@@ -8,4 +8,5 @@ target_sources(GViewCore PRIVATE
 	GoToDialog.cpp 
 	Instance.cpp 
 	NameRefactorDialog.cpp
+	DeleteDialog.cpp
 	Settings.cpp)

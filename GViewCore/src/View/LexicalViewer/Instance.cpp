@@ -976,19 +976,19 @@ void Instance::EditCurrentToken()
         auto end    = 0U;
         switch (method)
         {
-        case NameRefactorDialog::ApplyMethod::CurrentToken:
+        case ApplyMethod::CurrentToken:
             start = this->currentTokenIndex;
             end   = start + 1;
             break;
-        case NameRefactorDialog::ApplyMethod::Block:
+        case ApplyMethod::Block:
             start = blocks[containerBlock].GetStartIndex();
             end   = blocks[containerBlock].GetEndIndex();
             break;
-        case NameRefactorDialog::ApplyMethod::Selection:
+        case ApplyMethod::Selection:
             start = static_cast<uint32>(selection.GetSelectionStart(0));
             end   = static_cast<uint32>(selection.GetSelectionEnd(0)) + 1;
             break;
-        case NameRefactorDialog::ApplyMethod::EntireProgram:
+        case ApplyMethod::EntireProgram:
             start = 0;
             end   = static_cast<uint32>(tokens.size());
             break;

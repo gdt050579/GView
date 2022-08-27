@@ -291,21 +291,19 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        enum class ApplyMethod
+        {
+            CurrentToken,
+            EntireProgram,
+            Block,
+            Selection
+        };
         class NameRefactorDialog : public Window
         {
             TokenObject& tok;
             Reference<TextField> txNewValue;
             Reference<RadioBox> rbApplyOnCurrent, rbApplyOnAll, rbApplyOnBlock, rbApplyOnSelection;
             Reference<CheckBox> cbReparse;
-
-          public:
-            enum class ApplyMethod
-            {
-                CurrentToken,
-                EntireProgram,
-                Block,
-                Selection
-            };
 
           public:
             NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection, bool belongsToABlock);
@@ -323,6 +321,23 @@ namespace View
             {
                 if (rbApplyOnAll->IsChecked())
                     return ApplyMethod::EntireProgram;
+                if (rbApplyOnBlock->IsChecked())
+                    return ApplyMethod::Block;
+                if (rbApplyOnSelection->IsChecked())
+                    return ApplyMethod::Selection;
+                // default
+                return ApplyMethod::CurrentToken;
+            }
+        };
+        class DeleteDialog: public Window
+        {
+            Reference<RadioBox> rbApplyOnCurrent, rbApplyOnBlock, rbApplyOnSelection;
+
+          public:
+            DeleteDialog(TokenObject& tok, const char16* text, bool hasSelection, bool belongsToABlock);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline ApplyMethod GetApplyMethod()
+            {
                 if (rbApplyOnBlock->IsChecked())
                     return ApplyMethod::Block;
                 if (rbApplyOnSelection->IsChecked())
