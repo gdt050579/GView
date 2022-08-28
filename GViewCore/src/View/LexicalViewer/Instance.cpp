@@ -329,7 +329,7 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
         if (tok.IsBlockStarter())
         {
             const auto& block = this->blocks[tok.blockID];
-            auto endToken     = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            auto endToken     = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
             if (tok.IsFolded())
             {
                 // nothing to do
@@ -452,7 +452,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 x += tok.width + 3; // for ...
             else
                 x += tok.width + (int32) block.foldMessage.size();
-            partOfFoldedBlock = block.hasEndMarker; // only limit the alignament for end marker
+            partOfFoldedBlock = block.HasEndMarker(); // only limit the alignament for end marker
         }
         else
         {
@@ -507,7 +507,7 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         if (tok.IsBlockStarter())
         {
             auto& block           = this->blocks[tok.blockID];
-            auto endToken         = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            auto endToken         = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
             int32 blockMarginTop  = 0;
             int32 blockMarginLeft = 0;
             switch (block.align)
@@ -579,7 +579,7 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
             if (tok.IsFolded())
                 showStatus = false;
             const auto& block = this->blocks[tok.blockID];
-            auto endToken     = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            auto endToken     = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
             UpdateVisibilityStatus(block.tokenStart + 1, endToken, showStatus);
             pos = endToken;
         }
