@@ -1481,7 +1481,9 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         auto blockID = foldColumn.MouseToBlockIndex(y);
         if (blockID != BlockObject::INVALID_ID)
         {
+            auto currentScroll = this->Scroll;
             SetFoldStatus(this->blocks[blockID].tokenStart, FoldStatus::Reverse, false);
+            this->Scroll = currentScroll; // make sure that we preserve the same view
         }
         return;
     }
