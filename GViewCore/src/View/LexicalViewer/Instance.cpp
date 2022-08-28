@@ -98,9 +98,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 
     // load the entire data into a file
-    auto buf           = obj->GetData().GetEntireFile();
-    this->text         = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
-    this->prettyFormat = true;
+    auto buf               = obj->GetData().GetEntireFile();
+    this->text             = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
+    this->prettyFormat     = true;
 
     this->Parse();
 
@@ -724,6 +724,8 @@ bool Instance::RebuildTextFromTokens(TextEditor& editor)
     return true;
 }
 
+
+
 void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block)
 {
     const auto& tok      = this->tokens[block.tokenStart];
@@ -838,6 +840,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     const auto blockStarter = tok.IsBlockStarter();
     if ((onCursor) && (tok.HasBlock()))
         FillBlockSpace(renderer, this->blocks[tok.blockID]);
+    if (blockStarter)
+        foldColumn.SetBlock(tok.y - Scroll.y, index);
     if (tok.height > 1)
     {
         WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
@@ -880,7 +884,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
 {
     if (noItemsVisible)
         return;
-
+    foldColumn.Clear(this->GetHeight());
     // paint token on cursor first (and show block highlight if needed)
     if (this->currentTokenIndex < this->tokens.size())
     {
@@ -1171,7 +1175,7 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
                 const auto& block = this->blocks[blockIDX];
                 // collapse the entire block
                 MoveToToken(block.tokenStart, false);
-                MoveToClosestVisibleToken(block.tokenStart,false);
+                MoveToClosestVisibleToken(block.tokenStart, false);
                 SetFoldStatus(block.tokenStart, FoldStatus::Folded, recursive);
             }
         }
@@ -1189,7 +1193,7 @@ void Instance::FoldAll()
 {
     for (const auto& block : this->blocks)
     {
-        if (block.CanOnlyBeFoldedManually()==false)
+        if (block.CanOnlyBeFoldedManually() == false)
             this->tokens[block.tokenStart].SetFolded(true);
     }
     RecomputeTokenPositions();

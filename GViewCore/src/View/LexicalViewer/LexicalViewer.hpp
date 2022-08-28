@@ -209,8 +209,23 @@ namespace View
             static void Update(IniSection sect);
             void Initialize();
         };
+        class Instance;
+        class FoldColumn
+        {
+            static constexpr int32 MAX_INDEXES = 256;
+            uint32 indexes[MAX_INDEXES];
+            int32 count;
+          public:
+            FoldColumn() : count(0)
+            {
+            }
+            void Clear(int32 height);
+            void SetBlock(int32 index, uint32 blockID);
+            void Paint(AppCUI::Graphics::Renderer& renderer, int32 x, Instance* instance);
+        };
         class Instance : public View::ViewControl
         {
+            FoldColumn foldColumn;
             FixSizeString<29> name;
             Utils::Selection selection;
             Pointer<SettingsData> settings;
