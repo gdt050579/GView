@@ -1152,6 +1152,17 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
         // if current token is not the block starter, but reference a block, fold that block
         if (tok.HasBlock())
             SetFoldStatus(this->blocks[tok.blockID].tokenStart, foldStatus, recursive);
+        else
+        {
+            auto blockIDX = TokenToBlock(index);
+            if (blockIDX != BlockObject::INVALID_ID)
+            {
+                const auto& block = this->blocks[blockIDX];
+                // collapse the entire block
+                MoveToToken(block.tokenStart, false);
+                SetFoldStatus(block.tokenStart, FoldStatus::Folded, recursive);
+            }
+        }
     }
 }
 void Instance::EditCurrentToken()
