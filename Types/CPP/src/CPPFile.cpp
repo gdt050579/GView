@@ -627,14 +627,33 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
     {
         TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
         auto opType           = tokenType >> 16;
-        if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
-            (opType == OperatorType::TWO_POINTS))
-            align = TokenAlignament::AfterPreviousToken;
-        if (opType == OperatorType::Namespace)
+        switch (opType)
         {
+        case OperatorType::Namespace:
+            align = TokenAlignament::AfterPreviousToken;
             if (tokenList.GetLastTokenID() == TokenType::Word)
                 tokenList.GetLastToken().SetTokenColor(TokenColor::Keyword2);
+            break;
+        case OperatorType::Pointer:
+        case OperatorType::MemberAccess:
+        case OperatorType::TWO_POINTS:
+            align = TokenAlignament::AfterPreviousToken;
+            break;
+        case OperatorType::Assign:
+        case OperatorType::PlusEQ:
+        case OperatorType::MinusEQ:
+        case OperatorType::MupliplyEQ:
+        case OperatorType::DivisionEQ:
+        case OperatorType::ModuloEQ:
+        case OperatorType::AndEQ:
+        case OperatorType::OrEQ:
+        case OperatorType::XorEQ:
+        case OperatorType::RightShiftEQ:
+        case OperatorType::LeftShiftEQ:
+            align |= TokenAlignament::SameColumn;
+            break;
         }
+
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, true);
         return pos + sz;
     }
