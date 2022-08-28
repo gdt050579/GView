@@ -193,6 +193,8 @@ namespace View
                 AppCUI::Input::Key showMetaData;
                 AppCUI::Input::Key prettyFormat;
                 AppCUI::Input::Key changeSelectionType;
+                AppCUI::Input::Key foldAll;
+                AppCUI::Input::Key expandAll;
             } Keys;
             bool Loaded;
 
@@ -242,7 +244,8 @@ namespace View
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
-            void ExpandOrCollapseAll(bool expand, bool recursive);
+            void ExpandAll();
+            void FoldAll();
 
             uint32 TokenToBlock(uint32 tokenIndex);
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);

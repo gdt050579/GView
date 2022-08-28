@@ -10,6 +10,8 @@ constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
 constexpr int32 CMD_ID_PRETTY_FORMAT    = 0xBF01;
 constexpr int32 CMD_ID_DELETE           = 0xBF02;
 constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
+constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
+constexpr int32 CMD_ID_EXPAND_ALL       = 0xBF05;
 constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
 
 /*
@@ -939,6 +941,9 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(config.Keys.changeSelectionType, "Select:Multiple", CMD_ID_CHANGE_SELECTION);
 
+    commandBar.SetCommand(config.Keys.foldAll, "Fold all", CMD_ID_FOLD_ALL);
+    commandBar.SetCommand(config.Keys.expandAll, "Expand all", CMD_ID_EXPAND_ALL);
+
     return false;
 }
 void Instance::MoveToToken(uint32 index, bool selected)
@@ -1160,13 +1165,28 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
                 const auto& block = this->blocks[blockIDX];
                 // collapse the entire block
                 MoveToToken(block.tokenStart, false);
+                MoveToClosestVisibleToken(block.tokenStart,false);
                 SetFoldStatus(block.tokenStart, FoldStatus::Folded, recursive);
             }
         }
     }
 }
-void Instance::ExpandOrCollapseAll(bool expand, bool recursive)
-{   
+void Instance::ExpandAll()
+{
+    for (const auto& block : this->blocks)
+    {
+        this->tokens[block.tokenStart].SetFolded(false);
+    }
+    RecomputeTokenPositions();
+}
+void Instance::FoldAll()
+{
+    for (const auto& block : this->blocks)
+    {
+        this->tokens[block.tokenStart].SetFolded(true);
+    }
+    RecomputeTokenPositions();
+    MoveToClosestVisibleToken(this->currentTokenIndex, false);
 }
 void Instance::EditCurrentToken()
 {
@@ -1360,6 +1380,13 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         EditCurrentToken();
         return true;
 
+    case Key::E:
+        ExpandAll();
+        return true;
+    case Key::F:
+        FoldAll();
+        return true;
+
     // copy & selection
     case Key::A | Key::Ctrl:
         if ((!this->tokens.empty()) && (this->noItemsVisible == false))
@@ -1397,6 +1424,12 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case CMD_ID_CHANGE_SELECTION:
         this->selection.InvertMultiSelectionMode();
+        return true;
+    case CMD_ID_FOLD_ALL:
+        this->FoldAll();
+        return true;
+    case CMD_ID_EXPAND_ALL:
+        this->ExpandAll();
         return true;
     }
     return false;
