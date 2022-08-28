@@ -14,18 +14,34 @@ void FoldColumn::SetBlock(int32 index, uint32 blockID)
         }
     }
 }
-void FoldColumn::Clear(int32 height)
+void FoldColumn::Clear(int32 _height)
 {
-    if (height < 0)
-        height = 0;
-    this->count = std::min<>(height, MAX_INDEXES);
-    auto* p     = this->indexes;
-    auto* e     = p + this->count;
+    if (_height < 0)
+        _height = 0;
+    this->count  = std::min<>(_height, MAX_INDEXES);
+    this->height = _height;
+    auto* p      = this->indexes;
+    auto* e      = p + this->count;
     for (; p < e; p++)
         (*p) = BlockObject::INVALID_ID;
 }
 void FoldColumn::Paint(AppCUI::Graphics::Renderer& renderer, int32 x, Instance* instance)
 {
+    auto state        = instance->HasFocus() ? ControlState::Focused : ControlState::Normal;
+    auto lineSepColor = instance->GetConfig()->Lines.GetColor(state);
+    const uint32* p   = this->indexes;
+    const uint32* e   = p + this->count;
 
+    renderer.DrawVerticalLine(x, 0, this->height, lineSepColor);
+    for (;p<e;p++)
+    {
+        if ((*p) == BlockObject::INVALID_ID)
+            continue;
+        auto yPoz = static_cast<int32>(p - this->indexes);
+        if (instance->tokens[instance->blocks[*p].tokenStart].IsFolded())
+            renderer.WriteCharacter(x, yPoz, '+', lineSepColor);
+        else
+            renderer.WriteCharacter(x, yPoz, '-', lineSepColor);
+    }
 }
 } // namespace GView::View::LexicalViewer

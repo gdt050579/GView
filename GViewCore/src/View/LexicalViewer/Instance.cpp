@@ -98,9 +98,9 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 
     // load the entire data into a file
-    auto buf               = obj->GetData().GetEntireFile();
-    this->text             = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
-    this->prettyFormat     = true;
+    auto buf           = obj->GetData().GetEntireFile();
+    this->text         = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
+    this->prettyFormat = true;
 
     this->Parse();
 
@@ -724,8 +724,6 @@ bool Instance::RebuildTextFromTokens(TextEditor& editor)
     return true;
 }
 
-
-
 void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block)
 {
     const auto& tok      = this->tokens[block.tokenStart];
@@ -763,11 +761,9 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
 void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
 {
     auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
-    auto lineSepColor    = Cfg.Lines.GetColor(state);
     auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
 
     renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
-    renderer.DrawVerticalLine(this->lineNrWidth - 1, 0, this->GetHeight(), lineSepColor);
     NumericFormatter num;
     WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
     params.Width = lineNrWidth - 2;
@@ -840,8 +836,10 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     const auto blockStarter = tok.IsBlockStarter();
     if ((onCursor) && (tok.HasBlock()))
         FillBlockSpace(renderer, this->blocks[tok.blockID]);
-    if (blockStarter)
-        foldColumn.SetBlock(tok.y - Scroll.y, index);
+    if ((blockStarter) && (this->blocks[tok.blockID].CanOnlyBeFoldedManually() == false))
+    {
+        foldColumn.SetBlock(tok.y - Scroll.y, tok.blockID);
+    }
     if (tok.height > 1)
     {
         WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
@@ -924,6 +922,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
         idx++;
     }
     PaintLineNumbers(renderer);
+    foldColumn.Paint(renderer, this->lineNrWidth - 1, this);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {

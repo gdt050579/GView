@@ -214,7 +214,7 @@ namespace View
         {
             static constexpr int32 MAX_INDEXES = 256;
             uint32 indexes[MAX_INDEXES];
-            int32 count;
+            int32 count, height;
           public:
             FoldColumn() : count(0)
             {
