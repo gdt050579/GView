@@ -252,6 +252,41 @@ void Instance::ComputeOriginalPositions()
         }
     }
 }
+void Instance::PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff)
+{
+    auto idx                 = idxStart;
+    bool foundSameColumnFlag = false;
+    for (; idx < idxEnd; idx++)
+    {
+        auto& tok = this->tokens[idx];
+        if (tok.IsVisible() == false)
+            continue;
+        if (tok.y != currentLineYOffset)
+            break;
+        tok.x += diff;
+        if ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None)
+            foundSameColumnFlag = true;
+    }
+    if ((idx >= idxEnd) || (foundSameColumnFlag == false))
+        return;
+    // we did found another token aligned to the same column, we need to align the rest of the block
+
+    auto diffToAdd = 0;
+    for (; idx < idxEnd; idx++)
+    {
+        auto& tok = this->tokens[idx];
+        if (tok.IsVisible() == false)
+            continue;
+        if (tok.y != currentLineYOffset)
+        {
+            currentLineYOffset = tok.y;
+            diffToAdd          = 0;
+        }
+        if ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None)
+            diffToAdd = diff;
+        tok.x += diffToAdd;
+    }
+}
 void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 dif)
 {
     for (auto idx = idxStart; idx < idxEnd; idx++)
@@ -309,7 +344,8 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             {
             case BlockAlignament::AsCurrentBlock:
             case BlockAlignament::ToRightOfCurrentBlock:
-                // align until current line ends --> if a same
+                // align until current line ends --> if a sameColumn flag is found , align the rest of the block as well
+                PrettyFormatIncreaseUntilNewLineXWithValue(idx + 1, endToken, tok.y, dif);
                 break;
             case BlockAlignament::AsBlockStartToken:
                 // all visible tokens must be increaset with diff

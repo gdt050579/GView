@@ -222,7 +222,8 @@ namespace View
 
             void UpdateTokensInformation();
             void ComputeOriginalPositions();
-            void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 columnXOffset);
+            void PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff);
+            void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 diff);
             void PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset);
             AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
             void PrettyFormat();
