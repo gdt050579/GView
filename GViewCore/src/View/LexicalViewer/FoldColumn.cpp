@@ -27,19 +27,19 @@ void FoldColumn::Clear(int32 _height)
 }
 void FoldColumn::Paint(AppCUI::Graphics::Renderer& renderer, int32 x, Instance* instance)
 {
-    auto state          = instance->HasFocus() ? ControlState::Focused : ControlState::Normal;
-    auto cfg            = instance->GetConfig();
-    auto lineSepColor   = cfg->Lines.GetColor(state);
-    auto symbolSepColor = cfg->Symbol.Arrows;
-    const uint32* p     = this->indexes;
-    const uint32* e     = p + this->count;
+    auto state        = instance->HasFocus() ? ControlState::Focused : ControlState::Normal;
+    auto cfg          = instance->GetConfig();
+    auto lineSepColor = cfg->Lines.GetColor(state);
+    const uint32* p   = this->indexes;
+    const uint32* e   = p + this->count;
 
     renderer.DrawVerticalLine(x, 0, this->height, lineSepColor);
     for (; p < e; p++)
     {
         if ((*p) == BlockObject::INVALID_ID)
             continue;
-        auto yPoz = static_cast<int32>(p - this->indexes);
+        auto yPoz           = static_cast<int32>(p - this->indexes);
+        auto symbolSepColor = yPoz == this->mouseHoverIndex ? cfg->Symbol.Hovered : cfg->Symbol.Arrows;
         if (instance->tokens[instance->blocks[*p].tokenStart].IsFolded())
             renderer.WriteCharacter(x, yPoz, '+', symbolSepColor);
         else

@@ -212,16 +212,44 @@ namespace View
         class Instance;
         class FoldColumn
         {
-            static constexpr int32 MAX_INDEXES = 256;
+            static constexpr int32 MAX_INDEXES   = 256;
+            static constexpr int32 INVALID_INDEX = -1;
             uint32 indexes[MAX_INDEXES];
             int32 count, height;
+            int32 mouseHoverIndex;
+
           public:
-            FoldColumn() : count(0)
+            FoldColumn() : count(0), mouseHoverIndex(INVALID_INDEX)
             {
             }
             void Clear(int32 height);
             void SetBlock(int32 index, uint32 blockID);
             void Paint(AppCUI::Graphics::Renderer& renderer, int32 x, Instance* instance);
+            
+            inline bool ClearMouseHoverIndex()
+            {
+                if (mouseHoverIndex != INVALID_INDEX)
+                {
+                    mouseHoverIndex = INVALID_INDEX;
+                    return true;
+                }
+                return false;                
+            }
+            inline bool UpdateMouseHoverIndex(int32 y)
+            {
+                if ((y >= 0) && (y < count) && (indexes[y] != BlockObject::INVALID_ID))
+                {
+                    mouseHoverIndex = y;
+                    return true;
+                }
+                return ClearMouseHoverIndex();
+            }
+            inline uint32 MouseToBlockIndex(int32 y)
+            {
+                if ((y >= 0) && (y < count))
+                    return indexes[y];
+                return BlockObject::INVALID_ID;
+            }
         };
         class Instance : public View::ViewControl
         {
@@ -272,7 +300,7 @@ namespace View
 
             uint32 TokenToBlock(uint32 tokenIndex);
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);
-            
+
             void EditCurrentToken();
             void DeleteTokens();
 
@@ -280,10 +308,10 @@ namespace View
             void Parse();
             void Reparse(bool openInNewWindow);
 
-
             int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
             int PrintTokenTypeInfo(uint32 tokenTypeID, int x, int y, uint32 width, Renderer& r);
             int PrintDataTypeInfo(TokenDataType dataType, int x, int y, uint32 width, Renderer& r);
+
           public:
             std::vector<TokenObject> tokens;
             std::vector<BlockObject> blocks;
@@ -319,6 +347,7 @@ namespace View
             virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            virtual bool OnMouseOver(int x, int y) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
@@ -367,7 +396,7 @@ namespace View
                 return ApplyMethod::CurrentToken;
             }
         };
-        class DeleteDialog: public Window
+        class DeleteDialog : public Window
         {
             Reference<RadioBox> rbApplyOnCurrent, rbApplyOnBlock, rbApplyOnSelection;
 

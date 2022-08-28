@@ -1476,6 +1476,15 @@ std::string_view Instance::GetName()
 //======================================================================[Mouse coords]========================
 void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
+    if (x == (this->lineNrWidth-1))
+    {
+        auto blockID = foldColumn.MouseToBlockIndex(y);
+        if (blockID != BlockObject::INVALID_ID)
+        {
+            SetFoldStatus(this->blocks[blockID].tokenStart, FoldStatus::Reverse, false);
+        }
+        return;
+    }
 }
 void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
 {
@@ -1495,6 +1504,13 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
     }
 
     return false;
+}
+bool Instance::OnMouseOver(int x, int y)
+{
+    if (x == (this->lineNrWidth - 1))
+        return foldColumn.UpdateMouseHoverIndex(y);
+    else
+        return foldColumn.ClearMouseHoverIndex();
 }
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)
