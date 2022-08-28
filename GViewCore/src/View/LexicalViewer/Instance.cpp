@@ -252,6 +252,16 @@ void Instance::ComputeOriginalPositions()
         }
     }
 }
+void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 dif)
+{
+    for (auto idx = idxStart; idx < idxEnd; idx++)
+    {
+        auto& tok = this->tokens[idx];
+        if (tok.IsVisible() == false)
+            continue;
+        tok.x += dif;
+    }
+}
 void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset)
 {
     auto idx                     = idxStart;
@@ -273,6 +283,12 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             dif                     = 0;
             firstWithSameColumnFlag = true;
         }
+        if ((firstWithSameColumnFlag) && ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None))
+        {
+            dif                     = columnXOffset - tok.x;
+            firstWithSameColumnFlag = false;
+        }
+        tok.x += dif;
         if (tok.IsBlockStarter())
         {
             const auto& block = this->blocks[tok.blockID];
@@ -284,16 +300,31 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
                 continue;
             }
             // if not folded a different logic
+            if (dif == 0)
+            {
+                idx = endToken;
+                continue;
+            }
+            switch (block.align)
+            {
+            case BlockAlignament::AsCurrentBlock:
+            case BlockAlignament::ToRightOfCurrentBlock:
+                // align until current line ends --> if a same
+                break;
+            case BlockAlignament::AsBlockStartToken:
+                // all visible tokens must be increaset with diff
+                PrettyFormatIncreaseAllXWithValue(idx + 1, endToken, dif);
+                break;
+            default:
+                // do nothing --> leave the block as it is
+                break;
+            }
             idx = endToken;
-            continue;
         }
-        if ((firstWithSameColumnFlag) && ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None))
+        else
         {
-            dif                     = columnXOffset - tok.x;
-            firstWithSameColumnFlag = false;
+            idx++;
         }
-        tok.x += dif;
-        idx++;
     }
 }
 AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
