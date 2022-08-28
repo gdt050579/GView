@@ -862,12 +862,12 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     if ((index > 0) && (onSelection) && (selection.Contains(index - 1)))
     {
         const auto& precTok = this->tokens[index - 1];
-        if (tok.y == precTok.y)
+        if ((tok.y == precTok.y) && (tok.height == 1))
         {
             // fill in the space between them
             renderer.FillHorizontalLine(
                   lineNrWidth + precTok.x + precTok.width - Scroll.x,
-                  precTok.y,
+                  precTok.y - Scroll.y,
                   lineNrWidth + tok.x - 1 - Scroll.x,
                   -1,
                   Cfg.Selection.Editor);
@@ -1354,7 +1354,6 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
             this->selection.SetSelection(0, 0, this->tokens.size() - 1);
         }
         return true;
-
     }
 
     return false;
