@@ -1345,6 +1345,16 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     case Key::Enter:
         EditCurrentToken();
         return true;
+
+    // copy & selection
+    case Key::A | Key::Ctrl:
+        if ((!this->tokens.empty()) && (this->noItemsVisible == false))
+        {
+            this->selection.Clear();
+            this->selection.SetSelection(0, 0, this->tokens.size() - 1);
+        }
+        return true;
+
     }
 
     return false;
