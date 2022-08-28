@@ -222,6 +222,7 @@ namespace View
 
             void UpdateTokensInformation();
             void ComputeOriginalPositions();
+            void PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset);
             AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
             void PrettyFormat();
             void EnsureCurrentItemIsVisible();

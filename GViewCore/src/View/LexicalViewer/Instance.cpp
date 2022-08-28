@@ -252,16 +252,64 @@ void Instance::ComputeOriginalPositions()
         }
     }
 }
+void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset)
+{
+    auto idx                     = idxStart;
+    auto dif                     = 0;
+    auto lastLine                = -1;
+    auto firstWithSameColumnFlag = true;
+
+    while (idx < idxEnd)
+    {
+        auto& tok = this->tokens[idx];
+        if (tok.IsVisible() == false)
+        {
+            idx++;
+            continue;
+        }
+        if (lastLine != tok.y)
+        {
+            lastLine                = tok.y;
+            dif                     = 0;
+            firstWithSameColumnFlag = true;
+        }
+        if (tok.IsBlockStarter())
+        {
+            const auto& block = this->blocks[tok.blockID];
+            auto endToken     = block.hasEndMarker ? block.tokenEnd : block.tokenEnd + 1;
+            if (tok.IsFolded())
+            {
+                // nothing to do
+                idx = endToken;
+                continue;
+            }
+            // if not folded a different logic
+            idx = endToken;
+            continue;
+        }
+        if ((firstWithSameColumnFlag) && ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None))
+        {
+            dif                     = columnXOffset - tok.x;
+            firstWithSameColumnFlag = false;
+        }
+        tok.x += dif;
+        idx++;
+    }
+}
 AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
 {
-    auto x                 = leftMargin;
-    auto y                 = topMargin;
-    auto lastY             = topMargin;
-    auto idx               = idxStart;
-    auto spaceAdded        = true;
-    auto partOfFoldedBlock = false;
-    auto indent            = 0U;
-    auto firstOnNewLine    = true;
+    auto x                       = leftMargin;
+    auto y                       = topMargin;
+    auto lastY                   = topMargin;
+    auto idx                     = idxStart;
+    auto spaceAdded              = true;
+    auto partOfFoldedBlock       = false;
+    auto indent                  = 0U;
+    auto firstOnNewLine          = true;
+    auto sameColumnCount         = 0;
+    auto maxXOffsetForSameColumn = 0;
+    auto sameColumnDifferences   = false;
+    auto lastSameColumnLine      = 0;
 
     while (idx < idxEnd)
     {
@@ -320,6 +368,8 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!spaceAdded))
                 x++;
         }
+
+        // assign position to curent token
         tok.x                   = x;
         tok.y                   = y;
         lastY                   = y;
@@ -344,6 +394,26 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         spaceAdded = false;
         if (!partOfFoldedBlock)
         {
+            // Same column logic
+            if ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None)
+            {
+                sameColumnCount++;
+                if (sameColumnCount == 1)
+                {
+                    // first one
+                    maxXOffsetForSameColumn = tok.x;
+                    lastSameColumnLine      = tok.y;
+                }
+                else
+                {
+                    if ((tok.x > maxXOffsetForSameColumn) && (tok.y != lastSameColumnLine))
+                    {
+                        maxXOffsetForSameColumn = tok.x;
+                        lastSameColumnLine      = tok.y;
+                        sameColumnDifferences   = true;
+                    }
+                }
+            }
             // indent
             if ((tok.align & TokenAlignament::IncrementIndentAfterPaint) != TokenAlignament::None)
                 indent++;
@@ -407,6 +477,11 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
         {
             idx++; // next token
         }
+    }
+    // recompute same column only if differences were found
+    if (sameColumnDifferences)
+    {
+        PrettyFormatAlignToSameColumn(idxStart, idxEnd, maxXOffsetForSameColumn);
     }
     return { x, y };
 }
