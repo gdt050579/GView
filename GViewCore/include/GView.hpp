@@ -864,6 +864,8 @@ namespace View
             DecrementIndentAfterPaint  = 0x0400, // decrement the indent of the current line (after painting the token)
             ClearIndentAfterPaint      = 0x0800, // resets current indent to 0 (after painting the token)
 
+            SameColumn = 0x1000, // make sure that first token with this flag from each line from a block has the same X-offste
+
         };
         enum class TokenColor : uint8
         {
