@@ -78,7 +78,8 @@ namespace View
             int32 leftHighlightMargin;
             std::string foldMessage;
             BlockAlignament align;
-            bool hasEndMarker;
+            BlockFlags flags;
+            //bool hasEndMarker;
 
             inline uint32 GetStartIndex() const
             {
@@ -86,7 +87,15 @@ namespace View
             }
             inline uint32 GetEndIndex() const
             {
-                return hasEndMarker ? tokenEnd + 1 : tokenEnd;
+                return ((flags & BlockFlags::EndMarker) != BlockFlags::None) ? tokenEnd + 1 : tokenEnd;
+            }
+            inline bool HasEndMarker() const
+            {
+                return (flags & BlockFlags::EndMarker) != BlockFlags::None;
+            }
+            inline bool CanOnlyBeFoldedManually() const
+            {
+                return (flags & BlockFlags::ManualCollapse) != BlockFlags::None;
             }
         };
         struct TokenObject

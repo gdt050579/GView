@@ -887,6 +887,12 @@ namespace View
             ToRightOfCurrentBlock,
             AsBlockStartToken,
         };
+        enum class BlockFlags : uint16
+        {
+            None           = 0,
+            EndMarker      = 0x0001,
+            ManualCollapse = 0x0002,
+        };
         class CORE_EXPORT Token;
         class CORE_EXPORT Block
         {
@@ -1003,8 +1009,8 @@ namespace View
           public:
             uint32 Len() const;
             Block operator[](uint32 index) const;
-            Block Add(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
-            Block Add(Token start, Token end, BlockAlignament align, bool hasBlockEndMarker);
+            Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+            Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
         };
         struct SyntaxManager
         {
@@ -1165,3 +1171,4 @@ namespace App
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint16);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::BlockFlags, AppCUI::uint16);
