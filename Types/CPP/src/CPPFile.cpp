@@ -703,13 +703,13 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             stBlocks.Push(index);
             break;
         case TokenType::BlockClose:
-            syntax.blocks.Add(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, true);
+            syntax.blocks.Add(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, BlockFlags::EndMarker);
             break;
         case TokenType::ExpressionOpen:
             exprBlocks.Push(index);
             break;
         case TokenType::ExpressionClose:
-            syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, true);
+            syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, BlockFlags::EndMarker|BlockFlags::ManualCollapse);
             break;
         }
     }

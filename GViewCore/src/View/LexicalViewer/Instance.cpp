@@ -1147,7 +1147,13 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
             {
                 auto& currentTok = this->tokens[idx];
                 if (currentTok.IsBlockStarter())
+                {
+                    const auto& currentBlock = this->blocks[currentTok.blockID];
+                    // skip block that can only be folded manually
+                    if ((foldValue) && (currentBlock.CanOnlyBeFoldedManually()))
+                        continue;
                     currentTok.SetFolded(foldValue);
+                }
             }
         }
         RecomputeTokenPositions();
@@ -1183,7 +1189,8 @@ void Instance::FoldAll()
 {
     for (const auto& block : this->blocks)
     {
-        this->tokens[block.tokenStart].SetFolded(true);
+        if (block.CanOnlyBeFoldedManually()==false)
+            this->tokens[block.tokenStart].SetFolded(true);
     }
     RecomputeTokenPositions();
     MoveToClosestVisibleToken(this->currentTokenIndex, false);

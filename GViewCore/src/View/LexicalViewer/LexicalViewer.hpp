@@ -79,7 +79,6 @@ namespace View
             std::string foldMessage;
             BlockAlignament align;
             BlockFlags flags;
-            //bool hasEndMarker;
 
             inline uint32 GetStartIndex() const
             {
