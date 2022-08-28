@@ -282,6 +282,12 @@ Block BlocksList::Add(uint32 start, uint32 end, BlockAlignament align, bool hasB
 
     return Block(this->data, blockID);
 }
+Block BlocksList::Add(Token start, Token end, BlockAlignament align, bool hasBlockEndMarker)
+{
+    if ((start.IsValid() == false) || (end.IsValid() == false))
+        return Block();
+    return Add(start.GetIndex(), end.GetIndex(), align, hasBlockEndMarker);
+}
 uint32 BlocksList::Len() const
 {
     return static_cast<uint32>(INSTANCE->blocks.size());

@@ -242,6 +242,7 @@ namespace View
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
+            void ExpandOrCollapseAll(bool expand, bool recursive);
 
             uint32 TokenToBlock(uint32 tokenIndex);
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);

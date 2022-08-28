@@ -1165,6 +1165,9 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
         }
     }
 }
+void Instance::ExpandOrCollapseAll(bool expand, bool recursive)
+{   
+}
 void Instance::EditCurrentToken()
 {
     // sanity checks
