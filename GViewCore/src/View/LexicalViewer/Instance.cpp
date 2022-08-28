@@ -476,9 +476,9 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                     if ((tok.x > maxXOffsetForSameColumn) && (tok.y != lastSameColumnLine))
                     {
                         maxXOffsetForSameColumn = tok.x;
-                        lastSameColumnLine      = tok.y;
                         sameColumnDifferences   = true;
                     }
+                    lastSameColumnLine = tok.y;
                 }
             }
             // indent
