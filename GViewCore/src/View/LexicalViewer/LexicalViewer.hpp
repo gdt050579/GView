@@ -424,7 +424,9 @@ namespace View
             PluginData& pluginData;
             Reference<ListView> lstPlugins;
             Reference<CheckBox> cbOpenInNewWindow;
+            Reference<SettingsData> settings;
 
+            void RunPlugin();
           public:
             PluginDialog(PluginData& data, Reference<SettingsData> settings);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
