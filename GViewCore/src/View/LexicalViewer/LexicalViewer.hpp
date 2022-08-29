@@ -419,6 +419,16 @@ namespace View
                 return ApplyMethod::CurrentToken;
             }
         };
+        class PluginDialog : public Window
+        {
+            PluginData& pluginData;
+            Reference<ListView> lstPlugins;
+            Reference<CheckBox> cbOpenInNewWindow;
+
+          public:
+            PluginDialog(PluginData& data, Reference<SettingsData> settings);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+        };
         class GoToDialog : public Window
         {
             Reference<RadioBox> rbLineNumber;

@@ -1052,6 +1052,11 @@ namespace View
             uint32 currentTokenIndex;
             uint32 selectionStartTokenIndex;
             uint32 selectionTokensCount;
+            PluginData(TextEditor& _editor, TokensList& _tokens, BlocksList& _blocks)
+                : editor(_editor), tokens(_tokens), blocks(_blocks), currentTokenIndex(0), selectionStartTokenIndex(Token::INVALID_INDEX),
+                  selectionTokensCount(0)
+            {
+            }
         };
         struct CORE_EXPORT Plugin
         {

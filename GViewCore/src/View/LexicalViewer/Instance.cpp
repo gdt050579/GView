@@ -1485,6 +1485,20 @@ void Instance::ShowPlugins()
         AppCUI::Dialogs::MessageBox::ShowNotification("Plugins", "No plugins defined for this type of file !");
         return;
     }
+    TextEditorBuilder ted(this->text);
+    TokensListBuilder tokensList(this);
+    BlocksListBuilder blockList(this);
+    PluginData pd(ted, tokensList, blockList);
+    pd.currentTokenIndex = this->currentTokenIndex;
+    if (this->selection.HasSelection(0))
+    {
+        pd.selectionStartTokenIndex = this->selection.GetSelectionStart(0);
+        pd.selectionTokensCount     = this->selection.GetSelectionEnd(0) + 1 - pd.selectionStartTokenIndex;
+    }
+    PluginDialog dlg(pd, this->settings.ToReference());
+    if (dlg.Show() != (int)AppCUI::Dialogs::Result::Cancel)
+    {
+    }
 }
 std::string_view Instance::GetName()
 {
