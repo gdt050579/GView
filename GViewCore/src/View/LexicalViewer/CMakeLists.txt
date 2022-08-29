@@ -6,8 +6,9 @@ target_sources(GViewCore PRIVATE
         FoldColumn.cpp 
 	LexicalViewer.hpp 
 	Config.cpp 
-	GoToDialog.cpp 
 	Instance.cpp 
+	GoToDialog.cpp 
 	NameRefactorDialog.cpp
 	DeleteDialog.cpp
+	PluginDialog
 	Settings.cpp)
