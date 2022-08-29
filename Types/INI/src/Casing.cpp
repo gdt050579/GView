@@ -68,7 +68,28 @@ bool Casing::CanBeAppliedOn(const PluginData& data)
 }
 void Casing::ChangeCaseForToken(Token& tok, CaseFormat format, bool isSection)
 {
-    // need to be implemented
+    LocalUnicodeStringBuilder<256> temp;
+    auto text = tok.GetText();
+    auto index = 0U;
+    auto sz    = static_cast<uint32>(text.length());
+    
+    for (;index<sz;index++)
+    {
+        auto ch = text[index];
+        switch (format)
+        {
+        case CaseFormat::LowerCase:
+            if ((ch >= 'A') && (ch <= 'Z'))
+                ch |= 0x20;
+            break;
+        case CaseFormat::UpperCase:
+            if ((ch >= 'a') && (ch <= 'z'))
+                ch -= 0x20;
+            break;            
+        }
+        temp.AddChar(ch);
+    }
+    tok.SetText(temp);
 }
 
 PluginAfterActionRequest Casing::Execute(PluginData& data)
