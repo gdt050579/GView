@@ -135,7 +135,7 @@ namespace Utils
             if (text == nullptr)
                 return UnicodeString();
             auto* tmp = new char16[size];
-            memcpy(tmp, text, this->size);
+            memcpy(tmp, text, this->size*sizeof(char16));
             return UnicodeString(tmp, size, size);
         }
         inline void Destroy()

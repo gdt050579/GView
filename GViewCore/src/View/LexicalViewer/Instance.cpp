@@ -1518,7 +1518,7 @@ void Instance::ShowPlugins()
     case PluginAfterActionRequest::Rescan:
         this->text.Destroy();
         this->text = textClone;
-        this->Reparse(false);
+        this->Parse();
         break;
     default:
         textClone.Destroy();
