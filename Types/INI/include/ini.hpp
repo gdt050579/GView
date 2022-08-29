@@ -29,7 +29,7 @@ namespace Type
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
-                virtual void Execute(GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
         } // namespace Plugins
         class INIFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
@@ -39,6 +39,7 @@ namespace Type
             {
                 Plugins::RemoveComments removeComments;
             } plugins;
+
           public:
             INIFile();
             virtual ~INIFile()
@@ -53,7 +54,7 @@ namespace Type
             }
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
             virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
-            virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager &syntax) override;
+            virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
         };
         namespace Panels
         {
@@ -78,6 +79,6 @@ namespace Type
             };
         }; // namespace Panels
 
-    }      // namespace INI
+    } // namespace INI
 } // namespace Type
 } // namespace GView

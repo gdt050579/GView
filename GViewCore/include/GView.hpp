@@ -1058,12 +1058,18 @@ namespace View
             {
             }
         };
+        enum class PluginAfterActionRequest
+        {
+            None,
+            Refresh,
+            Rescan,
+        };
         struct CORE_EXPORT Plugin
         {
-            virtual std::string_view GetName()                  = 0;
-            virtual std::string_view GetDescription()           = 0;
-            virtual bool CanBeAppliedOn(const PluginData& data) = 0;
-            virtual void Execute(PluginData& data)              = 0;
+            virtual std::string_view GetName()                         = 0;
+            virtual std::string_view GetDescription()                  = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
+            virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
         };
         struct CORE_EXPORT Settings
         {
