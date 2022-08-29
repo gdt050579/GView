@@ -1446,6 +1446,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 }
 void Instance::OnUpdateScrollBars()
 {
+    if (this->noItemsVisible)
+        this->UpdateVScrollBar(0, 0);
+    else
+        this->UpdateVScrollBar(this->currentTokenIndex, this->tokens.size());
 }
 bool Instance::GoTo(uint64 offset)
 {
@@ -1485,7 +1489,7 @@ uint32 Instance::MousePositionToTokenID(int x, int y)
             continue;
         }
         auto tokLeft   = tok.x + lineNrWidth - Scroll.x;
-        auto tokTop     = tok.y - Scroll.y;
+        auto tokTop    = tok.y - Scroll.y;
         auto tokRight  = tokLeft + tok.width;
         auto tokBottom = tokTop + tok.height;
         if ((x >= tokLeft) && (x < tokRight) && (y >= tokTop) && (y < tokBottom))
@@ -1507,7 +1511,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         }
         return;
     }
-    if (x>=this->lineNrWidth)
+    if (x >= this->lineNrWidth)
     {
         auto tokIDX = MousePositionToTokenID(x, y);
         if (tokIDX != Token::INVALID_INDEX)
