@@ -6,6 +6,7 @@ using namespace AppCUI::Input;
 SettingsData::SettingsData()
 {
     this->indentWidth = 4;
+    this->maxWidth    = 120;
     this->parser      = nullptr;
     this->ignoreCase  = false;
 }
@@ -20,5 +21,13 @@ void Settings::SetParser(Reference<ParseInterface> _parser)
 void Settings::SetCaseSensitivity(bool ignoreCase)
 {
     ((SettingsData*) (this->data))->ignoreCase = ignoreCase;
+}
+void Settings::SetMaxWidth(uint32 width)
+{
+    if (width < 20)
+        width = 20;
+    if (width > 2000)
+        width = 2000;
+    ((SettingsData*) (this->data))->maxWidth = width;
 }
 

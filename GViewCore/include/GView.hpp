@@ -1044,13 +1044,31 @@ namespace View
             virtual void PreprocessText(TextEditor& editor)                                    = 0;
             virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
         };
+        struct PluginData
+        {
+            TextEditor& editor;
+            TokensList& tokens;
+            BlocksList& blocks;
+            uint32 currentTokenIndex;
+            uint32 selectionStartTokenIndex;
+            uint32 selectionTokensCount;
+        };
+        struct CORE_EXPORT Plugin
+        {
+            virtual std::string_view GetName()                  = 0;
+            virtual std::string_view GetDescription()           = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data) = 0;
+            virtual void Execute(PluginData& data)              = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
             void SetParser(Reference<ParseInterface> parser);
+            void AddPlugin(Reference<Plugin> plugin);
             void SetCaseSensitivity(bool ignoreCase);
+            void SetMaxWidth(uint32 width);
         };
     }; // namespace LexicalViewer
 

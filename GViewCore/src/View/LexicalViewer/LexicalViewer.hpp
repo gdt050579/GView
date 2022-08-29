@@ -189,6 +189,7 @@ namespace View
         struct SettingsData
         {
             Reference<ParseInterface> parser;
+            uint32 maxWidth;
             uint8 indentWidth;
             bool ignoreCase;
             SettingsData();
