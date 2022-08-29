@@ -130,6 +130,22 @@ namespace Utils
         UnicodeString(char16* txt, uint32 sz, uint32 alloc) : text(txt), size(sz), allocated(alloc)
         {
         }
+        inline UnicodeString Clone()
+        {
+            if (text == nullptr)
+                return UnicodeString();
+            auto* tmp = new char16[size];
+            memcpy(tmp, text, this->size);
+            return UnicodeString(tmp, size, size);
+        }
+        inline void Destroy()
+        {
+            if (text != nullptr)
+                delete[] text;
+            text      = nullptr;
+            size      = 0;
+            allocated = 0;
+        }
     };
 
     namespace CharacterEncoding

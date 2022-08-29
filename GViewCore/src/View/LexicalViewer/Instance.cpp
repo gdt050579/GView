@@ -1485,7 +1485,9 @@ void Instance::ShowPlugins()
         AppCUI::Dialogs::MessageBox::ShowNotification("Plugins", "No plugins defined for this type of file !");
         return;
     }
-    TextEditorBuilder ted(this->text);
+    // we need to clone the existing text as we don't want to modify the text while showing it
+    auto textClone = text.Clone();
+    TextEditorBuilder ted(textClone);
     TokensListBuilder tokensList(this);
     BlocksListBuilder blockList(this);
     PluginData pd(ted, tokensList, blockList);
@@ -1496,9 +1498,14 @@ void Instance::ShowPlugins()
         pd.selectionTokensCount     = this->selection.GetSelectionEnd(0) + 1 - pd.selectionStartTokenIndex;
     }
     PluginDialog dlg(pd, this->settings.ToReference());
-    if (dlg.Show() != (int)AppCUI::Dialogs::Result::Cancel)
+    auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
+    textClone   = ted.Release();
+    if (result == Dialogs::Result::Cancel)
     {
+        textClone.Destroy();
+        return;
     }
+
 }
 std::string_view Instance::GetName()
 {
