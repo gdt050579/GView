@@ -188,6 +188,7 @@ namespace View
 
         struct SettingsData
         {
+            std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
             uint32 maxWidth;
             uint8 indentWidth;

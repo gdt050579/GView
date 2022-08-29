@@ -30,4 +30,8 @@ void Settings::SetMaxWidth(uint32 width)
         width = 2000;
     ((SettingsData*) (this->data))->maxWidth = width;
 }
-
+void Settings::AddPlugin(Reference<Plugin> plugin)
+{
+    if (plugin.IsValid())
+        ((SettingsData*) (this->data))->plugins.push_back(plugin);
+}
