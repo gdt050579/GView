@@ -31,8 +31,15 @@ namespace Type
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
                 virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
+            enum CaseFormat : uint32
+            {
+                None = 0,
+                UpperCase,
+                LowerCase
+            };
             class Casing : public GView::View::LexicalViewer::Plugin
             {
+                void ChangeCaseForToken(GView::View::LexicalViewer::Token& tok, CaseFormat format, bool isSection);
               public:
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
