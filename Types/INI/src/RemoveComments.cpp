@@ -13,7 +13,14 @@ std::string_view RemoveComments::GetDescription()
 }
 bool RemoveComments::CanBeAppliedOn(const PluginData& data)
 {
-    return true;
+    // at least one comment must be present
+    auto len = data.tokens.Len();
+    for (auto index=0;index<len;index++)
+    {
+        if (data.tokens[index].GetTypeID(TokenType::Invalid) == TokenType::Comment)
+            return true;
+    }
+    return false;
 }
 PluginAfterActionRequest RemoveComments::Execute(PluginData& data)
 {
