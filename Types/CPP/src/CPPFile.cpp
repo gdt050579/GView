@@ -561,10 +561,11 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
-    auto tokColor = TokenColor::Word;
-    auto tokType  = Keyword::TextToKeywordID(text, pos, next);
-    auto align    = TokenAlignament::None;
-    auto opID     = 0U;
+    auto tokColor             = TokenColor::Word;
+    auto tokType              = Keyword::TextToKeywordID(text, pos, next);
+    auto align                = TokenAlignament::None;
+    auto opID                 = 0U;
+    bool disableSimilarSearch = false;
     if (tokType == TokenType::None)
     {
         tokType = Constant::TextToConstantID(text, pos, next);
@@ -582,7 +583,8 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         }
         else
         {
-            tokColor = TokenColor::Constant;
+            tokColor             = TokenColor::Constant;
+            disableSimilarSearch = true;
         }
         auto lastTokenID = tokenList.GetLastTokenID();
         switch (lastTokenID & 0xFFFF)
@@ -606,8 +608,9 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
     }
     else
     {
-        tokColor = TokenColor::Keyword;
-        align    = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+        tokColor             = TokenColor::Keyword;
+        align                = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+        disableSimilarSearch = true;
         if (((tokType >> 16) == KeywordsType::Else) && (tokenList.GetLastTokenID() == TokenType::BlockClose))
         {
             // if (...) { ... } else ...
@@ -615,7 +618,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         }
     }
 
-    tokenList.Add(tokType, pos, next, tokColor, align);
+    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, disableSimilarSearch);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -709,7 +712,8 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             exprBlocks.Push(index);
             break;
         case TokenType::ExpressionClose:
-            syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, BlockFlags::EndMarker|BlockFlags::ManualCollapse);
+            syntax.blocks.Add(
+                  exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, BlockFlags::EndMarker | BlockFlags::ManualCollapse);
             break;
         }
     }
@@ -808,7 +812,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         case CharType::String:
             next = text.ParseString(idx, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::AllowEscapeSequences);
-            tokenList.Add(TokenType::String, idx, next, TokenColor::String,TokenDataType::String);
+            tokenList.Add(TokenType::String, idx, next, TokenColor::String, TokenDataType::String);
             idx = next;
             break;
         case CharType::Comma:
@@ -881,7 +885,7 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
                         auto nextTok = list[endToken.GetIndex() + 1];
                         if ((nextTok.IsValid()) && (nextTok.GetTypeID(TokenType::None) != TokenType::BlockOpen))
                         {
-                            nextTok.UpdateAlignament(TokenAlignament::IncrementIndentBeforePaint|TokenAlignament::StartsOnNewLine);
+                            nextTok.UpdateAlignament(TokenAlignament::IncrementIndentBeforePaint | TokenAlignament::StartsOnNewLine);
                         }
                         // if the case is for
                         if (typeID == (TokenType::Keyword | (KeywordsType::For << 16)))
