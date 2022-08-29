@@ -10,10 +10,13 @@ constexpr int32 BTN_ID_CANCEL   = 2;
 constexpr uint64 INVALID_PLUGIN = 0xFFFFFFFFFFFFFFFFULL;
 
 PluginDialog::PluginDialog(PluginData& data, Reference<SettingsData> _settings)
-    : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings)
+    : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings),
+      afterActionRequest(PluginAfterActionRequest::None)
 {
     this->lstPlugins        = Factory::ListView::Create(this, "l:1,t:1,r:1,b:4", { "w:25,a:l,n:Name", "w:200,a:l,n:Descrition" });
     this->cbOpenInNewWindow = Factory::CheckBox::Create(this, "Open result in &new window", "l:1,b:3,w:60");
+
+    this->cbOpenInNewWindow->SetEnabled(false); // for the moment
 
     // populate
     auto index = 0;
@@ -49,12 +52,12 @@ void PluginDialog::RunPlugin()
     }
     // run the plugin
     auto idx = static_cast<size_t>(item.GetData(INVALID_PLUGIN));
-    if (idx>=this->settings->plugins.size())
+    if (idx >= this->settings->plugins.size())
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Internal error -> invalid plugin index");
         return;
     }
-    this->settings->plugins[idx]->Execute(this->pluginData);
+    this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData);
     Exit(Dialogs::Result::Ok);
 }
 bool PluginDialog::OnEvent(Reference<Control> control, Event eventType, int ID)

@@ -425,11 +425,16 @@ namespace View
             Reference<ListView> lstPlugins;
             Reference<CheckBox> cbOpenInNewWindow;
             Reference<SettingsData> settings;
+            PluginAfterActionRequest afterActionRequest;
 
             void RunPlugin();
           public:
             PluginDialog(PluginData& data, Reference<SettingsData> settings);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline PluginAfterActionRequest GetAfterActionRequest() const
+            {
+                return afterActionRequest;
+            }
         };
         class GoToDialog : public Window
         {

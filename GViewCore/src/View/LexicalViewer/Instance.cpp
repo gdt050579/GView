@@ -1505,7 +1505,25 @@ void Instance::ShowPlugins()
         textClone.Destroy();
         return;
     }
-
+    switch (dlg.GetAfterActionRequest())
+    {
+    case PluginAfterActionRequest::None:
+        textClone.Destroy();
+        return; // do nothing
+    case PluginAfterActionRequest::Refresh:
+        textClone.Destroy();
+        UpdateTokensInformation();
+        RecomputeTokenPositions();
+        break;
+    case PluginAfterActionRequest::Rescan:
+        this->text.Destroy();
+        this->text = textClone;
+        this->Reparse(false);
+        break;
+    default:
+        textClone.Destroy();
+        return;
+    }
 }
 std::string_view Instance::GetName()
 {
