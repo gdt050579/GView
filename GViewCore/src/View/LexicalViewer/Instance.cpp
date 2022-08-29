@@ -366,16 +366,11 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
         }
     }
 }
-AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin)
+void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin, PrettyFormatLayoutManager& manager)
 {
-    auto x                       = leftMargin;
-    auto y                       = topMargin;
-    auto lastY                   = topMargin;
     auto idx                     = idxStart;
-    auto spaceAdded              = true;
     auto partOfFoldedBlock       = false;
     auto indent                  = 0U;
-    auto firstOnNewLine          = true;
     auto sameColumnCount         = 0;
     auto maxXOffsetForSameColumn = 0;
     auto sameColumnDifferences   = false;
@@ -400,68 +395,68 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
                 indent = 0;
 
             // new line flags
-            if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (y > topMargin))
+            if (((tok.align & TokenAlignament::NewLineBefore) != TokenAlignament::None) && (manager.y > topMargin))
             {
-                x              = leftMargin + indent * settings->indentWidth;
-                spaceAdded     = true;
-                firstOnNewLine = true;
-                if (y == lastY)
-                    y += 2;
+                manager.x              = leftMargin + indent * settings->indentWidth;
+                manager.spaceAdded     = true;
+                manager.firstOnNewLine = true;
+                if (manager.y == manager.lastY)
+                    manager.y += 2;
                 else
-                    y++;
+                    manager.y++;
             }
-            if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (!firstOnNewLine))
+            if (((tok.align & TokenAlignament::StartsOnNewLine) != TokenAlignament::None) && (!manager.firstOnNewLine))
             {
-                x              = leftMargin + indent * settings->indentWidth;
-                spaceAdded     = true;
-                firstOnNewLine = true;
-                y++;
+                manager.x              = leftMargin + indent * settings->indentWidth;
+                manager.spaceAdded     = true;
+                manager.firstOnNewLine = true;
+                manager.y++;
             }
             if ((tok.align & TokenAlignament::AfterPreviousToken) != TokenAlignament::None)
             {
-                if (y == lastY)
+                if (manager.y == manager.lastY)
                 {
-                    if ((spaceAdded) && (x > leftMargin))
-                        x--;
+                    if ((manager.spaceAdded) && (manager.x > leftMargin))
+                        manager.x--;
                 }
                 else
                 {
                     if (idx > idxStart)
                     {
                         auto& previous = tokens[idx - 1];
-                        y              = previous.y + previous.height - 1;
-                        x              = previous.x + previous.width;
+                        manager.y      = previous.y + previous.height - 1;
+                        manager.x      = previous.x + previous.width;
                     }
                 }
-                spaceAdded = false;
+                manager.spaceAdded = false;
             }
-            if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!spaceAdded))
-                x++;
+            if (((tok.align & TokenAlignament::AddSpaceBefore) != TokenAlignament::None) && (!manager.spaceAdded))
+                manager.x++;
         }
 
         // assign position to curent token
-        tok.x                   = x;
-        tok.y                   = y;
-        lastY                   = y;
-        firstOnNewLine          = false;
+        tok.x                   = manager.x;
+        tok.y                   = manager.y;
+        manager.firstOnNewLine  = false;
         const auto blockStarter = tok.IsBlockStarter();
         const auto folded       = tok.IsFolded();
         if ((blockStarter) && (folded))
         {
             const auto& block = this->blocks[tok.blockID];
             if (block.foldMessage.empty())
-                x += tok.width + 3; // for ...
+                manager.x += tok.width + 3; // for ...
             else
-                x += tok.width + (int32) block.foldMessage.size();
+                manager.x += tok.width + (int32) block.foldMessage.size();
             partOfFoldedBlock = block.HasEndMarker(); // only limit the alignament for end marker
         }
         else
         {
-            x += tok.width;
-            y += tok.height - 1;
+            manager.x += tok.width;
+            manager.y += tok.height - 1;
             partOfFoldedBlock = false;
         }
-        spaceAdded = false;
+        manager.lastY      = manager.y;
+        manager.spaceAdded = false;
         if (!partOfFoldedBlock)
         {
             // Same column logic
@@ -494,15 +489,15 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
 
             if ((tok.align & TokenAlignament::AddSpaceAfter) != TokenAlignament::None)
             {
-                x++;
-                spaceAdded = true;
+                manager.x++;
+                manager.spaceAdded = true;
             }
             if ((tok.align & TokenAlignament::NewLineAfter) != TokenAlignament::None)
             {
-                x              = leftMargin + indent * settings->indentWidth;
-                spaceAdded     = true;
-                firstOnNewLine = true;
-                y++;
+                manager.x              = leftMargin + indent * settings->indentWidth;
+                manager.spaceAdded     = true;
+                manager.firstOnNewLine = true;
+                manager.y++;
             }
         }
         if (tok.IsBlockStarter())
@@ -514,32 +509,34 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
             switch (block.align)
             {
             case BlockAlignament::AsCurrentBlock:
-                blockMarginTop            = y;
+                blockMarginTop            = manager.y;
                 blockMarginLeft           = leftMargin;
                 block.leftHighlightMargin = leftMargin;
                 break;
             case BlockAlignament::ToRightOfCurrentBlock:
-                blockMarginTop            = y;
+                blockMarginTop            = manager.y;
                 blockMarginLeft           = leftMargin + (indent + 1) * settings->indentWidth;
                 block.leftHighlightMargin = leftMargin + indent * settings->indentWidth;
                 break;
             case BlockAlignament::AsBlockStartToken:
-                blockMarginTop            = y;
-                blockMarginLeft           = x;
-                block.leftHighlightMargin = x;
+                blockMarginTop            = manager.y;
+                blockMarginLeft           = manager.x;
+                block.leftHighlightMargin = manager.x;
                 break;
             default:
-                blockMarginTop            = y;
-                blockMarginLeft           = x;
+                blockMarginTop            = manager.y;
+                blockMarginLeft           = manager.x;
                 block.leftHighlightMargin = 0;
                 break;
             }
             if (((idx + 1) < endToken) && (tok.IsFolded() == false))
             {
                 // not an empty block and not folded
-                auto p = PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop);
-                x      = p.X == blockMarginLeft ? leftMargin + indent * settings->indentWidth : p.X;
-                y      = p.Y;
+                manager.x = blockMarginLeft;
+                manager.y = blockMarginTop;
+                PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop, manager);
+                if (manager.x == blockMarginLeft)
+                    manager.x = leftMargin + indent * settings->indentWidth;
             }
             idx = endToken;
         }
@@ -553,11 +550,16 @@ AppCUI::Graphics::Point Instance::PrettyFormatForBlock(uint32 idxStart, uint32 i
     {
         PrettyFormatAlignToSameColumn(idxStart, idxEnd, maxXOffsetForSameColumn);
     }
-    return { x, y };
 }
 void Instance::PrettyFormat()
 {
-    PrettyFormatForBlock(0, (uint32) this->tokens.size(), 0, 0);
+    PrettyFormatLayoutManager manager;
+    manager.x              = 0;
+    manager.y              = 0;
+    manager.lastY          = 0;
+    manager.firstOnNewLine = true;
+    manager.spaceAdded     = true;
+    PrettyFormatForBlock(0, (uint32) this->tokens.size(), 0, 0, manager);
 }
 void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
 {

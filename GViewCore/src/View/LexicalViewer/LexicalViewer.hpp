@@ -254,6 +254,12 @@ namespace View
                 return BlockObject::INVALID_ID;
             }
         };
+        struct PrettyFormatLayoutManager
+        {
+            int x, y, lastY;
+            bool firstOnNewLine;
+            bool spaceAdded;
+        };
         class Instance : public View::ViewControl
         {
             FoldColumn foldColumn;
@@ -281,7 +287,7 @@ namespace View
             void PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff);
             void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 diff);
             void PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset);
-            AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
+            void PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin, PrettyFormatLayoutManager& manager);
             void PrettyFormat();
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
