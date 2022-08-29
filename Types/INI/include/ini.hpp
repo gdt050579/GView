@@ -35,7 +35,8 @@ namespace Type
             {
                 None = 0,
                 UpperCase,
-                LowerCase
+                LowerCase,
+                SentenceCase,
             };
             class Casing : public GView::View::LexicalViewer::Plugin
             {
