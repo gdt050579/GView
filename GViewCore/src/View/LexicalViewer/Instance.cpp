@@ -1474,9 +1474,29 @@ std::string_view Instance::GetName()
     return this->name;
 }
 //======================================================================[Mouse coords]========================
+uint32 Instance::MousePositionToTokenID(int x, int y)
+{
+    auto idx = 0U;
+    for (const auto& tok : this->tokens)
+    {
+        if (tok.IsVisible() == false)
+        {
+            idx++;
+            continue;
+        }
+        auto tokLeft   = tok.x + lineNrWidth - Scroll.x;
+        auto tokTop     = tok.y - Scroll.y;
+        auto tokRight  = tokLeft + tok.width;
+        auto tokBottom = tokTop + tok.height;
+        if ((x >= tokLeft) && (x < tokRight) && (y >= tokTop) && (y < tokBottom))
+            return idx;
+        idx++;
+    }
+    return Token::INVALID_INDEX;
+}
 void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
 {
-    if (x == (this->lineNrWidth-1))
+    if (x == (this->lineNrWidth - 1))
     {
         auto blockID = foldColumn.MouseToBlockIndex(y);
         if (blockID != BlockObject::INVALID_ID)
@@ -1487,13 +1507,30 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         }
         return;
     }
+    if (x>=this->lineNrWidth)
+    {
+        auto tokIDX = MousePositionToTokenID(x, y);
+        if (tokIDX != Token::INVALID_INDEX)
+        {
+            MoveToToken(tokIDX, false);
+        }
+    }
 }
 void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
 {
 }
 bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
 {
-    NOT_IMPLEMENTED(false);
+    if (x >= this->lineNrWidth)
+    {
+        auto tokIDX = MousePositionToTokenID(x, y);
+        if (tokIDX != Token::INVALID_INDEX)
+        {
+            MoveToToken(tokIDX, true);
+            return true;
+        }
+    }
+    return false;
 }
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 {
