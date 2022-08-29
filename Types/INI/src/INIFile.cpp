@@ -3,19 +3,7 @@
 namespace GView::Type::INI
 {
 using namespace GView::View::LexicalViewer;
-namespace TokenType
-{
-    constexpr uint32 Comment    = 0;
-    constexpr uint32 Section    = 1;
-    constexpr uint32 Key        = 2;
-    constexpr uint32 Equal      = 3;
-    constexpr uint32 Value      = 4;
-    constexpr uint32 ArrayStart = 5;
-    constexpr uint32 Comma      = 6;
-    constexpr uint32 ArrayEnd   = 7;
-    constexpr uint32 Invalid    = 0xFFFFFFFF;
 
-} // namespace TokenType
 enum class ParserState
 {
     ExpectKeyValueOrSection,

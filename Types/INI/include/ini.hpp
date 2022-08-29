@@ -8,8 +8,37 @@ namespace Type
 {
     namespace INI
     {
+        namespace TokenType
+        {
+            constexpr uint32 Comment    = 0;
+            constexpr uint32 Section    = 1;
+            constexpr uint32 Key        = 2;
+            constexpr uint32 Equal      = 3;
+            constexpr uint32 Value      = 4;
+            constexpr uint32 ArrayStart = 5;
+            constexpr uint32 Comma      = 6;
+            constexpr uint32 ArrayEnd   = 7;
+            constexpr uint32 Invalid    = 0xFFFFFFFF;
+
+        } // namespace TokenType
+        namespace Plugins
+        {
+            class RemoveComments : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual void Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+        } // namespace Plugins
         class INIFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+          public:
+            struct
+            {
+                Plugins::RemoveComments removeComments;
+            } plugins;
           public:
             INIFile();
             virtual ~INIFile()
@@ -48,6 +77,7 @@ namespace Type
                 }
             };
         }; // namespace Panels
+
     }      // namespace INI
 } // namespace Type
 } // namespace GView
