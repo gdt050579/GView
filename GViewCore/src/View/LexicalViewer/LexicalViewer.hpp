@@ -201,6 +201,7 @@ namespace View
             struct
             {
                 AppCUI::Input::Key showMetaData;
+                AppCUI::Input::Key showPlugins;
                 AppCUI::Input::Key prettyFormat;
                 AppCUI::Input::Key changeSelectionType;
                 AppCUI::Input::Key foldAll;
@@ -307,6 +308,7 @@ namespace View
 
             void EditCurrentToken();
             void DeleteTokens();
+            void ShowPlugins();
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();

@@ -12,6 +12,7 @@ constexpr int32 CMD_ID_DELETE           = 0xBF02;
 constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
 constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
 constexpr int32 CMD_ID_EXPAND_ALL       = 0xBF05;
+constexpr int32 CMD_ID_SHOW_PLUGINS     = 0xBF06;
 constexpr uint32 INVALID_LINE_NUMBER    = 0xFFFFFFFF;
 
 /*
@@ -946,6 +947,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
     commandBar.SetCommand(config.Keys.foldAll, "Fold all", CMD_ID_FOLD_ALL);
     commandBar.SetCommand(config.Keys.expandAll, "Expand all", CMD_ID_EXPAND_ALL);
+    commandBar.SetCommand(config.Keys.showPlugins, "Plugins", CMD_ID_SHOW_PLUGINS);
 
     return false;
 }
@@ -1441,6 +1443,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case CMD_ID_EXPAND_ALL:
         this->ExpandAll();
         return true;
+    case CMD_ID_SHOW_PLUGINS:
+        this->ShowPlugins();
+        return true;
     }
     return false;
 }
@@ -1472,6 +1477,14 @@ bool Instance::ShowGoToDialog()
 bool Instance::ShowFindDialog()
 {
     NOT_IMPLEMENTED(false);
+}
+void Instance::ShowPlugins()
+{
+    if (settings->plugins.empty())
+    {
+        AppCUI::Dialogs::MessageBox::ShowNotification("Plugins", "No plugins defined for this type of file !");
+        return;
+    }
 }
 std::string_view Instance::GetName()
 {
