@@ -119,6 +119,16 @@ bool Token::Delete()
     tok.SetShouldDeleteFlag();
     return true;
 }
+std::optional<uint32> Token::GetTokenStartOffset() const
+{
+    CREATE_TOKENREF(std::nullopt);
+    return tok.start;
+}
+std::optional<uint32> Token::GetTokenEndOffset() const
+{
+    CREATE_TOKENREF(std::nullopt);
+    return tok.end;
+}
 // Token Object
 void TokenObject::UpdateSizes(const char16* text)
 {

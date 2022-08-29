@@ -953,6 +953,9 @@ namespace View
             bool SetText(const ConstString& text);
             bool Delete();
 
+            std::optional<uint32> GetTokenStartOffset() const;
+            std::optional<uint32> GetTokenEndOffset() const;
+
             Token Next() const;
             Token Precedent() const;
 
