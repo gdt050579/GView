@@ -15,7 +15,7 @@ bool RemoveComments::CanBeAppliedOn(const PluginData& data)
 {
     // at least one comment must be present
     auto len = data.tokens.Len();
-    for (auto index=0;index<len;index++)
+    for (auto index=0U;index<len;index++)
     {
         if (data.tokens[index].GetTypeID(TokenType::Invalid) == TokenType::Comment)
             return true;
