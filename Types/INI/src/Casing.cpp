@@ -32,11 +32,11 @@ class SelectCaseDialog : public Window
         Factory::Label::Create(this, "&Sections", "x:1,y:1,w:10");
         Factory::Label::Create(this, "&Keys", "x:1,y:3,w:10");
         comboSections = Factory::ComboBox::Create(
-              this, "x:15,y:1,w:52", "Do nothing,Upper case (ABC.ABC),Lower case (abc.abc), Sentence case (Abc.abc)");
+              this, "x:15,y:1,w:52", "Do nothing,Upper case (ABC.ABC),Lower case (abc.abc), Sentence case (Abc.abc), Title case (Abc.Abc)");
         comboSections->SetCurentItemIndex(0);
         comboSections->SetHotKey('S');
         comboKeys = Factory::ComboBox::Create(
-              this, "x:15,y:3,w:52", "Do nothing,Upper case (ABC.ABC),Lower case (abc.abc), Sentence case (Abc.abc)");
+              this, "x:15,y:3,w:52", "Do nothing,Upper case (ABC.ABC),Lower case (abc.abc), Sentence case (Abc.abc), Title case (Abc.Abc)");
         comboKeys->SetCurentItemIndex(0);
         comboKeys->SetHotKey('K');
         Factory::Button::Create(this, "&Run", "l:21,b:0,w:13", BUTTON_OK_ID);
@@ -73,7 +73,7 @@ std::string_view Casing::GetName()
 }
 std::string_view Casing::GetDescription()
 {
-    return "Change case-ing for keys and sections (upper, lower, sentence)";
+    return "Change case-ing for keys and sections (upper, lower, sentence, title)";
 }
 bool Casing::CanBeAppliedOn(const PluginData& data)
 {
@@ -109,6 +109,18 @@ void Casing::ChangeCaseForToken(Token& tok, CaseFormat format, bool isSection)
                     ch |= 0x20;
                 first = false;
             }
+            break;
+        case CaseFormat::TitleCase:
+            if (IsChar(ch))
+            {
+                if ((first) && (ch >= 'a') && (ch <= 'z'))
+                    ch -= 0x20;
+                else if ((!first) && (ch >= 'A') && (ch <= 'Z'))
+                    ch |= 0x20;
+                first = false;
+            }
+            if ((ch == ':') || (ch == '/') || (ch == '\\') || (ch == '.'))
+                first = true;
             break;
         }
         temp.AddChar(ch);
