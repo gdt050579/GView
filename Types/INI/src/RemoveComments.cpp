@@ -14,8 +14,8 @@ std::string_view RemoveComments::GetDescription()
 bool RemoveComments::CanBeAppliedOn(const PluginData& data)
 {
     // at least one comment must be present
-    auto len = data.tokens.Len();
-    for (auto index=0U;index<len;index++)
+    auto len = std::min<>(data.tokens.Len(), data.endIndex);
+    for (auto index=data.startIndex;index<len;index++)
     {
         if (data.tokens[index].GetTypeID(TokenType::Invalid) == TokenType::Comment)
             return true;
@@ -24,8 +24,9 @@ bool RemoveComments::CanBeAppliedOn(const PluginData& data)
 }
 PluginAfterActionRequest RemoveComments::Execute(PluginData& data)
 {
-    int32 index = static_cast<int32>(data.tokens.Len()) - 1;
-    while (index>=0)
+    auto len    = std::min<>(data.tokens.Len(), data.endIndex);    
+    int32 index = static_cast<int32>(len) - 1;
+    while (index>=static_cast<int32>(data.startIndex))
     {
         auto token = data.tokens[index];
         if (!token.IsValid())
