@@ -1053,11 +1053,10 @@ namespace View
             TokensList& tokens;
             BlocksList& blocks;
             uint32 currentTokenIndex;
-            uint32 selectionStartTokenIndex;
-            uint32 selectionTokensCount;
+            uint32 startIndex;
+            uint32 endIndex;
             PluginData(TextEditor& _editor, TokensList& _tokens, BlocksList& _blocks)
-                : editor(_editor), tokens(_tokens), blocks(_blocks), currentTokenIndex(0), selectionStartTokenIndex(Token::INVALID_INDEX),
-                  selectionTokensCount(0)
+                : editor(_editor), tokens(_tokens), blocks(_blocks), currentTokenIndex(0), startIndex(0), endIndex(0)
             {
             }
         };

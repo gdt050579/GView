@@ -429,6 +429,7 @@ namespace View
         {
             PluginData& pluginData;
             Reference<ListView> lstPlugins;
+            Reference<RadioBox> rbRunOnSelection, rbRunOnEntireFile;
             Reference<CheckBox> cbOpenInNewWindow;
             Reference<SettingsData> settings;
             PluginAfterActionRequest afterActionRequest;

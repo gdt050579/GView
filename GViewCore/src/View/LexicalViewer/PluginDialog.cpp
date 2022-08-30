@@ -7,13 +7,16 @@ using namespace AppCUI::Input;
 
 constexpr int32 BTN_ID_RUN      = 1;
 constexpr int32 BTN_ID_CANCEL   = 2;
+constexpr int32 APPLY_GROUP_ID  = 1234;
 constexpr uint64 INVALID_PLUGIN = 0xFFFFFFFFFFFFFFFFULL;
 
 PluginDialog::PluginDialog(PluginData& data, Reference<SettingsData> _settings)
     : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings),
       afterActionRequest(PluginAfterActionRequest::None)
 {
-    this->lstPlugins        = Factory::ListView::Create(this, "l:1,t:1,r:1,b:4", { "w:25,a:l,n:Name", "w:200,a:l,n:Descrition" });
+    this->lstPlugins        = Factory::ListView::Create(this, "l:1,t:1,r:1,b:8", { "w:25,a:l,n:Name", "w:200,a:l,n:Descrition" });
+    this->rbRunOnEntireFile = Factory::RadioBox::Create(this, "Run the plugin for the entire &program", "l:1,b:6,w:60", APPLY_GROUP_ID);
+    this->rbRunOnSelection  = Factory::RadioBox::Create(this, "Run the plugin over the &selected tokens", "l:1,b:5,w:60", APPLY_GROUP_ID);
     this->cbOpenInNewWindow = Factory::CheckBox::Create(this, "Open result in &new window", "l:1,b:3,w:60");
 
     this->cbOpenInNewWindow->SetEnabled(false); // for the moment
