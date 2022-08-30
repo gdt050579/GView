@@ -1496,10 +1496,10 @@ void Instance::ShowPlugins()
     pd.currentTokenIndex = this->currentTokenIndex;
     if (this->selection.HasSelection(0))
     {
-        pd.selectionStartTokenIndex = this->selection.GetSelectionStart(0);
-        pd.selectionTokensCount     = this->selection.GetSelectionEnd(0) + 1 - pd.selectionStartTokenIndex;
+        pd.startIndex = this->selection.GetSelectionStart(0);
+        pd.endIndex   = this->selection.GetSelectionEnd(0) + 1;
     }
-    PluginDialog dlg(pd, this->settings.ToReference());
+    PluginDialog dlg(pd, this->settings.ToReference(), this->selection.HasSelection(0));
     auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
     textClone   = ted.Release();
     if (result == Dialogs::Result::Cancel)

@@ -10,7 +10,7 @@ constexpr int32 BTN_ID_CANCEL   = 2;
 constexpr int32 APPLY_GROUP_ID  = 1234;
 constexpr uint64 INVALID_PLUGIN = 0xFFFFFFFFFFFFFFFFULL;
 
-PluginDialog::PluginDialog(PluginData& data, Reference<SettingsData> _settings)
+PluginDialog::PluginDialog(PluginData& data, Reference<SettingsData> _settings, bool hasSelection)
     : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings),
       afterActionRequest(PluginAfterActionRequest::None)
 {
@@ -20,7 +20,13 @@ PluginDialog::PluginDialog(PluginData& data, Reference<SettingsData> _settings)
     this->cbOpenInNewWindow = Factory::CheckBox::Create(this, "Open result in &new window", "l:1,b:3,w:60");
 
     this->cbOpenInNewWindow->SetEnabled(false); // for the moment
-
+    if (hasSelection)
+        this->rbRunOnSelection->SetChecked(true);
+    else
+    {
+        this->rbRunOnEntireFile->SetChecked(true);
+        this->rbRunOnSelection->SetEnabled(false);
+    }
     // populate
     auto index = 0;
     for (auto& p : settings->plugins)
@@ -59,6 +65,12 @@ void PluginDialog::RunPlugin()
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Internal error -> invalid plugin index");
         return;
+    }
+    // update the interval to work on (otherwise the interval is already set up with the selection from the Instance::ShowPlugin method)
+    if (rbRunOnEntireFile->IsChecked())
+    {
+        pluginData.startIndex = 0;
+        pluginData.endIndex   = pluginData.tokens.Len();
     }
     this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData);
     Exit(Dialogs::Result::Ok);

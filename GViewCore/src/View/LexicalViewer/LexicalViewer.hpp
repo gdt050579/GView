@@ -436,7 +436,7 @@ namespace View
 
             void RunPlugin();
           public:
-            PluginDialog(PluginData& data, Reference<SettingsData> settings);
+            PluginDialog(PluginData& data, Reference<SettingsData> settings, bool hasSelection);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline PluginAfterActionRequest GetAfterActionRequest() const
             {
