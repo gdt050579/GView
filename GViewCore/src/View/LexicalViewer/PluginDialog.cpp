@@ -10,23 +10,32 @@ constexpr int32 BTN_ID_CANCEL   = 2;
 constexpr int32 APPLY_GROUP_ID  = 1234;
 constexpr uint64 INVALID_PLUGIN = 0xFFFFFFFFFFFFFFFFULL;
 
-PluginDialog::PluginDialog(PluginData& data, Reference<SettingsData> _settings, bool hasSelection)
+PluginDialog::PluginDialog(
+      PluginData& data,
+      Reference<SettingsData> _settings,
+      uint32 _selectionStart,
+      uint32 _selectionEnd,
+      uint32 _blockStart,
+      uint32 _blockEnd)
     : Window("Plugins", "d:c,w:70,h:24", WindowFlags::ProcessReturn), pluginData(data), settings(_settings),
-      afterActionRequest(PluginAfterActionRequest::None)
+      afterActionRequest(PluginAfterActionRequest::None), selectionStart(_selectionStart), selectionEnd(_selectionEnd),
+      blockStart(_blockStart), blockEnd(_blockEnd)
 {
-    this->lstPlugins        = Factory::ListView::Create(this, "l:1,t:1,r:1,b:8", { "w:25,a:l,n:Name", "w:200,a:l,n:Descrition" });
-    this->rbRunOnEntireFile = Factory::RadioBox::Create(this, "Run the plugin for the entire &program", "l:1,b:6,w:60", APPLY_GROUP_ID);
-    this->rbRunOnSelection  = Factory::RadioBox::Create(this, "Run the plugin over the &selected tokens", "l:1,b:5,w:60", APPLY_GROUP_ID);
-    this->cbOpenInNewWindow = Factory::CheckBox::Create(this, "Open result in &new window", "l:1,b:3,w:60");
+    this->lstPlugins          = Factory::ListView::Create(this, "l:1,t:1,r:1,b:9", { "w:25,a:l,n:Name", "w:200,a:l,n:Descrition" });
+    this->rbRunOnEntireFile   = Factory::RadioBox::Create(this, "Run the plugin for the entire &program", "l:1,b:7,w:60", APPLY_GROUP_ID);
+    this->rbRunOnCurrentBlock = Factory::RadioBox::Create(this, "Run the plugin for current &block", "l:1,b:6,w:60", APPLY_GROUP_ID);
+    this->rbRunOnSelection    = Factory::RadioBox::Create(this, "Run the plugin over the &selected tokens", "l:1,b:5,w:60", APPLY_GROUP_ID);
+    this->cbOpenInNewWindow   = Factory::CheckBox::Create(this, "Open result in &new window", "l:1,b:3,w:60");
 
     this->cbOpenInNewWindow->SetEnabled(false); // for the moment
-    if (hasSelection)
+
+    this->rbRunOnSelection->SetEnabled(selectionEnd > selectionStart);
+    this->rbRunOnCurrentBlock->SetEnabled(blockEnd > blockStart);
+    if (selectionEnd > selectionStart)
         this->rbRunOnSelection->SetChecked(true);
     else
-    {
         this->rbRunOnEntireFile->SetChecked(true);
-        this->rbRunOnSelection->SetEnabled(false);
-    }
+
     // populate
     auto index = 0;
     for (auto& p : settings->plugins)
@@ -71,6 +80,16 @@ void PluginDialog::RunPlugin()
     {
         pluginData.startIndex = 0;
         pluginData.endIndex   = pluginData.tokens.Len();
+    }
+    if (rbRunOnSelection->IsChecked())
+    {
+        pluginData.startIndex = selectionStart;
+        pluginData.endIndex   = selectionEnd;
+    }
+    if (rbRunOnCurrentBlock->IsChecked())
+    {
+        pluginData.startIndex = blockStart;
+        pluginData.endIndex   = blockEnd;
     }
     this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData);
     Exit(Dialogs::Result::Ok);

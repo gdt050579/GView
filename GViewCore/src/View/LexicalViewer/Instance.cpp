@@ -1494,12 +1494,35 @@ void Instance::ShowPlugins()
     BlocksListBuilder blockList(this);
     PluginData pd(ted, tokensList, blockList);
     pd.currentTokenIndex = this->currentTokenIndex;
+
+    // selection and block infos
+    uint32 selectionStart = 0, selectionEnd = 0, blockStart = 0, blockEnd = 0;
+    auto tokensCount = static_cast<uint32>(this->tokens.size());
     if (this->selection.HasSelection(0))
     {
-        pd.startIndex = this->selection.GetSelectionStart(0);
-        pd.endIndex   = this->selection.GetSelectionEnd(0) + 1;
+        selectionStart = this->selection.GetSelectionStart(0);
+        selectionEnd   = this->selection.GetSelectionEnd(0) + 1;
+        // some sanity checks
+        if ((selectionStart >= selectionEnd) || (selectionEnd > tokensCount))
+        {
+            selectionStart = 0;
+            selectionEnd   = 0;
+        }
     }
-    PluginDialog dlg(pd, this->settings.ToReference(), this->selection.HasSelection(0));
+    auto blockIndex = TokenToBlock(this->currentTokenIndex);
+    if (blockIndex != BlockObject::INVALID_ID)
+    {
+        blockStart = this->blocks[blockIndex].GetStartIndex();
+        blockEnd   = this->blocks[blockIndex].GetEndIndex();
+        // some sanity checks
+        if ((blockStart >= blockEnd) || (blockEnd > tokensCount))
+        {
+            blockStart = 0;
+            blockEnd   = 0;
+        }
+    }
+
+    PluginDialog dlg(pd, this->settings.ToReference(), selectionStart, selectionEnd, blockStart, blockEnd);
     auto result = static_cast<AppCUI::Dialogs::Result>(dlg.Show());
     textClone   = ted.Release();
     if (result == Dialogs::Result::Cancel)

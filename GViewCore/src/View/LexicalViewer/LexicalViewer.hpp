@@ -429,14 +429,15 @@ namespace View
         {
             PluginData& pluginData;
             Reference<ListView> lstPlugins;
-            Reference<RadioBox> rbRunOnSelection, rbRunOnEntireFile;
+            Reference<RadioBox> rbRunOnSelection, rbRunOnCurrentBlock, rbRunOnEntireFile;
             Reference<CheckBox> cbOpenInNewWindow;
             Reference<SettingsData> settings;
             PluginAfterActionRequest afterActionRequest;
+            uint32 selectionStart, selectionEnd, blockStart, blockEnd;
 
             void RunPlugin();
           public:
-            PluginDialog(PluginData& data, Reference<SettingsData> settings, bool hasSelection);
+            PluginDialog(PluginData& data, Reference<SettingsData> settings, uint32 selectionStart,uint32 selectionEnd, uint32 blockStart, uint32 blockEnd);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline PluginAfterActionRequest GetAfterActionRequest() const
             {
