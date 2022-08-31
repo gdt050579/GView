@@ -118,6 +118,11 @@ bool Token::SetText(const ConstString& text)
     CREATE_TOKENREF(false);
     return tok.value.Set(text);
 }
+bool Token::SetError(const ConstString& error)
+{
+    CREATE_TOKENREF(false);
+    return tok.error.Set(error);
+}
 bool Token::Delete()
 {
     CREATE_TOKENREF(false);
@@ -260,15 +265,6 @@ Token TokensList::Add(
     this->lastTokenID = typeID;
 
     return Token(this->data, itemsCount);
-}
-Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
-{
-    auto tok = Add(0, start, end, TokenColor::Error);
-    if (tok.IsValid())
-    {
-        // add error
-    }
-    return tok;
 }
 
 // block list

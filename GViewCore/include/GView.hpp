@@ -952,6 +952,7 @@ namespace View
             bool SetBlock(uint32 blockIndex);
             bool DisableSimilartyHighlight();
             bool SetText(const ConstString& text);
+            bool SetError(const ConstString& error);
             bool Delete();
 
             std::optional<uint32> GetTokenStartOffset() const;
@@ -999,7 +1000,7 @@ namespace View
                   TokenDataType dataType,
                   TokenAlignament align,
                   bool disableSimilartySearch);
-            Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+            //Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
         {

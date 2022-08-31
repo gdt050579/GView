@@ -663,7 +663,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
     else
     {
         // unknown operator
-        tokenList.AddErrorToken(pos, next, "Invalid C++ operator");
+        tokenList.Add(TokenType::Operator, pos, next, TokenColor::Word).SetError("Invalid C++ operator");
         return next;
     }
 }
@@ -857,7 +857,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         default:
             next = text.ParseSameGroupID(idx, CharType::GetCharType);
-            tokenList.AddErrorToken(idx, next, "Invalid character sequance");
+            tokenList.Add(TokenType::Word, idx, next, TokenColor::Word).SetError("Invalid character sequance");
             idx = next;
             break;
         }

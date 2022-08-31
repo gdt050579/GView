@@ -100,6 +100,7 @@ namespace View
         struct TokenObject
         {
             UnicodeStringBuilder value;
+            UnicodeStringBuilder error;
             uint64 hash;
             uint32 start, end, type;
             uint32 blockID; // for blocks

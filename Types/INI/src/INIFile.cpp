@@ -181,7 +181,8 @@ struct ParserData
             break;
         default:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a key or a section)");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a key or a section)");
             pos = next;
             break;
         }
@@ -212,7 +213,8 @@ struct ParserData
             break;
         case CharType::Invalid:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a avlue or an array)");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a avlue or an array)");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -265,7 +267,7 @@ struct ParserData
             break;
         default:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either ':' or '=')");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word).SetError("Invalid character (expecting either ':' or '=')");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -304,7 +306,8 @@ struct ParserData
                   pos, [](char16 ch) { return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != ',') && (ch != ']'); });
             next = text.ParseBackwards(next - 1, [](char16 ch) { return (ch == ' ') || (ch == '\t'); });
             next++;
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a comma (,) or the end of an array (])");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a comma (,) or the end of an array (])");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -335,7 +338,8 @@ struct ParserData
             break;
         case CharType::Invalid:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a avlue or an array)");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a avlue or an array)");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -438,7 +442,7 @@ bool INIFile::Update()
     return true;
 }
 
-void INIFile::PreprocessText(GView::View::LexicalViewer::TextEditor& )
+void INIFile::PreprocessText(GView::View::LexicalViewer::TextEditor&)
 {
     // nothing to do --> there is no pre-processing needed for an INI format
 }
