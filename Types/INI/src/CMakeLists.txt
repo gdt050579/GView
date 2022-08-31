@@ -3,4 +3,5 @@ target_sources(INI PRIVATE
 	INIFile.cpp
 	PanelInformation.cpp
 	RemoveComments.cpp
-	Casing.cpp)
+	Casing.cpp
+	ValueToString.cpp)
