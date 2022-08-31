@@ -21,7 +21,7 @@ PluginDialog::PluginDialog(
       afterActionRequest(PluginAfterActionRequest::None), selectionStart(_selectionStart), selectionEnd(_selectionEnd),
       blockStart(_blockStart), blockEnd(_blockEnd)
 {
-    this->lstPlugins          = Factory::ListView::Create(this, "l:1,t:1,r:1,b:9", { "w:25,a:l,n:Name", "w:200,a:l,n:Descrition" });
+    this->lstPlugins          = Factory::ListView::Create(this, "l:1,t:1,r:1,b:9", { "w:25,a:l,n:Name","w:3,a:c,n:#", "w:200,a:l,n:Descrition" });
     this->rbRunOnEntireFile   = Factory::RadioBox::Create(this, "Run the plugin for the entire &program", "l:1,b:7,w:60", APPLY_GROUP_ID);
     this->rbRunOnCurrentBlock = Factory::RadioBox::Create(this, "Run the plugin for current &block", "l:1,b:6,w:60", APPLY_GROUP_ID);
     this->rbRunOnSelection    = Factory::RadioBox::Create(this, "Run the plugin over the &selected tokens", "l:1,b:5,w:60", APPLY_GROUP_ID);
@@ -37,26 +37,57 @@ PluginDialog::PluginDialog(
         this->rbRunOnEntireFile->SetChecked(true);
 
     // populate
-    auto index = 0;
     for (auto& p : settings->plugins)
     {
-        auto item = this->lstPlugins->AddItem({ p->GetName(), p->GetDescription() });
-        if (p->CanBeAppliedOn(pluginData) == false)
-        {
-            item.SetType(ListViewItem::Type::GrayedOut);
-            item.SetData(INVALID_PLUGIN);
-        }
-        else
-        {
-            item.SetType(ListViewItem::Type::Normal);
-            item.SetData(index);
-        }
-        index++;
+        this->lstPlugins->AddItem({ p->GetName(), "", p->GetDescription() });
     }
 
     // buttons
     Factory::Button::Create(this, "&Run", "l:21,b:0,w:13", BTN_ID_RUN);
     Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_ID_CANCEL);
+    
+    // update plugin data
+    UpdatePluginData();
+}
+void PluginDialog::UpdatePluginData()
+{
+    if (rbRunOnEntireFile->IsChecked())
+    {
+        pluginData.startIndex = 0;
+        pluginData.endIndex   = pluginData.tokens.Len();
+    }
+    if (rbRunOnSelection->IsChecked())
+    {
+        pluginData.startIndex = selectionStart;
+        pluginData.endIndex   = selectionEnd;
+    }
+    if (rbRunOnCurrentBlock->IsChecked())
+    {
+        pluginData.startIndex = blockStart;
+        pluginData.endIndex   = blockEnd;
+    }
+    // update plugin status
+    auto index = 0;
+    char16 status[2] = { 0 };
+    for (auto& p : settings->plugins)
+    {
+        auto item = this->lstPlugins->GetItem(index);
+        if (p->CanBeAppliedOn(pluginData) == false)
+        {
+            item.SetType(ListViewItem::Type::GrayedOut);
+            item.SetData(INVALID_PLUGIN);
+            status[0] = '-';
+        }
+        else
+        {
+            item.SetType(ListViewItem::Type::Normal);
+            item.SetData(index);
+            status[0] = '+';
+
+        }
+        item.SetText(1, u16string_view{ status, (size_t)2 });
+        index++;
+    }
 }
 void PluginDialog::RunPlugin()
 {
@@ -74,22 +105,6 @@ void PluginDialog::RunPlugin()
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Internal error -> invalid plugin index");
         return;
-    }
-    // update the interval to work on (otherwise the interval is already set up with the selection from the Instance::ShowPlugin method)
-    if (rbRunOnEntireFile->IsChecked())
-    {
-        pluginData.startIndex = 0;
-        pluginData.endIndex   = pluginData.tokens.Len();
-    }
-    if (rbRunOnSelection->IsChecked())
-    {
-        pluginData.startIndex = selectionStart;
-        pluginData.endIndex   = selectionEnd;
-    }
-    if (rbRunOnCurrentBlock->IsChecked())
-    {
-        pluginData.startIndex = blockStart;
-        pluginData.endIndex   = blockEnd;
     }
     this->afterActionRequest = this->settings->plugins[idx]->Execute(this->pluginData);
     Exit(Dialogs::Result::Ok);
@@ -115,6 +130,9 @@ bool PluginDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
         return true;
     case Event::WindowClose:
         Exit(Dialogs::Result::Cancel);
+        return true;
+    case Event::CheckedStatusChanged:
+        UpdatePluginData();
         return true;
     }
 

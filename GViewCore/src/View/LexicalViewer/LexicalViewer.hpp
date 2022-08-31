@@ -435,6 +435,7 @@ namespace View
             PluginAfterActionRequest afterActionRequest;
             uint32 selectionStart, selectionEnd, blockStart, blockEnd;
 
+            void UpdatePluginData();
             void RunPlugin();
           public:
             PluginDialog(PluginData& data, Reference<SettingsData> settings, uint32 selectionStart,uint32 selectionEnd, uint32 blockStart, uint32 blockEnd);
