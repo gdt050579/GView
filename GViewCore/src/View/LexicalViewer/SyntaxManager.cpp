@@ -28,6 +28,11 @@ TokenAlignament Token::GetAlignament() const
     CREATE_TOKENREF(TokenAlignament::None);
     return tok.align;
 }
+TokenDataType Token::GetDataType() const
+{
+    CREATE_TOKENREF(TokenDataType::None);
+    return tok.dataType;
+}
 bool Token::SetAlignament(TokenAlignament align)
 {
     CREATE_TOKENREF(false);

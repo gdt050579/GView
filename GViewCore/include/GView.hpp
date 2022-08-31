@@ -944,6 +944,7 @@ namespace View
 
             uint32 GetTypeID(uint32 errorValue) const;
             TokenAlignament GetAlignament() const;
+            TokenDataType GetDataType() const;
             bool SetAlignament(TokenAlignament align);
             bool UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove = TokenAlignament::None);
             bool SetTokenColor(TokenColor col);
