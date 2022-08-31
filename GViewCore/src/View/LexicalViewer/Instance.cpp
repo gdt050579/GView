@@ -1216,6 +1216,10 @@ void Instance::EditCurrentToken()
     auto& tok = this->tokens[this->currentTokenIndex];
     if (!tok.IsVisible())
         return;
+    if (tok.error.Len()>0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
+    }
     if (tok.CanChangeValue() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowNotification("Rename", "This type of token can not be modified/renamed !");
@@ -1504,8 +1508,8 @@ void Instance::ShowPlugins()
     auto tokensCount = static_cast<uint32>(this->tokens.size());
     if (this->selection.HasSelection(0))
     {
-        selectionStart = this->selection.GetSelectionStart(0);
-        selectionEnd   = this->selection.GetSelectionEnd(0) + 1;
+        selectionStart = static_cast<uint32>(this->selection.GetSelectionStart(0));
+        selectionEnd   = static_cast<uint32>(this->selection.GetSelectionEnd(0) + 1);
         // some sanity checks
         if ((selectionStart >= selectionEnd) || (selectionEnd > tokensCount))
         {
