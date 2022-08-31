@@ -50,7 +50,7 @@ namespace Type
             };
             class ValueToString : public GView::View::LexicalViewer::Plugin
             {
-                void ConvertToString(GView::View::LexicalViewer::Token& tok);
+                void ConvertToString(GView::View::LexicalViewer::Token& tok, GView::View::LexicalViewer::PluginData& data);
 
               public:
                 virtual std::string_view GetName() override;
