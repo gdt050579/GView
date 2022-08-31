@@ -69,179 +69,182 @@ namespace OperatorType
 } // namespace OperatorType
 namespace Operators
 {
-    constexpr uint32 HASH_DEVIDER            = 134;
-    uint32 operator_hash_table[HASH_DEVIDER] = { TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LogicNOT << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::XorEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Modulo << 16),
-                                                 TokenType::Operator | (OperatorType::AND << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Multiply << 16),
-                                                 TokenType::Operator | (OperatorType::Plus << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Minus << 16),
-                                                 TokenType::Operator | (OperatorType::MemberAccess << 16),
-                                                 TokenType::Operator | (OperatorType::Division << 16),
-                                                 TokenType::Operator | (OperatorType::Spaceship << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Equal << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::OrEQ << 16),
-                                                 TokenType::Operator | (OperatorType::TWO_POINTS << 16),
-                                                 TokenType::Operator | (OperatorType::Decrement << 16),
-                                                 TokenType::Operator | (OperatorType::Smaller << 16),
-                                                 TokenType::Operator | (OperatorType::Assign << 16),
-                                                 TokenType::Operator | (OperatorType::Bigger << 16),
-                                                 TokenType::Operator | (OperatorType::Condition << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::MinusEQ << 16),
-                                                 TokenType::Operator | (OperatorType::Pointer << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::BiggerOrEq << 16),
-                                                 TokenType::Operator | (OperatorType::RightShift << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Namespace << 16),
-                                                 TokenType::Operator | (OperatorType::ModuloEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Different << 16),
-                                                 TokenType::Operator | (OperatorType::XOR << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LogicAND << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::MupliplyEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::RightShiftEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::AndEQ << 16),
-                                                 TokenType::Operator | (OperatorType::LogicOR << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::OR << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::NOT << 16),
-                                                 TokenType::Operator | (OperatorType::Increment << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::DivisionEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::PlusEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LeftShiftEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LeftShift << 16),
-                                                 TokenType::Operator | (OperatorType::SmallerOrEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None };
+    uint8 chars_ids[128] = { 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0,  0,
+                             0, 4, 0, 0, 0, 9, 11, 0, 0, 0, 7, 5, 0, 6, 10, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 2,  3, 1,  15,
+                             0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 13, 0,
+                             0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 12, 0, 14, 0 };
+
+    constexpr uint32 HASH_DEVIDER            = 133;
+    uint32 operator_hash_table[HASH_DEVIDER] = {
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Bigger << 8) | (uint32) (1 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Smaller << 8) | (uint32) (2 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Assign << 8) | (uint32) (3 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LogicNOT << 8) | (uint32) (4 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Plus << 8) | (uint32) (5 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Minus << 8) | (uint32) (6 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Multiply << 8) | (uint32) (7 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Division << 8) | (uint32) (8 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Modulo << 8) | (uint32) (9 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::MemberAccess << 8) | (uint32) (10 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::AND << 8) | (uint32) (11 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::OR << 8) | (uint32) (12 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::XOR << 8) | (uint32) (13 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::NOT << 8) | (uint32) (14 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Condition << 8) | (uint32) (15 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::TWO_POINTS << 8) | (uint32) (16 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Spaceship << 8) | (uint32) (2145 << 16),
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::XorEQ << 8) | (uint32) (419 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::ModuloEQ << 8) | (uint32) (291 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::PlusEQ << 8) | (uint32) (163 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Increment << 8) | (uint32) (165 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::RightShift << 8) | (uint32) (33 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::BiggerOrEq << 8) | (uint32) (35 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Pointer << 8) | (uint32) (193 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::MinusEQ << 8) | (uint32) (195 << 16),
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Decrement << 8) | (uint32) (198 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LeftShift << 8) | (uint32) (66 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::SmallerOrEQ << 8) | (uint32) (67 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::AndEQ << 8) | (uint32) (355 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::MupliplyEQ << 8) | (uint32) (227 << 16),
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LogicAND << 8) | (uint32) (363 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Equal << 8) | (uint32) (99 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LeftShiftEQ << 8) | (uint32) (2115 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::OrEQ << 8) | (uint32) (387 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::DivisionEQ << 8) | (uint32) (259 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::RightShiftEQ << 8) | (uint32) (1059 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Namespace << 8) | (uint32) (528 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LogicOR << 8) | (uint32) (396 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Different << 8) | (uint32) (131 << 16),
+        TokenType::None
+    };
 
     bool TextToOperatorID(const char16* txt, uint32 size, uint32& opID, uint32& opSize)
     {
         // compute the hashes over the entire 3 cases
         uint32 hash1 = 0, hash2 = 0, hash3 = 0;
-        if (((*txt) > 32) && ((*txt) < 128))
+        if (((*txt) < 128) && (chars_ids[*txt] != 0))
         {
-            hash1 = (*txt) - 32;
+            hash1 = chars_ids[*txt];
             txt++;
-            if ((size > 1) && (((*txt) > 32) && ((*txt) < 128)))
+            if ((size > 1) && ((*txt) < 128) && (chars_ids[*txt] != 0))
             {
-                hash2 = (hash1 << 5) + (*txt) - 32;
+                hash2 = (hash1 << 5) + chars_ids[*txt];
                 txt++;
-                if ((size > 2) && (((*txt) > 32) && ((*txt) < 128)))
-                    hash3 = (hash2 << 5) + (*txt) - 32;
+                if ((size > 2) && ((*txt) < 128) && (chars_ids[*txt] != 0))
+                    hash3 = (hash2 << 5) + chars_ids[*txt];
             }
         }
-        hash1 %= HASH_DEVIDER;
-        hash2 %= HASH_DEVIDER;
-        hash3 %= HASH_DEVIDER;
-        auto op = operator_hash_table[hash3];
-        if (op != TokenType::None)
+        auto op = operator_hash_table[hash3 % HASH_DEVIDER];
+        if ((op != TokenType::None) && ((op >> 16) == hash3))
         {
-            opID   = op;
+            opID   = (op & 0xFF) | ((op & 0xFF00) << 8);
             opSize = 3;
             return true;
         }
-        op = operator_hash_table[hash2];
-        if (op != TokenType::None)
+        op = operator_hash_table[hash2 % HASH_DEVIDER];
+        if ((op != TokenType::None) && ((op >> 16) == hash2))
         {
-            opID   = op;
+            opID   = (op & 0xFF) | ((op & 0xFF00) << 8);
             opSize = 2;
             return true;
         }
-        op = operator_hash_table[hash1];
-        if (op != TokenType::None)
+        op = operator_hash_table[hash1 % HASH_DEVIDER];
+        if ((op != TokenType::None) && ((op >> 16) == hash1))
         {
-            opID   = op;
+            opID   = (op & 0xFF) | ((op & 0xFF00) << 8);
             opSize = 1;
             return true;
         }

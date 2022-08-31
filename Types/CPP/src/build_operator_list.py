@@ -40,14 +40,25 @@ op = {
 	"<=>"	:"Spaceship"
 }
 
+def ComputeCharIndexes():
+	global op
+	d = {}
+	for k in op:
+		for ch in k:
+			if not ch in d:
+				d[ch] = len(d)+1
+	return d
 
+chIndex = ComputeCharIndexes()
+ 
 def ComputeHash(text,devider):
+	global chIndex
 	sum = 0
 	index = 0
 	for k in text:
-		if ord(k)<=32:
-			raise "Invali character in "+text
-		sum = ((sum<<5) + ((ord(k)-32) & 0xFF))
+		if not k in chIndex:
+			raise "Invalid character in "+text
+		sum = (sum<<5)+chIndex[k]
 		index+=1
 	return sum % devider
 
@@ -70,31 +81,38 @@ def ComputeHashes():
 	return devider
 
 def CreateHashTable():
-	global op
+	global op,chIndex
 	devider = ComputeHashes()
-	l = ["None"]*devider
+	l = [("None",0)]*devider
 	s = "namespace OperatorType {\n"
 	op_id = 0
 	for k in op:
-		l[ComputeHash(k,devider)] = op[k]	
+		l[ComputeHash(k,devider)] = (op[k],ComputeHash(k,0xFFFFFFFF))	
 		s += "constexpr uint32 "+op[k]+" = "+str(op_id)+";\n"
 		op_id+=1
 	s+="}\n"		        
 	s+="namespace Operators {\n"                                        	
+	s+="uint8 chars_ids[128] = {";
+	for i in range(0,128):
+		if chr(i) in chIndex:
+			s+=str(chIndex[chr(i)])+","
+		else:
+			s+="0,"
+	s = s[:-1]+"};\n"	
 	s+= "constexpr uint32 HASH_DEVIDER = "+str(devider)+";\n"
 	s+= "uint32 operator_hash_table[HASH_DEVIDER] = {";
 	for k in l:
-		if k=="None":
+		print(k)
+		if k[0]=="None":
 			s+="TokenType::None,"
 		else:
-			s+="TokenType::Operator | (OperatorType::"+k+"<<16),"
+			s+="(uint32)TokenType::Operator | (uint32)(OperatorType::"+k[0]+"<<8) | (uint32)("+str(k[1])+" << 16),"
 	s = s[:-1]+"};\n"	
 	s+="}\n"
 	print(s)
 	
-CreateHashTable()
-
-
 ComputeHashes()		                
+CreateHashTable()
 		
+
 	        	
