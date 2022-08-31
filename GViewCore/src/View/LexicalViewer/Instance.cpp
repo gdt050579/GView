@@ -471,12 +471,13 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                 }
                 else
                 {
-                    if ((tok.x > maxXOffsetForSameColumn) && (tok.y != lastSameColumnLine))
+                    if (tok.y != lastSameColumnLine)
                     {
-                        maxXOffsetForSameColumn = tok.x;
-                        sameColumnDifferences   = true;
-                    }
-                    lastSameColumnLine = tok.y;
+                        // a new item on a differnt line
+                        maxXOffsetForSameColumn = std::max<>(maxXOffsetForSameColumn, tok.x);
+                        sameColumnDifferences   = true; // set the marker
+                        lastSameColumnLine      = tok.y; // update last line
+                    }                    
                 }
             }
             // indent
