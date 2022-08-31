@@ -121,6 +121,7 @@ bool Token::SetText(const ConstString& text)
 bool Token::SetError(const ConstString& error)
 {
     CREATE_TOKENREF(false);
+    tok.color = TokenColor::Error;
     return tok.error.Set(error);
 }
 bool Token::Delete()

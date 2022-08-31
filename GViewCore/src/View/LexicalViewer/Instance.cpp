@@ -828,6 +828,9 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         case TokenColor::Preprocesor:
             col = ColorPair{ Color::Olive, Color::Transparent };
             break;
+        case TokenColor::Error:
+            col = ColorPair{ Color::Black, Color::Red };
+            break;
         default:
             col = Cfg.Text.Normal;
             break;
