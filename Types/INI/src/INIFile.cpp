@@ -206,7 +206,7 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String);
+            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -329,7 +329,7 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String);
+            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
             pos   = next;
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
