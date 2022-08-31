@@ -475,9 +475,9 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                     {
                         // a new item on a differnt line
                         maxXOffsetForSameColumn = std::max<>(maxXOffsetForSameColumn, tok.x);
-                        sameColumnDifferences   = true; // set the marker
+                        sameColumnDifferences   = true;  // set the marker
                         lastSameColumnLine      = tok.y; // update last line
-                    }                    
+                    }
                 }
             }
             // indent
@@ -1677,6 +1677,13 @@ int Instance::PrintDataTypeInfo(TokenDataType dataType, int x, int y, uint32 wid
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
     return x + width + 1;
 }
+int Instance::PrintError(std::u16string_view error, int x, int y, uint32 width, Renderer& r)
+{
+    auto col = this->HasFocus() ? Cfg.Text.Error : Cfg.Text.Inactive;
+    r.WriteSingleLineText(x, y, width, error, col, TextAlignament::Left);
+    r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->Cfg.Lines.Normal);
+    return x + width + 1;
+}
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
 {
@@ -1701,7 +1708,10 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 9, "Col:", tmp.Format("%d", tok.x + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs:", tmp.Format("%u", tok.start));
-        xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 0, 30, r);
+        if (tok.error.Len() > 0)
+            xPoz = PrintError(tok.error, xPoz, 0, 50, r);
+        else
+            xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 0, 30, r);
         break;
     case 2:
         PrintSelectionInfo(0, 0, 0, 16, r);
@@ -1713,7 +1723,10 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
-        xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
+        if (tok.error.Len() > 0)
+            xPoz = PrintError(tok.error, xPoz, 1, 35, r);
+        else
+            xPoz = this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
         break;
     case 3:
         PrintSelectionInfo(0, 0, 0, 16, r);
@@ -1724,7 +1737,10 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = this->WriteCursorInfo(r, xPoz, 2, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
         this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
-        xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 2, 35, r);
+        if (tok.error.Len() > 0)
+            xPoz = PrintError(tok.error, xPoz, 2, 35, r);
+        else
+            xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 2, 35, r);
         break;
     default:
         PrintSelectionInfo(0, 0, 0, 16, r);
@@ -1742,7 +1758,10 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->WriteCursorInfo(r, xPoz, 0, 40, "Token     : ", tok.GetText(this->text.text));
         this->WriteCursorInfo(r, xPoz, 1, 40, "Original  : ", tok.GetOriginalText(this->text.text));
         this->PrintTokenTypeInfo(tok.type, xPoz, 2, 40, r);
-        xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 3, 40, r);
+        if (tok.error.Len() > 0)
+            xPoz = PrintError(tok.error, xPoz, 3, 40, r);
+        else
+            xPoz = this->PrintDataTypeInfo(tok.dataType, xPoz, 3, 40, r);
 
         break;
     }
