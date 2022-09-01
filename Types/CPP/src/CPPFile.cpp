@@ -3,28 +3,7 @@
 namespace GView::Type::CPP
 {
 using namespace GView::View::LexicalViewer;
-namespace TokenType
-{
-    constexpr uint32 None            = 0xFFFFFFFF;
-    constexpr uint32 Comment         = 0;
-    constexpr uint32 ArrayOpen       = 1;
-    constexpr uint32 ArrayClose      = 2;
-    constexpr uint32 BlockOpen       = 3;
-    constexpr uint32 BlockClose      = 4;
-    constexpr uint32 ExpressionOpen  = 5;
-    constexpr uint32 ExpressionClose = 6;
-    constexpr uint32 Number          = 7;
-    constexpr uint32 String          = 8;
-    constexpr uint32 Comma           = 9;
-    constexpr uint32 Semicolumn      = 10;
-    constexpr uint32 Preprocess      = 11;
-    constexpr uint32 Word            = 12;
-    constexpr uint32 Operator        = 13;
-    constexpr uint32 Keyword         = 14;
-    constexpr uint32 Constant        = 15;
-    constexpr uint32 Datatype        = 16;
 
-} // namespace TokenType
 namespace OperatorType
 {
     constexpr uint32 Bigger       = 0;
@@ -670,30 +649,43 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
         return next;
     }
 }
-uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::TextParser& text, uint32 pos)
+uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
-    auto next = text.ParseUntillEndOfLine(pos);
-
-    // check for multi-line format
-    if ((next > 0) && (text[next - 1] == '\\'))
+    auto eol   = text.ParseUntillEndOfLine(pos);
+    auto start = pos;
+    pos        = text.ParseSpace(pos+1, SpaceType::SpaceAndTabs);
+    if ((CharType::GetCharType(text[pos])) != CharType::Word)
     {
-        pos = text.ParseUntillStartOfNextLine(next); // skip CR, CRLF, LF or LFCRif any
-        // repeat the flow
-        while (true)
-        {
-            next = text.ParseUntillEndOfLine(next);
-            if ((next > 0) && (text[next - 1] == '\\'))
-            {
-                next = text.ParseUntillStartOfNextLine(next);
-                continue;
-            }
-            break;
-        }
-        return next;
+        // we have an error
+        list.Add(TokenType::Preprocess,
+                 start,
+                 eol,
+                 TokenColor::Preprocesor,
+                 TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter)
+              .SetError("Invalid preprocess directive");
+        return eol;
     }
+    // we have a good preprocess directive ==> lets formalize it
+    auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
+    list.Add(
+          TokenType::Preprocess,
+          start,
+          eol /*next*/,
+          TokenColor::Preprocesor,
+          TokenAlignament::StartsOnNewLine | TokenAlignament::AddSpaceAfter | TokenAlignament::NewLineAfter);
 
-    // check for #if...#endif (TODO)
-    return next;
+    //auto tknIndex = list.Len();
+    //Tokenize(next, eol, text, list, blocks);
+    //auto tknCount = list.Len();
+    //// change the color of every added token
+    //for (auto index = tknIndex; index < tknCount; index++)
+    //    list[index].SetTokenColor(TokenColor::Preprocesor);
+    //// make sure that last token has a new line after it
+    //list.GetLastToken().UpdateAlignament(TokenAlignament::NewLineAfter);
+    //// crete a block
+    //blocks.Add(tknIndex - 1, tknCount-1, BlockAlignament::AsBlockStartToken);
+
+    return eol;
 }
 void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
@@ -721,13 +713,17 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
         }
     }
 }
-void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
+void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList, BlocksList& blocks)
 {
-    auto len  = text.Len();
-    auto idx  = 0U;
+    Tokenize(0, text.Len(), text, tokenList, blocks);
+}
+void CPPFile::Tokenize(
+      uint32 start, uint32 end, const TextParser& text, TokensList& tokenList, BlocksList& blocks)
+{
+    auto idx  = start;
     auto next = 0U;
 
-    while (idx < len)
+    while (idx < end)
     {
         auto ch   = text[idx];
         auto type = CharType::GetCharType(ch);
@@ -841,16 +837,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx++;
             break;
         case CharType::Preprocess:
-            next = TokenizePreprocessDirective(text, idx);
-            tokenList.Add(
-                  TokenType::Preprocess,
-                  idx,
-                  next,
-                  TokenColor::Preprocesor,
-                  TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::NewLineBefore,
-                  true);
-            idx = next;
+            idx = TokenizePreprocessDirective(text, tokenList, blocks, idx);
             break;
         case CharType::Word:
             idx = TokenizeWord(text, tokenList, idx);
@@ -1085,7 +1072,7 @@ void CPPFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& s
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     syntax.tokens.ResetLastTokenID(TokenType::None);
-    Tokenize(syntax.text, syntax.tokens);
+    Tokenize(syntax.text, syntax.tokens, syntax.blocks);
     BuildBlocks(syntax);
     IndentSimpleInstructions(syntax.tokens);
     CreateFoldUnfoldLinks(syntax);
