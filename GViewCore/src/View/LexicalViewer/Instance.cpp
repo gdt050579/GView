@@ -299,6 +299,21 @@ void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd,
             continue;
         tok.x += dif;
     }
+    if (idxEnd > 0)
+    {
+        // move all tokens after the end of the block with the same diff
+        auto lastLineY = this->tokens[idxEnd - 1].y;
+        auto len       = static_cast<uint32>(this->tokens.size());
+        for (auto idx = idxEnd; idx < len; idx++)
+        {
+            auto& tok = this->tokens[idx];
+            if (tok.IsVisible() == false)
+                continue;
+            if (tok.y != lastLineY)
+                break;
+                tok.x += dif;
+        }
+    }
 }
 void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset)
 {
@@ -329,8 +344,8 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
         tok.x += dif;
         if (tok.IsBlockStarter())
         {
-            const auto& block = this->blocks[tok.blockID];
-            auto endToken     = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
+            auto& block   = this->blocks[tok.blockID];
+            auto endToken = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
             if (tok.IsFolded())
             {
                 // nothing to do
@@ -353,6 +368,8 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             case BlockAlignament::AsBlockStartToken:
                 // all visible tokens must be increaset with diff
                 PrettyFormatIncreaseAllXWithValue(idx + 1, endToken, dif);
+                lastLine = -1; // required so that we don't add diff twice
+                block.leftHighlightMargin += dif;
                 break;
             default:
                 // do nothing --> leave the block as it is
