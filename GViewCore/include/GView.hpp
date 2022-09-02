@@ -864,7 +864,9 @@ namespace View
             DecrementIndentAfterPaint  = 0x0400, // decrement the indent of the current line (after painting the token)
             ClearIndentAfterPaint      = 0x0800, // resets current indent to 0 (after painting the token)
 
-            SameColumn = 0x1000, // make sure that first token with this flag from each line from a block has the same X-offste
+            SameColumn     = 0x1000, // make sure that first token with this flag from each line from a block has the same X-offste
+            WrapToNextLine = 0x2000, // if the "X" coordonate of a token is after a specific with, move to the next
+                                     // line and reset the "X" coordonate acording to the block rules.
 
         };
         enum class TokenColor : uint8
@@ -1000,7 +1002,7 @@ namespace View
                   TokenDataType dataType,
                   TokenAlignament align,
                   bool disableSimilartySearch);
-            //Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+            // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
         {

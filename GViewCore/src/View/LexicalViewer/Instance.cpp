@@ -500,6 +500,13 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                 manager.firstOnNewLine = true;
                 manager.y++;
             }
+            if (((tok.align & TokenAlignament::WrapToNextLine) != TokenAlignament::None) && (manager.x > this->settings->maxWidth))
+            {
+                manager.x              = leftMargin + indent * settings->indentWidth;
+                manager.spaceAdded     = true;
+                manager.firstOnNewLine = true;
+                manager.y++;
+            }
         }
         if (tok.IsBlockStarter())
         {
@@ -1216,7 +1223,7 @@ void Instance::EditCurrentToken()
     auto& tok = this->tokens[this->currentTokenIndex];
     if (!tok.IsVisible())
         return;
-    if (tok.error.Len()>0)
+    if (tok.error.Len() > 0)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
     }
