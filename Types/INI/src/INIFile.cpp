@@ -291,7 +291,7 @@ struct ParserData
             pos = next;
             break;
         case CharType::Comma:
-            tokenList.Add(TokenType::Comma, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(TokenType::Comma, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::WrapToNextLine, true);
             pos++;
             state = ParserState::ExpectArrayValue;
             break;
