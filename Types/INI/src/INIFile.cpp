@@ -260,7 +260,7 @@ struct ParserData
                   pos + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter | TokenAlignament::SameColumn,
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter /*| TokenAlignament::SameColumn*/,
                   true);
             pos++;
             state = ParserState::ExpectValueOrArray;

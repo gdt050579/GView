@@ -540,7 +540,12 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             if (((idx + 1) < endToken) && (tok.IsFolded() == false))
             {
                 // not an empty block and not folded
-                manager.x = blockMarginLeft;
+                if (manager.firstOnNewLine)
+                {
+                    // of the new token has already been moved to the next like, make sure that the "x" offset is alligned to the new block
+                    // position
+                    manager.x = blockMarginLeft;
+                }
                 manager.y = blockMarginTop;
                 PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop, manager);
                 if (manager.x == blockMarginLeft)
