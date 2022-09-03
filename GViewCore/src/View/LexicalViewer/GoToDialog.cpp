@@ -9,17 +9,18 @@ constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BTN_ID_CANCEL = 2;
 
 GoToDialog::GoToDialog(uint32 currentLine, uint32 _maxLines)
-    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::ProcessReturn), maxLines(_maxLines)
+    : Window("GoTo", "d:c,w:40,h:8", WindowFlags::ProcessReturn), maxLines(_maxLines)
 {
     LocalString<128> tmp;
     this->selectedLineNo = 0;
 
-    Factory::Label::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:38");
-    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:40,y:1,w:16");
+    Factory::Label::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:16");
+    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:17,y:1,w:19");
     txLineNumber->SetHotKey('L');
 
-    Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
-    Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
+    Factory::Button::Create(this, "&OK", "l:5,b:0,w:13", BTN_ID_OK);
+    Factory::Button::Create(this, "&Cancel", "l:20,b:0,w:13", BTN_ID_CANCEL);
+    txLineNumber->SetFocus();
 }
 
 void GoToDialog::Validate()
