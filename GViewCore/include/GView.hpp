@@ -846,27 +846,27 @@ namespace View
             MetaInformation,
             Boolean
         };
-        enum class TokenAlignament : uint16
+        enum class TokenAlignament : uint32
         {
             None            = 0,
-            AddSpaceBefore  = 0x0001,    // adds a space on left (except when current token is already at left-most position)
-            AddSpaceAfter   = 0x0002,    // adds a space on right of the current token
-            NewLineAfter    = 0x0004,    // adds a new line after the current token
-            NewLineBefore   = 0x0008,    // makes sure that there is a new (empty) line before previous token and current one
-            StartsOnNewLine = 0x0010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
-                                         // otherwise adds a new line.
-            AfterPreviousToken = 0x0020, // make sure that there any space or new line (within the block) between current token
-                                         // and previous token is removed. Both tokens are at on the same line.
-            IncrementIndentBeforePaint = 0x0040, // increments the indent of the current line (before painting the token)
-            DecrementIndentBeforePaint = 0x0080, // decrement the indent of the current line (before painting the token)
-            ClearIndentBeforePaint     = 0x0100, // resets current indent to 0 (before painting the token)
-            IncrementIndentAfterPaint  = 0x0200, // increments the indent of the current line (after painting the token)
-            DecrementIndentAfterPaint  = 0x0400, // decrement the indent of the current line (after painting the token)
-            ClearIndentAfterPaint      = 0x0800, // resets current indent to 0 (after painting the token)
+            AddSpaceBefore  = 0x00000001,    // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x00000002,    // adds a space on right of the current token
+            NewLineAfter    = 0x00000004,    // adds a new line after the current token
+            NewLineBefore   = 0x00000008,    // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x00000010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                             // otherwise adds a new line.
+            AfterPreviousToken = 0x00000020, // make sure that there any space or new line (within the block) between current token
+                                             // and previous token is removed. Both tokens are at on the same line.
+            IncrementIndentBeforePaint = 0x00000040, // increments the indent of the current line (before painting the token)
+            DecrementIndentBeforePaint = 0x00000080, // decrement the indent of the current line (before painting the token)
+            ClearIndentBeforePaint     = 0x00000100, // resets current indent to 0 (before painting the token)
+            IncrementIndentAfterPaint  = 0x00000200, // increments the indent of the current line (after painting the token)
+            DecrementIndentAfterPaint  = 0x00000400, // decrement the indent of the current line (after painting the token)
+            ClearIndentAfterPaint      = 0x00000800, // resets current indent to 0 (after painting the token)
 
-            SameColumn     = 0x1000, // make sure that first token with this flag from each line from a block has the same X-offste
-            WrapToNextLine = 0x2000, // if the "X" coordonate of a token is after a specific with, move to the next
-                                     // line and reset the "X" coordonate acording to the block rules.
+            SameColumn     = 0x00001000, // make sure that first token with this flag from each line from a block has the same X-offste
+            WrapToNextLine = 0x00002000, // if the "X" coordonate of a token is after a specific with, move to the next
+                                         // line and reset the "X" coordonate acording to the block rules.
 
         };
         enum class TokenColor : uint8
@@ -1206,5 +1206,5 @@ namespace App
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
-ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint16);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::BlockFlags, AppCUI::uint16);
