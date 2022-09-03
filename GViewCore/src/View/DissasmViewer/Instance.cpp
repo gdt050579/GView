@@ -60,10 +60,10 @@ std::string_view Instance::GetName()
     return "DissasmView";
 }
 
-bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
-{
-    NOT_IMPLEMENTED(false);
-}
+// bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+//{
+//     NOT_IMPLEMENTED(false);
+// }
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height)
 {
@@ -104,10 +104,10 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
     if (addSeparator)
         r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 
-    if (this->obj->cache.GetSize() > 0)
+    if (this->obj->GetData().GetSize() > 0)
     {
         LocalString<32> tmp;
-        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->cache.GetSize());
+        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->GetData().GetSize());
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
@@ -418,7 +418,7 @@ bool Instance::WriteStructureToScreen(
     if (typeSize > 0)
     {
         // TODO: check textFileOffset!!
-        auto buf = this->obj->cache.Get(structureZone->textFileOffset - typeSize, typeSize, false);
+        auto buf = this->obj->GetData().Get(structureZone->textFileOffset - typeSize, typeSize, false);
 
         char buffer[9];
         memset(buffer, '\0', 9);
@@ -485,10 +485,10 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
     uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.actualLineToDraw;
 
-    if (textFileOffset >= this->obj->cache.GetSize())
+    if (textFileOffset >= this->obj->GetData().GetSize())
         return false;
 
-    auto buf          = this->obj->cache.Get(textFileOffset, Layout.textSize, false);
+    auto buf          = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
@@ -537,6 +537,14 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // chars.Resize(10);
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
+
+    if (!MyLine.buttons.empty())
+    {
+        for (const auto& btn : MyLine.buttons)
+            renderer.WriteSpecialCharacter(btn.x, btn.y, btn.c, btn.color);
+    }
+}
+
 bool Instance::ShowGoToDialog()
 {
     NOT_IMPLEMENTED(false);
@@ -544,16 +552,6 @@ bool Instance::ShowGoToDialog()
 bool Instance::ShowFindDialog()
 {
     NOT_IMPLEMENTED(false);
-}
-
-    if (!MyLine.buttons.empty())
-    {
-        for (const auto& btn : MyLine.buttons)
-            renderer.WriteSpecialCharacter(btn.x, btn.y, btn.c, btn.color);
-    }
-std::string_view Instance::GetName()
-{
-    return "DissasmView";
 }
 
 void Instance::OnAfterResize(int newWidth, int newHeight)

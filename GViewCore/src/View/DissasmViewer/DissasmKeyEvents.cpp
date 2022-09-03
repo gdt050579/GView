@@ -32,17 +32,17 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
     if (mpInfo.location == MouseLocation::OnView)
     {
         mpInfo.bufferOffset += Cursor.startView;
-        if (mpInfo.bufferOffset >= this->obj->cache.GetSize())
+        if (mpInfo.bufferOffset >= this->obj->GetData().GetSize())
             mpInfo.location = MouseLocation::Outside;
     }
 }
 
 void Instance::MoveTo(uint64 offset, bool select)
 {
-    if (this->obj->cache.GetSize() == 0)
+    if (this->obj->GetData().GetSize() == 0)
         return;
-    if (offset > (obj->cache.GetSize() - 1))
-        offset = obj->cache.GetSize() - 1;
+    if (offset > (obj->GetData().GetSize() - 1))
+        offset = obj->GetData().GetSize() - 1;
 
     if (offset == this->Cursor.currentPos)
     {
@@ -86,10 +86,10 @@ void Instance::MoveTo(uint64 offset, bool select)
 
 void Instance::MoveScrollTo(uint64 offset)
 {
-    if (this->obj->cache.GetSize() == 0)
+    if (this->obj->GetData().GetSize() == 0)
         return;
-    if (offset > (obj->cache.GetSize() - 1))
-        offset = obj->cache.GetSize() - 1;
+    if (offset > (obj->GetData().GetSize() - 1))
+        offset = obj->GetData().GetSize() - 1;
     auto old               = this->Cursor.startView;
     this->Cursor.startView = offset;
     if (this->Cursor.startView > old)
