@@ -1524,13 +1524,31 @@ bool Instance::Select(uint64 offset, uint64 size)
 }
 bool Instance::ShowGoToDialog()
 {
-    NOT_IMPLEMENTED(false);
-    // GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
-    // if (dlg.Show() == (int) Dialogs::Result::Ok)
-    //{
+    if (this->tokens.empty())
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "No tokens to go to !");
+        return true;
+    }
+    auto curentLineNumber = 1U;
+    if (this->currentTokenIndex < this->tokens.size())
+        curentLineNumber = this->tokens[this->currentTokenIndex].lineNo;
 
-    //}
-    // return true;
+    GoToDialog dlg(curentLineNumber, lastLineNumber);
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        auto gotoLine = dlg.GetSelectedLineNo();
+        auto idx      = 0U;
+        for (const auto& tok: this->tokens)
+        {
+            if (tok.lineNo == gotoLine)
+            {
+                MoveToToken(idx, false);
+                break;
+            }
+            idx++;
+        }
+    }
+    return true;
 }
 bool Instance::ShowFindDialog()
 {
