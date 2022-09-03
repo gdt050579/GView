@@ -417,7 +417,7 @@ struct ParserData
                 idx = CreateArrayBlock(idx, end, false, blocks);
                 break;
             case TokenType::ArrayEnd:
-                block = blocks.Add(start, idx, BlockAlignament::AsBlockStartToken, BlockFlags::EndMarker);
+                block = blocks.Add(start, idx, BlockAlignament::CurrentToken, BlockFlags::EndMarker);
                 if ((start >= 2) && (tokenList[start - 2].GetTypeID(TokenType::Invalid) == TokenType::Key))
                 {
                     // make sure that key can also fold/unfold current block
@@ -513,7 +513,7 @@ void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
                 next++;
             }
             // we have found another section
-            auto block = syntax.blocks.Add(idx, next - 1, BlockAlignament::AsCurrentBlock);
+            auto block = syntax.blocks.Add(idx, next - 1, BlockAlignament::ParentBlock);
             if (keyCount == 0)
                 block.SetFoldMessage("<Empty>");
             else

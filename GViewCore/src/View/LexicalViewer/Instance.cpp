@@ -311,7 +311,7 @@ void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd,
                 continue;
             if (tok.y != lastLineY)
                 break;
-                tok.x += dif;
+            tok.x += dif;
         }
     }
 }
@@ -366,6 +366,7 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
                 PrettyFormatIncreaseUntilNewLineXWithValue(idx + 1, endToken, tok.y, dif);
                 break;
             case BlockAlignament::CurrentToken:
+            case BlockAlignament::CurrentTokenWithIndent:
                 // all visible tokens must be increaset with diff
                 PrettyFormatIncreaseAllXWithValue(idx + 1, endToken, dif);
                 lastLine = -1; // required so that we don't add diff twice
@@ -517,7 +518,7 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                 manager.firstOnNewLine = true;
                 manager.y++;
             }
-            if (((tok.align & TokenAlignament::WrapToNextLine) != TokenAlignament::None) && (manager.x > this->settings->maxWidth))
+            if (((tok.align & TokenAlignament::WrapToNextLine) != TokenAlignament::None) && (manager.x > (int) this->settings->maxWidth))
             {
                 manager.x              = leftMargin + indent * settings->indentWidth;
                 manager.spaceAdded     = true;
@@ -546,6 +547,11 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             case BlockAlignament::CurrentToken:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = manager.x;
+                block.leftHighlightMargin = manager.x;
+                break;
+            case BlockAlignament::CurrentTokenWithIndent:
+                blockMarginTop            = manager.y;
+                blockMarginLeft           = manager.x + settings->indentWidth;
                 block.leftHighlightMargin = manager.x;
                 break;
             default:
