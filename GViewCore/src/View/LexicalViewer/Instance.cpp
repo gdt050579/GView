@@ -647,6 +647,32 @@ uint32 Instance::CountSimilarTokens(uint32 start, uint32 end, uint64 hash)
     return count;
 }
 
+void Instance::MakeTokenVisible(uint32 index)
+{
+    if (static_cast<size_t>(index) >= this->tokens.size())
+        return;
+    auto& tok    = this->tokens[index];
+    auto blockID = BlockObject::INVALID_ID;
+    if (tok.IsBlockStarter())
+    {
+        tok.SetFolded(false);
+        tok.SetVisible(true);
+        if (index == 0)
+            return;
+        // find the block that contains the current block (start with the precedent token)
+        blockID = TokenToBlock(index - 1);
+    }
+    else
+    {
+        tok.SetVisible(true);
+        // find the block that contains the current bloc
+        blockID = TokenToBlock(index);
+    }
+    if (blockID == BlockObject::INVALID_ID)
+        return;
+    MakeTokenVisible(this->blocks[blockID].tokenStart);
+}
+
 void Instance::EnsureCurrentItemIsVisible()
 {
     if (this->noItemsVisible)
@@ -1538,10 +1564,12 @@ bool Instance::ShowGoToDialog()
     {
         auto gotoLine = dlg.GetSelectedLineNo();
         auto idx      = 0U;
-        for (const auto& tok: this->tokens)
+        for (const auto& tok : this->tokens)
         {
             if (tok.lineNo == gotoLine)
             {
+                MakeTokenVisible(idx);
+                RecomputeTokenPositions();
                 MoveToToken(idx, false);
                 break;
             }

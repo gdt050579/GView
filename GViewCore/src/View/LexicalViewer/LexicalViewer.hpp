@@ -300,6 +300,8 @@ namespace View
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index);
 
+            void MakeTokenVisible(uint32 index);
+
             void MoveToToken(uint32 index, bool selected);
             void MoveLeft(bool selected, bool stopAfterFirst);
             void MoveRight(bool selected, bool stopAfterFirst);
