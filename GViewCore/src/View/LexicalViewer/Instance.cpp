@@ -360,12 +360,12 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             }
             switch (block.align)
             {
-            case BlockAlignament::AsCurrentBlock:
-            case BlockAlignament::ToRightOfCurrentBlock:
+            case BlockAlignament::ParentBlock:
+            case BlockAlignament::ParentBlockWithIndent:
                 // align until current line ends --> if a sameColumn flag is found , align the rest of the block as well
                 PrettyFormatIncreaseUntilNewLineXWithValue(idx + 1, endToken, tok.y, dif);
                 break;
-            case BlockAlignament::AsBlockStartToken:
+            case BlockAlignament::CurrentToken:
                 // all visible tokens must be increaset with diff
                 PrettyFormatIncreaseAllXWithValue(idx + 1, endToken, dif);
                 lastLine = -1; // required so that we don't add diff twice
@@ -533,17 +533,17 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             int32 blockMarginLeft = 0;
             switch (block.align)
             {
-            case BlockAlignament::AsCurrentBlock:
+            case BlockAlignament::ParentBlock:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = leftMargin;
                 block.leftHighlightMargin = leftMargin;
                 break;
-            case BlockAlignament::ToRightOfCurrentBlock:
+            case BlockAlignament::ParentBlockWithIndent:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = leftMargin + (indent + 1) * settings->indentWidth;
                 block.leftHighlightMargin = leftMargin + indent * settings->indentWidth;
                 break;
-            case BlockAlignament::AsBlockStartToken:
+            case BlockAlignament::CurrentToken:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = manager.x;
                 block.leftHighlightMargin = manager.x;

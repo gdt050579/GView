@@ -885,9 +885,10 @@ namespace View
         };
         enum class BlockAlignament : uint8
         {
-            AsCurrentBlock,
-            ToRightOfCurrentBlock,
-            AsBlockStartToken,
+            ParentBlock,
+            ParentBlockWithIndent,
+            CurrentToken,
+            CurrentTokenWithIndent,
         };
         enum class BlockFlags : uint16
         {
