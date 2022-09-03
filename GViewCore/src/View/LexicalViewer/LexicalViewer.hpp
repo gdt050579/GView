@@ -104,6 +104,7 @@ namespace View
             uint64 hash;
             uint32 start, end, type;
             uint32 blockID; // for blocks
+            uint32 lineNo;
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
             TokenAlignament align;
@@ -297,7 +298,6 @@ namespace View
 
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index);
-            void PaintLineNumbers(Graphics::Renderer& renderer);
 
             void MoveToToken(uint32 index, bool selected);
             void MoveLeft(bool selected, bool stopAfterFirst);

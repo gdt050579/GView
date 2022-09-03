@@ -700,6 +700,7 @@ void Instance::Parse()
     this->lastLineNumber    = 0;
     this->currentHash       = 0;
     this->noItemsVisible    = true;
+    this->showMetaData      = true; // has to be true at this point to proper compute line numbers
 
     this->tokens.clear();
     this->blocks.clear();
@@ -721,6 +722,13 @@ void Instance::Parse()
         UpdateTokensInformation();
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
+
+        // step 3 (recompute line numbers)
+        // the list of tokens and blocks has been cleared so we know for sure that everything is expanded
+        for (auto& tok : this->tokens)
+        {
+            tok.lineNo = static_cast<uint32>(tok.y) + 1;
+        }
     }
 }
 void Instance::Reparse(bool openInNewWindow)
@@ -797,26 +805,7 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
         }
     }
 }
-void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
-{
-    auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
-    auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
 
-    renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
-    NumericFormatter num;
-    WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
-    params.Width = lineNrWidth - 2;
-    params.Color = lineMarkerColor;
-    params.X     = params.Width;
-    params.Align = TextAlignament::Right;
-    auto height  = this->GetHeight();
-
-    for (auto i = 0, value = Scroll.y + 1; (i < height) && (value <= this->lastLineNumber); i++, value++)
-    {
-        params.Y = i;
-        renderer.WriteText(num.ToDec(value), params);
-    }
-}
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index)
 {
     u16string_view txt = tok.GetText(this->text.text);
@@ -922,9 +911,24 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
+    auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
+    auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
+    // draw line number bar
+    renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
+
+    // check if there are items to be shown
     if (noItemsVisible)
         return;
     foldColumn.Clear(this->GetHeight());
+
+    NumericFormatter num;
+    WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
+
+    params.Width = lineNrWidth - 2;
+    params.Color = lineMarkerColor;
+    params.X     = params.Width;
+    params.Align = TextAlignament::Right;
+
     // paint token on cursor first (and show block highlight if needed)
     if (this->currentTokenIndex < this->tokens.size())
     {
@@ -933,6 +937,8 @@ void Instance::Paint(Graphics::Renderer& renderer)
         {
             this->currentHash = currentTok.hash;
             PaintToken(renderer, currentTok, this->currentTokenIndex);
+            params.Y = std::max<>(0, currentTok.y - Scroll.y);
+            renderer.WriteText(num.ToDec(currentTok.lineNo), params);
         }
     }
     else
@@ -943,6 +949,8 @@ void Instance::Paint(Graphics::Renderer& renderer)
     const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
+    uint32 lastLineNo         = 0;
+
     for (auto& t : this->tokens)
     {
         // skip hidden and current token
@@ -961,9 +969,14 @@ void Instance::Paint(Graphics::Renderer& renderer)
             continue;
         }
         PaintToken(renderer, t, idx);
+        if (t.lineNo != lastLineNo)
+        {
+            params.Y = std::max<>(0, t.y - Scroll.y);
+            renderer.WriteText(num.ToDec(t.lineNo), params);
+            lastLineNo = t.lineNo;
+        }
         idx++;
     }
-    PaintLineNumbers(renderer);
     foldColumn.Paint(renderer, this->lineNrWidth - 1, this);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
