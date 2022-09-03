@@ -725,9 +725,16 @@ void Instance::Parse()
 
         // step 3 (recompute line numbers)
         // the list of tokens and blocks has been cleared so we know for sure that everything is expanded
+        auto lastY  = -1;
+        auto lineNo = 0;
         for (auto& tok : this->tokens)
         {
-            tok.lineNo = static_cast<uint32>(tok.y) + 1;
+            if (tok.y != lastY)
+            {
+                lineNo++;
+                lastY = tok.y;
+            }
+            tok.lineNo = lineNo;
         }
     }
 }
