@@ -23,9 +23,9 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ICO::ICOFile(file);
+        return new ICO::ICOFile();
     }
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
     {
@@ -60,7 +60,7 @@ extern "C"
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto ico = win->GetObject()->type->To<ICO::ICOFile>();
+        auto ico = win->GetObject()->GetContentType<ICO::ICOFile>();
         ico->Update();
 
         // add viewer

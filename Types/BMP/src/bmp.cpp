@@ -21,9 +21,9 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new BMP::BMPFile(file);
+        return new BMP::BMPFile();
     }
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<BMP::BMPFile> bmp)
     {
@@ -38,12 +38,12 @@ extern "C"
     {
         GView::View::ImageViewer::Settings settings;
         settings.SetLoadImageCallback(bmp.ToBase<View::ImageViewer::LoadImageInterface>());
-        settings.AddImage(0, bmp->file->GetSize());
+        settings.AddImage(0, bmp->obj->GetData().GetSize());
         win->CreateViewer("ImageView", settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto bmp = win->GetObject()->type->To<BMP::BMPFile>();
+        auto bmp = win->GetObject()->GetContentType<BMP::BMPFile>();
         bmp->Update();
 
         // add viewer

@@ -38,7 +38,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
               "d:c,w:100%,h:100%",
               static_cast<uint32>(settings->cols),
               static_cast<uint32>(settings->rows),
-              AppCUI::Controls::GridFlags::Sort);
+              AppCUI::Controls::GridFlags::Sort | AppCUI::Controls::GridFlags::Filter | GridFlags::DisableDuplicates);
 
         grid->SetSeparator(settings->separator);
     }
@@ -52,14 +52,24 @@ std::string_view Instance::GetName()
     return name;
 }
 
-bool Instance::GoTo(unsigned long long offset)
+bool Instance::GoTo(uint64 offset)
 {
     return true;
 }
 
-bool Instance::Select(unsigned long long offset, unsigned long long size)
+bool Instance::Select(uint64 offset, uint64 size)
 {
     return true;
+}
+
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
 }
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
@@ -103,11 +113,6 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         PaintCursorInformationSeparator(renderer, x4 - 1, y1);
         PaintCursorInformationSelection(renderer, x5, y1);
     }
-}
-
-bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
-{
-    NOT_IMPLEMENTED(false);
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -161,7 +166,7 @@ void Instance::PopulateGrid()
         std::vector<AppCUI::Utils::ConstString> headerCS;
         for (const auto& [start, end] : header)
         {
-            const auto token = obj->cache.Get(start, static_cast<uint32>(end - start), false);
+            const auto token = obj->GetData().Get(start, static_cast<uint32>(end - start), false);
             headerCS.push_back(token);
         }
         std::advance(it, 1);
@@ -185,7 +190,7 @@ void Instance::PopulateGrid()
         for (auto itRow = row.begin(); itRow != row.end(); itRow++)
         {
             const auto j     = row.size() - std::abs(std::distance(row.end(), itRow));
-            const auto token = obj->cache.Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
+            const auto token = obj->GetData().Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
             const ConstString value{ token };
             grid->UpdateCell(static_cast<uint32>(j), static_cast<uint32>(i - settings->firstRowAsHeader), value);
         }
@@ -200,8 +205,8 @@ void GView::View::GridViewer::Instance::ProcessContent()
     std::map<uint64, std::pair<uint64, uint64>> lines;
     std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
 
-    const auto oSize = obj->cache.GetSize();
-    const auto cSize = obj->cache.GetCacheSize();
+    const auto oSize = obj->GetData().GetSize();
+    const auto cSize = obj->GetData().GetCacheSize();
 
     auto oSizeProcessed = 0ULL;
     auto lineStart      = 0ULL;
@@ -209,7 +214,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
 
     do
     {
-        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         const auto nPos = data.find_first_of('\n', 0);

@@ -115,24 +115,24 @@ void ErrorList::PopulateListView(AppCUI::Utils::Reference<AppCUI::Controls::List
     auto el = reinterpret_cast<InternalErrorList*>(data);
     if (el->errors.size() > 0)
     {
-        auto handle = listView->AddItem("Errors");
-        listView->SetItemType(handle, AppCUI::Controls::ListViewItemType::Highlighted);
+        auto item = listView->AddItem("Errors");
+        item.SetType(AppCUI::Controls::ListViewItem::Type::Highlighted);
         for (auto& text : el->errors)
         {
-            handle = listView->AddItem(text);
-            listView->SetItemType(handle, AppCUI::Controls::ListViewItemType::ErrorInformation);
-            listView->SetItemXOffset(handle, 2);
+            item = listView->AddItem(text);
+            item.SetType(AppCUI::Controls::ListViewItem::Type::ErrorInformation);
+            item.SetXOffset(2);
         }
     }
     if (el->warnings.size() > 0)
     {
-        auto handle = listView->AddItem("Warnings");
-        listView->SetItemType(handle, AppCUI::Controls::ListViewItemType::Highlighted);
+        auto item = listView->AddItem("Warnings");
+        item.SetType(AppCUI::Controls::ListViewItem::Type::Highlighted);
         for (auto& text : el->warnings)
         {
-            handle = listView->AddItem(text);
-            listView->SetItemType(handle, AppCUI::Controls::ListViewItemType::WarningInformation);
-            listView->SetItemXOffset(handle, 2);
+            item = listView->AddItem(text);
+            item.SetType(AppCUI::Controls::ListViewItem::Type::WarningInformation);
+            item.SetXOffset(2);
         }
     }
 }

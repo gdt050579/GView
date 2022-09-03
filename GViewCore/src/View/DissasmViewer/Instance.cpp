@@ -537,12 +537,23 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // chars.Resize(10);
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
+bool Instance::ShowGoToDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
 
     if (!MyLine.buttons.empty())
     {
         for (const auto& btn : MyLine.buttons)
             renderer.WriteSpecialCharacter(btn.x, btn.y, btn.c, btn.color);
     }
+std::string_view Instance::GetName()
+{
+    return "DissasmView";
 }
 
 void Instance::OnAfterResize(int newWidth, int newHeight)

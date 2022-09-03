@@ -13,6 +13,8 @@ constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
+    imgView->SetVScrollBarTopMargin(4);
+    imgView->SetHScrollBarLeftMarging(4);
 
     this->obj               = _obj;
     this->name              = _name;
@@ -168,13 +170,31 @@ bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
 }
+bool Instance::ShowGoToDialog()
+{
+    GoToDialog dlg(this->settings.get(), this->currentImageIndex, this->obj->GetData().GetSize());
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        if (dlg.ShouldGoToImage())
+        {
+            this->currentImageIndex = dlg.GetSelectedImageIndex();
+            LoadImage();
+        }
+        else
+        {
+            GoTo(dlg.GetFileOffset());
+        }
+    }
+    return true;
+}
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
 std::string_view Instance::GetName()
 {
     return this->name;
-}
-bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
-{
-    NOT_IMPLEMENTED(false);
 }
 //======================================================================[Cursor information]==================
 

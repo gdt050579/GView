@@ -53,10 +53,9 @@ namespace Type
             bool isIcoFormat;
             
           public:
-            Reference<GView::Utils::FileCache> file;
             std::vector<DirectoryEntry> dirs;
           public:
-            ICOFile(Reference<GView::Utils::FileCache> file);
+            ICOFile();
             virtual ~ICOFile()
             {
             }

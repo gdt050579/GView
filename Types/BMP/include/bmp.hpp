@@ -40,13 +40,11 @@ namespace Type
         class BMPFile : public TypeInterface, public View::ImageViewer::LoadImageInterface
         {
           public:
-            Reference<GView::Utils::FileCache> file;
             Header header;
             InfoHeader infoHeader;
-            
 
           public:
-            BMPFile(Reference<GView::Utils::FileCache> file);
+            BMPFile();
             virtual ~BMPFile()
             {
             }

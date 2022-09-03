@@ -59,8 +59,9 @@ namespace View
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
+            virtual bool ShowGoToDialog() override;
+            virtual bool ShowFindDialog() override;
             virtual std::string_view GetName() override;
-            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
@@ -72,7 +73,37 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        class GoToDialog : public Window
+        {
+            Reference<RadioBox> rbImageIndex;
+            Reference<ComboBox> cbImageList;
+            Reference<RadioBox> rbFileOffset;
+            Reference<TextField> txFileOffset;
+            uint64 maxSize;
+            uint64 resultedPos;
+            bool gotoImageIndex;
 
+            void UpdateEnableStatus();
+            void Validate();
+
+
+        public:
+            GoToDialog(Reference<SettingsData> settings, uint32 currentImageIndex, uint64 size);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            bool ShouldGoToImage() const
+            {
+                return gotoImageIndex;
+            }
+            uint32 GetSelectedImageIndex() const
+            {
+                return static_cast<uint32>(resultedPos);                
+            }
+            uint64 GetFileOffset() const
+            {
+                return resultedPos;
+            }
+        };
     } // namespace ImageViewer
 } // namespace View
 

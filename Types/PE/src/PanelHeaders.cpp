@@ -11,25 +11,22 @@ Panels::Headers::Headers(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Field", TextAlignament::Left, 16);
-    list->AddColumn("Value", TextAlignament::Left, 60);
+    list = Factory::ListView::Create(this, "d:c", { "n:Field,w:16", "n:Value,w:60" }, ListViewFlags::None);
 
     Update();
 }
 void Panels::Headers::AddHeader(std::string_view name)
 {
-    auto handle = list->AddItem(name);
-    list->SetItemType(handle, ListViewItemType::Category);
+    list->AddItem(name).SetType(ListViewItem::Type::Category);
 }
 void Panels::Headers::AddNumber(std::string_view name, uint32_t value)
 {
     LocalString<128> temp;
-    auto handle = list->AddItem(name, temp.Format("0x%X (Dec:%u)", value, value));
+    list->AddItem({ name, temp.Format("0x%X (Dec:%u)", value, value) });
 }
 void Panels::Headers::AddItem(std::string_view name, std::string_view value)
 {
-    auto handle = list->AddItem(name, value);
+    list->AddItem({ name, value });
 }
 void Panels::Headers::AddMagic(uint8* offset, uint32 size)
 {
@@ -45,7 +42,7 @@ void Panels::Headers::AddMagic(uint8* offset, uint32 size)
     temp.Add("\"  ");
     for (uint32 tr = 0; tr < size; tr++)
         temp.AddFormat("%02X ", offset[tr]);
-    auto handle = list->AddItem("Magic", temp);
+    list->AddItem({ "Magic", temp });
 }
 void Panels::Headers::Update()
 {
@@ -63,7 +60,6 @@ void Panels::Headers::Update()
     AddNumber("SizeOfOptionalHeader", pe->nth32.FileHeader.SizeOfOptionalHeader);
     AddItem("Machine", pe->GetMachine());
     AddNumber("Characteristics", pe->nth32.FileHeader.Characteristics);
-    
 
     AddHeader("DOS Header");
     AddMagic((uint8*) &pe->dos.e_magic, 2);

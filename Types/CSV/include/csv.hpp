@@ -27,11 +27,11 @@ namespace Type
             uint64_t panelsMask{ 0 };
 
           public:
-            Reference<GView::Object> obj;
-            Reference<GView::Utils::FileCache> file;
+            Reference<GView::Object> obj; // should not be here
+
 
           public:
-            CSVFile(Reference<GView::Utils::FileCache> fileCache);
+            CSVFile();
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;

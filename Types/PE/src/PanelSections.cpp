@@ -15,20 +15,24 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
     win  = _win;
     Base = 16;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 8);
-    list->AddColumn("FilePoz", TextAlignament::Right, 12);
-    list->AddColumn("FileSize", TextAlignament::Right, 12);
-    list->AddColumn("RVA", TextAlignament::Right, 12);
-    list->AddColumn("MemSize", TextAlignament::Right, 12);
-    list->AddColumn("PtrReloc", TextAlignament::Left, 10);
-    list->AddColumn("NrReloc", TextAlignament::Right, 10);
-    list->AddColumn("PtrLnNum", TextAlignament::Left, 10);
-    list->AddColumn("NrLnNum", TextAlignament::Right, 10);
-    list->AddColumn("Characteristics", TextAlignament::Left, 32);
+    list = Factory::ListView::Create(
+          this,
+          "d:c",
+          { "n:Name,w:8",
+            "n:FilePoz,a:r,w:12",
+            "n:FileSize,a:r,w:12",
+            "n:RVA,a:r,w:12",
+            "n:MemSize,a:r,w:12",
+            "n:PtrReloc,w:10",
+            "n:NrReloc,a:r,w:10",
+            "n:PtrLnNum,w:10",
+            "n:NrLnNum,a:r,w:10",
+            "n:Characteristics,w:32" },
+          ListViewFlags::None);
 
     Update();
 }
+
 std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
 {
     if (Base == 10)
@@ -36,18 +40,21 @@ std::string_view Panels::Sections::GetValue(NumericFormatter& n, uint32 value)
     else
         return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
 }
+
 void Panels::Sections::GoToSelectedSection()
 {
-    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->GoTo(sect->PointerToRawData);
 }
+
 void Panels::Sections::SelectCurrentSection()
 {
-    auto sect = list->GetItemData<PE::ImageSectionHeader>(list->GetCurrentItem());
+    auto sect = list->GetCurrentItem().GetData<PE::ImageSectionHeader>();
     if (sect.IsValid())
         win->GetCurrentView()->Select(sect->PointerToRawData, sect->SizeOfRawData);
 }
+
 void Panels::Sections::Update()
 {
     LocalString<128> temp;
@@ -56,20 +63,23 @@ void Panels::Sections::Update()
 
     for (auto tr = 0U; tr < pe->nrSections; tr++)
     {
+        auto& sect = pe->sect[tr];
         pe->CopySectionName(tr, temp);
         auto item = list->AddItem(temp);
-        list->SetItemData<PE::ImageSectionHeader>(item, pe->sect + tr);
-        list->SetItemText(item, 1, GetValue(n, pe->sect[tr].PointerToRawData));
-        list->SetItemText(item, 2, GetValue(n, pe->sect[tr].SizeOfRawData));
-        list->SetItemText(item, 3, GetValue(n, pe->sect[tr].VirtualAddress));
-        list->SetItemText(item, 4, GetValue(n, pe->sect[tr].Misc.VirtualSize));
-        list->SetItemText(item, 5, GetValue(n, pe->sect[tr].PointerToRelocations));
-        list->SetItemText(item, 6, GetValue(n, pe->sect[tr].NumberOfRelocations));
-        list->SetItemText(item, 7, GetValue(n, pe->sect[tr].PointerToLinenumbers));
-        list->SetItemText(item, 8, GetValue(n, pe->sect[tr].NumberOfLinenumbers));
+
+        item.SetData<PE::ImageSectionHeader>(pe->sect + tr);
+
+        item.SetText(1, GetValue(n, sect.PointerToRawData));
+        item.SetText(2, GetValue(n, sect.SizeOfRawData));
+        item.SetText(3, GetValue(n, sect.VirtualAddress));
+        item.SetText(4, GetValue(n, sect.Misc.VirtualSize));
+        item.SetText(5, GetValue(n, sect.PointerToRelocations));
+        item.SetText(6, GetValue(n, sect.NumberOfRelocations));
+        item.SetText(7, GetValue(n, sect.PointerToLinenumbers));
+        item.SetText(8, GetValue(n, sect.NumberOfLinenumbers));
 
         // caracteristics
-        const auto tmp = pe->sect[tr].Characteristics;
+        const auto tmp = sect.Characteristics;
         temp.SetFormat("0x%08X  [", tmp);
         if ((tmp & __IMAGE_SCN_MEM_READ) != 0)
             temp.AddChar('R');
@@ -107,7 +117,7 @@ void Panels::Sections::Update()
         {
             temp.Add(" [+]");
         }
-        list->SetItemText(item, 9, temp);
+        item.SetText(9, temp);
     }
 }
 
@@ -127,7 +137,7 @@ bool Panels::Sections::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedSection();
         return true;

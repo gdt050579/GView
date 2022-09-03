@@ -3,16 +3,12 @@
 using namespace GView::Type::ICO;
 using namespace AppCUI::Controls;
 
-
 Panels::Information::Information(Reference<GView::Type::ICO::ICOFile> _ico) : TabPage("&Information")
 {
-    ico      = _ico;
-    general = this->CreateChildControl<ListView>("x:0,y:0,w:100%,h:10", ListViewFlags::None);
-    general->AddColumn("Field", TextAlignament::Left, 12);
-    general->AddColumn("Value", TextAlignament::Left, 100);
+    ico     = _ico;
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Field,w:12", "n:Value,w:100" }, ListViewFlags::None);
 
-    issues = this->CreateChildControl<ListView>("x:0,y:21,w:100%,h:10", ListViewFlags::HideColumns);
-    issues->AddColumn("Info", TextAlignament::Left, 200);
+    issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
 
     this->Update();
 }
@@ -23,33 +19,32 @@ void Panels::Information::UpdateGeneralInformation()
 
     general->DeleteAllItems();
     general->AddItem("File");
-    //general->SetItemText(poz++, 1, (char*) pe->file->GetFileName(true));
-    // size
-    general->AddItem("Size", tempStr.Format("%s bytes",n.ToString(ico->file->GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()));
+    // general->SetItemText(poz++, 1, (char*) pe->obj->GetData().GetFileName(true));
+    //  size
+    general->AddItem(
+          { "Size",
+            tempStr.Format("%s bytes", n.ToString(ico->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
     // type
     if (ico->isIcoFormat)
-        general->AddItem("Type", "ICON");
+        general->AddItem({ "Type", "ICON" });
     else
-        general->AddItem("Type", "CURSOR");
+        general->AddItem({ "Type", "CURSOR" });
     // dirs
-    general->AddItem("Images", n.ToDec(ico->dirs.size()));
-
-
-
+    general->AddItem({ "Images", n.ToDec(static_cast<uint64>(ico->dirs.size())) });
 }
 
 void Panels::Information::UpdateIssues()
 {
-    //AppCUI::Controls::ItemHandle itemHandle;
-    //bool hasErrors   = false;
-    //bool hasWarnings = false;
+    // AppCUI::Controls::ItemHandle itemHandle;
+    // bool hasErrors   = false;
+    // bool hasWarnings = false;
 
-    //issues->DeleteAllItems();
+    // issues->DeleteAllItems();
 
-    //for (const auto& err : pe->errList)
+    // for (const auto& err : pe->errList)
     //{
-    //    if (err.type != PEFile::ErrorType::Error)
-    //        continue;
+    //     if (err.type != PEFile::ErrorType::Error)
+    //         continue;
 
     //    if (!hasErrors)
     //    {
@@ -62,10 +57,10 @@ void Panels::Information::UpdateIssues()
     //    issues->SetItemXOffset(itemHandle, 2);
     //}
 
-    //for (const auto& err : pe->errList)
+    // for (const auto& err : pe->errList)
     //{
-    //    if (err.type != PEFile::ErrorType::Warning)
-    //        continue;
+    //     if (err.type != PEFile::ErrorType::Warning)
+    //         continue;
 
     //    if (!hasWarnings)
     //    {
@@ -78,7 +73,7 @@ void Panels::Information::UpdateIssues()
     //    issues->SetItemXOffset(itemHandle, 2);
     //}
     //// hide if no issues
-    //issues->SetVisible(pe->errList.size() > 0);
+    // issues->SetVisible(pe->errList.size() > 0);
 }
 void Panels::Information::RecomputePanelsPositions()
 {
@@ -86,71 +81,71 @@ void Panels::Information::RecomputePanelsPositions()
     int last = 0;
     int w    = this->GetWidth();
     int h    = this->GetHeight();
-    
+
     if ((!general.IsValid()) || (!issues.IsValid()))
         return;
 
     issues->SetVisible(false);
     this->general->Resize(w, h);
 
-    //if (this->version->IsVisible())
-    //    last = 1;
-    //if (this->issues->IsVisible())
-    //    last = 2;
-    // if (InfoPanelCtx.pnlIcon->IsVisible()) last = 3;
-    
+    // if (this->version->IsVisible())
+    //     last = 1;
+    // if (this->issues->IsVisible())
+    //     last = 2;
+    //  if (InfoPanelCtx.pnlIcon->IsVisible()) last = 3;
+
     // resize
-/*    if (last == 0)
-    {
-        this->general->Resize(w, h - py);
-    }
-    else
-    {
-        if (this->general->GetItemsCount() > 15)
+    /*    if (last == 0)
         {
-            this->general->Resize(w, 18);
-            py += 18;
+            this->general->Resize(w, h - py);
         }
         else
         {
-            this->general->Resize(w, this->general->GetItemsCount() + 3);
-            py += (this->general->GetItemsCount() + 3);
-        }
-    }
-    if (this->version->IsVisible())
-    {
-        this->version->MoveTo(0, py);
-        if (last == 1)
-        {
-            this->version->Resize(w, h - py);
-        }
-        else
-        {
-            this->version->Resize(w, this->version->GetItemsCount() + 3);
-            py += (this->version->GetItemsCount() + 3);
-        }
-    }
-    if (this->issues->IsVisible())
-    {
-        this->issues->MoveTo(0, py);
-        if (last == 2)
-        {
-            this->issues->Resize(w, h - py);
-        }
-        else
-        {
-            if (this->issues->GetItemsCount() > 6)
+            if (this->general->GetItemsCount() > 15)
             {
-                this->issues->Resize(w, 8);
-                py += 8;
+                this->general->Resize(w, 18);
+                py += 18;
             }
             else
             {
-                this->issues->Resize(w, this->issues->GetItemsCount() + 2);
-                py += (this->issues->GetItemsCount() + 2);
+                this->general->Resize(w, this->general->GetItemsCount() + 3);
+                py += (this->general->GetItemsCount() + 3);
             }
         }
-    }*/
+        if (this->version->IsVisible())
+        {
+            this->version->MoveTo(0, py);
+            if (last == 1)
+            {
+                this->version->Resize(w, h - py);
+            }
+            else
+            {
+                this->version->Resize(w, this->version->GetItemsCount() + 3);
+                py += (this->version->GetItemsCount() + 3);
+            }
+        }
+        if (this->issues->IsVisible())
+        {
+            this->issues->MoveTo(0, py);
+            if (last == 2)
+            {
+                this->issues->Resize(w, h - py);
+            }
+            else
+            {
+                if (this->issues->GetItemsCount() > 6)
+                {
+                    this->issues->Resize(w, 8);
+                    py += 8;
+                }
+                else
+                {
+                    this->issues->Resize(w, this->issues->GetItemsCount() + 2);
+                    py += (this->issues->GetItemsCount() + 2);
+                }
+            }
+        }*/
 }
 void Panels::Information::Update()
 {
@@ -158,4 +153,3 @@ void Panels::Information::Update()
     UpdateIssues();
     RecomputePanelsPositions();
 }
-

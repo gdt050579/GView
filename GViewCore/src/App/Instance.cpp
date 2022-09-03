@@ -6,8 +6,10 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
-constexpr uint32 DEFAULT_CACHE_SIZE = 0x100000; // 1 MB
-constexpr uint32 MIN_CACHE_SIZE     = 0x10000;  // 64 K
+constexpr uint32 DEFAULT_CACHE_SIZE    = 0x100000; // 1 MB
+constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
+constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
+constexpr uint32 GENERIC_PLUGINS_FRAME = 100;
 
 struct _MenuCommand_
 {
@@ -64,21 +66,25 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
 
 Instance::Instance()
 {
-    this->defaultCacheSize = DEFAULT_CACHE_SIZE; // 1 MB
-    this->keyToChangeViews = Key::F4;
-    this->mnuWindow        = nullptr;
-    this->mnuHelp          = nullptr;
-    this->mnuFile          = nullptr;
+    this->defaultCacheSize  = DEFAULT_CACHE_SIZE; // 1 MB
+    this->Keys.changeViews  = Key::F4;
+    this->Keys.find         = Key::Alt | Key::F7;
+    this->Keys.switchToView = Key::Alt | Key::F;
+    this->Keys.goTo         = Key::F5;
+    this->mnuWindow         = nullptr;
+    this->mnuHelp           = nullptr;
+    this->mnuFile           = nullptr;
 }
 bool Instance::LoadSettings()
 {
     auto ini = AppCUI::Application::GetAppSettings();
     CHECK(ini, false, "");
-
+    CHECK(ini->GetSectionsCount() > 0, false, "");
     // check plugins
-    for (const auto& section : ini->GetSections())
+    for (auto section : *ini)
     {
-        if (String::StartsWith(section.GetName(), std::string_view("type."), true))
+        auto sectionName = section.GetName();
+        if (String::StartsWith(sectionName, "type.", true))
         {
             GView::Type::Plugin p;
             if (p.Init(section))
@@ -87,18 +93,33 @@ bool Instance::LoadSettings()
             }
             else
             {
-                errList.AddWarning("Fail to load type plugin ");
-            }            
+                errList.AddWarning("Fail to load type plugin (%s)", sectionName.data());
+            }
+        }
+        if (String::StartsWith(sectionName, "generic.", true))
+        {
+            GView::Generic::Plugin p;
+            if (p.Init(section))
+            {
+                this->genericPlugins.push_back(p);
+            }
+            else
+            {
+                errList.AddWarning("Fail to load generic plugin (%s)", sectionName.data());
+            }
         }
     }
+
     // sort all plugins based on their priority
     std::sort(this->typePlugins.begin(), this->typePlugins.end());
 
     // read instance settings
     auto sect               = ini->GetSection("GView");
     this->defaultCacheSize  = std::min<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
-    this->keyToChangeViews  = sect.GetValue("ChangeView").ToKey(Key::F4);
-    this->keyToSwitchToView = sect.GetValue("SwitchToView").ToKey(Key::F | Key::Alt);
+    this->Keys.changeViews  = sect.GetValue("Key.ChangeView").ToKey(Key::F4);
+    this->Keys.switchToView = sect.GetValue("Key.SwitchToView").ToKey(Key::F | Key::Alt);
+    this->Keys.find         = sect.GetValue("Key.Find").ToKey(Key::F7 | Key::Alt);
+    this->Keys.goTo         = sect.GetValue("Key.GoTo").ToKey(Key::F5);
 
     return true;
 }
@@ -126,18 +147,23 @@ bool Instance::Init()
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
     // set up handlers
-    auto dsk = AppCUI::Application::GetDesktop();
+    auto dsk                 = AppCUI::Application::GetDesktop();
     dsk->Handlers()->OnEvent = this;
     dsk->Handlers()->OnStart = this;
     return true;
 }
-bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext)
+bool Instance::Add(
+      GView::Object::Type objType,
+      std::unique_ptr<AppCUI::OS::DataObject> data,
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      uint32 PID,
+      std::string_view ext)
 {
-    auto win = std::make_unique<FileWindow>(name, this);
-    auto obj = win->GetObject();
-    CHECK(obj->cache.Init(std::move(file), this->defaultCacheSize), false, "Fail to instantiate window");
+    GView::Utils::DataCache cache;
+    CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
-    auto buf  = obj->cache.Get(0, 4096, false); // first 4k
+    auto buf  = cache.Get(0, 0x8800, false);
     auto* plg = &this->defaultPlugin;
     // iterate from existing types
     for (auto& pType : this->typePlugins)
@@ -148,28 +174,45 @@ bool Instance::Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils:
             break;
         }
     }
+    // create an instance of that object type
+    auto contentType = plg->CreateInstance();
+    CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
-    // create an instance of that type
-    obj->type = plg->CreateInstance(Reference<GView::Utils::FileCache>(&obj->cache));
-
-    // validate type
-    CHECK(obj->type, false, "`CreateInstance` returned a null pointer to a type object !");
+    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this);
 
     // instantiate window
     while (true)
     {
         CHECKBK(plg->PopulateWindow(win.get()), "Fail to populate file window !");
         win->Start(); // starts the window and set focus
-        // set window TAG (based on type)
-        win->SetTag(obj->type->GetTypeName(), "");
         auto res = AppCUI::Application::AddWindow(std::move(win));
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
     }
     // error case
-    delete obj->type;
-    obj->type = nullptr;
+    return false;
+}
+bool Instance::AddFolder(const std::filesystem::path& path)
+{
+    auto contentType = GView::Type::FolderViewPlugin::CreateInstance(path);
+    CHECK(contentType, false, "`CreateInstance` returned a null pointer to a type object !");
+
+    GView::Utils::DataCache cache;
+    auto win = std::make_unique<FileWindow>(
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this);
+
+    // instantiate window
+    while (true)
+    {
+        GView::Type::FolderViewPlugin::PopulateWindow(win.get());
+        win->Start(); // starts the window and set focus
+        auto res = AppCUI::Application::AddWindow(std::move(win));
+        CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
+
+        return true;
+    }
+    // error case
     return false;
 }
 void Instance::ShowErrors()
@@ -182,13 +225,38 @@ void Instance::ShowErrors()
 }
 bool Instance::AddFileWindow(const std::filesystem::path& path)
 {
-    auto f = std::make_unique<AppCUI::OS::File>();
-    if (f->OpenRead(path)==false)
+    try
+    {
+        if (std::filesystem::is_directory(path))
+        {
+            return AddFolder(path);
+        }
+        else
+        {
+            auto f = std::make_unique<AppCUI::OS::File>();
+            if (f->OpenRead(path) == false)
+            {
+                errList.AddError("Fail to open file: %s", path.u8string().c_str());
+                RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
+            }
+            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
+        }
+    }
+    catch (std::filesystem::filesystem_error /* e */)
     {
         errList.AddError("Fail to open file: %s", path.u8string().c_str());
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
-    return Add(std::move(f), path.u16string(), path.extension().string());
+}
+bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension)
+{
+    auto f = std::make_unique<AppCUI::OS::MemoryFile>();
+    if (f->Create(buf.GetData(), buf.GetLength()) == false)
+    {
+        errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
+        RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
+    }
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, "", 0, typeExtension);
 }
 void Instance::OpenFile()
 {
@@ -198,6 +266,33 @@ void Instance::OpenFile()
         if (AddFileWindow(res.value()) == false)
             ShowErrors();
     }
+}
+void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+{
+    auto idx = GENERIC_PLUGINS_CMDID;
+    for (auto& p : this->genericPlugins)
+    {
+        p.UpdateCommandBar(commandBar, idx);
+        idx += GENERIC_PLUGINS_FRAME;
+    }
+}
+uint32 Instance::GetObjectsCount()
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    CHECK(dsk.IsValid(), 0, "Fail to get Desktop object from AppCUI !");
+    return dsk->GetChildrenCount();
+}
+Reference<GView::Object> Instance::GetObject(uint32 index)
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
+    return dsk->GetChild(index).ToObjectRef<FileWindow>()->GetObject();
+}
+Reference<GView::Object> Instance::GetCurrentObject()
+{
+    auto dsk = AppCUI::Application::GetDesktop();
+    CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
+    return dsk->GetFocusedChild().ToObjectRef<FileWindow>()->GetObject();
 }
 //===============================[APPCUI HANDLERS]==============================
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
@@ -226,6 +321,14 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_FILE:
             OpenFile();
+            return true;
+        }
+        if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000))
+        {
+            auto packedValue = ((uint32) ID) - GENERIC_PLUGINS_CMDID;
+            // get current focused object
+
+            this->genericPlugins[packedValue / GENERIC_PLUGINS_FRAME].Run(packedValue % GENERIC_PLUGINS_FRAME, this->GetCurrentObject());
             return true;
         }
     }

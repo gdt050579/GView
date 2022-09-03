@@ -8,18 +8,24 @@ add_library(GViewCore SHARED)
 set_target_properties(GViewCore PROPERTIES PREFIX "lib")
 target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
+target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
+target_link_libraries(GViewCore PRIVATE LLVMDemangle)
+
+find_package(OpenSSL REQUIRED)
+if(OPENSSL_FOUND)
+    target_include_directories(GViewCore PRIVATE ${OPENSSL_INCLUDE_DIR})
+    target_link_libraries(GViewCore PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+endif()
+
 
 if (MSVC)
-    add_definitions(-DBUILD_FOR_WINDOWS)
     add_compile_options(-W3)
 elseif (APPLE)
-    add_definitions(-DBUILD_FOR_OSX)
     if (DEBUG_BUILD)
         add_compile_options(-g)
         add_compile_options(-W)
     endif()
 elseif (UNIX)
-    add_definitions(-DBUILD_FOR_UNIX)
     if (DEBUG_BUILD)
         add_compile_options(-g)
         add_compile_options(-W)
@@ -27,16 +33,16 @@ elseif (UNIX)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-     add_compile_options(-Wall -Wextra
-             -Wno-switch
-             -Wpointer-arith
-             -Wcast-qual
-             -Wredundant-decls
-             -Wctor-dtor-privacy
-             -Wwrite-strings
-             -Wdisabled-optimization
-             -Wzero-as-null-pointer-constant
-             -Wvla) # -pedantic
+    add_compile_options(-Wall -Wextra
+            -Wno-switch
+            -Wpointer-arith
+            -Wcast-qual
+            -Wredundant-decls
+            -Wctor-dtor-privacy
+            -Wwrite-strings
+            -Wdisabled-optimization
+            -Wzero-as-null-pointer-constant
+            -Wvla) # -pedantic
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
@@ -63,6 +69,8 @@ include_directories(src/View/ImageViewer)
 include_directories(src/View/GridViewer)
 include_directories(src/View/DissasmViewer)
 include_directories(src/View/TextViewer)
+include_directories(src/View/ContainerViewer)
+include_directories(src/View/LexicalViewer)
 add_subdirectory(src)
 add_subdirectory(3rdparty)
 
@@ -71,4 +79,3 @@ file(GLOB_RECURSE GVIEWCORE_HEADERS include/*.hpp)
 target_sources(GViewCore PRIVATE ${GVIEWCORE_HEADERS})
 get_target_property(GVIEWCORE_SOURCES GViewCore SOURCES)
 source_group(TREE ${CMAKE_SOURCE_DIR}/GViewCore FILES ${GVIEWCORE_SOURCES} ${GVIEWCORE_HEADERS})
-

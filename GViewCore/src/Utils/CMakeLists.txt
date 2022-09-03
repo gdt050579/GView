@@ -1,2 +1,10 @@
-target_sources(GViewCore PRIVATE CharacterSet.cpp FileCache.cpp ErrorList.cpp Selection.cpp Zone.cpp ZonesList.cpp)
+target_sources(GViewCore PRIVATE
+    CharacterSet.cpp
+    Demangle.cpp
+    ErrorList.cpp
+    DataCache.cpp
+    Selection.cpp
+    CharacterEncoding.cpp
+    Zone.cpp
+    ZonesList.cpp)
 

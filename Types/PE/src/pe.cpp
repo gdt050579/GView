@@ -9,6 +9,8 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+constexpr auto OVERLAY_BOOKMARK_VALUE = 0;
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
@@ -23,10 +25,12 @@ extern "C"
             return false;
         return nth32->Signature == PE::Constants::IMAGE_NT_SIGNATURE;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new PE::PEFile(file);
+        return new PE::PEFile();
     }
+
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
     {
         LocalString<128> tempStr;
@@ -37,8 +41,13 @@ extern "C"
         if (pe->nrSections > 0)
             settings.AddZone(pe->sectStart, pe->nrSections * sizeof(PE::ImageSectionHeader), pe->peCols.colSectDef, "SectDef");
 
+        if (pe->hasOverlay)
+        {
+            settings.AddBookmark(OVERLAY_BOOKMARK_VALUE, pe->computedSize);
+        }
+
         // sections
-        for (uint32_t tr = 0; tr < pe->nrSections; tr++)
+        for (uint32 tr = 0; tr < pe->nrSections; tr++)
         {
             if ((pe->sect[tr].PointerToRawData != 0) && (pe->sect[tr].SizeOfRawData > 0))
             {
@@ -55,7 +64,7 @@ extern "C"
         {
             if ((dr->VirtualAddress > 0) && (dr->Size > 0))
             {
-                if (tr == (uint8_t) PE::DirectoryType::Security)
+                if (tr == (uint8) PE::DirectoryType::Security)
                 {
                     settings.AddZone(dr->VirtualAddress, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
                 }
@@ -90,6 +99,45 @@ extern "C"
             settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth64.OptionalHeader.AddressOfEntryPoint));
         else
             settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
+
+        if (pe->hdr64)
+        {
+            if (pe->nth64.FileHeader.PointerToSymbolTable > 0)
+            {
+                settings.AddZone(
+                      pe->nth64.FileHeader.PointerToSymbolTable,
+                      (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
+                      pe->peCols.colSectDef,
+                      "SymbolTable");
+
+                const auto strTableOffset =
+                      pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+
+                uint32 strTableSize = 0;
+                pe->obj->GetData().Copy(strTableOffset, strTableSize);
+
+                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
+            }
+        }
+        else
+        {
+            if (pe->nth32.FileHeader.PointerToSymbolTable > 0)
+            {
+                settings.AddZone(
+                      pe->nth32.FileHeader.PointerToSymbolTable,
+                      (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
+                      pe->peCols.colSectDef,
+                      "SymbolTable");
+
+                const auto strTableOffset =
+                      pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+
+                uint32 strTableSize = 0;
+                pe->obj->GetData().Copy(strTableOffset, strTableSize);
+
+                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
+            }
+        }
 
         win->CreateViewer("BufferView", settings);
     }
@@ -150,14 +198,14 @@ UInt16 e_res[4];)");
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto pe = reinterpret_cast<PE::PEFile*>(win->GetObject()->type);
+        auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
         CreateBufferView(win, pe);
         CreateDissasmView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
-            win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(win->GetObject(), pe)), true);
         if (pe->HasPanel(PE::Panels::IDs::Headers))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Headers(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Sections))
@@ -172,8 +220,11 @@ UInt16 e_res[4];)");
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Resources(pe, win)), false);
         if (pe->HasPanel(PE::Panels::IDs::Icons))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Icons(pe, win)), true);
+        if (pe->HasPanel(PE::Panels::IDs::Symbols))
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::Symbols(pe, win)), false);
         return true;
     }
+
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect.UpdateValue("Pattern", "MZ", false);

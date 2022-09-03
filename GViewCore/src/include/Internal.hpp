@@ -26,11 +26,36 @@ namespace Utils
         Selection();
         void Clear();
         bool Clear(int index);
+        inline constexpr bool HasSelection(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start != INVALID_OFFSET;
+            return false;
+        }
+        inline constexpr bool HasAnySelection() const
+        {
+            for (uint32 index = 0; index < MAX_SELECTION_ZONES; index++)
+                if (zones[index].start != INVALID_OFFSET)
+                    return true;
+            return false;
+        }
         inline constexpr uint32 GetCount() const
         {
             return Selection::MAX_SELECTION_ZONES;
         }
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
+        inline uint64 GetSelectionStart(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start;
+            return INVALID_OFFSET;
+        }
+        inline uint64 GetSelectionEnd(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].end;
+            return INVALID_OFFSET;
+        }
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
@@ -75,8 +100,9 @@ namespace Utils
         AppCUI::Utils::FixSizeString<25> name;
 
         Zone();
-        void Set(unsigned long long s, unsigned long long e, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        void Set(uint64 s, uint64 e, AppCUI::Graphics::ColorPair c, std::string_view txt);
     };
+
     class ZonesList
     {
         Zone* list;
@@ -87,19 +113,170 @@ namespace Utils
       public:
         ZonesList();
         ~ZonesList();
-        bool Add(unsigned long long start, unsigned long long end, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
         bool Reserve(unsigned int count);
-        const Zone* OffsetToZone(unsigned long long offset);
+        const Zone* OffsetToZone(uint64 offset);
     };
+
+    struct UnicodeString
+    {
+        char16* text;
+        uint32 size;
+        uint32 allocated;
+
+        UnicodeString() : text(nullptr), size(0), allocated(0)
+        {
+        }
+        UnicodeString(char16* txt, uint32 sz, uint32 alloc) : text(txt), size(sz), allocated(alloc)
+        {
+        }
+        inline UnicodeString Clone()
+        {
+            if (text == nullptr)
+                return UnicodeString();
+            auto* tmp = new char16[size];
+            memcpy(tmp, text, this->size*sizeof(char16));
+            return UnicodeString(tmp, size, size);
+        }
+        inline void Destroy()
+        {
+            if (text != nullptr)
+                delete[] text;
+            text      = nullptr;
+            size      = 0;
+            allocated = 0;
+        }
+    };
+
+    namespace CharacterEncoding
+    {
+        enum class Encoding : uint8
+        {
+            Binary      = 0,
+            Ascii       = 1,
+            UTF8        = 2,
+            Unicode16LE = 3,
+            Unicode16BE = 4
+        };
+        class ExpandedCharacter
+        {
+            char16 unicodeValue;
+            uint16 length;
+
+          public:
+            ExpandedCharacter() : unicodeValue(0), length(0)
+            {
+            }
+            inline operator char16() const
+            {
+                return unicodeValue;
+            }
+            inline char16 GetChar() const
+            {
+                return unicodeValue;
+            }
+            inline uint32 Length() const
+            {
+                return length;
+            }
+            inline bool IsValid() const
+            {
+                return length > 0;
+            }
+            bool FromUTF8Buffer(const uint8* start, const uint8* end);
+            inline bool FromEncoding(Encoding e, const uint8* start, const uint8* end)
+            {
+                if (start >= end)
+                {
+                    unicodeValue = 0;
+                    length       = 0;
+                    return false;
+                }
+                switch (e)
+                {
+                case Encoding::Ascii:
+                case Encoding::Binary:
+                    unicodeValue = *start;
+                    length       = 1;
+                    return true;
+                case Encoding::Unicode16LE:
+                    if (start + 1 < end)
+                    {
+                        length       = 2;
+                        unicodeValue = *(const char16*) start;
+                        return true;
+                    }
+                    length       = 0;
+                    unicodeValue = 0;
+                    return false;
+                case Encoding::Unicode16BE:
+                    if (start + 1 < end)
+                    {
+                        length       = 2;
+                        unicodeValue = ((uint16) (*start) << 8) | (start[1]);
+                        return true;
+                    }
+                    length       = 0;
+                    unicodeValue = 0;
+                    return false;
+                case Encoding::UTF8:
+                    if ((*start) < 0x80)
+                    {
+                        unicodeValue = *start;
+                        length       = 1;
+                        return true;
+                    }
+                    return FromUTF8Buffer(start, end);
+                default:
+                    unicodeValue = 0;
+                    length       = 0;
+                    return false;
+                }
+            }
+        };
+
+        Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
+        UnicodeString ConvertToUnicode16(BufferView buf);
+    }; // namespace CharacterEncoding
 } // namespace Utils
+
+namespace Generic
+{
+    constexpr uint32 MAX_PLUGINS_COMMANDS = 8;
+    class Plugin
+    {
+        FixSizeString<29> Name;
+        struct
+        {
+            FixSizeString<25> Name;
+            Input::Key ShortKey;
+        } Commands[MAX_PLUGINS_COMMANDS];
+        uint32 CommandsCount;
+        bool (*fnRun)(const string_view command, Reference<GView::Object> currentObject);
+
+      public:
+        Plugin();
+        bool Init(AppCUI::Utils::IniSection section);
+        void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar, uint32 commandID);
+        void Run(uint32 commandIndex, Reference<GView::Object> currentObject);
+    };
+}; // namespace Generic
+
 namespace Type
 {
     namespace DefaultTypePlugin
     {
         bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
-        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache);
+        TypeInterface* CreateInstance();
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
-    }                                               // namespace DefaultTypePlugin
+    } // namespace DefaultTypePlugin
+
+    namespace FolderViewPlugin
+    {
+        TypeInterface* CreateInstance(const std::filesystem::path& path);
+        bool PopulateWindow(Reference<GView::View::WindowInterface> win);
+    } // namespace FolderViewPlugin
+
     constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
     class SimplePattern
     {
@@ -116,6 +293,7 @@ namespace Type
             return Count == 0;
         }
     };
+
     constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31; // must be less than 255 !!!
     class Plugin
     {
@@ -129,7 +307,7 @@ namespace Type
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
-        TypeInterface* (*fnCreateInstance)(Reference<GView::Utils::FileCache> fileCache);
+        TypeInterface* (*fnCreateInstance)();
         bool (*fnPopulateWindow)(Reference<GView::View::WindowInterface> win);
 
         bool LoadPlugin();
@@ -140,13 +318,14 @@ namespace Type
         void Init();
         bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
-        TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> fileCache) const;
+        TypeInterface* CreateInstance() const;
         inline bool operator<(const Plugin& plugin) const
         {
             return Priority > plugin.Priority;
         }
     };
 } // namespace Type
+
 namespace App
 {
     namespace MenuCommands
@@ -170,6 +349,7 @@ namespace App
         constexpr int OPEN_PROCESS_TREE = 120003;
 
     }; // namespace MenuCommands
+
     class Instance : public AppCUI::Utils::PropertiesInterface,
                      public AppCUI::Controls::Handlers::OnEventInterface,
                      public AppCUI::Controls::Handlers::OnStartInterface
@@ -178,34 +358,58 @@ namespace App
         AppCUI::Controls::Menu* mnuHelp;
         AppCUI::Controls::Menu* mnuFile;
         std::vector<GView::Type::Plugin> typePlugins;
+        std::vector<GView::Generic::Plugin> genericPlugins;
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
-        AppCUI::Input::Key keyToChangeViews, keyToSwitchToView;
+        struct
+        {
+            AppCUI::Input::Key changeViews;
+            AppCUI::Input::Key switchToView;
+            AppCUI::Input::Key goTo;
+            AppCUI::Input::Key find;
+        } Keys;
 
         bool BuildMainMenus();
         bool LoadSettings();
         void OpenFile();
         void ShowErrors();
-        bool Add(std::unique_ptr<AppCUI::OS::IFile> file, const AppCUI::Utils::ConstString& name, std::string_view ext);
+        bool Add(
+              GView::Object::Type objType,
+              std::unique_ptr<AppCUI::OS::DataObject> data,
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint32 PID,
+              std::string_view ext);
+        bool AddFolder(const std::filesystem::path& path);
 
       public:
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension);
+        void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
         constexpr inline uint32 GetDefaultCacheSize() const
         {
             return this->defaultCacheSize;
         }
-        constexpr inline AppCUI::Input::Key GetKeyToChangeViewes() const
+        constexpr inline AppCUI::Input::Key GetChangeViewesKey() const
         {
-            return this->keyToChangeViews;
+            return this->Keys.changeViews;
         }
-        constexpr inline AppCUI::Input::Key GetKeyToSwitchToView() const
+        constexpr inline AppCUI::Input::Key GetSwitchToViewKey() const
         {
-            return this->keyToSwitchToView;
+            return this->Keys.switchToView;
+        }
+        constexpr inline AppCUI::Input::Key GetGoToKey() const
+        {
+            return this->Keys.goTo;
+        }
+        constexpr inline AppCUI::Input::Key GetFindKey() const
+        {
+            return this->Keys.find;
         }
 
         // property interface
@@ -218,29 +422,34 @@ namespace App
         // AppCUI Handlers
         virtual bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
         virtual void OnStart(Reference<Control> control) override;
+
+        // infos
+        uint32 GetObjectsCount();
+        Reference<GView::Object> GetObject(uint32 index);
+        Reference<GView::Object> GetCurrentObject();
     };
+
     class FileWindowProperties : public Window
     {
       public:
         FileWindowProperties(Reference<Tab> viewContainer);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
-    class FileWindow : public Window, public GView::View::WindowInterface, public AppCUI::Controls::Handlers::OnFocusInterface
+
+    class FileWindow : public Window, public GView::View::WindowInterface
     {
         Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
         ItemHandle cursorInfoHandle;
-        GView::Object obj;
+        std::unique_ptr<GView::Object> obj;
         unsigned int defaultCursorViewSize;
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
 
-        void UpdateDefaultPanelsSizes(Reference<Splitter> splitter);
-
       public:
-        FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> gviewApp);
+        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);
 
         void Start();
 
@@ -251,19 +460,21 @@ namespace App
         bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
+        bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
+
         Reference<View::ViewControl> GetCurrentView() override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event eventType, int) override;
-        void OnFocus(Reference<Control> control) override;
     };
-    class ErrorDialog: public AppCUI::Controls::Window
+
+    class ErrorDialog : public AppCUI::Controls::Window
     {
       public:
         ErrorDialog(const GView::Utils::ErrorList& errList);
         bool OnEvent(Reference<Control> control, Event eventType, int ID) override;
     };
 } // namespace App
-
 } // namespace GView

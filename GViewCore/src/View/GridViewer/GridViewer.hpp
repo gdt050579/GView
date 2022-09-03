@@ -56,10 +56,11 @@ namespace View
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
-            bool GoTo(unsigned long long offset) override;
-            bool Select(unsigned long long offset, unsigned long long size) override;
+            bool GoTo(uint64 offset) override;
+            bool Select(uint64 offset, uint64 size) override;
+            virtual bool ShowGoToDialog() override;
+            virtual bool ShowFindDialog() override;
             std::string_view GetName() override;
-            virtual bool ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size) override;
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

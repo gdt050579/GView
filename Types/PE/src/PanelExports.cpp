@@ -11,10 +11,7 @@ Panels::Exports::Exports(Reference<GView::Type::PE::PEFile> _pe, Reference<GView
     pe  = _pe;
     win = _win;
 
-    list = this->CreateChildControl<ListView>("d:c", ListViewFlags::None);
-    list->AddColumn("Name", TextAlignament::Left, 60);
-    list->AddColumn("Ord", TextAlignament::Left, 5);
-    list->AddColumn("RVA", TextAlignament::Left, 12);
+    list = Factory::ListView::Create(this, "d:c", { "n:Name,w:60", "n:Ord,w:5", "n:RVA,w:12" }, ListViewFlags::None);
 
     Update();
 }
@@ -26,8 +23,8 @@ void Panels::Exports::Update()
     list->DeleteAllItems();
     for (auto& exp : pe->exp)
     {
-        auto handle = list->AddItem(exp.Name, n.ToDec(exp.Ordinal), temp.Format("%u (0x%08X)", exp.RVA, exp.RVA));
-        list->SetItemData(handle, (uint64) pe->ConvertAddress(exp.RVA, AddressType::RVA, AddressType::FileOffset));
+        list->AddItem({ exp.Name, n.ToDec(exp.Ordinal), temp.Format("%u (0x%08X)", exp.RVA, exp.RVA) })
+              .SetData((uint64) pe->ConvertAddress(exp.RVA, AddressType::RVA, AddressType::FileOffset));
     }
 }
 bool Panels::Exports::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -39,9 +36,9 @@ bool Panels::Exports::OnEvent(Reference<Control> ctrl, Event evnt, int controlID
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if ((evnt == Event::ListViewItemClicked) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
+    if ((evnt == Event::ListViewItemPressed) || ((evnt == Event::Command) && (controlID == PE_EXP_GOTO)))
     {
-        auto addr = list->GetItemData(list->GetCurrentItem(), GView::Utils::INVALID_OFFSET);
+        auto addr = list->GetCurrentItem().GetData(GView::Utils::INVALID_OFFSET);
         if (addr != GView::Utils::INVALID_OFFSET)
             win->GetCurrentView()->GoTo(addr);
         return true;
