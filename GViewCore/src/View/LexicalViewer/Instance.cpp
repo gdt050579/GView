@@ -117,27 +117,6 @@ void Instance::RecomputeTokenPositions()
     else
         ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
-    this->lineNrWidth    = 0;
-    this->lastLineNumber = 0;
-    if (this->noItemsVisible == false)
-    {
-        // find the last visible
-        auto idx = (uint32) (this->tokens.size() - 1);
-        while ((idx > 0) && (this->tokens[idx].IsVisible() == false))
-            idx--;
-        // worst case, the fist item should be visible (if none is tham noItemsVisible can not be false)
-        this->lastLineNumber = tokens[idx].y + tokens[idx].height;
-        if (lastLineNumber < 100)
-            this->lineNrWidth = 4;
-        else if (lastLineNumber < 1000)
-            this->lineNrWidth = 5;
-        else if (lastLineNumber < 10000)
-            this->lineNrWidth = 6;
-        else if (lastLineNumber < 100000)
-            this->lineNrWidth = 7;
-        else
-            this->lineNrWidth = 8;
-    }
 }
 void Instance::UpdateTokensInformation()
 {
@@ -736,6 +715,20 @@ void Instance::Parse()
             }
             tok.lineNo = lineNo;
         }
+        // at the end --> lineNo is the highest line number
+        this->lineNrWidth    = 0;
+        this->lastLineNumber = lineNo;
+
+        if (lastLineNumber < 100)
+            this->lineNrWidth = 4;
+        else if (lastLineNumber < 1000)
+            this->lineNrWidth = 5;
+        else if (lastLineNumber < 10000)
+            this->lineNrWidth = 6;
+        else if (lastLineNumber < 100000)
+            this->lineNrWidth = 7;
+        else
+            this->lineNrWidth = 8;
     }
 }
 void Instance::Reparse(bool openInNewWindow)
@@ -1764,7 +1757,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
             xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
             xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
         }
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 9, "Col:", tmp.Format("%d", tok.x + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs:", tmp.Format("%u", tok.start));
         if (tok.error.Len() > 0)
@@ -1777,7 +1770,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
         PrintSelectionInfo(1, xPoz, 0, 16, r);
         xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
-        this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
@@ -1792,7 +1785,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         PrintSelectionInfo(1, 0, 1, 16, r);
         xPoz = PrintSelectionInfo(2, 0, 2, 16, r);
         PrintSelectionInfo(3, xPoz, 0, 16, r);
-        this->WriteCursorInfo(r, xPoz, 1, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 1, 16, "Line: ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         xPoz = this->WriteCursorInfo(r, xPoz, 2, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
         this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
@@ -1808,7 +1801,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = PrintSelectionInfo(3, 0, 3, 16, r);
 
         // second colum
-        this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         this->WriteCursorInfo(r, xPoz, 1, 20, "Col     : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 2, 20, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 3, 20, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
