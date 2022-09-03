@@ -956,7 +956,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
     const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
-    uint32 lastLineNo         = 0;
+    int32 lastY               = -1;
 
     for (auto& t : this->tokens)
     {
@@ -976,11 +976,11 @@ void Instance::Paint(Graphics::Renderer& renderer)
             continue;
         }
         PaintToken(renderer, t, idx);
-        if (t.lineNo != lastLineNo)
+        if (t.y != lastY)
         {
             params.Y = std::max<>(0, t.y - Scroll.y);
             renderer.WriteText(num.ToDec(t.lineNo), params);
-            lastLineNo = t.lineNo;
+            lastY = t.y;
         }
         idx++;
     }
