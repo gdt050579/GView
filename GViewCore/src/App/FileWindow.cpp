@@ -100,6 +100,10 @@ void FileWindow::ShowFindDialog()
 }
 void FileWindow::ShowCopyDialog()
 {
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowCopyDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Copy command !");
+    }
 }
 
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)

@@ -191,7 +191,10 @@ bool Instance::ShowFindDialog()
 {
     NOT_IMPLEMENTED(false);
 }
-
+bool Instance::ShowCopyDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
 std::string_view Instance::GetName()
 {
     return this->name;
