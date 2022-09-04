@@ -448,6 +448,11 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
 
+        void ShowFilePropertiesDialog();
+        void ShowGoToDialog();
+        void ShowFindDialog();
+        void ShowCopyDialog();
+
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);
 
