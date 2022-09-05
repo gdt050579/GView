@@ -741,12 +741,13 @@ namespace View
         };
         enum class StringFormat : uint32
         {
-            SingleQuotes         = 0x00000001, // "..."
-            DoubleQuotes         = 0x00000002, // '...'
-            TripleQuotes         = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences = 0x00000008, // "...\n..."
-            MultiLine            = 0x00000010, // string accross mulitple lines
-            All                  = 0xFFFFFFFF, // all possible forms of strings
+            SingleQuotes                = 0x00000001, // "..."
+            DoubleQuotes                = 0x00000002, // '...'
+            TripleQuotes                = 0x00000004, // '''...''' or """..."""
+            AllowEscapeSequences        = 0x00000008, // "...\n..."
+            MultiLine                   = 0x00000010, // string accross mulitple lines
+            LineContinuityWithBackslash = 0x00000020, // "   \<newline>   "
+            All                         = 0xFFFFFFFF, // all possible forms of strings
         };
         enum class NumberFormat : uint32
         {
