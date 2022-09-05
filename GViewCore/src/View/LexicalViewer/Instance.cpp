@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
-constexpr int32 CMD_ID_PRETTY_FORMAT    = 0xBF01;
+constexpr int32 CMD_ID_SAVE_AS          = 0xBF01;
 constexpr int32 CMD_ID_DELETE           = 0xBF02;
 constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
 constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
@@ -1012,11 +1012,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:OFF", CMD_ID_SHOW_METADATA);
 
-    if (this->prettyFormat)
-        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Pretty", CMD_ID_PRETTY_FORMAT);
-    else
-        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Original", CMD_ID_PRETTY_FORMAT);
-
     if (this->noItemsVisible == false)
         commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
 
@@ -1028,6 +1023,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.foldAll, "Fold all", CMD_ID_FOLD_ALL);
     commandBar.SetCommand(config.Keys.expandAll, "Expand all", CMD_ID_EXPAND_ALL);
     commandBar.SetCommand(config.Keys.showPlugins, "Plugins", CMD_ID_SHOW_PLUGINS);
+    commandBar.SetCommand(config.Keys.saveAs, "Save As", CMD_ID_SAVE_AS);
 
     return false;
 }

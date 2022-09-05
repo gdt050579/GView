@@ -202,9 +202,9 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key showMetaData;
+                AppCUI::Input::Key saveAs;
                 AppCUI::Input::Key showPlugins;
-                AppCUI::Input::Key prettyFormat;
+                AppCUI::Input::Key showMetaData;
                 AppCUI::Input::Key changeSelectionType;
                 AppCUI::Input::Key foldAll;
                 AppCUI::Input::Key expandAll;
