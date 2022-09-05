@@ -475,6 +475,13 @@ namespace View
                 return selectedLineNo;
             }
         };
+        class SaveAsDialog : public Window
+        {
+          public:
+            SaveAsDialog();
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+        };
 
     } // namespace LexicalViewer
 } // namespace View

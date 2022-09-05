@@ -1657,6 +1657,8 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
+    SaveAsDialog dlg;
+    dlg.Show();
 }
 std::string_view Instance::GetName()
 {
