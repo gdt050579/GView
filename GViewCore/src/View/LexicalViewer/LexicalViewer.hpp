@@ -319,6 +319,7 @@ namespace View
             void EditCurrentToken();
             void DeleteTokens();
             void ShowPlugins();
+            void ShowSaveAsDialog();
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();

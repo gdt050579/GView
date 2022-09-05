@@ -1507,10 +1507,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         this->showMetaData = !this->showMetaData;
         this->RecomputeTokenPositions();
         return true;
-    case CMD_ID_PRETTY_FORMAT:
-        this->prettyFormat = !this->prettyFormat;
-        this->RecomputeTokenPositions();
-        return true;
+    //case CMD_ID_PRETTY_FORMAT:
+    //    this->prettyFormat = !this->prettyFormat;
+    //    this->RecomputeTokenPositions();
+    //    return true;
     case CMD_ID_DELETE:
         this->DeleteTokens();
         return true;
@@ -1525,6 +1525,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case CMD_ID_SHOW_PLUGINS:
         this->ShowPlugins();
+        return true;
+    case CMD_ID_SAVE_AS:
+        this->ShowSaveAsDialog();
         return true;
     }
     return false;
@@ -1651,6 +1654,9 @@ void Instance::ShowPlugins()
         textClone.Destroy();
         return;
     }
+}
+void Instance::ShowSaveAsDialog()
+{
 }
 std::string_view Instance::GetName()
 {
