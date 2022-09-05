@@ -477,10 +477,26 @@ namespace View
         };
         class SaveAsDialog : public Window
         {
+            Reference<TextField> txPath;
+            Reference<ComboBox> comboEncoding, comboNewLine;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
           public:
             SaveAsDialog();
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+            std::string_view GetNewLineFormat();
+            CharacterEncoding::Encoding GetTextEncoding();
+            bool HasBOM();
+
+            inline bool ShouldBackupOriginalFile()
+            {
+                return cbBackupOriginalFile->IsChecked();
+            }
+            inline bool ShouldOpenANewWindow()
+            {
+                return cbOpenInNewWindow->IsChecked();
+            }
         };
 
     } // namespace LexicalViewer
