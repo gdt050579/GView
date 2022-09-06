@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
-constexpr int32 CMD_ID_PRETTY_FORMAT    = 0xBF01;
+constexpr int32 CMD_ID_SAVE_AS          = 0xBF01;
 constexpr int32 CMD_ID_DELETE           = 0xBF02;
 constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
 constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
@@ -117,27 +117,6 @@ void Instance::RecomputeTokenPositions()
     else
         ComputeOriginalPositions();
     EnsureCurrentItemIsVisible();
-    this->lineNrWidth    = 0;
-    this->lastLineNumber = 0;
-    if (this->noItemsVisible == false)
-    {
-        // find the last visible
-        auto idx = (uint32) (this->tokens.size() - 1);
-        while ((idx > 0) && (this->tokens[idx].IsVisible() == false))
-            idx--;
-        // worst case, the fist item should be visible (if none is tham noItemsVisible can not be false)
-        this->lastLineNumber = tokens[idx].y + tokens[idx].height;
-        if (lastLineNumber < 100)
-            this->lineNrWidth = 4;
-        else if (lastLineNumber < 1000)
-            this->lineNrWidth = 5;
-        else if (lastLineNumber < 10000)
-            this->lineNrWidth = 6;
-        else if (lastLineNumber < 100000)
-            this->lineNrWidth = 7;
-        else
-            this->lineNrWidth = 8;
-    }
 }
 void Instance::UpdateTokensInformation()
 {
@@ -299,6 +278,21 @@ void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd,
             continue;
         tok.x += dif;
     }
+    if (idxEnd > 0)
+    {
+        // move all tokens after the end of the block with the same diff
+        auto lastLineY = this->tokens[idxEnd - 1].y;
+        auto len       = static_cast<uint32>(this->tokens.size());
+        for (auto idx = idxEnd; idx < len; idx++)
+        {
+            auto& tok = this->tokens[idx];
+            if (tok.IsVisible() == false)
+                continue;
+            if (tok.y != lastLineY)
+                break;
+            tok.x += dif;
+        }
+    }
 }
 void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset)
 {
@@ -329,8 +323,8 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
         tok.x += dif;
         if (tok.IsBlockStarter())
         {
-            const auto& block = this->blocks[tok.blockID];
-            auto endToken     = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
+            auto& block   = this->blocks[tok.blockID];
+            auto endToken = block.HasEndMarker() ? block.tokenEnd : block.tokenEnd + 1;
             if (tok.IsFolded())
             {
                 // nothing to do
@@ -345,14 +339,17 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             }
             switch (block.align)
             {
-            case BlockAlignament::AsCurrentBlock:
-            case BlockAlignament::ToRightOfCurrentBlock:
+            case BlockAlignament::ParentBlock:
+            case BlockAlignament::ParentBlockWithIndent:
                 // align until current line ends --> if a sameColumn flag is found , align the rest of the block as well
                 PrettyFormatIncreaseUntilNewLineXWithValue(idx + 1, endToken, tok.y, dif);
                 break;
-            case BlockAlignament::AsBlockStartToken:
+            case BlockAlignament::CurrentToken:
+            case BlockAlignament::CurrentTokenWithIndent:
                 // all visible tokens must be increaset with diff
                 PrettyFormatIncreaseAllXWithValue(idx + 1, endToken, dif);
+                lastLine = -1; // required so that we don't add diff twice
+                block.leftHighlightMargin += dif;
                 break;
             default:
                 // do nothing --> leave the block as it is
@@ -500,6 +497,13 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                 manager.firstOnNewLine = true;
                 manager.y++;
             }
+            if (((tok.align & TokenAlignament::WrapToNextLine) != TokenAlignament::None) && (manager.x > (int) this->settings->maxWidth))
+            {
+                manager.x              = leftMargin + indent * settings->indentWidth;
+                manager.spaceAdded     = true;
+                manager.firstOnNewLine = true;
+                manager.y++;
+            }
         }
         if (tok.IsBlockStarter())
         {
@@ -509,19 +513,24 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             int32 blockMarginLeft = 0;
             switch (block.align)
             {
-            case BlockAlignament::AsCurrentBlock:
+            case BlockAlignament::ParentBlock:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = leftMargin;
                 block.leftHighlightMargin = leftMargin;
                 break;
-            case BlockAlignament::ToRightOfCurrentBlock:
+            case BlockAlignament::ParentBlockWithIndent:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = leftMargin + (indent + 1) * settings->indentWidth;
                 block.leftHighlightMargin = leftMargin + indent * settings->indentWidth;
                 break;
-            case BlockAlignament::AsBlockStartToken:
+            case BlockAlignament::CurrentToken:
                 blockMarginTop            = manager.y;
                 blockMarginLeft           = manager.x;
+                block.leftHighlightMargin = manager.x;
+                break;
+            case BlockAlignament::CurrentTokenWithIndent:
+                blockMarginTop            = manager.y;
+                blockMarginLeft           = manager.x + settings->indentWidth;
                 block.leftHighlightMargin = manager.x;
                 break;
             default:
@@ -533,7 +542,12 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
             if (((idx + 1) < endToken) && (tok.IsFolded() == false))
             {
                 // not an empty block and not folded
-                manager.x = blockMarginLeft;
+                if (manager.firstOnNewLine)
+                {
+                    // of the new token has already been moved to the next like, make sure that the "x" offset is alligned to the new block
+                    // position
+                    manager.x = blockMarginLeft;
+                }
                 manager.y = blockMarginTop;
                 PrettyFormatForBlock(idx + 1, endToken, blockMarginLeft, blockMarginTop, manager);
                 if (manager.x == blockMarginLeft)
@@ -633,6 +647,32 @@ uint32 Instance::CountSimilarTokens(uint32 start, uint32 end, uint64 hash)
     return count;
 }
 
+void Instance::MakeTokenVisible(uint32 index)
+{
+    if (static_cast<size_t>(index) >= this->tokens.size())
+        return;
+    auto& tok    = this->tokens[index];
+    auto blockID = BlockObject::INVALID_ID;
+    if (tok.IsBlockStarter())
+    {
+        tok.SetFolded(false);
+        tok.SetVisible(true);
+        if (index == 0)
+            return;
+        // find the block that contains the current block (start with the precedent token)
+        blockID = TokenToBlock(index - 1);
+    }
+    else
+    {
+        tok.SetVisible(true);
+        // find the block that contains the current bloc
+        blockID = TokenToBlock(index);
+    }
+    if (blockID == BlockObject::INVALID_ID)
+        return;
+    MakeTokenVisible(this->blocks[blockID].tokenStart);
+}
+
 void Instance::EnsureCurrentItemIsVisible()
 {
     if (this->noItemsVisible)
@@ -665,6 +705,7 @@ void Instance::Parse()
     this->lastLineNumber    = 0;
     this->currentHash       = 0;
     this->noItemsVisible    = true;
+    this->showMetaData      = true; // has to be true at this point to proper compute line numbers
 
     this->tokens.clear();
     this->blocks.clear();
@@ -686,6 +727,34 @@ void Instance::Parse()
         UpdateTokensInformation();
         RecomputeTokenPositions();
         MoveToClosestVisibleToken(0, false);
+
+        // step 3 (recompute line numbers)
+        // the list of tokens and blocks has been cleared so we know for sure that everything is expanded
+        auto lastY  = -1;
+        auto lineNo = 0;
+        for (auto& tok : this->tokens)
+        {
+            if (tok.y != lastY)
+            {
+                lineNo++;
+                lastY = tok.y;
+            }
+            tok.lineNo = lineNo;
+        }
+        // at the end --> lineNo is the highest line number
+        this->lineNrWidth    = 0;
+        this->lastLineNumber = lineNo;
+
+        if (lastLineNumber < 100)
+            this->lineNrWidth = 4;
+        else if (lastLineNumber < 1000)
+            this->lineNrWidth = 5;
+        else if (lastLineNumber < 10000)
+            this->lineNrWidth = 6;
+        else if (lastLineNumber < 100000)
+            this->lineNrWidth = 7;
+        else
+            this->lineNrWidth = 8;
     }
 }
 void Instance::Reparse(bool openInNewWindow)
@@ -762,26 +831,7 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
         }
     }
 }
-void Instance::PaintLineNumbers(Graphics::Renderer& renderer)
-{
-    auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
-    auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
 
-    renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
-    NumericFormatter num;
-    WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
-    params.Width = lineNrWidth - 2;
-    params.Color = lineMarkerColor;
-    params.X     = params.Width;
-    params.Align = TextAlignament::Right;
-    auto height  = this->GetHeight();
-
-    for (auto i = 0, value = Scroll.y + 1; (i < height) && (value <= this->lastLineNumber); i++, value++)
-    {
-        params.Y = i;
-        renderer.WriteText(num.ToDec(value), params);
-    }
-}
 void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index)
 {
     u16string_view txt = tok.GetText(this->text.text);
@@ -887,9 +937,24 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
 }
 void Instance::Paint(Graphics::Renderer& renderer)
 {
+    auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
+    auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
+    // draw line number bar
+    renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
+
+    // check if there are items to be shown
     if (noItemsVisible)
         return;
     foldColumn.Clear(this->GetHeight());
+
+    NumericFormatter num;
+    WriteTextParams params(WriteTextFlags::FitTextToWidth | WriteTextFlags::SingleLine);
+
+    params.Width = lineNrWidth - 2;
+    params.Color = lineMarkerColor;
+    params.X     = params.Width;
+    params.Align = TextAlignament::Right;
+
     // paint token on cursor first (and show block highlight if needed)
     if (this->currentTokenIndex < this->tokens.size())
     {
@@ -898,6 +963,8 @@ void Instance::Paint(Graphics::Renderer& renderer)
         {
             this->currentHash = currentTok.hash;
             PaintToken(renderer, currentTok, this->currentTokenIndex);
+            params.Y = std::max<>(0, currentTok.y - Scroll.y);
+            renderer.WriteText(num.ToDec(currentTok.lineNo), params);
         }
     }
     else
@@ -908,6 +975,8 @@ void Instance::Paint(Graphics::Renderer& renderer)
     const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
+    int32 lastY               = -1;
+
     for (auto& t : this->tokens)
     {
         // skip hidden and current token
@@ -926,9 +995,14 @@ void Instance::Paint(Graphics::Renderer& renderer)
             continue;
         }
         PaintToken(renderer, t, idx);
+        if (t.y != lastY)
+        {
+            params.Y = std::max<>(0, t.y - Scroll.y);
+            renderer.WriteText(num.ToDec(t.lineNo), params);
+            lastY = t.y;
+        }
         idx++;
     }
-    PaintLineNumbers(renderer);
     foldColumn.Paint(renderer, this->lineNrWidth - 1, this);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -937,11 +1011,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:ON", CMD_ID_SHOW_METADATA);
     else
         commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:OFF", CMD_ID_SHOW_METADATA);
-
-    if (this->prettyFormat)
-        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Pretty", CMD_ID_PRETTY_FORMAT);
-    else
-        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Original", CMD_ID_PRETTY_FORMAT);
 
     if (this->noItemsVisible == false)
         commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
@@ -954,6 +1023,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.foldAll, "Fold all", CMD_ID_FOLD_ALL);
     commandBar.SetCommand(config.Keys.expandAll, "Expand all", CMD_ID_EXPAND_ALL);
     commandBar.SetCommand(config.Keys.showPlugins, "Plugins", CMD_ID_SHOW_PLUGINS);
+    commandBar.SetCommand(config.Keys.saveAs, "Save As", CMD_ID_SAVE_AS);
 
     return false;
 }
@@ -1216,7 +1286,7 @@ void Instance::EditCurrentToken()
     auto& tok = this->tokens[this->currentTokenIndex];
     if (!tok.IsVisible())
         return;
-    if (tok.error.Len()>0)
+    if (tok.error.Len() > 0)
     {
         AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
     }
@@ -1437,10 +1507,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         this->showMetaData = !this->showMetaData;
         this->RecomputeTokenPositions();
         return true;
-    case CMD_ID_PRETTY_FORMAT:
-        this->prettyFormat = !this->prettyFormat;
-        this->RecomputeTokenPositions();
-        return true;
+    //case CMD_ID_PRETTY_FORMAT:
+    //    this->prettyFormat = !this->prettyFormat;
+    //    this->RecomputeTokenPositions();
+    //    return true;
     case CMD_ID_DELETE:
         this->DeleteTokens();
         return true;
@@ -1455,6 +1525,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case CMD_ID_SHOW_PLUGINS:
         this->ShowPlugins();
+        return true;
+    case CMD_ID_SAVE_AS:
+        this->ShowSaveAsDialog();
         return true;
     }
     return false;
@@ -1476,15 +1549,39 @@ bool Instance::Select(uint64 offset, uint64 size)
 }
 bool Instance::ShowGoToDialog()
 {
-    NOT_IMPLEMENTED(false);
-    // GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
-    // if (dlg.Show() == (int) Dialogs::Result::Ok)
-    //{
+    if (this->tokens.empty())
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "No tokens to go to !");
+        return true;
+    }
+    auto curentLineNumber = 1U;
+    if (this->currentTokenIndex < this->tokens.size())
+        curentLineNumber = this->tokens[this->currentTokenIndex].lineNo;
 
-    //}
-    // return true;
+    GoToDialog dlg(curentLineNumber, lastLineNumber);
+    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    {
+        auto gotoLine = dlg.GetSelectedLineNo();
+        auto idx      = 0U;
+        for (const auto& tok : this->tokens)
+        {
+            if (tok.lineNo == gotoLine)
+            {
+                MakeTokenVisible(idx);
+                RecomputeTokenPositions();
+                MoveToToken(idx, false);
+                break;
+            }
+            idx++;
+        }
+    }
+    return true;
 }
 bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
@@ -1557,6 +1654,11 @@ void Instance::ShowPlugins()
         textClone.Destroy();
         return;
     }
+}
+void Instance::ShowSaveAsDialog()
+{
+    SaveAsDialog dlg;
+    dlg.Show();
 }
 std::string_view Instance::GetName()
 {
@@ -1709,7 +1811,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
             xPoz = PrintSelectionInfo(2, xPoz, 0, 16, r);
             xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
         }
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 9, "Col:", tmp.Format("%d", tok.x + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs:", tmp.Format("%u", tok.start));
         if (tok.error.Len() > 0)
@@ -1722,7 +1824,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = PrintSelectionInfo(2, 0, 1, 16, r);
         PrintSelectionInfo(1, xPoz, 0, 16, r);
         xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
-        this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
@@ -1737,7 +1839,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         PrintSelectionInfo(1, 0, 1, 16, r);
         xPoz = PrintSelectionInfo(2, 0, 2, 16, r);
         PrintSelectionInfo(3, xPoz, 0, 16, r);
-        this->WriteCursorInfo(r, xPoz, 1, 16, "Line: ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 1, 16, "Line: ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         xPoz = this->WriteCursorInfo(r, xPoz, 2, 16, "Col : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
         this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
@@ -1753,7 +1855,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = PrintSelectionInfo(3, 0, 3, 16, r);
 
         // second colum
-        this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.y + 1, this->lastLineNumber + 1));
+        this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
         this->WriteCursorInfo(r, xPoz, 1, 20, "Col     : ", tmp.Format("%d", tok.x + 1));
         this->WriteCursorInfo(r, xPoz, 2, 20, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 3, 20, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));

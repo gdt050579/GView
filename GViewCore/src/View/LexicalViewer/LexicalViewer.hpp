@@ -104,6 +104,7 @@ namespace View
             uint64 hash;
             uint32 start, end, type;
             uint32 blockID; // for blocks
+            uint32 lineNo;
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
             TokenAlignament align;
@@ -201,9 +202,9 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key showMetaData;
+                AppCUI::Input::Key saveAs;
                 AppCUI::Input::Key showPlugins;
-                AppCUI::Input::Key prettyFormat;
+                AppCUI::Input::Key showMetaData;
                 AppCUI::Input::Key changeSelectionType;
                 AppCUI::Input::Key foldAll;
                 AppCUI::Input::Key expandAll;
@@ -229,7 +230,7 @@ namespace View
             void Clear(int32 height);
             void SetBlock(int32 index, uint32 blockID);
             void Paint(AppCUI::Graphics::Renderer& renderer, int32 x, Instance* instance);
-            
+
             inline bool ClearMouseHoverIndex()
             {
                 if (mouseHoverIndex != INVALID_INDEX)
@@ -237,7 +238,7 @@ namespace View
                     mouseHoverIndex = INVALID_INDEX;
                     return true;
                 }
-                return false;                
+                return false;
             }
             inline bool UpdateMouseHoverIndex(int32 y)
             {
@@ -288,7 +289,8 @@ namespace View
             void PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff);
             void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 diff);
             void PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset);
-            void PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin, PrettyFormatLayoutManager& manager);
+            void PrettyFormatForBlock(
+                  uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin, PrettyFormatLayoutManager& manager);
             void PrettyFormat();
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
@@ -297,7 +299,8 @@ namespace View
 
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index);
-            void PaintLineNumbers(Graphics::Renderer& renderer);
+
+            void MakeTokenVisible(uint32 index);
 
             void MoveToToken(uint32 index, bool selected);
             void MoveLeft(bool selected, bool stopAfterFirst);
@@ -316,6 +319,7 @@ namespace View
             void EditCurrentToken();
             void DeleteTokens();
             void ShowPlugins();
+            void ShowSaveAsDialog();
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();
@@ -354,6 +358,7 @@ namespace View
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
+            virtual bool ShowCopyDialog() override;
             virtual std::string_view GetName() override;
 
             // mouse events
@@ -439,8 +444,15 @@ namespace View
 
             void UpdatePluginData();
             void RunPlugin();
+
           public:
-            PluginDialog(PluginData& data, Reference<SettingsData> settings, uint32 selectionStart,uint32 selectionEnd, uint32 blockStart, uint32 blockEnd);
+            PluginDialog(
+                  PluginData& data,
+                  Reference<SettingsData> settings,
+                  uint32 selectionStart,
+                  uint32 selectionEnd,
+                  uint32 blockStart,
+                  uint32 blockEnd);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline PluginAfterActionRequest GetAfterActionRequest() const
             {
@@ -449,33 +461,41 @@ namespace View
         };
         class GoToDialog : public Window
         {
-            Reference<RadioBox> rbLineNumber;
             Reference<TextField> txLineNumber;
-            Reference<RadioBox> rbFileOffset;
-            Reference<TextField> txFileOffset;
-            uint64 maxSize;
+            uint32 selectedLineNo;
             uint32 maxLines;
-            uint64 resultedPos;
-            bool gotoLine;
-
-            void UpdateEnableStatus();
             void Validate();
 
           public:
-            GoToDialog(uint64 currentPos, uint64 size, uint32 currentLine, uint32 maxLines);
+            GoToDialog(uint32 currentLine, uint32 maxLines);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            inline uint64 GetFileOffset() const
+            inline uint32 GetSelectedLineNo() const
             {
-                return resultedPos;
+                return selectedLineNo;
             }
-            inline uint32 GetLine() const
+        };
+        class SaveAsDialog : public Window
+        {
+            Reference<TextField> txPath;
+            Reference<ComboBox> comboEncoding, comboNewLine;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+          public:
+            SaveAsDialog();
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+            std::string_view GetNewLineFormat();
+            CharacterEncoding::Encoding GetTextEncoding();
+            bool HasBOM();
+
+            inline bool ShouldBackupOriginalFile()
             {
-                return static_cast<uint32>(resultedPos - 1);
+                return cbBackupOriginalFile->IsChecked();
             }
-            inline bool ShouldGoToLine() const
+            inline bool ShouldOpenANewWindow()
             {
-                return gotoLine;
+                return cbOpenInNewWindow->IsChecked();
             }
         };
 

@@ -118,7 +118,7 @@ void JSONFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             if (!braces.Empty())
             {
                 last_val = braces.Pop();
-                syntax.blocks.Add(last_val, pos, BlockAlignament::ToRightOfCurrentBlock, BlockFlags::EndMarker);
+                syntax.blocks.Add(last_val, pos, BlockAlignament::ParentBlockWithIndent, BlockFlags::EndMarker);
             }
             else
             {
@@ -129,7 +129,7 @@ void JSONFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             if (!brackets.Empty())
             {
                 last_val = brackets.Pop();
-                syntax.blocks.Add(last_val, pos, BlockAlignament::AsBlockStartToken, BlockFlags::EndMarker);
+                syntax.blocks.Add(last_val, pos, BlockAlignament::CurrentToken, BlockFlags::EndMarker);
                 for (auto index = last_val + 1; index < pos; index++)
                 {
                     auto block = syntax.tokens[index].GetBlock();

@@ -235,8 +235,41 @@ namespace Utils
             }
         };
 
+        class EncodedCharacter
+        {
+            uint8 internalBuffer[16];
+
+            BufferView ToUTF8(char16 ch);
+          public:
+            inline BufferView Encode(char16 ch, Encoding encoding)
+            {
+                switch (encoding)
+                {
+                case Encoding::UTF8:
+                    if (ch < 256)
+                    {
+                        internalBuffer[0] = static_cast<uint8>(ch);
+                        return BufferView(internalBuffer, 1);
+                    }
+                    return ToUTF8(ch);
+                case Encoding::Ascii:
+                    internalBuffer[0] = ch < 256 ? static_cast<uint8>(ch) : '?';
+                    return BufferView(internalBuffer, 1);
+                case Encoding::Binary:
+                case Encoding::Unicode16LE:
+                    *(char16*) &internalBuffer = ch;
+                    return BufferView(internalBuffer, 2);
+                case Encoding::Unicode16BE:
+                    internalBuffer[0] = ch >> 8;
+                    internalBuffer[1] = ch & 0xFF;
+                    return BufferView(internalBuffer, 2);
+                }
+                return BufferView{};
+            }
+        };
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
         UnicodeString ConvertToUnicode16(BufferView buf);
+        BufferView GetBOMForEncoding(Encoding encoding);
     }; // namespace CharacterEncoding
 } // namespace Utils
 
@@ -447,6 +480,11 @@ namespace App
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
+
+        void ShowFilePropertiesDialog();
+        void ShowGoToDialog();
+        void ShowFindDialog();
+        void ShowCopyDialog();
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);

@@ -253,6 +253,7 @@ Token TokensList::Add(
     cToken.height    = 1;
     cToken.maxWidth  = 0;
     cToken.maxHeight = 0;
+    cToken.lineNo    = 0;
     cToken.color     = color;
     cToken.width     = (uint8) (std::min(end - start, (uint32) 0xFE));
     cToken.blockID   = BlockObject::INVALID_ID;

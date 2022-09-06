@@ -301,9 +301,10 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
         return size;
     }
     // check if a tri-quotes string
-    const auto supportsTripleQuoted  = HAS_FLAG(format, StringFormat::TripleQuotes);
-    const auto allowEscapeChars      = HAS_FLAG(format, StringFormat::AllowEscapeSequences);
-    const auto forbidMultiLine       = !(HAS_FLAG(format, StringFormat::MultiLine));
+    const auto supportsTripleQuoted         = HAS_FLAG(format, StringFormat::TripleQuotes);
+    const auto allowEscapeChars             = HAS_FLAG(format, StringFormat::AllowEscapeSequences);
+    const auto lineContinutityWithBackslash = HAS_FLAG(format, StringFormat::LineContinuityWithBackslash);
+    const auto forbidMultiLine              = !(HAS_FLAG(format, StringFormat::MultiLine));
     const auto searchForTripleQuotes = (supportsTripleQuoted && (index + 3 < size) && (text[index + 1] == ch) && (text[index + 2] == ch));
     index                            = searchForTripleQuotes ? index + 3 : index + 1;
     auto validString                 = false;
@@ -328,9 +329,27 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
                 break;
             }
         }
-        if ((currentChar == '\\') && (allowEscapeChars))
+        if (currentChar == '\\')
         {
-            index++;
+            index++; // move to next char
+            if (lineContinutityWithBackslash)
+            {
+                auto ch = text[index];
+                if ((ch == '\n') || (ch == '\r'))
+                {
+                    index++; // new line found
+                    auto chNext = text[index];
+                    if (((chNext == '\n') || (chNext == '\r')) && (chNext != ch))
+                        index++; // CRLF or LFCR cases
+                    continue;
+                }
+            }
+            if (allowEscapeChars)
+            {
+                // skip the next character after blacckslash (avoid cases like \ folowed by single or double quotes
+                index++;
+                continue;
+            }
         }
         else
         {
