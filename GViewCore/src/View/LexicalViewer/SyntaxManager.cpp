@@ -28,6 +28,11 @@ TokenAlignament Token::GetAlignament() const
     CREATE_TOKENREF(TokenAlignament::None);
     return tok.align;
 }
+TokenDataType Token::GetDataType() const
+{
+    CREATE_TOKENREF(TokenDataType::None);
+    return tok.dataType;
+}
 bool Token::SetAlignament(TokenAlignament align)
 {
     CREATE_TOKENREF(false);
@@ -72,7 +77,7 @@ bool Token::SetBlock(uint32 blockIndex)
         return false; // invalid block index
     const auto& block = INSTANCE->blocks[blockIndex];
     // token index can not be inside pointed block
-    if (block.hasEndMarker)
+    if (block.HasEndMarker())
     {
         if ((this->index >= block.tokenStart) && (this->index <= block.tokenEnd))
             return false;
@@ -112,6 +117,28 @@ bool Token::SetText(const ConstString& text)
 {
     CREATE_TOKENREF(false);
     return tok.value.Set(text);
+}
+bool Token::SetError(const ConstString& error)
+{
+    CREATE_TOKENREF(false);
+    tok.color = TokenColor::Error;
+    return tok.error.Set(error);
+}
+bool Token::Delete()
+{
+    CREATE_TOKENREF(false);
+    tok.SetShouldDeleteFlag();
+    return true;
+}
+std::optional<uint32> Token::GetTokenStartOffset() const
+{
+    CREATE_TOKENREF(std::nullopt);
+    return tok.start;
+}
+std::optional<uint32> Token::GetTokenEndOffset() const
+{
+    CREATE_TOKENREF(std::nullopt);
+    return tok.end;
 }
 // Token Object
 void TokenObject::UpdateSizes(const char16* text)
@@ -226,6 +253,7 @@ Token TokensList::Add(
     cToken.height    = 1;
     cToken.maxWidth  = 0;
     cToken.maxHeight = 0;
+    cToken.lineNo    = 0;
     cToken.color     = color;
     cToken.width     = (uint8) (std::min(end - start, (uint32) 0xFE));
     cToken.blockID   = BlockObject::INVALID_ID;
@@ -240,18 +268,9 @@ Token TokensList::Add(
 
     return Token(this->data, itemsCount);
 }
-Token TokensList::AddErrorToken(uint32 start, uint32 end, ConstString error)
-{
-    auto tok = Add(0, start, end, TokenColor::Error);
-    if (tok.IsValid())
-    {
-        // add error
-    }
-    return tok;
-}
 
 // block list
-Block BlocksList::Add(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker)
+Block BlocksList::Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags)
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     CHECK(start < itemsCount, Block(), "Invalid token index (start=%u), should be less than %u", start, itemsCount);
@@ -264,18 +283,26 @@ Block BlocksList::Add(uint32 start, uint32 end, BlockAlignament align, bool hasB
     block.tokenStart          = start;
     block.tokenEnd            = end;
     block.align               = align;
-    block.hasEndMarker        = hasBlockEndMarker;
+    block.flags               = flags;
     block.leftHighlightMargin = 0;
 
     // set token flags
     INSTANCE->tokens[start].SetBlockStartFlag();
     INSTANCE->tokens[start].blockID = blockID;
 
-    if (hasBlockEndMarker)
+    if (block.HasEndMarker())
         INSTANCE->tokens[end].blockID = blockID;
 
     return Block(this->data, blockID);
 }
+
+Block BlocksList::Add(Token start, Token end, BlockAlignament align, BlockFlags flags)
+{
+    if ((start.IsValid() == false) || (end.IsValid() == false))
+        return Block();
+    return Add(start.GetIndex(), end.GetIndex(), align, flags);
+}
+
 uint32 BlocksList::Len() const
 {
     return static_cast<uint32>(INSTANCE->blocks.size());

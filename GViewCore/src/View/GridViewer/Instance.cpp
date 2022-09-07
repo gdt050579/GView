@@ -72,6 +72,11 @@ bool Instance::ShowFindDialog()
     NOT_IMPLEMENTED(false);
 }
 
+bool Instance::ShowCopyDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
 {
     if (height == 1)

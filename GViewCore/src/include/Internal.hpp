@@ -26,11 +26,36 @@ namespace Utils
         Selection();
         void Clear();
         bool Clear(int index);
+        inline constexpr bool HasSelection(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start != INVALID_OFFSET;
+            return false;
+        }
+        inline constexpr bool HasAnySelection() const
+        {
+            for (uint32 index = 0; index < MAX_SELECTION_ZONES; index++)
+                if (zones[index].start != INVALID_OFFSET)
+                    return true;
+            return false;
+        }
         inline constexpr uint32 GetCount() const
         {
             return Selection::MAX_SELECTION_ZONES;
         }
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
+        inline uint64 GetSelectionStart(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start;
+            return INVALID_OFFSET;
+        }
+        inline uint64 GetSelectionEnd(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].end;
+            return INVALID_OFFSET;
+        }
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
@@ -91,6 +116,36 @@ namespace Utils
         bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
         bool Reserve(unsigned int count);
         const Zone* OffsetToZone(uint64 offset);
+    };
+
+    struct UnicodeString
+    {
+        char16* text;
+        uint32 size;
+        uint32 allocated;
+
+        UnicodeString() : text(nullptr), size(0), allocated(0)
+        {
+        }
+        UnicodeString(char16* txt, uint32 sz, uint32 alloc) : text(txt), size(sz), allocated(alloc)
+        {
+        }
+        inline UnicodeString Clone()
+        {
+            if (text == nullptr)
+                return UnicodeString();
+            auto* tmp = new char16[size];
+            memcpy(tmp, text, this->size*sizeof(char16));
+            return UnicodeString(tmp, size, size);
+        }
+        inline void Destroy()
+        {
+            if (text != nullptr)
+                delete[] text;
+            text      = nullptr;
+            size      = 0;
+            allocated = 0;
+        }
     };
 
     namespace CharacterEncoding
@@ -180,8 +235,41 @@ namespace Utils
             }
         };
 
+        class EncodedCharacter
+        {
+            uint8 internalBuffer[16];
+
+            BufferView ToUTF8(char16 ch);
+          public:
+            inline BufferView Encode(char16 ch, Encoding encoding)
+            {
+                switch (encoding)
+                {
+                case Encoding::UTF8:
+                    if (ch < 256)
+                    {
+                        internalBuffer[0] = static_cast<uint8>(ch);
+                        return BufferView(internalBuffer, 1);
+                    }
+                    return ToUTF8(ch);
+                case Encoding::Ascii:
+                    internalBuffer[0] = ch < 256 ? static_cast<uint8>(ch) : '?';
+                    return BufferView(internalBuffer, 1);
+                case Encoding::Binary:
+                case Encoding::Unicode16LE:
+                    *(char16*) &internalBuffer = ch;
+                    return BufferView(internalBuffer, 2);
+                case Encoding::Unicode16BE:
+                    internalBuffer[0] = ch >> 8;
+                    internalBuffer[1] = ch & 0xFF;
+                    return BufferView(internalBuffer, 2);
+                }
+                return BufferView{};
+            }
+        };
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
-        char16* ConvertToUnicode16(BufferView buf,size_t& length);
+        UnicodeString ConvertToUnicode16(BufferView buf);
+        BufferView GetBOMForEncoding(Encoding encoding);
     }; // namespace CharacterEncoding
 } // namespace Utils
 
@@ -392,6 +480,11 @@ namespace App
         unsigned int defaultVerticalPanelsSize;
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
+
+        void ShowFilePropertiesDialog();
+        void ShowGoToDialog();
+        void ShowFindDialog();
+        void ShowCopyDialog();
 
       public:
         FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);

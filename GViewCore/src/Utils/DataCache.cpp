@@ -158,6 +158,7 @@ Buffer DataCache::CopyToBuffer(uint64 offset, uint32 requestedSize, bool failIfR
     {
         CHECK(offset + (uint64) requestedSize <= this->fileSize, Buffer(), "Unable to read %u bytes from %llu", requestedSize, offset);
     }
+
     Buffer b{};
     b.Resize(requestedSize);
     uint32 toRead = this->cacheSize >> 1;

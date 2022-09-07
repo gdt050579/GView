@@ -136,6 +136,8 @@ add_subdirectory(Types/ELF)
 add_subdirectory(Types/JT)
 add_subdirectory(Types/INI)
 add_subdirectory(Types/CPP)
+add_subdirectory(Types/JSON)
+add_subdirectory(Types/VBA)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)

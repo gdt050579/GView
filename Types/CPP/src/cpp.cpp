@@ -27,6 +27,7 @@ extern "C"
 
         LexicalViewer::Settings settings;
         settings.SetParser(cpp.ToObjectRef<LexicalViewer::ParseInterface>());
+        settings.AddPlugin(&cpp->plugins.removeComments);
         win->CreateViewer("Lexical", settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");

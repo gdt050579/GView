@@ -343,6 +343,10 @@ bool Instance::ShowFindDialog()
 {
     NOT_IMPLEMENTED(false);
 }
+bool Instance::ShowCopyDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
 
 void Instance::ResetStringInfo()
 {

@@ -25,6 +25,7 @@ namespace View
             Folded                     = 0x02, // only for blocks
             BlockStart                 = 0x04,
             DisableSimilarityHighlight = 0x08, // hash will not be computed for this token
+            ShouldDelete               = 0x10, // token shoule be deleted on next reparse
         };
         class TokensListBuilder : public TokensList
         {
@@ -42,6 +43,34 @@ namespace View
                 this->data = _data;
             }
         };
+        class TextEditorBuilder : public TextEditor
+        {
+          public:
+            TextEditorBuilder(char16* _text, uint32 _size) : TextEditor()
+            {
+                this->text      = _text;
+                this->size      = _size;
+                this->allocated = _size;
+            }
+            TextEditorBuilder(GView::Utils::UnicodeString& str) : TextEditor()
+            {
+                this->text      = str.text;
+                this->size      = str.size;
+                this->allocated = str.allocated;
+                // works like a move method --> similar to what RUST is doing
+                str.text      = nullptr;
+                str.size      = 0;
+                str.allocated = 0;
+            }
+            GView::Utils::UnicodeString Release()
+            {
+                GView::Utils::UnicodeString result(this->text, this->size, this->allocated);
+                this->text      = nullptr;
+                this->size      = 0;
+                this->allocated = 0;
+                return result;
+            }
+        };
         struct BlockObject
         {
             static constexpr uint32 INVALID_ID = 0xFFFFFFFF;
@@ -49,7 +78,7 @@ namespace View
             int32 leftHighlightMargin;
             std::string foldMessage;
             BlockAlignament align;
-            bool hasEndMarker;
+            BlockFlags flags;
 
             inline uint32 GetStartIndex() const
             {
@@ -57,15 +86,25 @@ namespace View
             }
             inline uint32 GetEndIndex() const
             {
-                return hasEndMarker ? tokenEnd + 1 : tokenEnd;
+                return ((flags & BlockFlags::EndMarker) != BlockFlags::None) ? tokenEnd + 1 : tokenEnd;
+            }
+            inline bool HasEndMarker() const
+            {
+                return (flags & BlockFlags::EndMarker) != BlockFlags::None;
+            }
+            inline bool CanOnlyBeFoldedManually() const
+            {
+                return (flags & BlockFlags::ManualCollapse) != BlockFlags::None;
             }
         };
         struct TokenObject
         {
             UnicodeStringBuilder value;
+            UnicodeStringBuilder error;
             uint64 hash;
             uint32 start, end, type;
             uint32 blockID; // for blocks
+            uint32 lineNo;
             int32 x, y;
             uint8 maxWidth, maxHeight, width, height;
             TokenAlignament align;
@@ -89,6 +128,10 @@ namespace View
             {
                 return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) == 0;
             }
+            inline bool IsMarkForDeletion() const
+            {
+                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::ShouldDelete)) != 0;
+            }
             inline void SetVisible(bool value)
             {
                 if (value)
@@ -99,6 +142,10 @@ namespace View
             inline void SetBlockStartFlag()
             {
                 status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::BlockStart));
+            }
+            inline void SetShouldDeleteFlag()
+            {
+                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::ShouldDelete));
             }
             inline void SetFolded(bool value)
             {
@@ -143,7 +190,9 @@ namespace View
 
         struct SettingsData
         {
+            std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
+            uint32 maxWidth;
             uint8 indentWidth;
             bool ignoreCase;
             SettingsData();
@@ -153,23 +202,75 @@ namespace View
         {
             struct
             {
+                AppCUI::Input::Key saveAs;
+                AppCUI::Input::Key showPlugins;
                 AppCUI::Input::Key showMetaData;
-                AppCUI::Input::Key prettyFormat;
+                AppCUI::Input::Key changeSelectionType;
+                AppCUI::Input::Key foldAll;
+                AppCUI::Input::Key expandAll;
             } Keys;
             bool Loaded;
 
             static void Update(IniSection sect);
             void Initialize();
         };
+        class Instance;
+        class FoldColumn
+        {
+            static constexpr int32 MAX_INDEXES   = 256;
+            static constexpr int32 INVALID_INDEX = -1;
+            uint32 indexes[MAX_INDEXES];
+            int32 count, height;
+            int32 mouseHoverIndex;
+
+          public:
+            FoldColumn() : count(0), mouseHoverIndex(INVALID_INDEX)
+            {
+            }
+            void Clear(int32 height);
+            void SetBlock(int32 index, uint32 blockID);
+            void Paint(AppCUI::Graphics::Renderer& renderer, int32 x, Instance* instance);
+
+            inline bool ClearMouseHoverIndex()
+            {
+                if (mouseHoverIndex != INVALID_INDEX)
+                {
+                    mouseHoverIndex = INVALID_INDEX;
+                    return true;
+                }
+                return false;
+            }
+            inline bool UpdateMouseHoverIndex(int32 y)
+            {
+                if ((y >= 0) && (y < count) && (indexes[y] != BlockObject::INVALID_ID))
+                {
+                    mouseHoverIndex = y;
+                    return true;
+                }
+                return ClearMouseHoverIndex();
+            }
+            inline uint32 MouseToBlockIndex(int32 y)
+            {
+                if ((y >= 0) && (y < count))
+                    return indexes[y];
+                return BlockObject::INVALID_ID;
+            }
+        };
+        struct PrettyFormatLayoutManager
+        {
+            int x, y, lastY;
+            bool firstOnNewLine;
+            bool spaceAdded;
+        };
         class Instance : public View::ViewControl
         {
+            FoldColumn foldColumn;
             FixSizeString<29> name;
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             uint64 currentHash;
-            char16* text;
-            uint32 textLength;
+            UnicodeString text;
             uint32 currentTokenIndex;
             int32 lineNrWidth, lastLineNumber;
             bool noItemsVisible;
@@ -185,7 +286,11 @@ namespace View
 
             void UpdateTokensInformation();
             void ComputeOriginalPositions();
-            AppCUI::Graphics::Point PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin);
+            void PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff);
+            void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 diff);
+            void PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int32 columnXOffset);
+            void PrettyFormatForBlock(
+                  uint32 idxStart, uint32 idxEnd, int32 leftMargin, int32 topMargin, PrettyFormatLayoutManager& manager);
             void PrettyFormat();
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
@@ -193,8 +298,9 @@ namespace View
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
-            void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, bool onCursor);
-            void PaintLineNumbers(Graphics::Renderer& renderer);
+            void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index);
+
+            void MakeTokenVisible(uint32 index);
 
             void MoveToToken(uint32 index, bool selected);
             void MoveLeft(bool selected, bool stopAfterFirst);
@@ -202,10 +308,27 @@ namespace View
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
+            void ExpandAll();
+            void FoldAll();
 
             uint32 TokenToBlock(uint32 tokenIndex);
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);
+
+            uint32 MousePositionToTokenID(int x, int y);
+
             void EditCurrentToken();
+            void DeleteTokens();
+            void ShowPlugins();
+            void ShowSaveAsDialog();
+
+            bool RebuildTextFromTokens(TextEditor& edidor);
+            void Parse();
+            void Reparse(bool openInNewWindow);
+
+            int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
+            int PrintTokenTypeInfo(uint32 tokenTypeID, int x, int y, uint32 width, Renderer& r);
+            int PrintDataTypeInfo(TokenDataType dataType, int x, int y, uint32 width, Renderer& r);
+            int PrintError(std::u16string_view error, int x, int y, uint32 width, Renderer& r);
 
           public:
             std::vector<TokenObject> tokens;
@@ -216,11 +339,11 @@ namespace View
 
             inline uint32 GetUnicodeTextLen() const
             {
-                return textLength;
+                return text.size;
             }
             inline char16* GetUnicodeText() const
             {
-                return text;
+                return text.text;
             }
 
             virtual void Paint(Graphics::Renderer& renderer) override;
@@ -235,6 +358,7 @@ namespace View
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
+            virtual bool ShowCopyDialog() override;
             virtual std::string_view GetName() override;
 
             // mouse events
@@ -242,6 +366,7 @@ namespace View
             virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            virtual bool OnMouseOver(int x, int y) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
@@ -252,21 +377,19 @@ namespace View
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
         };
+        enum class ApplyMethod
+        {
+            CurrentToken,
+            EntireProgram,
+            Block,
+            Selection
+        };
         class NameRefactorDialog : public Window
         {
             TokenObject& tok;
             Reference<TextField> txNewValue;
             Reference<RadioBox> rbApplyOnCurrent, rbApplyOnAll, rbApplyOnBlock, rbApplyOnSelection;
             Reference<CheckBox> cbReparse;
-
-          public:
-            enum class ApplyMethod
-            {
-                CurrentToken,
-                EntireProgram,
-                Block,
-                Selection
-            };
 
           public:
             NameRefactorDialog(TokenObject& tok, const char16* text, bool hasSelection, bool belongsToABlock);
@@ -292,35 +415,91 @@ namespace View
                 return ApplyMethod::CurrentToken;
             }
         };
+        class DeleteDialog : public Window
+        {
+            Reference<RadioBox> rbApplyOnCurrent, rbApplyOnBlock, rbApplyOnSelection;
+
+          public:
+            DeleteDialog(TokenObject& tok, const char16* text, bool hasSelection, bool belongsToABlock);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline ApplyMethod GetApplyMethod()
+            {
+                if (rbApplyOnBlock->IsChecked())
+                    return ApplyMethod::Block;
+                if (rbApplyOnSelection->IsChecked())
+                    return ApplyMethod::Selection;
+                // default
+                return ApplyMethod::CurrentToken;
+            }
+        };
+        class PluginDialog : public Window
+        {
+            PluginData& pluginData;
+            Reference<ListView> lstPlugins;
+            Reference<RadioBox> rbRunOnSelection, rbRunOnCurrentBlock, rbRunOnEntireFile;
+            Reference<CheckBox> cbOpenInNewWindow;
+            Reference<SettingsData> settings;
+            PluginAfterActionRequest afterActionRequest;
+            uint32 selectionStart, selectionEnd, blockStart, blockEnd;
+
+            void UpdatePluginData();
+            void RunPlugin();
+
+          public:
+            PluginDialog(
+                  PluginData& data,
+                  Reference<SettingsData> settings,
+                  uint32 selectionStart,
+                  uint32 selectionEnd,
+                  uint32 blockStart,
+                  uint32 blockEnd);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline PluginAfterActionRequest GetAfterActionRequest() const
+            {
+                return afterActionRequest;
+            }
+        };
         class GoToDialog : public Window
         {
-            Reference<RadioBox> rbLineNumber;
             Reference<TextField> txLineNumber;
-            Reference<RadioBox> rbFileOffset;
-            Reference<TextField> txFileOffset;
-            uint64 maxSize;
+            uint32 selectedLineNo;
             uint32 maxLines;
-            uint64 resultedPos;
-            bool gotoLine;
-
-            void UpdateEnableStatus();
             void Validate();
 
           public:
-            GoToDialog(uint64 currentPos, uint64 size, uint32 currentLine, uint32 maxLines);
+            GoToDialog(uint32 currentLine, uint32 maxLines);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            inline uint64 GetFileOffset() const
+            inline uint32 GetSelectedLineNo() const
             {
-                return resultedPos;
+                return selectedLineNo;
             }
-            inline uint32 GetLine() const
+        };
+        class SaveAsDialog : public Window
+        {
+            Reference<TextField> txPath;
+            Reference<ComboBox> comboEncoding, comboNewLine;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+          public:
+            SaveAsDialog(Reference<Object> obj);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+            std::string_view GetNewLineFormat();
+            CharacterEncoding::Encoding GetTextEncoding();
+            bool HasBOM();
+
+            inline bool ShouldBackupOriginalFile()
             {
-                return static_cast<uint32>(resultedPos - 1);
+                return cbBackupOriginalFile->IsChecked();
             }
-            inline bool ShouldGoToLine() const
+            inline bool ShouldOpenANewWindow()
             {
-                return gotoLine;
+                return cbOpenInNewWindow->IsChecked();
+            }
+            inline const CharacterBuffer& GetFilePath()
+            {
+                return txPath->GetText();
             }
         };
 

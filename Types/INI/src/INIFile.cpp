@@ -3,19 +3,7 @@
 namespace GView::Type::INI
 {
 using namespace GView::View::LexicalViewer;
-namespace TokenType
-{
-    constexpr uint32 Comment    = 0;
-    constexpr uint32 Section    = 1;
-    constexpr uint32 Key        = 2;
-    constexpr uint32 Equal      = 3;
-    constexpr uint32 Value      = 4;
-    constexpr uint32 ArrayStart = 5;
-    constexpr uint32 Comma      = 6;
-    constexpr uint32 ArrayEnd   = 7;
-    constexpr uint32 Invalid    = 0xFFFFFFFF;
 
-} // namespace TokenType
 enum class ParserState
 {
     ExpectKeyValueOrSection,
@@ -193,7 +181,8 @@ struct ParserData
             break;
         default:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a key or a section)");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a key or a section)");
             pos = next;
             break;
         }
@@ -218,13 +207,14 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String);
+            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
         case CharType::Invalid:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a avlue or an array)");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a avlue or an array)");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -270,14 +260,14 @@ struct ParserData
                   pos + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter | TokenAlignament::SameColumn,
                   true);
             pos++;
             state = ParserState::ExpectValueOrArray;
             break;
         default:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either ':' or '=')");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word).SetError("Invalid character (expecting either ':' or '=')");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -301,7 +291,7 @@ struct ParserData
             pos = next;
             break;
         case CharType::Comma:
-            tokenList.Add(TokenType::Comma, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(TokenType::Comma, pos, pos + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::WrapToNextLine, true);
             pos++;
             state = ParserState::ExpectArrayValue;
             break;
@@ -316,7 +306,8 @@ struct ParserData
                   pos, [](char16 ch) { return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != ',') && (ch != ']'); });
             next = text.ParseBackwards(next - 1, [](char16 ch) { return (ch == ' ') || (ch == '\t'); });
             next++;
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a comma (,) or the end of an array (])");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a comma (,) or the end of an array (])");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -341,13 +332,14 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String);
+            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
             pos   = next;
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
         case CharType::Invalid:
             next = text.ParseUntillEndOfLine(pos);
-            tokenList.AddErrorToken(pos, next, "Invalid character (expecting either a avlue or an array)");
+            tokenList.Add(TokenType::Invalid, pos, next, TokenColor::Word)
+                  .SetError("Invalid character (expecting either a avlue or an array)");
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -425,7 +417,7 @@ struct ParserData
                 idx = CreateArrayBlock(idx, end, false, blocks);
                 break;
             case TokenType::ArrayEnd:
-                block = blocks.Add(start, idx, BlockAlignament::AsBlockStartToken, true);
+                block = blocks.Add(start, idx, BlockAlignament::CurrentToken, BlockFlags::EndMarker);
                 if ((start >= 2) && (tokenList[start - 2].GetTypeID(TokenType::Invalid) == TokenType::Key))
                 {
                     // make sure that key can also fold/unfold current block
@@ -450,6 +442,46 @@ bool INIFile::Update()
     return true;
 }
 
+void INIFile::PreprocessText(GView::View::LexicalViewer::TextEditor&)
+{
+    // nothing to do --> there is no pre-processing needed for an INI format
+}
+void INIFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
+{
+    switch (id)
+    {
+    case TokenType::Comment:
+        str.Set("Comment");
+        break;
+    case TokenType::Section:
+        str.Set("Section");
+        break;
+    case TokenType::Key:
+        str.Set("Key");
+        break;
+    case TokenType::Value:
+        str.Set("Value");
+        break;
+    case TokenType::ArrayStart:
+        str.Set("Array start");
+        break;
+    case TokenType::ArrayEnd:
+        str.Set("Array end");
+        break;
+    case TokenType::Comma:
+        str.Set("Separator (comma)");
+        break;
+    case TokenType::Equal:
+        str.Set("Asignament");
+        break;
+    case TokenType::Invalid:
+        str.Set("Invalid/Error");
+        break;
+    default:
+        str.SetFormat("Unknwon: 0x%08X", id);
+        break;
+    }
+}
 void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     LocalString<64> tmp;
@@ -481,7 +513,7 @@ void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
                 next++;
             }
             // we have found another section
-            auto block = syntax.blocks.Add(idx, next - 1, BlockAlignament::AsCurrentBlock, false);
+            auto block = syntax.blocks.Add(idx, next - 1, BlockAlignament::ParentBlock);
             if (keyCount == 0)
                 block.SetFoldMessage("<Empty>");
             else
