@@ -86,7 +86,7 @@ jobs:
       
     - name: Copy terminfo from VCPKG
       working-directory: /Users/runner/work/GView/GView/bin/Release
-      run: cp -R ../build/vcpkg_installed/x64-osx/share/terminfo .
+      run: cp -R ../../build/vcpkg_installed/x64-osx/share/terminfo .
       
     - name: List bin artefacts
       run: ls -R /Users/runner/work/GView/GView/bin
