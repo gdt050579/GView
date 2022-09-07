@@ -173,7 +173,7 @@ bool Instance::Select(uint64 offset, uint64 size)
 bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(this->settings.get(), this->currentImageIndex, this->obj->GetData().GetSize());
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         if (dlg.ShouldGoToImage())
         {

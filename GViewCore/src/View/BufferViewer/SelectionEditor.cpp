@@ -167,7 +167,7 @@ void SelectionEditor::Validate()
     {
         // no selection (clear selection);
         selection->Clear(zoneIndex);
-        Exit(0);
+        Exit(AppCUI::Dialogs::Result::None);
         return;
     }
     // we have some values
@@ -175,7 +175,7 @@ void SelectionEditor::Validate()
     if (GetValues(start, size))
     {
         selection->SetSelection(zoneIndex, start, start + size - 1);
-        Exit(0);
+        Exit(AppCUI::Dialogs::Result::None);
         return;
     }
 }
@@ -186,7 +186,7 @@ bool SelectionEditor::OnEvent(Reference<Control> control, Event eventType, int I
         switch (ID)
         {
         case BTN_ID_CANCEL:
-            Exit(0);
+            Exit(AppCUI::Dialogs::Result::None);
             return true;
         case BTN_ID_CLEAR:
             txOffset->SetText("");
@@ -207,7 +207,7 @@ bool SelectionEditor::OnEvent(Reference<Control> control, Event eventType, int I
         Validate();
         return true;
     case Event::WindowClose:
-        Exit(0);
+        Exit(AppCUI::Dialogs::Result::None);
         return true;
     }
 

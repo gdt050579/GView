@@ -34,13 +34,13 @@ bool FileWindowProperties::OnEvent(Reference<Control> control, Event eventType, 
     {
         if (ID == BUTTON_ID_CLOSE)
         {
-            this->Exit(0);
+            this->Exit(AppCUI::Dialogs::Result::None);
             return true;
         }
         if (ID == BUTTON_ID_GOTO)
         {
             //GDT: switch to that particular view
-            this->Exit(0);
+            this->Exit(AppCUI::Dialogs::Result::None);
             return true;
         }
     }

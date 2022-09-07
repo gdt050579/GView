@@ -32,7 +32,7 @@ bool ErrorDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
         return true;
     if (eventType == Event::ButtonClicked)
     {
-        Exit(0);
+        Exit(AppCUI::Dialogs::Result::None);
         return true;
     }
     return false;
