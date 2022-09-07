@@ -480,6 +480,8 @@ namespace View
             Reference<TextField> txPath;
             Reference<ComboBox> comboEncoding, comboNewLine;
             Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+            void Validate();
+            void BrowseForFile();
           public:
             SaveAsDialog(Reference<Object> obj);
 

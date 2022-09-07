@@ -21,7 +21,7 @@ SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,
     auto currentPath = obj->GetPath();
     auto indexExt    = currentPath.find_last_of('.');
     if (currentPath.empty() == false)
-    {   
+    {
         LocalUnicodeStringBuilder<256> temp;
         if (indexExt != u16string_view::npos)
         {
@@ -88,6 +88,41 @@ bool SaveAsDialog::HasBOM()
     const auto idx = comboEncoding->GetCurrentItemIndex();
     return (idx != 1) && (idx != 2);
 }
+void SaveAsDialog::BrowseForFile()
+{
+    auto& path                                        = txPath->GetText();
+    auto pathBuffer                                   = path.GetBuffer();
+    uint32 index                                      = 0xFFFFFFFF;
+    std::optional<std::filesystem::path> selectedPath = std::nullopt;
+    for (auto i = 0U; i < path.Len(); i++)
+        if ((pathBuffer[i].Code == '\\') || (pathBuffer[i].Code == '/'))
+            index = i;
+    if (index == 0xFFFFFFFF)
+    {
+        // current folder
+        selectedPath = Dialogs::FileDialog::ShowSaveFileWindow("", "", ".");
+    }
+    else
+    {
+        LocalUnicodeStringBuilder<256> temp(path.SubString(0, index));
+        selectedPath = Dialogs::FileDialog::ShowSaveFileWindow("", "", temp);
+    }
+    if (selectedPath.has_value())
+    {
+        txPath->SetText(selectedPath.value().u16string());
+        txPath->SetFocus();
+    }
+}
+void SaveAsDialog::Validate()
+{
+    if (txPath->GetText().Len() == 0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "You need to specify a file name !");
+        txPath->SetFocus();
+        return;
+    }
+    Exit(Dialogs::Result::Ok);
+}
 bool SaveAsDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
     switch (eventType)
@@ -99,12 +134,15 @@ bool SaveAsDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
             Exit(Dialogs::Result::Cancel);
             return true;
         case BTN_ID_OK:
-            Exit(Dialogs::Result::Ok);
+            Validate();
+            return true;
+        case BTN_ID_BROWSER:
+            BrowseForFile();
             return true;
         }
         break;
     case Event::WindowAccept:
-        Exit(Dialogs::Result::Ok);
+        Validate();
         return true;
     case Event::WindowClose:
         Exit(Dialogs::Result::Cancel);

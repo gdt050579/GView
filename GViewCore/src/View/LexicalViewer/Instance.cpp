@@ -1663,6 +1663,23 @@ void Instance::ShowSaveAsDialog()
     LocalUnicodeStringBuilder<256> tmpPath;
     tmpPath.Set(dlg.GetFilePath());
 
+    if ((dlg.ShouldBackupOriginalFile()) && (std::filesystem::exists(tmpPath)))
+    {
+        LocalUnicodeStringBuilder<256> tmpBakPath;
+        tmpBakPath.Set(tmpPath);
+        tmpBakPath.Add(".bak");
+        try
+        {
+            std::filesystem::rename(tmpPath, tmpBakPath);
+        }
+        catch (...)
+        {
+            if (Dialogs::MessageBox::ShowOkCancel(
+                      "Backup", "Unable to backup the original file. Do you want to continue and overwrite it ?") != Dialogs::Result::Ok)
+                return;
+        }
+    }
+
     // open the file
     AppCUI::OS::File f;
     if (f.Create(tmpPath, true) == false)
@@ -1747,6 +1764,10 @@ void Instance::ShowSaveAsDialog()
     }
     f.Close();
     AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
+    if (dlg.ShouldOpenANewWindow())
+    {
+        GView::App::OpenFile(tmpPath);
+    }
 }
 std::string_view Instance::GetName()
 {
