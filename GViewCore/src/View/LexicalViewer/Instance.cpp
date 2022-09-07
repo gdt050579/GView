@@ -1658,7 +1658,8 @@ void Instance::ShowPlugins()
 void Instance::ShowSaveAsDialog()
 {
     SaveAsDialog dlg(this->obj);
-    dlg.Show();
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return;
     LocalUnicodeStringBuilder<256> tmpPath;
     tmpPath.Set(dlg.GetFilePath());
 
