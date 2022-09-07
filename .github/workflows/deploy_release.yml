@@ -139,11 +139,11 @@ jobs:
       run: cp -R ../../build/vcpkg_installed/x64-linux/lib/*.a .
       
     - name: Copy terminfo from VCPKG
-      working-directory: /home/runner/work/AppCUI/AppCUI/bin/Release
+      working-directory: /home/runner/work/GView/GView/bin/Release
       run: cp -R ../../build/vcpkg_installed/x64-linux/share/terminfo .
       
     - name: List bin artefacts
-      run: ls -R /home/runner/work/AppCUI/AppCUI/bin
+      run: ls -R /home/runner/work/GView/GView/bin
       
     - name: Create archive
       working-directory: /home/runner/work/GView/GView/bin/Release
