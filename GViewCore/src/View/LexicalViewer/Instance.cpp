@@ -1299,7 +1299,7 @@ void Instance::EditCurrentToken()
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);
     NameRefactorDialog dlg(tok, this->text.text, selection.HasSelection(0), containerBlock != BlockObject::INVALID_ID);
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
         auto start  = 0U;
@@ -1363,7 +1363,7 @@ void Instance::DeleteTokens()
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);
     DeleteDialog dlg(tok, this->text.text, selection.HasSelection(0), containerBlock != BlockObject::INVALID_ID);
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
         auto start  = 0U;
@@ -1559,7 +1559,7 @@ bool Instance::ShowGoToDialog()
         curentLineNumber = this->tokens[this->currentTokenIndex].lineNo;
 
     GoToDialog dlg(curentLineNumber, lastLineNumber);
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         auto gotoLine = dlg.GetSelectedLineNo();
         auto idx      = 0U;

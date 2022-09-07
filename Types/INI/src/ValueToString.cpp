@@ -106,7 +106,7 @@ void ValueToString::ConvertToString(Token& tok, GView::View::LexicalViewer::Plug
 PluginAfterActionRequest ValueToString::Execute(PluginData& data)
 {
     SelectValuesToConvertDialog dlg;
-    if (dlg.Show() != (int) Dialogs::Result::Ok)
+    if (dlg.Show() != Dialogs::Result::Ok)
         return PluginAfterActionRequest::None;
     bool convertText    = dlg.ShouldConvertTexts();
     bool convertNumbers = dlg.ShouldConvertNumbers();

@@ -131,7 +131,7 @@ void Casing::ChangeCaseForToken(Token& tok, CaseFormat format, bool isSection)
 PluginAfterActionRequest Casing::Execute(PluginData& data)
 {
     SelectCaseDialog dlg;
-    if (dlg.Show() != (int) Dialogs::Result::Ok)
+    if (dlg.Show() != Dialogs::Result::Ok)
         return PluginAfterActionRequest::None;
     auto sectionAction = dlg.GetCaseFormatForSections();
     auto keysAction    = dlg.GetCaseFormatForKeys();
