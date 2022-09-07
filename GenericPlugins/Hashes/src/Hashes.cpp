@@ -104,7 +104,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
 {
     if (b->GetControlID() == CMD_BUTTON_CLOSE || b->GetControlID() == CMD_BUTTON_CANCEL)
     {
-        Exit(AppCUI::Dialogs::Result::None);
+        Exit();
     }
     else if (b->GetControlID() == CMD_BUTTON_OK)
     {
@@ -134,7 +134,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
         return;
     }
 
-    Exit(AppCUI::Dialogs::Result::None);
+    Exit();
 }
 
 bool HashesDialog::OnEvent(Reference<Control> c, Event eventType, int id)
