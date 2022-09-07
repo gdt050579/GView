@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.15)
 
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
+  CACHE STRING "Vcpkg toolchain file")
+
+message("CMAKE_TOOLCHAIN_FILE => ${CMAKE_TOOLCHAIN_FILE}")
+
 project(GView VERSION 1.0)
 
 include(CheckIPOSupported)
@@ -32,8 +37,6 @@ endif(NOT CMAKE_BUILD_TYPE)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
      set(DEBUG_BUILD 1)
 endif()
-
-find_package(OpenSSL REQUIRED)
 
 if (NOT MSVC)
 	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
@@ -137,10 +140,7 @@ add_subdirectory(Types/CPP)
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::Crypto)
-# install(TARGETS OpenSSL LIBRARY DESTINATION "." NAMELINK_ONLY)
-
+                                                                
 if (APPLE)
     	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
 elseif (UNIX)

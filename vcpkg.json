@@ -36,7 +36,7 @@
         },
         {
             "name": "openssl",
-            "platform": "windows | osx"
+            "platform": "windows | linux | osx"
         }
     ]
 }
