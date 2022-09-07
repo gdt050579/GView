@@ -9,18 +9,18 @@ constexpr int32 BTN_ID_OK      = 1;
 constexpr int32 BTN_ID_CANCEL  = 2;
 constexpr int32 BTN_ID_BROWSER = 3;
 
-std::string_view newLineFormats[] = { "\n\r", "\r", "\n", "\r\n" };
+std::string_view newLineFormats[] = { "\r\n", "\n", "\r", "\n\r" };
 
-SaveAsDialog::SaveAsDialog() : Window("Save As", "d:c,w:70,h:16", WindowFlags::ProcessReturn)
+SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,h:16", WindowFlags::ProcessReturn)
 {
     Factory::Label::Create(this, "File &path", "x:1,y:1,w:10");
     txPath = Factory::TextField::Create(this, "", "l:1,t:2,r:15,h:2");
     txPath->SetHotKey('P');
     Factory::Button::Create(this, "&Browse", "x:67,y:2,a:rt,w:13", BTN_ID_BROWSER);
 
+
     Factory::Label::Create(this, "&Encoding", "x:1,y:5,w:10");
-    comboEncoding = Factory::ComboBox::Create(
-          this, "l:12,t:5,r:1", "UTF-8 (with BOM),UTF-8 (without BOM),ASCII-Z,UTF-16 (LE),UTF-16 (BE)");
+    comboEncoding = Factory::ComboBox::Create(this, "l:12,t:5,r:1", "UTF-8 (with BOM),UTF-8 (without BOM),ASCII-Z,UTF-16 (LE),UTF-16 (BE)");
     comboEncoding->SetCurentItemIndex(0);
     comboEncoding->SetHotKey('E');
 

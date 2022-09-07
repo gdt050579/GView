@@ -481,7 +481,7 @@ namespace View
             Reference<ComboBox> comboEncoding, comboNewLine;
             Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
           public:
-            SaveAsDialog();
+            SaveAsDialog(Reference<Object> obj);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
@@ -496,6 +496,10 @@ namespace View
             inline bool ShouldOpenANewWindow()
             {
                 return cbOpenInNewWindow->IsChecked();
+            }
+            inline const CharacterBuffer& GetFilePath()
+            {
+                return txPath->GetText();
             }
         };
 

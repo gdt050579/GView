@@ -1507,10 +1507,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         this->showMetaData = !this->showMetaData;
         this->RecomputeTokenPositions();
         return true;
-    //case CMD_ID_PRETTY_FORMAT:
-    //    this->prettyFormat = !this->prettyFormat;
-    //    this->RecomputeTokenPositions();
-    //    return true;
+    // case CMD_ID_PRETTY_FORMAT:
+    //     this->prettyFormat = !this->prettyFormat;
+    //     this->RecomputeTokenPositions();
+    //     return true;
     case CMD_ID_DELETE:
         this->DeleteTokens();
         return true;
@@ -1657,8 +1657,95 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
-    SaveAsDialog dlg;
+    SaveAsDialog dlg(this->obj);
     dlg.Show();
+    LocalUnicodeStringBuilder<256> tmpPath;
+    tmpPath.Set(dlg.GetFilePath());
+
+    // open the file
+    AppCUI::OS::File f;
+    if (f.Create(tmpPath, true) == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");
+        return;
+    }
+
+    // actual save
+    Buffer b;
+    CharacterEncoding::EncodedCharacter encChar;
+    b.Reserve(100000);
+    auto y       = 0;
+    auto x       = 0;
+    auto newLine = dlg.GetNewLineFormat();
+    auto enc     = dlg.GetTextEncoding();
+    auto bom     = dlg.HasBOM() ? CharacterEncoding::GetBOMForEncoding(enc) : BufferView();
+
+    b.Add(bom);
+    for (const auto& tok : this->tokens)
+    {
+        if (tok.IsVisible() == false)
+            continue;
+        if (y < tok.y)
+        {
+            b.AddMultipleTimes(newLine, tok.y - y);
+            x = 0;
+            y = tok.y;
+        }
+        if (x < tok.x)
+        {
+            b.AddMultipleTimes(" ", tok.x - x);
+            x = tok.x;
+        }
+        auto txt    = tok.GetText(this->text.text);
+        auto lastCH = static_cast<char16>(0);
+        for (auto ch : txt)
+        {
+            if ((ch == '\n') || (ch == '\r'))
+            {
+                if (((lastCH == '\n') || (lastCH == '\r')) && (lastCH != ch))
+                {
+                    // CRLF or LFCR cases => do nothing, just reset the last char
+                    lastCH = 0;
+                }
+                else
+                {
+                    b.Add(newLine);
+                    b.AddMultipleTimes(" ", tok.x);
+                    x = tok.x;
+                    y++;
+                    lastCH = ch;
+                }
+            }
+            else
+            {
+                b.Add(encChar.Encode(ch, enc));
+                x++;
+                lastCH = 0;
+            }
+        }
+        if (b.GetLength() > 0x10000)
+        {
+            if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Writing to file failed !");
+                f.Close();
+                return;
+            }
+            b.Resize(0);
+        }
+    }
+
+    if (b.GetLength() > 0)
+    {
+        if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Writing to file failed !");
+            f.Close();
+            return;
+        }
+    }
+    f.Close();
+    AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
 }
 std::string_view Instance::GetName()
 {
