@@ -18,6 +18,31 @@ SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,
     txPath->SetHotKey('P');
     Factory::Button::Create(this, "&Browse", "x:67,y:2,a:rt,w:13", BTN_ID_BROWSER);
 
+    auto currentPath = obj->GetPath();
+    auto indexExt    = currentPath.find_last_of('.');
+    if (currentPath.empty() == false)
+    {   
+        LocalUnicodeStringBuilder<256> temp;
+        if (indexExt != u16string_view::npos)
+        {
+            // extension is present
+            temp.Set(currentPath.substr(0, indexExt));
+        }
+        else
+        {
+            temp.Set(currentPath);
+        }
+        temp.Add(".formated");
+        if (indexExt != u16string_view::npos)
+        {
+            temp.Add(currentPath.substr(indexExt));
+        }
+        else
+        {
+            temp.Add(".output");
+        }
+        txPath->SetText(temp);
+    }
 
     Factory::Label::Create(this, "&Encoding", "x:1,y:5,w:10");
     comboEncoding = Factory::ComboBox::Create(this, "l:12,t:5,r:1", "UTF-8 (with BOM),UTF-8 (without BOM),ASCII-Z,UTF-16 (LE),UTF-16 (BE)");
@@ -30,7 +55,7 @@ SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,
     comboNewLine->SetHotKey('N');
 
     cbOpenInNewWindow    = Factory::CheckBox::Create(this, "Open the file in a new &window after saving it", "l:1,t:9,r:1");
-    cbBackupOriginalFile = Factory::CheckBox::Create(this, "Backup of the original file", "l:1,t:10,r:1");
+    cbBackupOriginalFile = Factory::CheckBox::Create(this, "Backup of the original file (when overwriting content)", "l:1,t:10,r:1");
 
     Factory::Button::Create(this, "&OK", "l:21,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_ID_CANCEL);
