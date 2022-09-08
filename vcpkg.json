@@ -37,6 +37,10 @@
         {
             "name": "openssl",
             "platform": "windows | linux | osx"
+        },
+        {
+            "name": "distorm",
+            "platform": "windows | linux | osx"
         }
     ]
 }

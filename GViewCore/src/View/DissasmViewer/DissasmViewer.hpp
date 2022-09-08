@@ -238,7 +238,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
