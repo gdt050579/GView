@@ -333,13 +333,17 @@ void Instance::MoveToZone(bool startOfZone, bool select)
 bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
     }
     return true;
 }
 bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }

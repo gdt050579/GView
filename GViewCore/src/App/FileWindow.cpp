@@ -9,6 +9,7 @@
 
 using namespace GView::App;
 using namespace GView::View;
+using namespace AppCUI::Input;
 
 constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
@@ -77,6 +78,34 @@ Reference<GView::Object> FileWindow::GetObject()
 {
     return Reference<GView::Object>(this->obj.get());
 }
+
+void FileWindow::ShowFilePropertiesDialog()
+{
+    FileWindowProperties dlg(view);
+    dlg.Show();
+}
+void FileWindow::ShowGoToDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
+    }
+}
+void FileWindow::ShowFindDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
+    }
+}
+void FileWindow::ShowCopyDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowCopyDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Copy command !");
+    }
+}
+
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
     if (verticalPosition)
@@ -151,6 +180,20 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
             view->SetFocus();
         return true;
     }
+    // finally --> check some hardcoded commands
+    switch (keyCode)
+    {
+    case Key::Ctrl | Key::G:
+        ShowGoToDialog();
+        return true;
+    case Key::Ctrl | Key::F:
+        ShowFindDialog();
+        return true;
+    case Key::Ctrl | Key::C:
+    case Key::Ctrl | Key::Insert:
+        ShowCopyDialog();
+        return true;
+    }
     return false;
 }
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
@@ -160,31 +203,19 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     switch (eventType)
     {
     case Event::Command:
-        if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
+        switch (ID)
         {
-            FileWindowProperties dlg(view);
-            dlg.Show();
+        case CMD_SHOW_VIEW_CONFIG_PANEL:
+            ShowFilePropertiesDialog();
             return true;
-        }
-        if (ID == CMD_NEXT_VIEW)
-        {
+        case CMD_NEXT_VIEW:
             this->view->GoToNextTabPage();
             return true;
-        }
-        if (ID == CMD_GOTO)
-        {
-            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog()==false)
-            {
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
-            }
+        case CMD_GOTO:
+            ShowGoToDialog();
             return true;
-        }
-        if (ID == CMD_FIND)
-        {
-            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
-            {
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
-            }
+        case CMD_FIND:
+            ShowFindDialog();
             return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))

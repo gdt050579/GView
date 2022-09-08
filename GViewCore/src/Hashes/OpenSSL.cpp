@@ -18,7 +18,6 @@ OpenSSLHash::OpenSSLHash(OpenSSLHashKind kind)
     const EVP_MD* alg = nullptr;
     switch (kind)
     {
-        H(Md4, md4);
         H(Md5, md5);
         H(Blake2s256, blake2s256);
         H(Blake2b512, blake2b512);
@@ -36,6 +35,7 @@ OpenSSLHash::OpenSSLHash(OpenSSLHashKind kind)
         H(Shake128, shake128);
         H(Shake256, shake256);
     }
+
     auto ctx = EVP_MD_CTX_new();
     assert(EVP_DigestInit_ex(ctx, alg, nullptr));
     handle = ctx;

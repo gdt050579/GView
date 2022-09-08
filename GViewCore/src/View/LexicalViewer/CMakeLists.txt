@@ -11,4 +11,5 @@ target_sources(GViewCore PRIVATE
 	NameRefactorDialog.cpp
 	DeleteDialog.cpp
 	PluginDialog.cpp
+	SaveAsDialog.cpp
 	Settings.cpp)
