@@ -7,7 +7,7 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 constexpr int32 CMD_ID_SHOW_METADATA    = 0xBF00;
-constexpr int32 CMD_ID_PRETTY_FORMAT    = 0xBF01;
+constexpr int32 CMD_ID_SAVE_AS          = 0xBF01;
 constexpr int32 CMD_ID_DELETE           = 0xBF02;
 constexpr int32 CMD_ID_CHANGE_SELECTION = 0xBF03;
 constexpr int32 CMD_ID_FOLD_ALL         = 0xBF04;
@@ -647,6 +647,32 @@ uint32 Instance::CountSimilarTokens(uint32 start, uint32 end, uint64 hash)
     return count;
 }
 
+void Instance::MakeTokenVisible(uint32 index)
+{
+    if (static_cast<size_t>(index) >= this->tokens.size())
+        return;
+    auto& tok    = this->tokens[index];
+    auto blockID = BlockObject::INVALID_ID;
+    if (tok.IsBlockStarter())
+    {
+        tok.SetFolded(false);
+        tok.SetVisible(true);
+        if (index == 0)
+            return;
+        // find the block that contains the current block (start with the precedent token)
+        blockID = TokenToBlock(index - 1);
+    }
+    else
+    {
+        tok.SetVisible(true);
+        // find the block that contains the current bloc
+        blockID = TokenToBlock(index);
+    }
+    if (blockID == BlockObject::INVALID_ID)
+        return;
+    MakeTokenVisible(this->blocks[blockID].tokenStart);
+}
+
 void Instance::EnsureCurrentItemIsVisible()
 {
     if (this->noItemsVisible)
@@ -986,11 +1012,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     else
         commandBar.SetCommand(config.Keys.showMetaData, "ShowMetaData:OFF", CMD_ID_SHOW_METADATA);
 
-    if (this->prettyFormat)
-        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Pretty", CMD_ID_PRETTY_FORMAT);
-    else
-        commandBar.SetCommand(config.Keys.prettyFormat, "Format:Original", CMD_ID_PRETTY_FORMAT);
-
     if (this->noItemsVisible == false)
         commandBar.SetCommand(Key::Delete, "Delete", CMD_ID_DELETE);
 
@@ -1002,6 +1023,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.foldAll, "Fold all", CMD_ID_FOLD_ALL);
     commandBar.SetCommand(config.Keys.expandAll, "Expand all", CMD_ID_EXPAND_ALL);
     commandBar.SetCommand(config.Keys.showPlugins, "Plugins", CMD_ID_SHOW_PLUGINS);
+    commandBar.SetCommand(config.Keys.saveAs, "Save As", CMD_ID_SAVE_AS);
 
     return false;
 }
@@ -1277,7 +1299,7 @@ void Instance::EditCurrentToken()
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);
     NameRefactorDialog dlg(tok, this->text.text, selection.HasSelection(0), containerBlock != BlockObject::INVALID_ID);
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
         auto start  = 0U;
@@ -1341,7 +1363,7 @@ void Instance::DeleteTokens()
     // all good -> edit the token
     auto containerBlock = TokenToBlock(this->currentTokenIndex);
     DeleteDialog dlg(tok, this->text.text, selection.HasSelection(0), containerBlock != BlockObject::INVALID_ID);
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         auto method = dlg.GetApplyMethod();
         auto start  = 0U;
@@ -1485,10 +1507,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         this->showMetaData = !this->showMetaData;
         this->RecomputeTokenPositions();
         return true;
-    case CMD_ID_PRETTY_FORMAT:
-        this->prettyFormat = !this->prettyFormat;
-        this->RecomputeTokenPositions();
-        return true;
+    // case CMD_ID_PRETTY_FORMAT:
+    //     this->prettyFormat = !this->prettyFormat;
+    //     this->RecomputeTokenPositions();
+    //     return true;
     case CMD_ID_DELETE:
         this->DeleteTokens();
         return true;
@@ -1503,6 +1525,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case CMD_ID_SHOW_PLUGINS:
         this->ShowPlugins();
+        return true;
+    case CMD_ID_SAVE_AS:
+        this->ShowSaveAsDialog();
         return true;
     }
     return false;
@@ -1534,14 +1559,16 @@ bool Instance::ShowGoToDialog()
         curentLineNumber = this->tokens[this->currentTokenIndex].lineNo;
 
     GoToDialog dlg(curentLineNumber, lastLineNumber);
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         auto gotoLine = dlg.GetSelectedLineNo();
         auto idx      = 0U;
-        for (const auto& tok: this->tokens)
+        for (const auto& tok : this->tokens)
         {
             if (tok.lineNo == gotoLine)
             {
+                MakeTokenVisible(idx);
+                RecomputeTokenPositions();
                 MoveToToken(idx, false);
                 break;
             }
@@ -1551,6 +1578,10 @@ bool Instance::ShowGoToDialog()
     return true;
 }
 bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
@@ -1622,6 +1653,120 @@ void Instance::ShowPlugins()
     default:
         textClone.Destroy();
         return;
+    }
+}
+void Instance::ShowSaveAsDialog()
+{
+    SaveAsDialog dlg(this->obj);
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return;
+    LocalUnicodeStringBuilder<256> tmpPath;
+    tmpPath.Set(dlg.GetFilePath());
+
+    if ((dlg.ShouldBackupOriginalFile()) && (std::filesystem::exists(tmpPath)))
+    {
+        LocalUnicodeStringBuilder<256> tmpBakPath;
+        tmpBakPath.Set(tmpPath);
+        tmpBakPath.Add(".bak");
+        try
+        {
+            std::filesystem::rename(tmpPath, tmpBakPath);
+        }
+        catch (...)
+        {
+            if (Dialogs::MessageBox::ShowOkCancel(
+                      "Backup", "Unable to backup the original file. Do you want to continue and overwrite it ?") != Dialogs::Result::Ok)
+                return;
+        }
+    }
+
+    // open the file
+    AppCUI::OS::File f;
+    if (f.Create(tmpPath, true) == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to create file !");
+        return;
+    }
+
+    // actual save
+    Buffer b;
+    CharacterEncoding::EncodedCharacter encChar;
+    b.Reserve(100000);
+    auto y       = 0;
+    auto x       = 0;
+    auto newLine = dlg.GetNewLineFormat();
+    auto enc     = dlg.GetTextEncoding();
+    auto bom     = dlg.HasBOM() ? CharacterEncoding::GetBOMForEncoding(enc) : BufferView();
+
+    b.Add(bom);
+    for (const auto& tok : this->tokens)
+    {
+        if (tok.IsVisible() == false)
+            continue;
+        if (y < tok.y)
+        {
+            b.AddMultipleTimes(newLine, tok.y - y);
+            x = 0;
+            y = tok.y;
+        }
+        if (x < tok.x)
+        {
+            b.AddMultipleTimes(" ", tok.x - x);
+            x = tok.x;
+        }
+        auto txt    = tok.GetText(this->text.text);
+        auto lastCH = static_cast<char16>(0);
+        for (auto ch : txt)
+        {
+            if ((ch == '\n') || (ch == '\r'))
+            {
+                if (((lastCH == '\n') || (lastCH == '\r')) && (lastCH != ch))
+                {
+                    // CRLF or LFCR cases => do nothing, just reset the last char
+                    lastCH = 0;
+                }
+                else
+                {
+                    b.Add(newLine);
+                    b.AddMultipleTimes(" ", tok.x);
+                    x = tok.x;
+                    y++;
+                    lastCH = ch;
+                }
+            }
+            else
+            {
+                b.Add(encChar.Encode(ch, enc));
+                x++;
+                lastCH = 0;
+            }
+        }
+        if (b.GetLength() > 0x10000)
+        {
+            if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Writing to file failed !");
+                f.Close();
+                return;
+            }
+            b.Resize(0);
+        }
+    }
+
+    if (b.GetLength() > 0)
+    {
+        if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Writing to file failed !");
+            f.Close();
+            return;
+        }
+    }
+    f.Close();
+    AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
+    if (dlg.ShouldOpenANewWindow())
+    {
+        GView::App::OpenFile(tmpPath);
     }
 }
 std::string_view Instance::GetName()
@@ -1841,6 +1986,19 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 enum class PropertyID : uint32
 {
     // display
+    IndentWidth,
+    ViewWidth,
+    // shortcuts
+    ShowPluginListKey,
+    SaveAsKey,
+    ShowMetaDataKey,
+    ChangeSelectionTypeKey,
+    FoldAllKey,
+    ExpandAllKey,
+    // General
+    NoOfTokens,
+    NoOfBlocks,
+    NoOfLines
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1848,6 +2006,39 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
+    case PropertyID::IndentWidth:
+        value = this->settings->indentWidth;
+        return true;
+    case PropertyID::ViewWidth:
+        value = this->settings->maxWidth;
+        return true;
+    case PropertyID::ShowPluginListKey:
+        value = this->config.Keys.showPlugins;
+        return true;
+    case PropertyID::SaveAsKey:
+        value = this->config.Keys.saveAs;
+        return true;
+    case PropertyID::ShowMetaDataKey:
+        value = this->config.Keys.showMetaData;
+        return true;
+    case PropertyID::ChangeSelectionTypeKey:
+        value = this->config.Keys.changeSelectionType;
+        return true;
+    case PropertyID::FoldAllKey:
+        value = this->config.Keys.foldAll;
+        return true;
+    case PropertyID::ExpandAllKey:
+        value = this->config.Keys.expandAll;
+        return true;
+    case PropertyID::NoOfTokens:
+        value = static_cast<uint32>(this->tokens.size());
+        return true;
+    case PropertyID::NoOfBlocks:
+        value = static_cast<uint32>(this->blocks.size());
+        return true;
+    case PropertyID::NoOfLines:
+        value = static_cast<uint32>(this->lastLineNumber + 1);
+        return true;
     }
     return false;
 }
@@ -1855,8 +2046,34 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (static_cast<PropertyID>(id))
     {
+    case PropertyID::IndentWidth:
+        this->settings->indentWidth = std::min<uint8>(30, std::max<uint8>(2, std::get<uint8>(value)));
+        RecomputeTokenPositions();
+        return true;
+    case PropertyID::ViewWidth:
+        this->settings->maxWidth = std::min<>(2000U, std::max<>(8U, std::get<uint32>(value)));
+        RecomputeTokenPositions();
+        return true;
+    case PropertyID::ShowPluginListKey:
+        this->config.Keys.showPlugins = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::SaveAsKey:
+        this->config.Keys.saveAs = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::ShowMetaDataKey:
+        this->config.Keys.showMetaData = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::ChangeSelectionTypeKey:
+        this->config.Keys.changeSelectionType = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::FoldAllKey:
+        this->config.Keys.foldAll = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::ExpandAllKey:
+        this->config.Keys.expandAll = std::get<Input::Key>(value);
+        return true;
     }
-    error.SetFormat("Unknown internat ID: %u", id);
+    error.SetFormat("Unknown internal ID: %u", id);
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -1866,6 +2083,10 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     switch (static_cast<PropertyID>(propertyID))
     {
+    case PropertyID::NoOfTokens:
+    case PropertyID::NoOfLines:
+    case PropertyID::NoOfBlocks:
+        return true;
     }
 
     return false;
@@ -1873,14 +2094,19 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
-        //{ BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
-        //{ BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
-        //{ BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
-        //{ BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
-        //{ BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
-        //{ BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
-        //// shortcuts
-        //{ BT(PropertyID::WrapMethodKey), "Shortcuts", "Change wrap method", PropertyType::Key },
+        { BT(PropertyID::IndentWidth), "Sizes", "Indent with", PropertyType::UInt8 },
+        { BT(PropertyID::ViewWidth), "Sizes", "View width", PropertyType::UInt32 },
+        // shortcuts
+        { BT(PropertyID::ShowPluginListKey), "Shortcuts", "Show plugin list", PropertyType::Key },
+        { BT(PropertyID::SaveAsKey), "Shortcuts", "SaveAs", PropertyType::Key },
+        { BT(PropertyID::ShowMetaDataKey), "Shortcuts", "Show/Hide metadata", PropertyType::Key },
+        { BT(PropertyID::ChangeSelectionTypeKey), "Shortcuts", "Change selection", PropertyType::Key },
+        { BT(PropertyID::FoldAllKey), "Shortcuts", "Fold all", PropertyType::Key },
+        { BT(PropertyID::ExpandAllKey), "Shortcuts", "ExpandAll", PropertyType::Key },
+        // General
+        { BT(PropertyID::NoOfTokens), "General", "Tokens count", PropertyType::UInt32 },
+        { BT(PropertyID::NoOfBlocks), "General", "Blocks count", PropertyType::UInt32 },
+        { BT(PropertyID::NoOfLines), "General", "Lines count", PropertyType::UInt32 },
     };
 }
 #undef BT

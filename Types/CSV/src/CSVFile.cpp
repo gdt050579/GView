@@ -78,9 +78,11 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
                 oSizeProcessed += rPos + 1;
             }
         }
-        else
+        else // last line EOF
         {
-            throw std::runtime_error("Not enough cache to read a line!");
+            settings.AddZone(oldOSizeProcessed, oSize - oldOSizeProcessed, color, std::to_string(currentLine));
+            currentLine++;
+            break;
         }
 
         settings.AddZone(oldOSizeProcessed, oSizeProcessed - oldOSizeProcessed, color, std::to_string(currentLine));

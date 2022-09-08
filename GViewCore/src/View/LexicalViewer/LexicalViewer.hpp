@@ -202,9 +202,9 @@ namespace View
         {
             struct
             {
-                AppCUI::Input::Key showMetaData;
+                AppCUI::Input::Key saveAs;
                 AppCUI::Input::Key showPlugins;
-                AppCUI::Input::Key prettyFormat;
+                AppCUI::Input::Key showMetaData;
                 AppCUI::Input::Key changeSelectionType;
                 AppCUI::Input::Key foldAll;
                 AppCUI::Input::Key expandAll;
@@ -300,6 +300,8 @@ namespace View
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
             void PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, uint32 index);
 
+            void MakeTokenVisible(uint32 index);
+
             void MoveToToken(uint32 index, bool selected);
             void MoveLeft(bool selected, bool stopAfterFirst);
             void MoveRight(bool selected, bool stopAfterFirst);
@@ -317,6 +319,7 @@ namespace View
             void EditCurrentToken();
             void DeleteTokens();
             void ShowPlugins();
+            void ShowSaveAsDialog();
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();
@@ -355,6 +358,7 @@ namespace View
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
+            virtual bool ShowCopyDialog() override;
             virtual std::string_view GetName() override;
 
             // mouse events
@@ -469,6 +473,35 @@ namespace View
             inline uint32 GetSelectedLineNo() const
             {
                 return selectedLineNo;
+            }
+        };
+        class SaveAsDialog : public Window
+        {
+            Reference<TextField> txPath;
+            Reference<ComboBox> comboEncoding, comboNewLine;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+            void Validate();
+            void BrowseForFile();
+          public:
+            SaveAsDialog(Reference<Object> obj);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+            std::string_view GetNewLineFormat();
+            CharacterEncoding::Encoding GetTextEncoding();
+            bool HasBOM();
+
+            inline bool ShouldBackupOriginalFile()
+            {
+                return cbBackupOriginalFile->IsChecked();
+            }
+            inline bool ShouldOpenANewWindow()
+            {
+                return cbOpenInNewWindow->IsChecked();
+            }
+            inline const CharacterBuffer& GetFilePath()
+            {
+                return txPath->GetText();
             }
         };
 

@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.107.0"
+#define GVIEW_VERSION "0.205.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -249,38 +249,8 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    class CORE_EXPORT MD2
-    {
-      private:
-        uint8 m[16];
-        uint8 x[48];
-        uint8 c[16];
-        uint32 size;
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(const Buffer& buffer);
-        bool Update(const BufferView& buffer);
-        bool Final(uint8 hash[16]);
-        static std::string_view GetName();
-        const std::string_view GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
-
-      private:
-        char hexDigest[ResultBytesLength * 2];
-    };
-
     enum class OpenSSLHashKind : uint8
     {
-        Md4,
         Md5,
         Blake2s256,
         Blake2b512,
@@ -612,6 +582,7 @@ namespace View
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual bool ShowGoToDialog()                                                                          = 0;
         virtual bool ShowFindDialog()                                                                          = 0;
+        virtual bool ShowCopyDialog()                                                                          = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
@@ -740,12 +711,13 @@ namespace View
         };
         enum class StringFormat : uint32
         {
-            SingleQuotes         = 0x00000001, // "..."
-            DoubleQuotes         = 0x00000002, // '...'
-            TripleQuotes         = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences = 0x00000008, // "...\n..."
-            MultiLine            = 0x00000010, // string accross mulitple lines
-            All                  = 0xFFFFFFFF, // all possible forms of strings
+            SingleQuotes                = 0x00000001, // "..."
+            DoubleQuotes                = 0x00000002, // '...'
+            TripleQuotes                = 0x00000004, // '''...''' or """..."""
+            AllowEscapeSequences        = 0x00000008, // "...\n..."
+            MultiLine                   = 0x00000010, // string accross mulitple lines
+            LineContinuityWithBackslash = 0x00000020, // "   \<newline>   "
+            All                         = 0xFFFFFFFF, // all possible forms of strings
         };
         enum class NumberFormat : uint32
         {

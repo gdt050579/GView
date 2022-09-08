@@ -20,7 +20,7 @@ class CharacterTableExample : public Window, public Handlers::OnButtonPressedInt
     }
     void OnButtonPressed(Reference<Button>) override
     {
-        this->Exit(0);
+        this->Exit();
     }
 };
 

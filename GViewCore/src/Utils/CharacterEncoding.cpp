@@ -36,6 +36,44 @@ bool ExpandedCharacter::FromUTF8Buffer(const uint8* p, const uint8* end)
     // invalid 16 bytes encoding
     RETURNERROR(false, "Invalid UTF-8 encoding ");
 }
+BufferView EncodedCharacter::ToUTF8(char16 ch)
+{
+    if (ch <= 0x80)
+    {
+        this->internalBuffer[0] = static_cast<uint8>(ch);
+        return BufferView(this->internalBuffer, 2);
+    }
+    if (ch<=0x7FF)
+    {
+        this->internalBuffer[0] = static_cast<uint8>(0b11000000) | static_cast<uint8>(ch >> 6);
+        this->internalBuffer[1] = static_cast<uint8>(0b10000000) | static_cast<uint8>(ch & 63);
+        return BufferView(this->internalBuffer, 2);
+    }
+    // else rest of characters
+    this->internalBuffer[0] = static_cast<uint8>(0b11100000) | static_cast<uint8>(ch >> 12);
+    this->internalBuffer[1] = static_cast<uint8>(0b10000000) | static_cast<uint8>((ch >> 6) & 63);
+    this->internalBuffer[2] = static_cast<uint8>(0b10000000) | static_cast<uint8>(ch & 63);
+    return BufferView(this->internalBuffer, 3);
+}
+uint8 utf8BOM[] = {0xEF, 0xBB, 0xBf};
+uint8 unicode16LEBOM[] = {0xFF, 0xFE};
+uint8 unicode16BEBOM[] = {0xFE, 0xFF};
+BufferView GetBOMForEncoding(Encoding encoding)
+{
+    switch (encoding)
+    {
+    case Encoding::Binary:
+    case Encoding::Ascii:
+        return BufferView();
+    case Encoding::UTF8:
+        return BufferView(utf8BOM, 3);
+    case Encoding::Unicode16LE:
+        return BufferView(unicode16LEBOM, 2);
+    case Encoding::Unicode16BE:
+        return BufferView(unicode16BEBOM, 2);
+    }
+    return BufferView();
+}
 inline bool IsTextCharacter(uint8 value)
 {
     return ((value >= ' ') && (value < 127)) || (value == '\n') || (value == '\r') || (value == '\t');
@@ -163,4 +201,5 @@ UnicodeString ConvertToUnicode16(BufferView buf)
     }
     return UnicodeString(ptr, static_cast<uint32>(pos - ptr), static_cast<uint32>(buf.GetLength()));
 }
+
 } // namespace GView::Utils::CharacterEncoding

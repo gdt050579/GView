@@ -30,23 +30,19 @@ jobs:
       
     name: Analyze
     runs-on: windows-latest
-    
-    env:
-      VCPKGRS_DYNAMIC: 1
-      
+          
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v2
       with:
           submodules: recursive
-          
-    - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      
     - name: Configure CMake
-      run: cmake -B ${{env.build}} -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT"/scripts/buildsystems/vcpkg.cmake
-
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      
     # Build is not required unless generated source files are used
-    # - name: Build CMake
-    #   run: cmake --build ${{ env.build }}
+    # - name: Build
+    #   run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
     - name: Initialize MSVC Code Analysis
       uses: microsoft/msvc-code-analysis-action@v0.1.0
