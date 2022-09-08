@@ -1989,7 +1989,12 @@ enum class PropertyID : uint32
     IndentWidth,
     ViewWidth,
     // shortcuts
-    ShowPluginList
+    ShowPluginListKey,
+    SaveAsKey,
+    ShowMetaDataKey,
+    ChangeSelectionTypeKey,
+    FoldAllKey,
+    ExpandAllKey
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2003,8 +2008,23 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ViewWidth:
         value = this->settings->maxWidth;
         return true;
-    case PropertyID::ShowPluginList:
+    case PropertyID::ShowPluginListKey:
         value = this->config.Keys.showPlugins;
+        return true;
+    case PropertyID::SaveAsKey:
+        value = this->config.Keys.saveAs;
+        return true;
+    case PropertyID::ShowMetaDataKey:
+        value = this->config.Keys.showMetaData;
+        return true;
+    case PropertyID::ChangeSelectionTypeKey:
+        value = this->config.Keys.changeSelectionType;
+        return true;
+    case PropertyID::FoldAllKey:
+        value = this->config.Keys.foldAll;
+        return true;
+    case PropertyID::ExpandAllKey:
+        value = this->config.Keys.expandAll;
         return true;
     }
     return false;
@@ -2014,15 +2034,30 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     switch (static_cast<PropertyID>(id))
     {
     case PropertyID::IndentWidth:
-        this->settings->indentWidth = std::min<uint8>(30,std::max<uint8>(2,std::get<uint8>(value)));
+        this->settings->indentWidth = std::min<uint8>(30, std::max<uint8>(2, std::get<uint8>(value)));
         RecomputeTokenPositions();
         return true;
     case PropertyID::ViewWidth:
         this->settings->maxWidth = std::min<>(2000U, std::max<>(8U, std::get<uint32>(value)));
         RecomputeTokenPositions();
         return true;
-    case PropertyID::ShowPluginList:
+    case PropertyID::ShowPluginListKey:
         this->config.Keys.showPlugins = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::SaveAsKey:
+        this->config.Keys.saveAs = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::ShowMetaDataKey:
+        this->config.Keys.showMetaData = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::ChangeSelectionTypeKey:
+        this->config.Keys.changeSelectionType = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::FoldAllKey:
+        this->config.Keys.foldAll = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::ExpandAllKey:
+        this->config.Keys.expandAll = std::get<Input::Key>(value);
         return true;
     }
     error.SetFormat("Unknown internal ID: %u", id);
@@ -2045,7 +2080,12 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::IndentWidth), "Sizes", "Indent with", PropertyType::UInt8 },
         { BT(PropertyID::ViewWidth), "Sizes", "View width", PropertyType::UInt32 },
         // shortcuts
-        { BT(PropertyID::ShowPluginList), "Shortcuts", "Show plugin list", PropertyType::Key },
+        { BT(PropertyID::ShowPluginListKey), "Shortcuts", "Show plugin list", PropertyType::Key },
+        { BT(PropertyID::SaveAsKey), "Shortcuts", "SaveAs", PropertyType::Key },
+        { BT(PropertyID::ShowMetaDataKey), "Shortcuts", "Show/Hide metadata", PropertyType::Key },
+        { BT(PropertyID::ChangeSelectionTypeKey), "Shortcuts", "Change selection", PropertyType::Key },
+        { BT(PropertyID::FoldAllKey), "Shortcuts", "Fold all", PropertyType::Key },
+        { BT(PropertyID::ExpandAllKey), "Shortcuts", "ExpandAll", PropertyType::Key },
         //{ BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
         //{ BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         //{ BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
