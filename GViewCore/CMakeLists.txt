@@ -10,12 +10,10 @@ target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
 target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
 target_link_libraries(GViewCore PRIVATE LLVMDemangle)
-
+                                                             
 find_package(OpenSSL REQUIRED)
-if(OPENSSL_FOUND)
-    target_include_directories(GViewCore PRIVATE ${OPENSSL_INCLUDE_DIR})
-    target_link_libraries(GViewCore PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
-endif()
+target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 
 
 if (MSVC)

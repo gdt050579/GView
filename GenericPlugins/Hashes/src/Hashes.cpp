@@ -20,8 +20,6 @@ constexpr std::string_view TYPES_CRC32_JAMCRC_0 = "Types.CRC32_JAMCRC_0";
 constexpr std::string_view TYPES_CRC32_JAMCRC   = "Types.CRC32_JAMCRC";
 constexpr std::string_view TYPES_CRC64_ECMA_182 = "Types.CRC64_ECMA_182";
 constexpr std::string_view TYPES_CRC64_WE       = "Types.CRC64_WE";
-constexpr std::string_view TYPES_MD2            = "Types.MD2";
-constexpr std::string_view TYPES_MD4            = "Types.MD4";
 constexpr std::string_view TYPES_MD5            = "Types.MD5";
 constexpr std::string_view TYPES_BLAKE2S256     = "Types.BLAKE2S256";
 constexpr std::string_view TYPES_BLAKE2B512     = "Types.BLAKE2B512";
@@ -68,8 +66,6 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
     CRC32_JAMCRC   = options->AddItem(CRC32::GetName(CRC32Type::JAMCRC));
     CRC64_ECMA_182 = options->AddItem(CRC64::GetName(CRC64Type::ECMA_182));
     CRC64_WE       = options->AddItem(CRC64::GetName(CRC64Type::WE));
-    MD2            = options->AddItem(MD2::GetName());
-    MD4            = options->AddItem("MD4");
     MD5            = options->AddItem("MD5");
     BLAKE2S256     = options->AddItem("BLAKE2S256");
     BLAKE2B512     = options->AddItem("BLAKE2B512");
@@ -104,7 +100,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
 {
     if (b->GetControlID() == CMD_BUTTON_CLOSE || b->GetControlID() == CMD_BUTTON_CANCEL)
     {
-        Exit(0);
+        Exit();
     }
     else if (b->GetControlID() == CMD_BUTTON_OK)
     {
@@ -134,7 +130,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
         return;
     }
 
-    Exit(0);
+    Exit();
 }
 
 bool HashesDialog::OnEvent(Reference<Control> c, Event eventType, int id)
@@ -176,12 +172,6 @@ void HashesDialog::SetCheckBoxesFromFlags()
             break;
         case Hashes::CRC64_WE:
             CRC64_WE.SetCheck(true);
-            break;
-        case Hashes::MD2:
-            MD2.SetCheck(true);
-            break;
-        case Hashes::MD4:
-            MD4.SetCheck(true);
             break;
         case Hashes::MD5:
             MD5.SetCheck(true);
@@ -293,24 +283,6 @@ void HashesDialog::SetFlagsFromCheckBoxes()
     else
     {
         flags &= ~static_cast<uint32>(Hashes::CRC64_WE);
-    }
-
-    if (MD2.IsChecked())
-    {
-        flags |= static_cast<uint32>(Hashes::MD2);
-    }
-    else
-    {
-        flags &= ~static_cast<uint32>(Hashes::MD2);
-    }
-
-    if (MD4.IsChecked())
-    {
-        flags |= static_cast<uint32>(Hashes::MD4);
-    }
-    else
-    {
-        flags &= ~static_cast<uint32>(Hashes::MD4);
     }
 
     if (MD5.IsChecked())
@@ -507,14 +479,6 @@ void HashesDialog::SetFlagsFromSettings()
             {
                 flags |= static_cast<uint32>(Hashes::CRC64_WE);
             }
-            else if (name == TYPES_MD2)
-            {
-                flags |= static_cast<uint32>(Hashes::MD2);
-            }
-            else if (name == TYPES_MD4)
-            {
-                flags |= static_cast<uint32>(Hashes::MD4);
-            }
             else if (name == TYPES_MD5)
             {
                 flags |= static_cast<uint32>(Hashes::MD5);
@@ -594,8 +558,6 @@ void HashesDialog::SetSettingsFromFlags()
     hashesSettings[TYPES_CRC32_JAMCRC]   = CRC32_JAMCRC.IsChecked();
     hashesSettings[TYPES_CRC64_ECMA_182] = CRC64_ECMA_182.IsChecked();
     hashesSettings[TYPES_CRC64_WE]       = CRC64_WE.IsChecked();
-    hashesSettings[TYPES_MD2]            = MD2.IsChecked();
-    hashesSettings[TYPES_MD4]            = MD4.IsChecked();
     hashesSettings[TYPES_MD5]            = MD5.IsChecked();
     hashesSettings[TYPES_BLAKE2S256]     = BLAKE2S256.IsChecked();
     hashesSettings[TYPES_BLAKE2B512]     = BLAKE2B512.IsChecked();
@@ -627,8 +589,6 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
     CRC32 crc32JAMCRC{};
     CRC64 crc64ECMA182{};
     CRC64 crc64WE{};
-    MD2 md2{};
-    OpenSSLHash md4(OpenSSLHashKind::Md4);
     OpenSSLHash md5(OpenSSLHashKind::Md5);
     OpenSSLHash blake2s256(OpenSSLHashKind::Blake2s256);
     OpenSSLHash blake2b512(OpenSSLHashKind::Blake2b512);
@@ -668,10 +628,6 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         case Hashes::CRC64_WE:
             CHECK(crc64WE.Init(CRC64Type::WE), false, "");
             break;
-        case Hashes::MD2:
-            CHECK(md2.Init(), false, "");
-            break;
-        case Hashes::MD4:
         case Hashes::MD5:
         case Hashes::BLAKE2S256:
         case Hashes::BLAKE2B512:
@@ -737,12 +693,6 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
                 break;
             case Hashes::CRC64_WE:
                 CHECK(crc64WE.Update(buffer), false, "");
-                break;
-            case Hashes::MD2:
-                CHECK(md2.Update(buffer), false, "");
-                break;
-            case Hashes::MD4:
-                CHECK(md4.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
                 break;
             case Hashes::MD5:
                 CHECK(md5.Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength())), false, "");
@@ -823,13 +773,6 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             break;
         case Hashes::CRC64_WE:
             outputs.emplace(std::pair{ CRC64::GetName(CRC64Type::WE), crc64WE.GetHexValue() });
-            break;
-        case Hashes::MD2:
-            outputs.emplace(std::pair{ MD2::GetName(), md2.GetHexValue() });
-            break;
-        case Hashes::MD4:
-            md4.Final();
-            outputs.emplace(std::pair{ "MD4", md4.GetHexValue() });
             break;
         case Hashes::MD5:
             md5.Final();
@@ -976,8 +919,6 @@ extern "C"
         sect[GView::GenericPlugins::Hashes::TYPES_CRC32_JAMCRC]   = true;
         sect[GView::GenericPlugins::Hashes::TYPES_CRC64_ECMA_182] = true;
         sect[GView::GenericPlugins::Hashes::TYPES_CRC64_WE]       = true;
-        sect[GView::GenericPlugins::Hashes::TYPES_MD2]            = true;
-        sect[GView::GenericPlugins::Hashes::TYPES_MD4]            = true;
         sect[GView::GenericPlugins::Hashes::TYPES_MD5]            = true;
         sect[GView::GenericPlugins::Hashes::TYPES_BLAKE2S256]     = true;
         sect[GView::GenericPlugins::Hashes::TYPES_BLAKE2B512]     = true;

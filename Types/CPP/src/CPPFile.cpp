@@ -3,28 +3,7 @@
 namespace GView::Type::CPP
 {
 using namespace GView::View::LexicalViewer;
-namespace TokenType
-{
-    constexpr uint32 None            = 0xFFFFFFFF;
-    constexpr uint32 Comment         = 0;
-    constexpr uint32 ArrayOpen       = 1;
-    constexpr uint32 ArrayClose      = 2;
-    constexpr uint32 BlockOpen       = 3;
-    constexpr uint32 BlockClose      = 4;
-    constexpr uint32 ExpressionOpen  = 5;
-    constexpr uint32 ExpressionClose = 6;
-    constexpr uint32 Number          = 7;
-    constexpr uint32 String          = 8;
-    constexpr uint32 Comma           = 9;
-    constexpr uint32 Semicolumn      = 10;
-    constexpr uint32 Preprocess      = 11;
-    constexpr uint32 Word            = 12;
-    constexpr uint32 Operator        = 13;
-    constexpr uint32 Keyword         = 14;
-    constexpr uint32 Constant        = 15;
-    constexpr uint32 Datatype        = 16;
 
-} // namespace TokenType
 namespace OperatorType
 {
     constexpr uint32 Bigger       = 0;
@@ -69,179 +48,182 @@ namespace OperatorType
 } // namespace OperatorType
 namespace Operators
 {
-    constexpr uint32 HASH_DEVIDER            = 134;
-    uint32 operator_hash_table[HASH_DEVIDER] = { TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LogicNOT << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::XorEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Modulo << 16),
-                                                 TokenType::Operator | (OperatorType::AND << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Multiply << 16),
-                                                 TokenType::Operator | (OperatorType::Plus << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Minus << 16),
-                                                 TokenType::Operator | (OperatorType::MemberAccess << 16),
-                                                 TokenType::Operator | (OperatorType::Division << 16),
-                                                 TokenType::Operator | (OperatorType::Spaceship << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Equal << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::OrEQ << 16),
-                                                 TokenType::Operator | (OperatorType::TWO_POINTS << 16),
-                                                 TokenType::Operator | (OperatorType::Decrement << 16),
-                                                 TokenType::Operator | (OperatorType::Smaller << 16),
-                                                 TokenType::Operator | (OperatorType::Assign << 16),
-                                                 TokenType::Operator | (OperatorType::Bigger << 16),
-                                                 TokenType::Operator | (OperatorType::Condition << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::MinusEQ << 16),
-                                                 TokenType::Operator | (OperatorType::Pointer << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::BiggerOrEq << 16),
-                                                 TokenType::Operator | (OperatorType::RightShift << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Namespace << 16),
-                                                 TokenType::Operator | (OperatorType::ModuloEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::Different << 16),
-                                                 TokenType::Operator | (OperatorType::XOR << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LogicAND << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::MupliplyEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::RightShiftEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::AndEQ << 16),
-                                                 TokenType::Operator | (OperatorType::LogicOR << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::OR << 16),
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::NOT << 16),
-                                                 TokenType::Operator | (OperatorType::Increment << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::DivisionEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::PlusEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LeftShiftEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::Operator | (OperatorType::LeftShift << 16),
-                                                 TokenType::Operator | (OperatorType::SmallerOrEQ << 16),
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None,
-                                                 TokenType::None };
+    uint8 chars_ids[128] = { 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0,  0,
+                             0, 4, 0, 0, 0, 9, 11, 0, 0, 0, 7, 5, 0, 6, 10, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 2,  3, 1,  15,
+                             0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 13, 0,
+                             0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 12, 0, 14, 0 };
+
+    constexpr uint32 HASH_DEVIDER            = 133;
+    uint32 operator_hash_table[HASH_DEVIDER] = {
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Bigger << 8) | (uint32) (1 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Smaller << 8) | (uint32) (2 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Assign << 8) | (uint32) (3 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LogicNOT << 8) | (uint32) (4 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Plus << 8) | (uint32) (5 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Minus << 8) | (uint32) (6 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Multiply << 8) | (uint32) (7 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Division << 8) | (uint32) (8 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Modulo << 8) | (uint32) (9 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::MemberAccess << 8) | (uint32) (10 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::AND << 8) | (uint32) (11 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::OR << 8) | (uint32) (12 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::XOR << 8) | (uint32) (13 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::NOT << 8) | (uint32) (14 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Condition << 8) | (uint32) (15 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::TWO_POINTS << 8) | (uint32) (16 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Spaceship << 8) | (uint32) (2145 << 16),
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::XorEQ << 8) | (uint32) (419 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::ModuloEQ << 8) | (uint32) (291 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::PlusEQ << 8) | (uint32) (163 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Increment << 8) | (uint32) (165 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::RightShift << 8) | (uint32) (33 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::BiggerOrEq << 8) | (uint32) (35 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Pointer << 8) | (uint32) (193 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::MinusEQ << 8) | (uint32) (195 << 16),
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Decrement << 8) | (uint32) (198 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LeftShift << 8) | (uint32) (66 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::SmallerOrEQ << 8) | (uint32) (67 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::AndEQ << 8) | (uint32) (355 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::MupliplyEQ << 8) | (uint32) (227 << 16),
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LogicAND << 8) | (uint32) (363 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Equal << 8) | (uint32) (99 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LeftShiftEQ << 8) | (uint32) (2115 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::OrEQ << 8) | (uint32) (387 << 16),
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::DivisionEQ << 8) | (uint32) (259 << 16),
+        TokenType::None,
+        (uint32) TokenType::Operator | (uint32) (OperatorType::RightShiftEQ << 8) | (uint32) (1059 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Namespace << 8) | (uint32) (528 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::LogicOR << 8) | (uint32) (396 << 16),
+        (uint32) TokenType::Operator | (uint32) (OperatorType::Different << 8) | (uint32) (131 << 16),
+        TokenType::None
+    };
 
     bool TextToOperatorID(const char16* txt, uint32 size, uint32& opID, uint32& opSize)
     {
         // compute the hashes over the entire 3 cases
         uint32 hash1 = 0, hash2 = 0, hash3 = 0;
-        if (((*txt) > 32) && ((*txt) < 128))
+        if (((*txt) < 128) && (chars_ids[*txt] != 0))
         {
-            hash1 = (*txt) - 32;
+            hash1 = chars_ids[*txt];
             txt++;
-            if ((size > 1) && (((*txt) > 32) && ((*txt) < 128)))
+            if ((size > 1) && ((*txt) < 128) && (chars_ids[*txt] != 0))
             {
-                hash2 = (hash1 << 5) + (*txt) - 32;
+                hash2 = (hash1 << 5) + chars_ids[*txt];
                 txt++;
-                if ((size > 2) && (((*txt) > 32) && ((*txt) < 128)))
-                    hash3 = (hash2 << 5) + (*txt) - 32;
+                if ((size > 2) && ((*txt) < 128) && (chars_ids[*txt] != 0))
+                    hash3 = (hash2 << 5) + chars_ids[*txt];
             }
         }
-        hash1 %= HASH_DEVIDER;
-        hash2 %= HASH_DEVIDER;
-        hash3 %= HASH_DEVIDER;
-        auto op = operator_hash_table[hash3];
-        if (op != TokenType::None)
+        auto op = operator_hash_table[hash3 % HASH_DEVIDER];
+        if ((op != TokenType::None) && ((op >> 16) == hash3))
         {
-            opID   = op;
+            opID   = (op & 0xFF) | ((op & 0xFF00) << 8);
             opSize = 3;
             return true;
         }
-        op = operator_hash_table[hash2];
-        if (op != TokenType::None)
+        op = operator_hash_table[hash2 % HASH_DEVIDER];
+        if ((op != TokenType::None) && ((op >> 16) == hash2))
         {
-            opID   = op;
+            opID   = (op & 0xFF) | ((op & 0xFF00) << 8);
             opSize = 2;
             return true;
         }
-        op = operator_hash_table[hash1];
-        if (op != TokenType::None)
+        op = operator_hash_table[hash1 % HASH_DEVIDER];
+        if ((op != TokenType::None) && ((op >> 16) == hash1))
         {
-            opID   = op;
+            opID   = (op & 0xFF) | ((op & 0xFF00) << 8);
             opSize = 1;
             return true;
         }
@@ -561,10 +543,11 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
-    auto tokColor = TokenColor::Word;
-    auto tokType  = Keyword::TextToKeywordID(text, pos, next);
-    auto align    = TokenAlignament::None;
-    auto opID     = 0U;
+    auto tokColor             = TokenColor::Word;
+    auto tokType              = Keyword::TextToKeywordID(text, pos, next);
+    auto align                = TokenAlignament::None;
+    auto opID                 = 0U;
+    bool disableSimilarSearch = false;
     if (tokType == TokenType::None)
     {
         tokType = Constant::TextToConstantID(text, pos, next);
@@ -582,7 +565,8 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         }
         else
         {
-            tokColor = TokenColor::Constant;
+            tokColor             = TokenColor::Constant;
+            disableSimilarSearch = true;
         }
         auto lastTokenID = tokenList.GetLastTokenID();
         switch (lastTokenID & 0xFFFF)
@@ -606,8 +590,9 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
     }
     else
     {
-        tokColor = TokenColor::Keyword;
-        align    = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+        tokColor             = TokenColor::Keyword;
+        align                = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+        disableSimilarSearch = true;
         if (((tokType >> 16) == KeywordsType::Else) && (tokenList.GetLastTokenID() == TokenType::BlockClose))
         {
             // if (...) { ... } else ...
@@ -615,7 +600,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         }
     }
 
-    tokenList.Add(tokType, pos, next, tokColor, align);
+    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, disableSimilarSearch);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -627,48 +612,80 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
     {
         TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
         auto opType           = tokenType >> 16;
-        if ((opType == OperatorType::Namespace) || (opType == OperatorType::Pointer) || (opType == OperatorType::MemberAccess) ||
-            (opType == OperatorType::TWO_POINTS))
-            align = TokenAlignament::AfterPreviousToken;
-        if (opType == OperatorType::Namespace)
+        switch (opType)
         {
+        case OperatorType::Namespace:
+            align = TokenAlignament::AfterPreviousToken;
             if (tokenList.GetLastTokenID() == TokenType::Word)
                 tokenList.GetLastToken().SetTokenColor(TokenColor::Keyword2);
+            break;
+        case OperatorType::Pointer:
+        case OperatorType::MemberAccess:
+        case OperatorType::TWO_POINTS:
+            align = TokenAlignament::AfterPreviousToken;
+            break;
+        case OperatorType::Assign:
+        case OperatorType::PlusEQ:
+        case OperatorType::MinusEQ:
+        case OperatorType::MupliplyEQ:
+        case OperatorType::DivisionEQ:
+        case OperatorType::ModuloEQ:
+        case OperatorType::AndEQ:
+        case OperatorType::OrEQ:
+        case OperatorType::XorEQ:
+        case OperatorType::RightShiftEQ:
+        case OperatorType::LeftShiftEQ:
+            align |= TokenAlignament::SameColumn;
+            break;
         }
+
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, true);
         return pos + sz;
     }
     else
     {
         // unknown operator
-        tokenList.AddErrorToken(pos, next, "Invalid C++ operator");
+        tokenList.Add(TokenType::Operator, pos, next, TokenColor::Word).SetError("Invalid C++ operator");
         return next;
     }
 }
-uint32 CPPFile::TokenizePreprocessDirective(const GView::View::LexicalViewer::TextParser& text, uint32 pos)
+uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
-    auto next = text.ParseUntillEndOfLine(pos);
-
-    // check for multi-line format
-    if ((next > 0) && (text[next - 1] == '\\'))
+    auto eol   = text.ParseUntillEndOfLine(pos);
+    auto start = pos;
+    pos        = text.ParseSpace(pos+1, SpaceType::SpaceAndTabs);
+    if ((CharType::GetCharType(text[pos])) != CharType::Word)
     {
-        pos = text.ParseUntillStartOfNextLine(next); // skip CR, CRLF, LF or LFCRif any
-        // repeat the flow
-        while (true)
-        {
-            next = text.ParseUntillEndOfLine(next);
-            if ((next > 0) && (text[next - 1] == '\\'))
-            {
-                next = text.ParseUntillStartOfNextLine(next);
-                continue;
-            }
-            break;
-        }
-        return next;
+        // we have an error
+        list.Add(TokenType::Preprocess,
+                 start,
+                 eol,
+                 TokenColor::Preprocesor,
+                 TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter)
+              .SetError("Invalid preprocess directive");
+        return eol;
     }
+    // we have a good preprocess directive ==> lets formalize it
+    auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
+    list.Add(
+          TokenType::Preprocess,
+          start,
+          eol /*next*/,
+          TokenColor::Preprocesor,
+          TokenAlignament::StartsOnNewLine | TokenAlignament::AddSpaceAfter | TokenAlignament::NewLineAfter);
 
-    // check for #if...#endif (TODO)
-    return next;
+    //auto tknIndex = list.Len();
+    //Tokenize(next, eol, text, list, blocks);
+    //auto tknCount = list.Len();
+    //// change the color of every added token
+    //for (auto index = tknIndex; index < tknCount; index++)
+    //    list[index].SetTokenColor(TokenColor::Preprocesor);
+    //// make sure that last token has a new line after it
+    //list.GetLastToken().UpdateAlignament(TokenAlignament::NewLineAfter);
+    //// crete a block
+    //blocks.Add(tknIndex - 1, tknCount-1, BlockAlignament::AsBlockStartToken);
+
+    return eol;
 }
 void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
@@ -684,24 +701,29 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             stBlocks.Push(index);
             break;
         case TokenType::BlockClose:
-            syntax.blocks.Add(stBlocks.Pop(), index, BlockAlignament::ToRightOfCurrentBlock, true);
+            syntax.blocks.Add(stBlocks.Pop(), index, BlockAlignament::ParentBlockWithIndent, BlockFlags::EndMarker);
             break;
         case TokenType::ExpressionOpen:
             exprBlocks.Push(index);
             break;
         case TokenType::ExpressionClose:
-            syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::AsBlockStartToken, true);
+            syntax.blocks.Add(
+                  exprBlocks.Pop(), index, BlockAlignament::CurrentToken, BlockFlags::EndMarker | BlockFlags::ManualCollapse);
             break;
         }
     }
 }
-void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
+void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList, BlocksList& blocks)
 {
-    auto len  = text.Len();
-    auto idx  = 0U;
+    Tokenize(0, text.Len(), text, tokenList, blocks);
+}
+void CPPFile::Tokenize(
+      uint32 start, uint32 end, const TextParser& text, TokensList& tokenList, BlocksList& blocks)
+{
+    auto idx  = start;
     auto next = 0U;
 
-    while (idx < len)
+    while (idx < end)
     {
         auto ch   = text[idx];
         auto type = CharType::GetCharType(ch);
@@ -757,8 +779,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             idx++;
             break;
         case CharType::ExpressionClose:
-            tokenList.Add(
-                  TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
             idx++;
             break;
         case CharType::BlockOpen:
@@ -779,18 +800,18 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter,
+                  TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter | TokenAlignament::ClearIndentAfterPaint,
                   true);
             idx++;
             break;
         case CharType::Number:
             next = text.ParseNumber(idx);
-            tokenList.Add(TokenType::Number, idx, next, TokenColor::Number);
+            tokenList.Add(TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number);
             idx = next;
             break;
         case CharType::String:
             next = text.ParseString(idx, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::AllowEscapeSequences);
-            tokenList.Add(TokenType::String, idx, next, TokenColor::String);
+            tokenList.Add(TokenType::String, idx, next, TokenColor::String, TokenDataType::String);
             idx = next;
             break;
         case CharType::Comma:
@@ -811,21 +832,12 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
                   idx + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken,
+                  TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken | TokenAlignament::ClearIndentAfterPaint,
                   true);
             idx++;
             break;
         case CharType::Preprocess:
-            next = TokenizePreprocessDirective(text, idx);
-            tokenList.Add(
-                  TokenType::Preprocess,
-                  idx,
-                  next,
-                  TokenColor::Preprocesor,
-                  TokenDataType::MetaInformation,
-                  TokenAlignament::NewLineAfter | TokenAlignament::NewLineBefore,
-                  true);
-            idx = next;
+            idx = TokenizePreprocessDirective(text, tokenList, blocks, idx);
             break;
         case CharType::Word:
             idx = TokenizeWord(text, tokenList, idx);
@@ -835,7 +847,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList)
             break;
         default:
             next = text.ParseSameGroupID(idx, CharType::GetCharType);
-            tokenList.AddErrorToken(idx, next, "Invalid character sequance");
+            tokenList.Add(TokenType::Word, idx, next, TokenColor::Word).SetError("Invalid character sequance");
             idx = next;
             break;
         }
@@ -863,7 +875,7 @@ void CPPFile::IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& l
                         auto nextTok = list[endToken.GetIndex() + 1];
                         if ((nextTok.IsValid()) && (nextTok.GetTypeID(TokenType::None) != TokenType::BlockOpen))
                         {
-                            nextTok.UpdateAlignament(TokenAlignament::StartsOnNewLineWithIndent);
+                            nextTok.UpdateAlignament(TokenAlignament::IncrementIndentBeforePaint | TokenAlignament::StartsOnNewLine);
                         }
                         // if the case is for
                         if (typeID == (TokenType::Keyword | (KeywordsType::For << 16)))
@@ -940,10 +952,127 @@ void CPPFile::CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& s
         }
     }
 }
+void CPPFile::RemoveLineContinuityCharacter(TextEditor& editor)
+{
+    auto pos = 0;
+    do
+    {
+        auto res = editor.Find(pos, "\\");
+        if (!res.has_value())
+            break;
+        pos       = res.value() + 1;
+        auto next = editor[pos];
+        if ((next == '\n') || (next == '\r'))
+        {
+            auto nextAfterNext = editor[pos + 1];
+            if (((nextAfterNext == '\n') || (nextAfterNext == '\r')) && (nextAfterNext != next))
+            {
+                // case like \CRLF or \LFCR
+                editor.Delete(res.value(), 3);
+            }
+            else
+            {
+                // case line \CR or \LF
+                editor.Delete(res.value(), 2);
+            }
+        }
+    } while (true);
+}
+void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
+{
+    // change alternate character set to their original character
+    // https://en.cppreference.com/w/cpp/language/operator_alternative
+    // very simplistic
+    editor.ReplaceAll("<%", "{");
+    editor.ReplaceAll("%>", "}");
+    editor.ReplaceAll("%:%:", "##");
+    editor.ReplaceAll("%:", "#");
+    editor.ReplaceAll(":>", "]");
+    // check for < : case
+    auto pos = 0;
+    do
+    {
+        auto res = editor.Find(pos, "<:");
+        if (!res.has_value())
+            break;
+        pos = res.value() + 2;
+        if ((editor[pos] == ':') && ((editor[pos + 1] == '>') || (editor[pos + 1] == ':')))
+        {
+            // skip it
+        }
+        else
+        {
+            editor.Replace(res.value(), 2, "[");
+        }
+    } while (true);
+
+    // remove line continuity
+    RemoveLineContinuityCharacter(editor);
+}
+void CPPFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
+{
+    switch (id & 0xFFFF)
+    {
+    case TokenType::None:
+        str.Set("Unknwon/Error");
+        break;
+    case TokenType::Comment:
+        str.Set("Comment");
+        break;
+    case TokenType::ArrayOpen:
+        str.Set("Array (open)");
+        break;
+    case TokenType::ArrayClose:
+        str.Set("Array (close)");
+        break;
+    case TokenType::BlockOpen:
+        str.Set("Block (open)");
+        break;
+    case TokenType::BlockClose:
+        str.Set("Block (close)");
+        break;
+    case TokenType::ExpressionOpen:
+        str.Set("Expression (open)");
+        break;
+    case TokenType::ExpressionClose:
+        str.Set("Expression (close)");
+        break;
+    case TokenType::Number:
+        str.Set("Number constant");
+        break;
+    case TokenType::String:
+        str.Set("String");
+        break;
+    case TokenType::Comma:
+        str.Set("Separator (comma)");
+        break;
+    case TokenType::Semicolumn:
+        str.Set("Separator (semicolumn)");
+        break;
+    case TokenType::Preprocess:
+        str.Set("Preprocess directive");
+        break;
+    case TokenType::Word:
+        str.Set("Word");
+        break;
+    case TokenType::Operator:
+        str.Set("Operator");
+        break;
+    case TokenType::Keyword:
+        str.Set("Keyword");
+        break;
+    case TokenType::Constant:
+        str.Set("Constant");
+        break;
+    case TokenType::Datatype:
+        str.Set("Data type");
+        break;
+    }
+}
 void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     syntax.tokens.ResetLastTokenID(TokenType::None);
-    Tokenize(syntax.text, syntax.tokens);
+    Tokenize(syntax.text, syntax.tokens, syntax.blocks);
     BuildBlocks(syntax);
     IndentSimpleInstructions(syntax.tokens);
     CreateFoldUnfoldLinks(syntax);

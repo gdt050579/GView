@@ -1,85 +1,54 @@
 #include "LexicalViewer.hpp"
 
-using namespace GView::View::LexicalViewer;
+namespace GView::View::LexicalViewer
+{
+
 using namespace AppCUI::Input;
 
-constexpr int32 BTN_ID_OK        = 1;
-constexpr int32 BTN_ID_CANCEL    = 2;
-constexpr int32 RB_GROUP_ID      = 123;
+constexpr int32 BTN_ID_OK     = 1;
+constexpr int32 BTN_ID_CANCEL = 2;
 
-GoToDialog::GoToDialog(uint64 currentPos, uint64 sz, uint32 currentLine, uint32 _maxLines)
-    : Window("GoTo", "d:c,w:60,h:10", WindowFlags::ProcessReturn), maxSize(sz), maxLines(_maxLines)
+GoToDialog::GoToDialog(uint32 currentLine, uint32 _maxLines)
+    : Window("GoTo", "d:c,w:40,h:8", WindowFlags::ProcessReturn), maxLines(_maxLines)
 {
     LocalString<128> tmp;
-    resultedPos = GView::Utils::INVALID_OFFSET;
-    gotoLine    = true;
+    this->selectedLineNo = 0;
 
-    rbLineNumber = Factory::RadioBox::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:38", RB_GROUP_ID);
-    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:40,y:1,w:16");
+    Factory::Label::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:16");
+    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:17,y:1,w:19");
+    txLineNumber->SetHotKey('L');
 
-    rbFileOffset = Factory::RadioBox::Create(this, tmp.Format("&File offset (0..%llu)", sz), "x:1,y:3,w:38", RB_GROUP_ID);
-    txFileOffset = Factory::TextField::Create(this, tmp.Format("%llu", currentPos), "x:40,y:3,w:16");
-
-    Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
-    Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
-
-    rbLineNumber->SetChecked(true);    
-    UpdateEnableStatus();
+    Factory::Button::Create(this, "&OK", "l:5,b:0,w:13", BTN_ID_OK);
+    Factory::Button::Create(this, "&Cancel", "l:20,b:0,w:13", BTN_ID_CANCEL);
+    txLineNumber->SetFocus();
 }
-void GoToDialog::UpdateEnableStatus()
-{
-    txLineNumber->SetEnabled(rbLineNumber->IsChecked());
-    txFileOffset->SetEnabled(rbFileOffset->IsChecked());
-    if (txLineNumber->IsEnabled())
-        txLineNumber->SetFocus();
-    if (txFileOffset->IsEnabled())
-        txFileOffset->SetFocus();
-}
+
 void GoToDialog::Validate()
 {
     LocalString<128> tmp;
     LocalString<256> error;
-    Reference<TextField> input = rbLineNumber->IsChecked() ? txLineNumber : txFileOffset;
-    NumberParseFlags flags     = NumberParseFlags::BaseAuto;
 
-    if (tmp.Set(input->GetText()) == false)
+
+    if (tmp.Set(txLineNumber->GetText()) == false)
     {
-        Dialogs::MessageBox::ShowError("Error", "Fail to get the value of the numerical field !");
-        input->SetFocus();
+        Dialogs::MessageBox::ShowError("Error", "Fail to get the line number of the numerical field !");
+        txLineNumber->SetFocus();
         return;
     }
-    auto ofs = Number::ToUInt64(tmp, flags);
-    if (!ofs.has_value())
+    auto lineNo = Number::ToUInt32(tmp, NumberParseFlags::BaseAuto);
+    if (!lineNo.has_value())
     {
         Dialogs::MessageBox::ShowError("Error", error.Format("Value `%s` is not a valid number !", tmp.GetText()));
-        input->SetFocus();
+        txLineNumber->SetFocus();
         return;
     }
-
-    // all good
-    auto newPos = ofs.value();
-    gotoLine    = rbLineNumber->IsChecked();
-    // checks in boundery
-    if (rbLineNumber->IsChecked())
+    if ((lineNo.value() > maxLines) || (lineNo.value() < 1))
     {
-        if ((newPos > maxLines) || (newPos < 1))
-        {
-            Dialogs::MessageBox::ShowError("Error", error.Format("Valid line number are between 1 and %u", maxLines));
-            input->SetFocus();
-            return;
-        }
+        Dialogs::MessageBox::ShowError("Error", error.Format("Valid line number are between 1 and %u", maxLines));
+        txLineNumber->SetFocus();
+        return;
     }
-    else
-    {
-        if (newPos >= maxSize)
-        {
-            Dialogs::MessageBox::ShowError("Error", error.Format("Offset `%llu` is bigger than the offset size: `%llu`", newPos, maxSize));
-            input->SetFocus();
-            return;
-        }
-    }
-    // convert to FileOffset
-    resultedPos = newPos;
+    selectedLineNo = lineNo.value();
     Exit(Dialogs::Result::Ok);
 }
 
@@ -98,9 +67,6 @@ bool GoToDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         }
         break;
-    case Event::CheckedStatusChanged:
-        UpdateEnableStatus();
-        return true;
     case Event::WindowAccept:
         Validate();
         return true;
@@ -111,3 +77,4 @@ bool GoToDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 
     return false;
 }
+} // namespace GView::View::LexicalViewer

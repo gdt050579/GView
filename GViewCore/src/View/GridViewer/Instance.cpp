@@ -72,6 +72,11 @@ bool Instance::ShowFindDialog()
     NOT_IMPLEMENTED(false);
 }
 
+bool Instance::ShowCopyDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
 {
     if (height == 1)
@@ -217,7 +222,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
         const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
-        const auto nPos = data.find_first_of('\n', 0);
+        auto nPos       = data.find_first_of('\n', 0);
         const auto rPos = data.find_first_of('\r', 0);
 
         const auto oldOSizeProcessed = oSizeProcessed;
@@ -246,7 +251,8 @@ void GView::View::GridViewer::Instance::ProcessContent()
         }
         else
         {
-            throw std::runtime_error("Not enough cache to read a line!");
+            nPos = oSize - oldOSizeProcessed;
+            oSizeProcessed += nPos;
         }
 
         lines.insert({ currentLine, { lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed } });
@@ -260,6 +266,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
                 separators.push_back(pos + oldOSizeProcessed);
                 pos = line.find(settings->separator[0], pos + 1);
             }
+            separators.push_back(line.size() + oldOSizeProcessed);
         }
 
         std::vector<std::pair<uint64, uint64>> lTokens;

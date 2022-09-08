@@ -1451,7 +1451,7 @@ bool Instance::Select(uint64 offset, uint64 size)
 bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(this->Cursor.pos, this->obj->GetData().GetSize(), this->Cursor.lineNo + 1U, static_cast<uint32>(this->lines.size()));
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         if (dlg.ShouldGoToLine())
         {
@@ -1465,6 +1465,10 @@ bool Instance::ShowGoToDialog()
     return true;
 }
 bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }

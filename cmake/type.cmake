@@ -41,8 +41,7 @@ function (create_type type_name)
 	    endif()
 	endif()
 	
-	include_directories(include)
-	
+	include_directories(include)	
 	add_subdirectory(src)
                   
 	file(GLOB_RECURSE PROJECT_HEADERS include/*.hpp)

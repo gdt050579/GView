@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.88.0"
+#define GVIEW_VERSION "0.205.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -249,38 +249,8 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    class CORE_EXPORT MD2
-    {
-      private:
-        uint8 m[16];
-        uint8 x[48];
-        uint8 c[16];
-        uint32 size;
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(const Buffer& buffer);
-        bool Update(const BufferView& buffer);
-        bool Final(uint8 hash[16]);
-        static std::string_view GetName();
-        const std::string_view GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
-
-      private:
-        char hexDigest[ResultBytesLength * 2];
-    };
-
     enum class OpenSSLHashKind : uint8
     {
-        Md4,
         Md5,
         Blake2s256,
         Blake2b512,
@@ -612,10 +582,12 @@ namespace View
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual bool ShowGoToDialog()                                                                          = 0;
         virtual bool ShowFindDialog()                                                                          = 0;
+        virtual bool ShowCopyDialog()                                                                          = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
+        int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
         ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
@@ -739,12 +711,13 @@ namespace View
         };
         enum class StringFormat : uint32
         {
-            SingleQuotes         = 0x00000001, // "..."
-            DoubleQuotes         = 0x00000002, // '...'
-            TripleQuotes         = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences = 0x00000008, // "...\n..."
-            MultiLine            = 0x00000010, // string accross mulitple lines
-            All                  = 0xFFFFFFFF, // all possible forms of strings
+            SingleQuotes                = 0x00000001, // "..."
+            DoubleQuotes                = 0x00000002, // '...'
+            TripleQuotes                = 0x00000004, // '''...''' or """..."""
+            AllowEscapeSequences        = 0x00000008, // "...\n..."
+            MultiLine                   = 0x00000010, // string accross mulitple lines
+            LineContinuityWithBackslash = 0x00000020, // "   \<newline>   "
+            All                         = 0xFFFFFFFF, // all possible forms of strings
         };
         enum class NumberFormat : uint32
         {
@@ -801,6 +774,7 @@ namespace View
         class CORE_EXPORT TextEditor
         {
             bool Grow(size_t size);
+
           protected:
             char16* text;
             uint32 size;
@@ -812,8 +786,10 @@ namespace View
             bool Insert(uint32 offset, std::string_view text);
             bool Insert(uint32 offset, std::u16string_view text);
             bool InsertChar(uint32 offset, char16 ch);
+            std::optional<uint32> Find(uint32 startOffset, std::string_view textToSearch, bool ignoreCase = false);
             bool Replace(uint32 offset, uint32 size, std::string_view text);
             bool Replace(uint32 offset, uint32 size, std::u16string_view text);
+            bool ReplaceAll(std::string_view textToSearch, std::string_view textToReplaceWith, bool ignoreCase = false);
             bool DeleteChar(uint32 offset);
             bool Delete(uint32 offset, uint32 charactersCount);
             bool Add(std::string_view text);
@@ -831,7 +807,7 @@ namespace View
             }
             inline operator u16string_view() const
             {
-                return { text, (size_t)size };
+                return { text, (size_t) size };
             }
         };
         enum class TokenDataType : uint8
@@ -842,18 +818,28 @@ namespace View
             MetaInformation,
             Boolean
         };
-        enum class TokenAlignament : uint16
+        enum class TokenAlignament : uint32
         {
             None            = 0,
-            AddSpaceBefore  = 0x0001, // adds a space on left (except when current token is already at left-most position)
-            AddSpaceAfter   = 0x0002, // adds a space on right of the current token
-            NewLineAfter    = 0x0004, // adds a new line after the current token
-            NewLineBefore   = 0x0008, // makes sure that there is a new (empty) line before previous token and current one
-            StartsOnNewLine = 0x0010, // makes sure that current token starts on new line. If already on new line, nothing happens.
-                                      // otherwise adds a new line.
-            StartsOnNewLineWithIndent = 0x0020, // similar to StartsOnNewLine but adds an Indent (e.g. 4 spaces) on left before token
-            AfterPreviousToken        = 0x0040, // make sure that there any space or new line (within the block) between current token
-                                                // and previous token is removed. Both tokens are at on the same line.
+            AddSpaceBefore  = 0x00000001,    // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x00000002,    // adds a space on right of the current token
+            NewLineAfter    = 0x00000004,    // adds a new line after the current token
+            NewLineBefore   = 0x00000008,    // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x00000010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                             // otherwise adds a new line.
+            AfterPreviousToken = 0x00000020, // make sure that there any space or new line (within the block) between current token
+                                             // and previous token is removed. Both tokens are at on the same line.
+            IncrementIndentBeforePaint = 0x00000040, // increments the indent of the current line (before painting the token)
+            DecrementIndentBeforePaint = 0x00000080, // decrement the indent of the current line (before painting the token)
+            ClearIndentBeforePaint     = 0x00000100, // resets current indent to 0 (before painting the token)
+            IncrementIndentAfterPaint  = 0x00000200, // increments the indent of the current line (after painting the token)
+            DecrementIndentAfterPaint  = 0x00000400, // decrement the indent of the current line (after painting the token)
+            ClearIndentAfterPaint      = 0x00000800, // resets current indent to 0 (after painting the token)
+
+            SameColumn     = 0x00001000, // make sure that first token with this flag from each line from a block has the same X-offste
+            WrapToNextLine = 0x00002000, // if the "X" coordonate of a token is after a specific with, move to the next
+                                         // line and reset the "X" coordonate acording to the block rules.
+
         };
         enum class TokenColor : uint8
         {
@@ -871,9 +857,16 @@ namespace View
         };
         enum class BlockAlignament : uint8
         {
-            AsCurrentBlock,
-            ToRightOfCurrentBlock,
-            AsBlockStartToken,
+            ParentBlock,
+            ParentBlockWithIndent,
+            CurrentToken,
+            CurrentTokenWithIndent,
+        };
+        enum class BlockFlags : uint16
+        {
+            None           = 0,
+            EndMarker      = 0x0001,
+            ManualCollapse = 0x0002,
         };
         class CORE_EXPORT Token;
         class CORE_EXPORT Block
@@ -926,6 +919,7 @@ namespace View
 
             uint32 GetTypeID(uint32 errorValue) const;
             TokenAlignament GetAlignament() const;
+            TokenDataType GetDataType() const;
             bool SetAlignament(TokenAlignament align);
             bool UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove = TokenAlignament::None);
             bool SetTokenColor(TokenColor col);
@@ -933,6 +927,11 @@ namespace View
             bool SetBlock(uint32 blockIndex);
             bool DisableSimilartyHighlight();
             bool SetText(const ConstString& text);
+            bool SetError(const ConstString& error);
+            bool Delete();
+
+            std::optional<uint32> GetTokenStartOffset() const;
+            std::optional<uint32> GetTokenEndOffset() const;
 
             Token Next() const;
             Token Precedent() const;
@@ -976,7 +975,7 @@ namespace View
                   TokenDataType dataType,
                   TokenAlignament align,
                   bool disableSimilartySearch);
-            Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+            // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
         {
@@ -990,8 +989,8 @@ namespace View
           public:
             uint32 Len() const;
             Block operator[](uint32 index) const;
-            Block Add(uint32 start, uint32 end, BlockAlignament align, bool hasBlockEndMarker);
-            Block Add(Token start, Token end, BlockAlignament align, bool hasBlockEndMarker);
+            Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+            Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
         };
         struct SyntaxManager
         {
@@ -1021,7 +1020,35 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void AnalyzeText(SyntaxManager& syntax) = 0;
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) = 0;
+            virtual void PreprocessText(TextEditor& editor)                                    = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
+        };
+        struct PluginData
+        {
+            TextEditor& editor;
+            TokensList& tokens;
+            BlocksList& blocks;
+            uint32 currentTokenIndex;
+            uint32 startIndex;
+            uint32 endIndex;
+            PluginData(TextEditor& _editor, TokensList& _tokens, BlocksList& _blocks)
+                : editor(_editor), tokens(_tokens), blocks(_blocks), currentTokenIndex(0), startIndex(0), endIndex(0)
+            {
+            }
+        };
+        enum class PluginAfterActionRequest
+        {
+            None,
+            Refresh,
+            Rescan,
+        };
+        struct CORE_EXPORT Plugin
+        {
+            virtual std::string_view GetName()                         = 0;
+            virtual std::string_view GetDescription()                  = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
+            virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
         };
         struct CORE_EXPORT Settings
         {
@@ -1029,7 +1056,9 @@ namespace View
 
             Settings();
             void SetParser(Reference<ParseInterface> parser);
+            void AddPlugin(Reference<Plugin> plugin);
             void SetCaseSensitivity(bool ignoreCase);
+            void SetMaxWidth(uint32 width);
         };
     }; // namespace LexicalViewer
 
@@ -1149,4 +1178,5 @@ namespace App
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
-ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint16);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::BlockFlags, AppCUI::uint16);
