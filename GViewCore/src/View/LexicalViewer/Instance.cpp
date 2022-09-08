@@ -1986,6 +1986,10 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 enum class PropertyID : uint32
 {
     // display
+    IndentWidth,
+    ViewWidth,
+    // shortcuts
+    ShowPluginList
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1993,6 +1997,15 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
+    case PropertyID::IndentWidth:
+        value = this->settings->indentWidth;
+        return true;
+    case PropertyID::ViewWidth:
+        value = this->settings->maxWidth;
+        return true;
+    case PropertyID::ShowPluginList:
+        value = this->config.Keys.showPlugins;
+        return true;
     }
     return false;
 }
@@ -2000,8 +2013,19 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (static_cast<PropertyID>(id))
     {
+    case PropertyID::IndentWidth:
+        this->settings->indentWidth = std::min<uint8>(30,std::max<uint8>(2,std::get<uint8>(value)));
+        RecomputeTokenPositions();
+        return true;
+    case PropertyID::ViewWidth:
+        this->settings->maxWidth = std::min<>(2000U, std::max<>(8U, std::get<uint32>(value)));
+        RecomputeTokenPositions();
+        return true;
+    case PropertyID::ShowPluginList:
+        this->config.Keys.showPlugins = std::get<Input::Key>(value);
+        return true;
     }
-    error.SetFormat("Unknown internat ID: %u", id);
+    error.SetFormat("Unknown internal ID: %u", id);
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -2018,6 +2042,10 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 const vector<Property> Instance::GetPropertiesList()
 {
     return {
+        { BT(PropertyID::IndentWidth), "Sizes", "Indent with", PropertyType::UInt8 },
+        { BT(PropertyID::ViewWidth), "Sizes", "View width", PropertyType::UInt32 },
+        // shortcuts
+        { BT(PropertyID::ShowPluginList), "Shortcuts", "Show plugin list", PropertyType::Key },
         //{ BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
         //{ BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
         //{ BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
