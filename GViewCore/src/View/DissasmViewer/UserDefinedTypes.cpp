@@ -21,7 +21,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 {
     uint32& availableValue = INTERNAL_SETTINGS->availableID;
 
-    DissasmType userType = { InternalDissasmType::UserDefined, name };
+    DissasmType userType{ InternalDissasmType::UserDefined, name, { 0 }, { 0 }, { 0 }, {} };
 
     char* newBuffer = new char[definition.size() + 1];
     memcpy(newBuffer, definition.data(), definition.size());

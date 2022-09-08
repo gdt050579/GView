@@ -39,7 +39,7 @@
             "platform": "windows | linux | osx"
         },
         {
-            "name": "distorm",
+            "name": "capstone",
             "platform": "windows | linux | osx"
         }
     ]
