@@ -25,8 +25,6 @@ enum class Hashes : uint32
     CRC32_JAMCRC   = 0x00000008,
     CRC64_ECMA_182 = 0x00000010,
     CRC64_WE       = 0x00000020,
-    MD2            = 0x00000040,
-    MD4            = 0x00000080,
     MD5            = 0x00000100,
     BLAKE2S256     = 0x00000200,
     BLAKE2B512     = 0x00000400,
@@ -52,8 +50,6 @@ static constexpr std::array<Hashes, 24> hashList{ Hashes::Adler32,
                                                   Hashes::CRC32_JAMCRC,
                                                   Hashes::CRC64_ECMA_182,
                                                   Hashes::CRC64_WE,
-                                                  Hashes::MD2,
-                                                  Hashes::MD4,
                                                   Hashes::MD5,
                                                   Hashes::BLAKE2S256,
                                                   Hashes::BLAKE2B512,
@@ -86,8 +82,6 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     ListViewItem CRC32_JAMCRC;
     ListViewItem CRC64_ECMA_182;
     ListViewItem CRC64_WE;
-    ListViewItem MD2;
-    ListViewItem MD4;
     ListViewItem MD5;
     ListViewItem BLAKE2S256;
     ListViewItem BLAKE2B512;
