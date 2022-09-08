@@ -37,7 +37,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
     char* startingNamePtr = start;
     uint32 size           = 0;
     uint32 arraySizes     = 0;
-    DissasmType newType   = {};
+    DissasmType newType{};
 
     while (start < end)
     {
@@ -119,7 +119,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 
             size = 0;
             userType.internalTypes.push_back(newType);
-            newType = {};
+            newType = DissasmType{};
         }
         else if (*start == '\n' || *start == '\r')
         {
