@@ -11,6 +11,11 @@ namespace Type
 
         class VBAFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+            void Tokenize(GView::View::LexicalViewer::SyntaxManager& syntax);
+            void CreateBlocks(GView::View::LexicalViewer::SyntaxManager& syntax);
+            uint32 ParseWord(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 pos);
+            GView::View::LexicalViewer::TokenAlignament NewLineRequired;
+
           public:
             VBAFile();
             virtual ~VBAFile()
