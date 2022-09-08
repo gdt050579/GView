@@ -21,7 +21,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 {
     uint32& availableValue = INTERNAL_SETTINGS->availableID;
 
-    DissasmType userType{ InternalDissasmType::UserDefined, name, { 0 }, { 0 }, { 0 }, {} };
+    DissasmType userType{ InternalDissasmType::UserDefined, name, 0, 0, 0, {} };
 
     char* newBuffer = new char[definition.size() + 1];
     memcpy(newBuffer, definition.data(), definition.size());
@@ -111,7 +111,9 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
                         return -1;
                     }
 
-                    newType.internalTypes.emplace_back((InternalDissasmType) newType.secondaryType, cellOffset);
+                    auto& internal = newType.internalTypes.emplace_back();
+                    internal.primaryType = (InternalDissasmType) newType.secondaryType;
+                    internal.name        = cellOffset;
                     cellOffset += res + 1;
                 }
                 cellOffset = cellOffset;
