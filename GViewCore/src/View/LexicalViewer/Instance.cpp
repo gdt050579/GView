@@ -1994,7 +1994,11 @@ enum class PropertyID : uint32
     ShowMetaDataKey,
     ChangeSelectionTypeKey,
     FoldAllKey,
-    ExpandAllKey
+    ExpandAllKey,
+    // General
+    NoOfTokens,
+    NoOfBlocks,
+    NoOfLines
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2025,6 +2029,15 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::ExpandAllKey:
         value = this->config.Keys.expandAll;
+        return true;
+    case PropertyID::NoOfTokens:
+        value = static_cast<uint32>(this->tokens.size());
+        return true;
+    case PropertyID::NoOfBlocks:
+        value = static_cast<uint32>(this->blocks.size());
+        return true;
+    case PropertyID::NoOfLines:
+        value = static_cast<uint32>(this->lastLineNumber + 1);
         return true;
     }
     return false;
@@ -2070,6 +2083,10 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 {
     switch (static_cast<PropertyID>(propertyID))
     {
+    case PropertyID::NoOfTokens:
+    case PropertyID::NoOfLines:
+    case PropertyID::NoOfBlocks:
+        return true;
     }
 
     return false;
@@ -2086,14 +2103,10 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ChangeSelectionTypeKey), "Shortcuts", "Change selection", PropertyType::Key },
         { BT(PropertyID::FoldAllKey), "Shortcuts", "Fold all", PropertyType::Key },
         { BT(PropertyID::ExpandAllKey), "Shortcuts", "ExpandAll", PropertyType::Key },
-        //{ BT(PropertyID::WordWrap), "General", "Wrap method", PropertyType::List, "None=0,LeftMargin=1,Padding=2,Bullets=3" },
-        //{ BT(PropertyID::HighlightCurrentLine), "General", "Highlight Current line", PropertyType::Boolean },
-        //{ BT(PropertyID::TabSize), "Tabs", "Size", PropertyType::UInt32 },
-        //{ BT(PropertyID::ShowTabCharacter), "Tabs", "Show tab character", PropertyType::Boolean },
-        //{ BT(PropertyID::Encoding), "Encoding", "Format", PropertyType::List, "Binary=0,Ascii=1,UTF-8=2,UTF-16(LE)=3,UTF-16(BE)=4" },
-        //{ BT(PropertyID::HasBOM), "Encoding", "HasBom", PropertyType::Boolean },
-        //// shortcuts
-        //{ BT(PropertyID::WrapMethodKey), "Shortcuts", "Change wrap method", PropertyType::Key },
+        // General
+        { BT(PropertyID::NoOfTokens), "General", "Tokens count", PropertyType::UInt32 },
+        { BT(PropertyID::NoOfBlocks), "General", "Blocks count", PropertyType::UInt32 },
+        { BT(PropertyID::NoOfLines), "General", "Lines count", PropertyType::UInt32 },
     };
 }
 #undef BT
