@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.201.0"
+#define GVIEW_VERSION "0.204.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -249,38 +249,8 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    class CORE_EXPORT MD2
-    {
-      private:
-        uint8 m[16];
-        uint8 x[48];
-        uint8 c[16];
-        uint32 size;
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(const Buffer& buffer);
-        bool Update(const BufferView& buffer);
-        bool Final(uint8 hash[16]);
-        static std::string_view GetName();
-        const std::string_view GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
-
-      private:
-        char hexDigest[ResultBytesLength * 2];
-    };
-
     enum class OpenSSLHashKind : uint8
     {
-        Md4,
         Md5,
         Blake2s256,
         Blake2b512,
