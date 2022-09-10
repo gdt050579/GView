@@ -297,6 +297,8 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
             break;
         if ((ch == '\'') && (HAS_FLAG(format, StringFormat::SingleQuotes)))
             break;
+        if ((ch == '`') && (HAS_FLAG(format, StringFormat::Apostrophe)))
+            break;
         // string does not starts with a valid string character
         return size;
     }
