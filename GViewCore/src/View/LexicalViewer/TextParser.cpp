@@ -399,6 +399,14 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
                 index += 2;
             }
             break;
+        case 'o':
+        case 'O':
+            if (HAS_FLAG(format, NumberFormat::OctFormatOo))
+            {
+                base = 8;
+                index += 2;
+            }
+            break;
         }
     }
     auto* p                     = text + index;
@@ -411,6 +419,21 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
         while (index < size)
         {
             validCharacter = (((*p) == '0') || ((*p) == '1'));
+            VALIDATE_NUMBER_SEPARATOR;
+
+            if (validCharacter)
+            {
+                p++;
+                index++;
+                continue;
+            }
+            break;
+        }
+        break;
+    case 8:
+        while (index < size)
+        {
+            validCharacter = (((*p) >= '0') && ((*p) <= '7'));
             VALIDATE_NUMBER_SEPARATOR;
 
             if (validCharacter)

@@ -725,11 +725,12 @@ namespace View
             DecimalOnly           = 0,
             HexFormat0x           = 0x00000001,
             BinFormat0b           = 0x00000002,
-            FloatingPoint         = 0x00000004,
-            AllowSignBeforeNumber = 0x00000008,
-            AllowUnderline        = 0x00000010,
-            AllowSingleQuote      = 0x00000020,
-            ExponentFormat        = 0x00000040,
+            OctFormatOo           = 0x00000004, 
+            FloatingPoint         = 0x00000008,
+            AllowSignBeforeNumber = 0x00000010,
+            AllowUnderline        = 0x00000020,
+            AllowSingleQuote      = 0x00000040,
+            ExponentFormat        = 0x00000080,
             All                   = 0xFFFFFFFF, // all possible forms of numbers
         };
         class CORE_EXPORT TextParser
