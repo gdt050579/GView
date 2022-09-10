@@ -483,6 +483,8 @@ namespace Golang
         uint64 GetFunctionsCount() const;
         bool GetFunction(uint64 index, Function& func) const;
         uint64 GetEntriesCount() const;
+        void SetBuildId(std::string_view buildId);
+        const std::string& GetBuildId() const;
     };
 
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);

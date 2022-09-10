@@ -40,6 +40,8 @@ struct GoPclntab112Context
     std::vector<Function> functions;
 
     bool processed{ false };
+
+    std::string buildId; // this gets set from outside
 };
 
 GoPclntab112::GoPclntab112()
@@ -49,12 +51,12 @@ GoPclntab112::GoPclntab112()
 
 GoPclntab112::~GoPclntab112()
 {
-    delete (GoPclntab112Context*) context;
+    delete reinterpret_cast<GoPclntab112Context*>(context);
 }
 
 void GoPclntab112::Reset()
 {
-    delete (GoPclntab112Context*) context;
+    delete reinterpret_cast<GoPclntab112Context*>(context);
     context = new GoPclntab112Context;
 }
 
@@ -65,86 +67,87 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     CHECK(buffer.GetLength() > sizeof(Golang::GoFunctionHeader), false, "");
     CHECK(arch != Architecture::Unknown, false, "");
 
-    auto goContext = (GoPclntab112Context*) this->context;
-    CHECK(goContext->processed == false, false, "");
-    goContext->buffer = buffer;
-    goContext->arch   = arch;
+    auto goCtx = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECK(goCtx->processed == false, false, "");
+    goCtx->buffer = buffer;
+    goCtx->arch   = arch;
 
-    goContext->header      = (Golang::GoFunctionHeader*) goContext->buffer.GetData();
-    goContext->nfunctab    = *(uint32*) (goContext->buffer.GetData() + sizeof(Golang::GoFunctionHeader));
-    goContext->funcdata    = goContext->buffer.GetData();
-    goContext->funcnametab = goContext->buffer.GetData();
-    goContext->functab     = goContext->buffer.GetData() + 8 + goContext->header->sizeOfUintptr;
-    goContext->pctab       = goContext->buffer.GetData();
-    goContext->functabsize = (goContext->nfunctab * 2 + 1) * goContext->header->sizeOfUintptr; // TODO: version >= 1.18 size is fixed to 4
-    goContext->fileoff     = *(uint32*) (goContext->functab + goContext->functabsize);
-    goContext->filetab     = goContext->buffer.GetData() + goContext->fileoff;
-    goContext->nfiletab    = *(uint32*) goContext->filetab;
-    goContext->filetab     = goContext->filetab + goContext->nfiletab * 4;
+    goCtx->header      = reinterpret_cast<Golang::GoFunctionHeader*>(goCtx->buffer.GetData());
+    goCtx->nfunctab    = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader));
+    goCtx->funcdata    = goCtx->buffer.GetData();
+    goCtx->funcnametab = goCtx->buffer.GetData();
+    goCtx->functab     = goCtx->buffer.GetData() + 8 + goCtx->header->sizeOfUintptr;
+    goCtx->pctab       = goCtx->buffer.GetData();
+    goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr; // TODO: version >= 1.18 size is fixed to 4
+    goCtx->fileoff     = *reinterpret_cast<uint32*>(goCtx->functab + goCtx->functabsize);
+    goCtx->filetab     = goCtx->buffer.GetData() + goCtx->fileoff;
+    goCtx->nfiletab    = *reinterpret_cast<uint32*>(goCtx->filetab);
+    goCtx->filetab     = goCtx->filetab + goCtx->nfiletab * 4;
 
     {
-        goContext->files.reserve(goContext->nfiletab);
+        goCtx->files.reserve(goCtx->nfiletab);
 
         uint32 offset = 0;
-        for (uint32 i = 0; i < goContext->nfiletab - 1; i++)
+        for (uint32 i = 0; i < goCtx->nfiletab - 1; i++)
         {
-            auto fname      = (char*) (goContext->filetab + offset);
-            const auto& res = goContext->files.emplace_back(fname);
-            offset += (uint32) res.size() + 2;
+            auto fname      = (char*) (goCtx->filetab + offset);
+            const auto& res = goCtx->files.emplace_back(fname);
+            offset += static_cast<uint32>(res.size()) + 2;
         }
     }
 
     if (arch == Architecture::x86)
     {
-        goContext->entries32.reserve(goContext->nfunctab);
-        goContext->functions.reserve(goContext->nfunctab);
+        goCtx->entries32.reserve(goCtx->nfunctab);
+        goCtx->functions.reserve(goCtx->nfunctab);
 
-        auto entries = (Golang::FstEntry32*) goContext->functab;
-        for (auto i = 0U; i < goContext->nfunctab; i++)
+        auto entries = reinterpret_cast<Golang::FstEntry32*>(goCtx->functab);
+        for (auto i = 0U; i < goCtx->nfunctab; i++)
         {
             const auto entry32 = entries + i;
-            goContext->entries32.emplace_back(entry32);
+            goCtx->entries32.emplace_back(entry32);
         }
 
-        for (const auto& entry : goContext->entries32)
+        for (const auto& entry : goCtx->entries32)
         {
-            const auto f32 = (Golang::Func32*) (goContext->buffer.GetData() + entry->functionOffset);
+            const auto f32 = (Golang::Func32*) (goCtx->buffer.GetData() + entry->functionOffset);
 
-            auto& e      = goContext->functions.emplace_back();
+            auto& e      = goCtx->functions.emplace_back();
             e.func.entry = f32->entry;
             memcpy(
-                  (char*) &e.func.entry + sizeof(e.func.entry),
-                  (char*) &f32->entry + sizeof(f32->entry),
+                  reinterpret_cast<char*>(&e.func.entry) + sizeof(e.func.entry),
+                  reinterpret_cast<char*>(&f32->entry) + sizeof(f32->entry),
                   sizeof(Golang::Func32) - sizeof(Golang::Func32::entry));
-            e.name = (char*) goContext->funcnametab + e.func.name;
+            e.name = (char*) goCtx->funcnametab + e.func.name;
         }
     }
     else if (arch == Architecture::x64)
     {
-        goContext->entries64.reserve(goContext->nfunctab);
-        goContext->functions.reserve(goContext->nfunctab);
+        goCtx->entries64.reserve(goCtx->nfunctab);
+        goCtx->functions.reserve(goCtx->nfunctab);
 
-        auto entries = (Golang::FstEntry64*) goContext->functab;
-        for (auto i = 0U; i < goContext->nfunctab; i++)
+        auto entries = reinterpret_cast<Golang::FstEntry64*>(goCtx->functab);
+        for (auto i = 0U; i < goCtx->nfunctab; i++)
         {
             const auto entry64 = entries + i;
-            goContext->entries64.emplace_back(entry64);
+            goCtx->entries64.emplace_back(entry64);
         }
 
-        for (const auto& entry : goContext->entries64)
+        for (const auto& entry : goCtx->entries64)
         {
-            auto& e = goContext->functions.emplace_back(Function{ nullptr, *(Golang::Func64*) (buffer.GetData() + entry->functionOffset) });
-            e.name  = (char*) goContext->funcnametab + e.func.name;
+            auto& e = goCtx->functions.emplace_back(
+                  Function{ nullptr, *reinterpret_cast<Golang::Func64*>(buffer.GetData() + entry->functionOffset) });
+            e.name = reinterpret_cast<char*>(goCtx->funcnametab) + e.func.name;
         }
     }
 
-    if (goContext->functions.empty() == false)
+    if (goCtx->functions.empty() == false)
     {
-        goContext->functions.pop_back();
-        std::reverse(goContext->functions.begin(), goContext->functions.end());
+        goCtx->functions.pop_back();
+        std::reverse(goCtx->functions.begin(), goCtx->functions.end());
     }
 
-    goContext->processed = true;
+    goCtx->processed = true;
 
     return true;
 }
@@ -152,7 +155,7 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
 GoFunctionHeader* GoPclntab112::GetHeader() const
 {
     CHECK(context != nullptr, nullptr, "");
-    const auto goContext = (GoPclntab112Context*) this->context;
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
     CHECK(goContext->processed, nullptr, "");
     return goContext->header;
 }
@@ -160,7 +163,7 @@ GoFunctionHeader* GoPclntab112::GetHeader() const
 uint64 GoPclntab112::GetFilesCount() const
 {
     CHECK(context != nullptr, 0, "");
-    const auto goContext = (GoPclntab112Context*) this->context;
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
     CHECK(goContext->processed, 0, "");
     return goContext->files.size();
 }
@@ -168,7 +171,7 @@ uint64 GoPclntab112::GetFilesCount() const
 bool GoPclntab112::GetFile(uint64 index, std::string_view& file) const
 {
     CHECK(context != nullptr, false, "");
-    const auto goContext = (GoPclntab112Context*) this->context;
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
     CHECK(goContext->processed, false, "");
     CHECK(index < goContext->files.size(), false, "");
     file = goContext->files.at(index);
@@ -178,37 +181,56 @@ bool GoPclntab112::GetFile(uint64 index, std::string_view& file) const
 uint64 GoPclntab112::GetFunctionsCount() const
 {
     CHECK(context != nullptr, 0, "");
-    const auto goContext = (GoPclntab112Context*) this->context;
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
     CHECK(goContext->processed, 0, "");
-
     return goContext->functions.size();
 }
 
 bool GoPclntab112::GetFunction(uint64 index, Function& func) const
 {
     CHECK(context != nullptr, false, "");
-    const auto goContext = (GoPclntab112Context*) this->context;
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
     CHECK(goContext->processed, false, "");
-
     CHECK(index < goContext->functions.size(), false, "");
     func = goContext->functions.at(index);
-
     return true;
 }
 
 uint64 GoPclntab112::GetEntriesCount() const
 {
     CHECK(context != nullptr, 0, "");
-    const auto goContext = (GoPclntab112Context*) this->context;
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
     CHECK(goContext->processed, 0, "");
 
     if (goContext->arch == Architecture::x86)
+    {
         return goContext->entries32.size();
+    }
 
     if (goContext->arch == Architecture::x64)
+    {
         return goContext->entries64.size();
+    }
 
     return 0;
 }
 
+void GoPclntab112::SetBuildId(std::string_view buildId)
+{
+    CHECKRET(context != nullptr, "");
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECKRET(goContext->processed, "");
+
+    goContext->buildId = buildId;
+}
+
+const std::string& GoPclntab112::GetBuildId() const
+{
+    static const std::string empty;
+    CHECK(context != nullptr, empty, "");
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECK(goContext->processed, empty, "");
+
+    return goContext->buildId;
+}
 } // namespace GView::Golang

@@ -182,7 +182,7 @@ bool ELFFile::ParseGoData()
         if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
             noteNameView == Golang::ELF_GO_NOTE)
         {
-            buildId = std::string((char*) noteBuffer.GetData() + 16, valSize);
+            pclntab112.SetBuildId({ (char*) noteBuffer.GetData() + 16, valSize });
         }
 
         if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&

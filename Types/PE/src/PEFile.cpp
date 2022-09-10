@@ -221,7 +221,7 @@ static std::map<uint32, std::string_view> languageCode = {
     { 20490, "Spanish (Puerto Rico)" },
 };
 
-uint32_t SectionALIGN(uint32_t value, uint32_t alignValue)
+inline static uint32 SectionALIGN(uint32 value, uint32 alignValue)
 {
     if (alignValue == 0)
         return value;
@@ -1699,6 +1699,9 @@ bool PEFile::Update()
         }
     }
 
+    // TODO: separation for go symbols
+    ParseGoData();
+
     return true;
 }
 
@@ -1774,4 +1777,108 @@ bool PEFile::BuildSymbols()
     }
 
     return true;
+}
+
+bool PEFile::ParseGoData()
+{
+    constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
+    constexpr std::string_view goBuildEnd{ "\"\n \xff" };
+
+    const auto cacheSize = this->obj->GetData().GetCacheSize();
+    const auto fileSize  = this->obj->GetData().GetSize();
+
+    const auto fileView = this->obj->GetData().CopyToBuffer(0, cacheSize, false);
+
+    // we should find go build id at the start of the file
+    const std::string_view buffer{ (char*) fileView.GetData(), fileView.GetLength() }; // force for find
+    const auto sPos = buffer.find(goBuildPrefix);
+    if (sPos != std::string::npos)
+    {
+        const auto ePos = buffer.find(goBuildEnd, sPos + 1);
+        const std::string_view buildID{ buffer.data() + sPos + goBuildPrefix.size(), ePos - sPos - goBuildPrefix.size() };
+        this->pclntab112.SetBuildId(buildID);
+    }
+
+    // we should find go build info at the start of the file .data section
+    constexpr uint32 flags = __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE;
+    auto dataOffset        = 0ULL;
+    for (auto i = 0U; i < nrSections; i++)
+    {
+        if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags)
+        {
+            dataOffset = (uint64) sect[i].PointerToRawData;
+            break;
+        }
+    }
+
+    constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
+    // TODO..
+
+
+    auto offset    = 0ULL;
+    auto symbolsNo = 0ULL;
+
+    if (this->hdr64)
+    {
+        offset    = nth64.FileHeader.PointerToSymbolTable;
+        symbolsNo = nth64.FileHeader.NumberOfSymbols;
+    }
+    else
+    {
+        offset    = nth32.FileHeader.PointerToSymbolTable;
+        symbolsNo = nth32.FileHeader.NumberOfSymbols;
+    }
+
+    CHECK(offset != 0, false, "");
+    CHECK(symbolsNo != 0, false, "");
+
+    const auto size          = symbolsNo * IMAGE_SIZEOF_SYMBOL;
+    const auto symbolsBuffer = this->obj->GetData().CopyToBuffer(offset, (uint32) size);
+    CHECK(symbolsBuffer.IsValid(), false, "");
+    const auto endSymbolsBuffer = ((uint64) symbolsBuffer.GetData()) + offset + size;
+
+    const auto strTableOffset = offset + symbolsNo * PE::IMAGE_SIZEOF_SYMBOL;
+    uint32 strTableSize       = 0;
+    CHECK(obj->GetData().Copy(strTableOffset, strTableSize), false, "");
+    CHECK(strTableSize != 0, false, "");
+    const auto stringsBuffer = this->obj->GetData().CopyToBuffer(strTableOffset, strTableSize);
+    CHECK(stringsBuffer.IsValid(), false, "");
+
+    for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++)
+    {
+        const auto is = (ImageSymbol*) (symbolsBuffer.GetData() + i * IMAGE_SIZEOF_SYMBOL);
+        CHECKBK((uint64) (is) < endSymbolsBuffer - IMAGE_SIZEOF_SYMBOL, "");
+        if (is->StorageClass == IMAGE_SYM_CLASS_NULL)
+        {
+            continue;
+        }
+
+        String actualName;
+        if (is->N.Name.Short != 0)
+        {
+            CHECK(actualName.Set((char*) is->N.ShortName, sizeof(is->N.ShortName) / sizeof(is->N.ShortName[0])), false, "");
+        }
+        else if (is->N.Name.Long >= sizeof(strTableSize) && is->N.Name.Long < strTableSize)
+        {
+            const auto name     = std::string_view{ (char*) (stringsBuffer.GetData() + is->N.Name.Long) };
+            const auto dolarPos = name.find_first_of('$');
+            if (dolarPos != std::string::npos)
+            {
+                const auto fname = std::string_view{ name.data() + dolarPos + 1, name.size() - 1 - dolarPos };
+                String sName;
+                if (GView::Utils::Demangle(fname.data(), sName))
+                {
+                    actualName.Format("[%.*s]: %s", dolarPos, name.data(), sName.GetText());
+                }
+                else
+                {
+                    actualName.Format("[%.*s]: %.*s", dolarPos, name.data(), name.size() - dolarPos + 1, name.data() + dolarPos + 1);
+                }
+            }
+            else if (GView::Utils::Demangle(name.data(), actualName) == false)
+            {
+                actualName = name.data();
+            }
+        }
+    }
 }

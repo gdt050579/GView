@@ -43,8 +43,8 @@ void GoInformation::UpdateGoInformation()
     if (elf->noteName.empty() == false)
         list->AddItem({ "Note Name", ls.Format("%s", elf->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 
-    if (elf->buildId.empty() == false)
-        list->AddItem({ "Build ID", ls.Format("%s", elf->buildId.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    if (elf->pclntab112.GetBuildId().empty() == false)
+        list->AddItem({ "Build ID", ls.Format("%s", elf->pclntab112.GetBuildId().c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 
     if (elf->gnuString.empty() == false)
         list->AddItem({ "GNU String", ls.Format("%s", elf->gnuString.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);

@@ -784,7 +784,6 @@ namespace Type
             uint32 valSize  = 0;
             uint32 tag      = 0;
             std::string noteName{};
-            std::string buildId;
             Golang::GoPclntab112 pclntab112{};
 
           public:
@@ -820,6 +819,7 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
             bool BuildSymbols();
+            bool ParseGoData();
 
             bool HasPanel(Panels::IDs id);
 
