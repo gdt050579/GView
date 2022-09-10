@@ -796,6 +796,29 @@ bool Instance::RebuildTextFromTokens(TextEditor& editor)
     }
     return true;
 }
+void Instance::BakupTokensPositions()
+{
+    // make a copy of all tokens positions
+    backupedTokenPositionList.reserve(this->tokens.size());
+    backupedTokenPositionList.clear();
+    for (const auto& tok : this->tokens)
+    {
+        backupedTokenPositionList.push_back({ 0, 0, TokenStatus::None });
+    }
+}
+void Instance::RestoreTokensPositionsFromBackup()
+{
+    ASSERT(this->tokens.size() == this->backupedTokenPositionList.size(), "Expecting backup list to be of the same size as tokens list");
+    auto sz    = this->tokens.size();
+    auto index = static_cast<size_t>(0);
+    for (auto& tok : this->tokens)
+    {
+        const auto& bakPos = this->backupedTokenPositionList[index];
+        // copy from bakPos to tok
+        index++;
+    }
+    backupedTokenPositionList.clear();
+}
 
 void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block)
 {
@@ -1689,6 +1712,13 @@ void Instance::ShowSaveAsDialog()
     }
 
     // actual save
+    // step 1 --> make sure that we save all tokens , not just the visible ones
+    BakupTokensPositions();
+    auto originalShowMetaDataValue = this->showMetaData;
+    this->showMetaData             = true;
+    ExpandAll();
+
+    // Step 2 --> create a buffer for the entire text
     Buffer b;
     CharacterEncoding::EncodedCharacter encChar;
     b.Reserve(100000);
@@ -1752,7 +1782,11 @@ void Instance::ShowSaveAsDialog()
             b.Resize(0);
         }
     }
+    // Stept 3 --> restore the original tokens positions
+    RestoreTokensPositionsFromBackup();
+    this->showMetaData = originalShowMetaDataValue;
 
+    // Step 4 --> save
     if (b.GetLength() > 0)
     {
         if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
