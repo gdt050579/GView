@@ -159,7 +159,7 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    settings.AddDissasemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData);
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData);
                     break;
                 }
             }

@@ -1107,10 +1107,10 @@ namespace View
         {
             void* data;
 
-            void SetDefaultDissasemblyLanguage(DissasemblyLanguage lang);
-            void AddDissasemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang = DissasemblyLanguage::Default);
+            void SetDefaultDisassemblyLanguage(DissasemblyLanguage lang);
+            void AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang = DissasemblyLanguage::Default);
 
-            void AddMemmoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name);
 
             /**
              * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
@@ -1126,11 +1126,11 @@ namespace View
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);
             void AddArray(uint64 offset, std::string_view name, VariableType type, uint32 count);
-            void AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height);
+            void AddBidimensionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height);
 
             void AddVariable(uint64 offset, std::string_view name, TypeID type);
             void AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count);
-            void AddBiDiminesionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height);
+            void AddBidimensionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height);
 
             /*
              * types: uin8-64,int8-64, float,double, char* (asciiZ), Unicode16Z,Unicode32Z

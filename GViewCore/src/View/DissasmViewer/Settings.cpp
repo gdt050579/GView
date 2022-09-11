@@ -8,20 +8,20 @@ using namespace AppCUI::Input;
 Settings::Settings()
 {
     this->data                     = new SettingsData();
-    INTERNAL_SETTINGS->availableID = (uint32) InternalDissasmType::UserDefined + 1;
+    INTERNAL_SETTINGS->availableID = static_cast<uint32>(InternalDissasmType::UserDefined) + 1;
 }
 
-void Settings::SetDefaultDissasemblyLanguage(DissasemblyLanguage lang)
+void Settings::SetDefaultDisassemblyLanguage(DissasemblyLanguage lang)
 {
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
-void Settings::AddDissasemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang)
+void Settings::AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang)
 {
     INTERNAL_SETTINGS->dissasemblyZones[start] = { size, lang };
 }
 
-void Settings::AddMemmoryMapping(uint64 address, std::string_view name)
+void Settings::AddMemoryMapping(uint64 address, std::string_view name)
 {
     INTERNAL_SETTINGS->memoryMappings[address] = name;
 }
@@ -36,7 +36,7 @@ void Settings::AddArray(uint64 offset, std::string_view name, VariableType type,
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { InternalDissasmType::UnidimnsionalArray, name, (uint32) type, count };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
 }
-void Settings::AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height)
+void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height)
 {
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { InternalDissasmType::BidimensionalArray, name, (uint32) type, width, height };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
@@ -57,7 +57,7 @@ void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
 void Settings::AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count)
 {
 }
-void Settings::AddBiDiminesionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height)
+void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height)
 {
 }
 
