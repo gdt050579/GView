@@ -26,17 +26,18 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
     char* newBuffer = new char[definition.size() + 1];
     memcpy(newBuffer, definition.data(), definition.size());
     newBuffer[definition.size()] = '\0';
-    INTERNAL_SETTINGS->buffersToDelete.push_back(newBuffer);
 
-    char* start = newBuffer;
-    char* end   = newBuffer + definition.size();
+    std::deque<char*> localBuffersToDelete;
+    localBuffersToDelete.push_back(newBuffer);
 
-    const char *startDef = start, *endDef = nullptr;
+    char* start     = newBuffer;
+    const char* end = newBuffer + definition.size();
 
-    char buffer[128];
-    char* startingNamePtr = start;
-    uint32 size           = 0;
-    uint32 arraySizes     = 0;
+    constexpr uint32 buffer_size = 128;
+    char buffer[buffer_size];
+    const char* startingNamePtr = start;
+    uint32 size                 = 0;
+    uint32 arraySizes           = 0;
     DissasmType newType{};
 
     while (start < end)
@@ -48,11 +49,13 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
             auto it      = types.find(buffer);
             if (it != types.end())
             {
-                newType.primaryType = (InternalDissasmType) it->second;
+                newType.primaryType = static_cast<InternalDissasmType>(it->second);
             }
             else
             {
-                // err
+                for (auto entry_buffer : localBuffersToDelete)
+                    delete[] entry_buffer;
+                return TypeIDError;
             }
             size            = 0;
             startingNamePtr = start + 1;
@@ -70,17 +73,19 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
             auto res     = Number::ToUInt32(buffer);
             if (!res.has_value())
             {
-                // err
+                for (auto entry_buffer : localBuffersToDelete)
+                    delete[] entry_buffer;
+                return TypeIDError;
             }
             else
             {
                 if (arraySizes == 1)
                 {
-                    newType.secondaryType = (uint32) newType.primaryType;
+                    newType.secondaryType = static_cast<uint32>(newType.primaryType);
                     newType.primaryType   = InternalDissasmType::UnidimnsionalArray;
                     newType.width         = res.value();
                 }
-                else // bidimensional
+                else // bi-dimensional TODO -> possible even more dimensions
                 {
                     newType.primaryType = InternalDissasmType::BidimensionalArray;
                     newType.height      = res.value();
@@ -96,9 +101,9 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 
             if (newType.primaryType == InternalDissasmType::UnidimnsionalArray)
             {
-                assert(newType.width < 100); // TODO: fix for more numberss
-                char* arrayCellNames = new char[5 * newType.width];
-                INTERNAL_SETTINGS->buffersToDelete.push_back(arrayCellNames);
+                assert(newType.width < 100); // TODO: fix for more numbers
+                char* arrayCellNames = new char[5u * newType.width];
+                localBuffersToDelete.push_back(arrayCellNames);
                 char* cellOffset = arrayCellNames;
                 *cellOffset      = '\0';
 
@@ -107,16 +112,16 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
                     int res = snprintf(cellOffset, 5, "[%u]", i);
                     if (res < 0)
                     {
-                        // err;
-                        return -1;
+                        for (auto entry_buffer : localBuffersToDelete)
+                            delete[] entry_buffer;
+                        return TypeIDError;
                     }
 
-                    auto& internal = newType.internalTypes.emplace_back();
-                    internal.primaryType = (InternalDissasmType) newType.secondaryType;
+                    auto& internal       = newType.internalTypes.emplace_back();
+                    internal.primaryType = static_cast<InternalDissasmType>(newType.secondaryType);
                     internal.name        = cellOffset;
                     cellOffset += res + 1;
                 }
-                cellOffset = cellOffset;
             }
 
             size = 0;
@@ -128,13 +133,19 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
             size = 0;
         }
         else
+        {
             buffer[size++] = *start;
+            if (size >= buffer_size) // capping to buffer_size current string
+                size = buffer_size - 1;
+        }
         start++;
     }
 
+    for (auto entry_buffer : localBuffersToDelete)
+        INTERNAL_SETTINGS->buffersToDelete.push_back(entry_buffer);
+
     INTERNAL_SETTINGS->userDeginedTypes[availableValue] = userType;
-    ++availableValue;
-    return availableValue - 1;
+    return availableValue++;
 }
 
 uint32 DissasmType::GetExpandedSize() const

@@ -146,10 +146,6 @@ extern "C"
     {
         DissasmViewer::Settings settings;
 
-#ifndef DISSASM_DEV
-        win->CreateViewer("BufferView", settings);
-#endif
-
         if (pe->HasPanel(PE::Panels::IDs::Sections))
         {
             LocalString<128> temp;
@@ -205,7 +201,9 @@ UInt16 e_res[4];)");
         auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
+#ifndef DISSASM_DEV
         CreateBufferView(win, pe);
+#endif
         CreateDissasmView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))

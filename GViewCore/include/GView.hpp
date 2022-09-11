@@ -1103,6 +1103,8 @@ namespace View
             Utf32Z
         };
 
+        constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
+
         struct CORE_EXPORT Settings
         {
             void* data;
@@ -1111,7 +1113,7 @@ namespace View
             void AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang = DissasemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name);
-
+            
             /**
              * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
              *
@@ -1119,7 +1121,7 @@ namespace View
              * @param[in] name Name of the new type
              * @param[in] definition Multiple statements in the form DataType variableName followed by semicolon. Example: name="Point",
              * definition="UInt32 x;UInt32 y;"
-             * @returns The id of the new data type generated.
+             * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
 
