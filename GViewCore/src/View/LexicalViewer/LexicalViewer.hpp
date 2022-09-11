@@ -97,6 +97,11 @@ namespace View
                 return (flags & BlockFlags::ManualCollapse) != BlockFlags::None;
             }
         };
+        struct TokenPosition
+        {
+            int32 x, y;
+            TokenStatus status;
+        };
         struct TokenObject
         {
             UnicodeStringBuilder value;
@@ -277,6 +282,8 @@ namespace View
             bool showMetaData;
             bool prettyFormat;
 
+            std::vector<TokenPosition> backupedTokenPositionList;
+
             struct
             {
                 int32 x, y;
@@ -313,7 +320,8 @@ namespace View
 
             uint32 TokenToBlock(uint32 tokenIndex);
             uint32 CountSimilarTokens(uint32 start, uint32 end, uint64 hash);
-
+            void BakupTokensPositions();
+            void RestoreTokensPositionsFromBackup();
             uint32 MousePositionToTokenID(int x, int y);
 
             void EditCurrentToken();

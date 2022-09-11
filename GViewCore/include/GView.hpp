@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.205.0"
+#define GVIEW_VERSION "0.207.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -711,12 +711,13 @@ namespace View
         };
         enum class StringFormat : uint32
         {
-            SingleQuotes                = 0x00000001, // "..."
-            DoubleQuotes                = 0x00000002, // '...'
-            TripleQuotes                = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences        = 0x00000008, // "...\n..."
-            MultiLine                   = 0x00000010, // string accross mulitple lines
-            LineContinuityWithBackslash = 0x00000020, // "   \<newline>   "
+            SingleQuotes                = 0x00000001, // '...'
+            DoubleQuotes                = 0x00000002, // "..."
+            Apostrophe                  = 0x00000004, // `...`
+            TripleQuotes                = 0x00000008, // '''...''' or """...""" or ```...``` (pending on the SingleQuotes..Apostrophe flag)
+            AllowEscapeSequences        = 0x00000010, // "...\n..."
+            MultiLine                   = 0x00000020, // string accross mulitple lines
+            LineContinuityWithBackslash = 0x00000040, // "   \<newline>   "
             All                         = 0xFFFFFFFF, // all possible forms of strings
         };
         enum class NumberFormat : uint32
@@ -724,11 +725,12 @@ namespace View
             DecimalOnly           = 0,
             HexFormat0x           = 0x00000001,
             BinFormat0b           = 0x00000002,
-            FloatingPoint         = 0x00000004,
-            AllowSignBeforeNumber = 0x00000008,
-            AllowUnderline        = 0x00000010,
-            AllowSingleQuote      = 0x00000020,
-            ExponentFormat        = 0x00000040,
+            OctFormatOo           = 0x00000004, 
+            FloatingPoint         = 0x00000008,
+            AllowSignBeforeNumber = 0x00000010,
+            AllowUnderline        = 0x00000020,
+            AllowSingleQuote      = 0x00000040,
+            ExponentFormat        = 0x00000080,
             All                   = 0xFFFFFFFF, // all possible forms of numbers
         };
         class CORE_EXPORT TextParser
