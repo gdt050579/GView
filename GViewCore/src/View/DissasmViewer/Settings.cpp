@@ -3,12 +3,11 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
-#define INTERNAL_SETTINGS ((SettingsData*) this->data)
+#define INTERNAL_SETTINGS static_cast<SettingsData*>(this->data)
 
 Settings::Settings()
 {
     this->data                     = new SettingsData();
-    INTERNAL_SETTINGS->availableID = static_cast<uint32>(InternalDissasmType::UserDefined) + 1;
 }
 
 void Settings::SetDefaultDisassemblyLanguage(DissasemblyLanguage lang)
@@ -28,7 +27,7 @@ void Settings::AddMemoryMapping(uint64 address, std::string_view name)
 
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
 {
-    INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { (InternalDissasmType) type, name };
+    INTERNAL_SETTINGS->dissasmTypeMapped[offset] = { static_cast<InternalDissasmType>(type), name };
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
 }
 void Settings::AddArray(uint64 offset, std::string_view name, VariableType type, uint32 count)
@@ -64,4 +63,5 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, TypeI
 SettingsData::SettingsData()
 {
     defaultLanguage = DissasemblyLanguage::Default;
+    availableID     = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
 }

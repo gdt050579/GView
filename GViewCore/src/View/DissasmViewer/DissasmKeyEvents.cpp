@@ -23,7 +23,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
         mpInfo.location = MouseLocation::Outside;
         return;
     }
-    auto xPoz = (uint32) x;
+    auto xPoz = static_cast<uint32>(x);
     if ((xPoz >= Layout.startingTextLineOffset) && (xPoz < Layout.startingTextLineOffset + Layout.textSize))
     {
         mpInfo.location     = MouseLocation::OnView;
@@ -166,11 +166,11 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveTo(this->Cursor.currentPos + 1, select);
         return true;
     case Key::PageDown:
-        MoveTo(this->Cursor.currentPos + this->Layout.textSize * this->Layout.visibleRows, select);
+        MoveTo(this->Cursor.currentPos + static_cast<uint64>(this->Layout.textSize) * this->Layout.visibleRows, select);
         return true;
     case Key::PageUp:
         if (this->Cursor.currentPos > static_cast<uint64>(this->Layout.textSize) * this->Layout.visibleRows)
-            MoveTo(this->Cursor.currentPos - this->Layout.textSize * this->Layout.visibleRows, select);
+            MoveTo(this->Cursor.currentPos - static_cast<uint64>(this->Layout.textSize) * this->Layout.visibleRows, select);
         else
             MoveTo(0, select);
         return true;

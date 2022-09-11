@@ -18,7 +18,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     {
         // move settings data pointer
         this->settings.reset((SettingsData*) _settings->data);
-        _settings->data = nullptr;
+        //_settings->data = nullptr; //TODO: is this ok?
     }
     else
     {

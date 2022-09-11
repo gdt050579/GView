@@ -59,7 +59,8 @@ namespace View
             Utf32Z,
             UnidimnsionalArray,
             BidimensionalArray,
-            UserDefined
+            UserDefined,
+            CustomTypesStartingId
         };
 
         struct DissasmType
