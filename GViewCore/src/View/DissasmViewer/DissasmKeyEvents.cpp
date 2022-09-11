@@ -44,11 +44,11 @@ void Instance::MoveTo(uint64 offset, bool select)
     if (offset > (obj->GetData().GetSize() - 1))
         offset = obj->GetData().GetSize() - 1;
 
-    if (offset == this->Cursor.currentPos)
-    {
-        this->Cursor.startView = offset;
-        return;
-    }
+    //if (offset == this->Cursor.currentPos)
+    //{
+    //    this->Cursor.startView = offset;
+    //    return;
+    //}
 
     auto h    = this->Layout.visibleRows;
     auto sz   = this->Layout.textSize * h;
