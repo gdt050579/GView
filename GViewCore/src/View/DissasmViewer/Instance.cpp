@@ -438,15 +438,19 @@ bool Instance::WriteStructureToScreen(
         }
     }
 
+    size_t buffer_size = dli.chText - dli.chNameAndSize;
+
     uint32 cursorLine = (this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
     if (cursorLine == dli.screenLineToDraw)
     {
-        uint32 index                   = this->Cursor.currentPos % Layout.textSize;
-        dli.chNameAndSize[index].Color = config.Colors.Selection;
+        uint32 index = this->Cursor.currentPos % Layout.textSize;
+        if (index < buffer_size)
+            dli.chNameAndSize[index].Color = config.Colors.Selection;
+        else
+            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
     }
 
-    size_t buffer_size = dli.chText - dli.chNameAndSize;
-    auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
+    auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
