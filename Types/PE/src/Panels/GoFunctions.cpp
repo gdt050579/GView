@@ -82,7 +82,8 @@ void GoFunctions::Update()
     NumericFormatter n;
     NumericFormatter n2;
 
-    for (auto i = 0ULL; i < pe->pclntab112.GetFunctionsCount(); i++)
+    const auto fCount = pe->pclntab112.GetFunctionsCount();
+    for (auto i = 0ULL; i < fCount; i++)
     {
         Golang::Function f{};
         CHECKRET(pe->pclntab112.GetFunction(i, f), "");

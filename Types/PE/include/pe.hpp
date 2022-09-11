@@ -110,6 +110,7 @@ namespace Type
                 Imports,
                 TLS,
                 Symbols,
+                GoInformation
             };
         };
         class VersionInformation
@@ -825,6 +826,7 @@ namespace Type
             bool ParseGoData();
             bool ParseGoBuild();
             bool ParseGoBuildInfo();
+            std::vector<uint64> FindPcLnTabSigsCandidates() const;
 
             bool HasPanel(Panels::IDs id);
 

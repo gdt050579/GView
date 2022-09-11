@@ -30,8 +30,8 @@ struct GoPclntab112Context
     uint8* functab{ nullptr };
     uint8* pctab{ nullptr };
     int32 functabsize{ 0 };
-    uint32 fileoff{ 0 };
     uint8* filetab{ nullptr };
+    uint8* cutab{ nullptr };
     uint32 nfiletab{ 0 };
 
     std::vector<std::string_view> files;
@@ -74,17 +74,47 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     goCtx->buffer = buffer;
     goCtx->arch   = arch;
 
-    goCtx->header      = reinterpret_cast<Golang::GoFunctionHeader*>(goCtx->buffer.GetData());
-    goCtx->nfunctab    = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader));
-    goCtx->funcdata    = goCtx->buffer.GetData();
-    goCtx->funcnametab = goCtx->buffer.GetData();
-    goCtx->functab     = goCtx->buffer.GetData() + 8 + goCtx->header->sizeOfUintptr;
-    goCtx->pctab       = goCtx->buffer.GetData();
-    goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr; // TODO: version >= 1.18 size is fixed to 4
-    goCtx->fileoff     = *reinterpret_cast<uint32*>(goCtx->functab + goCtx->functabsize);
-    goCtx->filetab     = goCtx->buffer.GetData() + goCtx->fileoff;
-    goCtx->nfiletab    = *reinterpret_cast<uint32*>(goCtx->filetab);
-    goCtx->filetab     = goCtx->filetab + goCtx->nfiletab * 4;
+    goCtx->header = reinterpret_cast<Golang::GoFunctionHeader*>(goCtx->buffer.GetData());
+    // data validation
+    CHECK(goCtx->header->magic == GoMagic::_116 || goCtx->header->magic == GoMagic::_118 || goCtx->header->magic == GoMagic::_12,
+          false,
+          "");
+    CHECK(goCtx->header->instructionSizeQuantum <= 4, false, "");
+    CHECK(goCtx->header->sizeOfUintptr <= 8, false, "");
+
+    switch (goCtx->header->magic) // functabsize = sizeOfUintptr when version <= 118 else 4
+    {
+    case GoMagic::_116:
+    {
+        goCtx->nfunctab = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader));
+        goCtx->nfiletab =
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 1 * goCtx->header->sizeOfUintptr);
+        goCtx->funcnametab =
+              goCtx->buffer.GetData() +
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 2 * goCtx->header->sizeOfUintptr);
+        goCtx->cutab =
+              goCtx->buffer.GetData() +
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 3 * goCtx->header->sizeOfUintptr);
+        goCtx->filetab =
+              goCtx->buffer.GetData() +
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 4 * goCtx->header->sizeOfUintptr);
+        goCtx->pctab =
+              goCtx->buffer.GetData() +
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 5 * goCtx->header->sizeOfUintptr);
+
+        auto a = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 6 * goCtx->header->sizeOfUintptr);
+        goCtx->funcdata =
+              goCtx->buffer.GetData() +
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 6 * goCtx->header->sizeOfUintptr);
+        goCtx->functab =
+              goCtx->buffer.GetData() +
+              *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 6 * goCtx->header->sizeOfUintptr);
+        goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr;
+    }
+    break;
+    default:
+        throw std::runtime_error("Not implemented!");
+    }
 
     {
         goCtx->files.reserve(goCtx->nfiletab);
@@ -94,7 +124,7 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
         {
             auto fname      = (char*) (goCtx->filetab + offset);
             const auto& res = goCtx->files.emplace_back(fname);
-            offset += static_cast<uint32>(res.size()) + 2;
+            offset += static_cast<uint32>(res.size()) + 1;
         }
     }
 
@@ -112,15 +142,38 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
 
         for (const auto& entry : goCtx->entries32)
         {
-            const auto f32 = (Golang::Func32*) (goCtx->buffer.GetData() + entry->functionOffset);
+            switch (goCtx->header->magic)
+            {
+            case GoMagic::_116:
+            {
+                auto& e          = goCtx->functions.emplace_back(Function{ nullptr, {} });
+                const auto index = goCtx->functions.size() - 1;
+                if (index == 0)
+                {
+                    e.name = reinterpret_cast<char*>(goCtx->funcnametab) + e.func.name;
+                }
+                else
+                {
+                    const auto& ePrevious = goCtx->functions.at(goCtx->functions.size() - 2);
+                    e.name                = ePrevious.name + strlen(ePrevious.name) + 1;
+                }
+            }
+            break;
+            default:
+                throw std::runtime_error("Check this magic");
 
-            auto& e      = goCtx->functions.emplace_back();
-            e.func.entry = f32->entry;
-            memcpy(
-                  reinterpret_cast<char*>(&e.func.entry) + sizeof(e.func.entry),
-                  reinterpret_cast<char*>(&f32->entry) + sizeof(f32->entry),
-                  sizeof(Golang::Func32) - sizeof(Golang::Func32::entry));
-            e.name = (char*) goCtx->funcnametab + e.func.name;
+                const auto f32 = (Golang::Func32*) (goCtx->buffer.GetData() + entry->functionOffset);
+
+                auto& e      = goCtx->functions.emplace_back();
+                e.func.entry = f32->entry;
+                memcpy(
+                      reinterpret_cast<char*>(&e.func.entry) + sizeof(e.func.entry),
+                      reinterpret_cast<char*>(&f32->entry) + sizeof(f32->entry),
+                      sizeof(Golang::Func32) - sizeof(Golang::Func32::entry));
+                e.name = (char*) goCtx->funcnametab + e.func.name;
+
+                break;
+            }
         }
     }
     else if (arch == Architecture::x64)
@@ -137,16 +190,54 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
 
         for (const auto& entry : goCtx->entries64)
         {
-            auto& e = goCtx->functions.emplace_back(
-                  Function{ nullptr, *reinterpret_cast<Golang::Func64*>(buffer.GetData() + entry->functionOffset) });
-            e.name = reinterpret_cast<char*>(goCtx->funcnametab) + e.func.name;
+            switch (goCtx->header->magic)
+            {
+            case GoMagic::_116:
+            {
+                auto& e          = goCtx->functions.emplace_back(Function{ .name = nullptr, .func = {}, .fstEntry{ ._64 = entry } });
+                const auto index = goCtx->functions.size() - 1;
+                if (index == 0)
+                {
+                    e.name = reinterpret_cast<char*>(goCtx->funcnametab) + e.func.name;
+                }
+                else
+                {
+                    const auto& ePrevious = goCtx->functions.at(goCtx->functions.size() - 2);
+                    e.name                = ePrevious.name + strlen(ePrevious.name) + 1;
+                }
+            }
+            break;
+            default:
+                throw std::runtime_error("Check this magic");
+
+                auto& e = goCtx->functions.emplace_back(
+                      Function{ nullptr, *reinterpret_cast<Golang::Func64*>(buffer.GetData() + entry->functionOffset) });
+                e.name = reinterpret_cast<char*>(goCtx->funcnametab) + e.func.name;
+                break;
+            }
         }
     }
 
-    if (goCtx->functions.empty() == false)
+    switch (goCtx->header->magic)
     {
-        goCtx->functions.pop_back();
-        std::reverse(goCtx->functions.begin(), goCtx->functions.end());
+    case GoMagic::_116:
+    {
+        auto& ePrevious = goCtx->functions.at(goCtx->functions.size() - 1);
+        auto ptr        = ePrevious.name + strlen(ePrevious.name) + 1;
+        while (*(char*) (ePrevious.name + strlen(ePrevious.name) + 1) != 0 && ptr < (char*) goCtx->cutab) // it is risky
+        {
+            auto& e   = goCtx->functions.emplace_back(Function{ .name = nullptr, .func = {}, .fstEntry{ ._64 = nullptr } });
+            e.name    = ptr;
+            ePrevious = goCtx->functions.at(goCtx->functions.size() - 1);
+            ptr       = ePrevious.name + strlen(ePrevious.name) + 1;
+        }
+    }
+    default:
+        if (goCtx->functions.empty() == false)
+        {
+            goCtx->functions.pop_back();
+        }
+        break;
     }
 
     goCtx->processed = true;
@@ -221,9 +312,7 @@ void GoPclntab112::SetBuildId(std::string_view buildId)
 {
     CHECKRET(context != nullptr, "");
     const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
-    CHECKRET(goContext->processed, "");
-
-    goContext->buildId = buildId;
+    goContext->buildId   = buildId;
 }
 
 const std::string& GoPclntab112::GetBuildId() const
@@ -239,13 +328,11 @@ const std::string& GoPclntab112::GetBuildId() const
 void GoPclntab112::SetRuntimeBuildVersion(std::string_view runtimeBuildVersion)
 {
     CHECKRET(context != nullptr, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
-    CHECKRET(goContext->processed, "");
-
+    const auto goContext           = reinterpret_cast<GoPclntab112Context*>(this->context);
     goContext->runtimeBuildVersion = runtimeBuildVersion;
 }
 
-const std::string& GoPclntab112::RuntimeBuildVersion() const
+const std::string& GoPclntab112::GetRuntimeBuildVersion() const
 {
     static const std::string empty;
     CHECK(context != nullptr, empty, "");
@@ -258,9 +345,7 @@ const std::string& GoPclntab112::RuntimeBuildVersion() const
 void GoPclntab112::SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo)
 {
     CHECKRET(context != nullptr, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
-    CHECKRET(goContext->processed, "");
-
+    const auto goContext           = reinterpret_cast<GoPclntab112Context*>(this->context);
     goContext->runtimeBuildModInfo = runtimeBuildModInfo;
 }
 

@@ -42,8 +42,11 @@ void GoInformation::UpdateGoInformation()
     if (pe->noteName.empty() == false)
         list->AddItem({ "Note Name", ls.Format("%s", pe->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 
-    if (pe->pclntab112.GetBuildId().empty() == false)
-        list->AddItem({ "Build ID", ls.Format("%s", pe->pclntab112.GetBuildId().c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ "Build ID", ls.Format("%s", pe->pclntab112.GetBuildId().c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ "Runtime Build Version", ls.Format("%s", pe->pclntab112.GetRuntimeBuildVersion().c_str()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ "Runtime Build Mod Info", ls.Format("%s", pe->pclntab112.GetRuntimeBuildModInfo().c_str()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void GoInformation::Update()

@@ -1704,7 +1704,7 @@ bool PEFile::Update()
 
     if (this->hdr64)
     {
-        if (nth64.FileHeader.PointerToSymbolTable != 0)
+        if (nth64.FileHeader.PointerToSymbolTable != 0 && nth64.FileHeader.NumberOfSymbols != 0)
         {
             ADD_PANEL(Panels::IDs::Symbols);
             BuildSymbols();
@@ -1712,15 +1712,17 @@ bool PEFile::Update()
     }
     else
     {
-        if (nth32.FileHeader.PointerToSymbolTable != 0)
+        if (nth32.FileHeader.PointerToSymbolTable != 0 && nth32.FileHeader.NumberOfSymbols != 0)
         {
             ADD_PANEL(Panels::IDs::Symbols);
             BuildSymbols();
         }
     }
 
-    // TODO: separation for go symbols
-    ParseGoData();
+    if (ParseGoData())
+    {
+        ADD_PANEL(Panels::IDs::GoInformation);
+    }
 
     return true;
 }
@@ -1801,75 +1803,40 @@ bool PEFile::BuildSymbols()
 
 bool PEFile::ParseGoData()
 {
-    ParseGoBuild();
+    CHECK(ParseGoBuild(), false, "");
     ParseGoBuildInfo();
 
-    auto offset    = 0ULL;
-    auto symbolsNo = 0ULL;
-
-    if (this->hdr64)
-    {
-        offset    = nth64.FileHeader.PointerToSymbolTable;
-        symbolsNo = nth64.FileHeader.NumberOfSymbols;
-    }
-    else
-    {
-        offset    = nth32.FileHeader.PointerToSymbolTable;
-        symbolsNo = nth32.FileHeader.NumberOfSymbols;
-    }
-
-    CHECK(offset != 0, false, "");
-    CHECK(symbolsNo != 0, false, "");
-
-    const auto size          = symbolsNo * IMAGE_SIZEOF_SYMBOL;
-    const auto symbolsBuffer = this->obj->GetData().CopyToBuffer(offset, (uint32) size);
-    CHECK(symbolsBuffer.IsValid(), false, "");
-    const auto endSymbolsBuffer = ((uint64) symbolsBuffer.GetData()) + offset + size;
-
-    const auto strTableOffset = offset + symbolsNo * PE::IMAGE_SIZEOF_SYMBOL;
-    uint32 strTableSize       = 0;
-    CHECK(obj->GetData().Copy(strTableOffset, strTableSize), false, "");
-    CHECK(strTableSize != 0, false, "");
-    const auto stringsBuffer = this->obj->GetData().CopyToBuffer(strTableOffset, strTableSize);
-    CHECK(stringsBuffer.IsValid(), false, "");
-
-    for (decltype(symbolsNo) i = 0ULL; i < symbolsNo; i++)
-    {
-        const auto is = (ImageSymbol*) (symbolsBuffer.GetData() + i * IMAGE_SIZEOF_SYMBOL);
-        CHECKBK((uint64) (is) < endSymbolsBuffer - IMAGE_SIZEOF_SYMBOL, "");
-        if (is->StorageClass == IMAGE_SYM_CLASS_NULL)
-        {
-            continue;
+    /*
+        if pclntab, err = loadPETable(f.pe, "runtime.pclntab", "runtime.epclntab"); err == nil {
+            foundpcln = true
+        } else {
+            // We didn't find the symbols, so look for the names used in 1.3 and earlier.
+            // TODO: Remove code looking for the old symbols when we no longer care about 1.3.
+            var err2 error
+            if pclntab, err2 = loadPETable(f.pe, "pclntab", "epclntab"); err2 == nil {
+                foundpcln = true
         }
+    */
 
-        String actualName;
-        if (is->N.Name.Short != 0)
+    const auto pcLnTabSigsCandidates = FindPcLnTabSigsCandidates();
+    CHECK(pcLnTabSigsCandidates.empty() == false, false, "");
+
+    bool found = false;
+    for (const auto& candidatesVA : pcLnTabSigsCandidates)
+    {
+        const auto cacheSize = obj->GetData().GetCacheSize();
+        const auto fa        = VAtoFA(candidatesVA);
+        const auto fileView  = obj->GetData().CopyToBuffer(fa, cacheSize, false);
+        if (pclntab112.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
         {
-            CHECK(actualName.Set((char*) is->N.ShortName, sizeof(is->N.ShortName) / sizeof(is->N.ShortName[0])), false, "");
-        }
-        else if (is->N.Name.Long >= sizeof(strTableSize) && is->N.Name.Long < strTableSize)
-        {
-            const auto name     = std::string_view{ (char*) (stringsBuffer.GetData() + is->N.Name.Long) };
-            const auto dolarPos = name.find_first_of('$');
-            if (dolarPos != std::string::npos)
-            {
-                const auto fname = std::string_view{ name.data() + dolarPos + 1, name.size() - 1 - dolarPos };
-                String sName;
-                if (GView::Utils::Demangle(fname.data(), sName))
-                {
-                    actualName.Format("[%.*s]: %s", dolarPos, name.data(), sName.GetText());
-                }
-                else
-                {
-                    actualName.Format("[%.*s]: %.*s", dolarPos, name.data(), name.size() - dolarPos + 1, name.data() + dolarPos + 1);
-                }
-            }
-            else if (GView::Utils::Demangle(name.data(), actualName) == false)
-            {
-                actualName = name.data();
-            }
+            found = true;
+            break;
         }
     }
+
+    CHECK(found, false, "");
+
+    return true;
 }
 
 bool PEFile::ParseGoBuild()
@@ -1906,7 +1873,7 @@ bool PEFile::ParseGoBuildInfo()
     {
         if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags)
         {
-            dataOffset = (uint64) sect[i].PointerToRawData;
+            dataOffset = static_cast<uint64>(sect[i].PointerToRawData);
             break;
         }
     }
@@ -1937,13 +1904,13 @@ bool PEFile::ParseGoBuildInfo()
     uint64 runtimeModInfoVA      = 0;
     if (ptrSize == 4)
     {
-        runtimeBuildVersionVA = *(uint32*) (buildInfo.data() + ptrOffset + 2);
-        runtimeModInfoVA      = *(uint32*) (buildInfo.data() + ptrOffset + 2 + ptrSize);
+        runtimeBuildVersionVA = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
+        runtimeModInfoVA      = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
     }
     else
     {
-        runtimeBuildVersionVA = *(uint64*) (buildInfo.data() + ptrOffset + 2);
-        runtimeModInfoVA      = *(uint64*) (buildInfo.data() + ptrOffset + 2 + ptrSize);
+        runtimeBuildVersionVA = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
+        runtimeModInfoVA      = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
     }
 
     const auto runtimeBuildVersionFA = VAtoFA(runtimeBuildVersionVA);
@@ -1958,28 +1925,29 @@ bool PEFile::ParseGoBuildInfo()
     uint64 strViewRuntimeModInfoLength  = 0;
     if (ptrSize == 4)
     {
-        strRuntimeBuildVersionVA     = *(uint32*) ptrRuntimeBuildVersion.GetData();
-        strRuntimeBuildVersionLength = *(uint32*) (ptrRuntimeBuildVersion.GetData() + ptrSize);
-        strViewRuntimeModInfoVA      = *(uint32*) ptrViewRuntimeModInfo.GetData();
-        strViewRuntimeModInfoLength  = *(uint32*) (ptrViewRuntimeModInfo.GetData() + ptrSize);
+        strRuntimeBuildVersionVA     = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData());
+        strRuntimeBuildVersionLength = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData());
+        strViewRuntimeModInfoLength  = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
     }
     else
     {
-        strRuntimeBuildVersionVA     = *(uint64*) ptrRuntimeBuildVersion.GetData();
-        strRuntimeBuildVersionLength = *(uint64*) (ptrRuntimeBuildVersion.GetData() + ptrSize);
-        strViewRuntimeModInfoVA      = *(uint64*) ptrViewRuntimeModInfo.GetData();
-        strViewRuntimeModInfoLength  = *(uint64*) (ptrViewRuntimeModInfo.GetData() + ptrSize);
+        strRuntimeBuildVersionVA     = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData());
+        strRuntimeBuildVersionLength = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData());
+        strViewRuntimeModInfoLength  = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
     }
 
     const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
     const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
 
     const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
-    const std::string_view runtimeBuildVersion{ (char*) fileViewRuntimeBuildVersion.GetData(), strRuntimeBuildVersionLength };
+    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
+                                                strRuntimeBuildVersionLength };
     pclntab112.SetRuntimeBuildVersion(runtimeBuildVersion);
 
     const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
-    std::string_view runtimeModInfo{ (char*) fileViewRuntimeModInfo.GetData(), strViewRuntimeModInfoLength };
+    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
     {
         runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
@@ -1987,4 +1955,35 @@ bool PEFile::ParseGoBuildInfo()
     pclntab112.SetRuntimeBuildModInfo(runtimeModInfo);
 
     return true;
+}
+
+std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
+{
+    constexpr std::string_view pclntabSigs[6]{ { "\xFB\xFF\xFF\xFF\x00\x00", 6 }, { "\xFA\xFF\xFF\xFF\x00\x00", 6 },
+                                               { "\xF0\xFF\xFF\xFF\x00\x00", 6 }, { "\xFF\xFF\xFF\xFB\x00\x00", 6 },
+                                               { "\xFF\xFF\xFF\xFA\x00\x00", 6 }, { "\xFF\xFF\xFF\xF0\x00\x00", 6 } };
+
+    std::vector<uint64> indexes;
+    indexes.reserve(10); // usually not that many sigs found matching
+
+    for (uint32 i = 0; i < nrSections; i++)
+    {
+        const auto sectionBuffer = obj->GetData().CopyToBuffer(sect[i].PointerToRawData, sect[i].SizeOfRawData);
+        const auto section       = std::string_view{ reinterpret_cast<char*>(sectionBuffer.GetData()), sectionBuffer.GetLength() };
+
+        for (const auto& sig : pclntabSigs)
+        {
+            uint64 index = 0;
+            while ((index = section.find(sig, index)) != std::string::npos)
+            {
+                if (index != std::string::npos && index < sect[i].SizeOfRawData)
+                {
+                    indexes.push_back(index + sect[i].VirtualAddress + imageBase);
+                }
+                index += sig.size();
+            }
+        }
+    }
+
+    return indexes;
 }
