@@ -45,7 +45,6 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->codePage = CodePageID::DOS_437;
 }
 
-
 bool Instance::GoTo(uint64 offset)
 {
     return true;
@@ -77,6 +76,9 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
     }
 
     renderer.Clear(' ', this->CursorColors.Normal);
+
+    if (Layout.textSize == 0)
+        return;
 
     int x = 0;
     switch (height)
@@ -537,6 +539,9 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     else
         renderer.Clear(' ', config.Colors.Inactive);
 
+    if (Layout.textSize == 0)
+        return;
+
     DrawLineInfo dli(renderer);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
@@ -642,9 +647,11 @@ void Instance::OnStart()
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
 {
-    this->Layout.visibleRows            = this->GetHeight() - 1;
-    this->Layout.totalCharactersPerLine = this->GetWidth() - 1;
-    this->Layout.textSize               = this->Layout.totalCharactersPerLine - this->Layout.startingTextLineOffset;
+    Layout.visibleRows = this->GetHeight() - 1;
+    Layout.totalCharactersPerLine = this->GetWidth() - 1;
+
+    Layout.textSize =
+          std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
 }
 
 void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
