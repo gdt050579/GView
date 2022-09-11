@@ -1974,7 +1974,7 @@ std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
     for (uint32 i = 0; i < nrSections; i++)
     {
         const auto sectionBuffer = obj->GetData().CopyToBuffer(sect[i].PointerToRawData, sect[i].SizeOfRawData);
-        CHECKRET(sectionBuffer.IsValid(), "");
+        CHECK(sectionBuffer.IsValid(), indexes, "");
         const auto section = std::string_view{ reinterpret_cast<char*>(sectionBuffer.GetData()), sectionBuffer.GetLength() };
 
         for (const auto& sig : pclntabSigs)
