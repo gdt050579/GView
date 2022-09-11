@@ -135,13 +135,13 @@ namespace View
                 bool recomputeOffsets;
 
                 uint32 currentLineFromOffset;
-                uint32 lineToDraw;
-                uint32 actualLineToDraw;
+                uint32 screenLineToDraw;
+                uint32 textLineToDraw;
                 AppCUI::Graphics::Renderer& renderer;
                 bool wasInsideStructure;
                 uint32 lastZoneIndexToReset;
                 DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
-                    : recomputeOffsets(true), currentLineFromOffset(0), lineToDraw(0), renderer(renderer), wasInsideStructure(false)
+                    : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), wasInsideStructure(false)
                 {
                 }
             };
@@ -158,7 +158,7 @@ namespace View
                 uint64 bufferOffset;
             };
 
-            struct
+            struct CursorDissasm
             {
                 uint64 startView, currentPos;
                 uint32 base;
@@ -169,7 +169,7 @@ namespace View
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
 
-            struct
+            struct LayoutDissasm
             {
                 uint32 visibleRows;
                 uint32 totalCharactersPerLine;

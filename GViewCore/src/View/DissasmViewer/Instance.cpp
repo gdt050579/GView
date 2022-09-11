@@ -45,6 +45,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->codePage = CodePageID::DOS_437;
 }
 
+
 bool Instance::GoTo(uint64 offset)
 {
     return true;
@@ -147,7 +148,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     // TODO: send multiple lines to be drawn with each other instead of searching line by line
     //          for example: search how many line from the text needs to be written -> write all of thems
 
-    uint32 currentLineIndex = dli.currentLineFromOffset + dli.lineToDraw;
+    uint32 currentLineIndex = dli.currentLineFromOffset + dli.screenLineToDraw;
     if (!settings->parseZones.empty())
     {
         auto& zones       = settings->parseZones;
@@ -158,7 +159,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
             {
                 // struct
-                dli.actualLineToDraw     = currentLineIndex - zones[i]->startLineIndex;
+                dli.textLineToDraw       = currentLineIndex - zones[i]->startLineIndex;
                 dli.lastZoneIndexToReset = i;
                 switch (zones[i]->zoneType)
                 {
@@ -174,7 +175,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             }
             else
             {
-                dli.actualLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
+                dli.textLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
                 if (i + 1 >= zonesCount)
                 {
                     return WriteTextLineToChars(dli);
@@ -189,7 +190,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     }
     else
     {
-        dli.actualLineToDraw = currentLineIndex;
+        dli.textLineToDraw = currentLineIndex;
         return WriteTextLineToChars(dli);
     }
 
@@ -226,7 +227,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
         structureZone->textFileOffset = structureZone->initalTextFileOffset;
     }
 
-    uint32 levelToReach    = dli.actualLineToDraw;
+    uint32 levelToReach    = dli.textLineToDraw;
     int16& levelNow        = structureZone->structureIndex;
     dli.wasInsideStructure = true;
     // TODO: consider if this value can be biffer than int16
@@ -343,8 +344,8 @@ bool Instance::WriteStructureToScreen(
 {
     ColorPair normalColor = config.Colors.Normal;
 
-    dli.chNameAndSize = this->chars.GetBuffer();
-    dli.chText        = dli.chNameAndSize + Layout.startingTextLineOffset;
+    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chText        = dli.chNameAndSize;
 
     if (spaces > 0)
     {
@@ -437,17 +438,24 @@ bool Instance::WriteStructureToScreen(
         }
     }
 
+    uint32 cursorLine = (this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
+    if (cursorLine == dli.screenLineToDraw)
+    {
+        uint32 index                   = this->Cursor.currentPos % Layout.textSize;
+        dli.chNameAndSize[index].Color = config.Colors.Selection;
+    }
+
     size_t buffer_size = dli.chText - dli.chNameAndSize;
     auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, bufferToDraw, false);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
     return true;
 }
 
 void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone)
 {
-    ButtonsData bData = { 3, (int) (dli.lineToDraw + 1), c, config.Colors.DataTypeColor, 3, zone };
+    ButtonsData bData = { 3, (int) (dli.screenLineToDraw + 1), c, config.Colors.DataTypeColor, 3, zone };
     MyLine.buttons.push_back(bData);
 }
 
@@ -483,7 +491,7 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
-    uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.actualLineToDraw;
+    uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
 
     if (textFileOffset >= this->obj->GetData().GetSize())
         return false;
@@ -505,7 +513,14 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.lineToDraw + 1, chars, true);
+    uint32 cursorLine = (this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
+    if (cursorLine == dli.screenLineToDraw)
+    {
+        uint32 index                   = this->Cursor.currentPos % Layout.textSize;
+        dli.chNameAndSize[index].Color = config.Colors.Selection;
+    }
+
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, true);
     return true;
 }
 
@@ -521,7 +536,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     DrawLineInfo dli(renderer);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        dli.lineToDraw = tr;
+        dli.screenLineToDraw = tr;
         if (!PrepareDrawLineInfo(dli))
             break;
 
@@ -586,7 +601,7 @@ void Instance::OnStart()
         parseZone->textLinesOffset = parseZone->startLineIndex - lastEndMinusLastOffset;
         parseZone->dissasmType     = mapping.second;
         parseZone->levels.push_back(0);
-        parseZone->types.push_back(mapping.second);
+        parseZone->types.emplace_back(mapping.second);
         parseZone->structureIndex       = 0;
         parseZone->textFileOffset       = mapping.first;
         parseZone->initalTextFileOffset = mapping.first;
