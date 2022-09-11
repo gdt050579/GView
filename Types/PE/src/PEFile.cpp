@@ -1887,6 +1887,7 @@ bool PEFile::ParseGoBuildInfo()
     const auto fileSize  = obj->GetData().GetSize();
 
     const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(dataOffset, cacheSize, false);
+    CHECK(fileViewBuildInfo.IsValid(), false, "");
     const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()),
                                             fileViewBuildInfo.GetLength() }; // force for find
     auto sPos = bufferBuildInfo.find(buildInfoMagic);
@@ -1918,6 +1919,8 @@ bool PEFile::ParseGoBuildInfo()
 
     const auto ptrRuntimeBuildVersion = obj->GetData().CopyToBuffer(runtimeBuildVersionFA, ptrSize * 2, false);
     const auto ptrViewRuntimeModInfo  = obj->GetData().CopyToBuffer(runtimeModInfoFA, ptrSize * 2, false);
+    CHECK(ptrRuntimeBuildVersion.IsValid(), false, "");
+    CHECK(ptrViewRuntimeModInfo.IsValid(), false, "");
 
     uint64 strRuntimeBuildVersionVA     = 0;
     uint64 strRuntimeBuildVersionLength = 0;
@@ -1942,11 +1945,13 @@ bool PEFile::ParseGoBuildInfo()
     const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
 
     const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
+    CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
     const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
                                                 strRuntimeBuildVersionLength };
     pclntab112.SetRuntimeBuildVersion(runtimeBuildVersion);
 
     const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
+    CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
     std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
     {
@@ -1969,7 +1974,8 @@ std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
     for (uint32 i = 0; i < nrSections; i++)
     {
         const auto sectionBuffer = obj->GetData().CopyToBuffer(sect[i].PointerToRawData, sect[i].SizeOfRawData);
-        const auto section       = std::string_view{ reinterpret_cast<char*>(sectionBuffer.GetData()), sectionBuffer.GetLength() };
+        CHECKRET(sectionBuffer.IsValid(), "");
+        const auto section = std::string_view{ reinterpret_cast<char*>(sectionBuffer.GetData()), sectionBuffer.GetLength() };
 
         for (const auto& sig : pclntabSigs)
         {
