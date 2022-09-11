@@ -135,15 +135,14 @@ void Information::SetCertificate()
 
 void Information::SetStringTable()
 {
-    if (pe->Ver.GetNrItems() > 0)
+    CHECKRET(pe->Ver.GetNrItems() > 0, "No string table to be set!");
+
+    general->AddItem("Version").SetType(ListViewItem::Type::Category);
+    // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
+    for (int i = 0; i < pe->Ver.GetNrItems(); i++)
     {
-        general->AddItem("Version").SetType(ListViewItem::Type::Category);
-        // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
-        for (int tr = 0; tr < pe->Ver.GetNrItems(); tr++)
-        {
-            auto itemID = general->AddItem(pe->Ver.GetKey(tr)->ToStringView());
-            itemID.SetText(1, u16string_view{ (char16_t*) pe->Ver.GetUnicode(tr) });
-        }
+        auto itemID = general->AddItem(pe->Ver.GetKey(i)->ToStringView());
+        itemID.SetText(1, u16string_view{ (char16_t*) pe->Ver.GetUnicode(i) });
     }
 }
 

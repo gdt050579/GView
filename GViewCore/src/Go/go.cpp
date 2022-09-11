@@ -41,7 +41,9 @@ struct GoPclntab112Context
 
     bool processed{ false };
 
-    std::string buildId; // this gets set from outside
+    std::string buildId{ "UNKNOWN" };             // this gets set from outside
+    std::string runtimeBuildVersion{ "UNKNOWN" }; // this gets set from outside
+    std::string runtimeBuildModInfo{ "UNKNOWN" }; // this gets set from outside
 };
 
 GoPclntab112::GoPclntab112()
@@ -232,5 +234,43 @@ const std::string& GoPclntab112::GetBuildId() const
     CHECK(goContext->processed, empty, "");
 
     return goContext->buildId;
+}
+
+void GoPclntab112::SetRuntimeBuildVersion(std::string_view runtimeBuildVersion)
+{
+    CHECKRET(context != nullptr, "");
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECKRET(goContext->processed, "");
+
+    goContext->runtimeBuildVersion = runtimeBuildVersion;
+}
+
+const std::string& GoPclntab112::RuntimeBuildVersion() const
+{
+    static const std::string empty;
+    CHECK(context != nullptr, empty, "");
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECK(goContext->processed, empty, "");
+
+    return goContext->runtimeBuildVersion;
+}
+
+void GoPclntab112::SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo)
+{
+    CHECKRET(context != nullptr, "");
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECKRET(goContext->processed, "");
+
+    goContext->runtimeBuildModInfo = runtimeBuildModInfo;
+}
+
+const std::string& GoPclntab112::GetRuntimeBuildModInfo() const
+{
+    static const std::string empty;
+    CHECK(context != nullptr, empty, "");
+    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    CHECK(goContext->processed, empty, "");
+
+    return goContext->runtimeBuildModInfo;
 }
 } // namespace GView::Golang

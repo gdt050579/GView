@@ -799,6 +799,7 @@ namespace Type
 
             std::string_view GetMachine();
             std::string_view GetSubsystem();
+            uint64 VAtoFA(uint64 va) const;
             uint64 RVAtoFilePointer(uint64 RVA);
             int32 RVAToSectionIndex(uint64 RVA);
             uint64 FilePointerToRVA(uint64 fileAddress);
@@ -819,7 +820,11 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
             bool BuildSymbols();
+
+            // GO
             bool ParseGoData();
+            bool ParseGoBuild();
+            bool ParseGoBuildInfo();
 
             bool HasPanel(Panels::IDs id);
 

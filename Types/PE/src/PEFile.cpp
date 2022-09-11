@@ -292,6 +292,26 @@ bool PEFile::ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxS
     return true;
 }
 
+uint64 PEFile::VAtoFA(uint64 va) const
+{
+    const auto rva = va - imageBase;
+
+    CHECK(nrSections > 0, PE_INVALID_ADDRESS, "");
+    CHECK(rva >= sect[0].VirtualAddress, PE_INVALID_ADDRESS, "");
+
+    for (uint32 i = 0; i < nrSections; i++)
+    {
+        const auto start = sect[i].VirtualAddress;
+        const auto end   = start + sect[i].Misc.VirtualSize;
+        if (rva >= start && rva < end)
+        {
+            return rva - sect[i].VirtualAddress + sect[i].PointerToRawData;
+        }
+    }
+
+    RETURNERROR(PE_INVALID_ADDRESS, "Address not found!");
+}
+
 uint64 PEFile::RVAtoFilePointer(uint64 RVA)
 {
     if (RVA < sect[0].VirtualAddress)
@@ -682,7 +702,7 @@ bool PEFile::BuildTLS()
 
 void PEFile::BuildVersionInfo()
 {
-    uint32_t szRead;
+    uint32 szRead;
 
     for (auto& ri : this->res)
     {
@@ -1781,39 +1801,8 @@ bool PEFile::BuildSymbols()
 
 bool PEFile::ParseGoData()
 {
-    constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
-    constexpr std::string_view goBuildEnd{ "\"\n \xff" };
-
-    const auto cacheSize = this->obj->GetData().GetCacheSize();
-    const auto fileSize  = this->obj->GetData().GetSize();
-
-    const auto fileView = this->obj->GetData().CopyToBuffer(0, cacheSize, false);
-
-    // we should find go build id at the start of the file
-    const std::string_view buffer{ (char*) fileView.GetData(), fileView.GetLength() }; // force for find
-    const auto sPos = buffer.find(goBuildPrefix);
-    if (sPos != std::string::npos)
-    {
-        const auto ePos = buffer.find(goBuildEnd, sPos + 1);
-        const std::string_view buildID{ buffer.data() + sPos + goBuildPrefix.size(), ePos - sPos - goBuildPrefix.size() };
-        this->pclntab112.SetBuildId(buildID);
-    }
-
-    // we should find go build info at the start of the file .data section
-    constexpr uint32 flags = __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE;
-    auto dataOffset        = 0ULL;
-    for (auto i = 0U; i < nrSections; i++)
-    {
-        if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags)
-        {
-            dataOffset = (uint64) sect[i].PointerToRawData;
-            break;
-        }
-    }
-
-    constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
-    // TODO..
-
+    ParseGoBuild();
+    ParseGoBuildInfo();
 
     auto offset    = 0ULL;
     auto symbolsNo = 0ULL;
@@ -1881,4 +1870,121 @@ bool PEFile::ParseGoData()
             }
         }
     }
+}
+
+bool PEFile::ParseGoBuild()
+{
+    constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
+    constexpr std::string_view goBuildEnd{ "\"\n \xff" };
+
+    const auto cacheSize = obj->GetData().GetCacheSize();
+    const auto fileSize  = obj->GetData().GetSize();
+
+    const auto fileViewBuildId = obj->GetData().CopyToBuffer(0, cacheSize, false);
+
+    // we should find go build id at the start of the file
+    const std::string_view bufferBuildId{ reinterpret_cast<char*>(fileViewBuildId.GetData()),
+                                          fileViewBuildId.GetLength() }; // force for find
+    const auto sPos = bufferBuildId.find(goBuildPrefix);
+    CHECK(sPos != std::string::npos, false, "");
+
+    const auto ePos = bufferBuildId.find(goBuildEnd, sPos + 1);
+    CHECK(ePos != std::string::npos, false, "");
+
+    const std::string_view buildID{ bufferBuildId.data() + sPos + goBuildPrefix.size(), ePos - sPos - goBuildPrefix.size() };
+    pclntab112.SetBuildId(buildID);
+
+    return true;
+}
+
+bool PEFile::ParseGoBuildInfo()
+{
+    // we should find go build info at the start of the file .data section
+    constexpr uint32 flags = __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE;
+    auto dataOffset        = 0ULL;
+    for (auto i = 0U; i < nrSections; i++)
+    {
+        if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags)
+        {
+            dataOffset = (uint64) sect[i].PointerToRawData;
+            break;
+        }
+    }
+    CHECK(dataOffset != 0, false, "");
+
+    constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
+    constexpr uint16 buildInfoAlign{ 16 };
+    constexpr uint16 buildInfoSize{ 32 };
+
+    const auto cacheSize = obj->GetData().GetCacheSize();
+    const auto fileSize  = obj->GetData().GetSize();
+
+    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(dataOffset, cacheSize, false);
+    const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()),
+                                            fileViewBuildInfo.GetLength() }; // force for find
+    auto sPos = bufferBuildInfo.find(buildInfoMagic);
+    CHECK(sPos != std::string::npos, false, "");
+
+    CHECK(bufferBuildInfo.size() - sPos >= buildInfoSize, false, "");
+
+    const std::string_view buildInfo{ bufferBuildInfo.data() + sPos + 1, buildInfoSize };
+
+    constexpr auto ptrOffset = 13;
+    const uint8 ptrSize      = buildInfo[ptrOffset];
+    const uint8 endianess    = buildInfo[ptrOffset + 1];
+
+    uint64 runtimeBuildVersionVA = 0;
+    uint64 runtimeModInfoVA      = 0;
+    if (ptrSize == 4)
+    {
+        runtimeBuildVersionVA = *(uint32*) (buildInfo.data() + ptrOffset + 2);
+        runtimeModInfoVA      = *(uint32*) (buildInfo.data() + ptrOffset + 2 + ptrSize);
+    }
+    else
+    {
+        runtimeBuildVersionVA = *(uint64*) (buildInfo.data() + ptrOffset + 2);
+        runtimeModInfoVA      = *(uint64*) (buildInfo.data() + ptrOffset + 2 + ptrSize);
+    }
+
+    const auto runtimeBuildVersionFA = VAtoFA(runtimeBuildVersionVA);
+    const auto runtimeModInfoFA      = VAtoFA(runtimeModInfoVA);
+
+    const auto ptrRuntimeBuildVersion = obj->GetData().CopyToBuffer(runtimeBuildVersionFA, ptrSize * 2, false);
+    const auto ptrViewRuntimeModInfo  = obj->GetData().CopyToBuffer(runtimeModInfoFA, ptrSize * 2, false);
+
+    uint64 strRuntimeBuildVersionVA     = 0;
+    uint64 strRuntimeBuildVersionLength = 0;
+    uint64 strViewRuntimeModInfoVA      = 0;
+    uint64 strViewRuntimeModInfoLength  = 0;
+    if (ptrSize == 4)
+    {
+        strRuntimeBuildVersionVA     = *(uint32*) ptrRuntimeBuildVersion.GetData();
+        strRuntimeBuildVersionLength = *(uint32*) (ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *(uint32*) ptrViewRuntimeModInfo.GetData();
+        strViewRuntimeModInfoLength  = *(uint32*) (ptrViewRuntimeModInfo.GetData() + ptrSize);
+    }
+    else
+    {
+        strRuntimeBuildVersionVA     = *(uint64*) ptrRuntimeBuildVersion.GetData();
+        strRuntimeBuildVersionLength = *(uint64*) (ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *(uint64*) ptrViewRuntimeModInfo.GetData();
+        strViewRuntimeModInfoLength  = *(uint64*) (ptrViewRuntimeModInfo.GetData() + ptrSize);
+    }
+
+    const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
+    const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
+
+    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
+    const std::string_view runtimeBuildVersion{ (char*) fileViewRuntimeBuildVersion.GetData(), strRuntimeBuildVersionLength };
+    pclntab112.SetRuntimeBuildVersion(runtimeBuildVersion);
+
+    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
+    std::string_view runtimeModInfo{ (char*) fileViewRuntimeModInfo.GetData(), strViewRuntimeModInfoLength };
+    if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
+    {
+        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
+    }
+    pclntab112.SetRuntimeBuildModInfo(runtimeModInfo);
+
+    return true;
 }
