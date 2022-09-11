@@ -146,7 +146,54 @@ extern "C"
     {
         DissasmViewer::Settings settings;
 
-        win->CreateViewer("BufferView", settings);
+        if (pe->HasPanel(PE::Panels::IDs::Sections))
+        {
+            LocalString<128> temp;
+
+            for (auto tr = 0U; tr < pe->nrSections; tr++)
+            {
+                pe->CopySectionName(tr, temp);
+                if (temp.CompareWith(".text") == 0)
+                {
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData);
+                    break;
+                }
+            }
+        }
+
+        uint32 typeImageDOSHeader = settings.AddType(
+              "ImageDOSHeader",
+              R"(UInt16 e_magic;
+UInt16 e_cblp;
+UInt16 e_cp;
+UInt16 e_crlc;
+UInt16 e_res[4];)");
+
+//                uint32 typeImageDOSHeader = settings.AddType(
+//              "ImageDOSHeader",
+//              R"(UInt16 e_magic;
+//UInt16 e_cblp;
+//UInt16 e_cp;
+//UInt16 e_crlc;
+//UInt16 e_cparhdr;
+//UInt16 e_minalloc;
+//UInt16 e_maxalloc;
+//UInt16 e_ss;
+//UInt16 e_sp;
+//UInt16 e_csum;
+//UInt16 e_ip;
+//UInt16 e_cs;
+//UInt16 e_lfarlc;
+//UInt16 e_ovno;
+//UInt16 e_res[4];
+//UInt16 e_oemid;
+//UInt16 e_oeminfo;
+//UInt16 e_res2[10];
+//UInt32 e_lfanew;)");
+
+        settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
+
+        win->CreateViewer("DissasmView", settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
@@ -154,7 +201,9 @@ extern "C"
         auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
+#ifndef DISSASM_DEV
         CreateBufferView(win, pe);
+#endif
         CreateDissasmView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))

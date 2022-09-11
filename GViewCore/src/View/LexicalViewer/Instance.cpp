@@ -796,6 +796,29 @@ bool Instance::RebuildTextFromTokens(TextEditor& editor)
     }
     return true;
 }
+void Instance::BakupTokensPositions()
+{
+    // make a copy of all tokens positions
+    backupedTokenPositionList.reserve(this->tokens.size());
+    backupedTokenPositionList.clear();
+    for (const auto& tok : this->tokens)
+    {
+        backupedTokenPositionList.push_back({ 0, 0, TokenStatus::None });
+    }
+}
+void Instance::RestoreTokensPositionsFromBackup()
+{
+    ASSERT(this->tokens.size() == this->backupedTokenPositionList.size(), "Expecting backup list to be of the same size as tokens list");
+    auto sz    = this->tokens.size();
+    auto index = static_cast<size_t>(0);
+    for (auto& tok : this->tokens)
+    {
+        const auto& bakPos = this->backupedTokenPositionList[index];
+        // copy from bakPos to tok
+        index++;
+    }
+    backupedTokenPositionList.clear();
+}
 
 void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block)
 {
@@ -1689,6 +1712,13 @@ void Instance::ShowSaveAsDialog()
     }
 
     // actual save
+    // step 1 --> make sure that we save all tokens , not just the visible ones
+    BakupTokensPositions();
+    auto originalShowMetaDataValue = this->showMetaData;
+    this->showMetaData             = true;
+    ExpandAll();
+
+    // Step 2 --> create a buffer for the entire text
     Buffer b;
     CharacterEncoding::EncodedCharacter encChar;
     b.Reserve(100000);
@@ -1752,7 +1782,11 @@ void Instance::ShowSaveAsDialog()
             b.Resize(0);
         }
     }
+    // Stept 3 --> restore the original tokens positions
+    RestoreTokensPositionsFromBackup();
+    this->showMetaData = originalShowMetaDataValue;
 
+    // Step 4 --> save
     if (b.GetLength() > 0)
     {
         if (f.Write(static_cast<const void*>(b.GetData()), static_cast<uint32>(b.GetLength())) == false)
@@ -1998,7 +2032,10 @@ enum class PropertyID : uint32
     // General
     NoOfTokens,
     NoOfBlocks,
-    NoOfLines
+    NoOfLines,
+    // View
+    Pretty,
+    ShowMetaData
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2039,6 +2076,12 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::NoOfLines:
         value = static_cast<uint32>(this->lastLineNumber + 1);
         return true;
+    case PropertyID::Pretty:
+        value = this->prettyFormat;
+        return true;
+    case PropertyID::ShowMetaData:
+        value = this->showMetaData;
+        return true;
     }
     return false;
 }
@@ -2052,7 +2095,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::ViewWidth:
         this->settings->maxWidth = std::min<>(2000U, std::max<>(8U, std::get<uint32>(value)));
-        RecomputeTokenPositions();
+        Parse();
         return true;
     case PropertyID::ShowPluginListKey:
         this->config.Keys.showPlugins = std::get<Input::Key>(value);
@@ -2071,6 +2114,14 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return true;
     case PropertyID::ExpandAllKey:
         this->config.Keys.expandAll = std::get<Input::Key>(value);
+        return true;
+    case PropertyID::Pretty:
+        this->prettyFormat = std::get<bool>(value);
+        Parse();
+        return true;
+    case PropertyID::ShowMetaData:
+        this->showMetaData = std::get<bool>(value);
+        RecomputeTokenPositions();
         return true;
     }
     error.SetFormat("Unknown internal ID: %u", id);
@@ -2107,6 +2158,9 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::NoOfTokens), "General", "Tokens count", PropertyType::UInt32 },
         { BT(PropertyID::NoOfBlocks), "General", "Blocks count", PropertyType::UInt32 },
         { BT(PropertyID::NoOfLines), "General", "Lines count", PropertyType::UInt32 },
+        // View
+        { BT(PropertyID::Pretty), "View", "Auto format text", PropertyType::Boolean },
+        { BT(PropertyID::ShowMetaData), "View", "Show/Hide metadate", PropertyType::Boolean },
     };
 }
 #undef BT

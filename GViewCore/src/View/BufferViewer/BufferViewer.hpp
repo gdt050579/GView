@@ -152,7 +152,7 @@ namespace View
 
             void UpdateCurrentSelection();
 
-            void PrepareDrawLineInfo(DrawLineInfo& dli);
+            void PrepareDrawLineInfo (DrawLineInfo& dli);
             void WriteHeaders(Renderer& renderer);
             void WriteLineAddress(DrawLineInfo& dli);
             void WriteLineNumbersToChars(DrawLineInfo& dli);
