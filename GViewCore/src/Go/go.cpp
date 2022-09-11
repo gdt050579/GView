@@ -30,6 +30,7 @@ struct GoPclntab112Context
     uint8* functab{ nullptr };
     uint8* pctab{ nullptr };
     int32 functabsize{ 0 };
+    uint32 fileoff{ 0 };
     uint8* filetab{ nullptr };
     uint8* cutab{ nullptr };
     uint32 nfiletab{ 0 };
@@ -85,7 +86,6 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     switch (goCtx->header->magic) // functabsize = sizeOfUintptr when version <= 118 else 4
     {
     case GoMagic::_116:
-    {
         goCtx->nfunctab = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader));
         goCtx->nfiletab =
               *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 1 * goCtx->header->sizeOfUintptr);
@@ -101,8 +101,6 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
         goCtx->pctab =
               goCtx->buffer.GetData() +
               *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 5 * goCtx->header->sizeOfUintptr);
-
-        auto a = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 6 * goCtx->header->sizeOfUintptr);
         goCtx->funcdata =
               goCtx->buffer.GetData() +
               *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 6 * goCtx->header->sizeOfUintptr);
@@ -110,8 +108,20 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
               goCtx->buffer.GetData() +
               *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader) + 6 * goCtx->header->sizeOfUintptr);
         goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr;
-    }
-    break;
+        break;
+    case GoMagic::_12:
+        goCtx->header      = reinterpret_cast<Golang::GoFunctionHeader*>(goCtx->buffer.GetData());
+        goCtx->nfunctab    = *reinterpret_cast<uint32*>(goCtx->buffer.GetData() + sizeof(Golang::GoFunctionHeader));
+        goCtx->funcdata    = goCtx->buffer.GetData();
+        goCtx->funcnametab = goCtx->buffer.GetData();
+        goCtx->functab     = goCtx->buffer.GetData() + 8 + goCtx->header->sizeOfUintptr;
+        goCtx->pctab       = goCtx->buffer.GetData();
+        goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr;
+        goCtx->fileoff     = *reinterpret_cast<uint32*>(goCtx->functab + goCtx->functabsize);
+        goCtx->filetab     = goCtx->buffer.GetData() + goCtx->fileoff;
+        goCtx->nfiletab    = *reinterpret_cast<uint32*>(goCtx->filetab);
+        goCtx->filetab     = goCtx->filetab + goCtx->nfiletab * 4;
+        break;
     default:
         throw std::runtime_error("Not implemented!");
     }
@@ -124,7 +134,18 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
         {
             auto fname      = (char*) (goCtx->filetab + offset);
             const auto& res = goCtx->files.emplace_back(fname);
-            offset += static_cast<uint32>(res.size()) + 1;
+
+            switch (goCtx->header->magic)
+            {
+            case GoMagic::_116:
+                offset += static_cast<uint32>(res.size()) + 1;
+                break;
+            case GoMagic::_12:
+                offset += static_cast<uint32>(res.size()) + 2;
+                break;
+            default:
+                break;
+            }
         }
     }
 
@@ -159,9 +180,8 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
                 }
             }
             break;
-            default:
-                throw std::runtime_error("Check this magic");
-
+            case GoMagic::_12:
+            {
                 const auto f32 = (Golang::Func32*) (goCtx->buffer.GetData() + entry->functionOffset);
 
                 auto& e      = goCtx->functions.emplace_back();
@@ -171,8 +191,10 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
                       reinterpret_cast<char*>(&f32->entry) + sizeof(f32->entry),
                       sizeof(Golang::Func32) - sizeof(Golang::Func32::entry));
                 e.name = (char*) goCtx->funcnametab + e.func.name;
-
-                break;
+            }
+            break;
+            default:
+                throw std::runtime_error("Check this magic");
             }
         }
     }
@@ -207,13 +229,15 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
                 }
             }
             break;
-            default:
-                throw std::runtime_error("Check this magic");
-
+            case GoMagic::_12:
+            {
                 auto& e = goCtx->functions.emplace_back(
                       Function{ nullptr, *reinterpret_cast<Golang::Func64*>(buffer.GetData() + entry->functionOffset) });
                 e.name = reinterpret_cast<char*>(goCtx->funcnametab) + e.func.name;
-                break;
+            }
+            break;
+            default:
+                throw std::runtime_error("Check this magic");
             }
         }
     }
@@ -232,11 +256,8 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
             ptr       = ePrevious.name + strlen(ePrevious.name) + 1;
         }
     }
+    case GoMagic::_12:
     default:
-        if (goCtx->functions.empty() == false)
-        {
-            goCtx->functions.pop_back();
-        }
         break;
     }
 
