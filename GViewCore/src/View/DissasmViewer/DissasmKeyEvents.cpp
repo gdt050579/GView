@@ -169,8 +169,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveTo(this->Cursor.currentPos + this->Layout.textSize * this->Layout.visibleRows, select);
         return true;
     case Key::PageUp:
-        if (this->Cursor.currentPos > this->Layout.textSize * this->Layout.visibleRows)
-            MoveTo(this->Cursor.currentPos - (this->Layout.textSize * this->Layout.visibleRows), select);
+        if (this->Cursor.currentPos > static_cast<uint64>(this->Layout.textSize) * this->Layout.visibleRows)
+            MoveTo(this->Cursor.currentPos - this->Layout.textSize * this->Layout.visibleRows, select);
         else
             MoveTo(0, select);
         return true;

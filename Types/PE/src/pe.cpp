@@ -146,6 +146,10 @@ extern "C"
     {
         DissasmViewer::Settings settings;
 
+#ifndef DISSASM_DEV
+        win->CreateViewer("BufferView", settings);
+#endif
+
         if (pe->HasPanel(PE::Panels::IDs::Sections))
         {
             LocalString<128> temp;
