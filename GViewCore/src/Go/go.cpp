@@ -274,14 +274,14 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     case GoMagic::_116:
     case GoMagic::_118:
     {
-        auto& ePrevious = goCtx->functions.at(goCtx->functions.size() - 1);
-        auto ptr        = ePrevious.name + strlen(ePrevious.name) + 1;
-        while (*(char*) (ePrevious.name + strlen(ePrevious.name) + 1) != 0 && ptr < (char*) goCtx->cutab) // it is risky
+        auto ePrevious = &goCtx->functions.at(goCtx->functions.size() - 1);
+        auto ptr       = ePrevious->name + strlen(ePrevious->name) + 1;
+        while (*(char*) (ePrevious->name + strlen(ePrevious->name) + 1) != 0 && ptr < (char*) goCtx->cutab) // it is risky
         {
             auto& e   = goCtx->functions.emplace_back(Function{ .name = nullptr, .func = {}, .fstEntry{ ._64 = nullptr } });
             e.name    = ptr;
-            ePrevious = goCtx->functions.at(goCtx->functions.size() - 1);
-            ptr       = ePrevious.name + strlen(ePrevious.name) + 1;
+            ePrevious = &goCtx->functions.at(goCtx->functions.size() - 1);
+            ptr       = ePrevious->name + strlen(ePrevious->name) + 1;
         }
     }
     case GoMagic::_12:
