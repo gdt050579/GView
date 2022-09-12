@@ -37,6 +37,10 @@
         {
             "name": "openssl",
             "platform": "windows | linux | osx"
+        },
+        {
+            "name": "capstone",
+            "platform": "windows | linux | osx"
         }
     ]
 }
