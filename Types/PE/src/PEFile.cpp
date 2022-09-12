@@ -1806,18 +1806,45 @@ bool PEFile::ParseGoData()
     CHECK(ParseGoBuild(), false, "");
     ParseGoBuildInfo();
 
-    /*
-        if pclntab, err = loadPETable(f.pe, "runtime.pclntab", "runtime.epclntab"); err == nil {
-            foundpcln = true
-        } else {
-            // We didn't find the symbols, so look for the names used in 1.3 and earlier.
-            // TODO: Remove code looking for the old symbols when we no longer care about 1.3.
-            var err2 error
-            if pclntab, err2 = loadPETable(f.pe, "pclntab", "epclntab"); err2 == nil {
-                foundpcln = true
-        }
-    */
+    // we assume we parsed the symbols first!
+    if (symbols.empty() == false)
+    {
+        std::map<std::string_view, ImageSymbol> pclntabSymbols{
+            { "runtime.pclntab", { 0 } }, { "runtime.epclntab", { 0 } }, { "pclntab", { 0 } }, { "epclntab", { 0 } }
+        };
 
+        for (const auto& symbol : symbols)
+        {
+            for (auto& [pclntabSymbol, value] : pclntabSymbols)
+            {
+                if (symbol.name.Equals(pclntabSymbol.data()))
+                {
+                    value = symbol.is;
+                }
+            }
+        }
+
+        auto& start = pclntabSymbols.at("runtime.pclntab");
+        auto& end   = pclntabSymbols.at("runtime.epclntab");
+        if (start.Value == 0 || end.Value == 0)
+        {
+            start = pclntabSymbols.at("pclntab");
+            end   = pclntabSymbols.at("epclntab");
+        }
+
+        const auto cacheSize = obj->GetData().GetCacheSize();
+        if (start.Value < end.Value && end.Value - start.Value < cacheSize && start.SectionNumber == end.SectionNumber)
+        {
+            const auto fa       = static_cast<uint64>(sect[start.SectionNumber - 1ULL].PointerToRawData);
+            const auto fileView = obj->GetData().CopyToBuffer(fa + start.Value, fa + end.Value - start.Value, false);
+            if (pclntab112.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
+            {
+                return true;
+            }
+        }
+    }
+
+    // parse raw
     const auto pcLnTabSigsCandidates = FindPcLnTabSigsCandidates();
     CHECK(pcLnTabSigsCandidates.empty() == false, false, "");
 
@@ -1829,14 +1856,11 @@ bool PEFile::ParseGoData()
         const auto fileView  = obj->GetData().CopyToBuffer(fa, cacheSize, false);
         if (pclntab112.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
         {
-            found = true;
-            break;
+            return true;
         }
     }
 
-    CHECK(found, false, "");
-
-    return true;
+    RETURNERROR(false, "Go PcLnTab not found!");
 }
 
 bool PEFile::ParseGoBuild()

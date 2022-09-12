@@ -150,6 +150,9 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
         throw std::runtime_error("Not implemented!");
     }
 
+    CHECK(goCtx->nfiletab < 0xA00000, false, ""); // sanity checks for invalid sigs
+    CHECK(goCtx->nfunctab < 0xA00000, false, ""); // sanity checks for invalid sigs
+
     {
         goCtx->files.reserve(goCtx->nfiletab);
 
