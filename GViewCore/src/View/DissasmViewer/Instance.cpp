@@ -138,6 +138,24 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
     return x + 5;
 }
 
+uint64 GView::View::DissasmViewer::Instance::ScreenOffsetToRelativeTypeOffset(uint64 screenOffset)
+{
+    //uint32 currentLineIndex = (uint32) (screenOffset / this->Layout.textSize);
+    //if (!settings->parseZones.empty())
+    //{
+    //    auto& zones       = settings->parseZones;
+    //    uint32 zonesCount = (uint32) settings->parseZones.size();
+    //    for (uint32 i = 0; i < zonesCount; i++)
+    //    {
+    //        if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
+    //        {
+
+    //        }
+    //    }
+    //}
+    return screenOffset;
+}
+
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
@@ -503,6 +521,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         return false;
 
     auto buf          = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
+    auto initialPos   = buf.GetData();
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
@@ -513,8 +532,11 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 
     while (dli.start < dli.end)
     {
+        auto characterColor = textColor;
+        if (selection.Contains(textFileOffset + (dli.start - initialPos)))
+            characterColor = config.Colors.Selection;
         dli.chText->Code  = codePage[*dli.start];
-        dli.chText->Color = textColor;
+        dli.chText->Color = characterColor;
         dli.chText++;
         dli.start++;
     }
@@ -647,7 +669,7 @@ void Instance::OnStart()
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
 {
-    Layout.visibleRows = this->GetHeight() - 1;
+    Layout.visibleRows            = this->GetHeight() - 1;
     Layout.totalCharactersPerLine = this->GetWidth() - 1;
 
     Layout.textSize =

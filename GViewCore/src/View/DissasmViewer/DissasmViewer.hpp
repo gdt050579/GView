@@ -178,6 +178,14 @@ namespace View
                 bool structuresInitialCollapsedState;
             } Layout;
 
+            struct
+            {
+                //uint8 buffer[256];
+                uint32 size;
+                uint64 start, end;
+                //bool highlight;
+            } CurrentSelection;
+
             struct ButtonsData
             {
                 int x;
@@ -225,9 +233,11 @@ namespace View
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
 
+            uint64 ScreenOffsetToRelativeTypeOffset(uint64 screenOffset);
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
-            virtual ~Instance();
+            virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
@@ -244,6 +254,7 @@ namespace View
 
             // Mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button) override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
 
             // Events
