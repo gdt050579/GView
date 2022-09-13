@@ -342,6 +342,7 @@ namespace DigitalSignature
         String errorSignerVerify;
     };
 
+    constexpr auto ERR_SIGNER            = -1;
     constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
 
     struct CORE_EXPORT SignerAttributes
