@@ -467,7 +467,7 @@ bool Instance::WriteStructureToScreen(
         }
     }
 
-    size_t buffer_size = dli.chText - dli.chNameAndSize;
+    size_t buffer_size = dli.chText - this->chars.GetBuffer();
 
     const uint32 cursorLine = static_cast<uint32>(this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
     if (cursorLine == dli.screenLineToDraw)
