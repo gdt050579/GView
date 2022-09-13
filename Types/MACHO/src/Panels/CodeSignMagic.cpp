@@ -50,6 +50,7 @@ void CodeSignMagic::UpdateLinkeditDataCommand()
 void CodeSignMagic::UpdateSuperBlob()
 {
     CHECKRET(machO->codeSignature.has_value(), "");
+    CHECKRET(static_cast<uint32>(machO->codeSignature->superBlob.magic) != 0U, ""); // probably truncated
 
     LocalString<1024> ls;
     NumericFormatter nf;

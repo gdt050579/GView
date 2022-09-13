@@ -65,7 +65,7 @@ void SymTab::Update()
     static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
     static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
-    for (auto i = 0U; i < machO->dySymTab->sc.nsyms; i++)
+    for (auto i = 0U; i < std::min<>(machO->dySymTab->sc.nsyms, static_cast<uint32>(machO->dySymTab->objects.size())); i++)
     {
         auto item = list->AddItem(GetValue(n, i));
         item.SetData(i);

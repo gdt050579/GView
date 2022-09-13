@@ -171,9 +171,6 @@ class MachOFile : public TypeInterface,
     uint32 currentItemIndex;
 
     // GO
-    uint32 nameSize = 0;
-    uint32 valSize  = 0;
-    uint32 tag      = 0;
     Golang::PcLnTab pcLnTab{};
 
   public:
@@ -209,6 +206,9 @@ class MachOFile : public TypeInterface,
     bool SetCodeSignature();
     bool SetVersionMin();
     bool ParseGoData();
+    bool ParseGoBuild();
+    bool ParseGoBuildInfo();
+    uint64 VAtoFA(uint64 va);
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;

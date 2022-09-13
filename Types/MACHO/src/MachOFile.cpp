@@ -478,9 +478,11 @@ bool MachOFile::SetSymbols()
                 Swap(dySymTab->sc);
             }
 
-            const auto stringTable       = obj->GetData().CopyToBuffer(dySymTab->sc.stroff, dySymTab->sc.strsize);
+            const auto stringTable = obj->GetData().CopyToBuffer(dySymTab->sc.stroff, dySymTab->sc.strsize);
+            CHECK(stringTable.IsValid(), false, "");
             const auto symbolTableOffset = dySymTab->sc.nsyms * (is64 ? sizeof(MAC::nlist_64) : sizeof(MAC::nlist));
             const auto symbolTable       = obj->GetData().CopyToBuffer(dySymTab->sc.symoff, static_cast<uint32>(symbolTableOffset));
+            CHECK(symbolTable.IsValid(), false, "");
 
             for (auto i = 0U; i < dySymTab->sc.nsyms; i++)
             {
@@ -839,59 +841,8 @@ bool MachOFile::SetVersionMin()
 
 bool MachOFile::ParseGoData()
 {
-    /*
-
-        // Look for section named "__go_buildinfo".
-        for _, sec := range x.f.Sections {
-            if sec.Name == "__go_buildinfo" {
-                return sec.Addr
-            }
-        }
-        // Try the first non-empty writable segment.
-        const RW = 3
-        for _, load := range x.f.Loads {
-            seg, ok := load.(*macho.Segment)
-            if ok && seg.Addr != 0 && seg.Filesz != 0 && seg.Prot == RW && seg.Maxprot == RW {
-                return seg.Addr
-            }
-        }
-
-        // Read the first 64kB of dataAddr to find the build info blob.
-        // On some platforms, the blob will be in its own section, and DataStart
-        // returns the address of that section. On others, it's somewhere in the
-        // data segment; the linker puts it near the beginning.
-        // See cmd/link/internal/ld.Link.buildinfo.
-    */
-
-    // Buffer noteBuffer;
-    // for (const auto& segment : segments)
-    // {
-    //     if (segment == PT_NOTE)
-    //     {
-    //         noteBuffer = obj->GetData().CopyToBuffer(segment.p_offset, (uint32) segment.p_filesz);
-    //     }
-    // }
-    //
-    // if (noteBuffer.IsValid() && noteBuffer.GetLength() >= 16)
-    // {
-    //     nameSize = *(uint32*) noteBuffer.GetData();
-    //     valSize  = *(uint32*) (noteBuffer.GetData() + 4);
-    //     tag      = *(uint32*) (noteBuffer.GetData() + 8);
-    //     noteName = std::string((char*) noteBuffer.GetData() + 12, 4);
-    //
-    //     std::string_view noteNameView{ (char*) noteBuffer.GetData() + 12, 4 };
-    //     if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
-    //         noteNameView == Golang::ELF_GO_NOTE)
-    //     {
-    //         pclntab112.SetBuildId({ (char*) noteBuffer.GetData() + 16, valSize });
-    //     }
-    //
-    //     if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&
-    //         noteNameView == Golang::ELF_GNU_NOTE)
-    //     {
-    //         gnuString = std::string((char*) noteBuffer.GetData() + 16, valSize);
-    //     }
-    // }
+    CHECK(ParseGoBuild(), false, "");
+    ParseGoBuildInfo();
 
     // go symbols
     constexpr std::string_view sectionName{ "__gopclntab" };
@@ -914,6 +865,227 @@ bool MachOFile::ParseGoData()
             }
         }
     }
+
+    return true;
+}
+
+bool MachOFile::ParseGoBuild()
+{
+    uint64 address = 0;
+    uint64 size    = 0;
+    bool found     = false;
+    constexpr std::string_view segmentName{ "__TEXT" };
+    for (auto i = 0U; i < segments.size(); i++)
+    {
+        const auto& segment = segments.at(i);
+        if (segmentName == segment.segname)
+        {
+            address = segment.fileoff;
+            size    = segment.filesize;
+            found   = true;
+            break;
+        }
+    }
+
+    CHECK(found, false, "");
+
+    constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
+    constexpr std::string_view goBuildEnd{ "\"\n \xff" };
+
+    const auto fileViewBuildId = obj->GetData().CopyToBuffer(address, size, false);
+
+    // we should find go build id at the start of the file
+    const std::string_view bufferBuildId{ reinterpret_cast<char*>(fileViewBuildId.GetData()),
+                                          fileViewBuildId.GetLength() }; // force for find
+    const auto sPos = bufferBuildId.find(goBuildPrefix);
+    CHECK(sPos != std::string::npos, false, "");
+
+    const auto ePos = bufferBuildId.find(goBuildEnd, sPos + 1);
+    CHECK(ePos != std::string::npos, false, "");
+
+    const std::string_view buildID{ bufferBuildId.data() + sPos + goBuildPrefix.size(), ePos - sPos - goBuildPrefix.size() };
+    pcLnTab.SetBuildId(buildID);
+
+    return true;
+}
+
+// pretty sure there are better ways of mapping this...
+inline static bool GetUVariantSizes(const std::string_view buf, uint64& x, uint32& s)
+{
+    // See issue https://golang.org/issues/41185
+    constexpr auto MaxVarintLen16 = 3;
+    constexpr auto MaxVarintLen32 = 5;
+    constexpr auto MaxVarintLen64 = 10;
+
+    for (auto i = 0; i < buf.size(); i++)
+    {
+        const auto b = static_cast<unsigned char>(buf.data()[i]);
+        if (i == MaxVarintLen64)
+        {
+            return false;
+        }
+
+        if (b < 0x80)
+        {
+            if (i == MaxVarintLen64 - 1 && b > 1)
+            {
+                return false;
+            }
+            x = x | uint64(b) << s;
+            s = i + 1;
+            return true;
+        }
+        x |= uint64(b & 0x7f) << s;
+        s += 7;
+    }
+
+    return false;
+}
+
+bool MachOFile::ParseGoBuildInfo()
+{
+    // Try the first non-empty writable segment.
+    uint64 address = 0;
+    uint64 size    = 0;
+
+    constexpr std::string_view sectionName{ "__go_buildinfo" };
+    for (auto i = 0U; i < segments.size(); i++)
+    {
+        const auto& segment = segments.at(i);
+        for (const auto& section : segment.sections)
+        {
+            const auto& name = section.sectname;
+            if (sectionName == name)
+            {
+                address = section.offset;
+                size    = section.size;
+                break;
+            }
+        }
+    }
+
+    if (address == 0)
+    {
+        const auto RW = 3;
+        for (const auto& segment : segments)
+        {
+            if (segment.fileoff != 0 && segment.filesize != 0 && segment.initprot == RW && segment.maxprot == RW)
+            {
+                address = segment.fileoff;
+                size    = segment.filesize;
+                break;
+            }
+        }
+    }
+
+    CHECK(address, false, "");
+
+    constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
+    constexpr uint16 buildInfoAlign{ 16 };
+    constexpr uint16 buildInfoSize{ 32 };
+
+    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(address, size, false);
+    CHECK(fileViewBuildInfo.IsValid(), false, "");
+    const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()),
+                                            fileViewBuildInfo.GetLength() }; // force for find
+    auto sPos = bufferBuildInfo.find(buildInfoMagic);
+    CHECK(sPos != std::string::npos, false, "");
+
+    CHECK(bufferBuildInfo.size() - sPos >= buildInfoSize, false, "");
+
+    std::string_view buildInfo{ bufferBuildInfo.data() + sPos, buildInfoSize };
+
+    constexpr auto ptrOffset = 14;
+    if ((buildInfo[15] & 2) != 0)
+    {
+        buildInfo = std::string_view{ buildInfo.data() + buildInfoSize, bufferBuildInfo.size() - buildInfoSize };
+
+        uint64 x = 0;
+        uint32 s = 0;
+        CHECK(GetUVariantSizes(buildInfo, x, s), false, "");
+
+        const std::string_view runtimeBuildVersion{ buildInfo.data() + s, x };
+        pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
+
+        buildInfo = std::string_view{ runtimeBuildVersion.data() + x, buildInfoSize };
+        x         = 0;
+        s         = 0;
+        CHECK(GetUVariantSizes(buildInfo, x, s), false, "");
+
+        std::string_view runtimeModInfo{ buildInfo.data() + s, x };
+        if (x >= 33 && runtimeModInfo[x - 17] == '\n')
+        {
+            runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, x - buildInfoSize };
+        }
+        pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
+
+        return true;
+    }
+
+    const uint8 ptrSize  = buildInfo[ptrOffset];
+    const auto bigEndian = buildInfo[ptrOffset + 1] != 0;
+    if (bigEndian)
+    {
+        throw std::runtime_error("Not handled!");
+    }
+
+    uint64 runtimeBuildVersionVA = 0;
+    uint64 runtimeModInfoVA      = 0;
+    if (ptrSize == 4)
+    {
+        runtimeBuildVersionVA = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
+        runtimeModInfoVA      = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
+    }
+    else
+    {
+        runtimeBuildVersionVA = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
+        runtimeModInfoVA      = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
+    }
+
+    const auto runtimeBuildVersionFA = VAtoFA(runtimeBuildVersionVA);
+    const auto runtimeModInfoFA      = VAtoFA(runtimeModInfoVA);
+
+    const auto ptrRuntimeBuildVersion = obj->GetData().CopyToBuffer(runtimeBuildVersionFA, ptrSize * 2, false);
+    const auto ptrViewRuntimeModInfo  = obj->GetData().CopyToBuffer(runtimeModInfoFA, ptrSize * 2, false);
+    CHECK(ptrRuntimeBuildVersion.IsValid(), false, "");
+    CHECK(ptrViewRuntimeModInfo.IsValid(), false, "");
+
+    uint64 strRuntimeBuildVersionVA     = 0;
+    uint64 strRuntimeBuildVersionLength = 0;
+    uint64 strViewRuntimeModInfoVA      = 0;
+    uint64 strViewRuntimeModInfoLength  = 0;
+    if (ptrSize == 4)
+    {
+        strRuntimeBuildVersionVA     = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData());
+        strRuntimeBuildVersionLength = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData());
+        strViewRuntimeModInfoLength  = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
+    }
+    else
+    {
+        strRuntimeBuildVersionVA     = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData());
+        strRuntimeBuildVersionLength = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData());
+        strViewRuntimeModInfoLength  = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
+    }
+
+    const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
+    const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
+
+    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
+    CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
+    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
+                                                strRuntimeBuildVersionLength };
+    pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
+
+    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
+    CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
+    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
+    if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
+    {
+        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
+    }
+    pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
 
     return true;
 }
@@ -981,6 +1153,7 @@ bool MachOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeV
     currentItemIndex = 0;
     return archs.size() > 0;
 }
+
 bool MachOFile::PopulateItem(TreeViewItem item)
 {
     LocalString<128> tmp;
@@ -1008,6 +1181,7 @@ bool MachOFile::PopulateItem(TreeViewItem item)
 
     return currentItemIndex != archs.size();
 }
+
 void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
@@ -1018,5 +1192,24 @@ void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewI
 
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
     GView::App::OpenBuffer(buffer, data->info.name);
+}
+
+uint64 MachOFile::VAtoFA(uint64 addr)
+{
+    constexpr std::string_view pageZero{ "__PAGEZERO" };
+    for (const auto& seg : segments)
+    {
+        if (seg.vmaddr <= addr && addr <= seg.vmaddr + seg.filesize - 1)
+        {
+            if (pageZero == seg.segname)
+            {
+                continue;
+            }
+            const auto n = addr - seg.vmaddr + seg.fileoff;
+            return n;
+        }
+    }
+
+    return -1;
 }
 } // namespace GView::Type::MachO

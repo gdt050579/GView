@@ -34,14 +34,12 @@ void GoInformation::UpdateGoInformation()
     const auto entriesNo = macho->pcLnTab.GetEntriesCount();
     AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);
 
-    list->AddItem("Note").SetType(ListViewItem::Type::Category);
-
-    AddDecAndHexElement("Name Size", format, macho->nameSize);
-    AddDecAndHexElement("Value Size", format, macho->valSize);
-    AddDecAndHexElement("Tag", format, macho->tag);
-
     if (macho->pcLnTab.GetBuildId().empty() == false)
         list->AddItem({ "Build ID", ls.Format("%s", macho->pcLnTab.GetBuildId().c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ "Runtime Build Version", ls.Format("%s", macho->pcLnTab.GetRuntimeBuildVersion().c_str()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ "Runtime Build Mod Info", ls.Format("%s", macho->pcLnTab.GetRuntimeBuildModInfo().c_str()) })
+          .SetType(ListViewItem::Type::Emphasized_1);
 }
 
 void GoInformation::Update()
