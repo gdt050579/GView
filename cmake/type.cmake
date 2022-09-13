@@ -13,14 +13,12 @@ function (create_type type_name)
 	set(PROJECT_NAME ${type_name})	
 	
 	include_directories(../../GViewCore/include)
-
-	string(TOLOWER ${type_name} type_name_lowercase)
 		
 	file(GLOB_RECURSE SRC_ALL "src/*.cpp" "src/*.h")
-        SOURCE_GROUP(TREE "${PROJECT_SOURCE_DIR}/Types/${type_name_lowercase}/src" FILES ${SRC_ALL})
-	message(STATUS "${PROJECT_SOURCE_DIR}/Types/${type_name_lowercase}/src => SRC = ${SRC_ALL}")
+        SOURCE_GROUP(TREE "${PROJECT_SOURCE_DIR}/Types/${type_name}/src" FILES ${SRC_ALL})
+	message(STATUS "${PROJECT_SOURCE_DIR}/Types/${type_name}/src => SRC = ${SRC_ALL}")
 
-	make_filters("${PROJECT_SOURCE_DIR}/Types/${type_name_lowercase}/src")
+	make_filters("${PROJECT_SOURCE_DIR}/Types/${type_name}/src")
 
 	set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
