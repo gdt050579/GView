@@ -11,7 +11,7 @@ enum class Action : int32
     MoreInfo = 3
 };
 
-CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSign&Magic")
+CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSig&nMagic")
 {
     machO   = _machO;
     win     = _win;
@@ -50,6 +50,7 @@ void CodeSignMagic::UpdateLinkeditDataCommand()
 void CodeSignMagic::UpdateSuperBlob()
 {
     CHECKRET(machO->codeSignature.has_value(), "");
+    CHECKRET(static_cast<uint32>(machO->codeSignature->superBlob.magic) != 0U, ""); // probably truncated
 
     LocalString<1024> ls;
     NumericFormatter nf;

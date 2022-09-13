@@ -1,6 +1,6 @@
-#include "elf.hpp"
+#include "pe.hpp"
 
-namespace GView::Type::ELF::Panels
+namespace GView::Type::PE::Panels
 {
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
@@ -12,9 +12,9 @@ enum class ObjectAction : int32
     ChangeBase = 4
 };
 
-GoFunctions::GoFunctions(Reference<ELFFile> _elf, Reference<GView::View::WindowInterface> _win) : TabPage("G&oFunctions")
+GoFunctions::GoFunctions(Reference<PEFile> _pe, Reference<GView::View::WindowInterface> _win) : TabPage("G&oFunctions")
 {
-    elf  = _elf;
+    pe   = _pe;
     win  = _win;
     Base = 16;
 
@@ -53,7 +53,7 @@ void GoFunctions::GoToSelectedSection()
     CHECKRET(i != -1, "");
 
     Golang::Function f{};
-    CHECKRET(elf->pcLnTab.GetFunction(i, f), "");
+    CHECKRET(pe->pcLnTab.GetFunction(i, f), "");
 
     win->GetCurrentView()->GoTo(f.func.entry);
 }
@@ -64,11 +64,11 @@ void GoFunctions::SelectCurrentSection()
     CHECKRET(i != -1, "");
 
     Golang::Function f1{};
-    CHECKRET(elf->pcLnTab.GetFunction(i, f1), "");
-    const auto offset = elf->VAToFileOffset(f1.func.entry);
+    CHECKRET(pe->pcLnTab.GetFunction(i, f1), "");
+    const auto offset = pe->RVAtoFilePointer(f1.func.entry);
 
     Golang::Function f2{};
-    CHECKRET(elf->pcLnTab.GetFunction(i + 1, f2), "");
+    CHECKRET(pe->pcLnTab.GetFunction(i + 1, f2), "");
     const auto size = offset - f2.func.entry;
 
     win->GetCurrentView()->Select(offset, size);
@@ -82,10 +82,11 @@ void GoFunctions::Update()
     NumericFormatter n;
     NumericFormatter n2;
 
-    for (auto i = 0ULL; i < elf->pcLnTab.GetFunctionsCount(); i++)
+    const auto fCount = pe->pcLnTab.GetFunctionsCount();
+    for (auto i = 0ULL; i < fCount; i++)
     {
         Golang::Function f{};
-        CHECKRET(elf->pcLnTab.GetFunction(i, f), "");
+        CHECKRET(pe->pcLnTab.GetFunction(i, f), "");
         auto item = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
         item.SetText(1, tmp.Format("%s", GetValue(n, f.func.entry).data()));
@@ -143,4 +144,4 @@ bool GoFunctions::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 
     return false;
 }
-} // namespace GView::Type::ELF::Panels
+} // namespace GView::Type::PE::Panels

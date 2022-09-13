@@ -19,12 +19,11 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::PE::P
 
 void Information::UpdateGeneralInformation()
 {
-    ListViewItem item;
-    LocalString<256> tmp;
+    LocalString<1024> tmp;
     NumericFormatter n;
 
     general->DeleteAllItems();
-    item = general->AddItem("PE Info");
+    auto item = general->AddItem("PE Info");
     item.SetType(ListViewItem::Type::Category);
     general->AddItem({ "File", object->GetName() });
 
@@ -76,10 +75,17 @@ void Information::UpdateGeneralInformation()
 
     if (pe->pdbName)
     {
-        general->AddItem({ "PDB File", pe->pdbName }).SetType(ListViewItem::Type::Emphasized_3);
+        general->AddItem({ "PDB File", (char8_t*) pe->pdbName.GetText() }).SetType(ListViewItem::Type::Emphasized_3);
     }
 
-    // verific si language-ul
+    SetLanguage();
+    SetCertificate();
+    SetStringTable();
+    ChooseIcon();
+}
+
+void Information::SetLanguage()
+{
     for (const auto& r : pe->res)
     {
         if (r.Type == ResourceType::Version)
@@ -88,21 +94,6 @@ void Information::UpdateGeneralInformation()
             break;
         }
     }
-
-    SetCertificate();
-
-    if (pe->Ver.GetNrItems() > 0)
-    {
-        general->AddItem("Version").SetType(ListViewItem::Type::Category);
-        // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
-        for (int tr = 0; tr < pe->Ver.GetNrItems(); tr++)
-        {
-            auto itemID = general->AddItem(pe->Ver.GetKey(tr)->ToStringView());
-            itemID.SetText(1, pe->Ver.GetValue(tr)->ToStringView());
-        }
-    }
-
-    ChooseIcon();
 }
 
 void Information::SetCertificate()
@@ -139,6 +130,19 @@ void Information::SetCertificate()
             tmp.AddFormat(", Revision: 0x%s", n.ToString(cert.wRevision, { NumericFormatFlags::None, 10, 3, ',' }).data());
             general->AddItem({ "Certificate", tmp }).SetType(ListViewItem::Type::Emphasized_1);
         }
+    }
+}
+
+void Information::SetStringTable()
+{
+    CHECKRET(pe->Ver.GetNrItems() > 0, "No string table to be set!");
+
+    general->AddItem("Version").SetType(ListViewItem::Type::Category);
+    // description/Copyright/Company/Comments/IntName/OrigName/FileVer/ProdName/ProdVer
+    for (int i = 0; i < pe->Ver.GetNrItems(); i++)
+    {
+        auto itemID = general->AddItem(pe->Ver.GetKey(i)->ToStringView());
+        itemID.SetText(1, u16string_view{ (char16_t*) pe->Ver.GetUnicode(i) });
     }
 }
 

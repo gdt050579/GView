@@ -342,6 +342,7 @@ namespace DigitalSignature
         String errorSignerVerify;
     };
 
+    constexpr auto ERR_SIGNER            = -1;
     constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
 
     struct CORE_EXPORT SignerAttributes
@@ -465,17 +466,22 @@ namespace Golang
     {
         char* name{ nullptr };
         Func64 func;
+        union FstEntry
+        {
+            FstEntry32* _32;
+            FstEntry64* _64;
+        } fstEntry{ nullptr };
     };
 
-    struct CORE_EXPORT GoPclntab112
+    struct CORE_EXPORT PcLnTab
     {
       private:
         void* context{ nullptr };
         void Reset();
 
       public:
-        GoPclntab112();
-        ~GoPclntab112();
+        PcLnTab();
+        ~PcLnTab();
         bool Process(const Buffer& buffer, Architecture arch);
         GoFunctionHeader* GetHeader() const;
         uint64 GetFilesCount() const;
@@ -483,6 +489,12 @@ namespace Golang
         uint64 GetFunctionsCount() const;
         bool GetFunction(uint64 index, Function& func) const;
         uint64 GetEntriesCount() const;
+        void SetBuildId(std::string_view buildId);
+        const std::string& GetBuildId() const;
+        void SetRuntimeBuildVersion(std::string_view runtimeBuildVersion);
+        const std::string& GetRuntimeBuildVersion() const;
+        void SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo);
+        const std::string& GetRuntimeBuildModInfo() const;
     };
 
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
@@ -725,7 +737,7 @@ namespace View
             DecimalOnly           = 0,
             HexFormat0x           = 0x00000001,
             BinFormat0b           = 0x00000002,
-            OctFormatOo           = 0x00000004, 
+            OctFormatOo           = 0x00000004,
             FloatingPoint         = 0x00000008,
             AllowSignBeforeNumber = 0x00000010,
             AllowUnderline        = 0x00000020,
@@ -1115,7 +1127,7 @@ namespace View
             void AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang = DissasemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name);
-            
+
             /**
              * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
              *

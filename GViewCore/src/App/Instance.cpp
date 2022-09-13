@@ -6,7 +6,7 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
-constexpr uint32 DEFAULT_CACHE_SIZE    = 0x100000; // 1 MB
+constexpr uint32 DEFAULT_CACHE_SIZE    = 0xA00000; // 10 MB
 constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
 constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
 constexpr uint32 GENERIC_PLUGINS_FRAME = 100;
@@ -66,7 +66,7 @@ bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
 
 Instance::Instance()
 {
-    this->defaultCacheSize  = DEFAULT_CACHE_SIZE; // 1 MB
+    this->defaultCacheSize  = DEFAULT_CACHE_SIZE;
     this->Keys.changeViews  = Key::F4;
     this->Keys.find         = Key::Alt | Key::F7;
     this->Keys.switchToView = Key::Alt | Key::F;
@@ -115,7 +115,7 @@ bool Instance::LoadSettings()
 
     // read instance settings
     auto sect               = ini->GetSection("GView");
-    this->defaultCacheSize  = std::min<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
+    this->defaultCacheSize  = std::max<>(sect.GetValue("CacheSize").ToUInt32(DEFAULT_CACHE_SIZE), MIN_CACHE_SIZE);
     this->Keys.changeViews  = sect.GetValue("Key.ChangeView").ToKey(Key::F4);
     this->Keys.switchToView = sect.GetValue("Key.SwitchToView").ToKey(Key::F | Key::Alt);
     this->Keys.find         = sect.GetValue("Key.Find").ToKey(Key::F7 | Key::Alt);

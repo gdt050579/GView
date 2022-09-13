@@ -57,9 +57,9 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
             return false; // empty directory
         return dirIT->exists();
     }
-    catch (...)
+    catch (std::filesystem::filesystem_error const& ex)
     {
-        return false;
+        RETURNERROR(false, ex.what());
     }
 }
 bool FolderType::PopulateItem(TreeViewItem item)

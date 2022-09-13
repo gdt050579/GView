@@ -147,8 +147,6 @@ bool ELFFile::HasPanel(Panels::IDs id)
 
 bool ELFFile::ParseGoData()
 {
-    // go metadata
-
     Buffer noteBuffer;
     if (is64)
     {
@@ -182,7 +180,7 @@ bool ELFFile::ParseGoData()
         if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
             noteNameView == Golang::ELF_GO_NOTE)
         {
-            buildId = std::string((char*) noteBuffer.GetData() + 16, valSize);
+            pcLnTab.SetBuildId({ (char*) noteBuffer.GetData() + 16, valSize });
         }
 
         if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&
@@ -216,7 +214,7 @@ bool ELFFile::ParseGoData()
                 bufferSize          = section.sh_size;
             }
 
-            CHECK(pclntab112.Process(obj->GetData().CopyToBuffer(bufferOffset, (uint32) bufferSize), arch), false, "");
+            CHECK(pcLnTab.Process(obj->GetData().CopyToBuffer(bufferOffset, (uint32) bufferSize), arch), false, "");
             break;
         }
     }

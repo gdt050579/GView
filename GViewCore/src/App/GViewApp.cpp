@@ -14,6 +14,8 @@ using namespace AppCUI::Utils;
 
 GView::App::Instance* gviewAppInstance = nullptr;
 
+constexpr uint32 DEFAULT_CACHE_SIZE = 0xA00000; // 10 MB // sync this with the one from App/Instance.cpp
+
 bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
 {
     // First load the plugin
@@ -94,7 +96,7 @@ bool GView::App::ResetConfiguration()
     }
 
     // generic GView settings
-    ini["GView"]["CacheSize"]        = 0x100000;
+    ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
     ini["GView"]["Key.ChangeView"]   = Key::F4;
     ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
     ini["GView"]["Key.GoTo"]         = Key::F5;

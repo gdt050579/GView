@@ -28,7 +28,7 @@ Dylib::Dylib(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface
             "n:Timestamp,w:24",
             "n:Current Version,a:r,w:25",
             "n:Compatibility Version,a:r,w:25" },
-          ListViewFlags::None);
+          ListViewFlags::AllowMultipleItemsSelection);
 
     if (machO->is64)
         list->GetColumn(3).SetText("Name Ptr");

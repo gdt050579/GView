@@ -1,6 +1,6 @@
-#include "elf.hpp"
+#include "MachO.hpp"
 
-namespace GView::Type::ELF::Panels
+namespace GView::Type::MachO::Panels
 {
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
@@ -12,11 +12,11 @@ enum class ObjectAction : int32
     ChangeBase = 4
 };
 
-GoFunctions::GoFunctions(Reference<ELFFile> _elf, Reference<GView::View::WindowInterface> _win) : TabPage("G&oFunctions")
+GoFunctions::GoFunctions(Reference<MachOFile> _macho, Reference<GView::View::WindowInterface> _win) : TabPage("G&oFunctions")
 {
-    elf  = _elf;
-    win  = _win;
-    Base = 16;
+    macho = _macho;
+    win   = _win;
+    Base  = 16;
 
     list = Factory::ListView::Create(
           this,
@@ -53,7 +53,7 @@ void GoFunctions::GoToSelectedSection()
     CHECKRET(i != -1, "");
 
     Golang::Function f{};
-    CHECKRET(elf->pcLnTab.GetFunction(i, f), "");
+    CHECKRET(macho->pcLnTab.GetFunction(i, f), ""); // TODO: seems invalid
 
     win->GetCurrentView()->GoTo(f.func.entry);
 }
@@ -64,11 +64,11 @@ void GoFunctions::SelectCurrentSection()
     CHECKRET(i != -1, "");
 
     Golang::Function f1{};
-    CHECKRET(elf->pcLnTab.GetFunction(i, f1), "");
-    const auto offset = elf->VAToFileOffset(f1.func.entry);
+    CHECKRET(macho->pcLnTab.GetFunction(i, f1), "");
+    const auto offset = f1.func.entry; // TODO: seems invalid
 
     Golang::Function f2{};
-    CHECKRET(elf->pcLnTab.GetFunction(i + 1, f2), "");
+    CHECKRET(macho->pcLnTab.GetFunction(i + 1, f2), "");
     const auto size = offset - f2.func.entry;
 
     win->GetCurrentView()->Select(offset, size);
@@ -82,10 +82,10 @@ void GoFunctions::Update()
     NumericFormatter n;
     NumericFormatter n2;
 
-    for (auto i = 0ULL; i < elf->pcLnTab.GetFunctionsCount(); i++)
+    for (auto i = 0ULL; i < macho->pcLnTab.GetFunctionsCount(); i++)
     {
         Golang::Function f{};
-        CHECKRET(elf->pcLnTab.GetFunction(i, f), "");
+        CHECKRET(macho->pcLnTab.GetFunction(i, f), "");
         auto item = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
 
         item.SetText(1, tmp.Format("%s", GetValue(n, f.func.entry).data()));
@@ -143,4 +143,4 @@ bool GoFunctions::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 
     return false;
 }
-} // namespace GView::Type::ELF::Panels
+} // namespace GView::Type::MachO::Panels
