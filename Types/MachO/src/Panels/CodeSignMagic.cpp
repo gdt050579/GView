@@ -11,7 +11,7 @@ enum class Action : int32
     MoreInfo = 3
 };
 
-CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSign&Magic")
+CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSig&nMagic")
 {
     machO   = _machO;
     win     = _win;

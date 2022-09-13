@@ -17,7 +17,7 @@ const char* GetNameForGoMagic(GoMagic magic)
     }
 }
 
-struct GoPclntab112Context
+struct PcLnTabContext
 {
     Buffer buffer{};
     GoFunctionHeader* header{ nullptr };
@@ -47,30 +47,30 @@ struct GoPclntab112Context
     std::string runtimeBuildModInfo{ "UNKNOWN" }; // this gets set from outside
 };
 
-GoPclntab112::GoPclntab112()
+PcLnTab::PcLnTab()
 {
-    context = new GoPclntab112Context;
+    context = new PcLnTabContext;
 }
 
-GoPclntab112::~GoPclntab112()
+PcLnTab::~PcLnTab()
 {
-    delete reinterpret_cast<GoPclntab112Context*>(context);
+    delete reinterpret_cast<PcLnTabContext*>(context);
 }
 
-void GoPclntab112::Reset()
+void PcLnTab::Reset()
 {
-    delete reinterpret_cast<GoPclntab112Context*>(context);
-    context = new GoPclntab112Context;
+    delete reinterpret_cast<PcLnTabContext*>(context);
+    context = new PcLnTabContext;
 }
 
-bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
+bool PcLnTab::Process(const Buffer& buffer, Architecture arch)
 {
     CHECK(context != nullptr, false, "");
     CHECK(buffer.IsValid(), false, "");
     CHECK(buffer.GetLength() > sizeof(Golang::GoFunctionHeader), false, "");
     CHECK(arch != Architecture::Unknown, false, "");
 
-    auto goCtx = reinterpret_cast<GoPclntab112Context*>(this->context);
+    auto goCtx = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goCtx->processed == false, false, "");
     goCtx->buffer = buffer;
     goCtx->arch   = arch;
@@ -297,54 +297,54 @@ bool GoPclntab112::Process(const Buffer& buffer, Architecture arch)
     return true;
 }
 
-GoFunctionHeader* GoPclntab112::GetHeader() const
+GoFunctionHeader* PcLnTab::GetHeader() const
 {
     CHECK(context != nullptr, nullptr, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, nullptr, "");
     return goContext->header;
 }
 
-uint64 GoPclntab112::GetFilesCount() const
+uint64 PcLnTab::GetFilesCount() const
 {
     CHECK(context != nullptr, 0, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, 0, "");
     return goContext->files.size();
 }
 
-bool GoPclntab112::GetFile(uint64 index, std::string_view& file) const
+bool PcLnTab::GetFile(uint64 index, std::string_view& file) const
 {
     CHECK(context != nullptr, false, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, false, "");
     CHECK(index < goContext->files.size(), false, "");
     file = goContext->files.at(index);
     return true;
 }
 
-uint64 GoPclntab112::GetFunctionsCount() const
+uint64 PcLnTab::GetFunctionsCount() const
 {
     CHECK(context != nullptr, 0, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, 0, "");
     return goContext->functions.size();
 }
 
-bool GoPclntab112::GetFunction(uint64 index, Function& func) const
+bool PcLnTab::GetFunction(uint64 index, Function& func) const
 {
     CHECK(context != nullptr, false, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, false, "");
     CHECK(index < goContext->functions.size(), false, "");
     func = goContext->functions.at(index);
     return true;
 }
 
-uint64 GoPclntab112::GetEntriesCount() const
+uint64 PcLnTab::GetEntriesCount() const
 {
     CHECK(context != nullptr, 0, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, 0, "");
 
     if (goContext->arch == Architecture::x86)
@@ -360,52 +360,52 @@ uint64 GoPclntab112::GetEntriesCount() const
     return 0;
 }
 
-void GoPclntab112::SetBuildId(std::string_view buildId)
+void PcLnTab::SetBuildId(std::string_view buildId)
 {
     CHECKRET(context != nullptr, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     goContext->buildId   = buildId;
 }
 
-const std::string& GoPclntab112::GetBuildId() const
+const std::string& PcLnTab::GetBuildId() const
 {
     static const std::string empty;
     CHECK(context != nullptr, empty, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, empty, "");
 
     return goContext->buildId;
 }
 
-void GoPclntab112::SetRuntimeBuildVersion(std::string_view runtimeBuildVersion)
+void PcLnTab::SetRuntimeBuildVersion(std::string_view runtimeBuildVersion)
 {
     CHECKRET(context != nullptr, "");
-    const auto goContext           = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext           = reinterpret_cast<PcLnTabContext*>(this->context);
     goContext->runtimeBuildVersion = runtimeBuildVersion;
 }
 
-const std::string& GoPclntab112::GetRuntimeBuildVersion() const
+const std::string& PcLnTab::GetRuntimeBuildVersion() const
 {
     static const std::string empty;
     CHECK(context != nullptr, empty, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, empty, "");
 
     return goContext->runtimeBuildVersion;
 }
 
-void GoPclntab112::SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo)
+void PcLnTab::SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo)
 {
     CHECKRET(context != nullptr, "");
-    const auto goContext           = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext           = reinterpret_cast<PcLnTabContext*>(this->context);
     goContext->runtimeBuildModInfo = runtimeBuildModInfo;
 }
 
-const std::string& GoPclntab112::GetRuntimeBuildModInfo() const
+const std::string& PcLnTab::GetRuntimeBuildModInfo() const
 {
     static const std::string empty;
     CHECK(context != nullptr, empty, "");
-    const auto goContext = reinterpret_cast<GoPclntab112Context*>(this->context);
+    const auto goContext = reinterpret_cast<PcLnTabContext*>(this->context);
     CHECK(goContext->processed, empty, "");
 
     return goContext->runtimeBuildModInfo;

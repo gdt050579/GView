@@ -1837,7 +1837,7 @@ bool PEFile::ParseGoData()
         {
             const auto fa       = static_cast<uint64>(sect[start.SectionNumber - 1ULL].PointerToRawData);
             const auto fileView = obj->GetData().CopyToBuffer(fa + start.Value, fa + end.Value - start.Value, false);
-            if (pclntab112.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
+            if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
             {
                 return true;
             }
@@ -1854,7 +1854,7 @@ bool PEFile::ParseGoData()
         const auto cacheSize = obj->GetData().GetCacheSize();
         const auto fa        = VAtoFA(candidatesVA);
         const auto fileView  = obj->GetData().CopyToBuffer(fa, cacheSize, false);
-        if (pclntab112.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
+        if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
         {
             return true;
         }
@@ -1883,7 +1883,7 @@ bool PEFile::ParseGoBuild()
     CHECK(ePos != std::string::npos, false, "");
 
     const std::string_view buildID{ bufferBuildId.data() + sPos + goBuildPrefix.size(), ePos - sPos - goBuildPrefix.size() };
-    pclntab112.SetBuildId(buildID);
+    pcLnTab.SetBuildId(buildID);
 
     return true;
 }
@@ -1972,7 +1972,7 @@ bool PEFile::ParseGoBuildInfo()
     CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
     const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
                                                 strRuntimeBuildVersionLength };
-    pclntab112.SetRuntimeBuildVersion(runtimeBuildVersion);
+    pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
 
     const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
@@ -1981,7 +1981,7 @@ bool PEFile::ParseGoBuildInfo()
     {
         runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
     }
-    pclntab112.SetRuntimeBuildModInfo(runtimeModInfo);
+    pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
 
     return true;
 }

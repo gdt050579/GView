@@ -473,15 +473,15 @@ namespace Golang
         } fstEntry{ nullptr };
     };
 
-    struct CORE_EXPORT GoPclntab112
+    struct CORE_EXPORT PcLnTab
     {
       private:
         void* context{ nullptr };
         void Reset();
 
       public:
-        GoPclntab112();
-        ~GoPclntab112();
+        PcLnTab();
+        ~PcLnTab();
         bool Process(const Buffer& buffer, Architecture arch);
         GoFunctionHeader* GetHeader() const;
         uint64 GetFilesCount() const;

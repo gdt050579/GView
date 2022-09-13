@@ -124,6 +124,11 @@ bool MachOFile::Update()
         }
     }
 
+    if (ParseGoData())
+    {
+        panelsMask |= (1ULL << (uint8_t) Panels::IDs::GoInformation);
+    }
+
     return true;
 }
 
@@ -825,6 +830,87 @@ bool MachOFile::SetVersionMin()
             if (shouldSwapEndianess)
             {
                 Swap(*versionMin);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool MachOFile::ParseGoData()
+{
+    /*
+
+        // Look for section named "__go_buildinfo".
+        for _, sec := range x.f.Sections {
+            if sec.Name == "__go_buildinfo" {
+                return sec.Addr
+            }
+        }
+        // Try the first non-empty writable segment.
+        const RW = 3
+        for _, load := range x.f.Loads {
+            seg, ok := load.(*macho.Segment)
+            if ok && seg.Addr != 0 && seg.Filesz != 0 && seg.Prot == RW && seg.Maxprot == RW {
+                return seg.Addr
+            }
+        }
+
+        // Read the first 64kB of dataAddr to find the build info blob.
+        // On some platforms, the blob will be in its own section, and DataStart
+        // returns the address of that section. On others, it's somewhere in the
+        // data segment; the linker puts it near the beginning.
+        // See cmd/link/internal/ld.Link.buildinfo.
+    */
+
+    // Buffer noteBuffer;
+    // for (const auto& segment : segments)
+    // {
+    //     if (segment == PT_NOTE)
+    //     {
+    //         noteBuffer = obj->GetData().CopyToBuffer(segment.p_offset, (uint32) segment.p_filesz);
+    //     }
+    // }
+    //
+    // if (noteBuffer.IsValid() && noteBuffer.GetLength() >= 16)
+    // {
+    //     nameSize = *(uint32*) noteBuffer.GetData();
+    //     valSize  = *(uint32*) (noteBuffer.GetData() + 4);
+    //     tag      = *(uint32*) (noteBuffer.GetData() + 8);
+    //     noteName = std::string((char*) noteBuffer.GetData() + 12, 4);
+    //
+    //     std::string_view noteNameView{ (char*) noteBuffer.GetData() + 12, 4 };
+    //     if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
+    //         noteNameView == Golang::ELF_GO_NOTE)
+    //     {
+    //         pclntab112.SetBuildId({ (char*) noteBuffer.GetData() + 16, valSize });
+    //     }
+    //
+    //     if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&
+    //         noteNameView == Golang::ELF_GNU_NOTE)
+    //     {
+    //         gnuString = std::string((char*) noteBuffer.GetData() + 16, valSize);
+    //     }
+    // }
+
+    // go symbols
+    constexpr std::string_view sectionName{ "__gopclntab" };
+    for (auto i = 0U; i < segments.size(); i++)
+    {
+        const auto& segment = segments.at(i);
+        for (const auto& section : segment.sections)
+        {
+            const auto& name = section.sectname;
+            if (sectionName == name)
+            {
+                panelsMask |= (1ULL << (uint8) Panels::IDs::GoInformation);
+
+                const uint64 bufferOffset = section.offset;
+                const uint64 bufferSize   = section.size;
+                const auto view           = obj->GetData().CopyToBuffer(bufferOffset, (uint32) bufferSize);
+                auto arch                 = is64 ? Golang::Architecture::x64 : Golang::Architecture::x86;
+                CHECK(pcLnTab.Process(view, arch), false, "");
+                break;
             }
         }
     }
