@@ -365,12 +365,14 @@ bool Instance::WriteStructureToScreen(
     ColorPair normalColor = config.Colors.Normal;
 
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
-    // for (int i = 0; i < Layout.startingTextLineOffset;i++)
-    //{
-    //     dli.chNameAndSize->Code = codePage[' '];
-    //     dli.chNameAndSize->Color = NoColorPair;
-    //     dli.chNameAndSize++;
-    // }
+
+    auto clearChar = this->chars.GetBuffer();
+    for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
+    {
+        clearChar->Code  = codePage[' '];
+        clearChar->Color = config.Colors.Normal;
+        clearChar++;
+    }
 
     dli.chText = dli.chNameAndSize;
 
@@ -471,7 +473,7 @@ bool Instance::WriteStructureToScreen(
     if (cursorLine == dli.screenLineToDraw)
     {
         uint32 index = this->Cursor.currentPos % Layout.textSize;
-        if (index < buffer_size)
+        if (index < buffer_size - Layout.startingTextLineOffset)
             dli.chNameAndSize[index].Color = config.Colors.Selection;
         else
             dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
@@ -527,8 +529,16 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
     if (textFileOffset >= this->obj->GetData().GetSize())
         return false;
 
-    auto buf          = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
-    auto initialPos   = buf.GetData();
+    auto clearChar = this->chars.GetBuffer();
+    for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
+    {
+        clearChar->Code  = codePage[' '];
+        clearChar->Color = config.Colors.Normal;
+        clearChar++;
+    }
+
+    auto buf = this->obj->GetData().Get(textFileOffset, Layout.textSize, false);
+
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
@@ -587,10 +597,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 {
     if (!MyLine.buttons.empty())
         MyLine.buttons.clear();
-    if (HasFocus())
-        renderer.Clear(' ', config.Colors.Normal);
-    else
-        renderer.Clear(' ', config.Colors.Inactive);
+    //if (HasFocus())
+    //    renderer.Clear(' ', config.Colors.Normal);
+    //else
+    //    renderer.Clear(' ', config.Colors.Inactive);
 
     if (Layout.textSize == 0)
         return;
