@@ -1,2 +1,2 @@
 include(type)
-create_type(MachO)
+create_type(MACHO)
