@@ -140,15 +140,15 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 
 uint64 GView::View::DissasmViewer::Instance::ScreenOffsetToRelativeTypeOffset(uint64 screenOffset)
 {
-    //uint32 currentLineIndex = (uint32) (screenOffset / this->Layout.textSize);
-    //if (!settings->parseZones.empty())
+    // uint32 currentLineIndex = (uint32) (screenOffset / this->Layout.textSize);
+    // if (!settings->parseZones.empty())
     //{
-    //    auto& zones       = settings->parseZones;
-    //    uint32 zonesCount = (uint32) settings->parseZones.size();
-    //    for (uint32 i = 0; i < zonesCount; i++)
-    //    {
-    //        if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
-    //        {
+    //     auto& zones       = settings->parseZones;
+    //     uint32 zonesCount = (uint32) settings->parseZones.size();
+    //     for (uint32 i = 0; i < zonesCount; i++)
+    //     {
+    //         if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
+    //         {
 
     //        }
     //    }
@@ -365,7 +365,14 @@ bool Instance::WriteStructureToScreen(
     ColorPair normalColor = config.Colors.Normal;
 
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
-    dli.chText        = dli.chNameAndSize;
+    // for (int i = 0; i < Layout.startingTextLineOffset;i++)
+    //{
+    //     dli.chNameAndSize->Code = codePage[' '];
+    //     dli.chNameAndSize->Color = NoColorPair;
+    //     dli.chNameAndSize++;
+    // }
+
+    dli.chText = dli.chNameAndSize;
 
     if (spaces > 0)
     {
@@ -460,7 +467,7 @@ bool Instance::WriteStructureToScreen(
 
     size_t buffer_size = dli.chText - dli.chNameAndSize;
 
-    uint32 cursorLine = (this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
+    const uint32 cursorLine = static_cast<uint32>(this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
     if (cursorLine == dli.screenLineToDraw)
     {
         uint32 index = this->Cursor.currentPos % Layout.textSize;
@@ -532,19 +539,43 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 
     while (dli.start < dli.end)
     {
-        auto characterColor = textColor;
-        if (selection.Contains(textFileOffset + (dli.start - initialPos)))
-            characterColor = config.Colors.Selection;
         dli.chText->Code  = codePage[*dli.start];
-        dli.chText->Color = characterColor;
+        dli.chText->Color = textColor;
         dli.chText++;
         dli.start++;
     }
 
-    uint32 cursorLine = (this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
+    if (selection.HasAnySelection())
+    {
+        const uint64 selectionStart = selection.GetSelectionStart(0);
+        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
+
+        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
+        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+
+        if (selectStartLine <= dli.screenLineToDraw && dli.screenLineToDraw <= selectionEndLine)
+        {
+            uint32 startingIndex = selectionStart % Layout.textSize;
+            if (selectStartLine < dli.screenLineToDraw)
+                startingIndex = 0;
+            uint32 endIndex = selectionEnd % Layout.textSize + 1;
+            if (dli.screenLineToDraw < selectionEndLine)
+                endIndex = static_cast<uint32>(buf.GetLength());
+            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
+            dli.chText = dli.chNameAndSize + startingIndex;
+            while (startingIndex < endIndex)
+            {
+                dli.chText->Color = config.Colors.Selection;
+                dli.chText++;
+                startingIndex++;
+            }
+        }
+    }
+
+    const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
     if (cursorLine == dli.screenLineToDraw)
     {
-        uint32 index                   = this->Cursor.currentPos % Layout.textSize;
+        const uint32 index             = this->Cursor.currentPos % Layout.textSize;
         dli.chNameAndSize[index].Color = config.Colors.Selection;
     }
 
