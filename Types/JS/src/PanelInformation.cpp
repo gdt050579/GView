@@ -24,7 +24,6 @@ void Panels::Information::UpdateGeneralInformation()
     general->AddItem(
           { "Size",
             tempStr.Format("%s bytes", n.ToString(js->obj->GetData().GetSize(), { NumericFormatFlags::None, 10, 3, ',' }).data()) });
-
 }
 
 void Panels::Information::UpdateIssues()
