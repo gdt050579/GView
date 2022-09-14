@@ -632,6 +632,8 @@ void JSFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     TokenIndexStack stBlocks;
     TokenIndexStack exprBlocks;
+    TokenIndexStack arrayBlocks;
+    auto indexArrayBlock = 0u;
     auto len = syntax.tokens.Len();
     for (auto index = 0U; index < len; index++)
     {
@@ -649,6 +651,20 @@ void JSFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             break;
         case TokenType::ExpressionClose:
             syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::CurrentToken, BlockFlags::EndMarker | BlockFlags::ManualCollapse);
+            break;
+        case TokenType::ArrayOpen:
+            arrayBlocks.Push(index);
+            break;
+        case TokenType::ArrayClose:
+            indexArrayBlock = arrayBlocks.Pop();
+            if (indexArrayBlock < index)
+            {
+                if (index - indexArrayBlock >= 5)
+                    syntax.blocks.Add(indexArrayBlock, index, BlockAlignament::CurrentToken, BlockFlags::EndMarker);
+                else
+                    syntax.blocks.Add(
+                          indexArrayBlock, index, BlockAlignament::CurrentToken, BlockFlags::EndMarker | BlockFlags::ManualCollapse);
+            }
             break;
         }
     }
@@ -794,7 +810,7 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
                   idx + 1,
                   TokenColor::Operator,
                   TokenDataType::None,
-                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
+                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter | TokenAlignament::WrapToNextLine,
                   TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
@@ -820,7 +836,8 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             break;
         default:
             next = text.ParseSameGroupID(idx, CharType::GetCharType);
-            tokenList.Add(TokenType::Word, idx, next, TokenColor::Word).SetError("Invalid character sequance");
+            tokenList.Add(TokenType::Word, idx, next, TokenColor::Word, TokenDataType::MetaInformation)
+                  .SetError("Invalid character sequance");
             idx = next;
             break;
         }
@@ -955,32 +972,22 @@ void JSFile::RemoveLineContinuityCharacter(TextEditor& editor)
 }
 void JSFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
 {
-    // change alternate character set to their original character
-    // https://en.cppreference.com/w/cpp/language/operator_alternative
-    // very simplistic
-    editor.ReplaceAll("<%", "{");
-    editor.ReplaceAll("%>", "}");
-    editor.ReplaceAll("%:%:", "##");
-    editor.ReplaceAll("%:", "#");
-    editor.ReplaceAll(":>", "]");
-    // check for < : case
-    auto pos = 0;
+    auto foundIE11Comment = false;
     do
     {
-        auto res = editor.Find(pos, "<:");
-        if (!res.has_value())
-            break;
-        pos = res.value() + 2;
-        if ((editor[pos] == ':') && ((editor[pos + 1] == '>') || (editor[pos + 1] == ':')))
+        auto res         = editor.Find(0, "/*@cc_on", true);
+        foundIE11Comment = false;
+        if (res.has_value())
         {
-            // skip it
+            auto next = editor.Find(res.value(), "@*/");
+            if (next.has_value())
+            {
+                editor.Delete(next.value(), 3);
+                editor.Delete(res.value(), 8);
+                foundIE11Comment = true;
+            }
         }
-        else
-        {
-            editor.Replace(res.value(), 2, "[");
-        }
-    } while (true);
-
+    } while (foundIE11Comment);
     // remove line continuity
     RemoveLineContinuityCharacter(editor);
 }
