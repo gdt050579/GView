@@ -479,6 +479,34 @@ bool Instance::WriteStructureToScreen(
             dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
     }
 
+    if (selection.HasAnySelection())
+    {
+        const uint64 selectionStart = selection.GetSelectionStart(0);
+        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
+
+        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
+        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
+
+        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
+        {
+            uint32 startingIndex = selectionStart % Layout.textSize;
+            if (selectStartLine < lineToDrawTo)
+                startingIndex = 0;
+            uint32 endIndex = selectionEnd % Layout.textSize + 1;
+            if (lineToDrawTo < selectionEndLine)
+                endIndex = static_cast<uint32>(buffer_size - Layout.startingTextLineOffset);
+            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
+            dli.chText = dli.chNameAndSize + startingIndex;
+            while (startingIndex < endIndex)
+            {
+                dli.chText->Color = Cfg.Selection.Editor;
+                dli.chText++;
+                startingIndex++;
+            }
+        }
+    }
+
     auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
