@@ -562,20 +562,21 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 
         uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
         uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
 
-        if (selectStartLine <= dli.screenLineToDraw && dli.screenLineToDraw <= selectionEndLine)
+        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
         {
             uint32 startingIndex = selectionStart % Layout.textSize;
-            if (selectStartLine < dli.screenLineToDraw)
+            if (selectStartLine < lineToDrawTo)
                 startingIndex = 0;
             uint32 endIndex = selectionEnd % Layout.textSize + 1;
-            if (dli.screenLineToDraw < selectionEndLine)
+            if (lineToDrawTo < selectionEndLine)
                 endIndex = static_cast<uint32>(buf.GetLength());
             // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
             dli.chText = dli.chNameAndSize + startingIndex;
             while (startingIndex < endIndex)
             {
-                dli.chText->Color = config.Colors.Selection;
+                dli.chText->Color = Cfg.Selection.Editor;
                 dli.chText++;
                 startingIndex++;
             }
@@ -597,10 +598,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 {
     if (!MyLine.buttons.empty())
         MyLine.buttons.clear();
-    //if (HasFocus())
-    //    renderer.Clear(' ', config.Colors.Normal);
-    //else
-    //    renderer.Clear(' ', config.Colors.Inactive);
+    // if (HasFocus())
+    //     renderer.Clear(' ', config.Colors.Normal);
+    // else
+    //     renderer.Clear(' ', config.Colors.Inactive);
 
     if (Layout.textSize == 0)
         return;
