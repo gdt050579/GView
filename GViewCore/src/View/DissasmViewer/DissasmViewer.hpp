@@ -235,8 +235,6 @@ namespace View
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
 
-            uint64 ScreenOffsetToRelativeTypeOffset(uint64 screenOffset);
-
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;

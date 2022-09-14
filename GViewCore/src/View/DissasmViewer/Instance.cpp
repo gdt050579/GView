@@ -138,24 +138,6 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
     return x + 5;
 }
 
-uint64 GView::View::DissasmViewer::Instance::ScreenOffsetToRelativeTypeOffset(uint64 screenOffset)
-{
-    // uint32 currentLineIndex = (uint32) (screenOffset / this->Layout.textSize);
-    // if (!settings->parseZones.empty())
-    //{
-    //     auto& zones       = settings->parseZones;
-    //     uint32 zonesCount = (uint32) settings->parseZones.size();
-    //     for (uint32 i = 0; i < zonesCount; i++)
-    //     {
-    //         if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
-    //         {
-
-    //        }
-    //    }
-    //}
-    return screenOffset;
-}
-
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
