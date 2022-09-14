@@ -1,43 +1,66 @@
 op = {
+	#Assignment operators
+	"="	:"Assignment",
+	"+="	:"PlusAssignment",
+	"-="	:"MinusAssignment",
+	"*="	:"MupliplyAssignment",
+	"/="	:"DivisionAssignment",
+	"%="	:"ModuloAssignment",
+	"**=": "ExponentiationAssignment",
+	"<<="	:"LeftShiftAssignment",
+	">>="	:"RightShiftAssignment",
+	">>>="	:"UnsignedRightShiftAssignment",
+	"&="	:"AndAssignment",
+	"^="	:"XorAssignment",
+	"|=": "OrAssignment",
+	"&&="	:"LogicANDAssignment",
+	"||="	:"LogicORAssignment",
+	"??="	:"LogicNullishAssignment",
+
+	#Comparison operators
 	">"	:"Bigger",
 	"<"	:"Smaller",
-	"="	:"Assign",
 	">="	:"BiggerOrEq",
 	"<="	:"SmallerOrEQ",
 	"=="	:"Equal",
+	"==="	:"StrictEqual",
 	"!="	:"Different",
+	"!=="	:"StrictDifferent",
+
+	#Arithmetic operators
+	"++"	:"Increment",
+	"--"	:"Decrement",
 	"+"	:"Plus",
 	"-"	:"Minus",
 	"*"	:"Multiply",
 	"/"	:"Division",
 	"%"	:"Modulo",
-	"."	:"MemberAccess",
-	"->"	:"Pointer",
-	"++"	:"Increment",
-	"--"	:"Decrement",
-	"&&"	:"LogicAND",
-	"||"	:"LogicOR",
+	"**"	:"Exponential",
+
+
+	#Bitwise operators
 	"&"	:"AND",
 	"|"	:"OR",
 	"^"	:"XOR",
-	"!"	:"LogicNOT",
 	"~"	:"NOT",
+
+	"<<": "LeftShift",
+	">>": "RightShift",
+	">>>": "SignRightShift",
+
+	#Logical operators
+	"&&"	:"LogicAND",
+	"||"	:"LogicOR",
+	"!"	:"LogicalNOT",
+
+
+	#Conditional (ternary) operator
 	"?"	:"Condition",
 	":"	:"TWO_POINTS",
-	"::"	:"Namespace",
-	"+="	:"PlusEQ",
-	"-="	:"MinusEQ",
-	"*="	:"MupliplyEQ",
-	"/="	:"DivisionEQ",
-	"%="	:"ModuloEQ",
-	"&="	:"AndEQ",
-	"|="	:"OrEQ",
-	"^="	:"XorEQ",
-	"<<"	:"LeftShift",
-	">>"	:"RightShift",
-	">>="	:"RightShiftEQ",
-	"<<="	:"LeftShiftEQ",
-	"<=>"	:"Spaceship"
+
+
+	".": "MemberAccess",
+	"=>": "ArrowFunction",
 }
 
 def ComputeCharIndexes():
@@ -50,6 +73,7 @@ def ComputeCharIndexes():
 	return d
 
 chIndex = ComputeCharIndexes()
+print("Toatal posible operator chars:" + str(chIndex))
  
 def ComputeHash(text,devider):
 	global chIndex
@@ -84,13 +108,13 @@ def CreateHashTable():
 	global op,chIndex
 	devider = ComputeHashes()
 	l = [("None",0)]*devider
-	s = "namespace OperatorType {\n"
-	op_id = 0
+	s = ""
+	op_id = 9000
 	for k in op:
 		l[ComputeHash(k,devider)] = (op[k],ComputeHash(k,0xFFFFFFFF))	
-		s += "constexpr uint32 "+op[k]+" = "+str(op_id)+";\n"
+		s += "constexpr uint32 Operator_"+op[k]+" = "+str(op_id)+";\n"
 		op_id+=1
-	s+="}\n"		        
+	s+="inline bool IsOperator(uint32 tokenType) { return (tokenType >= 9000 && tokenType <=  9999);}\n"		        
 	s+="namespace Operators {\n"                                        	
 	s+="uint8 chars_ids[128] = {";
 	for i in range(0,128):
@@ -100,13 +124,13 @@ def CreateHashTable():
 			s+="0,"
 	s = s[:-1]+"};\n"	
 	s+= "constexpr uint32 HASH_DEVIDER = "+str(devider)+";\n"
-	s+= "uint32 operator_hash_table[HASH_DEVIDER] = {";
+	s+= "OperatorPair operator_hash_table[HASH_DEVIDER] = {";
 	for k in l:
-		print(k)
+		#print(k)
 		if k[0]=="None":
-			s+="TokenType::None,"
+			s+="{TokenType::None, 0},"
 		else:
-			s+="(uint32)TokenType::Operator | (uint32)(OperatorType::"+k[0]+"<<8) | (uint32)("+str(k[1])+" << 16),"
+			s+="{TokenType::Operator_" + k[0] + ", 0x%08x" %(k[1]) + "},"; 
 	s = s[:-1]+"};\n"	
 	s+="}\n"
 	print(s)

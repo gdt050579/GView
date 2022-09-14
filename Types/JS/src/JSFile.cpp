@@ -4,233 +4,6 @@ namespace GView::Type::JS
 {
     using namespace GView::View::LexicalViewer;
 
-    namespace OperatorType
-    {
-        constexpr uint32 Bigger = 0;
-        constexpr uint32 Smaller = 1;
-        constexpr uint32 Assign = 2;
-        constexpr uint32 BiggerOrEq = 3;
-        constexpr uint32 SmallerOrEQ = 4;
-        constexpr uint32 Equal = 5;
-        constexpr uint32 Different = 6;
-        constexpr uint32 Plus = 7;
-        constexpr uint32 Minus = 8;
-        constexpr uint32 Multiply = 9;
-        constexpr uint32 Division = 10;
-        constexpr uint32 Modulo = 11;
-        constexpr uint32 MemberAccess = 12;
-        constexpr uint32 Pointer = 13;
-        constexpr uint32 Increment = 14;
-        constexpr uint32 Decrement = 15;
-        constexpr uint32 LogicAND = 16;
-        constexpr uint32 LogicOR = 17;
-        constexpr uint32 AND = 18;
-        constexpr uint32 OR = 19;
-        constexpr uint32 XOR = 20;
-        constexpr uint32 LogicNOT = 21;
-        constexpr uint32 NOT = 22;
-        constexpr uint32 Condition = 23;
-        constexpr uint32 TWO_POINTS = 24;
-        constexpr uint32 Namespace = 25;
-        constexpr uint32 PlusEQ = 26;
-        constexpr uint32 MinusEQ = 27;
-        constexpr uint32 MupliplyEQ = 28;
-        constexpr uint32 DivisionEQ = 29;
-        constexpr uint32 ModuloEQ = 30;
-        constexpr uint32 AndEQ = 31;
-        constexpr uint32 OrEQ = 32;
-        constexpr uint32 XorEQ = 33;
-        constexpr uint32 LeftShift = 34;
-        constexpr uint32 RightShift = 35;
-        constexpr uint32 RightShiftEQ = 36;
-        constexpr uint32 LeftShiftEQ = 37;
-        constexpr uint32 Spaceship = 38;
-    } // namespace OperatorType
-    namespace Operators
-    {
-        uint8 chars_ids[128] = { 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0,  0,
-                                 0, 4, 0, 0, 0, 9, 11, 0, 0, 0, 7, 5, 0, 6, 10, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 2,  3, 1,  15,
-                                 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 13, 0,
-                                 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 12, 0, 14, 0 };
-
-        constexpr uint32 HASH_DEVIDER = 133;
-        uint32 operator_hash_table[HASH_DEVIDER] = {
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Bigger << 8) | (uint32)(1 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Smaller << 8) | (uint32)(2 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Assign << 8) | (uint32)(3 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::LogicNOT << 8) | (uint32)(4 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Plus << 8) | (uint32)(5 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Minus << 8) | (uint32)(6 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Multiply << 8) | (uint32)(7 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Division << 8) | (uint32)(8 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Modulo << 8) | (uint32)(9 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::MemberAccess << 8) | (uint32)(10 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::AND << 8) | (uint32)(11 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::OR << 8) | (uint32)(12 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::XOR << 8) | (uint32)(13 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::NOT << 8) | (uint32)(14 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Condition << 8) | (uint32)(15 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::TWO_POINTS << 8) | (uint32)(16 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Spaceship << 8) | (uint32)(2145 << 16),
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::XorEQ << 8) | (uint32)(419 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::ModuloEQ << 8) | (uint32)(291 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::PlusEQ << 8) | (uint32)(163 << 16),
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Increment << 8) | (uint32)(165 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::RightShift << 8) | (uint32)(33 << 16),
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::BiggerOrEq << 8) | (uint32)(35 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Pointer << 8) | (uint32)(193 << 16),
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::MinusEQ << 8) | (uint32)(195 << 16),
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Decrement << 8) | (uint32)(198 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::LeftShift << 8) | (uint32)(66 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::SmallerOrEQ << 8) | (uint32)(67 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::AndEQ << 8) | (uint32)(355 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::MupliplyEQ << 8) | (uint32)(227 << 16),
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::LogicAND << 8) | (uint32)(363 << 16),
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Equal << 8) | (uint32)(99 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::LeftShiftEQ << 8) | (uint32)(2115 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::OrEQ << 8) | (uint32)(387 << 16),
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::DivisionEQ << 8) | (uint32)(259 << 16),
-            TokenType::None,
-            (uint32)TokenType::Operator | (uint32)(OperatorType::RightShiftEQ << 8) | (uint32)(1059 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Namespace << 8) | (uint32)(528 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::LogicOR << 8) | (uint32)(396 << 16),
-            (uint32)TokenType::Operator | (uint32)(OperatorType::Different << 8) | (uint32)(131 << 16),
-            TokenType::None
-        };
-
-        bool TextToOperatorID(const char16* txt, uint32 size, uint32& opID, uint32& opSize)
-        {
-            // compute the hashes over the entire 3 cases
-            uint32 hash1 = 0, hash2 = 0, hash3 = 0;
-            if (((*txt) < 128) && (chars_ids[*txt] != 0))
-            {
-                hash1 = chars_ids[*txt];
-                txt++;
-                if ((size > 1) && ((*txt) < 128) && (chars_ids[*txt] != 0))
-                {
-                    hash2 = (hash1 << 5) + chars_ids[*txt];
-                    txt++;
-                    if ((size > 2) && ((*txt) < 128) && (chars_ids[*txt] != 0))
-                        hash3 = (hash2 << 5) + chars_ids[*txt];
-                }
-            }
-            auto op = operator_hash_table[hash3 % HASH_DEVIDER];
-            if ((op != TokenType::None) && ((op >> 16) == hash3))
-            {
-                opID = (op & 0xFF) | ((op & 0xFF00) << 8);
-                opSize = 3;
-                return true;
-            }
-            op = operator_hash_table[hash2 % HASH_DEVIDER];
-            if ((op != TokenType::None) && ((op >> 16) == hash2))
-            {
-                opID = (op & 0xFF) | ((op & 0xFF00) << 8);
-                opSize = 2;
-                return true;
-            }
-            op = operator_hash_table[hash1 % HASH_DEVIDER];
-            if ((op != TokenType::None) && ((op >> 16) == hash1))
-            {
-                opID = (op & 0xFF) | ((op & 0xFF00) << 8);
-                opSize = 1;
-                return true;
-            }
-            return false; // invalid operator
-        }
-    }; // namespace Operators
-
     int32 BinarySearch(uint32 hash, uint32* list, int32 elementsCount)
     {
         if (elementsCount <= 0)
@@ -282,6 +55,77 @@ namespace GView::Type::JS
             return 6000 + res;
         };
     }
+
+    namespace Operators {
+
+        struct OperatorPair
+        {
+            uint32 tokenType;
+            uint32 hash;
+        };
+
+        uint8 chars_ids[128] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,13,0,0,0,6,9,0,0,0,4,2,0,3,16,5,0,0,0,0,0,0,0,0,0,0,15,0,7,1,8,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,11,0,14,0 };
+        constexpr uint32 HASH_DEVIDER = 265;
+        OperatorPair operator_hash_table[HASH_DEVIDER] = { {TokenType::None, 0},{TokenType::Operator_Assignment, 0x00000001},{TokenType::Operator_Plus, 0x00000002},{TokenType::Operator_Minus, 0x00000003},{TokenType::Operator_Multiply, 0x00000004},{TokenType::Operator_Division, 0x00000005},{TokenType::Operator_Modulo, 0x00000006},{TokenType::Operator_Smaller, 0x00000007},{TokenType::Operator_Bigger, 0x00000008},{TokenType::Operator_AND, 0x00000009},{TokenType::Operator_XOR, 0x0000000a},{TokenType::Operator_OR, 0x0000000b},{TokenType::Operator_Condition, 0x0000000c},{TokenType::Operator_LogicalNOT, 0x0000000d},{TokenType::Operator_NOT, 0x0000000e},{TokenType::Operator_TWO_POINTS, 0x0000000f},{TokenType::Operator_MemberAccess, 0x00000010},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_AndAssignment, 0x00000121},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_UnsignedRightShiftAssignment, 0x00042101},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_LogicAND, 0x00000129},{TokenType::Operator_Equal, 0x00000021},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_ArrowFunction, 0x00000028},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_XorAssignment, 0x00000141},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_PlusAssignment, 0x00000041},{TokenType::Operator_Increment, 0x00000042},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_OrAssignment, 0x00000161},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_StrictDifferent, 0x00003421},{TokenType::None, 0},{TokenType::Operator_MinusAssignment, 0x00000061},{TokenType::Operator_LogicOR, 0x0000016b},{TokenType::Operator_Decrement, 0x00000063},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_MupliplyAssignment, 0x00000081},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_Exponential, 0x00000084},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_Different, 0x000001a1},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_DivisionAssignment, 0x000000a1},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_ModuloAssignment, 0x000000c1},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_LogicNullishAssignment, 0x00003181},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_LogicORAssignment, 0x00002d61},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_SmallerOrEQ, 0x000000e1},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_LogicANDAssignment, 0x00002521},{TokenType::Operator_LeftShift, 0x000000e7},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_RightShiftAssignment, 0x00002101},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_LeftShiftAssignment, 0x00001ce1},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_SignRightShift, 0x00002108},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_ExponentiationAssignment, 0x00001081},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_BiggerOrEq, 0x00000101},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::None, 0},{TokenType::Operator_StrictEqual, 0x00000421},{TokenType::None, 0},{TokenType::Operator_RightShift, 0x00000108} };
+
+        uint32 TextToOperatorID(const char16* txt, uint32 size, uint32& opSize)
+        {
+            // compute the hashes over the entire 3 cases
+            uint32 hash1 = 0, hash2 = 0, hash3 = 0, hash4 = 0;
+            if (((*txt) < 128) && (chars_ids[*txt] != 0))
+            {
+                hash1 = chars_ids[*txt];
+                txt++;
+                if ((size > 1) && ((*txt) < 128) && (chars_ids[*txt] != 0))
+                {
+                    hash2 = (hash1 << 5) + chars_ids[*txt];
+                    txt++;
+                    if ((size > 2) && ((*txt) < 128) && (chars_ids[*txt] != 0))
+                    {
+                        hash3 = (hash2 << 5) + chars_ids[*txt];
+                        txt++;
+                        if ((size > 3) && ((*txt) < 128) && (chars_ids[*txt] != 0))
+                            hash4 = (hash3 << 5) + chars_ids[*txt];
+                    }
+                        
+                }
+            }
+            {
+                auto op = operator_hash_table[hash4 % HASH_DEVIDER];
+                if ((op.tokenType != TokenType::None) && (op.hash == hash4))
+                {
+                    opSize = 4;
+                    return op.tokenType;
+                }
+            }
+            {
+                auto op = operator_hash_table[hash3 % HASH_DEVIDER];
+                if ((op.tokenType != TokenType::None) && (op.hash == hash3))
+                {
+                    opSize = 3;
+                    return op.tokenType;
+                }
+            }
+            {
+                auto op = operator_hash_table[hash2 % HASH_DEVIDER];
+                if ((op.tokenType != TokenType::None) && (op.hash == hash2))
+                {
+                    opSize = 2;
+                    return op.tokenType;
+                }
+            }
+            {
+                auto op = operator_hash_table[hash1 % HASH_DEVIDER];
+                if ((op.tokenType != TokenType::None) && (op.hash == hash1))
+                {
+                    opSize = 1;
+                    return op.tokenType;
+                }
+            }
+            return TokenType::None; // invalid operator
+        }
+    }
+
 
     namespace CharType
     {
@@ -363,7 +207,15 @@ namespace GView::Type::JS
                 if (tokType == TokenType::None)
                 {
                     tokType = TokenType::Word;
-                    align = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+                    const auto lastToken = tokenList.GetLastTokenID();
+                    if (TokenType::IsClassicKeyword(lastToken))
+                    {
+                        align = TokenAlignament::AddSpaceAfter;
+                    }
+                    else
+                    {
+                        align = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+                    }
                 }
                 else
                 {
@@ -408,35 +260,35 @@ namespace GView::Type::JS
         auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
         auto txt = text.GetSubString(pos, next);
         uint32 tokenType, sz;
-        if (Operators::TextToOperatorID(txt.data(), (uint32)txt.size(), tokenType, sz))
+        tokenType = Operators::TextToOperatorID(txt.data(), (uint32)txt.size(), sz);
+        if (tokenType != TokenType::None)
         {
             TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
-            auto opType = tokenType >> 16;
-            switch (opType)
+            switch (tokenType)
             {
-            case OperatorType::Namespace:
-                align = TokenAlignament::AfterPreviousToken;
-                if (tokenList.GetLastTokenID() == TokenType::Word)
-                    tokenList.GetLastToken().SetTokenColor(TokenColor::Keyword2);
-                break;
-            case OperatorType::Pointer:
-            case OperatorType::MemberAccess:
-            case OperatorType::TWO_POINTS:
+            case TokenType::Operator_MemberAccess:
                 align = TokenAlignament::AfterPreviousToken;
                 break;
-            case OperatorType::Assign:
-            case OperatorType::PlusEQ:
-            case OperatorType::MinusEQ:
-            case OperatorType::MupliplyEQ:
-            case OperatorType::DivisionEQ:
-            case OperatorType::ModuloEQ:
-            case OperatorType::AndEQ:
-            case OperatorType::OrEQ:
-            case OperatorType::XorEQ:
-            case OperatorType::RightShiftEQ:
-            case OperatorType::LeftShiftEQ:
+            case TokenType::Operator_Assignment:
+            case TokenType::Operator_PlusAssignment:
+                align = TokenAlignament::SameColumn | TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+                break;
+           
+            /*
+            case TokenType::Assign:
+            case TokenType::PlusEQ:
+            case TokenType::MinusEQ:
+            case TokenType::MupliplyEQ:
+            case TokenType::DivisionEQ:
+            case TokenType::ModuloEQ:
+            case TokenType::AndEQ:
+            case TokenType::OrEQ:
+            case TokenType::XorEQ:
+            case TokenType::RightShiftEQ:
+            case TokenType::LeftShiftEQ:
                 align |= TokenAlignament::SameColumn;
                 break;
+                */
             }
 
             tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, true);
@@ -445,7 +297,7 @@ namespace GView::Type::JS
         else
         {
             // unknown operator
-            tokenList.Add(TokenType::Operator, pos, next, TokenColor::Word).SetError("Invalid C++ operator");
+            tokenList.Add(TokenType::Word, pos, next, TokenColor::Word).SetError("Invalid JS operator");
             return next;
         }
     }
@@ -575,11 +427,11 @@ namespace GView::Type::JS
                 idx++;
                 break;
             case CharType::ExpressionOpen:
-                tokenList.Add(TokenType::ExpressionOpen, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+                tokenList.Add(TokenType::ExpressionOpen, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::AfterPreviousToken, true);
                 idx++;
                 break;
             case CharType::ExpressionClose:
-                tokenList.Add(TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+                tokenList.Add(TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::AfterPreviousToken, true);
                 idx++;
                 break;
             case CharType::BlockOpen:
@@ -863,9 +715,6 @@ namespace GView::Type::JS
         case TokenType::Word:
             str.Set("Word");
             break;
-        case TokenType::Operator:
-            str.Set("Operator");
-            break;
         }
         if (TokenType::IsKeyword(id))
         {
@@ -879,13 +728,54 @@ namespace GView::Type::JS
         {
             str.Set("Constant");
         }
+        if (TokenType::IsOperator(id))
+        {
+            str.Set("Operator");
+        }
+
     }
     void JSFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
     {
         syntax.tokens.ResetLastTokenID(TokenType::None);
         Tokenize(syntax.text, syntax.tokens, syntax.blocks);
         BuildBlocks(syntax);
+        OperatorAlignament(syntax.tokens);
         IndentSimpleInstructions(syntax.tokens);
         CreateFoldUnfoldLinks(syntax);
+    }
+    void JSFile::OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenList)
+    {
+        //Luam fiecare token 
+        auto len = tokenList.Len();
+        for (auto index = 0u; index < len; index++)
+        {
+            Token t = tokenList[index];
+            if (t.GetTypeID(TokenType::None) == TokenType::Operator_MemberAccess)
+            {
+                t.Next().UpdateAlignament(TokenAlignament::AfterPreviousToken, TokenAlignament::AddSpaceBefore);
+            }
+
+            if (t.GetTypeID(TokenType::None) == TokenType::Keyword_For && t.Next().GetTypeID(TokenType::None) == TokenType::ExpressionOpen)
+            {
+                auto idx = index + 1;
+                auto end = t.Next().GetBlock().GetEndToken().GetIndex();
+                for (; idx < end; idx++)
+                {
+                    Token t2 = tokenList[idx];
+                    if (t2.GetTypeID(TokenType::None) == TokenType::Semicolumn)
+                    {
+                        t2.Precedent().UpdateAlignament(TokenAlignament::None, TokenAlignament::AddSpaceAfter);
+                        t2.SetAlignament(TokenAlignament::AddSpaceAfter);
+                    }
+                }
+                Token t3 = tokenList[end + 1];
+                if (t3.GetTypeID(TokenType::None) == TokenType::BlockOpen)
+                {
+                    t.SetBlock(t3.GetBlock());
+                }
+
+                //t.Next().UpdateAlignament(TokenAlignament::AfterPreviousToken, TokenAlignament::AddSpaceBefore);
+            }
+        }
     }
 } // namespace GView::Type::CPP

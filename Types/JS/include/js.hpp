@@ -24,7 +24,6 @@ namespace GView
                 constexpr uint32 Semicolumn = 10;
                 constexpr uint32 Preprocess = 11;
                 constexpr uint32 Word = 12;
-                constexpr uint32 Operator = 13;
 
                 constexpr uint32 Keyword_Clearinterval = 1000;
                 constexpr uint32 Keyword_Java = 1001;
@@ -168,11 +167,63 @@ namespace GView
                 constexpr uint32 Keyword_True = 8002;
                 constexpr uint32 Keyword_Null = 8003;
 
+                constexpr uint32 Operator_Assignment = 9000;
+                constexpr uint32 Operator_PlusAssignment = 9001;
+                constexpr uint32 Operator_MinusAssignment = 9002;
+                constexpr uint32 Operator_MupliplyAssignment = 9003;
+                constexpr uint32 Operator_DivisionAssignment = 9004;
+                constexpr uint32 Operator_ModuloAssignment = 9005;
+                constexpr uint32 Operator_ExponentiationAssignment = 9006;
+                constexpr uint32 Operator_LeftShiftAssignment = 9007;
+                constexpr uint32 Operator_RightShiftAssignment = 9008;
+                constexpr uint32 Operator_UnsignedRightShiftAssignment = 9009;
+                constexpr uint32 Operator_AndAssignment = 9010;
+                constexpr uint32 Operator_XorAssignment = 9011;
+                constexpr uint32 Operator_OrAssignment = 9012;
+                constexpr uint32 Operator_LogicANDAssignment = 9013;
+                constexpr uint32 Operator_LogicORAssignment = 9014;
+                constexpr uint32 Operator_LogicNullishAssignment = 9015;
+                constexpr uint32 Operator_Bigger = 9016;
+                constexpr uint32 Operator_Smaller = 9017;
+                constexpr uint32 Operator_BiggerOrEq = 9018;
+                constexpr uint32 Operator_SmallerOrEQ = 9019;
+                constexpr uint32 Operator_Equal = 9020;
+                constexpr uint32 Operator_StrictEqual = 9021;
+                constexpr uint32 Operator_Different = 9022;
+                constexpr uint32 Operator_StrictDifferent = 9023;
+                constexpr uint32 Operator_Increment = 9024;
+                constexpr uint32 Operator_Decrement = 9025;
+                constexpr uint32 Operator_Plus = 9026;
+                constexpr uint32 Operator_Minus = 9027;
+                constexpr uint32 Operator_Multiply = 9028;
+                constexpr uint32 Operator_Division = 9029;
+                constexpr uint32 Operator_Modulo = 9030;
+                constexpr uint32 Operator_Exponential = 9031;
+                constexpr uint32 Operator_AND = 9032;
+                constexpr uint32 Operator_OR = 9033;
+                constexpr uint32 Operator_XOR = 9034;
+                constexpr uint32 Operator_NOT = 9035;
+                constexpr uint32 Operator_LeftShift = 9036;
+                constexpr uint32 Operator_RightShift = 9037;
+                constexpr uint32 Operator_SignRightShift = 9038;
+                constexpr uint32 Operator_LogicAND = 9039;
+                constexpr uint32 Operator_LogicOR = 9040;
+                constexpr uint32 Operator_LogicalNOT = 9041;
+                constexpr uint32 Operator_Condition = 9042;
+                constexpr uint32 Operator_TWO_POINTS = 9043;
+                constexpr uint32 Operator_MemberAccess = 9044;
+                constexpr uint32 Operator_ArrowFunction = 9045;
+
+                inline bool IsOperator(uint32 tokenType) { return (tokenType >= 9000 && tokenType <= 9999); }
+
+
                 inline bool IsConstant(uint32 tokenType) { return (tokenType >= 8000 && tokenType <= 9000); }
 
                 inline bool IsDatatype(uint32 tokenType) { return (tokenType >= 6000 && tokenType <= 7000); }
 
                 inline bool IsKeyword(uint32 tokenType) { return (tokenType >= 1000 && tokenType <= 5000); }
+
+                inline bool IsClassicKeyword(uint32 tokenType) { return (tokenType >= 0 && tokenType <= 100); }
 
 
             } // namespace TokenType
@@ -202,6 +253,7 @@ namespace GView
                     GView::View::LexicalViewer::TokensList& list,
                     GView::View::LexicalViewer::BlocksList& blocks);
                 void RemoveLineContinuityCharacter(GView::View::LexicalViewer::TextEditor& editor);
+                void OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenList);
 
             public:
                 JSFile();

@@ -24,7 +24,7 @@ def CreateList(l, name, start_index, end_index):
 	idx = start_index
 	s = "// To be added in TokenTyepe namespace\n"
 	for k in res:
-		s += "\tconstexpr uint32 Keyword_"+k[1][0].upper()+k[1][1:].lower()+" = "+str(idx)+";\n"
+		s += "\tconstexpr uint32 "+ name + "_"+k[1][0].upper()+k[1][1:].lower()+" = "+str(idx)+";\n"
 		idx+=1
 	s+= "\n"
 	s+= "inline bool Is" + name + "(uint32 tokenType) { return (tokenType >= " + str(start_index) + " && tokenType <= " + str(end_index) + ");}\n"
