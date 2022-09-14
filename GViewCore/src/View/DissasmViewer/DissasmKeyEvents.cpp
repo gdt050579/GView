@@ -54,13 +54,13 @@ void Instance::MoveTo(uint64 offset, bool select)
     auto sz   = this->Layout.textSize * h;
     auto sidx = -1;
     if (select)
-        sidx = this->selection.BeginSelection(ScreenOffsetToRelativeTypeOffset(this->Cursor.currentPos));
+        sidx = this->selection.BeginSelection(this->Cursor.currentPos);
     if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
     {
         this->Cursor.currentPos = offset;
         if ((select) && (sidx >= 0))
         {
-            this->selection.UpdateSelection(sidx, ScreenOffsetToRelativeTypeOffset(offset));
+            this->selection.UpdateSelection(sidx, offset);
             //UpdateCurrentSelection();
             return; // nothing to do ... already in visual space
         }
@@ -79,7 +79,7 @@ void Instance::MoveTo(uint64 offset, bool select)
     this->Cursor.currentPos = offset;
     if ((select) && (sidx >= 0))
     {
-        this->selection.UpdateSelection(sidx, ScreenOffsetToRelativeTypeOffset(offset));
+        this->selection.UpdateSelection(sidx, offset);
         //UpdateCurrentSelection();
     }
 }
