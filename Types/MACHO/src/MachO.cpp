@@ -215,6 +215,13 @@ extern "C"
             {
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::CodeSignMagic(machO, win)), true);
             }
+
+            if (machO->HasPanel(MachO::Panels::IDs::GoInformation))
+            {
+                win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoInformation(win->GetObject(), machO)), true);
+                win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoFiles(win->GetObject(), machO)), true);
+                win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoFunctions(machO, win)), false);
+            }
         }
 
         return true;

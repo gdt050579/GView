@@ -332,7 +332,7 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         auto& signer       = output.signers[i];
 
         signer.count = CMS_signed_get_attr_count(si);
-        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER)
+        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER && signer.count != ERR_SIGNER)
         {
             throw std::runtime_error("Unable to parse this number of signers!");
         }

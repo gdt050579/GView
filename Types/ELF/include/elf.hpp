@@ -56,9 +56,8 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     uint32 valSize  = 0;
     uint32 tag      = 0;
     std::string noteName{};
-    std::string buildId;
     std::string gnuString;
-    Golang::GoPclntab112 pclntab112{};
+    Golang::PcLnTab pcLnTab{};
 
   public:
     ELFFile();

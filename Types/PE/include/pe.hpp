@@ -110,6 +110,7 @@ namespace Type
                 Imports,
                 TLS,
                 Symbols,
+                GoInformation
             };
         };
         class VersionInformation
@@ -779,11 +780,16 @@ namespace Type
             std::string_view ReadString(uint32 RVA, uint32 maxSize);
             bool ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxSize);
 
+            // GO
+            uint32 nameSize = 0;
+            uint32 valSize  = 0;
+            uint32 tag      = 0;
+            std::string noteName{};
+            Golang::PcLnTab pcLnTab{};
+
           public:
             PEFile();
-            virtual ~PEFile()
-            {
-            }
+            virtual ~PEFile() = default;
 
             bool Update();
 
@@ -794,6 +800,7 @@ namespace Type
 
             std::string_view GetMachine();
             std::string_view GetSubsystem();
+            uint64 VAtoFA(uint64 va) const;
             uint64 RVAtoFilePointer(uint64 RVA);
             int32 RVAToSectionIndex(uint64 RVA);
             uint64 FilePointerToRVA(uint64 fileAddress);
@@ -814,6 +821,12 @@ namespace Type
             bool BuildTLS();
             bool BuildDebugData();
             bool BuildSymbols();
+
+            // GO
+            bool ParseGoData();
+            bool ParseGoBuild();
+            bool ParseGoBuildInfo();
+            std::vector<uint64> FindPcLnTabSigsCandidates() const;
 
             bool HasPanel(Panels::IDs id);
 
@@ -845,7 +858,9 @@ namespace Type
                 int32 iconSize = 0;
 
                 void UpdateGeneralInformation();
+                void SetLanguage();
                 void SetCertificate();
+                void SetStringTable();
                 void ChooseIcon();
                 void UpdateIssues();
                 void RecomputePanelsPositions();
@@ -986,6 +1001,103 @@ namespace Type
                 Headers(Reference<GView::Type::PE::PEFile> pe, Reference<GView::View::WindowInterface> win);
 
                 void Update();
+            };
+
+            class GoInformation : public TabPage
+            {
+                inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+                inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+                const std::string_view format            = "%-16s (%s)";
+                const std::string_view formatDescription = "%-16s (%s) %s";
+
+                Reference<Object> object;
+                Reference<PEFile> pe;
+                Reference<AppCUI::Controls::ListView> list;
+
+              public:
+                GoInformation(Reference<Object> _object, Reference<PEFile> _pe);
+
+                template <typename T>
+                ListViewItem AddDecAndHexElement(
+                      std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+                {
+                    LocalString<1024> ls;
+                    NumericFormatter nf;
+                    NumericFormatter nf2;
+
+                    // static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ', sizeof(T) * 2 };
+                    static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ' };
+
+                    const auto v    = nf.ToString(value, dec);
+                    const auto vHex = nf2.ToString(value, hexBySize);
+                    auto it         = list->AddItem({ name, ls.Format(format.data(), v.data(), vHex.data()) });
+                    it.SetType(type);
+
+                    return it;
+                }
+
+                void Update();
+                void UpdateGoInformation();
+                void OnAfterResize(int newWidth, int newHeight) override;
+            };
+
+            class GoFiles : public TabPage
+            {
+                inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+                inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+                const std::string_view format            = "%-16s (%s)";
+                const std::string_view formatDescription = "%-16s (%s) %s";
+
+                Reference<Object> object;
+                Reference<PEFile> pe;
+                Reference<AppCUI::Controls::ListView> list;
+
+              public:
+                GoFiles(Reference<Object> _object, Reference<PEFile> _pe);
+
+                template <typename T>
+                ListViewItem AddDecAndHexElement(
+                      std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+                {
+                    LocalString<1024> ls;
+                    NumericFormatter nf;
+                    NumericFormatter nf2;
+
+                    // static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ', sizeof(T) * 2 };
+                    static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ' };
+
+                    const auto v    = nf.ToString(value, dec);
+                    const auto vHex = nf2.ToString(value, hexBySize);
+                    auto it         = list->AddItem({ name, ls.Format(format.data(), v.data(), vHex.data()) });
+                    it.SetType(type);
+
+                    return it;
+                }
+
+                void Update();
+                void UpdateGoFiles();
+                void OnAfterResize(int newWidth, int newHeight) override;
+            };
+
+            class GoFunctions : public AppCUI::Controls::TabPage
+            {
+                Reference<PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> list;
+                int32 Base;
+
+                std::string_view GetValue(NumericFormatter& n, uint64 value);
+                void GoToSelectedSection();
+                void SelectCurrentSection();
+
+              public:
+                GoFunctions(Reference<PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
         }; // namespace Panels
     }      // namespace PE

@@ -224,6 +224,12 @@ UInt16 e_res[4];)");
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Icons(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Symbols))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Symbols(pe, win)), false);
+        if (pe->HasPanel(PE::Panels::IDs::GoInformation))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoInformation(win->GetObject(), pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFiles(win->GetObject(), pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFunctions(pe, win)), false);
+        }
         return true;
     }
 

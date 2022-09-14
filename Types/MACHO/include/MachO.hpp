@@ -7,16 +7,17 @@ namespace GView::Type::MachO
 {
 namespace Panels
 {
-    enum class IDs : uint8_t
+    enum class IDs : uint8
     {
-        Information  = 0x0,
-        LoadCommands = 0x1,
-        Segments     = 0x2,
-        Sections     = 0x3,
-        DyldInfo     = 0x4,
-        Dylib        = 0x5,
-        DySymTab     = 0x6,
-        CodeSign     = 0x7
+        Information   = 0x0,
+        LoadCommands  = 0x1,
+        Segments      = 0x2,
+        Sections      = 0x3,
+        DyldInfo      = 0x4,
+        Dylib         = 0x5,
+        DySymTab      = 0x6,
+        CodeSign      = 0x7,
+        GoInformation = 0x8
     };
 };
 
@@ -169,6 +170,9 @@ class MachOFile : public TypeInterface,
     uint64 panelsMask;
     uint32 currentItemIndex;
 
+    // GO
+    Golang::PcLnTab pcLnTab{};
+
   public:
     // OffsetTranslateInterface
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
@@ -201,6 +205,10 @@ class MachOFile : public TypeInterface,
     bool SetLinkEditData();
     bool SetCodeSignature();
     bool SetVersionMin();
+    bool ParseGoData();
+    bool ParseGoBuild();
+    bool ParseGoBuildInfo();
+    uint64 VAtoFA(uint64 va);
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
@@ -392,6 +400,103 @@ namespace Panels
         {
             RecomputePanelsPositions();
         }
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class GoInformation : public TabPage
+    {
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        const std::string_view format            = "%-16s (%s)";
+        const std::string_view formatDescription = "%-16s (%s) %s";
+
+        Reference<Object> object;
+        Reference<GView::Type::MachO::MachOFile> macho;
+        Reference<AppCUI::Controls::ListView> list;
+
+      public:
+        GoInformation(Reference<Object> _object, Reference<GView::Type::MachO::MachOFile> _macho);
+
+        template <typename T>
+        ListViewItem AddDecAndHexElement(
+              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        {
+            LocalString<1024> ls;
+            NumericFormatter nf;
+            NumericFormatter nf2;
+
+            // static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ', sizeof(T) * 2 };
+            static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ' };
+
+            const auto v    = nf.ToString(value, dec);
+            const auto vHex = nf2.ToString(value, hexBySize);
+            auto it         = list->AddItem({ name, ls.Format(format.data(), v.data(), vHex.data()) });
+            it.SetType(type);
+
+            return it;
+        }
+
+        void Update();
+        void UpdateGoInformation();
+        void OnAfterResize(int newWidth, int newHeight) override;
+    };
+
+    class GoFiles : public TabPage
+    {
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        const std::string_view format            = "%-16s (%s)";
+        const std::string_view formatDescription = "%-16s (%s) %s";
+
+        Reference<Object> object;
+        Reference<GView::Type::MachO::MachOFile> macho;
+        Reference<AppCUI::Controls::ListView> list;
+
+      public:
+        GoFiles(Reference<Object> _object, Reference<GView::Type::MachO::MachOFile> _macho);
+
+        template <typename T>
+        ListViewItem AddDecAndHexElement(
+              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        {
+            LocalString<1024> ls;
+            NumericFormatter nf;
+            NumericFormatter nf2;
+
+            // static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ', sizeof(T) * 2 };
+            static const auto hexBySize = NumericFormat{ NumericFormatFlags::HexPrefix, 16, 0, ' ' };
+
+            const auto v    = nf.ToString(value, dec);
+            const auto vHex = nf2.ToString(value, hexBySize);
+            auto it         = list->AddItem({ name, ls.Format(format.data(), v.data(), vHex.data()) });
+            it.SetType(type);
+
+            return it;
+        }
+
+        void Update();
+        void UpdateGoFiles();
+        void OnAfterResize(int newWidth, int newHeight) override;
+    };
+
+    class GoFunctions : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> macho;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int32 Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint64 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        GoFunctions(Reference<MachOFile> macho, Reference<GView::View::WindowInterface> win);
+
+        void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };

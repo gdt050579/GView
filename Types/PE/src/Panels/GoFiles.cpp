@@ -1,10 +1,10 @@
-#include "elf.hpp"
+#include "pe.hpp"
 
 using namespace AppCUI::Controls;
 
-namespace GView::Type::ELF::Panels
+namespace GView::Type::PE::Panels
 {
-GoFiles::GoFiles(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile> _elf) : TabPage("Go&Modules"), object(_object), elf(_elf)
+GoFiles::GoFiles(Reference<Object> _object, Reference<PEFile> _pe) : TabPage("Go&Modules"), object(_object), pe(_pe)
 {
     list = CreateChildControl<ListView>(
           "x:0,y:0,w:100%,h:10",
@@ -16,16 +16,16 @@ GoFiles::GoFiles(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile>
 
 void GoFiles::UpdateGoFiles()
 {
-    CHECKRET(elf->pcLnTab.GetHeader() != nullptr, "");
+    CHECKRET(pe->pcLnTab.GetHeader() != nullptr, "");
 
     LocalString<1024> ls;
-    const auto filesCount = elf->pcLnTab.GetFilesCount();
+    const auto filesCount = pe->pcLnTab.GetFilesCount();
     list->AddItem(ls.Format("#%u files", filesCount)).SetType(ListViewItem::Type::Category);
 
     for (auto i = 0U; i < filesCount; i++)
     {
         std::string_view file;
-        CHECKRET(elf->pcLnTab.GetFile(i, file), "");
+        CHECKRET(pe->pcLnTab.GetFile(i, file), "");
 
         const auto pos        = file.find_last_of('/');
         std::string_view name = file;
@@ -52,4 +52,4 @@ void GoFiles::OnAfterResize(int newWidth, int newHeight)
         list->Resize(newWidth, h1);
     };
 }
-} // namespace GView::Type::ELF::Panels
+} // namespace GView::Type::PE::Panels
