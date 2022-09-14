@@ -213,22 +213,22 @@ Token TokensList::GetLastToken() const
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color)
 {
-    return Add(typeID, start, end, color, TokenDataType::None, TokenAlignament::None, false);
+    return Add(typeID, start, end, color, TokenDataType::None, TokenAlignament::None, TokenFlags::None);
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType)
 {
-    return Add(typeID, start, end, color, dataType, TokenAlignament::None, false);
+    return Add(typeID, start, end, color, dataType, TokenAlignament::None, TokenFlags::None);
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align)
 {
-    return Add(typeID, start, end, color, TokenDataType::None, align, false);
+    return Add(typeID, start, end, color, TokenDataType::None, align, TokenFlags::None);
 }
 Token TokensList::Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align)
 {
-    return Add(typeID, start, end, color, dataType, align, false);
+    return Add(typeID, start, end, color, dataType, align, TokenFlags::None);
 }
 Token TokensList::Add(
-      uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, bool disableSimilartySearch)
+      uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, TokenFlags flags)
 {
     uint32 itemsCount = static_cast<uint32>(INSTANCE->tokens.size());
     uint32 len        = INSTANCE->GetUnicodeTextLen();
@@ -261,7 +261,7 @@ Token TokensList::Add(
     cToken.align     = align;
     cToken.dataType  = dataType;
 
-    if (disableSimilartySearch)
+    if ((flags & TokenFlags::DisableSimilaritySearch) != TokenFlags::None)
         cToken.SetDisableSimilartyHighlightFlag();
 
     this->lastTokenID = typeID;

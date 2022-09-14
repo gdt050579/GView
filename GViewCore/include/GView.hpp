@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.209.0"
+#define GVIEW_VERSION "0.211.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -869,6 +869,12 @@ namespace View
             Datatype,
             Error,
         };
+        enum class TokenFlags : uint8
+        {
+            None                    = 0,
+            DisableSimilaritySearch = 0x01,
+            UnSizeable              = 0x02,
+        };
         enum class BlockAlignament : uint8
         {
             ParentBlock,
@@ -988,7 +994,7 @@ namespace View
                   TokenColor color,
                   TokenDataType dataType,
                   TokenAlignament align,
-                  bool disableSimilartySearch);
+                  TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
@@ -1195,3 +1201,4 @@ ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::BlockFlags, AppCUI::uint16);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenFlags, AppCUI::uint8);
