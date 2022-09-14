@@ -479,33 +479,7 @@ bool Instance::WriteStructureToScreen(
             dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
     }
 
-    if (selection.HasAnySelection())
-    {
-        const uint64 selectionStart = selection.GetSelectionStart(0);
-        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
-
-        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
-        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
-
-        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
-        {
-            uint32 startingIndex = selectionStart % Layout.textSize;
-            if (selectStartLine < lineToDrawTo)
-                startingIndex = 0;
-            uint32 endIndex = selectionEnd % Layout.textSize + 1;
-            if (lineToDrawTo < selectionEndLine)
-                endIndex = static_cast<uint32>(buffer_size - Layout.startingTextLineOffset);
-            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
-            dli.chText = dli.chNameAndSize + startingIndex;
-            while (startingIndex < endIndex)
-            {
-                dli.chText->Color = Cfg.Selection.Editor;
-                dli.chText++;
-                startingIndex++;
-            }
-        }
-    }
+    HighlightSelectionText(dli, buffer_size - Layout.startingTextLineOffset);
 
     auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
 
@@ -550,6 +524,37 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
     }
 }
 
+void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
+{
+    if (selection.HasAnySelection())
+    {
+        const uint64 selectionStart = selection.GetSelectionStart(0);
+        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
+
+        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
+        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
+
+        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
+        {
+            uint32 startingIndex = selectionStart % Layout.textSize;
+            if (selectStartLine < lineToDrawTo)
+                startingIndex = 0;
+            uint32 endIndex = selectionEnd % Layout.textSize + 1;
+            if (lineToDrawTo < selectionEndLine)
+                endIndex = static_cast<uint32>(maxLineLength);
+            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
+            dli.chText = dli.chNameAndSize + startingIndex;
+            while (startingIndex < endIndex)
+            {
+                dli.chText->Color = Cfg.Selection.Editor;
+                dli.chText++;
+                startingIndex++;
+            }
+        }
+    }
+}
+
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
     uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
@@ -583,33 +588,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    if (selection.HasAnySelection())
-    {
-        const uint64 selectionStart = selection.GetSelectionStart(0);
-        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
-
-        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
-        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
-
-        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
-        {
-            uint32 startingIndex = selectionStart % Layout.textSize;
-            if (selectStartLine < lineToDrawTo)
-                startingIndex = 0;
-            uint32 endIndex = selectionEnd % Layout.textSize + 1;
-            if (lineToDrawTo < selectionEndLine)
-                endIndex = static_cast<uint32>(buf.GetLength());
-            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
-            dli.chText = dli.chNameAndSize + startingIndex;
-            while (startingIndex < endIndex)
-            {
-                dli.chText->Color = Cfg.Selection.Editor;
-                dli.chText++;
-                startingIndex++;
-            }
-        }
-    }
+    HighlightSelectionText(dli, buf.GetLength());
 
     const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
     if (cursorLine == dli.screenLineToDraw)

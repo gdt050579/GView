@@ -225,6 +225,8 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
+            void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
+
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
             void MoveTo(uint64 offset, bool select);
