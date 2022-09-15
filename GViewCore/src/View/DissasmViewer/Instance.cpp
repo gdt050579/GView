@@ -155,7 +155,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     {
         auto& zones       = settings->parseZones;
         uint32 zonesCount = (uint32) settings->parseZones.size();
-        // TODO: optimization -> instead of search every time keep the last zone index inside memmory and search from there
+        // TODO: optimization -> instead of search every time keep the last zone index inside memory and search from there
         for (uint32 i = 0; i < zonesCount; i++)
         {
             if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
@@ -180,11 +180,14 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                 dli.textLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
                 if (i + 1 >= zonesCount)
                 {
+                    if (!config.ShowFileContent)
+                        return true;
                     return WriteTextLineToChars(dli);
-                    break;
                 }
                 if (currentLineIndex < zones[i + 1]->startLineIndex)
                 {
+                    if (!config.ShowFileContent)
+                        return true;
                     return WriteTextLineToChars(dli);
                 }
             }
@@ -192,6 +195,16 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     }
     else
     {
+        if (!config.ShowFileContent)
+        {
+            dli.renderer.WriteSingleLineText(
+                  Layout.startingTextLineOffset,
+                  1,
+                  "No structures found an File content is hidden. No content to show.",
+                  config.Colors.Normal);
+            return true;
+        }
+
         dli.textLineToDraw = currentLineIndex;
         return WriteTextLineToChars(dli);
     }
@@ -537,6 +550,60 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
     }
 }
 
+void Instance::RecomputeDissasmZones()
+{
+    // from dli, may need to be recomputed
+    const uint32 textSize = Layout.textSize;
+
+    uint32 lastEndMinusLastOffset = 0;
+    uint32 lastZoneEndingIndex    = 0;
+    uint16 currentIndex           = 0;
+
+    settings->parseZones.clear();
+
+    for (const auto& mapping : this->settings->dissasmTypeMapped)
+    {
+        std::unique_ptr<DissasmParseStructureZone> parseZone = std::make_unique<DissasmParseStructureZone>();
+        parseZone->startLineIndex                            = (uint32) (mapping.first / textSize);
+        if (parseZone->startLineIndex < lastZoneEndingIndex || !config.ShowFileContent)
+            parseZone->startLineIndex = lastZoneEndingIndex;
+        parseZone->endingLineIndex = parseZone->startLineIndex + 1;
+        parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+        parseZone->extendedSize    = mapping.second.GetExpandedSize() - 1;
+        parseZone->textLinesOffset = parseZone->startLineIndex - lastEndMinusLastOffset;
+        parseZone->dissasmType     = mapping.second;
+        parseZone->levels.push_back(0);
+        parseZone->types.emplace_back(mapping.second);
+        parseZone->structureIndex       = 0;
+        parseZone->textFileOffset       = mapping.first;
+        parseZone->initalTextFileOffset = mapping.first;
+        parseZone->zoneID               = currentIndex++;
+        parseZone->zoneType             = DissasmParseZoneType::StructureParseZone;
+
+        if (!parseZone->isCollapsed)
+            parseZone->endingLineIndex += parseZone->extendedSize;
+
+        lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
+        lastZoneEndingIndex    = parseZone->endingLineIndex;
+        settings->parseZones.push_back(std::move(parseZone));
+    }
+
+    // TODO: fix disassemblyZones to be where they belong not really after structures
+
+    // for (const auto& dissasmZone : settings->disassemblyZones)
+    //{
+    //     std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
+    //     codeZone->zoneDetails                     = dissasmZone.second;
+    //     codeZone->startLineIndex                  = (uint32) (dissasmZone.first / textSize);
+    //     if (codeZone->startLineIndex < lastZoneEndingIndex)
+    //         codeZone->startLineIndex = lastZoneEndingIndex;
+    //     codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+    //     codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
+    //     codeZone->zoneID          = currentIndex++;
+    //     codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
+    // }
+}
+
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 {
     uint64 textFileOffset = ((uint64) this->Layout.textSize) * dli.textLineToDraw;
@@ -642,60 +709,12 @@ void Instance::OnAfterResize(int newWidth, int newHeight)
 
 void Instance::OnStart()
 {
-    this->RecomputeDissasmLayout();
-
-    // from dli, may need to be recomputed
-    const uint32 textSize = Layout.textSize;
-
-    uint32 lastEndMinusLastOffset = 0;
-    uint32 lastZoneEndingIndex    = 0;
-    uint16 currentIndex           = 0;
-
-    for (const auto& mapping : this->settings->dissasmTypeMapped)
-    {
-        std::unique_ptr<DissasmParseStructureZone> parseZone = std::make_unique<DissasmParseStructureZone>();
-        parseZone->startLineIndex                            = (uint32) (mapping.first / textSize);
-        if (parseZone->startLineIndex < lastZoneEndingIndex)
-            parseZone->startLineIndex = lastZoneEndingIndex;
-        parseZone->endingLineIndex = parseZone->startLineIndex + 1;
-        parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
-        parseZone->extendedSize    = mapping.second.GetExpandedSize() - 1;
-        parseZone->textLinesOffset = parseZone->startLineIndex - lastEndMinusLastOffset;
-        parseZone->dissasmType     = mapping.second;
-        parseZone->levels.push_back(0);
-        parseZone->types.emplace_back(mapping.second);
-        parseZone->structureIndex       = 0;
-        parseZone->textFileOffset       = mapping.first;
-        parseZone->initalTextFileOffset = mapping.first;
-        parseZone->zoneID               = currentIndex++;
-        parseZone->zoneType             = DissasmParseZoneType::StructureParseZone;
-
-        if (!parseZone->isCollapsed)
-            parseZone->endingLineIndex += parseZone->extendedSize;
-
-        lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
-        lastZoneEndingIndex    = parseZone->endingLineIndex;
-        settings->parseZones.push_back(std::move(parseZone));
-    }
-
     // TODO: rethink
     if (settings->defaultLanguage == DisassemblyLanguage::Default)
         settings->defaultLanguage = DisassemblyLanguage::x86;
 
-    // TODO: fix disassemblyZones to be where they belong not really after structuress
-
-    for (const auto& dissasmZone : settings->disassemblyZones)
-    {
-        std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
-        codeZone->zoneDetails                     = dissasmZone.second;
-        codeZone->startLineIndex                  = (uint32) (dissasmZone.first / textSize);
-        if (codeZone->startLineIndex < lastZoneEndingIndex)
-            codeZone->startLineIndex = lastZoneEndingIndex;
-        codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-        codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
-        codeZone->zoneID          = currentIndex++;
-        codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
-    }
+    this->RecomputeDissasmLayout();
+    this->RecomputeDissasmZones();
 }
 
 void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()

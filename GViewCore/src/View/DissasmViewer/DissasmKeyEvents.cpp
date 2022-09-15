@@ -240,6 +240,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case COMMAND_ADD_SHOW_FILE_CONTENT:
             config.ShowFileContent = !config.ShowFileContent;
+            this->RecomputeDissasmZones();
             break;
         default:
             return false;

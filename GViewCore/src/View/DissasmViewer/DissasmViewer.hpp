@@ -229,6 +229,7 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
             void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
+            void RecomputeDissasmZones();
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
