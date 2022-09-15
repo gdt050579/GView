@@ -739,6 +739,8 @@ bool MachOFile::SetCodeSignature()
                     codeSignature->signature.offset = csOffset + sizeof(gblob);
                     codeSignature->signature.size   = gblob.length - sizeof(gblob);
 
+                    CHECKBK(codeSignature->signature.size > 0, "");
+
                     const auto blobBuffer = obj->GetData().CopyToBuffer(
                           codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
                     codeSignature->signature.errorHumanReadable =
