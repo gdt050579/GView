@@ -7,17 +7,17 @@ using namespace AppCUI::Input;
 
 Settings::Settings()
 {
-    this->data                     = new SettingsData();
+    this->data = new SettingsData();
 }
 
-void Settings::SetDefaultDisassemblyLanguage(DissasemblyLanguage lang)
+void Settings::SetDefaultDisassemblyLanguage(DisassemblyLanguage lang)
 {
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
-void Settings::AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang)
+void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang)
 {
-    INTERNAL_SETTINGS->disassemblyZones[start] = { size, lang };
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneSize, zoneDissasmStartPoint, lang };
 }
 
 void Settings::AddMemoryMapping(uint64 address, std::string_view name)
@@ -62,6 +62,6 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, TypeI
 
 SettingsData::SettingsData()
 {
-    defaultLanguage = DissasemblyLanguage::Default;
+    defaultLanguage = DisassemblyLanguage::Default;
     availableID     = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
 }

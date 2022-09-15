@@ -27,7 +27,7 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
         config.Keys.AddNewType = std::get<Key>(value);
         return true;
     case PROP_ID_DISSASM_LANGUAGE:
-        settings->defaultLanguage = static_cast<DissasemblyLanguage>(std::get<uint64>(value));
+        settings->defaultLanguage = static_cast<DisassemblyLanguage>(std::get<uint64>(value));
         return true;
     }
     return false;

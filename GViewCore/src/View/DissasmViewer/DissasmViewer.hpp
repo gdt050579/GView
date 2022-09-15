@@ -41,7 +41,8 @@ namespace View
         struct DissasemblyZone
         {
             uint64 size;
-            DissasemblyLanguage language;
+            uint64 entryPoint;
+            DisassemblyLanguage language;
         };
 
         enum class InternalDissasmType : uint8
@@ -111,7 +112,7 @@ namespace View
 
         struct SettingsData
         {
-            DissasemblyLanguage defaultLanguage;
+            DisassemblyLanguage defaultLanguage;
             std::map<uint64, DissasemblyZone> disassemblyZones;
             std::deque<char*> buffersToDelete;
             uint32 availableID;

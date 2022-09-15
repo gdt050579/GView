@@ -679,8 +679,8 @@ void Instance::OnStart()
     }
 
     // TODO: rethink
-    if (settings->defaultLanguage == DissasemblyLanguage::Default)
-        settings->defaultLanguage = DissasemblyLanguage::x86;
+    if (settings->defaultLanguage == DisassemblyLanguage::Default)
+        settings->defaultLanguage = DisassemblyLanguage::x86;
 
     // TODO: fix disassemblyZones to be where they belong not really after structuress
 
