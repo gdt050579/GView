@@ -44,26 +44,26 @@ void Instance::MoveTo(uint64 offset, bool select)
     if (offset > (obj->GetData().GetSize() - 1))
         offset = obj->GetData().GetSize() - 1;
 
-    if (offset == this->Cursor.currentPos)
-    {
-        this->Cursor.startView = offset;
-        return;
-    }
+    // if (offset == this->Cursor.currentPos)
+    //{
+    //     this->Cursor.startView = offset;
+    //     return;
+    // }
 
     auto h    = this->Layout.visibleRows;
     auto sz   = this->Layout.textSize * h;
     auto sidx = -1;
-    /*if (select)
-        sidx = this->selection.BeginSelection(this->Cursor.currentPos);*/
+    if (select)
+        sidx = this->selection.BeginSelection(this->Cursor.currentPos);
     if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
     {
         this->Cursor.currentPos = offset;
-        // if ((select) && (sidx >= 0))
-        //{
-        //    this->selection.UpdateSelection(sidx, offset);
-        //    UpdateCurrentSelection();
-        //    return; // nothing to do ... already in visual space
-        //}
+        if ((select) && (sidx >= 0))
+        {
+            this->selection.UpdateSelection(sidx, offset);
+            //UpdateCurrentSelection();
+            return; // nothing to do ... already in visual space
+        }
     }
 
     if (offset < this->Cursor.startView)
@@ -77,11 +77,11 @@ void Instance::MoveTo(uint64 offset, bool select)
             this->Cursor.startView = 0;
     }
     this->Cursor.currentPos = offset;
-    /* if ((select) && (sidx >= 0))
-     {
-         this->selection.UpdateSelection(sidx, offset);
-         UpdateCurrentSelection();
-     }*/
+    if ((select) && (sidx >= 0))
+    {
+        this->selection.UpdateSelection(sidx, offset);
+        //UpdateCurrentSelection();
+    }
 }
 
 void Instance::MoveScrollTo(uint64 offset)
@@ -109,9 +109,10 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    if (mpInfo.location == MouseLocation::OnView)
     {
-        MoveTo(mpInfo.bufferOffset, false);
+        if (mpInfo.bufferOffset != Cursor.currentPos)
+            MoveTo(mpInfo.bufferOffset, false);
     }
     else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty())
     {
@@ -122,6 +123,19 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
                 break;
             }
     }
+}
+
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+{
+    MousePositionInfo mpInfo;
+    AnalyzeMousePosition(x, y, mpInfo);
+    // make sure that consecutive click on the same location will not scroll the view to that location
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    {
+        MoveTo(mpInfo.bufferOffset, true);
+        return true;
+    }
+    return false;
 }
 
 bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
