@@ -170,7 +170,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 
                 // TODO:
                 case DissasmParseZoneType::DissasmCodeParseZone:
-                    return DrawStructureZone(dli, (DissasmParseStructureZone*) zones[i].get());
+                    return DrawDissasmZone(dli, (DissasmCodeZone*) zones[i].get());
                 default:
                     return false;
                 }
@@ -351,6 +351,13 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     // assert(structureZone->levels.back() == 0);
     // assert(structureZone->textFileOffset == structureZone->initalTextFileOffset);
 
+    return true;
+}
+
+bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone)
+{
+    dli.renderer.WriteSingleLineText(
+          Layout.startingTextLineOffset, structureZone->startLineIndex + 1, "Dissasm zone", config.Colors.Normal);
     return true;
 }
 
@@ -590,18 +597,30 @@ void Instance::RecomputeDissasmZones()
 
     // TODO: fix disassemblyZones to be where they belong not really after structures
 
-    // for (const auto& dissasmZone : settings->disassemblyZones)
-    //{
-    //     std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
-    //     codeZone->zoneDetails                     = dissasmZone.second;
-    //     codeZone->startLineIndex                  = (uint32) (dissasmZone.first / textSize);
-    //     if (codeZone->startLineIndex < lastZoneEndingIndex)
-    //         codeZone->startLineIndex = lastZoneEndingIndex;
-    //     codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-    //     codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
-    //     codeZone->zoneID          = currentIndex++;
-    //     codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
-    // }
+    for (const auto& dissasmZone : settings->disassemblyZones)
+    {
+        std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
+        codeZone->zoneDetails                     = dissasmZone.second;
+        codeZone->startLineIndex                  = (uint32) (dissasmZone.first / textSize);
+        if (codeZone->startLineIndex < lastZoneEndingIndex || !config.ShowFileContent)
+            codeZone->startLineIndex = lastZoneEndingIndex;
+        codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+        codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
+        codeZone->zoneID          = currentIndex++;
+        codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
+        settings->parseZones.push_back(std::move(codeZone));
+    }
+}
+
+uint64 Instance::GetZonesMaxSize() const
+{
+    if (settings->parseZones.empty())
+        return 0;
+    uint64 linesOccupiedByZones = 0;
+
+    for (const auto& zone : settings->parseZones)
+        linesOccupiedByZones += zone->endingLineIndex - zone->startLineIndex;
+    return linesOccupiedByZones * Layout.textSize;
 }
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)

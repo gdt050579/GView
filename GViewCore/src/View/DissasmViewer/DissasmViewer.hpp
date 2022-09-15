@@ -220,6 +220,7 @@ namespace View
             bool WriteStructureToScreen(
                   DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
+            bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
@@ -230,6 +231,7 @@ namespace View
 
             void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
             void RecomputeDissasmZones();
+            uint64 GetZonesMaxSize() const;
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 

@@ -21,15 +21,21 @@ void Config::Initialize()
     this->Colors.StructureColor = ColorPair{ Color::Magenta, Color::DarkBlue };
     this->Colors.DataTypeColor  = ColorPair{ Color::Green, Color::DarkBlue };
 
+    bool foundSettings = false;
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
     {
         auto sect                     = ini->GetSection("DissasmView");
-        this->Keys.AddNewType         = ini->GetValue("AddNewType").ToKey(Key::F6);
-        this->Keys.ShowFileContentKey = ini->GetValue("ShowFileContentKey").ToKey(Key::F9);
-        this->ShowFileContent         = ini->GetValue("ShowFileContent").ToBool(true);
+        if (sect.Exists())
+        {
+            this->Keys.AddNewType         = sect.GetValue("AddNewType").ToKey(Key::F6);
+            this->Keys.ShowFileContentKey = sect.GetValue("ShowFileContentKey").ToKey(Key::F9);
+            this->ShowFileContent         = sect.GetValue("ShowFileContent").ToBool(true);
+            foundSettings                 = true;
+        }
+        
     }
-    else
+    if (!foundSettings)
     {
         this->Keys.AddNewType         = Key::F6;
         this->Keys.ShowFileContentKey = Key::F9;

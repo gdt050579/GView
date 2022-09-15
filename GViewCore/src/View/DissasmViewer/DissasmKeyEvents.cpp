@@ -42,10 +42,11 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
 
 void Instance::MoveTo(uint64 offset, bool select)
 {
-    if (this->obj->GetData().GetSize() == 0)
+    const uint64 dataSize = config.ShowFileContent ? obj->GetData().GetSize() : GetZonesMaxSize();
+    if (dataSize == 0)
         return;
-    if (offset > (obj->GetData().GetSize() - 1))
-        offset = obj->GetData().GetSize() - 1;
+    if (offset > (dataSize - 1))
+        offset = dataSize - 1;
 
     // if (offset == this->Cursor.currentPos)
     //{
