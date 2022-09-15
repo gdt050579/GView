@@ -38,8 +38,8 @@ void Information::UpdateArchive()
     general->AddItem(
           { "Magic", ls.Format("%.*s", sizeof(py->archive.info.magic) / sizeof(py->archive.info.magic[0]), py->archive.info.magic) });
     AddDecAndHexElement("Length Of Package", format, py->archive.info.lengthofPackage);
-    AddDecAndHexElement("Toc", format, py->archive.info.toc);
-    AddDecAndHexElement("Toc Len", format, py->archive.info.tocLen);
+    AddDecAndHexElement("Toc", format, py->archive.info.tableOfContentPosition);
+    AddDecAndHexElement("Toc Len", format, py->archive.info.tableOfContentSize);
 
     uint32 major;
     uint32 minor;

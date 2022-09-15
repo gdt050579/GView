@@ -13,6 +13,7 @@ bool PYEXTRACTORFile::Update()
     CHECK(SetCookiePosition(), false, "");
     CHECK(SetInstallerVersion(), false, "");
     CHECK(SetInfo(), false, "");
+    CHECK(SetTableOfContentEntries(), false, "");
 
     return true;
 }
@@ -66,6 +67,14 @@ bool PYEXTRACTORFile::SetInstallerVersion()
     return true;
 }
 
+inline void Swap(Archive& archive)
+{
+    archive.info.lengthofPackage        = AppCUI::Endian::BigToNative(archive.info.lengthofPackage);
+    archive.info.tableOfContentPosition = AppCUI::Endian::BigToNative(archive.info.tableOfContentPosition);
+    archive.info.tableOfContentSize     = AppCUI::Endian::BigToNative(archive.info.tableOfContentSize);
+    archive.info.pyver                  = AppCUI::Endian::BigToNative(archive.info.pyver);
+}
+
 bool PYEXTRACTORFile::SetInfo()
 {
     const uint64 size = (archive.version == PyInstallerVersion::V20 ? PYINSTALLER20_COOKIE_SIZE : PYINSTALLER21_COOKIE_SIZE);
@@ -73,11 +82,40 @@ bool PYEXTRACTORFile::SetInfo()
     const auto bufferView = obj->GetData().CopyToBuffer(archive.cookiePosition, static_cast<uint32>(size));
     CHECK(bufferView.IsValid(), false, "");
     memcpy(&archive.info, bufferView.GetData(), size);
+    Swap(archive);
 
-    archive.info.lengthofPackage = AppCUI::Endian::BigToNative(archive.info.lengthofPackage);
-    archive.info.toc             = AppCUI::Endian::BigToNative(archive.info.toc);
-    archive.info.tocLen          = AppCUI::Endian::BigToNative(archive.info.tocLen);
-    archive.info.pyver           = AppCUI::Endian::BigToNative(archive.info.pyver);
+    return true;
+}
+
+inline void Swap(TOCEntry& entry)
+{
+    entry.entrySize        = AppCUI::Endian::BigToNative(entry.entrySize);
+    entry.entryPos         = AppCUI::Endian::BigToNative(entry.entryPos);
+    entry.cmprsdDataSize   = AppCUI::Endian::BigToNative(entry.cmprsdDataSize);
+    entry.uncmprsdDataSize = AppCUI::Endian::BigToNative(entry.uncmprsdDataSize);
+    entry.cmprsFlag        = AppCUI::Endian::BigToNative(entry.cmprsFlag);
+    entry.typeCmprsData    = AppCUI::Endian::BigToNative(entry.typeCmprsData);
+}
+
+bool PYEXTRACTORFile::SetTableOfContentEntries()
+{
+    constexpr auto sizeEntryWithoutString = offsetof(TOCEntry, name);
+    uint64 i                              = archive.info.tableOfContentPosition;
+    const auto maxOffset                  = archive.info.tableOfContentPosition + archive.info.tableOfContentSize;
+    while (i < maxOffset)
+    {
+        const auto bufferView = obj->GetData().CopyToBuffer(i, sizeEntryWithoutString);
+        CHECK(bufferView.IsValid(), false, "");
+
+        auto& entry = tocEntries.emplace_back();
+        memcpy(&entry, bufferView.GetData(), sizeEntryWithoutString);
+        Swap(entry);
+
+        const auto nameLen = entry.entrySize - sizeEntryWithoutString;
+        entry.name         = obj->GetData().CopyToBuffer(i + sizeEntryWithoutString, static_cast<uint32>(nameLen));
+
+        i += entry.entrySize;
+    }
 
     return true;
 }

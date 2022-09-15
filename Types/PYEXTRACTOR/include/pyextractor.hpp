@@ -37,6 +37,19 @@ constexpr std::string_view GetNameForPyInstallerVersion(PyInstallerVersion v)
     }
 }
 
+struct TOCEntry
+{
+#pragma pack(push, 1)
+    uint32 entrySize{ 0 };
+    uint32 entryPos{ 0 };
+    uint32 cmprsdDataSize{ 0 };
+    uint32 uncmprsdDataSize{ 0 };
+    uint8 cmprsFlag{ 0 };
+    uint8 typeCmprsData{ 0 };
+#pragma pack(pop)
+    Buffer name;
+};
+
 struct Archive
 {
     uint64 cookiePosition{ 0 };
@@ -47,8 +60,8 @@ struct Archive
     {
         char magic[8]{ 0 };
         uint32 lengthofPackage{ 0 };
-        uint32 toc{ 0 };
-        uint32 tocLen{ 0 };
+        uint32 tableOfContentPosition{ 0 };
+        uint32 tableOfContentSize{ 0 };
         uint32 pyver{ 0 };
         char pylibname[64]{ 0 };
     } info;
@@ -68,6 +81,7 @@ class PYEXTRACTORFile : public TypeInterface
   public:
     uint64 panelsMask{ 0 };
     Archive archive;
+    std::vector<TOCEntry> tocEntries;
 
   public:
     PYEXTRACTORFile();
@@ -85,6 +99,7 @@ class PYEXTRACTORFile : public TypeInterface
     bool SetCookiePosition();
     bool SetInstallerVersion();
     bool SetInfo();
+    bool SetTableOfContentEntries();
 };
 
 namespace Panels
