@@ -8,13 +8,14 @@ using namespace AppCUI::Input;
 constexpr int ENTRY_GOTO       = 1;
 constexpr int ENTRY_SELECT     = 2;
 constexpr int ENTRY_CHANGEBASE = 3;
+constexpr int ENTRY_OPEN       = 4;
 
 TOCEntries::TOCEntries(Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> _py, Reference<GView::View::WindowInterface> _win)
     : TabPage("T&OCEntries")
 {
     py   = _py;
     win  = _win;
-    Base = 16;
+    base = 16;
 
     list = Factory::ListView::Create(
           this,
@@ -34,13 +35,13 @@ TOCEntries::TOCEntries(Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> _py,
 
 std::string_view TOCEntries::GetValue(NumericFormatter& n, uint32 value)
 {
-    if (Base == 10)
+    if (base == 10)
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
     else
         return n.ToString(value, { NumericFormatFlags::HexPrefix, 16 });
 }
 
-void TOCEntries::GoToSelectedSection()
+void TOCEntries::GoToSelectedEntry()
 {
     auto entry = list->GetCurrentItem().GetData<PYEXTRACTOR::TOCEntry>();
     if (entry.IsValid())
@@ -49,13 +50,28 @@ void TOCEntries::GoToSelectedSection()
     }
 }
 
-void TOCEntries::SelectCurrentSection()
+void TOCEntries::SelectCurrentEntry()
 {
     auto entry = list->GetCurrentItem().GetData<PYEXTRACTOR::TOCEntry>();
     if (entry.IsValid())
     {
         win->GetCurrentView()->Select(entry->entryPos, entry->entrySize);
     }
+}
+
+void TOCEntries::OpenCurrentEntry()
+{
+    auto entry       = list->GetCurrentItem().GetData<PYEXTRACTOR::TOCEntry>();
+    const auto& pos  = entry->entryPos;
+    const auto& size = entry->cmprsdDataSize;
+
+    const auto bufferCompressed = py->obj->GetData().CopyToBuffer(pos, size);
+    CHECKRET(bufferCompressed.IsValid(), "");
+
+    Buffer bufferDecompressed{};
+    CHECKRET(ZLIB::Decompress(bufferCompressed, bufferCompressed.GetLength(), bufferDecompressed, entry->uncmprsdDataSize), "");
+
+    GView::App::OpenBuffer(BufferView{ bufferDecompressed }, entry->name);
 }
 
 void TOCEntries::Update()
@@ -84,10 +100,16 @@ bool TOCEntries::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(Key::Enter, "GoTo", ENTRY_GOTO);
     commandBar.SetCommand(Key::F9, "Select", ENTRY_SELECT);
-    if (this->Base == 10)
+    if (base == 10)
+    {
         commandBar.SetCommand(Key::F2, "Dec", ENTRY_CHANGEBASE);
+    }
     else
+    {
         commandBar.SetCommand(Key::F2, "Hex", ENTRY_CHANGEBASE);
+    }
+    commandBar.SetCommand(Key::Ctrl | Key::O, "Open", ENTRY_OPEN);
+
     return true;
 }
 
@@ -97,7 +119,7 @@ bool TOCEntries::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
         return true;
     if (evnt == Event::ListViewItemPressed)
     {
-        GoToSelectedSection();
+        GoToSelectedEntry();
         return true;
     }
     if (evnt == Event::Command)
@@ -105,14 +127,16 @@ bool TOCEntries::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
         switch (controlID)
         {
         case ENTRY_GOTO:
-            GoToSelectedSection();
+            GoToSelectedEntry();
             return true;
         case ENTRY_CHANGEBASE:
-            this->Base = 26 - this->Base;
+            base = 26 - base;
             Update();
             return true;
         case ENTRY_SELECT:
-            SelectCurrentSection();
+            SelectCurrentEntry();
+        case ENTRY_OPEN:
+            OpenCurrentEntry();
             return true;
         }
     }

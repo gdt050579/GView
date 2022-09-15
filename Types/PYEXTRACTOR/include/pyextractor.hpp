@@ -156,11 +156,12 @@ namespace Panels
         Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> py;
         Reference<GView::View::WindowInterface> win;
         Reference<AppCUI::Controls::ListView> list;
-        int Base;
+        int base;
 
         std::string_view GetValue(NumericFormatter& n, uint32 value);
-        void GoToSelectedSection();
-        void SelectCurrentSection();
+        void GoToSelectedEntry();
+        void SelectCurrentEntry();
+        void OpenCurrentEntry();
 
       public:
         TOCEntries(Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> py, Reference<GView::View::WindowInterface> win);
