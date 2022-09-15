@@ -132,4 +132,70 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
 
     return true;
 }
+
+bool PYEXTRACTORFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+{
+    CHECK(tocEntries.empty() == false, false, "");
+    currentItemIndex = 0;
+    return true;
+}
+
+bool PYEXTRACTORFile::PopulateItem(TreeViewItem item)
+{
+    const static auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, '.' };
+    const static auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+    NumericFormatter n;
+    LocalString<128> tmp;
+
+    auto& entry = tocEntries.at(currentItemIndex);
+    item.SetText(std::string_view{ reinterpret_cast<char*>(entry.name.GetData()), entry.name.GetLength() });
+    item.SetData<PYEXTRACTOR::TOCEntry>(&tocEntries.at(currentItemIndex));
+
+    item.SetText(1, n.ToString((uint64) entry.entrySize, dec));
+    item.SetText(2, n.ToString((uint64) entry.entryPos, dec));
+    item.SetText(3, n.ToString((uint64) entry.cmprsdDataSize, dec));
+    item.SetText(4, n.ToString((uint64) entry.uncmprsdDataSize, dec));
+    item.SetText(5, n.ToString((uint64) entry.cmprsFlag, dec));
+    item.SetText(6, n.ToString((uint64) entry.typeCmprsData, dec));
+
+    item.SetPriority(0);
+    item.SetExpandable(false);
+
+    currentItemIndex++;
+
+    return currentItemIndex != tocEntries.size();
+}
+
+/*
+    const auto& pos  = entry->entryPos;
+    const auto& size = entry->cmprsdDataSize;
+
+    const auto bufferCompressed = py->obj->GetData().CopyToBuffer(pos, size);
+    CHECKRET(bufferCompressed.IsValid(), "");
+
+    Buffer bufferDecompressed{};
+    CHECKRET(ZLIB::Decompress(bufferCompressed, bufferCompressed.GetLength(), bufferDecompressed, entry->uncmprsdDataSize), "");
+
+    GView::App::OpenBuffer(BufferView{ bufferDecompressed }, entry->name);
+
+*/
+
+void PYEXTRACTORFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
+{
+    CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
+
+    auto data         = item.GetData<TOCEntry>();
+    const auto offset = (uint64) data->entryPos;
+    const auto length = (uint32) data->cmprsdDataSize;
+    const auto name   = std::string_view{ reinterpret_cast<char*>(data->name.GetData()), data->name.GetLength() };
+
+    std::string_view extension{ "" };
+    if (const auto pos = name.find_last_of('.'); pos != std::string::npos)
+    {
+        extension = std::string_view{ reinterpret_cast<char*>(data->name.GetData()) + pos, data->name.GetLength() - pos };
+    }
+
+    const auto buffer = obj->GetData().CopyToBuffer(offset, length);
+    GView::App::OpenBuffer(buffer, name, extension);
+}
 } // namespace GView::Type::PYEXTRACTOR

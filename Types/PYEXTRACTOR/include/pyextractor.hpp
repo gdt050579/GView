@@ -79,12 +79,16 @@ namespace Panels
     };
 };
 
-class PYEXTRACTORFile : public TypeInterface
+class PYEXTRACTORFile : public TypeInterface,
+                        public View::ContainerViewer::EnumerateInterface,
+                        public View::ContainerViewer::OpenItemInterface
 {
   public:
     uint64 panelsMask{ 0 };
     Archive archive;
     std::vector<TOCEntry> tocEntries;
+
+    uint32 currentItemIndex{ 0 };
 
   public:
     PYEXTRACTORFile();
@@ -97,6 +101,10 @@ class PYEXTRACTORFile : public TypeInterface
     {
         return "PYEXTRACTOR";
     }
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
   private:
     bool SetCookiePosition();

@@ -9,6 +9,23 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+constexpr string_view ISO_ICON = "................"  // 1
+                                 "................"  // 2
+                                 "................"  // 3
+                                 "................"  // 4
+                                 "WW.WWWWW.WWWWWWW"  // 5
+                                 "WW.WWWWW.WWWWWWW"  // 6
+                                 "WW.WW....WW...WW"  // 7
+                                 "WW.WWWWW.WW...WW"  // 8
+                                 "WW....WW.WW...WW"  // 9
+                                 "WW.WWWWW.WWWWWWW"  // 10
+                                 "WW.WWWWW.WWWWWWW"  // 11
+                                 "................"  // 12
+                                 "................"  // 13
+                                 "................"  // 14
+                                 "................"  // 15
+                                 "................"; // 16
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
@@ -33,12 +50,34 @@ extern "C"
         win->CreateViewer("BufferView", settings);
     }
 
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<PYEXTRACTOR::PYEXTRACTORFile> py)
+    {
+        ContainerViewer::Settings settings;
+
+        settings.SetIcon(ISO_ICON);
+        settings.SetColumns({
+              "n:&Name,a:l,w:80",
+              "n:&Size,a:r,w:20",
+              "n:&Created,a:r,w:25",
+              "n:&OffsetInFile,a:r,w:20",
+              "n:&Flags,a:r,w:25",
+        });
+
+        settings.SetEnumerateCallback(
+              win->GetObject()->GetContentType<PYEXTRACTOR::PYEXTRACTORFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(
+              win->GetObject()->GetContentType<PYEXTRACTOR::PYEXTRACTORFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+        win->CreateViewer("ContainerView", settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto py = win->GetObject()->GetContentType<PYEXTRACTOR::PYEXTRACTORFile>();
         py->Update();
 
         CreateBufferView(win, py);
+        CreateContainerView(win, py);
 
         if (py->HasPanel(PYEXTRACTOR::Panels::IDs::Information))
         {
