@@ -31,9 +31,11 @@ namespace View
             struct
             {
                 AppCUI::Input::Key AddNewType;
+                AppCUI::Input::Key ShowFileContentKey;
             } Keys;
             bool Loaded;
 
+            bool ShowFileContent;
             static void Update(IniSection sect);
             void Initialize();
         };

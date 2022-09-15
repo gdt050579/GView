@@ -1,5 +1,8 @@
 #include "DissasmViewer.hpp"
 
+constexpr uint32 COMMAND_ADD_NEW_TYPE          = 1;
+constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 2;
+
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -61,7 +64,7 @@ void Instance::MoveTo(uint64 offset, bool select)
         if ((select) && (sidx >= 0))
         {
             this->selection.UpdateSelection(sidx, offset);
-            //UpdateCurrentSelection();
+            // UpdateCurrentSelection();
             return; // nothing to do ... already in visual space
         }
     }
@@ -80,7 +83,7 @@ void Instance::MoveTo(uint64 offset, bool select)
     if ((select) && (sidx >= 0))
     {
         this->selection.UpdateSelection(sidx, offset);
-        //UpdateCurrentSelection();
+        // UpdateCurrentSelection();
     }
 }
 
@@ -219,7 +222,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", 12345);
+    const AppCUI::Utils::ConstString ShowFileContentText = config.ShowFileContent ? "ShowFileContent" : "HideFileContent";
+    commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", COMMAND_ADD_NEW_TYPE);
+    commandBar.SetCommand(config.Keys.ShowFileContentKey, ShowFileContentText, COMMAND_ADD_SHOW_FILE_CONTENT);
 
     return false;
 }
@@ -228,10 +233,16 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::Command)
     {
-        if (ID == 12345)
+        switch (ID)
         {
+        case COMMAND_ADD_NEW_TYPE:
             Dialogs::MessageBox::ShowNotification("Info", "OK!");
             return true;
+        case COMMAND_ADD_SHOW_FILE_CONTENT:
+            config.ShowFileContent = !config.ShowFileContent;
+            break;
+        default:
+            return false;
         }
     }
 

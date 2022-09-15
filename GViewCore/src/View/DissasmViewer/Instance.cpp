@@ -709,8 +709,8 @@ void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
 
 void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
 {
-    int16 sizeToAdjust;
-    sizeToAdjust = zoneToChange->extendedSize;
+    selection.Clear();
+    int16 sizeToAdjust = zoneToChange->extendedSize;
     if (!zoneToChange->isCollapsed)
         sizeToAdjust *= -1;
     zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
