@@ -135,13 +135,13 @@ namespace View
                 bool recomputeOffsets;
 
                 uint32 currentLineFromOffset;
-                uint32 lineToDraw;
-                uint32 actualLineToDraw;
+                uint32 screenLineToDraw;
+                uint32 textLineToDraw;
                 AppCUI::Graphics::Renderer& renderer;
                 bool wasInsideStructure;
                 uint32 lastZoneIndexToReset;
                 DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
-                    : recomputeOffsets(true), currentLineFromOffset(0), lineToDraw(0), renderer(renderer), wasInsideStructure(false)
+                    : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), wasInsideStructure(false)
                 {
                 }
             };
@@ -158,7 +158,7 @@ namespace View
                 uint64 bufferOffset;
             };
 
-            struct
+            struct CursorDissasm
             {
                 uint64 startView, currentPos;
                 uint32 base;
@@ -169,7 +169,7 @@ namespace View
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
 
-            struct
+            struct LayoutDissasm
             {
                 uint32 visibleRows;
                 uint32 totalCharactersPerLine;
@@ -177,6 +177,14 @@ namespace View
                 uint32 startingTextLineOffset;
                 bool structuresInitialCollapsedState;
             } Layout;
+
+            struct
+            {
+                //uint8 buffer[256];
+                uint32 size;
+                uint64 start, end;
+                //bool highlight;
+            } CurrentSelection;
 
             struct ButtonsData
             {
@@ -217,6 +225,8 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
+            void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
+
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
             void MoveTo(uint64 offset, bool select);
@@ -227,7 +237,7 @@ namespace View
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
-            virtual ~Instance();
+            virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
             virtual void OnAfterResize(int newWidth, int newHeight) override;
@@ -244,6 +254,7 @@ namespace View
 
             // Mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
+            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button) override;
             virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
 
             // Events
