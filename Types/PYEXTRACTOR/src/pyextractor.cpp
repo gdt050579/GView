@@ -55,7 +55,7 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        std::initializer_list list{ "hex:'78 01'", "hex:'78 9C'", "hex:'78 DA'" };
+        static const std::initializer_list<std::string> list{ "hex:'78 01'", "hex:'78 9C'", "hex:'78 DA'" };
         sect["Pattern"]  = list;
         sect["Priority"] = 1;
     }
