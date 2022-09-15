@@ -77,25 +77,25 @@ void SymTab::Update()
         std::string _1s;
         std::string _2s;
 
-        if ((nl.n_type & (uint32_t) MAC::N_TYPE::TYPE) == 1)
+        if ((nl.n_type & (uint32) MAC::N_TYPE::TYPE) == 1)
         {
-            _1s = MAC::NTypeNames.at((MAC::N_TYPE)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE));
+            _1s = MAC::NTypeNames.at((MAC::N_TYPE)(nl.n_type & (uint32) MAC::N_TYPE::TYPE));
         }
         else
         {
-            _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE));
+            _1s = MAC::NTypeBitsNames.at((MAC::N_TYPE_BITS)(nl.n_type & (uint32) MAC::N_TYPE::TYPE));
         }
 
-        if (nl.n_type & (uint32_t) MAC::N_TYPE::STAB)
+        if (nl.n_type & (uint32) MAC::N_TYPE::STAB)
         {
             _1s = MAC::NStabTypeNames.at((MAC::N_STAB_TYPE) nl.n_type);
             _2s = MAC::NTypeNames.at(MAC::N_TYPE::STAB);
         }
-        else if (nl.n_type & (uint32_t) MAC::N_TYPE::PEXT)
+        else if (nl.n_type & (uint32) MAC::N_TYPE::PEXT)
         {
             _2s = MAC::NTypeNames.at(MAC::N_TYPE::PEXT);
         }
-        else if (nl.n_type & (uint32_t) MAC::N_TYPE::EXT)
+        else if (nl.n_type & (uint32) MAC::N_TYPE::EXT)
         {
             _2s = MAC::NTypeNames.at(MAC::N_TYPE::EXT);
         }
@@ -184,15 +184,14 @@ void SymTab::Update()
             break;
         }
 
-        if ((MAC::N_TYPE_BITS)(nl.n_type & (uint32_t) MAC::N_TYPE::TYPE) == MAC::N_TYPE_BITS::INDR)
+        if ((MAC::N_TYPE_BITS)(nl.n_type & (uint32) MAC::N_TYPE::TYPE) == MAC::N_TYPE_BITS::INDR)
         {
             /*
-             TODO:
-             The n_value field is an index into the string table specifying the name of the other symbol. When that symbol is
-             linked, both this and the other symbol have the same defined type and value.
-             */
+            The n_value field is an index into the string table specifying the name of the other symbol. When that symbol is
+            linked, both this and the other symbol have the same defined type and value.
 
-            throw "MAC::N_TYPE_BITS::INDR not implement!";
+            skip => do nothing
+            */
         }
 
         item.SetText(4, tmp.Format("[%s | %s | %s] (%s)", align.c_str(), ordinal.c_str(), _1s.c_str(), GetValue(n, nl.n_desc).data()));

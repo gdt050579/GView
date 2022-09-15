@@ -13,7 +13,7 @@ bool MachOFile::Update()
 
     SetHeaderInfo(offset);
 
-    panelsMask |= (1ULL << (uint8_t) Panels::IDs::Information);
+    panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
 
     if (isMacho)
     {
@@ -30,32 +30,37 @@ bool MachOFile::Update()
         SetCodeSignature();
         SetVersionMin();
 
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::LoadCommands);
+        panelsMask |= (1ULL << (uint8) Panels::IDs::LoadCommands);
 
         if (segments.empty() == false)
         {
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::Segments);
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::Sections);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
         }
 
         if (dyldInfo.has_value())
         {
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::DyldInfo);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::DyldInfo);
         }
 
         if (dylibs.empty() == false)
         {
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::Dylib);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::Dylib);
         }
 
         if (dySymTab.has_value())
         {
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::DySymTab);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::DySymTab);
         }
 
         if (codeSignature.has_value())
         {
-            panelsMask |= (1ULL << (uint8_t) Panels::IDs::CodeSign);
+            panelsMask |= (1ULL << (uint8) Panels::IDs::CodeSign);
+        }
+
+        if (ParseGoData())
+        {
+            panelsMask |= (1ULL << (uint8) Panels::IDs::GoInformation);
         }
     }
     else if (isFat)
@@ -122,11 +127,6 @@ bool MachOFile::Update()
             arch.info = MAC::GetArchInfoFromCPUTypeAndSubtype(arch.cputype, arch.cpusubtype);
             archs.emplace_back(arch);
         }
-    }
-
-    if (ParseGoData())
-    {
-        panelsMask |= (1ULL << (uint8_t) Panels::IDs::GoInformation);
     }
 
     return true;
@@ -1148,6 +1148,25 @@ bool MachOFile::ComputeHash(const Buffer& buffer, uint8 hashType, std::string& o
     return false;
 }
 
+uint64 MachOFile::VAtoFA(uint64 addr)
+{
+    constexpr std::string_view pageZero{ "__PAGEZERO" };
+    for (const auto& seg : segments)
+    {
+        if (seg.vmaddr <= addr && addr <= seg.vmaddr + seg.filesize - 1)
+        {
+            if (pageZero == seg.segname)
+            {
+                continue;
+            }
+            const auto n = addr - seg.vmaddr + seg.fileoff;
+            return n;
+        }
+    }
+
+    return -1;
+}
+
 bool MachOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
     currentItemIndex = 0;
@@ -1192,24 +1211,5 @@ void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewI
 
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
     GView::App::OpenBuffer(buffer, data->info.name);
-}
-
-uint64 MachOFile::VAtoFA(uint64 addr)
-{
-    constexpr std::string_view pageZero{ "__PAGEZERO" };
-    for (const auto& seg : segments)
-    {
-        if (seg.vmaddr <= addr && addr <= seg.vmaddr + seg.filesize - 1)
-        {
-            if (pageZero == seg.segname)
-            {
-                continue;
-            }
-            const auto n = addr - seg.vmaddr + seg.fileoff;
-            return n;
-        }
-    }
-
-    return -1;
 }
 } // namespace GView::Type::MachO
