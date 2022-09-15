@@ -45,6 +45,11 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new PYEXTRACTOR::Panels::Information(win->GetObject(), py)), true);
         }
 
+        if (py->HasPanel(PYEXTRACTOR::Panels::IDs::TOCEntries))
+        {
+            win->AddPanel(Pointer<TabPage>(new PYEXTRACTOR::Panels::TOCEntries(py, win)), false);
+        }
+
         return true;
     }
 

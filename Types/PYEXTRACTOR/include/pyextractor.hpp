@@ -50,6 +50,8 @@ struct TOCEntry
     Buffer name;
 };
 
+constexpr auto TOC_ENTRY_KNOWN_SIZE = 18;
+
 struct Archive
 {
     uint64 cookiePosition{ 0 };
@@ -72,7 +74,8 @@ namespace Panels
 {
     enum class IDs : uint8
     {
-        Information = 0x0
+        Information = 0x0,
+        TOCEntries  = 0x1
     };
 };
 
@@ -146,6 +149,25 @@ namespace Panels
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override;
+    };
+
+    class TOCEntries : public AppCUI::Controls::TabPage
+    {
+        Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> py;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> list;
+        int Base;
+
+        std::string_view GetValue(NumericFormatter& n, uint32 value);
+        void GoToSelectedSection();
+        void SelectCurrentSection();
+
+      public:
+        TOCEntries(Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> py, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
 } // namespace GView::Type::PYEXTRACTOR

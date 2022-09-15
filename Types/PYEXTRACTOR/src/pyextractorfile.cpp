@@ -9,6 +9,7 @@ PYEXTRACTORFile::PYEXTRACTORFile()
 bool PYEXTRACTORFile::Update()
 {
     panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
+    panelsMask |= (1ULL << (uint8) Panels::IDs::TOCEntries);
 
     CHECK(SetCookiePosition(), false, "");
     CHECK(SetInstallerVersion(), false, "");
@@ -99,21 +100,33 @@ inline void Swap(TOCEntry& entry)
 
 bool PYEXTRACTORFile::SetTableOfContentEntries()
 {
-    constexpr auto sizeEntryWithoutString = offsetof(TOCEntry, name);
-    uint64 i                              = archive.info.tableOfContentPosition;
-    const auto maxOffset                  = archive.info.tableOfContentPosition + archive.info.tableOfContentSize;
+    const auto a = obj->GetData().CopyToBuffer(archive.info.tableOfContentPosition, archive.info.tableOfContentSize);
+    const auto b = a.GetData();
+
+    uint64 i             = archive.info.tableOfContentPosition;
+    const auto maxOffset = archive.info.tableOfContentPosition + archive.info.tableOfContentSize;
     while (i < maxOffset)
     {
-        const auto bufferView = obj->GetData().CopyToBuffer(i, sizeEntryWithoutString);
+        const auto bufferView = obj->GetData().CopyToBuffer(i, TOC_ENTRY_KNOWN_SIZE);
         CHECK(bufferView.IsValid(), false, "");
 
         auto& entry = tocEntries.emplace_back();
-        memcpy(&entry, bufferView.GetData(), sizeEntryWithoutString);
+        memcpy(&entry, bufferView.GetData(), TOC_ENTRY_KNOWN_SIZE);
         Swap(entry);
 
-        const auto nameLen = entry.entrySize - sizeEntryWithoutString;
-        entry.name         = obj->GetData().CopyToBuffer(i + sizeEntryWithoutString, static_cast<uint32>(nameLen));
+        const auto nameLen = entry.entrySize - TOC_ENTRY_KNOWN_SIZE;
 
+        if (nameLen != 0)
+        {
+            entry.name = obj->GetData().CopyToBuffer(i + TOC_ENTRY_KNOWN_SIZE, static_cast<uint32>(nameLen));
+        }
+        else
+        {
+            static uint32 countUnnamed = 0;
+            LocalString<30> ls;
+            ls.Format("unnamed_%u", countUnnamed);
+            entry.name.Add(ls);
+        }
         i += entry.entrySize;
     }
 
