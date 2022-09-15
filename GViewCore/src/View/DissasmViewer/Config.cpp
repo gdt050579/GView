@@ -6,6 +6,8 @@ using namespace AppCUI::Input;
 void Config::Update(IniSection sect)
 {
     sect.UpdateValue("AddNewType", Key::F5, true);
+    sect.UpdateValue("ShowFileContentKey", Key::F9, true);
+    sect.UpdateValue("ShowFileContent", true, true);
 }
 void Config::Initialize()
 {
@@ -29,9 +31,9 @@ void Config::Initialize()
     }
     else
     {
-        this->Keys.AddNewType = Key::F6;
+        this->Keys.AddNewType         = Key::F6;
         this->Keys.ShowFileContentKey = Key::F9;
-        this->ShowFileContent = true;
+        this->ShowFileContent         = true;
     }
 
     this->Loaded = true;
