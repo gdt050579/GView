@@ -17,7 +17,7 @@ void Settings::SetDefaultDisassemblyLanguage(DissasemblyLanguage lang)
 
 void Settings::AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang)
 {
-    INTERNAL_SETTINGS->dissasemblyZones[start] = { size, lang };
+    INTERNAL_SETTINGS->disassemblyZones[start] = { size, lang };
 }
 
 void Settings::AddMemoryMapping(uint64 address, std::string_view name)
@@ -43,8 +43,8 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, Varia
 
 void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
 {
-    auto res = INTERNAL_SETTINGS->userDeginedTypes.find(type);
-    if (res == INTERNAL_SETTINGS->userDeginedTypes.end())
+    auto res = INTERNAL_SETTINGS->userDesignedTypes.find(type);
+    if (res == INTERNAL_SETTINGS->userDesignedTypes.end())
     {
         // err;
         return;

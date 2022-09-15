@@ -682,9 +682,9 @@ void Instance::OnStart()
     if (settings->defaultLanguage == DissasemblyLanguage::Default)
         settings->defaultLanguage = DissasemblyLanguage::x86;
 
-    // TODO: fix dissasemblyZones to be where they belong not really after structuress
+    // TODO: fix disassemblyZones to be where they belong not really after structuress
 
-    for (const auto& dissasmZone : settings->dissasemblyZones)
+    for (const auto& dissasmZone : settings->disassemblyZones)
     {
         std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
         codeZone->zoneDetails                     = dissasmZone.second;

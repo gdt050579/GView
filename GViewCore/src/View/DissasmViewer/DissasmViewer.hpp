@@ -112,15 +112,15 @@ namespace View
         struct SettingsData
         {
             DissasemblyLanguage defaultLanguage;
-            std::map<uint64, DissasemblyZone> dissasemblyZones;
+            std::map<uint64, DissasemblyZone> disassemblyZones;
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-            std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
+            std::unordered_map<uint64, string_view> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmType> dissasmTypeMapped;          // mapped types against the offset of the file
-            std::unordered_map<TypeID, DissasmType> userDeginedTypes; // user defined typess
+            std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
             SettingsData();
         };
 
@@ -262,7 +262,7 @@ namespace View
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
-            // Proporty interface
+            // Property interface
             virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
             virtual bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
