@@ -14,7 +14,7 @@ extern "C"
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
     {
         CHECK(buf.GetLength() > sizeof(uint16), false, "");
-        auto magic = static_cast<PYEXTRACTOR::Magic>(*(uint16*) buf.GetData());
+        auto magic = static_cast<PYEXTRACTOR::Magic>(*reinterpret_cast<uint16*>(const_cast<uint8*>(buf.GetData())));
         CHECK(magic == PYEXTRACTOR::Magic::NoCompression || magic == PYEXTRACTOR::Magic::DefaultCompression ||
                     magic == PYEXTRACTOR::Magic::BestCompression,
               false,
