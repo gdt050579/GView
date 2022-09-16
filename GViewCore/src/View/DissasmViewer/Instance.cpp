@@ -148,7 +148,9 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     }
 
     // TODO: send multiple lines to be drawn with each other instead of searching line by line
-    //          for example: search how many line from the text needs to be written -> write all of thems
+    //          for example: search how many line from the text needs to be written -> write all of them
+
+    // TODO: current algorithm is build with ordered index values, could be improved later with a binary search
 
     uint32 currentLineIndex = dli.currentLineFromOffset + dli.screenLineToDraw;
     if (!settings->parseZones.empty())
@@ -161,8 +163,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
             {
                 // struct
-                dli.textLineToDraw       = currentLineIndex - zones[i]->startLineIndex;
-                dli.lastZoneIndexToReset = i;
+                dli.textLineToDraw = currentLineIndex - zones[i]->startLineIndex;
                 switch (zones[i]->zoneType)
                 {
                 case DissasmParseZoneType::StructureParseZone:
@@ -171,6 +172,8 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                 // TODO:
                 case DissasmParseZoneType::DissasmCodeParseZone:
                     return DrawDissasmZone(dli, (DissasmCodeZone*) zones[i].get());
+                case DissasmParseZoneType::CollapsibleAndTextZone:
+                    return DrawCollapsibleAndTextZone(dli, (CollapsibleAndTextZone*) zones[i].get());
                 default:
                     return false;
                 }
@@ -241,14 +244,14 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
         structureZone->levels.pop_back();
         structureZone->levels.push_back(0);
         structureZone->structureIndex = 0;
-        structureZone->textFileOffset = structureZone->initalTextFileOffset;
+        structureZone->textFileOffset = structureZone->initialTextFileOffset;
     }
 
-    uint32 levelToReach    = dli.textLineToDraw;
-    int16& levelNow        = structureZone->structureIndex;
-    dli.wasInsideStructure = true;
+    uint32 levelToReach = dli.textLineToDraw;
+    int16& levelNow     = structureZone->structureIndex;
+
     // TODO: consider if this value can be biffer than int16
-    bool increaseOffset = levelNow < (int16) levelToReach;
+    // bool increaseOffset = levelNow < (int16) levelToReach;
 
     // levelNow     = 0;
     // levelToReach = 47;
@@ -351,7 +354,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
 
     // assert(structureZone->levels.size() == 1);
     // assert(structureZone->levels.back() == 0);
-    // assert(structureZone->textFileOffset == structureZone->initalTextFileOffset);
+    // assert(structureZone->textFileOffset == structureZone->initialTextFileOffset);
 
     return true;
 }
@@ -464,7 +467,7 @@ bool Instance::WriteStructureToScreen(
         }
     }
 
-    size_t buffer_size = dli.chText - this->chars.GetBuffer();
+    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
 
     const uint32 cursorLine = static_cast<uint32>(this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
     if (cursorLine == dli.screenLineToDraw)
@@ -478,7 +481,77 @@ bool Instance::WriteStructureToScreen(
 
     HighlightSelectionText(dli, buffer_size - Layout.startingTextLineOffset);
 
-    auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
+    const auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
+
+    // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    return true;
+}
+
+bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone)
+{
+    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+
+    auto clearChar = this->chars.GetBuffer();
+    for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
+    {
+        clearChar->Code  = codePage[' '];
+        clearChar->Color = config.Colors.Normal;
+        clearChar++;
+    }
+    dli.chText = dli.chNameAndSize;
+
+    if (zone->data.canBeCollapsed)
+    {
+        if (dli.textLineToDraw == 0)
+        {
+            AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%u] ", zone->data.size);
+            RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+        }
+        else
+        {
+            if (!zone->isCollapsed)
+            {
+                if (zone->data.startingOffset + zone->data.size <= this->obj->GetData().GetSize())
+                {
+                    uint64 dataNeeded = std::min<uint32>(zone->data.size, Layout.textSize);
+                    if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
+                    {
+                        dataNeeded = std::min<uint32>(zone->data.size % Layout.textSize, Layout.textSize);
+                    }
+                    uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
+                    auto buf              = this->obj->GetData().Get(startingOffset, dataNeeded, false);
+
+                    dli.start         = buf.GetData();
+                    dli.end           = buf.GetData() + buf.GetLength();
+                    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+                    dli.chText        = dli.chNameAndSize;
+
+                    bool activ     = this->HasFocus();
+                    auto textColor = activ ? config.Colors.Line : config.Colors.Inactive;
+
+                    while (dli.start < dli.end)
+                    {
+                        dli.chText->Code  = codePage[*dli.start];
+                        dli.chText->Color = textColor;
+                        dli.chText++;
+                        dli.start++;
+                    }
+                }
+                else
+                {
+                    AddStringToChars(
+                          dli,
+                          config.Colors.StructureColor,
+                          "\tNot enough data for offset: %u",
+                          zone->data.startingOffset + zone->data.size);
+                }
+            }
+        }
+    }
+
+    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
+    const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
@@ -576,11 +649,11 @@ void Instance::RecomputeDissasmZones()
         parseZone->dissasmType     = mapping.second;
         parseZone->levels.push_back(0);
         parseZone->types.emplace_back(mapping.second);
-        parseZone->structureIndex       = 0;
-        parseZone->textFileOffset       = mapping.first;
-        parseZone->initalTextFileOffset = mapping.first;
-        parseZone->zoneID               = currentIndex++;
-        parseZone->zoneType             = DissasmParseZoneType::StructureParseZone;
+        parseZone->structureIndex        = 0;
+        parseZone->textFileOffset        = mapping.first;
+        parseZone->initialTextFileOffset = mapping.first;
+        parseZone->zoneID                = currentIndex++;
+        parseZone->zoneType              = DissasmParseZoneType::StructureParseZone;
 
         if (!parseZone->isCollapsed)
             parseZone->endingLineIndex += parseZone->extendedSize;
@@ -603,6 +676,26 @@ void Instance::RecomputeDissasmZones()
         codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
         codeZone->zoneID          = currentIndex++;
         codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
+        settings->parseZones.push_back(std::move(codeZone));
+    }
+
+    for (const auto& zone : settings->collapsibleAndTextZones)
+    {
+        std::unique_ptr<CollapsibleAndTextZone> codeZone = std::make_unique<CollapsibleAndTextZone>();
+        codeZone->data                                   = zone.second;
+        codeZone->startLineIndex                         = (uint32) (zone.first / textSize);
+        if (codeZone->startLineIndex < lastZoneEndingIndex)
+            codeZone->startLineIndex = lastZoneEndingIndex;
+        codeZone->isCollapsed     = false; // TODO: Layout.structuresInitialCollapsedState;
+        codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+        codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
+        codeZone->zoneID          = currentIndex++;
+        codeZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
+        codeZone->extendedSize    = codeZone->data.size / Layout.textSize + 1;
+
+        if (!codeZone->isCollapsed)
+            codeZone->endingLineIndex += codeZone->extendedSize;
+
         settings->parseZones.push_back(std::move(codeZone));
     }
 }

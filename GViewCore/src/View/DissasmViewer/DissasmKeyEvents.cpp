@@ -115,7 +115,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     // make sure that consecutive click on the same location will not scroll the view to that location
     if (mpInfo.location == MouseLocation::OnView)
     {
-        if (mpInfo.bufferOffset != Cursor.currentPos)
+        if (mpInfo.bufferOffset != Cursor.currentPos && button == MouseButton::Left)
             MoveTo(mpInfo.bufferOffset, false);
     }
     else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty())
@@ -134,7 +134,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    if (button == MouseButton::Left && (mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
     {
         MoveTo(mpInfo.bufferOffset, true);
         return true;

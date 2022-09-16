@@ -53,6 +53,12 @@ void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = res->second;
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
 }
+
+void Settings::AddCollapsibleZone(uint64 offset, uint64 size)
+{
+    INTERNAL_SETTINGS->collapsibleAndTextZones[offset] = { offset, size, true };
+}
+
 void Settings::AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count)
 {
 }

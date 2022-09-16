@@ -83,7 +83,8 @@ namespace View
         enum class DissasmParseZoneType : uint8
         {
             StructureParseZone,
-            DissasmCodeParseZone
+            DissasmCodeParseZone,
+            CollapsibleAndTextZone
         };
 
         struct ParseZone
@@ -92,7 +93,7 @@ namespace View
             uint32 endingLineIndex;
             uint32 extendedSize;
             uint32 textLinesOffset;
-            uint16 zoneID;
+            uint16 zoneID; // TODO: maybe can be replaced by the index in an array
             bool isCollapsed;
 
             DissasmParseZoneType zoneType;
@@ -105,7 +106,20 @@ namespace View
             std::list<std::reference_wrapper<const DissasmType>> types;
             std::list<int32> levels;
             uint64 textFileOffset;
-            uint64 initalTextFileOffset;
+            uint64 initialTextFileOffset;
+        };
+
+        struct CollapsibleAndTextData
+        {
+            uint64 startingOffset;
+            uint64 size;
+
+            bool canBeCollapsed;
+        };
+
+        struct CollapsibleAndTextZone : public ParseZone
+        {
+            CollapsibleAndTextData data;
         };
 
         struct DissasmCodeZone : public ParseZone
@@ -123,7 +137,8 @@ namespace View
             std::unordered_map<uint64, string_view> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
-            std::map<uint64, DissasmType> dissasmTypeMapped;          // mapped types against the offset of the file
+            std::map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
+            std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
             std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
             SettingsData();
         };
@@ -141,11 +156,9 @@ namespace View
                 uint32 currentLineFromOffset;
                 uint32 screenLineToDraw;
                 uint32 textLineToDraw;
-                AppCUI::Graphics::Renderer& renderer;
-                bool wasInsideStructure;
-                uint32 lastZoneIndexToReset;
-                DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
-                    : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), wasInsideStructure(false)
+
+                Renderer& renderer;
+                DrawLineInfo(Renderer& renderer) : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer)
                 {
                 }
             };
@@ -184,10 +197,10 @@ namespace View
 
             struct
             {
-                //uint8 buffer[256];
+                // uint8 buffer[256];
                 uint32 size;
                 uint64 start, end;
-                //bool highlight;
+                // bool highlight;
             } CurrentSelection;
 
             struct ButtonsData
@@ -220,6 +233,7 @@ namespace View
             bool WriteTextLineToChars(DrawLineInfo& dli);
             bool WriteStructureToScreen(
                   DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
+            bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);

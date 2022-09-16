@@ -1118,6 +1118,7 @@ namespace View
                   uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
              * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
