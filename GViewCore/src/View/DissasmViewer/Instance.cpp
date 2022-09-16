@@ -178,6 +178,8 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             else
             {
                 dli.textLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
+                if (currentLineIndex + zones[i]->textLinesOffset < zones[i]->endingLineIndex)
+                    dli.textLineToDraw = currentLineIndex;
                 if (i + 1 >= zonesCount)
                 {
                     if (!config.ShowFileContent)
@@ -729,7 +731,7 @@ void Instance::OnStart()
     this->RecomputeDissasmZones();
 }
 
-void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
+void Instance::RecomputeDissasmLayout()
 {
     Layout.visibleRows            = this->GetHeight() - 1;
     Layout.totalCharactersPerLine = this->GetWidth() - 1;
