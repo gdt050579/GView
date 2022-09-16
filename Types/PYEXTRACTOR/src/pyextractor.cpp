@@ -9,22 +9,22 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-constexpr string_view ISO_ICON = "................"  // 1
-                                 "................"  // 2
-                                 "................"  // 3
-                                 "................"  // 4
-                                 "WW.WWWWW.WWWWWWW"  // 5
-                                 "WW.WWWWW.WWWWWWW"  // 6
-                                 "WW.WW....WW...WW"  // 7
-                                 "WW.WWWWW.WW...WW"  // 8
-                                 "WW....WW.WW...WW"  // 9
-                                 "WW.WWWWW.WWWWWWW"  // 10
-                                 "WW.WWWWW.WWWWWWW"  // 11
-                                 "................"  // 12
-                                 "................"  // 13
-                                 "................"  // 14
-                                 "................"  // 15
-                                 "................"; // 16
+constexpr string_view IPYEXTRACTOR_ICON = "................"  // 1
+                                          "................"  // 2
+                                          "................"  // 3
+                                          "................"  // 4
+                                          "WWWWWW..WW....WW"  // 5
+                                          "WW..WW...WW..WW."  // 6
+                                          "WW..WW....WWWW.."  // 7
+                                          "WW.WWW.....WW..."  // 8
+                                          "WW.........WW..."  // 9
+                                          "WW.........WW..."  // 10
+                                          "WW.........WW..."  // 11
+                                          "................"  // 12
+                                          "................"  // 13
+                                          "................"  // 14
+                                          "................"  // 15
+                                          "................"; // 16
 
 extern "C"
 {
@@ -54,7 +54,7 @@ extern "C"
     {
         ContainerViewer::Settings settings;
 
-        settings.SetIcon(ISO_ICON);
+        settings.SetIcon(IPYEXTRACTOR_ICON);
         settings.SetColumns({
               "n:&Name,a:l,w:80",
               "n:&Size,a:r,w:20",
