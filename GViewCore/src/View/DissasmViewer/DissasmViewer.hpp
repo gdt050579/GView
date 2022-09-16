@@ -226,6 +226,8 @@ namespace View
             CharacterBuffer chars;
             Utils::Selection selection;
             CodePage codePage;
+            Menu rightClickMenu;
+            uint64 rightClickOffset;
 
             inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 

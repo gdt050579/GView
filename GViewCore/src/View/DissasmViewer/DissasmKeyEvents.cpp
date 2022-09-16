@@ -1,7 +1,13 @@
 #include "DissasmViewer.hpp"
 
-constexpr uint32 COMMAND_ADD_NEW_TYPE          = 1;
-constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 2;
+constexpr uint32 COMMAND_ADD_NEW_TYPE          = 100;
+constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 101;
+
+// TODO: fix remove duplicate with Instance.cpp
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
+constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
+constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
+constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -117,6 +123,11 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     {
         if (mpInfo.bufferOffset != Cursor.currentPos && button == MouseButton::Left)
             MoveTo(mpInfo.bufferOffset, false);
+        else if (button == MouseButton::Right)
+        {
+            rightClickOffset = mpInfo.bufferOffset;
+            rightClickMenu.Show(this, x, y);
+        }
     }
     else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty())
     {
@@ -242,7 +253,14 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_ADD_SHOW_FILE_CONTENT:
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
-            break;
+            return true;
+        case RIGHT_CLICK_MENU_CMD_COLLAPSE:
+            if (!selection.HasAnySelection())
+            {
+                Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
+                return true;
+            }
+            return true;
         default:
             return false;
         }

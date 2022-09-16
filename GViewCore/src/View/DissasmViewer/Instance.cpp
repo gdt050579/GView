@@ -9,6 +9,23 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
+constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
+constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
+constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
+
+struct
+{
+    int commandID;
+    string_view text;
+    ItemHandle handle = InvalidItemHandle;
+} RIGHT_CLICK_MENU_COMMANDS[] = {
+    { RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
+    { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
+    { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
+    { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },
+};
+
 Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
     : name(name), obj(obj), settings(nullptr)
 {
@@ -43,6 +60,12 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.structuresInitialCollapsedState = true;
 
     this->codePage = CodePageID::DOS_437;
+
+    for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS)
+    {
+        menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
+    }
+    rightClickOffset = 0;
 }
 
 bool Instance::GoTo(uint64 offset)
