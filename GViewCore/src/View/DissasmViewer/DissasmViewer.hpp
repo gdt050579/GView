@@ -42,6 +42,7 @@ namespace View
 
         struct DissasemblyZone
         {
+            uint64 startingZonePoint;
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;

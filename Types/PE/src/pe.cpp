@@ -158,7 +158,7 @@ extern "C"
                     const uint32 entryPoint =
                           pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, entryPoint, pe->sect[tr].SizeOfRawData);
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
                     break;
                 }
             }

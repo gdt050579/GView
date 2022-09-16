@@ -354,13 +354,6 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     return true;
 }
 
-bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone)
-{
-    dli.renderer.WriteSingleLineText(
-          Layout.startingTextLineOffset, structureZone->startLineIndex + 1, "Dissasm zone", config.Colors.Normal);
-    return true;
-}
-
 bool Instance::WriteStructureToScreen(
       DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
 {
