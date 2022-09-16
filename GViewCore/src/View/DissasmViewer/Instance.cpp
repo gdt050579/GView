@@ -681,22 +681,22 @@ void Instance::RecomputeDissasmZones()
 
     for (const auto& zone : settings->collapsibleAndTextZones)
     {
-        std::unique_ptr<CollapsibleAndTextZone> codeZone = std::make_unique<CollapsibleAndTextZone>();
-        codeZone->data                                   = zone.second;
-        codeZone->startLineIndex                         = (uint32) (zone.first / textSize);
-        if (codeZone->startLineIndex < lastZoneEndingIndex)
-            codeZone->startLineIndex = lastZoneEndingIndex;
-        codeZone->isCollapsed     = false; // TODO: Layout.structuresInitialCollapsedState;
-        codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-        codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
-        codeZone->zoneID          = currentIndex++;
-        codeZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
-        codeZone->extendedSize    = codeZone->data.size / Layout.textSize + 1;
+        std::unique_ptr<CollapsibleAndTextZone> collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+        collapsibleZone->data                                   = zone.second;
+        collapsibleZone->startLineIndex                         = (uint32) (zone.first / textSize);
+        if (collapsibleZone->startLineIndex < lastZoneEndingIndex)
+            collapsibleZone->startLineIndex = lastZoneEndingIndex;
+        collapsibleZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+        collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
+        collapsibleZone->textLinesOffset = collapsibleZone->startLineIndex - lastEndMinusLastOffset;
+        collapsibleZone->zoneID          = currentIndex++;
+        collapsibleZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
+        collapsibleZone->extendedSize    = collapsibleZone->data.size / Layout.textSize + 1;
 
-        if (!codeZone->isCollapsed)
-            codeZone->endingLineIndex += codeZone->extendedSize;
+        if (!collapsibleZone->isCollapsed)
+            collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
 
-        settings->parseZones.push_back(std::move(codeZone));
+        settings->parseZones.push_back(std::move(collapsibleZone));
     }
 }
 
