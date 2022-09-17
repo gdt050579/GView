@@ -40,6 +40,7 @@
         },
         {
             "name": "capstone",
+            "features": [ "x86" ],
             "platform": "windows | linux | osx"
         }
     ]

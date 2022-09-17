@@ -15,9 +15,7 @@ find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 
-
 find_package(capstone CONFIG REQUIRED)
-#target_compile_definitions(capstone PRIVATE -DCAPSTONE_X86_SUPPORT=1)
 target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
 
 if (MSVC)
