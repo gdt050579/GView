@@ -8,7 +8,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone
 {
     if (obj->GetData().GetSize() == 0)
         return true;
-    DissasemblyZone& zone         = structureZone->zoneDetails;
+    DisassemblyZone& zone         = structureZone->zoneDetails;
     uint64 entryPointSizeUntilEnd = zone.size - zone.entryPoint;
 
     csh handle;

@@ -40,7 +40,7 @@ namespace View
             void Initialize();
         };
 
-        struct DissasemblyZone
+        struct DisassemblyZone
         {
             uint64 startingZonePoint;
             uint64 size;
@@ -124,13 +124,13 @@ namespace View
 
         struct DissasmCodeZone : public ParseZone
         {
-            DissasemblyZone zoneDetails;
+            DisassemblyZone zoneDetails;
         };
 
         struct SettingsData
         {
             DisassemblyLanguage defaultLanguage;
-            std::map<uint64, DissasemblyZone> disassemblyZones;
+            std::map<uint64, DisassemblyZone> disassemblyZones;
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
