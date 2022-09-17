@@ -366,6 +366,8 @@ std::string_view PEFile::GetMachine()
         return "AMD 64";
     case MachineType::ARM:
         return "ARM";
+    case MachineType::ARM64:
+        return "ARM64";
     case MachineType::CEE:
         return "CEE";
     case MachineType::CEF:
@@ -1836,7 +1838,7 @@ bool PEFile::ParseGoData()
         if (start.Value < end.Value && end.Value - start.Value < cacheSize && start.SectionNumber == end.SectionNumber)
         {
             const auto fa       = static_cast<uint64>(sect[start.SectionNumber - 1ULL].PointerToRawData);
-            const auto fileView = obj->GetData().CopyToBuffer(fa + start.Value, fa + end.Value - start.Value, false);
+            const auto fileView = obj->GetData().CopyToBuffer(fa + start.Value, static_cast<uint32>(fa + end.Value - start.Value), false);
             if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
             {
                 return true;
@@ -1968,13 +1970,15 @@ bool PEFile::ParseGoBuildInfo()
     const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
     const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
 
-    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
+    const auto fileViewRuntimeBuildVersion =
+          obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, static_cast<uint32>(strRuntimeBuildVersionLength), false);
     CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
     const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
                                                 strRuntimeBuildVersionLength };
     pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
 
-    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
+    const auto fileViewRuntimeModInfo =
+          obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
     std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')

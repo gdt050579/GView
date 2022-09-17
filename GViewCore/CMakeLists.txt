@@ -15,6 +15,12 @@ find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 
+find_package(ZLIB REQUIRED)
+message("ZLIB_INCLUDE_DIR => ${ZLIB_INCLUDE_DIR}")
+message("ZLIB_LIBRARIES => ${ZLIB_LIBRARIES}")
+target_include_directories(${PROJECT_NAME} PRIVATE ${ZLIB_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
+
 
 if (MSVC)
     add_compile_options(-W3)

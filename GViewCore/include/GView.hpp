@@ -500,9 +500,9 @@ namespace Golang
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
 } // namespace Golang
 
-namespace Pyc
+namespace ZLIB
 {
-
+    CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
 namespace Compression

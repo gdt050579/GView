@@ -41,6 +41,10 @@
         {
             "name": "capstone",
             "platform": "windows | linux | osx"
+        },
+        {
+            "name": "zlib",
+            "platform": "windows | linux | osx"
         }
     ]
 }
