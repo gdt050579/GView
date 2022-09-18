@@ -667,13 +667,9 @@ namespace Type
             Manifest     = 24
         };
 
-        struct X86_X64_ColorBuffer : public GView::View::BufferViewer::PositionToColorInterface
-        {
-            uint64 memStartOffset, memEndOffset;
-            bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
-        };
-
-        class PEFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+        class PEFile : public TypeInterface,
+                       public GView::View::BufferViewer::OffsetTranslateInterface,
+                       public GView::View::BufferViewer::PositionToColorInterface
         {
           public:
             struct ExportedFunction
@@ -722,7 +718,8 @@ namespace Type
                 uint32 dllIndex;
                 String Name;
             };
-            enum
+
+            enum class Opcodes
             {
                 SHOW_JUMPS  = 1,
                 SHOW_CALLS  = 2,
@@ -771,7 +768,7 @@ namespace Type
             uint32 sectStart, peStart;
             uint64 panelsMask;
 
-            X86_X64_ColorBuffer x86x64ColorBuffer;
+            uint64 memStartOffset, memEndOffset;
 
             bool hdr64;
             bool isMetroApp;
@@ -836,6 +833,8 @@ namespace Type
 
             bool GetResourceImageInformation(const ResourceInformation& r, String& info);
             bool LoadIcon(const ResourceInformation& r, Image& img);
+
+            bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
 
             std::string_view GetTypeName() override
             {

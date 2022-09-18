@@ -8,6 +8,7 @@ add_subdirectory(DigitalSignature)
 add_subdirectory(Compression)
 add_subdirectory(Go)
 add_subdirectory(ZLIB)
+add_subdirectory(Dissasembly)
 target_sources(GViewCore PRIVATE main.cpp)
 
 

@@ -505,6 +505,41 @@ namespace ZLIB
     CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
+namespace Dissasembly
+{
+    enum class Architecture // cs_arch from capstone (keep it synced!)
+    {
+        ARM = 0,    ///< ARM architecture (including Thumb, Thumb-2)
+        ARM64,      ///< ARM-64, also called AArch64
+        MIPS,       ///< Mips architecture
+        X86,        ///< X86 architecture (including x86 & x86-64)
+        PPC,        ///< PowerPC architecture
+        SPARC,      ///< Sparc architecture
+        SYSZ,       ///< SystemZ architecture
+        XCORE,      ///< XCore architecture
+        M68K,       ///< 68K architecture
+        TMS320C64X, ///< TMS320C64x architecture
+        M680X,      ///< 680X architecture
+        EVM,        ///< Ethereum architecture
+        MOS65XX,    ///< MOS65XX architecture (including MOS6502)
+        WASM,       ///< WebAssembly architecture
+        BPF,        ///< Berkeley Packet Filter architecture (including eBPF)
+        RISCV,      ///< RISCV architecture
+        MAX,
+        ALL = 0xFFFF, // All architectures - for cs_support()
+    };
+
+    enum class Mode
+    {
+        Unknown,
+        X16,
+        X32,
+        X64
+    };
+
+    CORE_EXPORT bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode mode);
+} // namespace Dissasembly
+
 namespace Compression
 {
     namespace LZXPRESS
