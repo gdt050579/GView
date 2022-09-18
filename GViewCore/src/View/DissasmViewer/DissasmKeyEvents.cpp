@@ -255,11 +255,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             this->RecomputeDissasmZones();
             return true;
         case RIGHT_CLICK_MENU_CMD_COLLAPSE:
-            if (!selection.HasAnySelection())
-            {
-                Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
-                return true;
-            }
+            AddNewCollapsibleZone();
             return true;
         default:
             return false;

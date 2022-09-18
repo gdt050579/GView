@@ -3,6 +3,7 @@
 #include "Internal.hpp"
 
 #include <unordered_map>
+#include <utility>
 #include <deque>
 #include <list>
 
@@ -218,6 +219,18 @@ namespace View
                 std::vector<ButtonsData> buttons;
             } MyLine;
 
+            struct ZoneLocation
+            {
+                uint32 zoneIndex;
+                uint32 zoneLine;
+            };
+
+            struct LinePosition
+            {
+                uint32 line;
+                uint32 offset;
+            };
+
             FixSizeString<16> name;
 
             Reference<GView::Object> obj;
@@ -250,6 +263,9 @@ namespace View
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;
 
+            inline LinePosition OffsetToLinePosition(uint64 offset) const;
+            vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
+
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
             void MoveTo(uint64 offset, bool select);
@@ -257,6 +273,9 @@ namespace View
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
+
+            //Operations
+            void AddNewCollapsibleZone();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
