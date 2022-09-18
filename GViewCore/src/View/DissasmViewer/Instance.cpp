@@ -560,21 +560,21 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             {
                 if (zone->data.startingOffset + zone->data.size <= this->obj->GetData().GetSize())
                 {
-                    uint64 dataNeeded = std::min<uint32>(zone->data.size, Layout.textSize);
+                    uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
                     if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
                     {
-                        dataNeeded = std::min<uint32>(zone->data.size % Layout.textSize, Layout.textSize);
+                        dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
                     }
-                    uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
-                    auto buf              = this->obj->GetData().Get(startingOffset, dataNeeded, false);
+                    const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
+                    const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
 
                     dli.start         = buf.GetData();
                     dli.end           = buf.GetData() + buf.GetLength();
                     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
                     dli.chText        = dli.chNameAndSize;
 
-                    bool activ     = this->HasFocus();
-                    auto textColor = activ ? config.Colors.Line : config.Colors.Inactive;
+                    const bool activeColor = this->HasFocus();
+                    const auto textColor   = activeColor ? config.Colors.Line : config.Colors.Inactive;
 
                     while (dli.start < dli.end)
                     {
@@ -647,9 +647,9 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
         const uint64 selectionStart = selection.GetSelectionStart(0);
         const uint64 selectionEnd   = selection.GetSelectionEnd(0);
 
-        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
-        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
+        const uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
+        const uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+        const uint32 lineToDrawTo     = dli.screenLineToDraw + static_cast<uint32>(Cursor.startView / Layout.textSize);
 
         if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
         {
@@ -737,7 +737,7 @@ void Instance::RecomputeDissasmZones()
         collapsibleZone->textLinesOffset = collapsibleZone->startLineIndex - lastEndMinusLastOffset;
         collapsibleZone->zoneID          = currentIndex++;
         collapsibleZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
-        collapsibleZone->extendedSize    = collapsibleZone->data.size / Layout.textSize + 1;
+        collapsibleZone->extendedSize    = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
 
         if (!collapsibleZone->isCollapsed)
             collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
@@ -749,7 +749,8 @@ void Instance::RecomputeDissasmZones()
         return;
 
     //vector<CollapsibleAndTextData> textData;
-    //auto &zones = settings->parseZones;
+    //const uint32 textLinesCount = obj->GetData().GetSize() / Layout.textSize;
+    //auto& zones                 = settings->parseZones;
     //if (zones[0]->startLineIndex > 0)
     //{
     //    textData.emplace_back(0, zones[0]->startLineIndex * Layout.textSize);
@@ -757,16 +758,22 @@ void Instance::RecomputeDissasmZones()
     //const uint32 zonesCount = settings->parseZones.size();
     //if (zonesCount == 1)
     //{
-    //    textData.emplace_back(0, zones[0]->startLineIndex * Layout.textSize);
+    //    uint64 size = (textLinesCount - zones[0]->endingLineIndex + zones[0]->textLinesOffset) * Layout.textSize +
+    //                  obj->GetData().GetSize() % Layout.textSize;
+    //    textData.emplace_back(zones[0]->endingLineIndex, size, false);
     //}
-    //for (int i = 0; i < zonesCount - 1; i++)
+    //for (uint32 i = 0; i < zonesCount - 1; i++)
     //{
-    //    if (zones[i].endingIndex < zones[i + 1].startingIndex)
-    //        cout << "New zone: " << zones[i].endingIndex << ", " << zones[i + 1].startingIndex - 1 << endl;
+    //    if (zones[i]->endingLineIndex < zones[i + 1]->startLineIndex)
+    //    {
+    //        uint64 size = (zones[i + 1]->startLineIndex - zones[i]->endingLineIndex) * Layout.textSize;
+    //        textData.emplace_back(zones[i]->endingLineIndex, size, false);
+    //    }
     //}
-    //if (zones[zonesCount - 1].endingIndex <= textLine)
+    //if (zones[zonesCount - 1]->endingLineIndex <= textLinesCount)
     //{
-    //    cout << "New zone: " << zones[zonesCount - 1].endingIndex << ", " << textLine << endl;
+    //    uint64 size = (textLinesCount - zones[zonesCount - 1]->endingLineIndex - zones[zonesCount - 1]->textLinesOffset) * Layout.textSize;
+    //    textData.emplace_back(zones[zonesCount - 1]->endingLineIndex, size, false);
     //}
 }
 
