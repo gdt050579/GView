@@ -100,6 +100,25 @@ extern "C"
         // translation
         settings.SetOffsetTranslationList({ "VA" }, elf.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
+        // set specific color for opcodes
+        const auto machine = elf->is64 ? elf->header64.e_machine : elf->header32.e_machine;
+        switch (machine)
+        {
+        case ELF::EM_386:
+        case ELF::EM_486:
+        case ELF::EM_860:
+        case ELF::EM_960:
+        case ELF::EM_8051:
+        case ELF::EM_ARM:
+        case ELF::EM_AARCH64:
+        {
+            elf->memStartOffset = elf->GetImageBase();
+            elf->memEndOffset   = elf->GetImageBase() + elf->GetVirtualSize();
+            settings.SetPositionToColorCallback(elf.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
+        }
+        break;
+        };
+
         win->CreateViewer("BufferView", settings);
     }
 

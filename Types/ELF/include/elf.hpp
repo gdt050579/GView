@@ -25,7 +25,9 @@ namespace Panels
     };
 };
 
-class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+class ELFFile : public TypeInterface,
+                public GView::View::BufferViewer::OffsetTranslateInterface,
+                public GView::View::BufferViewer::PositionToColorInterface
 {
   public:
     uint64 panelsMask{ 0 };
@@ -70,12 +72,19 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     bool ParseGoData();
     bool ParseSymbols();
 
+    uint64 memStartOffset;
+    uint64 memEndOffset;
+    bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
     uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
     uint64 ConvertAddress(uint64 address, AddressType fromAddressType, AddressType toAddressType);
 
     uint64 FileOffsetToVA(uint64 fileOffset);
     uint64 VAToFileOffset(uint64 virtualAddress);
+
+    uint64 GetImageBase() const;
+    uint64 GetVirtualSize() const;
 
     std::string_view GetTypeName() override
     {

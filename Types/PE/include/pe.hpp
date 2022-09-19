@@ -768,7 +768,8 @@ namespace Type
             uint32 sectStart, peStart;
             uint64 panelsMask;
 
-            uint64 memStartOffset, memEndOffset;
+            uint64 memStartOffset;
+            uint64 memEndOffset;
 
             bool hdr64;
             bool isMetroApp;

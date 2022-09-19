@@ -415,7 +415,7 @@ uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
     {
         for (const auto& section : sections64)
         {
-            if (section.sh_addr <= virtualAddress && virtualAddress <= section.sh_addr + section.sh_size)
+            if (section.sh_addr != 0 && section.sh_addr <= virtualAddress && virtualAddress <= section.sh_addr + section.sh_size)
             {
                 auto diff     = virtualAddress - section.sh_addr;
                 const auto fa = section.sh_offset + diff;
@@ -427,7 +427,7 @@ uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
     {
         for (const auto& section : sections32)
         {
-            if (section.sh_addr <= virtualAddress && virtualAddress <= (uint64) section.sh_addr + section.sh_size)
+            if (section.sh_addr != 0 && section.sh_addr <= virtualAddress && virtualAddress <= (uint64) section.sh_addr + section.sh_size)
             {
                 auto diff     = virtualAddress - section.sh_addr;
                 const auto fa = section.sh_offset + diff;
@@ -437,4 +437,393 @@ uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
     }
 
     return ELF_INVALID_ADDRESS;
+}
+
+uint64 ELFFile::GetImageBase() const
+{
+    if (is64)
+    {
+        for (const auto& segment : segments64)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                return segment.p_vaddr;
+            }
+        }
+    }
+    else
+    {
+        for (const auto& segment : segments32)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                return segment.p_vaddr;
+            }
+        }
+    }
+    return -1;
+}
+
+uint64 ELFFile::GetVirtualSize() const
+{
+    uint64 vSize = 0;
+    if (is64)
+    {
+        for (const auto& segment : segments64)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                vSize += segment.p_memsz;
+            }
+        }
+    }
+    else
+    {
+        for (const auto& segment : segments32)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                vSize += segment.p_memsz;
+            }
+        }
+    }
+    return -1;
+}
+
+bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(buf.IsValid(), false, "");
+
+    static constexpr auto API_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
+    static constexpr auto API_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
+    static constexpr auto BREAKPOINT_COLOR     = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
+    static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
+    static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
+    static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
+
+    // maybe add
+    // EB (direct jump, signed byte EIP-displacement), E9 (direct jump, signed dword EIP-displacement), E8 (direct call, signed dword
+    // EIP-displacement)
+
+    const auto machine = is64 ? header64.e_machine : header32.e_machine;
+    auto* p            = buf.begin();
+    switch (*p)
+    {
+    case 0x7F:
+        CHECKBK(buf.GetLength() >= 4, "");
+        if (*(uint32*) p == 0x464C457F)
+        {
+            result.start = offset;
+            result.end   = offset + 3;
+            result.color = EXE_MARKER_COLOR;
+            return true;
+        }
+        break;
+    default:
+        switch (machine)
+        {
+        case EM_386:
+        case EM_486:
+        case EM_860:
+        case EM_960:
+        case EM_8051:
+            switch (*p)
+            {
+            case 0xFF:
+                CHECKBK(buf.GetLength() >= 6, "");
+
+                if (p[1] == 0x15) // FF 15 is a CALLN instruction. N stands for near (as opposed to F / FAR) | FF15 (indirect call, absolute
+                                  // dword address) | possible call to API
+                {
+                    auto addr = *(uint32*) (p + 2);
+                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset))
+                    {
+                        result.start = offset;
+                        result.end   = offset + 5;
+                        result.color = API_CALL_COLOR;
+                        return true;
+                    }
+                }
+                else if (p[1] == 0x25) // FF25 (indirect jmp, absolute dword address) | possible jump to API
+                {
+                    auto addr = *(uint32*) (p + 2);
+                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset))
+                    {
+                        result.start = offset;
+                        result.end   = offset + 5;
+                        result.color = API_JUMP_COLOR;
+                        return true;
+                    }
+                }
+                break;
+
+            case 0xE8: // not far calls
+                CHECKBK(buf.GetLength() >= 6, "");
+                {
+                    auto addr = *(uint32*) (p + 1);
+                    if (p[3] == 0xFF && p[4] == 0xFF)
+                    {
+                        addr = *(uint16*) (p + 1);
+                    }
+                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset) || addr < obj->GetData().GetSize())
+                    {
+                        result.start = offset;
+                        result.end   = offset + 3;
+                        result.color = API_CALL_COLOR;
+                        return true;
+                    }
+                }
+                break;
+            case 0xE9: // not far jmps
+                CHECKBK(buf.GetLength() >= 6, "");
+                {
+                    auto addr = *(uint32*) (p + 1);
+                    if (p[3] == 0xFF && p[4] == 0xFF)
+                    {
+                        addr = *(uint16*) (p + 1);
+                    }
+                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset) || addr < obj->GetData().GetSize())
+                    {
+                        result.start = offset;
+                        result.end   = offset + 3;
+                        result.color = API_JUMP_COLOR;
+                        return true;
+                    }
+                }
+                break;
+
+            case 0xCC: // INT 3
+                result.start = result.end = offset;
+                result.color              = BREAKPOINT_COLOR;
+                return true;
+
+            case 0x55: // start of function
+                CHECKBK(buf.GetLength() >= 3, "");
+
+                if ((*(uint16*) (p + 1)) == 0xEC8B || // possible `push EBP` followed by MOV ebp, esp
+                    (*(uint16*) (p + 1)) == 0xE589    // possible `push EBP` followed by MOV ebp, esp
+                )
+                {
+                    result.start = offset;
+                    result.end   = offset + 2;
+                    result.color = START_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+
+            case 0x8B: // end of function
+            case 0x89: // end of function
+                CHECKBK(buf.GetLength() >= 4, "");
+
+                if (((*(uint16*) (p + 1)) == 0x5DE5 || // possible `MOV esp, EBP` followed by `POP ebp` and `RET`
+                     ((*(uint16*) (p + 1)) == 0x5DEC)) &&
+                    (p[3] == 0xC3))
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+            case 0x5D: // end of function => pop ebp | ret
+                if (p[1] == 0xC3)
+                {
+                    result.start = offset;
+                    result.end   = offset + 1;
+                    result.color = END_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+            }
+            break;
+        case EM_ARM: // IT WILL NOT COVER ALL THE CASES | TODO: https://github.com/scottt/debugbreak/blob/master/debugbreak.h
+        {
+            switch (*p)
+            {
+            case 0x98: //
+            case 0xA0: // R3
+
+                if (p[1] == 0x47)
+                {
+                    result.start = offset;
+                    result.end   = offset + 1;
+                    result.color = API_CALL_COLOR;
+                    return true;
+                }
+                break;
+            case 0xDC: // api call => dc f8 00 f0 ldr.w pc,[r12,#0x0]=>->MSVCRT.DLL::_initterm = 00042f56
+                if (p[1] == 0xF8 && p[2] == 0x00 && p[3] == 0xF0)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = API_JUMP_COLOR;
+                    return true;
+                }
+                break;
+
+            case 0x2D: // start of function => 2d e9 00 48 push { r11, lr } | eb 46 mov r11, sp
+                if (p[1] == 0xE9 && p[4] == 0xEB && p[5] == 0x46)
+                {
+                    result.start = offset;
+                    result.end   = offset + 5;
+                    result.color = START_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+
+            case 0xBD: // end of function => bd e8 78 88 pop.w { r3, r4, r5, r6, r11, pc }
+                if (p[1] == 0xE8)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+
+            case 0xFE: // breapoint: UND => FE DE FF E7 in ARM mode
+                if (p[1] == 0xDE && p[2] == 0xFF && p[3] == 0xE7)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xBE: // breapoint: BKPT ( BE BE ) in Thumb
+                if (p[1] == 0xDE && p[2] == 0xBE)
+                {
+                    result.start = offset;
+                    result.end   = offset + 1;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            }
+        }
+        break;
+        case EM_AARCH64: // TODO: https://github.com/scottt/debugbreak/blob/master/debugbreak.h
+            switch (*p)
+            {
+                // https://opensource.apple.com/source/xnu/xnu-7195.50.7.100.1/doc/pac.md
+                /*
+                    - Assembly routines must manually sign the return address with `pacibsp` before
+                      pushing it onto the stack, and use an authenticating `retab` instruction in
+                      place of `ret`.  xnu provides assembly macros `ARM64_STACK_PROLOG` and
+                      `ARM64_STACK_EPILOG` which emit the appropriate instructions for both arm64
+                      and arm64e targets.
+                */
+
+            case 0x7F: // start of function => 7f 23 03 d5 pacibsp
+
+                if (p[1] == 0x23 && p[2] == 0x03 && p[3] == 0xD5)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = START_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+
+            case 0xFF: // end of function =>  ff 23 03 d5 autibsp | c0 03 5f d6 ret
+
+                if (p[1] == 0x23 && p[2] == 0x03 && p[3] == 0xD5)
+                {
+                    result.start = offset;
+                    result.end   = offset + 7;
+                    result.color = END_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+            case 0xC0: // end of function =>  c0 03 5f d6 ret
+
+                if (p[1] == 0x03 && p[2] == 0x5F && p[3] == 0xD6)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    return true;
+                }
+                break;
+
+            case 0xDE: // __builtin_trap();
+                if (p[1] == 0xFF)
+                {
+                    result.start = offset;
+                    result.end   = offset + 1;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xFE: // On ARM Linux it's usually an UND opcode (e.g. FE DE FF E7)
+                if (p[1] == 0xDE && p[2] == 0xFF && p[3] == 0xE7)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xF7: // raise(SIGTRAP); => blx	104a8 <raise@plt>
+                if (p[1] == 0xFF && p[2] == 0xEF && p[3] == 0x8A)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xD4: // __asm__("DCPS1"); / __asm__("DCPS2"); / __asm__("DCPS3");
+                if (p[1] == 0xA0 && p[2] == 0x00 && (p[3] == 0x01 || p[3] == 0x02 || p[3] == 0x03))
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0x52: // __asm__("DRPS");
+                if (p[1] == 0x80 && p[2] == 0x00 && p[3] == 0x00)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+
+            default: // api call => 60 02 3f d6 blr x19=>MSVCRT.DLL::_onexit
+                if (p[2] == 0x3F && p[3] == 0xD6)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = API_CALL_COLOR;
+                    return true;
+                }
+
+                /*
+                       14002ecfc b0 01 00 d0     adrp       x16,0x140064000
+                       14002ed00 10 8a 43 f9     ldr        x16,[x16, #0x710]=>->MSVCRT.DLL::setlocale       = 0006f26c
+                       14002ed04 00 02 1f d6     br         x16
+                */
+
+                if (buf.GetLength() >= 12)
+                {
+                    if ((p[3] == 0xD0 || p[3] == 0xB0) && p[7] == 0xF9 && p[11] == 0xD6)
+                    {
+                        result.start = offset;
+                        result.end   = offset + 7;
+                        result.color = API_JUMP_COLOR;
+                        return true;
+                    }
+                }
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    return false;
 }

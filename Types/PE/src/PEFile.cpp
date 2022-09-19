@@ -473,9 +473,9 @@ uint64_t PEFile::FilePointerToRVA(uint64_t fileAddress)
     return PE_INVALID_ADDRESS;
 }
 
-uint64_t PEFile::FilePointerToVA(uint64_t fileAddress)
+uint64 PEFile::FilePointerToVA(uint64_t fileAddress)
 {
-    uint64_t RVA;
+    uint64 RVA;
 
     if ((RVA = FilePointerToRVA(fileAddress)) != PE_INVALID_ADDRESS)
         return RVA + imageBase;
@@ -2041,7 +2041,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
     switch (*p)
     {
     case 0x4D:
-        CHECKBK(buf.GetLength() >= 2, "");
+        CHECKBK(buf.GetLength() >= 4, "");
         if (*(uint16*) p == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90) && p[3] == 0x00)
         {
             result.start = offset;
@@ -2051,7 +2051,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
         }
         break;
     case 0x50:
-        CHECKBK(buf.GetLength() >= 2, "");
+        CHECKBK(buf.GetLength() >= 4, "");
         if (*(uint32*) p == 0x00004550)
         {
             result.start = offset;
@@ -2291,6 +2291,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                     result.color = API_CALL_COLOR;
                     return true;
                 }
+
                 /*
                        14002ecfc b0 01 00 d0     adrp       x16,0x140064000
                        14002ed00 10 8a 43 f9     ldr        x16,[x16, #0x710]=>->MSVCRT.DLL::setlocale       = 0006f26c
