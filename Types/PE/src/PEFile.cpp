@@ -2123,9 +2123,11 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                 break;
             }
             break;
-        case PE::MachineType::ARMNT: // IT WILL NOT COVER ALL THE CASES
-        case PE::MachineType::THUMB: // IT WILL NOT COVER ALL THE CASES
-        case PE::MachineType::ARM:   // IT WILL NOT COVER ALL THE CASES
+        case PE::MachineType::ARMNT: // IT WILL NOT COVER ALL THE CASES | TODO:
+                                     // https://github.com/scottt/debugbreak/blob/master/debugbreak.h
+        case PE::MachineType::THUMB: // IT WILL NOT COVER ALL THE CASES | TODO:
+                                     // https://github.com/scottt/debugbreak/blob/master/debugbreak.h
+        case PE::MachineType::ARM: // IT WILL NOT COVER ALL THE CASES | TODO: https://github.com/scottt/debugbreak/blob/master/debugbreak.h
         {
             switch (*p)
             {
@@ -2191,7 +2193,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
             }
         }
         break;
-        case PE::MachineType::ARM64:
+        case PE::MachineType::ARM64: // TODO: https://github.com/scottt/debugbreak/blob/master/debugbreak.h
             switch (*p)
             {
                 // https://opensource.apple.com/source/xnu/xnu-7195.50.7.100.1/doc/pac.md
@@ -2235,24 +2237,51 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
                 }
                 break;
 
-                // case 0xFE: // breapoint: UND => FE DE FF E7 in ARM mode
-                //     if (p[1] == 0xDE && p[2] == 0xFF && p[3] == 0xE7)
-                //     {
-                //         result.start = offset;
-                //         result.end   = offset + 3;
-                //         result.color = BREAKPOINT_COLOR;
-                //         return true;
-                //     }
-                //     break;
-                // case 0xBE: // breapoint: BKPT ( BE BE ) in Thumb
-                //     if (p[1] == 0xDE && p[2] == 0xBE)
-                //     {
-                //         result.start = offset;
-                //         result.end   = offset + 1;
-                //         result.color = BREAKPOINT_COLOR;
-                //         return true;
-                //     }
-                //     break;
+            case 0xDE: // __builtin_trap();
+                if (p[1] == 0xFF)
+                {
+                    result.start = offset;
+                    result.end   = offset + 1;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xFE: // On ARM Linux it's usually an UND opcode (e.g. FE DE FF E7)
+                if (p[1] == 0xDE && p[2] == 0xFF && p[3] == 0xE7)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xF7: // raise(SIGTRAP); => blx	104a8 <raise@plt>
+                if (p[1] == 0xFF && p[2] == 0xEF && p[3] == 0x8A)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0xD4: // __asm__("DCPS1"); / __asm__("DCPS2"); / __asm__("DCPS3");
+                if (p[1] == 0xA0 && p[2] == 0x00 && (p[3] == 0x01 || p[3] == 0x02 || p[3] == 0x03))
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
+            case 0x52: // __asm__("DRPS");
+                if (p[1] == 0x80 && p[2] == 0x00 && p[3] == 0x00)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = BREAKPOINT_COLOR;
+                    return true;
+                }
+                break;
 
             default: // api call => 60 02 3f d6 blr x19=>MSVCRT.DLL::_onexit
                 if (p[2] == 0x3F && p[3] == 0xD6)
