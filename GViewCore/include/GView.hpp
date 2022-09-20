@@ -1079,6 +1079,8 @@ namespace View
             void AddPlugin(Reference<Plugin> plugin);
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
+            void SetMaxTokenSize(Size sz);
+            
         };
     }; // namespace LexicalViewer
 

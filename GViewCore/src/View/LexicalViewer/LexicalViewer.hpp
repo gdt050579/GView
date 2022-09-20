@@ -198,6 +198,7 @@ namespace View
         {
             std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
+            AppCUI::Graphics::Size maxTokenSize;
             uint32 maxWidth;
             uint8 indentWidth;
             bool ignoreCase;
