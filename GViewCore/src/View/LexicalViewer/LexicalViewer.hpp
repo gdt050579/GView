@@ -292,7 +292,7 @@ namespace View
 
             static Config config;
 
-            void UpdateTokensInformation();
+            void UpdateTokensWidthAndHeight();
             void ComputeOriginalPositions();
             void PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff);
             void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 diff);
@@ -303,6 +303,7 @@ namespace View
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
             void UpdateVisibilityStatus(uint32 start, uint32 end, bool visible);
+            void UpdateTokensInformation();
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);

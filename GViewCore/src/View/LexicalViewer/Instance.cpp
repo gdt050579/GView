@@ -112,6 +112,7 @@ void Instance::RecomputeTokenPositions()
 {
     this->noItemsVisible = true;
     UpdateVisibilityStatus(0, (uint32) this->tokens.size(), true);
+    UpdateTokensWidthAndHeight();
     if (this->prettyFormat)
         PrettyFormat();
     else
@@ -605,6 +606,16 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         {
             pos++;
         }
+    }
+}
+void Instance::UpdateTokensWidthAndHeight()
+{
+    for (auto& tok : this->tokens)
+    {
+        if (tok.IsVisible() == false)
+            continue;
+        tok.pos.width  = tok.contentWidth;
+        tok.pos.height = tok.contentHeight;
     }
 }
 uint32 Instance::TokenToBlock(uint32 tokenIndex)
