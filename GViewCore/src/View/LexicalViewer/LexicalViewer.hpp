@@ -100,6 +100,7 @@ namespace View
         struct TokenPosition
         {
             int32 x, y;
+            uint32 width, height;
             TokenStatus status;
         };
         struct TokenObject
@@ -110,8 +111,8 @@ namespace View
             uint32 start, end, type;
             uint32 blockID; // for blocks
             uint32 lineNo;
-            int32 x, y;
-            uint8 maxWidth, maxHeight, width, height;
+            uint32 contentWidth, contentHeight;
+            TokenPosition pos;
             TokenAlignament align;
             TokenColor color;
             TokenDataType dataType;
