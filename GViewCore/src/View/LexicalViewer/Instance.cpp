@@ -614,9 +614,19 @@ void Instance::UpdateTokensWidthAndHeight()
     {
         if (tok.IsVisible() == false)
             continue;
-        
-        tok.pos.width  = tok.contentWidth;
-        tok.pos.height = tok.contentHeight;
+        if (tok.IsUnSizeable())
+        {
+            tok.pos.width  = tok.contentWidth;
+            tok.pos.height = tok.contentHeight;
+        }
+        else
+        {
+            tok.pos.width  = std::min<>(tok.contentWidth, this->settings->maxTokenSize.Width);
+            tok.pos.height = std::min<>(tok.contentHeight, this->settings->maxTokenSize.Height);
+        }
+        // minim 1x1 size
+        tok.pos.width  = std::max<>(1U, tok.pos.width);
+        tok.pos.height = std::max<>(1U, tok.pos.height);
     }
 }
 uint32 Instance::TokenToBlock(uint32 tokenIndex)
