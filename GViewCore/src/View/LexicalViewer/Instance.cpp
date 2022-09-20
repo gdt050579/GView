@@ -614,6 +614,7 @@ void Instance::UpdateTokensWidthAndHeight()
     {
         if (tok.IsVisible() == false)
             continue;
+        
         tok.pos.width  = tok.contentWidth;
         tok.pos.height = tok.contentHeight;
     }

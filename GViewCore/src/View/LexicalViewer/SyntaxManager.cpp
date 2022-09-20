@@ -265,6 +265,8 @@ Token TokensList::Add(
 
     if ((flags & TokenFlags::DisableSimilaritySearch) != TokenFlags::None)
         cToken.SetDisableSimilartyHighlightFlag();
+    if ((flags & TokenFlags::UnSizeable) != TokenFlags::None)
+        cToken.SetFixedSizeFlag();
 
     this->lastTokenID = typeID;
 
