@@ -7,8 +7,8 @@ SettingsData::SettingsData()
 {
     this->indentWidth         = 4;
     this->maxWidth            = 120;
-    this->maxTokenSize.Width  = 5;
-    this->maxTokenSize.Height = 20;
+    this->maxTokenSize.Width  = 120;
+    this->maxTokenSize.Height = 5;
     this->parser              = nullptr;
     this->ignoreCase          = false;
 }

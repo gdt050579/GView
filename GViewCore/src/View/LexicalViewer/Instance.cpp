@@ -946,15 +946,20 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     }
     if (tok.pos.height > 1)
     {
-        WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
+        WriteTextParams params(WriteTextFlags::MultipleLines|WriteTextFlags::WrapToWidth, TextAlignament::Left);
         params.X     = lineNrWidth + tok.pos.x - Scroll.x;
         params.Y     = tok.pos.y - Scroll.y;
+        params.Width = tok.pos.width;
         params.Color = col;
+        Rect r;
+        r.Create(params.X, params.Y, tok.pos.width, tok.pos.height, Alignament::TopLeft);
+        renderer.SetClipRect(r);
         renderer.WriteText(txt, params);
+        renderer.ResetClip();
     }
     else
     {
-        renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, txt, col);
+        renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y,tok.pos.width, txt, col);
     }
     if (blockStarter && tok.IsFolded())
     {
