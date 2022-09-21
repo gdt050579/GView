@@ -112,6 +112,7 @@ void Instance::RecomputeTokenPositions()
 {
     this->noItemsVisible = true;
     UpdateVisibilityStatus(0, (uint32) this->tokens.size(), true);
+    UpdateTokensWidthAndHeight();
     if (this->prettyFormat)
         PrettyFormat();
     else
@@ -193,8 +194,8 @@ void Instance::ComputeOriginalPositions()
         {
             if (!this->tokens[idx].IsVisible())
             {
-                this->tokens[idx].x = 0;
-                this->tokens[idx].y = 0;
+                this->tokens[idx].pos.x = 0;
+                this->tokens[idx].pos.y = 0;
                 p += (this->tokens[idx].end - this->tokens[idx].start);
                 pos += (this->tokens[idx].end - this->tokens[idx].start);
                 if (p >= e)
@@ -202,8 +203,8 @@ void Instance::ComputeOriginalPositions()
             }
             else
             {
-                this->tokens[idx].x = x;
-                this->tokens[idx].y = y;
+                this->tokens[idx].pos.x = x;
+                this->tokens[idx].pos.y = y;
             }
 
             idx++;
@@ -243,9 +244,9 @@ void Instance::PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint3
         auto& tok = this->tokens[idx];
         if (tok.IsVisible() == false)
             continue;
-        if (tok.y != currentLineYOffset)
+        if (tok.pos.y != currentLineYOffset)
             break;
-        tok.x += diff;
+        tok.pos.x += diff;
         if ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None)
             foundSameColumnFlag = true;
     }
@@ -259,14 +260,14 @@ void Instance::PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint3
         auto& tok = this->tokens[idx];
         if (tok.IsVisible() == false)
             continue;
-        if (tok.y != currentLineYOffset)
+        if (tok.pos.y != currentLineYOffset)
         {
-            currentLineYOffset = tok.y;
+            currentLineYOffset = tok.pos.y;
             diffToAdd          = 0;
         }
         if ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None)
             diffToAdd = diff;
-        tok.x += diffToAdd;
+        tok.pos.x += diffToAdd;
     }
 }
 void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 dif)
@@ -276,21 +277,21 @@ void Instance::PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd,
         auto& tok = this->tokens[idx];
         if (tok.IsVisible() == false)
             continue;
-        tok.x += dif;
+        tok.pos.x += dif;
     }
     if (idxEnd > 0)
     {
         // move all tokens after the end of the block with the same diff
-        auto lastLineY = this->tokens[idxEnd - 1].y;
+        auto lastLineY = this->tokens[idxEnd - 1].pos.y;
         auto len       = static_cast<uint32>(this->tokens.size());
         for (auto idx = idxEnd; idx < len; idx++)
         {
             auto& tok = this->tokens[idx];
             if (tok.IsVisible() == false)
                 continue;
-            if (tok.y != lastLineY)
+            if (tok.pos.y != lastLineY)
                 break;
-            tok.x += dif;
+            tok.pos.x += dif;
         }
     }
 }
@@ -309,18 +310,18 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             idx++;
             continue;
         }
-        if (lastLine != tok.y)
+        if (lastLine != tok.pos.y)
         {
-            lastLine                = tok.y;
+            lastLine                = tok.pos.y;
             dif                     = 0;
             firstWithSameColumnFlag = true;
         }
         if ((firstWithSameColumnFlag) && ((tok.align & TokenAlignament::SameColumn) != TokenAlignament::None))
         {
-            dif                     = columnXOffset - tok.x;
+            dif                     = columnXOffset - tok.pos.x;
             firstWithSameColumnFlag = false;
         }
-        tok.x += dif;
+        tok.pos.x += dif;
         if (tok.IsBlockStarter())
         {
             auto& block   = this->blocks[tok.blockID];
@@ -342,7 +343,7 @@ void Instance::PrettyFormatAlignToSameColumn(uint32 idxStart, uint32 idxEnd, int
             case BlockAlignament::ParentBlock:
             case BlockAlignament::ParentBlockWithIndent:
                 // align until current line ends --> if a sameColumn flag is found , align the rest of the block as well
-                PrettyFormatIncreaseUntilNewLineXWithValue(idx + 1, endToken, tok.y, dif);
+                PrettyFormatIncreaseUntilNewLineXWithValue(idx + 1, endToken, tok.pos.y, dif);
                 break;
             case BlockAlignament::CurrentToken:
             case BlockAlignament::CurrentTokenWithIndent:
@@ -421,8 +422,8 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                     if (idx > idxStart)
                     {
                         auto& previous = tokens[idx - 1];
-                        manager.y      = previous.y + previous.height - 1;
-                        manager.x      = previous.x + previous.width;
+                        manager.y      = previous.pos.y + previous.pos.height - 1;
+                        manager.x      = previous.pos.x + previous.pos.width;
                     }
                 }
                 manager.spaceAdded = false;
@@ -432,8 +433,8 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
         }
 
         // assign position to curent token
-        tok.x                   = manager.x;
-        tok.y                   = manager.y;
+        tok.pos.x               = manager.x;
+        tok.pos.y               = manager.y;
         manager.firstOnNewLine  = false;
         const auto blockStarter = tok.IsBlockStarter();
         const auto folded       = tok.IsFolded();
@@ -441,15 +442,15 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
         {
             const auto& block = this->blocks[tok.blockID];
             if (block.foldMessage.empty())
-                manager.x += tok.width + 3; // for ...
+                manager.x += tok.pos.width + 3; // for ...
             else
-                manager.x += tok.width + (int32) block.foldMessage.size();
+                manager.x += tok.pos.width + (int32) block.foldMessage.size();
             partOfFoldedBlock = block.HasEndMarker(); // only limit the alignament for end marker
         }
         else
         {
-            manager.x += tok.width;
-            manager.y += tok.height - 1;
+            manager.x += tok.pos.width;
+            manager.y += tok.pos.height - 1;
             partOfFoldedBlock = false;
         }
         manager.lastY      = manager.y;
@@ -463,17 +464,17 @@ void Instance::PrettyFormatForBlock(uint32 idxStart, uint32 idxEnd, int32 leftMa
                 if (sameColumnCount == 1)
                 {
                     // first one
-                    maxXOffsetForSameColumn = tok.x;
-                    lastSameColumnLine      = tok.y;
+                    maxXOffsetForSameColumn = tok.pos.x;
+                    lastSameColumnLine      = tok.pos.y;
                 }
                 else
                 {
-                    if (tok.y != lastSameColumnLine)
+                    if (tok.pos.y != lastSameColumnLine)
                     {
                         // a new item on a differnt line
-                        maxXOffsetForSameColumn = std::max<>(maxXOffsetForSameColumn, tok.x);
-                        sameColumnDifferences   = true;  // set the marker
-                        lastSameColumnLine      = tok.y; // update last line
+                        maxXOffsetForSameColumn = std::max<>(maxXOffsetForSameColumn, tok.pos.x);
+                        sameColumnDifferences   = true;      // set the marker
+                        lastSameColumnLine      = tok.pos.y; // update last line
                     }
                 }
             }
@@ -607,6 +608,27 @@ void Instance::UpdateVisibilityStatus(uint32 start, uint32 end, bool visible)
         }
     }
 }
+void Instance::UpdateTokensWidthAndHeight()
+{
+    for (auto& tok : this->tokens)
+    {
+        if (tok.IsVisible() == false)
+            continue;
+        if (tok.IsUnSizeable())
+        {
+            tok.pos.width  = tok.contentWidth;
+            tok.pos.height = tok.contentHeight;
+        }
+        else
+        {
+            tok.pos.width  = std::min<>(tok.contentWidth, this->settings->maxTokenSize.Width);
+            tok.pos.height = std::min<>(tok.contentHeight, this->settings->maxTokenSize.Height);
+        }
+        // minim 1x1 size
+        tok.pos.width  = std::max<>(1U, tok.pos.width);
+        tok.pos.height = std::max<>(1U, tok.pos.height);
+    }
+}
 uint32 Instance::TokenToBlock(uint32 tokenIndex)
 {
     if ((size_t) tokenIndex >= tokens.size())
@@ -679,22 +701,22 @@ void Instance::EnsureCurrentItemIsVisible()
         return;
 
     const auto& tok    = this->tokens[this->currentTokenIndex];
-    auto tk_right      = tok.x + (int32) tok.width - 1;
-    auto tk_bottom     = tok.y + (int32) tok.height - 1;
+    auto tk_right      = tok.pos.x + (int32) tok.pos.width - 1;
+    auto tk_bottom     = tok.pos.y + (int32) tok.pos.height - 1;
     auto scroll_right  = Scroll.x + this->GetWidth() - 1 - this->lineNrWidth;
     auto scroll_bottom = Scroll.y + this->GetHeight() - 1;
 
     // if already in current view -> return;
-    if ((tok.x >= Scroll.x) && (tok.y >= Scroll.y) && (tk_right <= scroll_right) && (tk_bottom <= scroll_bottom))
+    if ((tok.pos.x >= Scroll.x) && (tok.pos.y >= Scroll.y) && (tk_right <= scroll_right) && (tk_bottom <= scroll_bottom))
         return;
     if (tk_right > scroll_right)
         Scroll.x += (tk_right - scroll_right);
     if (tk_bottom > scroll_bottom)
         Scroll.y += (tk_bottom - scroll_bottom);
-    if (tok.x < Scroll.x)
-        Scroll.x = tok.x;
-    if (tok.y < Scroll.y)
-        Scroll.y = tok.y;
+    if (tok.pos.x < Scroll.x)
+        Scroll.x = tok.pos.x;
+    if (tok.pos.y < Scroll.y)
+        Scroll.y = tok.pos.y;
 }
 void Instance::Parse()
 {
@@ -734,10 +756,10 @@ void Instance::Parse()
         auto lineNo = 0;
         for (auto& tok : this->tokens)
         {
-            if (tok.y != lastY)
+            if (tok.pos.y != lastY)
             {
                 lineNo++;
-                lastY = tok.y;
+                lastY = tok.pos.y;
             }
             tok.lineNo = lineNo;
         }
@@ -803,7 +825,7 @@ void Instance::BakupTokensPositions()
     backupedTokenPositionList.clear();
     for (const auto& tok : this->tokens)
     {
-        backupedTokenPositionList.push_back({ 0, 0, TokenStatus::None });
+        backupedTokenPositionList.push_back({ 0, 0, 1, 1, TokenStatus::None });
     }
 }
 void Instance::RestoreTokensPositionsFromBackup()
@@ -824,33 +846,35 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
 {
     const auto& tok      = this->tokens[block.tokenStart];
     const auto& tknEnd   = this->tokens[block.tokenEnd];
-    const auto rightPos  = tknEnd.x + tknEnd.width - 1;
-    const auto bottomPos = tknEnd.y + tknEnd.height - 1;
+    const auto rightPos  = tknEnd.pos.x + static_cast<int32>(tknEnd.pos.width) - 1;
+    const auto bottomPos = tknEnd.pos.y + static_cast<int32>(tknEnd.pos.height) - 1;
     const auto col       = Cfg.Editor.Focused;
     if (tok.IsFolded() == false)
     {
-        if (bottomPos > tok.y)
+        if (bottomPos > tok.pos.y)
         {
             // multi-line block
-            bool fillLastLine = ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].y != tknEnd.y) : true;
-            auto leftPos      = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
+            bool fillLastLine =
+                  ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].pos.y != tknEnd.pos.y) : true;
+            auto leftPos = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
             // first draw the first line
-            renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, this->GetWidth(), ' ', col);
+            renderer.FillHorizontalLine(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, this->GetWidth(), ' ', col);
             // draw the middle part
             if (fillLastLine)
             {
-                renderer.FillRect(leftPos, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
+                renderer.FillRect(leftPos, tok.pos.y + 1 - Scroll.y, this->GetWidth(), bottomPos - Scroll.y, ' ', col);
             }
             else
             {
                 // partial rect (the last line of the block contains some elements that are not part of the block
-                renderer.FillRect(leftPos, tok.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
+                renderer.FillRect(leftPos, tok.pos.y + 1 - Scroll.y, this->GetWidth(), bottomPos - 1 - Scroll.y, ' ', col);
                 renderer.FillHorizontalLine(leftPos, bottomPos - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
             }
         }
         else
         {
-            renderer.FillHorizontalLine(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
+            renderer.FillHorizontalLine(
+                  lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
         }
     }
 }
@@ -918,24 +942,29 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         FillBlockSpace(renderer, this->blocks[tok.blockID]);
     if ((blockStarter) && (this->blocks[tok.blockID].CanOnlyBeFoldedManually() == false))
     {
-        foldColumn.SetBlock(tok.y - Scroll.y, tok.blockID);
+        foldColumn.SetBlock(tok.pos.y - Scroll.y, tok.blockID);
     }
-    if (tok.height > 1)
+    if (tok.pos.height > 1)
     {
-        WriteTextParams params(WriteTextFlags::MultipleLines, TextAlignament::Left);
-        params.X     = lineNrWidth + tok.x - Scroll.x;
-        params.Y     = tok.y - Scroll.y;
+        WriteTextParams params(WriteTextFlags::MultipleLines | WriteTextFlags::WrapToWidth, TextAlignament::Left);
+        params.X     = lineNrWidth + tok.pos.x - Scroll.x;
+        params.Y     = tok.pos.y - Scroll.y;
+        params.Width = tok.pos.width;
         params.Color = col;
+        Rect r;
+        r.Create(params.X, params.Y, tok.pos.width, tok.pos.height, Alignament::TopLeft);
+        renderer.SetClipRect(r);
         renderer.WriteText(txt, params);
+        renderer.ResetClip();
     }
     else
     {
-        renderer.WriteSingleLineText(lineNrWidth + tok.x - Scroll.x, tok.y - Scroll.y, txt, col);
+        renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, tok.pos.width, txt, col);
     }
     if (blockStarter && tok.IsFolded())
     {
-        auto x            = lineNrWidth + tok.x + tok.width - Scroll.x;
-        auto y            = tok.y + tok.height - 1 - Scroll.y;
+        auto x            = lineNrWidth + tok.pos.x + tok.pos.width - Scroll.x;
+        auto y            = tok.pos.y + tok.pos.height - 1 - Scroll.y;
         const auto& block = this->blocks[tok.blockID];
         if (block.foldMessage.empty())
             renderer.WriteSingleLineText(x, y, "...", ColorPair{ Color::Gray, Color::Black });
@@ -946,13 +975,13 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     if ((index > 0) && (onSelection) && (selection.Contains(index - 1)))
     {
         const auto& precTok = this->tokens[index - 1];
-        if ((tok.y == precTok.y) && (tok.height == 1))
+        if ((tok.pos.y == precTok.pos.y) && (tok.pos.height == 1))
         {
             // fill in the space between them
             renderer.FillHorizontalLine(
-                  lineNrWidth + precTok.x + precTok.width - Scroll.x,
-                  precTok.y - Scroll.y,
-                  lineNrWidth + tok.x - 1 - Scroll.x,
+                  lineNrWidth + precTok.pos.x + precTok.pos.width - Scroll.x,
+                  precTok.pos.y - Scroll.y,
+                  lineNrWidth + tok.pos.x - 1 - Scroll.x,
                   -1,
                   Cfg.Selection.Editor);
         }
@@ -986,7 +1015,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
         {
             this->currentHash = currentTok.hash;
             PaintToken(renderer, currentTok, this->currentTokenIndex);
-            params.Y = std::max<>(0, currentTok.y - Scroll.y);
+            params.Y = std::max<>(0, currentTok.pos.y - Scroll.y);
             renderer.WriteText(num.ToDec(currentTok.lineNo), params);
         }
     }
@@ -1008,21 +1037,21 @@ void Instance::Paint(Graphics::Renderer& renderer)
             idx++;
             continue;
         }
-        const auto tk_right  = t.x + (int32) t.width - 1;
-        const auto tk_bottom = t.y + (int32) t.height - 1;
+        const auto tk_right  = t.pos.x + (int32) t.pos.width - 1;
+        const auto tk_bottom = t.pos.y + (int32) t.pos.height - 1;
 
         // if token not in visible screen => skip it
-        if ((t.x > scroll_right) || (t.y > scroll_bottom) || (tk_right < Scroll.x) || (tk_bottom < Scroll.y))
+        if ((t.pos.x > scroll_right) || (t.pos.y > scroll_bottom) || (tk_right < Scroll.x) || (tk_bottom < Scroll.y))
         {
             idx++;
             continue;
         }
         PaintToken(renderer, t, idx);
-        if (t.y != lastY)
+        if (t.pos.y != lastY)
         {
-            params.Y = std::max<>(0, t.y - Scroll.y);
+            params.Y = std::max<>(0, t.pos.y - Scroll.y);
             renderer.WriteText(num.ToDec(t.lineNo), params);
-            lastY = t.y;
+            lastY = t.pos.y;
         }
         idx++;
     }
@@ -1071,7 +1100,7 @@ void Instance::MoveLeft(bool selected, bool stopAfterFirst)
         return;
 
     auto idx          = this->currentTokenIndex - 1;
-    auto yPos         = this->tokens[currentTokenIndex].y;
+    auto yPos         = this->tokens[currentTokenIndex].pos.y;
     auto lastValidIdx = this->currentTokenIndex;
     while (idx > 0)
     {
@@ -1080,7 +1109,7 @@ void Instance::MoveLeft(bool selected, bool stopAfterFirst)
             idx--;
             continue;
         }
-        if (this->tokens[idx].y != yPos)
+        if (this->tokens[idx].pos.y != yPos)
             break;
         lastValidIdx = idx;
         if (stopAfterFirst)
@@ -1088,7 +1117,7 @@ void Instance::MoveLeft(bool selected, bool stopAfterFirst)
         else
             idx--;
     }
-    if ((idx == 0) && (this->tokens[0].IsVisible()) && (this->tokens[0].y == yPos))
+    if ((idx == 0) && (this->tokens[0].IsVisible()) && (this->tokens[0].pos.y == yPos))
         lastValidIdx = 0;
     MoveToToken(lastValidIdx, selected);
 }
@@ -1097,7 +1126,7 @@ void Instance::MoveRight(bool selected, bool stopAfterFirst)
     if (noItemsVisible)
         return;
     auto idx          = this->currentTokenIndex + 1;
-    auto yPos         = this->tokens[currentTokenIndex].y;
+    auto yPos         = this->tokens[currentTokenIndex].pos.y;
     auto lastValidIdx = this->currentTokenIndex;
     auto count        = this->tokens.size();
     while (idx < count)
@@ -1107,7 +1136,7 @@ void Instance::MoveRight(bool selected, bool stopAfterFirst)
             idx++;
             continue;
         }
-        if (this->tokens[idx].y != yPos)
+        if (this->tokens[idx].pos.y != yPos)
             break;
         lastValidIdx = idx;
         if (stopAfterFirst)
@@ -1124,21 +1153,21 @@ void Instance::MoveUp(uint32 times, bool selected)
     if (this->currentTokenIndex == 0)
         return;
     uint32 idx = this->currentTokenIndex - 1;
-    auto lastY = this->tokens[this->currentTokenIndex].y;
-    auto posX  = this->tokens[this->currentTokenIndex].x;
+    auto lastY = this->tokens[this->currentTokenIndex].pos.y;
+    auto posX  = this->tokens[this->currentTokenIndex].pos.x;
     while (times > 0)
     {
-        while ((idx > 0) && (this->tokens[idx].y == lastY))
+        while ((idx > 0) && (this->tokens[idx].pos.y == lastY))
             idx--;
 
-        while ((idx > 0) && ((!this->tokens[idx].IsVisible()) || (this->tokens[idx].y == lastY)))
+        while ((idx > 0) && ((!this->tokens[idx].IsVisible()) || (this->tokens[idx].pos.y == lastY)))
             idx--;
 
         if (idx == 0)
         {
             if (this->tokens[0].IsVisible())
             {
-                if (this->tokens[idx].y == lastY)
+                if (this->tokens[idx].pos.y == lastY)
                 {
                     // already on the first line --> move to first token
                     MoveToToken(0, selected);
@@ -1153,12 +1182,12 @@ void Instance::MoveUp(uint32 times, bool selected)
                 return;
             }
         }
-        lastY = this->tokens[idx].y;
+        lastY = this->tokens[idx].pos.y;
         times--;
     }
     // found the line that I am interested in --> now search the closest token in terms of position
     auto found     = idx;
-    auto best_dist = ComputeXDist(this->tokens[found].x, posX);
+    auto best_dist = ComputeXDist(this->tokens[found].pos.x, posX);
     while ((idx > 0) && (best_dist > 0))
     {
         if (this->tokens[idx].IsVisible() == false)
@@ -1166,9 +1195,9 @@ void Instance::MoveUp(uint32 times, bool selected)
             idx--;
             continue;
         }
-        if (this->tokens[idx].y != lastY)
+        if (this->tokens[idx].pos.y != lastY)
             break;
-        auto dist = ComputeXDist(this->tokens[idx].x, posX);
+        auto dist = ComputeXDist(this->tokens[idx].pos.x, posX);
         if (dist < best_dist)
         {
             found     = idx;
@@ -1179,7 +1208,7 @@ void Instance::MoveUp(uint32 times, bool selected)
     if ((idx == 0) && (this->tokens[idx].IsVisible()))
     {
         // it is possible that the first token is the closest --> so test this
-        auto dist = ComputeXDist(this->tokens[idx].x, posX);
+        auto dist = ComputeXDist(this->tokens[idx].pos.x, posX);
         if (dist < best_dist)
         {
             found     = idx;
@@ -1194,13 +1223,13 @@ void Instance::MoveDown(uint32 times, bool selected)
         return;
     uint32 cnt = (uint32) this->tokens.size();
     uint32 idx = this->currentTokenIndex + 1;
-    auto lastY = this->tokens[this->currentTokenIndex].y;
-    auto posX  = this->tokens[this->currentTokenIndex].x;
+    auto lastY = this->tokens[this->currentTokenIndex].pos.y;
+    auto posX  = this->tokens[this->currentTokenIndex].pos.x;
     if (idx >= cnt)
         return;
     while (times > 0)
     {
-        while ((idx < cnt) && ((!this->tokens[idx].IsVisible()) || (this->tokens[idx].y == lastY)))
+        while ((idx < cnt) && ((!this->tokens[idx].IsVisible()) || (this->tokens[idx].pos.y == lastY)))
             idx++;
         if (idx >= cnt)
         {
@@ -1208,12 +1237,12 @@ void Instance::MoveDown(uint32 times, bool selected)
             MoveToClosestVisibleToken(cnt - 1, selected);
             return;
         }
-        lastY = this->tokens[idx].y;
+        lastY = this->tokens[idx].pos.y;
         times--;
     }
     // found the line that I am interested in --> now search the closest token in terms of position
     auto found     = idx;
-    auto best_dist = ComputeXDist(this->tokens[found].x, posX);
+    auto best_dist = ComputeXDist(this->tokens[found].pos.x, posX);
     while ((idx < cnt) && (best_dist > 0))
     {
         if (this->tokens[idx].IsVisible() == false)
@@ -1221,9 +1250,9 @@ void Instance::MoveDown(uint32 times, bool selected)
             idx++;
             continue;
         }
-        if (this->tokens[idx].y != lastY)
+        if (this->tokens[idx].pos.y != lastY)
             break;
-        auto dist = ComputeXDist(this->tokens[idx].x, posX);
+        auto dist = ComputeXDist(this->tokens[idx].pos.x, posX);
         if (dist < best_dist)
         {
             found     = idx;
@@ -1512,6 +1541,29 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     }
 
+    if (characterCode > 0)
+    {
+        switch(characterCode)
+        {
+        case '[':
+            this->settings->maxTokenSize.Width = std::max<>(6U, this->settings->maxTokenSize.Width - 1);
+            this->RecomputeTokenPositions();
+            return true;
+        case ']':
+            this->settings->maxTokenSize.Width = std::min<>(500U, this->settings->maxTokenSize.Width + 1);
+            this->RecomputeTokenPositions();
+            return true;
+        case '{':
+            this->settings->maxTokenSize.Height = std::max<>(1U, this->settings->maxTokenSize.Height - 1);
+            this->RecomputeTokenPositions();
+            return true;
+        case '}':
+            this->settings->maxTokenSize.Height = std::min<>(500U, this->settings->maxTokenSize.Height + 1);
+            this->RecomputeTokenPositions();
+            return true;
+        }
+    }
+
     return false;
 }
 void Instance::OnStart()
@@ -1733,16 +1785,16 @@ void Instance::ShowSaveAsDialog()
     {
         if (tok.IsVisible() == false)
             continue;
-        if (y < tok.y)
+        if (y < tok.pos.y)
         {
-            b.AddMultipleTimes(newLine, tok.y - y);
+            b.AddMultipleTimes(newLine, tok.pos.y - y);
             x = 0;
-            y = tok.y;
+            y = tok.pos.y;
         }
-        if (x < tok.x)
+        if (x < tok.pos.x)
         {
-            b.AddMultipleTimes(" ", tok.x - x);
-            x = tok.x;
+            b.AddMultipleTimes(" ", tok.pos.x - x);
+            x = tok.pos.x;
         }
         auto txt    = tok.GetText(this->text.text);
         auto lastCH = static_cast<char16>(0);
@@ -1758,8 +1810,8 @@ void Instance::ShowSaveAsDialog()
                 else
                 {
                     b.Add(newLine);
-                    b.AddMultipleTimes(" ", tok.x);
-                    x = tok.x;
+                    b.AddMultipleTimes(" ", tok.pos.x);
+                    x = tok.pos.x;
                     y++;
                     lastCH = ch;
                 }
@@ -1818,10 +1870,10 @@ uint32 Instance::MousePositionToTokenID(int x, int y)
             idx++;
             continue;
         }
-        auto tokLeft   = tok.x + lineNrWidth - Scroll.x;
-        auto tokTop    = tok.y - Scroll.y;
-        auto tokRight  = tokLeft + tok.width;
-        auto tokBottom = tokTop + tok.height;
+        auto tokLeft   = tok.pos.x + lineNrWidth - Scroll.x;
+        auto tokTop    = tok.pos.y - Scroll.y;
+        auto tokRight  = tokLeft + static_cast<int32>(tok.pos.width);
+        auto tokBottom = tokTop + static_cast<int32>(tok.pos.height);
         if ((x >= tokLeft) && (x < tokRight) && (y >= tokTop) && (y < tokBottom))
             return idx;
         idx++;
@@ -1955,7 +2007,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
             xPoz = PrintSelectionInfo(3, xPoz, 0, 16, r);
         }
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 16, "Line:", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
-        xPoz = this->WriteCursorInfo(r, xPoz, 0, 9, "Col:", tmp.Format("%d", tok.x + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 0, 9, "Col:", tmp.Format("%d", tok.pos.x + 1));
         xPoz = this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs:", tmp.Format("%u", tok.start));
         if (tok.error.Len() > 0)
             xPoz = PrintError(tok.error, xPoz, 0, 50, r);
@@ -1968,7 +2020,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         PrintSelectionInfo(1, xPoz, 0, 16, r);
         xPoz = PrintSelectionInfo(3, xPoz, 1, 16, r);
         this->WriteCursorInfo(r, xPoz, 0, 16, "Line: ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
-        xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.x + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 1, 16, "Col : ", tmp.Format("%d", tok.pos.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 18, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 1, 18, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
@@ -1983,7 +2035,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         xPoz = PrintSelectionInfo(2, 0, 2, 16, r);
         PrintSelectionInfo(3, xPoz, 0, 16, r);
         this->WriteCursorInfo(r, xPoz, 1, 16, "Line: ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
-        xPoz = this->WriteCursorInfo(r, xPoz, 2, 16, "Col : ", tmp.Format("%d", tok.x + 1));
+        xPoz = this->WriteCursorInfo(r, xPoz, 2, 16, "Col : ", tmp.Format("%d", tok.pos.x + 1));
         this->WriteCursorInfo(r, xPoz, 0, 35, "Token     : ", tok.GetText(this->text.text));
         this->PrintTokenTypeInfo(tok.type, xPoz, 1, 35, r);
         if (tok.error.Len() > 0)
@@ -1999,7 +2051,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
 
         // second colum
         this->WriteCursorInfo(r, xPoz, 0, 20, "Line    : ", tmp.Format("%d/%d", tok.lineNo, this->lastLineNumber));
-        this->WriteCursorInfo(r, xPoz, 1, 20, "Col     : ", tmp.Format("%d", tok.x + 1));
+        this->WriteCursorInfo(r, xPoz, 1, 20, "Col     : ", tmp.Format("%d", tok.pos.x + 1));
         this->WriteCursorInfo(r, xPoz, 2, 20, "Char ofs: ", tmp.Format("%u", tok.start));
         xPoz = this->WriteCursorInfo(r, xPoz, 3, 20, "Tokens  : ", tmp.Format("%u", (size_t) tokens.size()));
 

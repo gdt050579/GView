@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.214.0"
+#define GVIEW_VERSION "0.215.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -1079,6 +1079,8 @@ namespace View
             void AddPlugin(Reference<Plugin> plugin);
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
+            void SetMaxTokenSize(Size sz);
+            
         };
     }; // namespace LexicalViewer
 

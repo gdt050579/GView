@@ -171,8 +171,8 @@ void TokenObject::UpdateSizes(const char16* text)
             w++;
         }
     }
-    this->height = nrLines;
-    this->width  = std::max<>(maxW, w);
+    this->contentHeight = nrLines;
+    this->contentWidth  = std::max<>(maxW, w);
 }
 // Block method
 Token Block::GetStartToken() const
@@ -246,23 +246,27 @@ Token TokensList::Add(
             return Token();
         }
     }
-    auto& cToken     = INSTANCE->tokens.emplace_back();
-    cToken.type      = typeID;
-    cToken.start     = start;
-    cToken.end       = end;
-    cToken.height    = 1;
-    cToken.maxWidth  = 0;
-    cToken.maxHeight = 0;
-    cToken.lineNo    = 0;
-    cToken.color     = color;
-    cToken.width     = (uint8) (std::min(end - start, (uint32) 0xFE));
-    cToken.blockID   = BlockObject::INVALID_ID;
-    cToken.status    = TokenStatus::Visible;
-    cToken.align     = align;
-    cToken.dataType  = dataType;
+    auto& cToken         = INSTANCE->tokens.emplace_back();
+    cToken.type          = typeID;
+    cToken.start         = start;
+    cToken.end           = end;
+    cToken.pos.status    = TokenStatus::Visible;
+    cToken.pos.x         = 0;
+    cToken.pos.y         = 0;
+    cToken.pos.width     = 1;
+    cToken.pos.height    = 1;
+    cToken.contentWidth  = 1;
+    cToken.contentHeight = 1;
+    cToken.lineNo        = 0;
+    cToken.color         = color;
+    cToken.blockID       = BlockObject::INVALID_ID;
+    cToken.align         = align;
+    cToken.dataType      = dataType;
 
     if ((flags & TokenFlags::DisableSimilaritySearch) != TokenFlags::None)
         cToken.SetDisableSimilartyHighlightFlag();
+    if ((flags & TokenFlags::UnSizeable) != TokenFlags::None)
+        cToken.SetFixedSizeFlag();
 
     this->lastTokenID = typeID;
 
