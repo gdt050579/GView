@@ -198,12 +198,20 @@ void CodeSignMagic::UpdateBlobs()
             cmsSize            = general->AddItem({ "Length", ls.Format("%-26s (%s)", size.data(), hexSize.data()) });
             cmsSize.SetData(signature.size);
 
-            humanReadable =
-                  general->AddItem({ "Human Readable", "Signature parsed - press ENTER for details!", signature.humanReadable.GetText() });
-            humanReadable.SetType(signature.errorHumanReadable ? ListViewItem::Type::ErrorInformation : ListViewItem::Type::Emphasized_2);
+            if (machO->codeSignature->signature.size)
+            {
+                humanReadable = general->AddItem(
+                      { "Human Readable", "Signature parsed - press ENTER for details!", signature.humanReadable.GetText() });
+                humanReadable.SetType(
+                      signature.errorHumanReadable ? ListViewItem::Type::ErrorInformation : ListViewItem::Type::Emphasized_2);
 
-            PEMs = general->AddItem({ "PEMs", ls.Format("(%d) PEMs parsed - press ENTER for details!", signature.PEMsCount) });
-            PEMs.SetType(signature.errorPEMs ? ListViewItem::Type::ErrorInformation : ListViewItem::Type::Emphasized_2);
+                PEMs = general->AddItem({ "PEMs", ls.Format("(%d) PEMs parsed - press ENTER for details!", signature.PEMsCount) });
+                PEMs.SetType(signature.errorPEMs ? ListViewItem::Type::ErrorInformation : ListViewItem::Type::Emphasized_2);
+            }
+            else
+            {
+                general->AddItem({ "Warning:", "Digital signature is missing!" }).SetType(ListViewItem::Type::WarningInformation);
+            }
         }
         break;
         default:
@@ -231,17 +239,25 @@ void CodeSignMagic::UpdateCodeDirectory(
 
     auto cdHashItem = general->AddItem({ "CD Hash", ls.Format("%s", cdHash.c_str()) });
 
-    bool validHash = false;
-    auto& signers  = machO->codeSignature->signature.sig.signers;
-    for (const auto& signer : signers)
+    if (machO->codeSignature->signature.size > 0)
     {
-        for (const auto& attribute : signer.attributes)
+        bool validHash = false;
+        auto& signers  = machO->codeSignature->signature.sig.signers;
+        for (const auto& signer : signers)
         {
-            for (const auto& hash : attribute.CDHashes)
+            for (const auto& attribute : signer.attributes)
             {
-                if (hash.GetText() != nullptr && cdHash == hash.GetText())
+                for (const auto& hash : attribute.CDHashes)
                 {
-                    validHash = true;
+                    if (hash.GetText() != nullptr && cdHash == hash.GetText())
+                    {
+                        validHash = true;
+                        break;
+                    }
+                }
+
+                if (validHash)
+                {
                     break;
                 }
             }
@@ -251,19 +267,20 @@ void CodeSignMagic::UpdateCodeDirectory(
                 break;
             }
         }
-
         if (validHash)
         {
-            break;
+            cdHashItem.SetType(ListViewItem::Type::Emphasized_2);
         }
-    }
-    if (validHash)
-    {
-        cdHashItem.SetType(ListViewItem::Type::Emphasized_2);
+        else
+        {
+            cdHashItem.SetType(ListViewItem::Type::ErrorInformation);
+        }
     }
     else
     {
-        cdHashItem.SetType(ListViewItem::Type::ErrorInformation);
+        cdHashItem.SetType(ListViewItem::Type::WarningInformation);
+        general->AddItem({ "Warning:", "Digital signature is missing! Unable to validate CDHash!" })
+              .SetType(ListViewItem::Type::WarningInformation);
     }
 
     const auto length    = nf.ToString(code.length, dec);

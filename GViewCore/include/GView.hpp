@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.213.0"
+#define GVIEW_VERSION "0.214.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -500,9 +500,9 @@ namespace Golang
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
 } // namespace Golang
 
-namespace Pyc
+namespace ZLIB
 {
-
+    CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
 namespace Compression

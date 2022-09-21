@@ -14,7 +14,7 @@ constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
 namespace Panels
 {
-    enum class IDs : uint8_t
+    enum class IDs : uint8
     {
         Information    = 0x0,
         Segments       = 0x1,

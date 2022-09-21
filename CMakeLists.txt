@@ -139,6 +139,7 @@ add_subdirectory(Types/CPP)
 add_subdirectory(Types/JSON)
 add_subdirectory(Types/VBA)
 add_subdirectory(Types/JS)
+add_subdirectory(Types/PYEXTRACTOR)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
