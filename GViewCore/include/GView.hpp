@@ -537,7 +537,21 @@ namespace Dissasembly
         X64
     };
 
-    CORE_EXPORT bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode mode);
+    constexpr auto BYTES_SIZE    = 24U;
+    constexpr auto MNEMONIC_SIZE = 32U;
+    constexpr auto OP_STR_SIZE   = 160U;
+
+    struct Instruction
+    {
+        uint32 id;
+        uint64 address;
+        uint16 size;
+        uint8 bytes[BYTES_SIZE];
+        char mnemonic[MNEMONIC_SIZE];
+        char opStr[OP_STR_SIZE];
+    };
+
+    CORE_EXPORT bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode mode, Instruction& instruction);
 } // namespace Dissasembly
 
 namespace Compression

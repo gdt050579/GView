@@ -527,6 +527,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
         case EM_860:
         case EM_960:
         case EM_8051:
+        case EM_X86_64:
             switch (*p)
             {
             case 0xFF:

@@ -12,6 +12,16 @@ enum class AddressType : uint8
 
 constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
+enum class Opcodes // TODO: as in actual options
+{
+    SHOW_JUMPS  = 1,
+    SHOW_CALLS  = 2,
+    SHOW_FSTART = 4,
+    SHOW_FEND   = 8,
+    SHOW_MZPE   = 16,
+    SHOW_INT3   = 32
+};
+
 namespace Panels
 {
     enum class IDs : uint8

@@ -6,7 +6,7 @@
 
 namespace GView::Dissasembly
 {
-bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode mode)
+bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode mode, Instruction& instruction)
 {
     cs_insn insn{};
 
@@ -54,21 +54,7 @@ bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode m
     uint64 address = va;
     CHECK(cs_disasm_iter(wHandle.value, &aa, &bb, &address, &insn), false, "");
 
-    auto id = (arm_insn) insn.id;
-
-    if (id == ARM_INS_PUSH)
-    {
-        std::ofstream outfile;
-        outfile.open(R"(Z:\Repositories\github\GView\arm_windows.txt)", std::ios_base::app); // append instead of overwrite
-        outfile << insn.mnemonic << " " << insn.op_str << " |=> " << std::hex << insn.id << " " << insn.address << " " << insn.size
-                << " |=> ";
-        for (auto i = 0; i < insn.size; i++)
-        {
-            outfile << (uint16) buf.GetData()[i] << " ";
-        }
-
-        outfile << std::endl;
-    }
+    memcpy(&instruction, &insn, sizeof(instruction));
 
     return true;
 }

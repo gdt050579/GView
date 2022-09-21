@@ -109,6 +109,7 @@ extern "C"
         case ELF::EM_860:
         case ELF::EM_960:
         case ELF::EM_8051:
+        case ELF::EM_X86_64:
         case ELF::EM_ARM:
         case ELF::EM_AARCH64:
         {

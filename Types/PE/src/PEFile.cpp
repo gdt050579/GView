@@ -2042,7 +2042,7 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
     {
     case 0x4D:
         CHECKBK(buf.GetLength() >= 4, "");
-        if (*(uint16*) p == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90) && p[3] == 0x00)
+        if (*(uint16*) p == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90 || p[2] == 0x78) && p[3] == 0x00)
         {
             result.start = offset;
             result.end   = offset + 3;

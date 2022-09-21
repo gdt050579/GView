@@ -719,7 +719,7 @@ namespace Type
                 String Name;
             };
 
-            enum class Opcodes
+            enum class Opcodes // TODO: as in actual options
             {
                 SHOW_JUMPS  = 1,
                 SHOW_CALLS  = 2,

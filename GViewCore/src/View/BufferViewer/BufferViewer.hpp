@@ -65,6 +65,7 @@ namespace View
                 AppCUI::Input::Key GoToEntryPoint;
                 AppCUI::Input::Key ChangeSelectionType;
                 AppCUI::Input::Key ShowHideStrings;
+                AppCUI::Input::Key DissasmDialog;
             } Keys;
             bool Loaded;
 
@@ -152,7 +153,7 @@ namespace View
 
             void UpdateCurrentSelection();
 
-            void PrepareDrawLineInfo (DrawLineInfo& dli);
+            void PrepareDrawLineInfo(DrawLineInfo& dli);
             void WriteHeaders(Renderer& renderer);
             void WriteLineAddress(DrawLineInfo& dli);
             void WriteLineNumbersToChars(DrawLineInfo& dli);
@@ -175,8 +176,9 @@ namespace View
             ColorPair OffsetToColor(uint64 offset);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
-            
+
             void OpenCurrentSelection();
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -185,12 +187,13 @@ namespace View
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            
+
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
+            virtual bool ShowDissasmDialog();
             virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
@@ -252,6 +255,23 @@ namespace View
             {
                 return resultedPos;
             }
+        };
+
+        class DissasmDialog : public Window
+        {
+            BufferView buffer;
+            Reference<ListView> list;
+            uint64 fa;
+            uint64 size;
+            GView::Dissasembly::Architecture arch;
+            GView::Dissasembly::Mode mode;
+
+            void Validate();
+
+          public:
+            DissasmDialog(BufferView buffer, uint64 fa, uint64 size, GView::Dissasembly::Architecture arch, GView::Dissasembly::Mode mode);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
         };
     } // namespace BufferViewer
 } // namespace View
