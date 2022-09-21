@@ -946,7 +946,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     }
     if (tok.pos.height > 1)
     {
-        WriteTextParams params(WriteTextFlags::MultipleLines|WriteTextFlags::WrapToWidth, TextAlignament::Left);
+        WriteTextParams params(WriteTextFlags::MultipleLines | WriteTextFlags::WrapToWidth, TextAlignament::Left);
         params.X     = lineNrWidth + tok.pos.x - Scroll.x;
         params.Y     = tok.pos.y - Scroll.y;
         params.Width = tok.pos.width;
@@ -959,7 +959,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     }
     else
     {
-        renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y,tok.pos.width, txt, col);
+        renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, tok.pos.width, txt, col);
     }
     if (blockStarter && tok.IsFolded())
     {
@@ -1539,6 +1539,29 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
             this->selection.SetSelection(0, 0, this->tokens.size() - 1);
         }
         return true;
+    }
+
+    if (characterCode > 0)
+    {
+        switch(characterCode)
+        {
+        case '[':
+            this->settings->maxTokenSize.Width = std::max<>(6U, this->settings->maxTokenSize.Width - 1);
+            this->RecomputeTokenPositions();
+            return true;
+        case ']':
+            this->settings->maxTokenSize.Width = std::min<>(500U, this->settings->maxTokenSize.Width + 1);
+            this->RecomputeTokenPositions();
+            return true;
+        case '{':
+            this->settings->maxTokenSize.Height = std::max<>(1U, this->settings->maxTokenSize.Height - 1);
+            this->RecomputeTokenPositions();
+            return true;
+        case '}':
+            this->settings->maxTokenSize.Height = std::min<>(500U, this->settings->maxTokenSize.Height + 1);
+            this->RecomputeTokenPositions();
+            return true;
+        }
     }
 
     return false;
