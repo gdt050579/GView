@@ -12,14 +12,30 @@ enum class AddressType : uint8
 
 constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
-enum class Opcodes // TODO: as in actual options
+static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::Yellow, Color::Silver };
+static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::White, Color::Silver };
+
+static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
+static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+
+static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue };
+
+static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
+static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
+
+static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+
+enum class Opcodes : uint32
 {
-    SHOW_JUMPS  = 1,
-    SHOW_CALLS  = 2,
-    SHOW_FSTART = 4,
-    SHOW_FEND   = 8,
-    SHOW_MZPE   = 16,
-    SHOW_INT3   = 32
+    Header        = 1,
+    Call          = 2,
+    LCall         = 4,
+    Jmp           = 8,
+    LJmp          = 16,
+    Breakpoint    = 32,
+    FunctionStart = 64,
+    FunctionEnd   = 128,
+    All           = 0xFFFFFFFF
 };
 
 namespace Panels
@@ -32,6 +48,7 @@ namespace Panels
         GoInformation  = 0x3,
         StaticSymbols  = 0x4,
         DynamicSymbols = 0x5,
+        OpCodes        = 0x6,
     };
 };
 
@@ -71,6 +88,8 @@ class ELFFile : public TypeInterface,
     std::string gnuString;
     Golang::PcLnTab pcLnTab{};
 
+    uint32 showOpcodesMask{ 0 };
+
   public:
     ELFFile();
     virtual ~ELFFile()
@@ -85,6 +104,7 @@ class ELFFile : public TypeInterface,
     uint64 memStartOffset;
     uint64 memEndOffset;
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+    bool GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
     uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
@@ -315,6 +335,35 @@ namespace Panels
 
       public:
         StaticSymbols(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class OpCodes : public AppCUI::Controls::TabPage
+    {
+        Reference<ELFFile> elf;
+        Reference<Object> object;
+
+        Reference<AppCUI::Controls::Label> value;
+        Reference<AppCUI::Controls::CheckBox> all;
+        Reference<AppCUI::Controls::CheckBox> header;
+        Reference<AppCUI::Controls::CheckBox> call;
+        Reference<AppCUI::Controls::CheckBox> lcall;
+        Reference<AppCUI::Controls::CheckBox> jmp;
+        Reference<AppCUI::Controls::CheckBox> ljmp;
+        Reference<AppCUI::Controls::CheckBox> bp;
+        Reference<AppCUI::Controls::CheckBox> fstart;
+        Reference<AppCUI::Controls::CheckBox> fend;
+
+        inline bool AllChecked();
+        inline bool AllUnChecked();
+        inline void SetMaskText();
+        inline void SetConfig(bool checked, uint16 position);
+
+      public:
+        OpCodes(Reference<Object> object, Reference<GView::Type::ELF::ELFFile> elf);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

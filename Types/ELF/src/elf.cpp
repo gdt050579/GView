@@ -158,13 +158,18 @@ extern "C"
         {
             win->AddPanel(Pointer<TabPage>(new ELF::Panels::DynamicSymbols(elf, win)), false);
         }
+        if (elf->HasPanel(ELF::Panels::IDs::OpCodes))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::OpCodes(win->GetObject(), elf)), true);
+        }
 
         return true;
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]  = "hex:'7F 45 4C 46'";
-        sect["Priority"] = 1;
+        sect["Pattern"]      = "hex:'7F 45 4C 46'";
+        sect["Priority"]     = 1;
+        sect["OpCodes.Mask"] = (uint32) ELF::Opcodes::All;
     }
 }

@@ -11,6 +11,7 @@ bool ELFFile::Update()
     panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
+    panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
 
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");
@@ -490,26 +491,158 @@ uint64 ELFFile::GetVirtualSize() const
     return -1;
 }
 
+bool ELFFile::GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    const auto mode = is64 ? GView::Dissasembly::Mode::X64 : GView::Dissasembly::Mode::X32;
+
+    GView::Dissasembly::Instruction ins{ 0 };
+    CHECK(GView::Dissasembly::DissasembleInstruction(buf, GView::Dissasembly::Architecture::X86, offset, mode, ins), false, "");
+
+    switch ((GView::Dissasembly::InstructionX86) ins.id)
+    {
+    case GView::Dissasembly::InstructionX86::CALL:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::Call) == (uint32) Opcodes::Call), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        result.color = INS_CALL_COLOR;
+        return true;
+    }
+    case GView::Dissasembly::InstructionX86::LCALL:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::LCall) == (uint32) Opcodes::LCall), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        result.color = INS_LCALL_COLOR;
+        return true;
+    }
+    case GView::Dissasembly::InstructionX86::JMP:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::Jmp) == (uint32) Opcodes::Jmp), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        result.color = INS_JUMP_COLOR;
+        return true;
+    }
+    case GView::Dissasembly::InstructionX86::LJMP:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::LJmp) == (uint32) Opcodes::LJmp), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        result.color = INS_LJUMP_COLOR;
+        return true;
+    }
+    case GView::Dissasembly::InstructionX86::INT:
+    case GView::Dissasembly::InstructionX86::INT1:
+    case GView::Dissasembly::InstructionX86::INT3:
+    case GView::Dissasembly::InstructionX86::INTO:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::Breakpoint) == (uint32) Opcodes::Breakpoint), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        result.color = INS_BREAKPOINT_COLOR;
+        return true;
+    }
+    case GView::Dissasembly::InstructionX86::PUSH:
+    case GView::Dissasembly::InstructionX86::PUSHAW:
+    case GView::Dissasembly::InstructionX86::PUSHAL:
+    case GView::Dissasembly::InstructionX86::PUSHF:
+    case GView::Dissasembly::InstructionX86::PUSHFD:
+    case GView::Dissasembly::InstructionX86::PUSHFQ:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::FunctionStart) == (uint32) Opcodes::FunctionStart), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        if (GView::Dissasembly::DissasembleInstruction(
+                  { buf.GetData() + ins.size, buf.GetLength() - ins.size },
+                  GView::Dissasembly::Architecture::X86,
+                  offset + ins.size,
+                  mode,
+                  ins))
+        {
+            switch ((GView::Dissasembly::InstructionX86) ins.id)
+            {
+            case GView::Dissasembly::InstructionX86::MOV:
+            case GView::Dissasembly::InstructionX86::MOVABS:
+            case GView::Dissasembly::InstructionX86::MOVAPD:
+            case GView::Dissasembly::InstructionX86::MOVAPS:
+            case GView::Dissasembly::InstructionX86::MOVBE:
+            case GView::Dissasembly::InstructionX86::MOVDDUP:
+            case GView::Dissasembly::InstructionX86::MOVDIR64B:
+            case GView::Dissasembly::InstructionX86::MOVDIRI:
+            case GView::Dissasembly::InstructionX86::MOVDQA:
+            case GView::Dissasembly::InstructionX86::MOVDQU:
+            case GView::Dissasembly::InstructionX86::MOVHLPS:
+            case GView::Dissasembly::InstructionX86::MOVHPD:
+            case GView::Dissasembly::InstructionX86::MOVHPS:
+            case GView::Dissasembly::InstructionX86::MOVLHPS:
+            case GView::Dissasembly::InstructionX86::MOVLPD:
+            case GView::Dissasembly::InstructionX86::MOVLPS:
+            case GView::Dissasembly::InstructionX86::MOVMSKPD:
+            case GView::Dissasembly::InstructionX86::MOVMSKPS:
+            case GView::Dissasembly::InstructionX86::MOVNTDQA:
+            case GView::Dissasembly::InstructionX86::MOVNTDQ:
+            case GView::Dissasembly::InstructionX86::MOVNTI:
+            case GView::Dissasembly::InstructionX86::MOVNTPD:
+            case GView::Dissasembly::InstructionX86::MOVNTPS:
+            case GView::Dissasembly::InstructionX86::MOVNTSD:
+            case GView::Dissasembly::InstructionX86::MOVNTSS:
+            case GView::Dissasembly::InstructionX86::MOVSB:
+            case GView::Dissasembly::InstructionX86::MOVSD:
+            case GView::Dissasembly::InstructionX86::MOVSHDUP:
+            case GView::Dissasembly::InstructionX86::MOVSLDUP:
+            case GView::Dissasembly::InstructionX86::MOVSQ:
+            case GView::Dissasembly::InstructionX86::MOVSS:
+            case GView::Dissasembly::InstructionX86::MOVSW:
+            case GView::Dissasembly::InstructionX86::MOVSX:
+            case GView::Dissasembly::InstructionX86::MOVSXD:
+            case GView::Dissasembly::InstructionX86::MOVUPD:
+            case GView::Dissasembly::InstructionX86::MOVUPS:
+            case GView::Dissasembly::InstructionX86::MOVZX:
+            {
+                result.end += ins.size;
+                result.color = START_FUNCTION_COLOR;
+                return true;
+            }
+            default:
+                break;
+            }
+        }
+        return false;
+    }
+    case GView::Dissasembly::InstructionX86::IRET:
+    case GView::Dissasembly::InstructionX86::IRETD:
+    case GView::Dissasembly::InstructionX86::IRETQ:
+    case GView::Dissasembly::InstructionX86::RET:
+    case GView::Dissasembly::InstructionX86::RETF:
+    case GView::Dissasembly::InstructionX86::RETFQ:
+    case GView::Dissasembly::InstructionX86::SYSRET:
+    case GView::Dissasembly::InstructionX86::SYSRETQ:
+    {
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::FunctionEnd) == (uint32) Opcodes::FunctionEnd), "");
+        result.start = offset;
+        result.end   = offset + ins.size;
+        result.color = END_FUNCTION_COLOR;
+        return true;
+    }
+    default:
+        break;
+    }
+
+    return false;
+}
+
 bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
     CHECK(buf.IsValid(), false, "");
-
-    static constexpr auto API_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
-    static constexpr auto API_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
-    static constexpr auto BREAKPOINT_COLOR     = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
-    static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
-    static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
-    static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
-
-    // maybe add
-    // EB (direct jump, signed byte EIP-displacement), E9 (direct jump, signed dword EIP-displacement), E8 (direct call, signed dword
-    // EIP-displacement)
+    result.color = ColorPair{ Color::Transparent, Color::Transparent };
 
     const auto machine = is64 ? header64.e_machine : header32.e_machine;
     auto* p            = buf.begin();
     switch (*p)
     {
     case 0x7F:
+        CHECKBK(((showOpcodesMask & (uint32) Opcodes::Header) == (uint32) Opcodes::Header), "");
         CHECKBK(buf.GetLength() >= 4, "");
         if (*(uint32*) p == 0x464C457F)
         {
@@ -517,8 +650,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
             result.end   = offset + 3;
             result.color = EXE_MARKER_COLOR;
             return true;
-        }
-        break;
+        } // do not break
     default:
         switch (machine)
         {
@@ -528,115 +660,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
         case EM_960:
         case EM_8051:
         case EM_X86_64:
-            switch (*p)
-            {
-            case 0xFF:
-                CHECKBK(buf.GetLength() >= 6, "");
-
-                if (p[1] == 0x15) // FF 15 is a CALLN instruction. N stands for near (as opposed to F / FAR) | FF15 (indirect call, absolute
-                                  // dword address) | possible call to API
-                {
-                    auto addr = *(uint32*) (p + 2);
-                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset))
-                    {
-                        result.start = offset;
-                        result.end   = offset + 5;
-                        result.color = API_CALL_COLOR;
-                        return true;
-                    }
-                }
-                else if (p[1] == 0x25) // FF25 (indirect jmp, absolute dword address) | possible jump to API
-                {
-                    auto addr = *(uint32*) (p + 2);
-                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset))
-                    {
-                        result.start = offset;
-                        result.end   = offset + 5;
-                        result.color = API_JUMP_COLOR;
-                        return true;
-                    }
-                }
-                break;
-
-            case 0xE8: // not far calls
-                CHECKBK(buf.GetLength() >= 6, "");
-                {
-                    auto addr = *(uint32*) (p + 1);
-                    if (p[3] == 0xFF && p[4] == 0xFF)
-                    {
-                        addr = *(uint16*) (p + 1);
-                    }
-                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset) || addr < obj->GetData().GetSize())
-                    {
-                        result.start = offset;
-                        result.end   = offset + 3;
-                        result.color = API_CALL_COLOR;
-                        return true;
-                    }
-                }
-                break;
-            case 0xE9: // not far jmps
-                CHECKBK(buf.GetLength() >= 6, "");
-                {
-                    auto addr = *(uint32*) (p + 1);
-                    if (p[3] == 0xFF && p[4] == 0xFF)
-                    {
-                        addr = *(uint16*) (p + 1);
-                    }
-                    if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset) || addr < obj->GetData().GetSize())
-                    {
-                        result.start = offset;
-                        result.end   = offset + 3;
-                        result.color = API_JUMP_COLOR;
-                        return true;
-                    }
-                }
-                break;
-
-            case 0xCC: // INT 3
-                result.start = result.end = offset;
-                result.color              = BREAKPOINT_COLOR;
-                return true;
-
-            case 0x55: // start of function
-                CHECKBK(buf.GetLength() >= 3, "");
-
-                if ((*(uint16*) (p + 1)) == 0xEC8B || // possible `push EBP` followed by MOV ebp, esp
-                    (*(uint16*) (p + 1)) == 0xE589    // possible `push EBP` followed by MOV ebp, esp
-                )
-                {
-                    result.start = offset;
-                    result.end   = offset + 2;
-                    result.color = START_FUNCTION_COLOR;
-                    return true;
-                }
-                break;
-
-            case 0x8B: // end of function
-            case 0x89: // end of function
-                CHECKBK(buf.GetLength() >= 4, "");
-
-                if (((*(uint16*) (p + 1)) == 0x5DE5 || // possible `MOV esp, EBP` followed by `POP ebp` and `RET`
-                     ((*(uint16*) (p + 1)) == 0x5DEC)) &&
-                    (p[3] == 0xC3))
-                {
-                    result.start = offset;
-                    result.end   = offset + 3;
-                    result.color = END_FUNCTION_COLOR;
-                    return true;
-                }
-                break;
-            case 0x5D: // end of function => pop ebp | ret
-                if (p[1] == 0xC3)
-                {
-                    result.start = offset;
-                    result.end   = offset + 1;
-                    result.color = END_FUNCTION_COLOR;
-                    return true;
-                }
-                break;
-            }
-            break;
+            return GetColorForBufferForIntel(offset, buf, result);
         case EM_ARM: // IT WILL NOT COVER ALL THE CASES | TODO: https://github.com/scottt/debugbreak/blob/master/debugbreak.h
         {
             switch (*p)
@@ -648,7 +672,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 1;
-                    result.color = API_CALL_COLOR;
+                    result.color = INS_LCALL_COLOR;
                     return true;
                 }
                 break;
@@ -657,7 +681,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = API_JUMP_COLOR;
+                    result.color = INS_LJUMP_COLOR;
                     return true;
                 }
                 break;
@@ -687,7 +711,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -696,7 +720,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 1;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -752,7 +776,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 1;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -761,7 +785,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -770,7 +794,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -779,7 +803,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -788,7 +812,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = BREAKPOINT_COLOR;
+                    result.color = INS_BREAKPOINT_COLOR;
                     return true;
                 }
                 break;
@@ -798,7 +822,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                 {
                     result.start = offset;
                     result.end   = offset + 3;
-                    result.color = API_CALL_COLOR;
+                    result.color = INS_LCALL_COLOR;
                     return true;
                 }
 
@@ -814,7 +838,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
                     {
                         result.start = offset;
                         result.end   = offset + 7;
-                        result.color = API_JUMP_COLOR;
+                        result.color = INS_LJUMP_COLOR;
                         return true;
                     }
                 }
