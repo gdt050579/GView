@@ -447,6 +447,7 @@ namespace View
 
             void UpdateValue(bool original);
             void UpdateTokenValue();
+            void ReverseValue();
             void RunStringOperation(AppCUI::Controls::ListViewItem item);
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);

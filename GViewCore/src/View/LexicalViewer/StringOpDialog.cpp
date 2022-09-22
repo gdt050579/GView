@@ -16,9 +16,9 @@ StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference
     : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), text(_text),
       openInANewWindow(false)
 {
-    auto panel    = Factory::Panel::Create(this, "Value", "l:1,t:1,r:1,b:3");
-    auto spl      = Factory::Splitter::Create(panel, "d:c", SplitterFlags::Vertical);
-    auto lst      = Factory::ListView::Create(
+    auto panel = Factory::Panel::Create(this, "Value", "l:1,t:1,r:1,b:3");
+    auto spl   = Factory::Splitter::Create(panel, "d:c", SplitterFlags::Vertical);
+    auto lst   = Factory::ListView::Create(
           spl,
           "d:c",
           { "w:100,a:l,n:Operations" },
@@ -55,6 +55,22 @@ void StringOpDialog::UpdateValue(bool original)
         this->txValue->SetText(tmp);
     }
 }
+void StringOpDialog::ReverseValue()
+{
+    LocalUnicodeStringBuilder<512> tmp;
+    tmp.Set(this->txValue->GetText());
+    char16* p = const_cast<char16*>(tmp.GetString());
+    char16* e = p + tmp.Len() - 1;
+    while (p<e)
+    {
+        auto val = *p;
+        *p       = *e;
+        *e       = val;
+        p++;
+        e--;
+    }
+    txValue->SetText(tmp);
+}
 void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
 {
     // check if valid or separator
@@ -68,6 +84,9 @@ void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
         break;
     case CMD_ID_RELOAD:
         UpdateValue(false);
+        break;
+    case CMD_ID_REVERSE:
+        ReverseValue();
         break;
     }
 }
@@ -112,7 +131,7 @@ bool StringOpDialog::OnEvent(Reference<Control> control, Event eventType, int ID
             return true;
         }
         break;
-    case Event::ListViewItemPressed:        
+    case Event::ListViewItemPressed:
         RunStringOperation(control.ToObjectRef<ListView>()->GetCurrentItem());
         control->SetFocus();
         return true;
