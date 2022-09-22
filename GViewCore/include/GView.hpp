@@ -956,6 +956,11 @@ namespace View
 
             Token Next() const;
             Token Precedent() const;
+            
+            Token& operator++();
+            Token& operator--();
+            Token operator+(uint32 offset) const;
+            Token operator-(uint32 offset) const;
 
             u16string_view GetText() const;
             Block GetBlock() const;
