@@ -39,6 +39,6 @@ void Settings::AddPlugin(Reference<Plugin> plugin)
 }
 void Settings::SetMaxTokenSize(Size sz)
 {
-    ((SettingsData*) (this->data))->maxTokenSize.Width  = std::min<>(1U, sz.Width);
-    ((SettingsData*) (this->data))->maxTokenSize.Height = std::min<>(1U, sz.Height);
+    ((SettingsData*) (this->data))->maxTokenSize.Width  = std::max<>(1U, sz.Width);
+    ((SettingsData*) (this->data))->maxTokenSize.Height = std::max<>(1U, sz.Height);
 }
