@@ -784,6 +784,7 @@ namespace View
             uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
             static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
             static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
+            static bool ExtractContentFromString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result, StringFormat format);
         };
         class CORE_EXPORT TextEditor
         {
@@ -1040,11 +1041,11 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) = 0;
-            virtual void PreprocessText(TextEditor& editor)                                    = 0;
-            virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
-            virtual std::u16string_view StringToContent(std::u16string_view strintValue)       = 0;
-            virtual std::u16string_view ContentToString(std::u16string_view content)           = 0;
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)                         = 0;
+            virtual void PreprocessText(TextEditor& editor)                                                            = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax)                                                            = 0;
+            virtual bool StringToContent(std::u16string_view stringValue, AppCUI::Utils::UnicodeStringBuilder& result) = 0;
+            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)     = 0;
         };
         struct PluginData
         {

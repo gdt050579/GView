@@ -214,7 +214,8 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
+            tokenList.Add(
+                  TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -360,7 +361,8 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
+            tokenList.Add(
+                  TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
@@ -571,5 +573,13 @@ void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
             idx = next;
         }
     }
+}
+bool INIFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(string, result, StringFormat::All);
+}
+bool INIFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) 
+{
+    NOT_IMPLEMENTED(false);
 }
 } // namespace GView::Type::INI

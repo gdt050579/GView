@@ -84,6 +84,8 @@ namespace Type
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
             virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
+            virtual bool StringToContent(std::u16string_view strintValue, AppCUI::Utils::UnicodeStringBuilder& result) override;
+            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
         };
         namespace Panels
         {
