@@ -240,6 +240,27 @@ namespace Type
 
         } // namespace TokenType
 
+        namespace Plugins
+        {
+            class AddStrings : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class ReverseStrings : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+        } // namespace Plugins
+
         class JSFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
             uint32 TokenizeWord(
@@ -268,6 +289,11 @@ namespace Type
             void OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenList);
 
           public:
+            struct
+            {
+                Plugins::AddStrings addStrings;
+                Plugins::ReverseStrings reverseStrings;
+            } plugins;
             JSFile();
             virtual ~JSFile()
             {

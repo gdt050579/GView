@@ -3,8 +3,10 @@ def GetCharType(ch):
 		return "Word"
 	if ch in "0123456789":
 		return "Number"
-	if (ch==' ') or (ch=='\t') or (ch=='\n') or (ch=='\r'):
+	if (ch==' ') or (ch=='\t'):
 		return "Space"
+	if (ch=='\n') or (ch=='\r'):
+		return "NewLine"
 	if ch=='#':
 		return "Preprocess"
 	if ch in "!%+-=^&|*:?~\/><.":
