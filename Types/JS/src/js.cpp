@@ -28,6 +28,10 @@ extern "C"
         LexicalViewer::Settings settings;
         settings.SetParser(js.ToObjectRef<LexicalViewer::ParseInterface>());
 
+        settings.SetMaxTokenSize({30u,5u});
+
+        settings.AddPlugin(&js->plugins.addStrings);
+        settings.AddPlugin(&js->plugins.reverseStrings);
         win->CreateViewer("Lexical", settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
