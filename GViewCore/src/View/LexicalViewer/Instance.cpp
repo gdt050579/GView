@@ -1330,20 +1330,13 @@ void Instance::FoldAll()
     RecomputeTokenPositions();
     MoveToClosestVisibleToken(this->currentTokenIndex, false);
 }
-void Instance::EditCurrentToken()
+void Instance::ShowStringOpDialog(TokenObject& tok)
 {
-    // sanity checks
-    if (this->noItemsVisible)
-        return;
-    if ((size_t) this->currentTokenIndex >= this->tokens.size())
-        return;
-    auto& tok = this->tokens[this->currentTokenIndex];
-    if (!tok.IsVisible())
-        return;
-    if (tok.error.Len() > 0)
-    {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
-    }
+    StringOpDialog dlg(tok, this->text.text);
+    dlg.Show();
+}
+void Instance::ShowRefactorDialog(TokenObject& tok)
+{
     if (tok.CanChangeValue() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowNotification("Rename", "This type of token can not be modified/renamed !");
@@ -1404,6 +1397,25 @@ void Instance::EditCurrentToken()
             RecomputeTokenPositions();
         }
     }
+}
+void Instance::EditCurrentToken()
+{
+    // sanity checks
+    if (this->noItemsVisible)
+        return;
+    if ((size_t) this->currentTokenIndex >= this->tokens.size())
+        return;
+    auto& tok = this->tokens[this->currentTokenIndex];
+    if (!tok.IsVisible())
+        return;
+    if (tok.error.Len() > 0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
+    }
+    if (tok.dataType == TokenDataType::String)
+        ShowStringOpDialog(tok);
+    else
+        ShowRefactorDialog(tok);
 }
 void Instance::DeleteTokens()
 {

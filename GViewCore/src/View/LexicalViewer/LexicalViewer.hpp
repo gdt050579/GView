@@ -340,6 +340,8 @@ namespace View
             void DeleteTokens();
             void ShowPlugins();
             void ShowSaveAsDialog();
+            void ShowRefactorDialog(TokenObject& tok);
+            void ShowStringOpDialog(TokenObject& tok);
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();
@@ -434,6 +436,16 @@ namespace View
                 // default
                 return ApplyMethod::CurrentToken;
             }
+        };
+        class StringOpDialog : public Window
+        {
+            TokenObject& tok;
+            Reference<TextField> txNewValue;
+          public:
+            StringOpDialog(TokenObject& tok, const char16* text);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+
+
         };
         class DeleteDialog : public Window
         {

@@ -9,6 +9,7 @@ target_sources(GViewCore PRIVATE
 	Instance.cpp 
 	GoToDialog.cpp 
 	NameRefactorDialog.cpp
+	StringOpDialog.cpp
 	DeleteDialog.cpp
 	PluginDialog.cpp
 	SaveAsDialog.cpp
