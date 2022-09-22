@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.215.0"
+#define GVIEW_VERSION "0.216.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -873,7 +873,7 @@ namespace View
         {
             None                    = 0,
             DisableSimilaritySearch = 0x01,
-            UnSizeable              = 0x02,
+            Sizeable                = 0x02,
         };
         enum class BlockAlignament : uint8
         {
@@ -1080,7 +1080,6 @@ namespace View
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
             void SetMaxTokenSize(Size sz);
-            
         };
     }; // namespace LexicalViewer
 

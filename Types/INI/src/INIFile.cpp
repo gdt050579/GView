@@ -134,7 +134,7 @@ struct ParserData
             tokenList.Add(TokenType::Value, start, end, TokenColor::Number, TokenDataType::Number);
             return;
         }
-        tokenList.Add(TokenType::Value, start, end, TokenColor::Word);
+        tokenList.Add(TokenType::Value, start, end, TokenColor::Word, TokenDataType::None, TokenAlignament::None, TokenFlags::Sizeable);
     }
     void ParseForExpectKeyValueOrSection(uint8 chType)
     {
@@ -175,7 +175,14 @@ struct ParserData
                       return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != '=') && (ch != ':') && (ch != ' ') &&
                              (ch != '\t');
                   });
-            tokenList.Add(TokenType::Key, pos, next, TokenColor::Keyword2, TokenAlignament::StartsOnNewLine);
+            tokenList.Add(
+                  TokenType::Key,
+                  pos,
+                  next,
+                  TokenColor::Keyword2,
+                  TokenDataType::None,
+                  TokenAlignament::StartsOnNewLine,
+                  TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectEqual;
             break;
@@ -207,7 +214,7 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
+            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -353,7 +360,7 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
+            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectCommaOrEndOfArray;
             break;

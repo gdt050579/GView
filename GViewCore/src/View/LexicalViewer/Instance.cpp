@@ -614,15 +614,15 @@ void Instance::UpdateTokensWidthAndHeight()
     {
         if (tok.IsVisible() == false)
             continue;
-        if (tok.IsUnSizeable())
-        {
-            tok.pos.width  = tok.contentWidth;
-            tok.pos.height = tok.contentHeight;
-        }
-        else
+        if (tok.IsSizeable())
         {
             tok.pos.width  = std::min<>(tok.contentWidth, this->settings->maxTokenSize.Width);
             tok.pos.height = std::min<>(tok.contentHeight, this->settings->maxTokenSize.Height);
+        }
+        else
+        {
+            tok.pos.width  = tok.contentWidth;
+            tok.pos.height = tok.contentHeight;
         }
         // minim 1x1 size
         tok.pos.width  = std::max<>(1U, tok.pos.width);
@@ -960,6 +960,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     else
     {
         renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, tok.pos.width, txt, col);
+        if (tok.pos.width<tok.contentWidth)
+            renderer.WriteSingleLineText(lineNrWidth + tok.pos.x + tok.pos.width - (Scroll.x+3), tok.pos.y - Scroll.y, "...", col);
     }
     if (blockStarter && tok.IsFolded())
     {
@@ -2074,6 +2076,8 @@ enum class PropertyID : uint32
     // display
     IndentWidth,
     ViewWidth,
+    MaxTokenWidth,
+    MaxTokenHeight,
     // shortcuts
     ShowPluginListKey,
     SaveAsKey,
@@ -2134,6 +2138,12 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ShowMetaData:
         value = this->showMetaData;
         return true;
+    case PropertyID::MaxTokenWidth:
+        value = this->settings->maxTokenSize.Width;
+        return true;
+    case PropertyID::MaxTokenHeight:
+        value = this->settings->maxTokenSize.Height;
+        return true;
     }
     return false;
 }
@@ -2175,6 +2185,14 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         this->showMetaData = std::get<bool>(value);
         RecomputeTokenPositions();
         return true;
+    case PropertyID::MaxTokenWidth:
+        this->settings->maxTokenSize.Width = std::max<>(6U, std::get<uint32>(value));
+        RecomputeTokenPositions();
+        return true;
+    case PropertyID::MaxTokenHeight:
+        this->settings->maxTokenSize.Height = std::max<>(1U, std::get<uint32>(value));
+        RecomputeTokenPositions();
+        return true;
     }
     error.SetFormat("Unknown internal ID: %u", id);
     return false;
@@ -2199,6 +2217,8 @@ const vector<Property> Instance::GetPropertiesList()
     return {
         { BT(PropertyID::IndentWidth), "Sizes", "Indent with", PropertyType::UInt8 },
         { BT(PropertyID::ViewWidth), "Sizes", "View width", PropertyType::UInt32 },
+        { BT(PropertyID::MaxTokenWidth), "Sizes", "Max sizeable tokens width", PropertyType::UInt32 },
+        { BT(PropertyID::MaxTokenHeight), "Sizes", "Max sizeable tokens height", PropertyType::UInt32 },
         // shortcuts
         { BT(PropertyID::ShowPluginListKey), "Shortcuts", "Show plugin list", PropertyType::Key },
         { BT(PropertyID::SaveAsKey), "Shortcuts", "SaveAs", PropertyType::Key },
