@@ -442,6 +442,9 @@ namespace View
             TokenObject& tok;
             Reference<TextArea> txValue;
             Reference<ParseInterface> parser;
+            const char16* text;
+
+            void UpdateValue(bool original);
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
