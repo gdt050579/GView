@@ -960,6 +960,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     else
     {
         renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, tok.pos.width, txt, col);
+        if (tok.pos.width<tok.contentWidth)
+            renderer.WriteSingleLineText(lineNrWidth + tok.pos.x + tok.pos.width - (Scroll.x+3), tok.pos.y - Scroll.y, "...", col);
     }
     if (blockStarter && tok.IsFolded())
     {
