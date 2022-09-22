@@ -576,7 +576,7 @@ void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 }
 bool INIFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
 {
-    return TextParser::ExtractContentFromString(string, result, StringFormat::All);
+    return TextParser::ExtractContentFromString(string, result, StringFormat::DoubleQuotes|StringFormat::SingleQuotes|StringFormat::MultiLine);
 }
 bool INIFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) 
 {
