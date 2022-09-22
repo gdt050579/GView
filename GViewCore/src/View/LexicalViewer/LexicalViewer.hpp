@@ -443,14 +443,21 @@ namespace View
             Reference<TextArea> txValue;
             Reference<ParseInterface> parser;
             const char16* text;
+            bool openInANewWindow;
 
             void UpdateValue(bool original);
             void UpdateTokenValue();
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-
-
+            inline bool ShouldOpenANewWindow() const
+            {
+                return openInANewWindow;
+            }
+            inline const CharacterBuffer& GetStringValue() 
+            {
+                return txValue->GetText();
+            }
         };
         class DeleteDialog : public Window
         {

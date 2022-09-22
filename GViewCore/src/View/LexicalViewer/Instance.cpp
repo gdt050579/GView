@@ -960,8 +960,8 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
     else
     {
         renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, tok.pos.width, txt, col);
-        if (tok.pos.width<tok.contentWidth)
-            renderer.WriteSingleLineText(lineNrWidth + tok.pos.x + tok.pos.width - (Scroll.x+3), tok.pos.y - Scroll.y, "...", col);
+        if (tok.pos.width < tok.contentWidth)
+            renderer.WriteSingleLineText(lineNrWidth + tok.pos.x + tok.pos.width - (Scroll.x + 3), tok.pos.y - Scroll.y, "...", col);
     }
     if (blockStarter && tok.IsFolded())
     {
@@ -1333,8 +1333,37 @@ void Instance::FoldAll()
 void Instance::ShowStringOpDialog(TokenObject& tok)
 {
     StringOpDialog dlg(tok, this->text.text, settings->parser);
-    if (dlg.Show() == Dialogs::Result::Ok)
+    if (dlg.Show() != Dialogs::Result::Ok)
+        return;
+    if (dlg.ShouldOpenANewWindow())
     {
+        auto& txt = dlg.GetStringValue();  
+        if (txt.Len()==0)
+        {
+            AppCUI::Dialogs::MessageBox::ShowNotification("Open", "Empty string -> nothing to open !");
+            return;
+        }
+
+        Buffer buf;              
+        buf.Reserve(txt.Len() * 2 + 8);
+        buf.Add(CharacterEncoding::GetBOMForEncoding(CharacterEncoding::Encoding::Unicode16LE));
+        // add the data
+        auto p = txt.GetBuffer();
+        auto e = p + txt.Len();
+        while (p<e)
+        {
+            char16 tmp = (*p).Code;
+            buf.Add(u16string_view{ &tmp, 1 });
+            p++;
+        }
+        // Buffer build --> open
+        LocalString<128> tmpName;
+        
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x",tok.start));
+    }
+    else
+    {
+        // update value
         UpdateTokensInformation();
         RecomputeTokenPositions();
     }
@@ -1561,7 +1590,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 
     if (characterCode > 0)
     {
-        switch(characterCode)
+        switch (characterCode)
         {
         case '[':
             this->settings->maxTokenSize.Width = std::max<>(6U, this->settings->maxTokenSize.Width - 1);

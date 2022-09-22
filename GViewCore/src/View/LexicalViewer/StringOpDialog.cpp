@@ -8,7 +8,8 @@ constexpr int32 BNT_ID_OPEN   = 2;
 constexpr int32 BTN_ID_CANCEL = 3;
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
-    : Window("String Operations", "d:c,w:80,h:16", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), text(_text)
+    : Window("String Operations", "d:c,w:80,h:16", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), text(_text),
+      openInANewWindow(false)
 {
     Factory::Label::Create(this, "&Value", "x:1,y:1,w:30");
     this->txValue = Factory::TextArea::Create(this, "", "x:1,y:2,w:65,h:9", TextAreaFlags::ShowLineNumbers);
@@ -71,6 +72,10 @@ bool StringOpDialog::OnEvent(Reference<Control> control, Event eventType, int ID
             return true;
         case BTN_ID_OK:
             UpdateTokenValue();
+            return true;
+        case BNT_ID_OPEN:
+            openInANewWindow = true;
+            Exit(Dialogs::Result::Ok);
             return true;
         }
         break;
