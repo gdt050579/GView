@@ -1333,7 +1333,10 @@ void Instance::FoldAll()
 void Instance::ShowStringOpDialog(TokenObject& tok)
 {
     StringOpDialog dlg(tok, this->text.text, settings->parser);
-    dlg.Show();
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+
+    }
 }
 void Instance::ShowRefactorDialog(TokenObject& tok)
 {
