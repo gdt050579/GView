@@ -37,7 +37,28 @@ void StringOpDialog::UpdateValue(bool original)
         this->txValue->SetText(tmp);
     }
 }
-
+void StringOpDialog::UpdateTokenValue()
+{
+    LocalUnicodeStringBuilder<512> content;
+    LocalUnicodeStringBuilder<512> output;
+    if (content.Set(this->txValue->GetText()) == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Fail to get content from text area object !");
+        txValue->SetFocus();
+        return;
+    }
+    if (parser->ContentToString(content.ToStringView(), output) == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError(
+              "Error", "Fail to convert content to string (is `ContentToString` virtual method implemented ?");
+        txValue->SetFocus();
+        return;
+    }
+    // all good --> set value to token
+    tok.value.Set(output);
+    tok.error.Clear();
+    Exit(Dialogs::Result::Ok);
+}
 bool StringOpDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
     switch (eventType)
@@ -49,13 +70,13 @@ bool StringOpDialog::OnEvent(Reference<Control> control, Event eventType, int ID
             Exit(Dialogs::Result::Cancel);
             return true;
         case BTN_ID_OK:
-            Exit(Dialogs::Result::Ok);
+            UpdateTokenValue();
             return true;
         }
         break;
 
     case Event::WindowAccept:
-        Exit(Dialogs::Result::Ok);
+        UpdateTokenValue();
         return true;
     case Event::WindowClose:
         Exit(Dialogs::Result::Cancel);

@@ -1335,7 +1335,8 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
     StringOpDialog dlg(tok, this->text.text, settings->parser);
     if (dlg.Show() == Dialogs::Result::Ok)
     {
-
+        UpdateTokensInformation();
+        RecomputeTokenPositions();
     }
 }
 void Instance::ShowRefactorDialog(TokenObject& tok)

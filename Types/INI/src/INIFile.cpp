@@ -583,7 +583,7 @@ bool CreateIniFileString(AppCUI::Utils::UnicodeStringBuilder& output, std::u16st
 {
     CHECK(output.Set(marker), false, "");
     CHECK(output.Add(content), false, "");
-    CHECK(output.Set(marker), false, "");
+    CHECK(output.Add(marker), false, "");
     return true;
 }
 bool INIFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
