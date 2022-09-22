@@ -1043,6 +1043,8 @@ namespace View
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) = 0;
             virtual void PreprocessText(TextEditor& editor)                                    = 0;
             virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
+            virtual std::u16string_view StringToContent(std::u16string_view strintValue)       = 0;
+            virtual std::u16string_view ContentToString(std::u16string_view content)           = 0;
         };
         struct PluginData
         {

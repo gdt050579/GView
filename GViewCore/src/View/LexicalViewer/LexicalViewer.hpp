@@ -440,9 +440,10 @@ namespace View
         class StringOpDialog : public Window
         {
             TokenObject& tok;
-            Reference<TextField> txNewValue;
+            Reference<TextArea> txValue;
+            Reference<ParseInterface> parser;
           public:
-            StringOpDialog(TokenObject& tok, const char16* text);
+            StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
 

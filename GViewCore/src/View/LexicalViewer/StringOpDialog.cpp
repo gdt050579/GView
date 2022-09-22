@@ -3,25 +3,23 @@
 using namespace GView::View::LexicalViewer;
 using namespace AppCUI::Input;
 
-constexpr int32 BTN_ID_OK      = 1;
-constexpr int32 BTN_ID_CANCEL  = 2;
-constexpr int32 APPLY_GROUP_ID = 1;
+constexpr int32 BTN_ID_OK     = 1;
+constexpr int32 BNT_ID_OPEN   = 2;
+constexpr int32 BTN_ID_CANCEL = 3;
 
-StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* text)
-    : Window("String Operations", "d:c,w:70,h:21", WindowFlags::ProcessReturn), tok(_tok)
+StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* text, Reference<ParseInterface> _parser)
+    : Window("String Operations", "d:c,w:80,h:16", WindowFlags::ProcessReturn), tok(_tok), parser(_parser)
 {
-    Factory::Label::Create(this, "Value", "x:1,y:1,w:30");
-    Factory::TextArea::Create(
-          this, tok.GetOriginalText(text), "x:1,y:2,w:65,h:4", TextAreaFlags::Readonly | TextAreaFlags::ShowLineNumbers);
-    Factory::Label::Create(this, "&New value (an empty field means using the original text)", "x:1,y:7,w:60");
-    this->txNewValue = Factory::TextField::Create(this, tok.value.ToStringView(), "x:1,y:8,w:65,h:1");
-    this->txNewValue->SetHotKey('N');
+    Factory::Label::Create(this, "&Value", "x:1,y:1,w:30");
+    this->txValue = Factory::TextArea::Create(this, tok.GetOriginalText(text), "x:1,y:2,w:65,h:9", TextAreaFlags::ShowLineNumbers);
+    this->txValue->SetHotKey('V');
 
-    // buttons
-    Factory::Button::Create(this, "&OK", "l:21,b:0,w:13", BTN_ID_OK);
-    Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_ID_CANCEL);
+    // button
+    Factory::Button::Create(this, "&Apply", "l:10,b:0,w:15", BTN_ID_OK);
+    Factory::Button::Create(this, "&Open content", "l:26,b:0,w:15", BNT_ID_OPEN);
+    Factory::Button::Create(this, "&Cancel", "l:42,b:0,w:15", BTN_ID_CANCEL);
 
-    this->txNewValue->SetFocus();
+    this->txValue->SetFocus();
 }
 bool StringOpDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
