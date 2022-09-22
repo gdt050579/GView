@@ -26,7 +26,7 @@ namespace View
             BlockStart                 = 0x04,
             DisableSimilarityHighlight = 0x08, // hash will not be computed for this token
             ShouldDelete               = 0x10, // token should be deleted on next reparse
-            FixedSize                  = 0x20, // token size (width and height) can not be shrinked
+            SizeableSize               = 0x20, // token size (width and height) can be modified
         };
         class TokensListBuilder : public TokensList
         {
@@ -130,9 +130,9 @@ namespace View
             {
                 return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::BlockStart)) != 0;
             }
-            inline bool IsUnSizeable() const
+            inline bool IsSizeable() const
             {
-                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::FixedSize)) != 0;
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::SizeableSize)) != 0;
             }
             inline bool CanChangeValue() const
             {
@@ -157,9 +157,9 @@ namespace View
             {
                 pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::ShouldDelete));
             }
-            inline void SetFixedSizeFlag()
+            inline void SetSizeableSizeFlag()
             {
-                pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::FixedSize));
+                pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::SizeableSize));
             }
             inline void SetFolded(bool value)
             {

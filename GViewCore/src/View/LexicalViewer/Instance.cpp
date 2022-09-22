@@ -614,15 +614,15 @@ void Instance::UpdateTokensWidthAndHeight()
     {
         if (tok.IsVisible() == false)
             continue;
-        if (tok.IsUnSizeable())
-        {
-            tok.pos.width  = tok.contentWidth;
-            tok.pos.height = tok.contentHeight;
-        }
-        else
+        if (tok.IsSizeable())
         {
             tok.pos.width  = std::min<>(tok.contentWidth, this->settings->maxTokenSize.Width);
             tok.pos.height = std::min<>(tok.contentHeight, this->settings->maxTokenSize.Height);
+        }
+        else
+        {
+            tok.pos.width  = tok.contentWidth;
+            tok.pos.height = tok.contentHeight;
         }
         // minim 1x1 size
         tok.pos.width  = std::max<>(1U, tok.pos.width);

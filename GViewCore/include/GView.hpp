@@ -873,7 +873,7 @@ namespace View
         {
             None                    = 0,
             DisableSimilaritySearch = 0x01,
-            UnSizeable              = 0x02,
+            Sizeable                = 0x02,
         };
         enum class BlockAlignament : uint8
         {
@@ -1080,7 +1080,6 @@ namespace View
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
             void SetMaxTokenSize(Size sz);
-            
         };
     }; // namespace LexicalViewer
 
