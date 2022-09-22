@@ -543,8 +543,11 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
             break;
         }
     }
-
-    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags);
+    /*
+    if (next - pos > SIZABLE_VALUE)
+        flags = flags | TokenFlags::Sizeable;
+        */
+    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags |TokenFlags::Sizeable);
     return next;
 }
 uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -698,14 +701,14 @@ void JSFile::Tokenize(const TextParser& text, TokensList& tokenList, BlocksList&
 }
 void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensList& tokenList, BlocksList& blocks)
 {
-    auto idx  = start;
-    auto next = 0U;
+    auto idx     = start;
+    auto next    = 0U;
     bool newLine = false;
     while (idx < end)
     {
         auto ch   = text[idx];
         auto type = CharType::GetCharType(ch);
-        
+
         // check for comments
         if (ch == '/')
         {
@@ -718,7 +721,7 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
         switch (type)
         {
         case CharType::NewLine:
-            idx = text.ParseSpace(idx, SpaceType::NewLine);
+            idx     = text.ParseSpace(idx, SpaceType::NewLine);
             newLine = true;
             break;
         case CharType::Space:
@@ -816,12 +819,20 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             break;
         case CharType::Number:
             next = text.ParseNumber(idx);
-            tokenList.Add(TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number);
+            if (next - idx > SIZABLE_VALUE)
+                tokenList.Add(
+                      TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number, TokenAlignament::None, TokenFlags::Sizeable);
+            else
+                tokenList.Add(TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number);
             idx = next;
             break;
         case CharType::String:
             next = text.ParseString(idx, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::AllowEscapeSequences);
-            tokenList.Add(TokenType::String, idx, next, TokenColor::String, TokenDataType::String);
+            if (next - idx > SIZABLE_VALUE)
+                tokenList.Add(
+                      TokenType::Number, idx, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
+            else
+                tokenList.Add(TokenType::Number, idx, next, TokenColor::String, TokenDataType::String);
             idx = next;
             break;
         case CharType::Backquote:
@@ -1125,7 +1136,7 @@ void JSFile::OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenLis
             {
                 t.SetBlock(t3.GetBlock());
             }
-         }
+        }
     }
 }
 } // namespace GView::Type::JS

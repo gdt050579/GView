@@ -8,6 +8,8 @@ namespace Type
 {
     namespace JS
     {
+        constexpr uint32 SIZABLE_VALUE = 32;
+
         namespace TokenType
         {
             constexpr uint32 None            = 0xFFFFFFFF;

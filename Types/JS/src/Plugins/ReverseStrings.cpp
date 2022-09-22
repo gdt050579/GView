@@ -31,6 +31,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest ReverseStrings::Execute(GVi
         if (currentToken.GetTypeID(TokenType::None) == TokenType::String)
         {
             u16string_view txt = currentToken.GetText();
+
             std::u16string reversableTxt{ txt };
 
             std::reverse(reversableTxt.begin(), reversableTxt.end());
