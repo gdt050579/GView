@@ -441,6 +441,8 @@ namespace View
         namespace StringOperationsPlugins
         {
             void Reverse(TextEditor& editor);
+            void UpperCase(TextEditor& editor);
+            void LowerCase(TextEditor& editor);
         }
         class StringOpDialog : public Window
         {

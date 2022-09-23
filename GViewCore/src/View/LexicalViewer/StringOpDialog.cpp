@@ -16,7 +16,9 @@ struct
 {
     std::string_view name;
     void (*run)(TextEditor& editor);
-} plugins[]{ { "Reverse", StringOperationsPlugins::Reverse } };
+} plugins[]{ { "Reverse", StringOperationsPlugins::Reverse },
+             { "UpperCase", StringOperationsPlugins::UpperCase },
+             { "LowerCase", StringOperationsPlugins::LowerCase } };
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
     : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), editor(nullptr, 0), text(_text),
