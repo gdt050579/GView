@@ -13,7 +13,7 @@ constexpr uint32 CMD_ID_REVERSE         = 2;
 constexpr uint32 INVALID_CMD_ID         = 0xFFFFFFFF;
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
-    : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), text(_text),
+    : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), editor(nullptr, 0), text(_text),
       openInANewWindow(false)
 {
     auto panel = Factory::Panel::Create(this, "Value", "l:1,t:1,r:1,b:3");
@@ -55,21 +55,19 @@ void StringOpDialog::UpdateValue(bool original)
         this->txValue->SetText(tmp);
     }
 }
+
 void StringOpDialog::ReverseValue()
 {
-    LocalUnicodeStringBuilder<512> tmp;
-    tmp.Set(this->txValue->GetText());
-    char16* p = const_cast<char16*>(tmp.GetString());
-    char16* e = p + tmp.Len() - 1;
-    while (p<e)
+    if (editor.Len() == 0)
+        return;
+    auto e = editor.Len() - 1;
+    auto s = 0U;
+    while (s < e)
     {
-        auto val = *p;
-        *p       = *e;
-        *e       = val;
-        p++;
+        std::swap(editor[s], editor[e]);
+        s++;
         e--;
     }
-    txValue->SetText(tmp);
 }
 void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
 {
@@ -81,14 +79,20 @@ void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
     {
     case CMD_ID_RELOAD_ORIGINAL:
         UpdateValue(true);
-        break;
+        return;
     case CMD_ID_RELOAD:
         UpdateValue(false);
-        break;
+        return;
+    }
+    // otherwise, we are dealing with some changes to be done directly over the text
+    editor.Set(this->txValue->GetText());
+    switch (id)
+    {
     case CMD_ID_REVERSE:
         ReverseValue();
         break;
     }
+    this->txValue->SetText((std::u16string_view) editor);
 }
 void StringOpDialog::UpdateTokenValue()
 {

@@ -788,6 +788,7 @@ namespace View
         };
         class CORE_EXPORT TextEditor
         {
+          protected:
             bool Grow(size_t size);
 
           protected:
@@ -812,6 +813,7 @@ namespace View
             bool Set(std::string_view text);
             bool Set(std::u16string_view text);
             bool Resize(uint32 charactersCount, char16 fillChar = ' ');
+            void Clear();
             bool Reserve(uint32 charactersCount);
 
             char16& operator[](uint32 index);

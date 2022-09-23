@@ -71,6 +71,7 @@ namespace View
                 this->allocated = 0;
                 return result;
             }
+            bool Set(const CharacterBuffer& chars);
         };
         struct BlockObject
         {
@@ -442,12 +443,13 @@ namespace View
             TokenObject& tok;
             Reference<TextArea> txValue;
             Reference<ParseInterface> parser;
+            TextEditorBuilder editor;
             const char16* text;
             bool openInANewWindow;
-
+            
             void UpdateValue(bool original);
             void UpdateTokenValue();
-            void ReverseValue();
+            void ReverseValue();            
             void RunStringOperation(AppCUI::Controls::ListViewItem item);
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
