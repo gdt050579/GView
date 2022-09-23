@@ -77,9 +77,14 @@ void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
     if (id < ARRAY_LEN(plugins))
     {
         editor.Set(this->txValue->GetText());
-        auto start = 0U;
-        auto end   = editor.Len();
-        plugins[id].run(editor,start,end);
+        uint32 start, size;
+        if (this->txValue->GetSelection(start, size) == false)
+        {
+            start = 0;
+            size  = editor.Len();
+        }
+
+        plugins[id].run(editor, start, start + size);
         this->txValue->SetText((std::u16string_view) editor);
     }
     else
