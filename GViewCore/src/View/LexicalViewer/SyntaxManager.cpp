@@ -103,9 +103,54 @@ Token Token::Precedent() const
 {
     if ((this->data == nullptr) || (this->index == 0))
         return Token();
-    if ((size_t) (this->index - 1) >= INSTANCE->tokens.size())
+    if (this->index == 0)
         return Token();
     return Token(this->data, this->index - 1);
+}
+Token& Token::operator++()
+{
+    if (this->data != nullptr)
+    {
+        this->index++;
+        if ((size_t) this->index >= INSTANCE->tokens.size())
+        {
+            this->index = 0;
+            this->data  = nullptr;
+        }
+    }
+    return *this;
+}
+Token& Token::operator--()
+{
+    if (this->data != nullptr)
+    {
+        if (this->index == 0)
+        {
+            this->index = 0;
+            this->data  = nullptr;
+        }
+        else
+        {
+            this->index--;
+        }
+    }
+    return *this;
+}
+Token Token::operator+(uint32 offset) const
+{
+    if ((this->data == nullptr) || (this->index == 0))
+        return Token();
+    if ((size_t) this->index + (size_t)offset >= INSTANCE->tokens.size())
+        return Token();
+    return Token(this->data, this->index + offset);
+}
+Token Token::operator-(uint32 offset) const
+{
+    if ((this->data == nullptr) || (this->index == 0))
+        return Token();
+    if (this->index < offset)
+        return Token();
+    return Token(this->data, this->index - offset);
 }
 bool Token::DisableSimilartyHighlight()
 {

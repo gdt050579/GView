@@ -549,6 +549,60 @@ uint64 TextParser::ComputeHash64(u16string_view txt, bool ignoreCase)
     const uint8* e = reinterpret_cast<const uint8*>(txt.data() + txt.size());
     return TextParser_ComputeHash64(p, e, ignoreCase);
 }
+bool ExtractContentOfString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result,u16string_view stringMarker)
+{
+    if (string.starts_with(stringMarker))
+    {
+        if (string.ends_with(stringMarker))
+        {
+            if (string.size() >= (stringMarker.size() * 2))
+                return result.Set(string.substr(stringMarker.size(), string.size() - (stringMarker.size() * 2)));
+            else
+                return result.Set("");
+        }
+        else
+        {
+            return result.Set(string.substr(stringMarker.size()));
+        }
+    }
+    return false;
+}
+bool TextParser::ExtractContentFromString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result, StringFormat format)
+{
+    // check for """..."""
+    if (HAS_FLAG(format, (StringFormat::DoubleQuotes | StringFormat::MultiLine)))
+        if (ExtractContentOfString(string, result, u"\"\"\""))
+            return true;
+
+    // check for '''...'''
+    if (HAS_FLAG(format, (StringFormat::SingleQuotes | StringFormat::MultiLine)))
+        if (ExtractContentOfString(string, result, u"'''"))
+            return true;
+
+    // check for ```...```
+    if (HAS_FLAG(format, (StringFormat::Apostrophe | StringFormat::MultiLine)))
+        if (ExtractContentOfString(string, result, u"```"))
+            return true;
+
+    // check for "..."
+    if (HAS_FLAG(format, (StringFormat::DoubleQuotes)))
+        if (ExtractContentOfString(string, result, u"\""))
+            return true;
+
+    // check for '...'
+    if (HAS_FLAG(format, (StringFormat::SingleQuotes)))
+        if (ExtractContentOfString(string, result, u"'"))
+            return true;
+
+    // check for `...`
+    if (HAS_FLAG(format, (StringFormat::Apostrophe)))
+        if (ExtractContentOfString(string, result, u"`"))
+            return true;
+
+    // otherwise return the entire string
+    return result.Set(string);
+}
+
 #undef HAS_FLAG
 #undef VALIDATE_NUMBER_SEPARATOR
 } // namespace GView::View::LexicalViewer

@@ -955,13 +955,13 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         r.Create(params.X, params.Y, tok.pos.width, tok.pos.height, Alignament::TopLeft);
         renderer.SetClipRect(r);
         renderer.WriteText(txt, params);
-        renderer.ResetClip();
+        renderer.SetClipMargins(this->lineNrWidth, 0, 0, 0);
     }
     else
     {
         renderer.WriteSingleLineText(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, tok.pos.width, txt, col);
-        if (tok.pos.width<tok.contentWidth)
-            renderer.WriteSingleLineText(lineNrWidth + tok.pos.x + tok.pos.width - (Scroll.x+3), tok.pos.y - Scroll.y, "...", col);
+        if (tok.pos.width < tok.contentWidth)
+            renderer.WriteSingleLineText(lineNrWidth + tok.pos.x + tok.pos.width - (Scroll.x + 3), tok.pos.y - Scroll.y, "...", col);
     }
     if (blockStarter && tok.IsFolded())
     {
@@ -993,6 +993,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
 {
     auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
     auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
+
     // draw line number bar
     renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
 
@@ -1016,8 +1017,10 @@ void Instance::Paint(Graphics::Renderer& renderer)
         if (currentTok.IsVisible())
         {
             this->currentHash = currentTok.hash;
+            renderer.SetClipMargins(this->lineNrWidth, 0, 0, 0);
             PaintToken(renderer, currentTok, this->currentTokenIndex);
             params.Y = std::max<>(0, currentTok.pos.y - Scroll.y);
+            renderer.ResetClip();
             renderer.WriteText(num.ToDec(currentTok.lineNo), params);
         }
     }
@@ -1030,7 +1033,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
     int32 lastY               = -1;
-
+    
     for (auto& t : this->tokens)
     {
         // skip hidden and current token
@@ -1048,15 +1051,18 @@ void Instance::Paint(Graphics::Renderer& renderer)
             idx++;
             continue;
         }
+        renderer.SetClipMargins(this->lineNrWidth, 0, 0, 0);
         PaintToken(renderer, t, idx);
         if (t.pos.y != lastY)
         {
             params.Y = std::max<>(0, t.pos.y - Scroll.y);
+            renderer.ResetClip();
             renderer.WriteText(num.ToDec(t.lineNo), params);
             lastY = t.pos.y;
         }
         idx++;
     }
+    renderer.ResetClip();
     foldColumn.Paint(renderer, this->lineNrWidth - 1, this);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
@@ -1330,20 +1336,46 @@ void Instance::FoldAll()
     RecomputeTokenPositions();
     MoveToClosestVisibleToken(this->currentTokenIndex, false);
 }
-void Instance::EditCurrentToken()
+void Instance::ShowStringOpDialog(TokenObject& tok)
 {
-    // sanity checks
-    if (this->noItemsVisible)
+    StringOpDialog dlg(tok, this->text.text, settings->parser);
+    if (dlg.Show() != Dialogs::Result::Ok)
         return;
-    if ((size_t) this->currentTokenIndex >= this->tokens.size())
-        return;
-    auto& tok = this->tokens[this->currentTokenIndex];
-    if (!tok.IsVisible())
-        return;
-    if (tok.error.Len() > 0)
+    if (dlg.ShouldOpenANewWindow())
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
+        auto& txt = dlg.GetStringValue();  
+        if (txt.Len()==0)
+        {
+            AppCUI::Dialogs::MessageBox::ShowNotification("Open", "Empty string -> nothing to open !");
+            return;
+        }
+
+        Buffer buf;              
+        buf.Reserve(txt.Len() * 2 + 8);
+        buf.Add(CharacterEncoding::GetBOMForEncoding(CharacterEncoding::Encoding::Unicode16LE));
+        // add the data
+        auto p = txt.GetBuffer();
+        auto e = p + txt.Len();
+        while (p<e)
+        {
+            char16 tmp = (*p).Code;
+            buf.Add(u16string_view{ &tmp, 1 });
+            p++;
+        }
+        // Buffer build --> open
+        LocalString<128> tmpName;
+        
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x",tok.start));
     }
+    else
+    {
+        // update value
+        UpdateTokensInformation();
+        RecomputeTokenPositions();
+    }
+}
+void Instance::ShowRefactorDialog(TokenObject& tok)
+{
     if (tok.CanChangeValue() == false)
     {
         AppCUI::Dialogs::MessageBox::ShowNotification("Rename", "This type of token can not be modified/renamed !");
@@ -1404,6 +1436,25 @@ void Instance::EditCurrentToken()
             RecomputeTokenPositions();
         }
     }
+}
+void Instance::EditCurrentToken()
+{
+    // sanity checks
+    if (this->noItemsVisible)
+        return;
+    if ((size_t) this->currentTokenIndex >= this->tokens.size())
+        return;
+    auto& tok = this->tokens[this->currentTokenIndex];
+    if (!tok.IsVisible())
+        return;
+    if (tok.error.Len() > 0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", tok.error);
+    }
+    if (tok.dataType == TokenDataType::String)
+        ShowStringOpDialog(tok);
+    else
+        ShowRefactorDialog(tok);
 }
 void Instance::DeleteTokens()
 {
@@ -1545,7 +1596,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 
     if (characterCode > 0)
     {
-        switch(characterCode)
+        switch (characterCode)
         {
         case '[':
             this->settings->maxTokenSize.Width = std::max<>(6U, this->settings->maxTokenSize.Width - 1);
@@ -1901,6 +1952,10 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         if (tokIDX != Token::INVALID_INDEX)
         {
             MoveToToken(tokIDX, false);
+        }
+        if ((button & MouseButton::DoubleClicked) != MouseButton::None)
+        {
+            OnKeyEvent(Key::Enter, 0);
         }
     }
 }

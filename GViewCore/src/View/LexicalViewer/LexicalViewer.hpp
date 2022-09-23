@@ -71,6 +71,7 @@ namespace View
                 this->allocated = 0;
                 return result;
             }
+            bool Set(const CharacterBuffer& chars);
         };
         struct BlockObject
         {
@@ -286,7 +287,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             uint64 currentHash;
-            UnicodeString text;
+            UnicodeString text;           
             uint32 currentTokenIndex;
             int32 lineNrWidth, lastLineNumber;
             bool noItemsVisible;
@@ -340,6 +341,8 @@ namespace View
             void DeleteTokens();
             void ShowPlugins();
             void ShowSaveAsDialog();
+            void ShowRefactorDialog(TokenObject& tok);
+            void ShowStringOpDialog(TokenObject& tok);
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();
@@ -433,6 +436,37 @@ namespace View
                     return ApplyMethod::Selection;
                 // default
                 return ApplyMethod::CurrentToken;
+            }
+        };
+        namespace StringOperationsPlugins
+        {
+            void Reverse(TextEditor& editor, uint32 start, uint32 end);
+            void UpperCase(TextEditor& editor, uint32 start, uint32 end);
+            void LowerCase(TextEditor& editor, uint32 start, uint32 end);
+            void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end);
+        }
+        class StringOpDialog : public Window
+        {
+            TokenObject& tok;
+            Reference<TextArea> txValue;
+            Reference<ParseInterface> parser;
+            TextEditorBuilder editor;
+            const char16* text;
+            bool openInANewWindow;
+            
+            void UpdateValue(bool original);
+            void UpdateTokenValue();
+            void RunStringOperation(AppCUI::Controls::ListViewItem item);
+          public:
+            StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline bool ShouldOpenANewWindow() const
+            {
+                return openInANewWindow;
+            }
+            inline const CharacterBuffer& GetStringValue() 
+            {
+                return txValue->GetText();
             }
         };
         class DeleteDialog : public Window
