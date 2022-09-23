@@ -440,10 +440,10 @@ namespace View
         };
         namespace StringOperationsPlugins
         {
-            void Reverse(TextEditor& editor);
-            void UpperCase(TextEditor& editor);
-            void LowerCase(TextEditor& editor);
-            void RemoveUnnecesaryWhiteSpaces(TextEditor& editor);
+            void Reverse(TextEditor& editor, uint32 start, uint32 end);
+            void UpperCase(TextEditor& editor, uint32 start, uint32 end);
+            void LowerCase(TextEditor& editor, uint32 start, uint32 end);
+            void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end);
         }
         class StringOpDialog : public Window
         {

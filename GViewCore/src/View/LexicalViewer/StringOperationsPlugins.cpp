@@ -2,7 +2,7 @@
 
 namespace GView::View::LexicalViewer::StringOperationsPlugins
 {
-void Reverse(TextEditor& editor)
+void Reverse(TextEditor& editor, uint32 start, uint32 end)
 {
     if (editor.Len() == 0)
         return;
@@ -15,19 +15,19 @@ void Reverse(TextEditor& editor)
         e--;
     }
 }
-void UpperCase(TextEditor& editor)
+void UpperCase(TextEditor& editor, uint32 start, uint32 end)
 {
-    for (auto index = 0U; index < editor.Len(); index++)
+    for (auto index = start; index < end; index++)
         if ((editor[index] >= 'a') && (editor[index] <= 'z'))
             editor[index] -= 32;
 }
-void LowerCase(TextEditor& editor)
+void LowerCase(TextEditor& editor, uint32 start, uint32 end)
 {
-    for (auto index = 0U; index < editor.Len(); index++)
+    for (auto index = start; index < end; index++)
         if ((editor[index] >= 'A') && (editor[index] <= 'Z'))
             editor[index] |= 0x20;
 }
-void RemoveUnnecesaryWhiteSpaces(TextEditor& editor)
+void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end)
 {
     auto len = editor.Len();
     auto pos = 0;

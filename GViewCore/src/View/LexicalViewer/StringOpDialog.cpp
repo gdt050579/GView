@@ -11,11 +11,10 @@ constexpr uint32 CMD_ID_RELOAD_ORIGINAL = 0xFFFFFF00;
 constexpr uint32 CMD_ID_RELOAD          = 0xFFFFFF01;
 constexpr uint32 INVALID_CMD_ID         = 0xFFFFFFFF;
 
-
 struct
 {
     std::string_view name;
-    void (*run)(TextEditor& editor);
+    void (*run)(TextEditor& editor, uint32 start, uint32 end);
 } plugins[]{ { "Reverse", StringOperationsPlugins::Reverse },
              { "UpperCase", StringOperationsPlugins::UpperCase },
              { "LowerCase", StringOperationsPlugins::LowerCase },
@@ -39,7 +38,7 @@ StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference
     lst->AddItem("Original value").SetData(CMD_ID_RELOAD_ORIGINAL);
     lst->AddItem("Reload value").SetData(CMD_ID_RELOAD);
     lst->AddItem("").SetType(ListViewItem::Type::Category);
-    for (auto index = 0; index < ARRAY_LEN(plugins);index++)
+    for (auto index = 0; index < ARRAY_LEN(plugins); index++)
     {
         lst->AddItem(plugins[index].name).SetData(index);
     }
@@ -78,7 +77,9 @@ void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
     if (id < ARRAY_LEN(plugins))
     {
         editor.Set(this->txValue->GetText());
-        plugins[id].run(editor);
+        auto start = 0U;
+        auto end   = editor.Len();
+        plugins[id].run(editor,start,end);
         this->txValue->SetText((std::u16string_view) editor);
     }
     else
@@ -93,7 +94,7 @@ void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
             UpdateValue(false);
             return;
         }
-    }    
+    }
 }
 void StringOpDialog::UpdateTokenValue()
 {
