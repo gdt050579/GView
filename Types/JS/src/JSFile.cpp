@@ -830,9 +830,9 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             next = text.ParseString(idx, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::AllowEscapeSequences);
             if (next - idx > SIZABLE_VALUE)
                 tokenList.Add(
-                      TokenType::Number, idx, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
+                      TokenType::String, idx, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             else
-                tokenList.Add(TokenType::Number, idx, next, TokenColor::String, TokenDataType::String);
+                tokenList.Add(TokenType::String, idx, next, TokenColor::String, TokenDataType::String);
             idx = next;
             break;
         case CharType::Backquote:
@@ -1145,6 +1145,9 @@ bool JSFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeS
 }
 bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
-    NOT_IMPLEMENTED(false);
+    result.Set("\"");
+    result.Add(content);
+    result.Add("\"");
+    return true;
 }
 } // namespace GView::Type::JS

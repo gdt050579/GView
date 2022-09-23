@@ -18,7 +18,8 @@ struct
 } plugins[]{ { "Reverse", StringOperationsPlugins::Reverse },
              { "UpperCase", StringOperationsPlugins::UpperCase },
              { "LowerCase", StringOperationsPlugins::LowerCase },
-             { "Remove extra white spaces", StringOperationsPlugins::RemoveUnnecesaryWhiteSpaces } };
+             { "Remove extra white spaces", StringOperationsPlugins::RemoveUnnecesaryWhiteSpaces },
+             { "Unescape characters", StringOperationsPlugins::UnescapedCharacters } };
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
     : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), editor(nullptr, 0), text(_text),

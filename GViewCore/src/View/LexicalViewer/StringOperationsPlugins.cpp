@@ -59,4 +59,56 @@ void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end)
         pos++;
     }
 }
+
+bool IsHex(char16 ch)
+{
+    return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
+}
+
+char16 HexCharToValue(char16 ch)
+{
+    if (ch >= '0' && ch <= '9')
+        return (ch - '0'); 
+    if (ch >= 'A' && ch <= 'F')
+        return (ch + 10 - 'A');
+    if (ch >= 'a' && ch <= 'f')
+        return (ch + 10 - 'a');
+    return 0;
+}
+
+void UnescapedCharacters(TextEditor& editor, uint32 start, uint32 end)
+{
+    editor.ReplaceAll("\\n", "\n");
+    editor.ReplaceAll("\\r", "\r");
+    editor.ReplaceAll("\\t", "\t");
+    editor.ReplaceAll("\\'", "\'");
+    editor.ReplaceAll("\\\"", "\"");
+    editor.ReplaceAll("\\a", "\a");
+    editor.ReplaceAll("\\b", "\b");
+    editor.ReplaceAll("\\f", "\f");
+    editor.ReplaceAll("\\v", "\v");
+    editor.ReplaceAll("\\?", "\?");
+    editor.ReplaceAll("\\\\", "\\");
+
+    for (auto i = 0u; i < editor.Len(); i++)
+    {
+        if (editor[i] != '\\')
+            continue;
+        if (editor[i + 1] == 'x' && IsHex(editor[i + 2]) && IsHex(editor[i + 3]))
+        {
+            editor[i]    = HexCharToValue(editor[i + 2]) * 0x10 + HexCharToValue(editor[i + 3]);
+            editor.Delete(i + 1, 3);
+            continue;
+        }
+        if (editor[i + 1] == 'u' && IsHex(editor[i + 2]) && IsHex(editor[i + 3]) && IsHex(editor[i + 4]) && IsHex(editor[i + 5]))
+        {
+            editor[i] = HexCharToValue(editor[i + 2]) * 0x1000 + HexCharToValue(editor[i + 3]) * 0x100 +
+                        HexCharToValue(editor[i + 4]) * 0x10 + HexCharToValue(editor[i + 5]);
+            editor.Delete(i + 1, 5);
+            continue;
+        }
+    }
+
+
+}
 } // namespace GView::View::LexicalViewer::StringOperationsPlugins
