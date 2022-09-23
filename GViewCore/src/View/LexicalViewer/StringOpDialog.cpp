@@ -11,25 +11,12 @@ constexpr uint32 CMD_ID_RELOAD_ORIGINAL = 0xFFFFFF00;
 constexpr uint32 CMD_ID_RELOAD          = 0xFFFFFF01;
 constexpr uint32 INVALID_CMD_ID         = 0xFFFFFFFF;
 
-void StringOpReverse(TextEditor& editor)
-{
-    if (editor.Len() == 0)
-        return;
-    auto e = editor.Len() - 1;
-    auto s = 0U;
-    while (s < e)
-    {
-        std::swap(editor[s], editor[e]);
-        s++;
-        e--;
-    }
-}
 
 struct
 {
     std::string_view name;
     void (*run)(TextEditor& editor);
-} plugins[]{ { "Reverse", StringOpReverse } };
+} plugins[]{ { "Reverse", StringOperationsPlugins::Reverse } };
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
     : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), editor(nullptr, 0), text(_text),

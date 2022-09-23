@@ -438,6 +438,10 @@ namespace View
                 return ApplyMethod::CurrentToken;
             }
         };
+        namespace StringOperationsPlugins
+        {
+            void Reverse(TextEditor& editor);
+        }
         class StringOpDialog : public Window
         {
             TokenObject& tok;
