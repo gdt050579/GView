@@ -360,6 +360,10 @@ namespace Type
         {
             return std::string_view{ (const char*) &this->Name[0], (size_t) this->NameLength };
         }
+        inline std::string_view GetDescription() const
+        {
+            return std::string_view{ (const char*) &this->Name[0], (size_t) this->NameLength };
+        }
     };
 } // namespace Type
 
@@ -466,7 +470,7 @@ namespace App
         Reference<GView::Object> GetCurrentObject();
         uint32 GetTypePluginsCount();
         std::string_view GetTypePluginName(uint32 index);
-        
+        std::string_view GetTypePluginDescription(uint32 index);
     };
 
     class FileWindowProperties : public Window

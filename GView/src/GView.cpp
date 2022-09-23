@@ -92,7 +92,9 @@ bool ListTypes()
     std::cout << "Types : " << cnt << std::endl;
     for (auto index = 0U; index < cnt; index++)
     {
-        std::cout << "  " << GView::App::GetTypePluginName(index) << std::endl;
+        auto name = GView::App::GetTypePluginName(index);
+        auto desc = GView::App::GetTypePluginDescription(index);
+        std::cout << " " << name << std::setw(12) << desc << std::endl;
     }
     return true;
 }

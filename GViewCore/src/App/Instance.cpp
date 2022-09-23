@@ -304,6 +304,12 @@ std::string_view Instance::GetTypePluginName(uint32 index)
         return "";
     return this->typePlugins[index].GetName();
 }
+std::string_view Instance::GetTypePluginDescription(uint32 index)
+{
+    if (index >= this->typePlugins.size())
+        return "";
+    return this->typePlugins[index].GetDescription();
+}
 
 //===============================[APPCUI HANDLERS]==============================
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)

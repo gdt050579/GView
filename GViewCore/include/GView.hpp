@@ -1212,6 +1212,7 @@ namespace App
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
+    std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
     uint32 CORE_EXPORT GetTypePluginsCount();
 
 }; // namespace App
