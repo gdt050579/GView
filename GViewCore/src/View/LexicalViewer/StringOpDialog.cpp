@@ -7,10 +7,29 @@ constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BNT_ID_OPEN   = 2;
 constexpr int32 BTN_ID_CANCEL = 3;
 
-constexpr uint32 CMD_ID_RELOAD_ORIGINAL = 0;
-constexpr uint32 CMD_ID_RELOAD          = 1;
-constexpr uint32 CMD_ID_REVERSE         = 2;
+constexpr uint32 CMD_ID_RELOAD_ORIGINAL = 0xFFFFFF00;
+constexpr uint32 CMD_ID_RELOAD          = 0xFFFFFF01;
 constexpr uint32 INVALID_CMD_ID         = 0xFFFFFFFF;
+
+void StringOpReverse(TextEditor& editor)
+{
+    if (editor.Len() == 0)
+        return;
+    auto e = editor.Len() - 1;
+    auto s = 0U;
+    while (s < e)
+    {
+        std::swap(editor[s], editor[e]);
+        s++;
+        e--;
+    }
+}
+
+struct
+{
+    std::string_view name;
+    void (*run)(TextEditor& editor);
+} plugins[]{ { "Reverse", StringOpReverse } };
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
     : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), editor(nullptr, 0), text(_text),
@@ -23,13 +42,17 @@ StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference
           "d:c",
           { "w:100,a:l,n:Operations" },
           ListViewFlags::HideBorder | ListViewFlags::HideCurrentItemWhenNotFocused | ListViewFlags::PopupSearchBar);
-    this->txValue = Factory::TextArea::Create(spl, "", "x:15,y:2,w:60,h:9", TextAreaFlags::ShowLineNumbers);
+    this->txValue =
+          Factory::TextArea::Create(spl, "", "x:15,y:2,w:60,h:9", TextAreaFlags::ShowLineNumbers | TextAreaFlags::DisableAutoSelectOnFocus);
 
     // list commands
     lst->AddItem("Original value").SetData(CMD_ID_RELOAD_ORIGINAL);
     lst->AddItem("Reload value").SetData(CMD_ID_RELOAD);
     lst->AddItem("").SetType(ListViewItem::Type::Category);
-    lst->AddItem("Reverse").SetData(CMD_ID_REVERSE);
+    for (auto index = 0; index < ARRAY_LEN(plugins);index++)
+    {
+        lst->AddItem(plugins[index].name).SetData(index);
+    }
 
     spl->SetFirstPanelSize(20);
     // button
@@ -56,43 +79,31 @@ void StringOpDialog::UpdateValue(bool original)
     }
 }
 
-void StringOpDialog::ReverseValue()
-{
-    if (editor.Len() == 0)
-        return;
-    auto e = editor.Len() - 1;
-    auto s = 0U;
-    while (s < e)
-    {
-        std::swap(editor[s], editor[e]);
-        s++;
-        e--;
-    }
-}
 void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
 {
     // check if valid or separator
     if (item.GetText(0).Len() == 0)
         return;
     uint32 id = static_cast<uint32>(item.GetData(INVALID_CMD_ID));
-    switch (id)
+    if (id < ARRAY_LEN(plugins))
     {
-    case CMD_ID_RELOAD_ORIGINAL:
-        UpdateValue(true);
-        return;
-    case CMD_ID_RELOAD:
-        UpdateValue(false);
-        return;
+        editor.Set(this->txValue->GetText());
+        plugins[id].run(editor);
+        this->txValue->SetText((std::u16string_view) editor);
     }
-    // otherwise, we are dealing with some changes to be done directly over the text
-    editor.Set(this->txValue->GetText());
-    switch (id)
+    else
     {
-    case CMD_ID_REVERSE:
-        ReverseValue();
-        break;
-    }
-    this->txValue->SetText((std::u16string_view) editor);
+        // special cases
+        switch (id)
+        {
+        case CMD_ID_RELOAD_ORIGINAL:
+            UpdateValue(true);
+            return;
+        case CMD_ID_RELOAD:
+            UpdateValue(false);
+            return;
+        }
+    }    
 }
 void StringOpDialog::UpdateTokenValue()
 {
