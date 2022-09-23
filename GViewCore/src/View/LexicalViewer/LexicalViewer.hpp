@@ -443,6 +443,7 @@ namespace View
             void Reverse(TextEditor& editor);
             void UpperCase(TextEditor& editor);
             void LowerCase(TextEditor& editor);
+            void RemoveUnnecesaryWhiteSpaces(TextEditor& editor);
         }
         class StringOpDialog : public Window
         {
