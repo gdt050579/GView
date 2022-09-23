@@ -337,6 +337,7 @@ bool TextEditorBuilder::Set(const CharacterBuffer& chars)
         p++;
         ch++;
     }
+    this->size = chars.Len();
     return true;
 }
 
