@@ -144,3 +144,13 @@ uint32 GView::App::GetObjectsCount()
     CHECK(gviewAppInstance, 0U, "GView was not initialized !");
     return gviewAppInstance->GetObjectsCount();
 }
+std::string_view GView::App::GetTypePluginName(uint32 index)
+{
+    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginName(index);
+}
+uint32 CORE_EXPORT GView::App::GetTypePluginsCount()
+{
+    CHECK(gviewAppInstance, 0, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginsCount();
+}

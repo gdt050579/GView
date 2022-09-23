@@ -36,6 +36,7 @@ Plugin::Plugin()
     this->Name[0]    = 0;
     this->Loaded     = false;
     this->Invalid    = false;
+    this->Priority   = 0;
     // functions
     this->fnValidate       = nullptr;
     this->fnCreateInstance = nullptr;

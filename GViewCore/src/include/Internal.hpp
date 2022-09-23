@@ -356,6 +356,10 @@ namespace Type
         {
             return Priority > plugin.Priority;
         }
+        inline std::string_view GetName() const
+        {
+            return std::string_view{ (const char*) &this->Name[0], (size_t) this->NameLength };
+        }
     };
 } // namespace Type
 
@@ -460,6 +464,9 @@ namespace App
         uint32 GetObjectsCount();
         Reference<GView::Object> GetObject(uint32 index);
         Reference<GView::Object> GetCurrentObject();
+        uint32 GetTypePluginsCount();
+        std::string_view GetTypePluginName(uint32 index);
+        
     };
 
     class FileWindowProperties : public Window
