@@ -287,7 +287,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             uint64 currentHash;
-            UnicodeString text;
+            UnicodeString text;           
             uint32 currentTokenIndex;
             int32 lineNrWidth, lastLineNumber;
             bool noItemsVisible;

@@ -955,7 +955,7 @@ void Instance::PaintToken(Graphics::Renderer& renderer, const TokenObject& tok, 
         r.Create(params.X, params.Y, tok.pos.width, tok.pos.height, Alignament::TopLeft);
         renderer.SetClipRect(r);
         renderer.WriteText(txt, params);
-        renderer.ResetClip();
+        renderer.SetClipMargins(this->lineNrWidth, 0, 0, 0);
     }
     else
     {
@@ -993,6 +993,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
 {
     auto state           = this->HasFocus() ? ControlState::Focused : ControlState::Normal;
     auto lineMarkerColor = Cfg.LineMarker.GetColor(state);
+
     // draw line number bar
     renderer.FillRect(0, 0, this->lineNrWidth - 2, this->GetHeight(), ' ', lineMarkerColor);
 
@@ -1016,8 +1017,10 @@ void Instance::Paint(Graphics::Renderer& renderer)
         if (currentTok.IsVisible())
         {
             this->currentHash = currentTok.hash;
+            renderer.SetClipMargins(this->lineNrWidth, 0, 0, 0);
             PaintToken(renderer, currentTok, this->currentTokenIndex);
             params.Y = std::max<>(0, currentTok.pos.y - Scroll.y);
+            renderer.ResetClip();
             renderer.WriteText(num.ToDec(currentTok.lineNo), params);
         }
     }
@@ -1030,7 +1033,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
     int32 lastY               = -1;
-
+    
     for (auto& t : this->tokens)
     {
         // skip hidden and current token
@@ -1048,15 +1051,18 @@ void Instance::Paint(Graphics::Renderer& renderer)
             idx++;
             continue;
         }
+        renderer.SetClipMargins(this->lineNrWidth, 0, 0, 0);
         PaintToken(renderer, t, idx);
         if (t.pos.y != lastY)
         {
             params.Y = std::max<>(0, t.pos.y - Scroll.y);
+            renderer.ResetClip();
             renderer.WriteText(num.ToDec(t.lineNo), params);
             lastY = t.pos.y;
         }
         idx++;
     }
+    renderer.ResetClip();
     foldColumn.Paint(renderer, this->lineNrWidth - 1, this);
 }
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
