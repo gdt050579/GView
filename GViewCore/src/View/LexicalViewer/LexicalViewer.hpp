@@ -457,7 +457,7 @@ namespace View
             
             void UpdateValue(bool original);
             void UpdateTokenValue();
-            void RunStringOperation(AppCUI::Controls::ListViewItem item);
+            void RunStringOperation(uint32 commandID);
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
