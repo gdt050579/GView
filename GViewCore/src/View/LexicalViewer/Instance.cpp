@@ -1953,6 +1953,10 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         {
             MoveToToken(tokIDX, false);
         }
+        if ((button & MouseButton::DoubleClicked) != MouseButton::None)
+        {
+            OnKeyEvent(Key::Enter, 0);
+        }
     }
 }
 void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
