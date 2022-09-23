@@ -4,15 +4,14 @@ namespace GView::View::LexicalViewer::StringOperationsPlugins
 {
 void Reverse(TextEditor& editor, uint32 start, uint32 end)
 {
-    if (editor.Len() == 0)
+    if (end == 0)
         return;
-    auto e = editor.Len() - 1;
-    auto s = 0U;
-    while (s < e)
+    end--;
+    while (start < end)
     {
-        std::swap(editor[s], editor[e]);
-        s++;
-        e--;
+        std::swap(editor[start], editor[end]);
+        start++;
+        end--;
     }
 }
 void UpperCase(TextEditor& editor, uint32 start, uint32 end)
