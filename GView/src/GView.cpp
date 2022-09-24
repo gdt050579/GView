@@ -94,7 +94,7 @@ bool ListTypes()
     {
         auto name = GView::App::GetTypePluginName(index);
         auto desc = GView::App::GetTypePluginDescription(index);
-        std::cout << " " << name << std::setw(12) << desc << std::endl;
+        std::cout << " " << std::left << std:: setw(15) << name << desc << std::endl;
     }
     return true;
 }
