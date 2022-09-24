@@ -668,6 +668,15 @@ namespace Type
             Manifest     = 24
         };
 
+        static constexpr auto INS_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
+        static constexpr auto INS_LCALL_COLOR      = ColorPair{ Color::Red, Color::DarkGreen };
+        static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
+        static constexpr auto INS_LJUMP_COLOR      = ColorPair{ Color::Yellow, Color::DarkRed };
+        static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
+        static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
+        static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
+        static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
+
         class PEFile : public TypeInterface,
                        public GView::View::BufferViewer::OffsetTranslateInterface,
                        public GView::View::BufferViewer::PositionToColorInterface
@@ -720,16 +729,6 @@ namespace Type
                 String Name;
             };
 
-            enum class Opcodes // TODO: as in actual options
-            {
-                SHOW_JUMPS  = 1,
-                SHOW_CALLS  = 2,
-                SHOW_FSTART = 4,
-                SHOW_FEND   = 8,
-                SHOW_MZPE   = 16,
-                SHOW_INT3   = 32
-            };
-
             struct SymbolInformation
             {
                 String name; // this can be either short or long name that needs to be located
@@ -769,8 +768,9 @@ namespace Type
             uint32 sectStart, peStart;
             uint64 panelsMask;
 
-            uint64 memStartOffset;
-            uint64 memEndOffset;
+            uint32 showOpcodesMask{ 0xFFFFFFFF };
+            std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+            GView::Dissasembly::DissasemblerIntel dissasembler{};
 
             bool hdr64;
             bool isMetroApp;
@@ -837,6 +837,7 @@ namespace Type
             bool LoadIcon(const ResourceInformation& r, Image& img);
 
             bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+            bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 
             std::string_view GetTypeName() override
             {

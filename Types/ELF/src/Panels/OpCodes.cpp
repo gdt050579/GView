@@ -62,9 +62,9 @@ void OpCodes::Update()
 {
     elf->showOpcodesMask = 0;
     auto settings        = Application::GetAppSettings();
-    if (settings->HasSection("Type.PE"))
+    if (settings->HasSection("Type.ELF"))
     {
-        auto pe       = settings->GetSection("Type.PE");
+        auto pe       = settings->GetSection("Type.ELF");
         auto optValue = pe["OpCodes.Mask"];
         if (optValue.HasValue())
         {

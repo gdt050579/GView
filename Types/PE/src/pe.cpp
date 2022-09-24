@@ -89,8 +89,6 @@ extern "C"
         case PE::MachineType::IA64:
         case PE::MachineType::AMD64:
         {
-            pe->memStartOffset = pe->imageBase;
-            pe->memEndOffset   = pe->imageBase + pe->virtualComputedSize;
             settings.SetPositionToColorCallback(pe.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
         }
         break;
@@ -237,9 +235,10 @@ UInt16 e_res[4];)");
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = "MZ";
-        sect["Priority"]    = 1;
-        sect["Description"] = "Portable executable format for Windows OS binaries";
+        sect["Pattern"]      = "MZ";
+        sect["Priority"]     = 1;
+        sect["Description"]  = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
     }
 }
 

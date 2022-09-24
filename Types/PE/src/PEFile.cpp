@@ -1680,6 +1680,15 @@ bool PEFile::Update()
 
     hasOverlay = computedSize < obj->GetData().GetSize();
 
+    for (auto i = 0; i < nrSections; i++)
+    {
+        const auto& section = sect[i];
+        if ((section.Characteristics & __IMAGE_SCN_MEM_EXECUTE) == __IMAGE_SCN_MEM_EXECUTE)
+        {
+            executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ section.PointerToRawData, section.SizeOfRawData });
+        }
+    }
+
     // Default panels
     ADD_PANEL(Panels::IDs::Information);
     ADD_PANEL(Panels::IDs::Directories);
@@ -2024,97 +2033,156 @@ std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
     return indexes;
 }
 
+bool PEFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(dissasembler.Init(hdr64, true), false, "");
+
+    static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
+    static std::map<uint64, bool> cacheDiscard{};
+
+    if (cacheBuffer.count(offset) > 0)
+    {
+        result = cacheBuffer.at(offset);
+        return true;
+    }
+
+    if (cacheDiscard.count(offset) > 0)
+    {
+        return false;
+    }
+
+    GView::Dissasembly::Instruction ins{ 0 };
+    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
+    {
+        if (dissasembler.IsCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_CALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
+    {
+        if (dissasembler.IsLCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LCALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
+    {
+        if (dissasembler.IsJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_JUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
+    {
+        if (dissasembler.IsLJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LJUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
+    {
+        if (dissasembler.IsBreakpointInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_BREAKPOINT_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
+    {
+        GView::Dissasembly::Instruction ins2{ 0 };
+        const auto offset2 = offset + ins.size;
+        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
+
+        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size + ins2.size;
+            result.color        = START_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
+    {
+        if (dissasembler.IsFunctionEndInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = END_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    cacheDiscard[offset] = false;
+
+    return false;
+}
+
 bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
     CHECK(buf.IsValid(), false, "");
-
-    static constexpr auto API_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
-    static constexpr auto API_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
-    static constexpr auto BREAKPOINT_COLOR     = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
-    static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
-    static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
-    static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
-
-    // maybe add
-    // EB (direct jump, signed byte EIP-displacement), E9 (direct jump, signed dword EIP-displacement), E8 (direct call, signed dword
-    // EIP-displacement)
+    result.color = ColorPair{ Color::Transparent, Color::Transparent };
+    CHECK(showOpcodesMask != 0, false, "");
 
     auto* p = buf.begin();
     switch (*p)
     {
-    case 0x4D:
+    case 0x7F:
+        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header), "");
         CHECKBK(buf.GetLength() >= 4, "");
-        if (*(uint16*) p == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90 || p[2] == 0x78) && p[3] == 0x00)
+        if (*(uint32*) p == 0x464C457F)
         {
             result.start = offset;
             result.end   = offset + 3;
             result.color = EXE_MARKER_COLOR;
             return true;
-        }
-        break;
-    case 0x50:
-        CHECKBK(buf.GetLength() >= 4, "");
-        if (*(uint32*) p == 0x00004550)
+        } // do not break
+    default:
+        switch ((PE::MachineType) nth32.FileHeader.Machine)
         {
-            result.start = offset;
-            result.end   = offset + 3;
-            result.color = EXE_MARKER_COLOR;
-            return true;
-        }
-        break;
-    case 0xFF:
-        CHECKBK(buf.GetLength() >= 6, "");
-
-        if (p[1] == 0x15) // FF 15 is a CALLN instruction. N stands for near (as opposed to F / FAR) | FF15 (indirect call, absolute
-                          // dword address) | possible call to API
-        {
-            auto addr = *(uint32*) (p + 2);
-            if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset))
+        case PE::MachineType::I386:
+        case PE::MachineType::IA64:
+        case PE::MachineType::AMD64:
+            for (const auto& [start, end] : executableZonesFAs)
             {
-                result.start = offset;
-                result.end   = offset + 5;
-                result.color = API_CALL_COLOR;
-                return true;
+                if (offset >= start && offset < end)
+                {
+                    return GetColorForBufferIntel(offset, buf, result);
+                }
             }
+            break;
+        default:
+            break;
         }
-        else if (p[1] == 0x25) // FF25 (indirect jmp, absolute dword address) | possible jump to API
-        {
-            auto addr = *(uint32*) (p + 2);
-            if ((addr >= this->memStartOffset) && (addr <= this->memEndOffset))
-            {
-                result.start = offset;
-                result.end   = offset + 5;
-                result.color = API_JUMP_COLOR;
-                return true;
-            }
-        }
-        break;
-    case 0xCC: // INT 3
-        result.start = result.end = offset;
-        result.color              = BREAKPOINT_COLOR;
-        return true;
-    case 0x55: // start of function
-        CHECKBK(buf.GetLength() >= 3, "");
-
-        if ((*(uint16*) (p + 1)) == 0xEC8B) // possible `push EBP` followed by MOV ebp, sep
-        {
-            result.start = offset;
-            result.end   = offset + 2;
-            result.color = START_FUNCTION_COLOR;
-            return true;
-        }
-        break;
-    case 0x8B: // end of function
-        CHECKBK(buf.GetLength() >= 4, "");
-
-        if (((*(uint16*) (p + 1)) == 0x5DE5) && (p[3] == 0xC3)) // possible `MOV esp, EBP` followed by `POP ebp` and `RET`
-        {
-            result.start = offset;
-            result.end   = offset + 3;
-            result.color = END_FUNCTION_COLOR;
-            return true;
-        }
-        break;
     }
 
     return false;

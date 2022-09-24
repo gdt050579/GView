@@ -77,8 +77,8 @@ class ELFFile : public TypeInterface,
     Golang::PcLnTab pcLnTab{};
 
     uint32 showOpcodesMask{ 0 };
-
     std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+    GView::Dissasembly::DissasemblerIntel dissasembler{};
 
   public:
     ELFFile();
@@ -91,7 +91,6 @@ class ELFFile : public TypeInterface,
     bool ParseGoData();
     bool ParseSymbols();
 
-    GView::Dissasembly::DissasemblerIntel dissasembler{};
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
     bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 
