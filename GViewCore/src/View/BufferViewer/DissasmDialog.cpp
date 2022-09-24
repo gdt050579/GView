@@ -13,7 +13,7 @@ DissasmDialog::DissasmDialog(BufferView _buffer, uint64 _fa, uint64 _size)
           this, "x:0,y:0,w:100%,h:90%", { "n:FA,w:10%", "n:Bytes,w:20%", "n:Instructions,w:70%" }, ListViewFlags::None);
     list->SetFocus();
 
-    CHECKRET(dissasembler.Init(false, true), "");
+    CHECKRET(dissasembler.Init(true, true), "");
 
     LocalString<128> tmp;
     LocalString<128> tmp3;
@@ -36,6 +36,7 @@ DissasmDialog::DissasmDialog(BufferView _buffer, uint64 _fa, uint64 _size)
 
     Factory::Button::Create(this, "&Cancel", "x:45%,y:95%,w:10%,h:10%", BTN_ID_CANCEL);
 }
+
 void DissasmDialog::Validate()
 {
     Exit(Dialogs::Result::Ok);

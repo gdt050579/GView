@@ -36,6 +36,10 @@ bool ELFFile::Update()
         {
             Elf64_Phdr entry{};
             CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, entry), false, "");
+            if ((entry.p_flags & PF_X) == PF_X)
+            {
+                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_filesz });
+            }
             segments64.emplace_back(entry);
             offset += sizeof(entry);
         }
@@ -47,6 +51,10 @@ bool ELFFile::Update()
         {
             Elf32_Phdr entry{};
             CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, entry), false, "");
+            if ((entry.p_flags & PF_X) == PF_X)
+            {
+                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_filesz });
+            }
             segments32.emplace_back(entry);
             offset += sizeof(entry);
         }
@@ -497,6 +505,20 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
 {
     CHECK(dissasembler.Init(is64, isLittleEndian), false, "");
 
+    static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
+    static std::map<uint64, bool> cacheDiscard{};
+
+    if (cacheBuffer.count(offset) > 0)
+    {
+        result = cacheBuffer.at(offset);
+        return true;
+    }
+
+    if (cacheDiscard.count(offset) > 0)
+    {
+        return false;
+    }
+
     GView::Dissasembly::Instruction ins{ 0 };
     CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
 
@@ -504,9 +526,10 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     {
         if (dissasembler.IsCallInstruction(ins))
         {
-            result.start = offset;
-            result.end   = offset + ins.size;
-            result.color = INS_CALL_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_CALL_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
@@ -515,9 +538,10 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     {
         if (dissasembler.IsLCallInstruction(ins))
         {
-            result.start = offset;
-            result.end   = offset + ins.size;
-            result.color = INS_LCALL_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LCALL_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
@@ -526,9 +550,10 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     {
         if (dissasembler.IsJmpInstruction(ins))
         {
-            result.start = offset;
-            result.end   = offset + ins.size;
-            result.color = INS_JUMP_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_JUMP_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
@@ -537,9 +562,10 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     {
         if (dissasembler.IsLJmpInstruction(ins))
         {
-            result.start = offset;
-            result.end   = offset + ins.size;
-            result.color = INS_LJUMP_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LJUMP_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
@@ -548,9 +574,10 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     {
         if (dissasembler.IsBreakpointInstruction(ins))
         {
-            result.start = offset;
-            result.end   = offset + ins.size;
-            result.color = INS_BREAKPOINT_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_BREAKPOINT_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
@@ -558,14 +585,15 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
     {
         GView::Dissasembly::Instruction ins2{ 0 };
-        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset + ins.size, ins2),
-              false,
-              "");
+        const auto offset2 = offset + ins.size;
+        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
+
         if (dissasembler.AreFunctionStartInstructions(ins, ins2))
         {
-            result.start = offset;
-            result.end   = offset + ins.size + ins2.size;
-            result.color = START_FUNCTION_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size + ins2.size;
+            result.color        = START_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
@@ -574,12 +602,15 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     {
         if (dissasembler.IsFunctionEndInstruction(ins))
         {
-            result.start = offset;
-            result.end   = offset + ins.size;
-            result.color = END_FUNCTION_COLOR;
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = END_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
             return true;
         }
     }
+
+    cacheDiscard[offset] = false;
 
     return false;
 }
@@ -613,7 +644,14 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
         case EM_960:
         case EM_8051:
         case EM_X86_64:
-            return GetColorForBufferIntel(offset, buf, result);
+            for (const auto& [start, end] : executableZonesFAs)
+            {
+                if (offset >= start && offset < end)
+                {
+                    return GetColorForBufferIntel(offset, buf, result);
+                }
+            }
+            break;
         default:
             break;
         }

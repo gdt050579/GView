@@ -110,12 +110,8 @@ extern "C"
         case ELF::EM_960:
         case ELF::EM_8051:
         case ELF::EM_X86_64:
-        {
-            elf->memStartOffset = elf->GetImageBase();
-            elf->memEndOffset   = elf->GetImageBase() + elf->GetVirtualSize();
             settings.SetPositionToColorCallback(elf.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
-        }
-        break;
+            break;
         };
 
         win->CreateViewer("BufferView", settings);

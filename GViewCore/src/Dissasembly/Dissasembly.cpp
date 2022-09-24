@@ -7,6 +7,8 @@ bool DissasemblerIntel::Init(bool isx64, bool isLittleEndian)
 {
     if (handle == 0)
     {
+        this->isX64 = isx64;
+
         cs_arch arch = CS_ARCH_X86;
         cs_mode mode = isx64 ? CS_MODE_64 : CS_MODE_32;
         mode         = (cs_mode) ((uint32) mode | (isLittleEndian ? CS_MODE_LITTLE_ENDIAN : CS_MODE_BIG_ENDIAN));
@@ -82,6 +84,17 @@ inline bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& i
     case X86_INS_PUSHF:
     case X86_INS_PUSHFD:
     case X86_INS_PUSHFQ:
+    {
+        const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
+        if (this->isX64)
+        {
+            CHECK(opStr.starts_with("rsp"), false, "");
+        }
+        else
+        {
+            CHECK(opStr.starts_with("esp"), false, "");
+        }
+
         switch (instruction2.id)
         {
         case X86_INS_MOV:
@@ -125,6 +138,40 @@ inline bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& i
         default:
             RETURNERROR(false, "Instruction not mov!");
         }
+    }
+
+    // sub rsp, 40; mov edx, 2
+    case X86_INS_SUB:
+    case X86_INS_SUBPD:
+    case X86_INS_SUBPS:
+    case X86_INS_FSUBR:
+    case X86_INS_FISUBR:
+    case X86_INS_FSUBRP:
+    case X86_INS_SUBSD:
+    case X86_INS_SUBSS:
+    case X86_INS_FSUB:
+    case X86_INS_FISUB:
+    case X86_INS_FSUBP:
+    {
+        const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
+        if (this->isX64)
+        {
+            CHECK(opStr.starts_with("rsp"), false, "");
+        }
+        else
+        {
+            CHECK(opStr.starts_with("esp"), false, "");
+        }
+
+        return true;
+    }
+
+    case X86_INS_ENDBR64:
+    case X86_INS_ENDBR32:
+    {
+        CHECK(instruction2.id != X86_INS_RET, false, ""); // function end
+        return true;
+    }
     default:
         RETURNERROR(false, "Instruction not push!");
     }
@@ -134,14 +181,16 @@ inline bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instr
 {
     switch (instruction.id)
     {
-    case X86_INS_IRET:
-    case X86_INS_IRETD:
-    case X86_INS_IRETQ:
-    case X86_INS_RET:
-    case X86_INS_RETF:
-    case X86_INS_RETFQ:
-    case X86_INS_SYSRET:
-    case X86_INS_SYSRETQ:
+        // case X86_INS_IRET:  // Interrupt return (16-bit operand size).
+        // case X86_INS_IRETD: // Interrupt return (32-bit operand size).
+        // case X86_INS_IRETQ: // Interrupt return (64-bit operand size).
+
+    case X86_INS_RET:   // Near return to calling procedure.
+    case X86_INS_RETF:  // Far return to calling procedure.
+    case X86_INS_RETFQ: // Far return to calling procedure (pops address and code segment).
+        return true;
+    case X86_INS_SYSRET:  // Return to compatibility mode from fast system call.
+    case X86_INS_SYSRETQ: // Return to 64-bit mode from fast system call.
         return true;
     default:
         RETURNERROR(false, "");

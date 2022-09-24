@@ -538,7 +538,7 @@ namespace Dissasembly
     {
       private:
         size_t handle{ 0 };
-        bool isX64{ 0 };
+        bool isX64{ false };
 
       public:
         bool Init(bool isx64, bool isLittleEndian);
