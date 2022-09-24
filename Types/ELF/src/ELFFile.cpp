@@ -27,6 +27,8 @@ bool ELFFile::Update()
         offset += sizeof(Elf32_Ehdr);
     }
 
+    isLittleEndian = (header32.e_ident[EI_DATA] == ELFDATA2LSB);
+
     if (is64)
     {
         offset = header64.e_phoff;
@@ -491,9 +493,9 @@ uint64 ELFFile::GetVirtualSize() const
     return -1;
 }
 
-bool ELFFile::GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
-    CHECK(dissasembler.Init(is64, true), false, "");
+    CHECK(dissasembler.Init(is64, isLittleEndian), false, "");
 
     GView::Dissasembly::Instruction ins{ 0 };
     CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
@@ -664,7 +666,7 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
         case EM_960:
         case EM_8051:
         case EM_X86_64:
-            return GetColorForBufferForIntel(offset, buf, result);
+            return GetColorForBufferIntel(offset, buf, result);
         default:
             break;
         }

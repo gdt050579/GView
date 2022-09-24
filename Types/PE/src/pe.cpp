@@ -88,10 +88,6 @@ extern "C"
         case PE::MachineType::I386:
         case PE::MachineType::IA64:
         case PE::MachineType::AMD64:
-        case PE::MachineType::THUMB:
-        case PE::MachineType::ARMNT:
-        case PE::MachineType::ARM:
-        case PE::MachineType::ARM64:
         {
             pe->memStartOffset = pe->imageBase;
             pe->memEndOffset   = pe->imageBase + pe->virtualComputedSize;

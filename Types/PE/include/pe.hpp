@@ -593,6 +593,7 @@ namespace Type
             AM33      = 0x01d3,
             POWERPC   = 0x01F0, // IBM PowerPC Little-Endian
             POWERPCFP = 0x01f1,
+            PPCBE     = 0x01f2, // Xbox 360 (aka Xenon)
             IA64      = 0x0200, // Intel 64
             MIPS16    = 0x0266, // MIPS
             ALPHA64   = 0x0284, // ALPHA64

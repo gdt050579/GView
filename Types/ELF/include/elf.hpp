@@ -49,6 +49,7 @@ class ELFFile : public TypeInterface,
     Elf32_Ehdr header32;
     Elf64_Ehdr header64;
     bool is64{ false };
+    bool isLittleEndian{ true };
 
     std::vector<Elf32_Phdr> segments32;
     std::vector<Elf64_Phdr> segments64;
@@ -92,7 +93,7 @@ class ELFFile : public TypeInterface,
     uint64 memEndOffset;
     GView::Dissasembly::DissasemblerIntel dissasembler{};
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
-    bool GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
+    bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
     uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
