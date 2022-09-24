@@ -12,16 +12,16 @@ enum class AddressType : uint8
 
 constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
-static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::Yellow, Color::Silver };
-static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::White, Color::Silver };
+static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
+static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Yellow, Color::DarkGreen };
 
 static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
 static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
 
 static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue };
 
-static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
-static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
+static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::White, Color::Teal };
+static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Yellow, Color::Teal };
 
 static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
 
@@ -78,6 +78,8 @@ class ELFFile : public TypeInterface,
 
     uint32 showOpcodesMask{ 0 };
 
+    std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+
   public:
     ELFFile();
     virtual ~ELFFile()
@@ -89,8 +91,6 @@ class ELFFile : public TypeInterface,
     bool ParseGoData();
     bool ParseSymbols();
 
-    uint64 memStartOffset;
-    uint64 memEndOffset;
     GView::Dissasembly::DissasemblerIntel dissasembler{};
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
     bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
