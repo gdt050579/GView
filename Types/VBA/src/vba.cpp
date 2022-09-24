@@ -42,6 +42,7 @@ extern "C"
     {
         sect["Extension"] = { "vba", "vbs" };
         sect["Priority"]  = 1;
+        sect["Description"] = "Visual basic language file format (*.vba, *.vbs)";
     }
 }
 

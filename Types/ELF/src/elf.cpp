@@ -144,7 +144,8 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]  = "hex:'7F 45 4C 46'";
-        sect["Priority"] = 1;
+        sect["Pattern"]     = "hex:'7F 45 4C 46'";
+        sect["Priority"]    = 1;
+        sect["Description"] = "Executable and Linkable Format (for UNIX systems)";
     }
 }

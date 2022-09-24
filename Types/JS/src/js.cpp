@@ -28,7 +28,7 @@ extern "C"
         LexicalViewer::Settings settings;
         settings.SetParser(js.ToObjectRef<LexicalViewer::ParseInterface>());
 
-        settings.SetMaxTokenSize({30u,5u});
+        settings.SetMaxTokenSize({ 30u, 5u });
 
         settings.AddPlugin(&js->plugins.addStrings);
         settings.AddPlugin(&js->plugins.reverseStrings);
@@ -44,8 +44,9 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "js" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = "js";
+        sect["Priority"]    = 1;
+        sect["Description"] = "JavaScript / ECMAScript language file (*.js)";
     }
 }
 
