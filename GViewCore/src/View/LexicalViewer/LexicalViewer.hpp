@@ -25,7 +25,8 @@ namespace View
             Folded                     = 0x02, // only for blocks
             BlockStart                 = 0x04,
             DisableSimilarityHighlight = 0x08, // hash will not be computed for this token
-            ShouldDelete               = 0x10, // token shoule be deleted on next reparse
+            ShouldDelete               = 0x10, // token should be deleted on next reparse
+            SizeableSize               = 0x20, // token size (width and height) can be modified
         };
         class TokensListBuilder : public TokensList
         {
@@ -70,6 +71,7 @@ namespace View
                 this->allocated = 0;
                 return result;
             }
+            bool Set(const CharacterBuffer& chars);
         };
         struct BlockObject
         {
@@ -100,6 +102,7 @@ namespace View
         struct TokenPosition
         {
             int32 x, y;
+            uint32 width, height;
             TokenStatus status;
         };
         struct TokenObject
@@ -110,54 +113,61 @@ namespace View
             uint32 start, end, type;
             uint32 blockID; // for blocks
             uint32 lineNo;
-            int32 x, y;
-            uint8 maxWidth, maxHeight, width, height;
+            uint32 contentWidth, contentHeight;
+            TokenPosition pos;
             TokenAlignament align;
             TokenColor color;
             TokenDataType dataType;
-            TokenStatus status;
 
             inline bool IsVisible() const
             {
-                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::Visible)) != 0;
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::Visible)) != 0;
             }
             inline bool IsFolded() const
             {
-                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::Folded)) != 0;
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::Folded)) != 0;
             }
             inline bool IsBlockStarter() const
             {
-                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::BlockStart)) != 0;
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::BlockStart)) != 0;
+            }
+            inline bool IsSizeable() const
+            {
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::SizeableSize)) != 0;
             }
             inline bool CanChangeValue() const
             {
-                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) == 0;
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) == 0;
             }
             inline bool IsMarkForDeletion() const
             {
-                return (static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::ShouldDelete)) != 0;
+                return (static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::ShouldDelete)) != 0;
             }
             inline void SetVisible(bool value)
             {
                 if (value)
-                    status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::Visible));
+                    pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::Visible));
                 else
-                    status = static_cast<TokenStatus>(static_cast<uint8>(status) & (~static_cast<uint8>(TokenStatus::Visible)));
+                    pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) & (~static_cast<uint8>(TokenStatus::Visible)));
             }
             inline void SetBlockStartFlag()
             {
-                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::BlockStart));
+                pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::BlockStart));
             }
             inline void SetShouldDeleteFlag()
             {
-                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::ShouldDelete));
+                pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::ShouldDelete));
+            }
+            inline void SetSizeableSizeFlag()
+            {
+                pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::SizeableSize));
             }
             inline void SetFolded(bool value)
             {
                 if (value)
-                    status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::Folded));
+                    pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::Folded));
                 else
-                    status = static_cast<TokenStatus>(static_cast<uint8>(status) & (~static_cast<uint8>(TokenStatus::Folded)));
+                    pos.status = static_cast<TokenStatus>(static_cast<uint8>(pos.status) & (~static_cast<uint8>(TokenStatus::Folded)));
             }
             inline bool HasBlock() const
             {
@@ -165,12 +175,13 @@ namespace View
             }
             inline void SetDisableSimilartyHighlightFlag()
             {
-                status = static_cast<TokenStatus>(static_cast<uint8>(status) | static_cast<uint8>(TokenStatus::DisableSimilarityHighlight));
+                pos.status = static_cast<TokenStatus>(
+                      static_cast<uint8>(pos.status) | static_cast<uint8>(TokenStatus::DisableSimilarityHighlight));
             }
             void UpdateSizes(const char16* text);
             inline void UpdateHash(const char16* text, bool ignoreCase)
             {
-                if ((static_cast<uint8>(status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) != 0)
+                if ((static_cast<uint8>(pos.status) & static_cast<uint8>(TokenStatus::DisableSimilarityHighlight)) != 0)
                 {
                     this->hash = 0;
                     return;
@@ -197,6 +208,7 @@ namespace View
         {
             std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
+            AppCUI::Graphics::Size maxTokenSize;
             uint32 maxWidth;
             uint8 indentWidth;
             bool ignoreCase;
@@ -275,7 +287,7 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
             uint64 currentHash;
-            UnicodeString text;
+            UnicodeString text;           
             uint32 currentTokenIndex;
             int32 lineNrWidth, lastLineNumber;
             bool noItemsVisible;
@@ -291,7 +303,7 @@ namespace View
 
             static Config config;
 
-            void UpdateTokensInformation();
+            void UpdateTokensWidthAndHeight();
             void ComputeOriginalPositions();
             void PrettyFormatIncreaseUntilNewLineXWithValue(uint32 idxStart, uint32 idxEnd, int32 currentLineYOffset, int32 diff);
             void PrettyFormatIncreaseAllXWithValue(uint32 idxStart, uint32 idxEnd, int32 diff);
@@ -302,6 +314,7 @@ namespace View
             void EnsureCurrentItemIsVisible();
             void RecomputeTokenPositions();
             void UpdateVisibilityStatus(uint32 start, uint32 end, bool visible);
+            void UpdateTokensInformation();
             void MoveToClosestVisibleToken(uint32 startIndex, bool selected);
 
             void FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& block);
@@ -328,6 +341,8 @@ namespace View
             void DeleteTokens();
             void ShowPlugins();
             void ShowSaveAsDialog();
+            void ShowRefactorDialog(TokenObject& tok);
+            void ShowStringOpDialog(TokenObject& tok);
 
             bool RebuildTextFromTokens(TextEditor& edidor);
             void Parse();
@@ -423,6 +438,38 @@ namespace View
                 return ApplyMethod::CurrentToken;
             }
         };
+        namespace StringOperationsPlugins
+        {
+            void Reverse(TextEditor& editor, uint32 start, uint32 end);
+            void UpperCase(TextEditor& editor, uint32 start, uint32 end);
+            void LowerCase(TextEditor& editor, uint32 start, uint32 end);
+            void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end);
+            void UnescapedCharacters(TextEditor& editor, uint32 start, uint32 end);
+        }
+        class StringOpDialog : public Window
+        {
+            TokenObject& tok;
+            Reference<TextArea> txValue;
+            Reference<ParseInterface> parser;
+            TextEditorBuilder editor;
+            const char16* text;
+            bool openInANewWindow;
+            
+            void UpdateValue(bool original);
+            void UpdateTokenValue();
+            void RunStringOperation(uint32 commandID);
+          public:
+            StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline bool ShouldOpenANewWindow() const
+            {
+                return openInANewWindow;
+            }
+            inline const CharacterBuffer& GetStringValue() 
+            {
+                return txValue->GetText();
+            }
+        };
         class DeleteDialog : public Window
         {
             Reference<RadioBox> rbApplyOnCurrent, rbApplyOnBlock, rbApplyOnSelection;
@@ -490,6 +537,7 @@ namespace View
             Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
             void Validate();
             void BrowseForFile();
+
           public:
             SaveAsDialog(Reference<Object> obj);
 

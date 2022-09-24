@@ -42,6 +42,7 @@ extern "C"
     {
         sect["Extension"] = { "cpp", "c", "h", "hpp" };
         sect["Priority"]  = 1;
+        sect["Description"] = "C/C++ language file (*.h, *.hpp, *.c, *.cpp)";
     }
 }
 

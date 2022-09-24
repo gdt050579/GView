@@ -98,8 +98,9 @@ extern "C"
             "hex:'" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_10, sizeof(Prefetch::Magic::WIN_10)) + "'",
         };
 
-        sect["Pattern"]   = patterns;
-        sect["Extension"] = "pf";
-        sect["Priority"]  = 1;
+        sect["Pattern"]     = patterns;
+        sect["Extension"]   = "pf";
+        sect["Priority"]    = 1;
+        sect["Description"] = "Prefetch file format for Windows OS";
     }
 }

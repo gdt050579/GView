@@ -5,10 +5,12 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
-    this->indentWidth = 4;
-    this->maxWidth    = 120;
-    this->parser      = nullptr;
-    this->ignoreCase  = false;
+    this->indentWidth         = 4;
+    this->maxWidth            = 120;
+    this->maxTokenSize.Width  = 120;
+    this->maxTokenSize.Height = 5;
+    this->parser              = nullptr;
+    this->ignoreCase          = false;
 }
 Settings::Settings()
 {
@@ -34,4 +36,9 @@ void Settings::AddPlugin(Reference<Plugin> plugin)
 {
     if (plugin.IsValid())
         ((SettingsData*) (this->data))->plugins.push_back(plugin);
+}
+void Settings::SetMaxTokenSize(Size sz)
+{
+    ((SettingsData*) (this->data))->maxTokenSize.Width  = std::max<>(1U, sz.Width);
+    ((SettingsData*) (this->data))->maxTokenSize.Height = std::max<>(1U, sz.Height);
 }

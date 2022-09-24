@@ -31,11 +31,10 @@ uint64 ExtensionToHash(std::string_view ext)
 
 Plugin::Plugin()
 {
-    this->Extension  = EXTENSION_EMPTY_HASH;
-    this->NameLength = 0;
-    this->Name[0]    = 0;
+    this->extension  = EXTENSION_EMPTY_HASH;
     this->Loaded     = false;
     this->Invalid    = false;
+    this->priority   = 0;
     // functions
     this->fnValidate       = nullptr;
     this->fnCreateInstance = nullptr;
@@ -49,22 +48,19 @@ void Plugin::Init()
     this->fnPopulateWindow = DefaultTypePlugin::PopulateWindow;
     this->Loaded           = true;
     this->Invalid          = false;
-    this->NameLength       = 0;
-    this->Name[0]          = 0;
 }
 bool Plugin::Init(AppCUI::Utils::IniSection section)
 {
     // set the name
-    auto name = section.GetName();
-    CHECK(name.length() > 5, false, "Expected a name after 'type.' !");
-    CHECK((name.length() - 5) < (PLUGIN_NAME_MAX_SIZE - 1), false, "Name is too large (max allowed is: %d)", PLUGIN_NAME_MAX_SIZE - 1);
-    memcpy(this->Name, name.data() + 5, name.length() - 5);
-    this->NameLength             = (uint8) (name.length() - 5);
-    this->Name[this->NameLength] = 0;
+    auto pluginName = section.GetName();
+    CHECK(pluginName.length() > 5, false, "Expected a name after 'type.' !");
+    name.Set(pluginName.substr(5));
+
+    // set the description
+    description.Set(section.GetValue("Description").ToStringView());
 
     // priority
-    auto Priority  = section.GetValue("Priority").ToUInt32(0xFFFF);
-    this->Priority = std::max<>(Priority, 0xFFFFU);
+    this->priority = std::max<>(section.GetValue("Priority").ToUInt32(0xFFFF), 0xFFFFU);
 
     // patterns
     auto MatchOffset  = section.GetValue("MatchOffset").ToUInt32(0);
@@ -78,12 +74,12 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
             {
                 SimplePattern sp;
                 CHECK(sp.Init(PatternValue[index].ToStringView(), MatchOffset), false, "Invalid patern !");
-                this->Patterns.push_back(sp);
+                this->patterns.push_back(sp);
             }
         }
         else
         {
-            CHECK(this->Pattern.Init(PatternValue.ToStringView(), MatchOffset), false, "Invalid pattern !");
+            CHECK(this->pattern.Init(PatternValue.ToStringView(), MatchOffset), false, "Invalid pattern !");
         }
     }
 
@@ -96,18 +92,18 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
             auto count = ExtensionValue.GetArrayCount();
             for (uint32 index = 0; index < count; index++)
             {
-                this->Extensions.insert(ExtensionToHash(ExtensionValue[index].ToStringView()));
+                this->extensions.insert(ExtensionToHash(ExtensionValue[index].ToStringView()));
             }
-            this->Extension = EXTENSION_EMPTY_HASH;
+            this->extension = EXTENSION_EMPTY_HASH;
         }
         else
         {
-            this->Extension = ExtensionToHash(ExtensionValue.ToStringView());
+            this->extension = ExtensionToHash(ExtensionValue.ToStringView());
         }
     }
     else
     {
-        this->Extension = EXTENSION_EMPTY_HASH;
+        this->extension = EXTENSION_EMPTY_HASH;
     }
 
     this->Loaded  = false;
@@ -122,7 +118,7 @@ bool Plugin::LoadPlugin()
     path.remove_filename();
     path /= "Types";
     path /= "lib";
-    path += std::string_view((const char*) this->Name, this->NameLength);
+    path += this->GetName();
     path += ".tpl";
     CHECK(lib.Load(path), false, "Unable to load: %s", path.generic_string().c_str());
 
@@ -142,28 +138,28 @@ bool Plugin::Validate(BufferView buf, std::string_view extension)
         return false; // a load in memory attempt was tryed and failed
     bool matched = false;
     // check if matches any of the existing patterns
-    if (this->Patterns.empty())
+    if (this->patterns.empty())
     {
-        if (this->Pattern.Empty() == false)
+        if (this->pattern.Empty() == false)
         {
-            matched = this->Pattern.Match(buf);
+            matched = this->pattern.Match(buf);
         }
     }
     else
     {
-        for (auto& p : this->Patterns)
+        for (auto& p : this->patterns)
         {
             if ((matched = p.Match(buf)) == true)
                 break;
         }
     }
-    if ((!matched) && ((this->Extension != EXTENSION_EMPTY_HASH) || (!this->Extensions.empty())))
+    if ((!matched) && ((this->extension != EXTENSION_EMPTY_HASH) || (!this->extensions.empty())))
     {
         auto hash = ExtensionToHash(extension);
-        if (this->Extensions.empty())
-            matched = hash == this->Extension;
+        if (this->extensions.empty())
+            matched = hash == this->extension;
         else
-            matched = this->Extensions.contains(hash);
+            matched = this->extensions.contains(hash);
     }
     // if initial prefilter was not matched --> exit
     if (!matched)

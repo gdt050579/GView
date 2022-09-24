@@ -186,4 +186,12 @@ void JSONFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
     ParseFile(syntax);
     BuildBlocks(syntax);
 }
+bool JSONFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(string, result, StringFormat::All);
+}
+bool JSONFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    NOT_IMPLEMENTED(false);
+}
 } // namespace GView::Type::JSON

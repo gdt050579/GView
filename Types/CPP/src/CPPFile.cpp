@@ -1104,4 +1104,12 @@ void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
     IndentSimpleInstructions(syntax.tokens);
     CreateFoldUnfoldLinks(syntax);
 }
+bool CPPFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(string, result, StringFormat::All);
+}
+bool CPPFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    NOT_IMPLEMENTED(false);
+}
 } // namespace GView::Type::CPP

@@ -241,8 +241,9 @@ UInt16 e_res[4];)");
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect.UpdateValue("Pattern", "MZ", false);
-        sect.UpdateValue("Priority", 1, false);
+        sect["Pattern"]     = "MZ";
+        sect["Priority"]    = 1;
+        sect["Description"] = "Portable executable format for Windows OS binaries";
     }
 }
 

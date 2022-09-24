@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.214.0"
+#define GVIEW_VERSION "0.228.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -2378,9 +2378,11 @@ namespace View
             uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
             static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
             static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
+            static bool ExtractContentFromString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result, StringFormat format);
         };
         class CORE_EXPORT TextEditor
         {
+          protected:
             bool Grow(size_t size);
 
           protected:
@@ -2405,6 +2407,7 @@ namespace View
             bool Set(std::string_view text);
             bool Set(std::u16string_view text);
             bool Resize(uint32 charactersCount, char16 fillChar = ' ');
+            void Clear();
             bool Reserve(uint32 charactersCount);
 
             char16& operator[](uint32 index);
@@ -2467,7 +2470,7 @@ namespace View
         {
             None                    = 0,
             DisableSimilaritySearch = 0x01,
-            UnSizeable              = 0x02,
+            Sizeable                = 0x02,
         };
         enum class BlockAlignament : uint8
         {
@@ -2549,6 +2552,11 @@ namespace View
 
             Token Next() const;
             Token Precedent() const;
+            
+            Token& operator++();
+            Token& operator--();
+            Token operator+(uint32 offset) const;
+            Token operator-(uint32 offset) const;
 
             u16string_view GetText() const;
             Block GetBlock() const;
@@ -2634,9 +2642,11 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) = 0;
-            virtual void PreprocessText(TextEditor& editor)                                    = 0;
-            virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)                         = 0;
+            virtual void PreprocessText(TextEditor& editor)                                                            = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax)                                                            = 0;
+            virtual bool StringToContent(std::u16string_view stringValue, AppCUI::Utils::UnicodeStringBuilder& result) = 0;
+            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)     = 0;
         };
         struct PluginData
         {
@@ -2673,6 +2683,7 @@ namespace View
             void AddPlugin(Reference<Plugin> plugin);
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
+            void SetMaxTokenSize(Size sz);
         };
     }; // namespace LexicalViewer
 
@@ -2781,6 +2792,12 @@ namespace View
 }; // namespace View
 namespace App
 {
+    enum class OpenMethod
+    {
+        Auto,
+        SelectType,
+        SelectTypeIfUnknown
+    };
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
@@ -2788,6 +2805,10 @@ namespace App
     void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
+    std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
+    std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
+    uint32 CORE_EXPORT GetTypePluginsCount();
+
 }; // namespace App
 }; // namespace GView
 

@@ -308,9 +308,37 @@ bool TextEditor::Resize(uint32 newSize, char16 fillChar)
     size = newSize;
     return true;
 }
+void TextEditor::Clear()
+{
+    this->size = 0;
+}
 bool TextEditor::Reserve(uint32 newSize)
 {
     GROW_TO(newSize);
     return true;
 }
+
+// ================= Builder specific
+bool TextEditorBuilder::Set(const CharacterBuffer& chars)
+{
+    if (chars.IsEmpty())
+    {
+        Clear();
+        return true;
+    }
+
+    GROW_TO(chars.Len());
+    auto* p  = this->text;
+    auto* e  = this->text + chars.Len();
+    auto* ch = chars.GetBuffer();
+    while (p < e)
+    {
+        *p = ch->Code;
+        p++;
+        ch++;
+    }
+    this->size = chars.Len();
+    return true;
+}
+
 } // namespace GView::View::LexicalViewer

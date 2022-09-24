@@ -94,8 +94,8 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        static const std::initializer_list<std::string> list{ "hex:'78 01'", "hex:'78 9C'", "hex:'78 DA'" };
-        sect["Pattern"]  = list;
-        sect["Priority"] = 1;
+        sect["Pattern"]     = { "hex:'78 01'", "hex:'78 9C'", "hex:'78 DA'" };
+        sect["Priority"]    = 1;
+        sect["Description"] = "PyExtractor file format";
     }
 }

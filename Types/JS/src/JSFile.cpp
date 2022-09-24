@@ -437,9 +437,10 @@ namespace CharType
     constexpr uint8 SingleLineComment = 15; // virtual (not in Cpp_Groups_IDs)
     constexpr uint8 Comment           = 16; // virtual (not in Cpp_Groups_IDs)
     constexpr uint8 Backquote         = 17;
+    constexpr uint8 NewLine           = 18;
 
     uint8 Cpp_Groups_IDs[] = { Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
-                               Invalid,    Invalid,  Space,      Space,      Invalid,   Invalid,        Space,
+                               Invalid,    Invalid,  Space,      NewLine,    Invalid,   Invalid,        NewLine,
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Invalid,   Invalid,        Invalid,
                                Invalid,    Invalid,  Invalid,    Invalid,    Space,     Operator,       String,
@@ -488,6 +489,7 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
     auto align    = TokenAlignament::None;
     auto opID     = 0U;
     auto flags    = TokenFlags::None;
+
     if (tokType == TokenType::None)
     {
         tokType = Constant::TextToConstantID(text, pos, next);
@@ -523,6 +525,7 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
         tokColor = TokenColor::Keyword;
         align    = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
         flags    = TokenFlags::DisableSimilaritySearch;
+
         switch (tokType)
         {
         case TokenType::Keyword_Else:
@@ -540,14 +543,18 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
             break;
         }
     }
-
-    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags);
+    /*
+    if (next - pos > SIZABLE_VALUE)
+        flags = flags | TokenFlags::Sizeable;
+        */
+    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags |TokenFlags::Sizeable);
     return next;
 }
 uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
 {
     auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
-    auto txt  = text.GetSubString(pos, next);
+    uint32 next2;
+    auto txt = text.GetSubString(pos, next);
     uint32 tokenType, sz;
     tokenType = Operators::TextToOperatorID(txt.data(), (uint32) txt.size(), sz);
     if (tokenType != TokenType::None)
@@ -561,6 +568,24 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
         case TokenType::Operator_Assignment:
         case TokenType::Operator_PlusAssignment:
             align = TokenAlignament::SameColumn | TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+            break;
+        case TokenType::Operator_Minus:
+            next2 = text.ParseSpace(pos + 1);
+            if (CharType::GetCharType(text[next2]) == CharType::Number)
+            {
+                // x = - 5
+                if (TokenType::IsOperator(tokenList.GetLastTokenID()))
+                {
+                    next = text.ParseNumber(next2);
+                    LocalUnicodeStringBuilder<128> tmp;
+                    tmp.AddChar('-');
+                    tmp.Add(text.GetSubString(next2, next));
+                    auto t = tokenList.Add(TokenType::Number, pos, next, TokenColor::Number, TokenDataType::Number);
+                    t.SetText(tmp);
+                    // tokenList.Add(TokenType::Number, pos, next, TokenColor::Number, TokenDataType::Number);
+                    return next;
+                }
+            }
             break;
 
             /*
@@ -580,6 +605,7 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
                 */
         }
 
+        align = align | TokenAlignament::WrapToNextLine;
         tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
         return pos + sz;
     }
@@ -634,7 +660,7 @@ void JSFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
     TokenIndexStack exprBlocks;
     TokenIndexStack arrayBlocks;
     auto indexArrayBlock = 0u;
-    auto len = syntax.tokens.Len();
+    auto len             = syntax.tokens.Len();
     for (auto index = 0U; index < len; index++)
     {
         auto typeID = syntax.tokens[index].GetTypeID(TokenType::None);
@@ -675,9 +701,9 @@ void JSFile::Tokenize(const TextParser& text, TokensList& tokenList, BlocksList&
 }
 void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensList& tokenList, BlocksList& blocks)
 {
-    auto idx  = start;
-    auto next = 0U;
-
+    auto idx     = start;
+    auto next    = 0U;
+    bool newLine = false;
     while (idx < end)
     {
         auto ch   = text[idx];
@@ -694,8 +720,12 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
         }
         switch (type)
         {
+        case CharType::NewLine:
+            idx     = text.ParseSpace(idx, SpaceType::NewLine);
+            newLine = true;
+            break;
         case CharType::Space:
-            idx = text.ParseSpace(idx, SpaceType::All);
+            idx = text.ParseSpace(idx, SpaceType::SpaceAndTabs);
             break;
         case CharType::SingleLineComment:
             next = text.ParseUntillEndOfLine(idx);
@@ -789,12 +819,20 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             break;
         case CharType::Number:
             next = text.ParseNumber(idx);
-            tokenList.Add(TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number);
+            if (next - idx > SIZABLE_VALUE)
+                tokenList.Add(
+                      TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number, TokenAlignament::None, TokenFlags::Sizeable);
+            else
+                tokenList.Add(TokenType::Number, idx, next, TokenColor::Number, TokenDataType::Number);
             idx = next;
             break;
         case CharType::String:
             next = text.ParseString(idx, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::AllowEscapeSequences);
-            tokenList.Add(TokenType::String, idx, next, TokenColor::String, TokenDataType::String);
+            if (next - idx > SIZABLE_VALUE)
+                tokenList.Add(
+                      TokenType::String, idx, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
+            else
+                tokenList.Add(TokenType::String, idx, next, TokenColor::String, TokenDataType::String);
             idx = next;
             break;
         case CharType::Backquote:
@@ -840,6 +878,11 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
                   .SetError("Invalid character sequance");
             idx = next;
             break;
+        }
+        if (newLine && type != CharType::NewLine)
+        {
+            tokenList.GetLastToken().UpdateAlignament(TokenAlignament::StartsOnNewLine);
+            newLine = false;
         }
     }
 }
@@ -1066,7 +1109,6 @@ void JSFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 }
 void JSFile::OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenList)
 {
-    // Luam fiecare token
     auto len = tokenList.Len();
     for (auto index = 0u; index < len; index++)
     {
@@ -1094,9 +1136,18 @@ void JSFile::OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenLis
             {
                 t.SetBlock(t3.GetBlock());
             }
-
-            // t.Next().UpdateAlignament(TokenAlignament::AfterPreviousToken, TokenAlignament::AddSpaceBefore);
         }
     }
+}
+bool JSFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(string, result, StringFormat::DoubleQuotes | StringFormat::SingleQuotes| StringFormat::Apostrophe);
+}
+bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    result.Set("\"");
+    result.Add(content);
+    result.Add("\"");
+    return true;
 }
 } // namespace GView::Type::JS

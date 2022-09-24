@@ -134,7 +134,7 @@ struct ParserData
             tokenList.Add(TokenType::Value, start, end, TokenColor::Number, TokenDataType::Number);
             return;
         }
-        tokenList.Add(TokenType::Value, start, end, TokenColor::Word);
+        tokenList.Add(TokenType::Value, start, end, TokenColor::Word, TokenDataType::None, TokenAlignament::None, TokenFlags::Sizeable);
     }
     void ParseForExpectKeyValueOrSection(uint8 chType)
     {
@@ -175,7 +175,14 @@ struct ParserData
                       return (ch != ';') && (ch != '#') && (ch != 13) && (ch != 10) && (ch != '=') && (ch != ':') && (ch != ' ') &&
                              (ch != '\t');
                   });
-            tokenList.Add(TokenType::Key, pos, next, TokenColor::Keyword2, TokenAlignament::StartsOnNewLine);
+            tokenList.Add(
+                  TokenType::Key,
+                  pos,
+                  next,
+                  TokenColor::Keyword2,
+                  TokenDataType::None,
+                  TokenAlignament::StartsOnNewLine,
+                  TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectEqual;
             break;
@@ -207,7 +214,8 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
+            tokenList.Add(
+                  TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectKeyValueOrSection;
             break;
@@ -353,7 +361,8 @@ struct ParserData
             break;
         case CharType::String:
             next = text.ParseString(pos);
-            tokenList.Add(TokenType::Value, pos, next, TokenColor::String, TokenDataType::String);
+            tokenList.Add(
+                  TokenType::Value, pos, next, TokenColor::String, TokenDataType::String, TokenAlignament::None, TokenFlags::Sizeable);
             pos   = next;
             state = ParserState::ExpectCommaOrEndOfArray;
             break;
@@ -564,5 +573,41 @@ void INIFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
             idx = next;
         }
     }
+}
+bool INIFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(
+          string, result, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::MultiLine);
+}
+bool CreateIniFileString(AppCUI::Utils::UnicodeStringBuilder& output, std::u16string_view content, std::u16string_view marker)
+{
+    CHECK(output.Set(marker), false, "");
+    CHECK(output.Add(content), false, "");
+    CHECK(output.Add(marker), false, "");
+    return true;
+}
+bool INIFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    // check for multi-line
+    if ((content.find_first_of('\n', 0) != u16string_view::npos) || (content.find_first_of('\r', 0) != u16string_view::npos))
+    {
+        // check to see if """ or ''' are found in the string
+        if (content.find_first_of(u"\"\"\"", 0) == u16string_view::npos)
+            return CreateIniFileString(result, content, u"\"\"\"");
+        if (content.find_first_of(u"'''", 0) == u16string_view::npos)
+            return CreateIniFileString(result, content, u"'''");
+        // error
+        AppCUI::Dialogs::MessageBox::ShowError(
+              "Error", "Unable to create a string (remove ''' or \"\"\" sequences from the string and try again");
+        return false;
+    }
+    // not a multi-line ==> format as single line
+    if (content.find_first_of('"', 0) == u16string_view::npos)
+        return CreateIniFileString(result, content, u"\"");
+    if (content.find_first_of('\'', 0) == u16string_view::npos)
+        return CreateIniFileString(result, content, u"'");
+    // else it means it contains either a " or '
+    // swicth to multi-line format
+    return CreateIniFileString(result, content, u"\"\"\"");
 }
 } // namespace GView::Type::INI

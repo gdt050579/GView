@@ -294,6 +294,23 @@ Reference<GView::Object> Instance::GetCurrentObject()
     CHECK(dsk.IsValid(), nullptr, "Fail to get Desktop object from AppCUI !");
     return dsk->GetFocusedChild().ToObjectRef<FileWindow>()->GetObject();
 }
+uint32 Instance::GetTypePluginsCount()
+{
+    return static_cast<uint32>(this->typePlugins.size());
+}
+std::string_view Instance::GetTypePluginName(uint32 index)
+{
+    if (index >= this->typePlugins.size())
+        return "";
+    return this->typePlugins[index].GetName();
+}
+std::string_view Instance::GetTypePluginDescription(uint32 index)
+{
+    if (index >= this->typePlugins.size())
+        return "";
+    return this->typePlugins[index].GetDescription();
+}
+
 //===============================[APPCUI HANDLERS]==============================
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
