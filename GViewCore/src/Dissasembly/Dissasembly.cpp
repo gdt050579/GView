@@ -1,8 +1,5 @@
 #include "Internal.hpp"
-
 #include <capstone/capstone.h>
-
-#include <fstream>
 
 namespace GView::Dissasembly
 {
@@ -24,14 +21,10 @@ bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode m
     if (actualArch == CS_ARCH_ARM)
     {
         actualMode = (cs_mode) (CS_MODE_ARM | CS_MODE_THUMB | CS_MODE_MCLASS);
-        // CS_MODE_ARM          = 0,      ///< 32-bit ARM
-        // CS_MODE_THUMB  = 1 << 4, ///< ARM's Thumb mode, including Thumb-2
-        // CS_MODE_MCLASS = 1 << 5, ///< ARM's Cortex-M series
-        // CS_MODE_V8     = 1 << 6, ///< ARMv8 A32 encodings for ARM
     }
     else if (actualArch == CS_ARCH_ARM64)
     {
-        actualMode = CS_MODE_V8;
+        actualMode = CS_MODE_ARM; // (cs_mode)(CS_MODE_ARM | CS_MODE_V8);
     }
     else if (actualArch == CS_ARCH_X86)
     {
@@ -48,14 +41,26 @@ bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode m
     const auto result = cs_open(actualArch, actualMode, &wHandle.value);
     CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
 
-    auto aa = buf.GetData();
-    auto bb = buf.GetLength();
+    auto data   = buf.GetData();
+    auto length = buf.GetLength();
 
     uint64 address = va;
-    CHECK(cs_disasm_iter(wHandle.value, &aa, &bb, &address, &insn), false, "");
+    CHECK(cs_disasm_iter(wHandle.value, &data, &length, &address, &insn), false, "");
 
     memcpy(&instruction, &insn, sizeof(instruction));
 
+    return true;
+}
+
+bool DissasembleInstructionIntelx86(BufferView buf, uint64 va, Instruction& instruction)
+{
+    CHECK(DissasembleInstruction(buf, Architecture::X86, va, Mode::X32, instruction), false, "");
+    return true;
+}
+
+bool DissasembleInstructionIntelx64(BufferView buf, uint64 va, Instruction& instruction)
+{
+    CHECK(DissasembleInstruction(buf, Architecture::X86, va, Mode::X64, instruction), false, "");
     return true;
 }
 } // namespace GView::Dissasembly

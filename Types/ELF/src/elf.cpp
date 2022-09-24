@@ -110,8 +110,6 @@ extern "C"
         case ELF::EM_960:
         case ELF::EM_8051:
         case ELF::EM_X86_64:
-        case ELF::EM_ARM:
-        case ELF::EM_AARCH64:
         {
             elf->memStartOffset = elf->GetImageBase();
             elf->memEndOffset   = elf->GetImageBase() + elf->GetVirtualSize();
@@ -170,6 +168,6 @@ extern "C"
     {
         sect["Pattern"]      = "hex:'7F 45 4C 46'";
         sect["Priority"]     = 1;
-        sect["OpCodes.Mask"] = (uint32) ELF::Opcodes::All;
+        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
     }
 }

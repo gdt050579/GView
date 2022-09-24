@@ -537,6 +537,19 @@ namespace Dissasembly
         X64
     };
 
+    enum class Opcodes : uint32
+    {
+        Header        = 1,
+        Call          = 2,
+        LCall         = 4,
+        Jmp           = 8,
+        LJmp          = 16,
+        Breakpoint    = 32,
+        FunctionStart = 64,
+        FunctionEnd   = 128,
+        All           = 0xFFFFFFFF
+    };
+
     enum class InstructionX86 : uint32 // x86_insn from capstone (keep it synced!)
     {
         INVALID = 0,
@@ -2082,7 +2095,8 @@ namespace Dissasembly
         char opStr[OP_STR_SIZE];
     };
 
-    CORE_EXPORT bool DissasembleInstruction(BufferView buf, Architecture arch, uint64 va, Mode mode, Instruction& instruction);
+    CORE_EXPORT bool DissasembleInstructionIntelx86(BufferView buf, uint64 va, Instruction& instruction);
+    CORE_EXPORT bool DissasembleInstructionIntelx64(BufferView buf, uint64 va, Instruction& instruction);
 } // namespace Dissasembly
 
 namespace Compression

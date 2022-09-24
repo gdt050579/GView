@@ -25,19 +25,6 @@ static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Oli
 
 static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
 
-enum class Opcodes : uint32
-{
-    Header        = 1,
-    Call          = 2,
-    LCall         = 4,
-    Jmp           = 8,
-    LJmp          = 16,
-    Breakpoint    = 32,
-    FunctionStart = 64,
-    FunctionEnd   = 128,
-    All           = 0xFFFFFFFF
-};
-
 namespace Panels
 {
     enum class IDs : uint8

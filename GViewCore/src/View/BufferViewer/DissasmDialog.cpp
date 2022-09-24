@@ -19,7 +19,7 @@ DissasmDialog::DissasmDialog(
 
     GView::Dissasembly::Instruction instruction{ 0 };
     uint64 offset = 0;
-    bool ok       = GView::Dissasembly::DissasembleInstruction(buffer, arch, offset, mode, instruction);
+    bool ok       = GView::Dissasembly::DissasembleInstructionIntelx86(buffer, offset, instruction);
     while (ok && offset < size)
     {
         LocalString<128> tmp2;
@@ -30,7 +30,7 @@ DissasmDialog::DissasmDialog(
 
         list->AddItem({ tmp3.Format("0x%llx", fa + offset), tmp2, tmp.Format("%s %s", instruction.mnemonic, instruction.opStr) });
         offset += instruction.size;
-        ok = GView::Dissasembly::DissasembleInstruction({ buffer.GetData() + offset, size - offset }, arch, offset, mode, instruction);
+        ok = GView::Dissasembly::DissasembleInstructionIntelx86({ buffer.GetData() + offset, size - offset }, offset, instruction);
     }
 
     Factory::Button::Create(this, "&Cancel", "x:45%,y:95%,w:10%,h:10%", BTN_ID_CANCEL);
