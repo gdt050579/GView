@@ -507,36 +507,6 @@ namespace ZLIB
 
 namespace Dissasembly
 {
-    enum class Architecture // cs_arch from capstone (keep it synced!)
-    {
-        ARM = 0,    ///< ARM architecture (including Thumb, Thumb-2)
-        ARM64,      ///< ARM-64, also called AArch64
-        MIPS,       ///< Mips architecture
-        X86,        ///< X86 architecture (including x86 & x86-64)
-        PPC,        ///< PowerPC architecture
-        SPARC,      ///< Sparc architecture
-        SYSZ,       ///< SystemZ architecture
-        XCORE,      ///< XCore architecture
-        M68K,       ///< 68K architecture
-        TMS320C64X, ///< TMS320C64x architecture
-        M680X,      ///< 680X architecture
-        EVM,        ///< Ethereum architecture
-        MOS65XX,    ///< MOS65XX architecture (including MOS6502)
-        WASM,       ///< WebAssembly architecture
-        BPF,        ///< Berkeley Packet Filter architecture (including eBPF)
-        RISCV,      ///< RISCV architecture
-        MAX,
-        ALL = 0xFFFF, // All architectures - for cs_support()
-    };
-
-    enum class Mode
-    {
-        Unknown,
-        X16,
-        X32,
-        X64
-    };
-
     enum class Opcodes : uint32
     {
         Header        = 1,
@@ -2095,8 +2065,17 @@ namespace Dissasembly
         char opStr[OP_STR_SIZE];
     };
 
-    CORE_EXPORT bool DissasembleInstructionIntelx86(BufferView buf, uint64 va, Instruction& instruction);
-    CORE_EXPORT bool DissasembleInstructionIntelx64(BufferView buf, uint64 va, Instruction& instruction);
+    class CORE_EXPORT DissasemblerIntel
+    {
+      private:
+        size_t handle{ 0 };
+        bool isX64{ 0 };
+
+      public:
+        bool Init(bool isx64, bool isLittleEndian);
+        bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        ~DissasemblerIntel();
+    };
 } // namespace Dissasembly
 
 namespace Compression
@@ -2552,7 +2531,7 @@ namespace View
 
             Token Next() const;
             Token Precedent() const;
-            
+
             Token& operator++();
             Token& operator--();
             Token operator+(uint32 offset) const;

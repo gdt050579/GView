@@ -351,7 +351,7 @@ bool Instance::ShowCopyDialog()
 bool Instance::ShowDissasmDialog()
 {
     const auto buffer = obj->GetData().CopyToBuffer(this->Cursor.currentPos, 0x1000);
-    DissasmDialog dlg(buffer, this->Cursor.currentPos, 0x1000, GView::Dissasembly::Architecture::X86, GView::Dissasembly::Mode::X64);
+    DissasmDialog dlg(buffer, this->Cursor.currentPos, 0x1000);
     CHECK(dlg.Show() == Dialogs::Result::Ok, false, "");
     return true;
 }

@@ -493,17 +493,10 @@ uint64 ELFFile::GetVirtualSize() const
 
 bool ELFFile::GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
-    const auto mode = is64 ? GView::Dissasembly::Mode::X64 : GView::Dissasembly::Mode::X32;
+    CHECK(dissasembler.Init(is64, true), false, "");
 
     GView::Dissasembly::Instruction ins{ 0 };
-    if (is64)
-    {
-        CHECK(GView::Dissasembly::DissasembleInstructionIntelx64(buf, offset, ins), false, "");
-    }
-    else
-    {
-        CHECK(GView::Dissasembly::DissasembleInstructionIntelx86(buf, offset, ins), false, "");
-    }
+    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
 
     switch ((GView::Dissasembly::InstructionX86) ins.id)
     {
@@ -566,9 +559,7 @@ bool ELFFile::GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::Vi
         result.start = offset;
         result.end   = offset + ins.size;
 
-        bool ok = is64 ? GView::Dissasembly::DissasembleInstructionIntelx64(buf, offset, ins)
-                       : GView::Dissasembly::DissasembleInstructionIntelx86(buf, offset, ins);
-        if (ok)
+        if (dissasembler.DissasembleInstruction(buf, offset, ins))
         {
             switch ((GView::Dissasembly::InstructionX86) ins.id)
             {

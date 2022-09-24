@@ -90,6 +90,7 @@ class ELFFile : public TypeInterface,
 
     uint64 memStartOffset;
     uint64 memEndOffset;
+    GView::Dissasembly::DissasemblerIntel dissasembler{};
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
     bool GetColorForBufferForIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 

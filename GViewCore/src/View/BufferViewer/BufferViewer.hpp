@@ -263,13 +263,13 @@ namespace View
             Reference<ListView> list;
             uint64 fa;
             uint64 size;
-            GView::Dissasembly::Architecture arch;
-            GView::Dissasembly::Mode mode;
+
+            GView::Dissasembly::DissasemblerIntel dissasembler{};
 
             void Validate();
 
           public:
-            DissasmDialog(BufferView buffer, uint64 fa, uint64 size, GView::Dissasembly::Architecture arch, GView::Dissasembly::Mode mode);
+            DissasmDialog(BufferView buffer, uint64 fa, uint64 size);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
         };
