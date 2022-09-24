@@ -34,6 +34,120 @@ bool DissasemblerIntel::DissasembleInstruction(BufferView buf, uint64 va, Instru
     return true;
 }
 
+inline bool DissasemblerIntel::IsCallInstruction(const Instruction& instruction) const
+{
+    CHECK(instruction.id == X86_INS_CALL, false, "");
+    return true;
+}
+
+inline bool DissasemblerIntel::IsLCallInstruction(const Instruction& instruction) const
+{
+    CHECK(instruction.id == X86_INS_LCALL, false, "");
+    return true;
+}
+
+inline bool DissasemblerIntel::IsJmpInstruction(const Instruction& instruction) const
+{
+    CHECK(instruction.id == X86_INS_JMP, false, "");
+    return true;
+}
+
+inline bool DissasemblerIntel::IsLJmpInstruction(const Instruction& instruction) const
+{
+    CHECK(instruction.id == X86_INS_LJMP, false, "");
+    return true;
+}
+
+inline bool DissasemblerIntel::IsBreakpointInstruction(const Instruction& instruction) const
+{
+    switch (instruction.id)
+    {
+    case X86_INS_INT:
+    case X86_INS_INT1:
+    case X86_INS_INT3:
+    case X86_INS_INTO:
+        return true;
+    default:
+        RETURNERROR(false, "");
+    }
+}
+
+inline bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const
+{
+    switch (instruction1.id)
+    {
+    case X86_INS_PUSH:
+    case X86_INS_PUSHAW:
+    case X86_INS_PUSHAL:
+    case X86_INS_PUSHF:
+    case X86_INS_PUSHFD:
+    case X86_INS_PUSHFQ:
+        switch (instruction2.id)
+        {
+        case X86_INS_MOV:
+        case X86_INS_MOVABS:
+        case X86_INS_MOVAPD:
+        case X86_INS_MOVAPS:
+        case X86_INS_MOVBE:
+        case X86_INS_MOVDDUP:
+        case X86_INS_MOVDIR64B:
+        case X86_INS_MOVDIRI:
+        case X86_INS_MOVDQA:
+        case X86_INS_MOVDQU:
+        case X86_INS_MOVHLPS:
+        case X86_INS_MOVHPD:
+        case X86_INS_MOVHPS:
+        case X86_INS_MOVLHPS:
+        case X86_INS_MOVLPD:
+        case X86_INS_MOVLPS:
+        case X86_INS_MOVMSKPD:
+        case X86_INS_MOVMSKPS:
+        case X86_INS_MOVNTDQA:
+        case X86_INS_MOVNTDQ:
+        case X86_INS_MOVNTI:
+        case X86_INS_MOVNTPD:
+        case X86_INS_MOVNTPS:
+        case X86_INS_MOVNTSD:
+        case X86_INS_MOVNTSS:
+        case X86_INS_MOVSB:
+        case X86_INS_MOVSD:
+        case X86_INS_MOVSHDUP:
+        case X86_INS_MOVSLDUP:
+        case X86_INS_MOVSQ:
+        case X86_INS_MOVSS:
+        case X86_INS_MOVSW:
+        case X86_INS_MOVSX:
+        case X86_INS_MOVSXD:
+        case X86_INS_MOVUPD:
+        case X86_INS_MOVUPS:
+        case X86_INS_MOVZX:
+            return true;
+        default:
+            RETURNERROR(false, "Instruction not mov!");
+        }
+    default:
+        RETURNERROR(false, "Instruction not push!");
+    }
+}
+
+inline bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction) const
+{
+    switch (instruction.id)
+    {
+    case X86_INS_IRET:
+    case X86_INS_IRETD:
+    case X86_INS_IRETQ:
+    case X86_INS_RET:
+    case X86_INS_RETF:
+    case X86_INS_RETFQ:
+    case X86_INS_SYSRET:
+    case X86_INS_SYSRETQ:
+        return true;
+    default:
+        RETURNERROR(false, "");
+    }
+}
+
 DissasemblerIntel::~DissasemblerIntel()
 {
     CHECKRET(cs_close(&handle), "");

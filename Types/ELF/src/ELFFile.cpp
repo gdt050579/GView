@@ -500,138 +500,85 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
     GView::Dissasembly::Instruction ins{ 0 };
     CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
 
-    switch ((GView::Dissasembly::InstructionX86) ins.id)
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
     {
-    case GView::Dissasembly::InstructionX86::CALL:
-    {
-        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call), "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-        result.color = INS_CALL_COLOR;
-        return true;
-    }
-    case GView::Dissasembly::InstructionX86::LCALL:
-    {
-        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall), "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-        result.color = INS_LCALL_COLOR;
-        return true;
-    }
-    case GView::Dissasembly::InstructionX86::JMP:
-    {
-        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp), "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-        result.color = INS_JUMP_COLOR;
-        return true;
-    }
-    case GView::Dissasembly::InstructionX86::LJMP:
-    {
-        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp), "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-        result.color = INS_LJUMP_COLOR;
-        return true;
-    }
-    case GView::Dissasembly::InstructionX86::INT:
-    case GView::Dissasembly::InstructionX86::INT1:
-    case GView::Dissasembly::InstructionX86::INT3:
-    case GView::Dissasembly::InstructionX86::INTO:
-    {
-        CHECKBK(
-              ((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint),
-              "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-        result.color = INS_BREAKPOINT_COLOR;
-        return true;
-    }
-    case GView::Dissasembly::InstructionX86::PUSH:
-    case GView::Dissasembly::InstructionX86::PUSHAW:
-    case GView::Dissasembly::InstructionX86::PUSHAL:
-    case GView::Dissasembly::InstructionX86::PUSHF:
-    case GView::Dissasembly::InstructionX86::PUSHFD:
-    case GView::Dissasembly::InstructionX86::PUSHFQ:
-    {
-        CHECKBK(
-              ((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) ==
-               (uint32) GView::Dissasembly::Opcodes::FunctionStart),
-              "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-
-        if (dissasembler.DissasembleInstruction(buf, offset, ins))
+        if (dissasembler.IsCallInstruction(ins))
         {
-            switch ((GView::Dissasembly::InstructionX86) ins.id)
-            {
-            case GView::Dissasembly::InstructionX86::MOV:
-            case GView::Dissasembly::InstructionX86::MOVABS:
-            case GView::Dissasembly::InstructionX86::MOVAPD:
-            case GView::Dissasembly::InstructionX86::MOVAPS:
-            case GView::Dissasembly::InstructionX86::MOVBE:
-            case GView::Dissasembly::InstructionX86::MOVDDUP:
-            case GView::Dissasembly::InstructionX86::MOVDIR64B:
-            case GView::Dissasembly::InstructionX86::MOVDIRI:
-            case GView::Dissasembly::InstructionX86::MOVDQA:
-            case GView::Dissasembly::InstructionX86::MOVDQU:
-            case GView::Dissasembly::InstructionX86::MOVHLPS:
-            case GView::Dissasembly::InstructionX86::MOVHPD:
-            case GView::Dissasembly::InstructionX86::MOVHPS:
-            case GView::Dissasembly::InstructionX86::MOVLHPS:
-            case GView::Dissasembly::InstructionX86::MOVLPD:
-            case GView::Dissasembly::InstructionX86::MOVLPS:
-            case GView::Dissasembly::InstructionX86::MOVMSKPD:
-            case GView::Dissasembly::InstructionX86::MOVMSKPS:
-            case GView::Dissasembly::InstructionX86::MOVNTDQA:
-            case GView::Dissasembly::InstructionX86::MOVNTDQ:
-            case GView::Dissasembly::InstructionX86::MOVNTI:
-            case GView::Dissasembly::InstructionX86::MOVNTPD:
-            case GView::Dissasembly::InstructionX86::MOVNTPS:
-            case GView::Dissasembly::InstructionX86::MOVNTSD:
-            case GView::Dissasembly::InstructionX86::MOVNTSS:
-            case GView::Dissasembly::InstructionX86::MOVSB:
-            case GView::Dissasembly::InstructionX86::MOVSD:
-            case GView::Dissasembly::InstructionX86::MOVSHDUP:
-            case GView::Dissasembly::InstructionX86::MOVSLDUP:
-            case GView::Dissasembly::InstructionX86::MOVSQ:
-            case GView::Dissasembly::InstructionX86::MOVSS:
-            case GView::Dissasembly::InstructionX86::MOVSW:
-            case GView::Dissasembly::InstructionX86::MOVSX:
-            case GView::Dissasembly::InstructionX86::MOVSXD:
-            case GView::Dissasembly::InstructionX86::MOVUPD:
-            case GView::Dissasembly::InstructionX86::MOVUPS:
-            case GView::Dissasembly::InstructionX86::MOVZX:
-            {
-                result.end += ins.size;
-                result.color = START_FUNCTION_COLOR;
-                return true;
-            }
-            default:
-                break;
-            }
+            result.start = offset;
+            result.end   = offset + ins.size;
+            result.color = INS_CALL_COLOR;
+            return true;
         }
-        return false;
     }
-    case GView::Dissasembly::InstructionX86::IRET:
-    case GView::Dissasembly::InstructionX86::IRETD:
-    case GView::Dissasembly::InstructionX86::IRETQ:
-    case GView::Dissasembly::InstructionX86::RET:
-    case GView::Dissasembly::InstructionX86::RETF:
-    case GView::Dissasembly::InstructionX86::RETFQ:
-    case GView::Dissasembly::InstructionX86::SYSRET:
-    case GView::Dissasembly::InstructionX86::SYSRETQ:
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
     {
-        CHECKBK(
-              ((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd),
-              "");
-        result.start = offset;
-        result.end   = offset + ins.size;
-        result.color = END_FUNCTION_COLOR;
-        return true;
+        if (dissasembler.IsLCallInstruction(ins))
+        {
+            result.start = offset;
+            result.end   = offset + ins.size;
+            result.color = INS_LCALL_COLOR;
+            return true;
+        }
     }
-    default:
-        break;
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
+    {
+        if (dissasembler.IsJmpInstruction(ins))
+        {
+            result.start = offset;
+            result.end   = offset + ins.size;
+            result.color = INS_JUMP_COLOR;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
+    {
+        if (dissasembler.IsLJmpInstruction(ins))
+        {
+            result.start = offset;
+            result.end   = offset + ins.size;
+            result.color = INS_LJUMP_COLOR;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
+    {
+        if (dissasembler.IsBreakpointInstruction(ins))
+        {
+            result.start = offset;
+            result.end   = offset + ins.size;
+            result.color = INS_BREAKPOINT_COLOR;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
+    {
+        GView::Dissasembly::Instruction ins2{ 0 };
+        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset + ins.size, ins2),
+              false,
+              "");
+        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
+        {
+            result.start = offset;
+            result.end   = offset + ins.size + ins2.size;
+            result.color = START_FUNCTION_COLOR;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
+    {
+        if (dissasembler.IsFunctionEndInstruction(ins))
+        {
+            result.start = offset;
+            result.end   = offset + ins.size;
+            result.color = END_FUNCTION_COLOR;
+            return true;
+        }
     }
 
     return false;
