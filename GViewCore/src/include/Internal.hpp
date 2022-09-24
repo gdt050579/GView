@@ -327,16 +327,15 @@ namespace Type
         }
     };
 
-    constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31; // must be less than 255 !!!
     class Plugin
     {
-        SimplePattern Pattern;
-        std::vector<SimplePattern> Patterns;
-        unsigned long long Extension;
-        std::set<unsigned long long> Extensions;
-        unsigned char Name[PLUGIN_NAME_MAX_SIZE];
-        unsigned char NameLength;
-        unsigned short Priority;
+        SimplePattern pattern;
+        std::vector<SimplePattern> patterns;
+        uint64 extension;
+        std::set<uint64> extensions;
+        FixSizeString<27> name;
+        FixSizeString<124> description;
+        uint16 priority;
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
@@ -354,15 +353,15 @@ namespace Type
         TypeInterface* CreateInstance() const;
         inline bool operator<(const Plugin& plugin) const
         {
-            return Priority > plugin.Priority;
+            return priority > plugin.priority;
         }
         inline std::string_view GetName() const
         {
-            return std::string_view{ (const char*) &this->Name[0], (size_t) this->NameLength };
+            return name;
         }
         inline std::string_view GetDescription() const
         {
-            return std::string_view{ (const char*) &this->Name[0], (size_t) this->NameLength };
+            return description;
         }
     };
 } // namespace Type
