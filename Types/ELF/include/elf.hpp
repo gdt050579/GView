@@ -13,7 +13,7 @@ enum class AddressType : uint8
 constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
 static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
-static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Yellow, Color::DarkGreen };
+static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
 
 static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
 static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
@@ -336,15 +336,16 @@ namespace Panels
         Reference<Object> object;
 
         Reference<AppCUI::Controls::Label> value;
-        Reference<AppCUI::Controls::CheckBox> all;
-        Reference<AppCUI::Controls::CheckBox> header;
-        Reference<AppCUI::Controls::CheckBox> call;
-        Reference<AppCUI::Controls::CheckBox> lcall;
-        Reference<AppCUI::Controls::CheckBox> jmp;
-        Reference<AppCUI::Controls::CheckBox> ljmp;
-        Reference<AppCUI::Controls::CheckBox> bp;
-        Reference<AppCUI::Controls::CheckBox> fstart;
-        Reference<AppCUI::Controls::CheckBox> fend;
+        Reference<AppCUI::Controls::ListView> list;
+        AppCUI::Controls::ListViewItem all;
+        AppCUI::Controls::ListViewItem header;
+        AppCUI::Controls::ListViewItem call;
+        AppCUI::Controls::ListViewItem lcall;
+        AppCUI::Controls::ListViewItem jmp;
+        AppCUI::Controls::ListViewItem ljmp;
+        AppCUI::Controls::ListViewItem bp;
+        AppCUI::Controls::ListViewItem fstart;
+        AppCUI::Controls::ListViewItem fend;
 
         inline bool AllChecked();
         inline bool AllUnChecked();
