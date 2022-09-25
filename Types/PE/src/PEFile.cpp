@@ -1680,12 +1680,13 @@ bool PEFile::Update()
 
     hasOverlay = computedSize < obj->GetData().GetSize();
 
-    for (auto i = 0; i < nrSections; i++)
+    for (auto i = 0U; i < nrSections; i++)
     {
         const auto& section = sect[i];
         if ((section.Characteristics & __IMAGE_SCN_MEM_EXECUTE) == __IMAGE_SCN_MEM_EXECUTE)
         {
-            executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ section.PointerToRawData, section.SizeOfRawData });
+            executableZonesFAs.emplace_back(
+                  std::pair<uint64, uint64>{ section.PointerToRawData, section.PointerToRawData + section.SizeOfRawData });
         }
     }
 
@@ -1694,6 +1695,7 @@ bool PEFile::Update()
     ADD_PANEL(Panels::IDs::Directories);
     ADD_PANEL(Panels::IDs::Sections);
     ADD_PANEL(Panels::IDs::Headers);
+    ADD_PANEL(Panels::IDs::OpCodes);
 
     if (impDLL.size() > 0)
         ADD_PANEL(Panels::IDs::Imports);
@@ -2037,8 +2039,16 @@ bool PEFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::
 {
     CHECK(dissasembler.Init(hdr64, true), false, "");
 
+    static auto previousOpcodeMask = showOpcodesMask;
     static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
     static std::map<uint64, bool> cacheDiscard{};
+
+    if (previousOpcodeMask != showOpcodesMask)
+    {
+        cacheBuffer.clear();
+        cacheDiscard.clear();
+        previousOpcodeMask = showOpcodesMask;
+    }
 
     if (cacheBuffer.count(offset) > 0)
     {
@@ -2156,16 +2166,36 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
     auto* p = buf.begin();
     switch (*p)
     {
-    case 0x7F:
-        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header), "");
-        CHECKBK(buf.GetLength() >= 4, "");
-        if (*(uint32*) p == 0x464C457F)
+    case 0x4D:
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
         {
-            result.start = offset;
-            result.end   = offset + 3;
-            result.color = EXE_MARKER_COLOR;
-            return true;
-        } // do not break
+            if (buf.GetLength() >= 4)
+            {
+                if (*(uint16*) p == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90 || p[2] == 0x78) && p[3] == 0x00)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    result.color = EXE_MARKER_COLOR;
+                    return true;
+                } // do not break
+            }
+        }
+    case 0x50:
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
+        {
+            if (buf.GetLength() >= 4)
+            {
+                if (*(uint32*) p == 0x00004550)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    result.color = EXE_MARKER_COLOR;
+                    return true;
+                } // do not break
+            }
+        }
     default:
         switch ((PE::MachineType) nth32.FileHeader.Machine)
         {

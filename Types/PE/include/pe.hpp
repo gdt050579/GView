@@ -110,7 +110,8 @@ namespace Type
                 Imports,
                 TLS,
                 Symbols,
-                GoInformation
+                GoInformation,
+                OpCodes
             };
         };
         class VersionInformation
@@ -670,7 +671,7 @@ namespace Type
 
         static constexpr auto INS_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
         static constexpr auto INS_LCALL_COLOR      = ColorPair{ Color::Red, Color::DarkGreen };
-        static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
+        static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::White, Color::DarkRed };
         static constexpr auto INS_LJUMP_COLOR      = ColorPair{ Color::Yellow, Color::DarkRed };
         static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
         static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
@@ -768,7 +769,7 @@ namespace Type
             uint32 sectStart, peStart;
             uint64 panelsMask;
 
-            uint32 showOpcodesMask{ 0xFFFFFFFF };
+            uint32 showOpcodesMask{ 0 };
             std::vector<std::pair<uint64, uint64>> executableZonesFAs;
             GView::Dissasembly::DissasemblerIntel dissasembler{};
 
@@ -1097,6 +1098,36 @@ namespace Type
 
               public:
                 GoFunctions(Reference<PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+
+            class OpCodes : public AppCUI::Controls::TabPage
+            {
+                Reference<PEFile> pe;
+                Reference<Object> object;
+
+                Reference<AppCUI::Controls::Label> value;
+                Reference<AppCUI::Controls::ListView> list;
+                AppCUI::Controls::ListViewItem all;
+                AppCUI::Controls::ListViewItem header;
+                AppCUI::Controls::ListViewItem call;
+                AppCUI::Controls::ListViewItem lcall;
+                AppCUI::Controls::ListViewItem jmp;
+                AppCUI::Controls::ListViewItem ljmp;
+                AppCUI::Controls::ListViewItem bp;
+                AppCUI::Controls::ListViewItem fstart;
+                AppCUI::Controls::ListViewItem fend;
+
+                inline bool AllChecked();
+                inline bool AllUnChecked();
+                inline void SetMaskText();
+                inline void SetConfig(bool checked, uint16 position);
+
+              public:
+                OpCodes(Reference<Object> object, Reference<GView::Type::PE::PEFile> pe);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

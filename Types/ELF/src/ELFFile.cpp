@@ -38,7 +38,7 @@ bool ELFFile::Update()
             CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, entry), false, "");
             if ((entry.p_flags & PF_X) == PF_X)
             {
-                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_filesz });
+                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_offset + entry.p_filesz });
             }
             segments64.emplace_back(entry);
             offset += sizeof(entry);
@@ -53,7 +53,7 @@ bool ELFFile::Update()
             CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, entry), false, "");
             if ((entry.p_flags & PF_X) == PF_X)
             {
-                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_filesz });
+                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_offset + entry.p_filesz });
             }
             segments32.emplace_back(entry);
             offset += sizeof(entry);
@@ -505,8 +505,16 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
 {
     CHECK(dissasembler.Init(is64, isLittleEndian), false, "");
 
+    static auto previousOpcodeMask = showOpcodesMask;
     static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
     static std::map<uint64, bool> cacheDiscard{};
+
+    if (previousOpcodeMask != showOpcodesMask)
+    {
+        cacheBuffer.clear();
+        cacheDiscard.clear();
+        previousOpcodeMask = showOpcodesMask;
+    }
 
     if (cacheBuffer.count(offset) > 0)
     {
@@ -626,15 +634,19 @@ bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buff
     switch (*p)
     {
     case 0x7F:
-        CHECKBK(((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header), "");
-        CHECKBK(buf.GetLength() >= 4, "");
-        if (*(uint32*) p == 0x464C457F)
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
         {
-            result.start = offset;
-            result.end   = offset + 3;
-            result.color = EXE_MARKER_COLOR;
-            return true;
-        } // do not break
+            if (buf.GetLength() >= 4)
+            {
+                if (*(uint32*) p == 0x464C457F)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = EXE_MARKER_COLOR;
+                    return true;
+                } // do not break
+            }
+        }
     default:
         switch (machine)
         {

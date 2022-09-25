@@ -230,6 +230,11 @@ UInt16 e_res[4];)");
             win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFiles(win->GetObject(), pe)), true);
             win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFunctions(pe, win)), false);
         }
+        if (pe->HasPanel(PE::Panels::IDs::OpCodes))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::OpCodes(win->GetObject(), pe)), true);
+        }
+
         return true;
     }
 
