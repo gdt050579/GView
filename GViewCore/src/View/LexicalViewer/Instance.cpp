@@ -1283,7 +1283,7 @@ void Instance::MoveToNextSimilarToken(int32 direction)
     auto index      = this->currentTokenIndex;
     if (tok.hash == 0)
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", "This type of token does has similarity search disabled !");
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This type of token has similarity search disabled !");
     }
     do
     {
@@ -1623,6 +1623,14 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::F:
         FoldAll();
+        return true;
+    case Key::N:
+    case Key::Ctrl | Key::PageDown:
+        MoveToNextSimilarToken(1);
+        return true;
+    case Key::P:
+    case Key::Ctrl | Key::PageUp:
+        MoveToNextSimilarToken(-1);
         return true;
 
     // copy & selection
