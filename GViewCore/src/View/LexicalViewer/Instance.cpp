@@ -137,7 +137,7 @@ void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
     if (startIndex >= this->tokens.size())
         return;
     if (this->tokens[startIndex].IsVisible())
-        MoveToToken(startIndex, false);
+        MoveToToken(startIndex, false, false);
     else
     {
         auto beforeIndex = Token::INVALID_INDEX;
@@ -164,11 +164,11 @@ void Instance::MoveToClosestVisibleToken(uint32 startIndex, bool selected)
         uint32 difBefore = beforeIndex == Token::INVALID_INDEX ? 0xFFFFFFFF : startIndex - beforeIndex;
         uint32 difAfter  = afterIndex == Token::INVALID_INDEX ? 0xFFFFFFFF : afterIndex - startIndex;
         if (difAfter < difBefore)
-            MoveToToken(afterIndex, false);
+            MoveToToken(afterIndex, false, false);
         else if (difBefore < difAfter)
-            MoveToToken(beforeIndex, false);
+            MoveToToken(beforeIndex, false, false);
         else if (difBefore != 0xFFFFFFFF)
-            MoveToToken(beforeIndex, false);
+            MoveToToken(beforeIndex, false, false);
     }
 }
 void Instance::ComputeOriginalPositions()
@@ -1033,7 +1033,7 @@ void Instance::Paint(Graphics::Renderer& renderer)
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
     uint32 idx                = 0;
     int32 lastY               = -1;
-    
+
     for (auto& t : this->tokens)
     {
         // skip hidden and current token
@@ -1087,8 +1087,13 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
     return false;
 }
-void Instance::MoveToToken(uint32 index, bool selected)
+void Instance::MoveToToken(uint32 index, bool selected, bool makeVisibleIfHidden)
 {
+    if (makeVisibleIfHidden)
+    {
+        MakeTokenVisible(index);
+        RecomputeTokenPositions();
+    }
     if ((noItemsVisible) || (index == this->currentTokenIndex))
         return;
     auto sidx = -1;
@@ -1127,7 +1132,7 @@ void Instance::MoveLeft(bool selected, bool stopAfterFirst)
     }
     if ((idx == 0) && (this->tokens[0].IsVisible()) && (this->tokens[0].pos.y == yPos))
         lastValidIdx = 0;
-    MoveToToken(lastValidIdx, selected);
+    MoveToToken(lastValidIdx, selected, false);
 }
 void Instance::MoveRight(bool selected, bool stopAfterFirst)
 {
@@ -1152,7 +1157,7 @@ void Instance::MoveRight(bool selected, bool stopAfterFirst)
         else
             idx++;
     }
-    MoveToToken(lastValidIdx, selected);
+    MoveToToken(lastValidIdx, selected, false);
 }
 void Instance::MoveUp(uint32 times, bool selected)
 {
@@ -1178,7 +1183,7 @@ void Instance::MoveUp(uint32 times, bool selected)
                 if (this->tokens[idx].pos.y == lastY)
                 {
                     // already on the first line --> move to first token
-                    MoveToToken(0, selected);
+                    MoveToToken(0, selected, false);
                     return;
                 }
                 // otherwise do nothing --> just decrease the times count
@@ -1223,7 +1228,7 @@ void Instance::MoveUp(uint32 times, bool selected)
             best_dist = dist;
         }
     }
-    MoveToToken(found, selected);
+    MoveToToken(found, selected, false);
 }
 void Instance::MoveDown(uint32 times, bool selected)
 {
@@ -1268,8 +1273,44 @@ void Instance::MoveDown(uint32 times, bool selected)
         }
         idx++;
     }
-    MoveToToken(found, selected);
+    MoveToToken(found, selected, false);
 }
+void Instance::MoveToNextSimilarToken(int32 direction)
+{
+    if (noItemsVisible)
+        return;
+    const auto& tok = this->tokens[this->currentTokenIndex];
+    auto index      = this->currentTokenIndex;
+    if (tok.hash == 0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This type of token does has similarity search disabled !");
+    }
+    do
+    {
+        if (direction == 1)
+        {
+            index++;
+            if (index >= this->tokens.size())
+                index = 0;
+        }
+        else
+        {
+            if (index == 0)
+                index = static_cast<uint32>(this->tokens.size() - 1);
+            else
+                index--;
+        }
+    } while ((index != this->currentTokenIndex) && (this->tokens[index].hash != tok.hash));
+    if (index == this->currentTokenIndex)
+    {
+        AppCUI::Dialogs::MessageBox::ShowNotification("Similar tokens", "There aren't any similar tokens to this one !");
+    }
+    else
+    {
+        MoveToToken(index, false, true);
+    }
+}
+
 void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive)
 {
     if (this->noItemsVisible)
@@ -1311,7 +1352,7 @@ void Instance::SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive
             {
                 const auto& block = this->blocks[blockIDX];
                 // collapse the entire block
-                MoveToToken(block.tokenStart, false);
+                MoveToToken(block.tokenStart, false, false);
                 MoveToClosestVisibleToken(block.tokenStart, false);
                 SetFoldStatus(block.tokenStart, FoldStatus::Folded, recursive);
             }
@@ -1343,20 +1384,20 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         return;
     if (dlg.ShouldOpenANewWindow())
     {
-        auto& txt = dlg.GetStringValue();  
-        if (txt.Len()==0)
+        auto& txt = dlg.GetStringValue();
+        if (txt.Len() == 0)
         {
             AppCUI::Dialogs::MessageBox::ShowNotification("Open", "Empty string -> nothing to open !");
             return;
         }
 
-        Buffer buf;              
+        Buffer buf;
         buf.Reserve(txt.Len() * 2 + 8);
         buf.Add(CharacterEncoding::GetBOMForEncoding(CharacterEncoding::Encoding::Unicode16LE));
         // add the data
         auto p = txt.GetBuffer();
         auto e = p + txt.Len();
-        while (p<e)
+        while (p < e)
         {
             char16 tmp = (*p).Code;
             buf.Add(u16string_view{ &tmp, 1 });
@@ -1364,8 +1405,8 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         }
         // Buffer build --> open
         LocalString<128> tmpName;
-        
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x",tok.start));
+
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start));
     }
     else
     {
@@ -1695,9 +1736,7 @@ bool Instance::ShowGoToDialog()
         {
             if (tok.lineNo == gotoLine)
             {
-                MakeTokenVisible(idx);
-                RecomputeTokenPositions();
-                MoveToToken(idx, false);
+                MoveToToken(idx, false, true);
                 break;
             }
             idx++;
@@ -1951,7 +1990,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         auto tokIDX = MousePositionToTokenID(x, y);
         if (tokIDX != Token::INVALID_INDEX)
         {
-            MoveToToken(tokIDX, false);
+            MoveToToken(tokIDX, false, false);
         }
         if ((button & MouseButton::DoubleClicked) != MouseButton::None)
         {
@@ -1969,7 +2008,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
         auto tokIDX = MousePositionToTokenID(x, y);
         if (tokIDX != Token::INVALID_INDEX)
         {
-            MoveToToken(tokIDX, true);
+            MoveToToken(tokIDX, true, false);
             return true;
         }
     }
