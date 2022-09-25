@@ -11,7 +11,19 @@ bool ELFFile::Update()
     panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
-    panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+
+    switch (is64 ? header64.e_machine : header32.e_machine)
+    {
+    case EM_386:
+    case EM_486:
+    case EM_860:
+    case EM_960:
+    case EM_8051:
+    case EM_X86_64:
+        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+    default:
+        break;
+    }
 
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");

@@ -1695,7 +1695,16 @@ bool PEFile::Update()
     ADD_PANEL(Panels::IDs::Directories);
     ADD_PANEL(Panels::IDs::Sections);
     ADD_PANEL(Panels::IDs::Headers);
-    ADD_PANEL(Panels::IDs::OpCodes);
+
+    switch ((PE::MachineType) nth32.FileHeader.Machine)
+    {
+    case PE::MachineType::I386:
+    case PE::MachineType::IA64:
+    case PE::MachineType::AMD64:
+        ADD_PANEL(Panels::IDs::OpCodes);
+    default:
+        break;
+    }
 
     if (impDLL.size() > 0)
         ADD_PANEL(Panels::IDs::Imports);

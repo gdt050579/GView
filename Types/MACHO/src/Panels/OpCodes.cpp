@@ -1,4 +1,4 @@
-#include "elf.hpp"
+#include "macho.hpp"
 
 using namespace AppCUI::Controls;
 
@@ -12,9 +12,10 @@ constexpr auto ID_CHECKBOX_BP     = 0x1007U;
 constexpr auto ID_CHECKBOX_FSTART = 0x1008U;
 constexpr auto ID_CHECKBOX_FEND   = 0x1009U;
 
-namespace GView::Type::ELF::Panels
+namespace GView::Type::MachO::Panels
 {
-OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile> _elf) : TabPage("Op&Codes"), object(_object), elf(_elf)
+OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::MachO::MachOFile> _macho)
+    : TabPage("Op&Codes"), object(_object), macho(_macho)
 {
     value = Factory::Label::Create(this, "Mask", "x:1,y:1,w:60");
 
@@ -24,35 +25,35 @@ OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile>
     all.SetData(ID_CHECKBOX_ALL);
 
     header = list->AddItem("Executable header(s)");
-    header.SetColor(ELF::EXE_MARKER_COLOR);
+    header.SetColor(MachO::EXE_MARKER_COLOR);
     header.SetData(ID_CHECKBOX_HEADER);
 
     call = list->AddItem("CALL");
-    call.SetColor(ELF::INS_CALL_COLOR);
+    call.SetColor(MachO::INS_CALL_COLOR);
     call.SetData(ID_CHECKBOX_CALL);
 
     lcall = list->AddItem("LCALL");
-    lcall.SetColor(ELF::INS_LCALL_COLOR);
+    lcall.SetColor(MachO::INS_LCALL_COLOR);
     lcall.SetData(ID_CHECKBOX_LCALL);
 
     jmp = list->AddItem("JMP");
-    jmp.SetColor(ELF::INS_JUMP_COLOR);
+    jmp.SetColor(MachO::INS_JUMP_COLOR);
     jmp.SetData(ID_CHECKBOX_JMP);
 
     ljmp = list->AddItem("LJMP");
-    ljmp.SetColor(ELF::INS_LJUMP_COLOR);
+    ljmp.SetColor(MachO::INS_LJUMP_COLOR);
     ljmp.SetData(ID_CHECKBOX_LJMP);
 
     bp = list->AddItem("Breakpoints");
-    bp.SetColor(ELF::INS_BREAKPOINT_COLOR);
+    bp.SetColor(MachO::INS_BREAKPOINT_COLOR);
     bp.SetData(ID_CHECKBOX_BP);
 
     fstart = list->AddItem("Function Start");
-    fstart.SetColor(ELF::START_FUNCTION_COLOR);
+    fstart.SetColor(MachO::START_FUNCTION_COLOR);
     fstart.SetData(ID_CHECKBOX_FSTART);
 
     fend = list->AddItem("Function End");
-    fend.SetColor(ELF::END_FUNCTION_COLOR);
+    fend.SetColor(MachO::END_FUNCTION_COLOR);
     fend.SetData(ID_CHECKBOX_FEND);
 
     Update();
@@ -60,30 +61,30 @@ OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile>
 
 void OpCodes::Update()
 {
-    elf->showOpcodesMask = 0;
-    auto settings        = Application::GetAppSettings();
-    if (settings->HasSection("Type.ELF"))
+    macho->showOpcodesMask = 0;
+    auto settings          = Application::GetAppSettings();
+    if (settings->HasSection("Type.MACHO"))
     {
-        auto pe       = settings->GetSection("Type.ELF");
+        auto pe       = settings->GetSection("Type.MACHO");
         auto optValue = pe["OpCodes.Mask"];
         if (optValue.HasValue())
         {
             auto optUInt32 = optValue.AsUInt32();
             if (optUInt32.has_value())
             {
-                elf->showOpcodesMask = *optUInt32;
+                macho->showOpcodesMask = *optUInt32;
             }
         }
     }
 
-    header.SetCheck((elf->showOpcodesMask >> 0) & 1U);
-    call.SetCheck((elf->showOpcodesMask >> 1) & 1U);
-    lcall.SetCheck((elf->showOpcodesMask >> 2) & 1U);
-    jmp.SetCheck((elf->showOpcodesMask >> 3) & 1U);
-    ljmp.SetCheck((elf->showOpcodesMask >> 4) & 1U);
-    bp.SetCheck((elf->showOpcodesMask >> 5) & 1U);
-    fstart.SetCheck((elf->showOpcodesMask >> 6) & 1U);
-    fend.SetCheck((elf->showOpcodesMask >> 7) & 1U);
+    header.SetCheck((macho->showOpcodesMask >> 0) & 1U);
+    call.SetCheck((macho->showOpcodesMask >> 1) & 1U);
+    lcall.SetCheck((macho->showOpcodesMask >> 2) & 1U);
+    jmp.SetCheck((macho->showOpcodesMask >> 3) & 1U);
+    ljmp.SetCheck((macho->showOpcodesMask >> 4) & 1U);
+    bp.SetCheck((macho->showOpcodesMask >> 5) & 1U);
+    fstart.SetCheck((macho->showOpcodesMask >> 6) & 1U);
+    fend.SetCheck((macho->showOpcodesMask >> 7) & 1U);
 
     all.SetCheck(AllChecked());
 
@@ -109,9 +110,9 @@ inline bool OpCodes::AllUnChecked()
 inline void OpCodes::SetMaskText()
 {
     auto settings = Application::GetAppSettings();
-    if (settings->HasSection("Type.ELF"))
+    if (settings->HasSection("Type.MACHO"))
     {
-        auto pe        = settings->GetSection("Type.ELF");
+        auto pe        = settings->GetSection("Type.MACHO");
         auto optValue  = pe["OpCodes.Mask"];
         uint32 mask    = 0;
         auto optUInt32 = optValue.AsUInt32();
@@ -131,9 +132,9 @@ inline void OpCodes::SetMaskText()
 inline void OpCodes::SetConfig(bool checked, uint16 position)
 {
     auto settings = Application::GetAppSettings();
-    if (settings->HasSection("Type.ELF"))
+    if (settings->HasSection("Type.MACHO"))
     {
-        auto viewBuffer = settings->GetSection("Type.ELF");
+        auto viewBuffer = settings->GetSection("Type.MACHO");
         auto optValue   = viewBuffer["OpCodes.Mask"];
         uint32 value    = 0;
         if (optValue.HasValue())
@@ -178,9 +179,9 @@ bool OpCodes::OnEvent(Reference<Control>, Event evnt, int controlID)
         fend.SetCheck(isChecked);
 
         auto settings = Application::GetAppSettings();
-        if (settings->HasSection("Type.ELF"))
+        if (settings->HasSection("Type.MACHO"))
         {
-            auto viewBuffer            = settings->GetSection("Type.ELF");
+            auto viewBuffer            = settings->GetSection("Type.MACHO");
             viewBuffer["OpCodes.Mask"] = isChecked ? 0xFFFFFFFF : 0;
             settings->Save(Application::GetAppSettingsFile());
         }
@@ -243,4 +244,4 @@ bool OpCodes::OnEvent(Reference<Control>, Event evnt, int controlID)
 
     return false;
 }
-} // namespace GView::Type::ELF::Panels
+} // namespace GView::Type::MachO::Panels

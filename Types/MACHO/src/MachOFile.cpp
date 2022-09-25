@@ -15,11 +15,21 @@ bool MachOFile::Update()
 
     panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
 
+    switch (header.cputype)
+    {
+    case MAC::CPU_TYPE_I386:
+    case MAC::CPU_TYPE_X86_64:
+        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+    default:
+        break;
+    }
+
     if (isMacho)
     {
         SetHeader(offset);
         SetLoadCommands(offset);
         SetSegmentsAndTheirSections();
+        SetExecutableZones();
         SetDyldInfo();
         SetIdDylibs();
         SetMain();
@@ -309,6 +319,19 @@ bool MachOFile::SetSegmentsAndTheirSections()
     }
 
     return true;
+}
+
+void MachOFile::SetExecutableZones()
+{
+    for (const auto& segment : segments)
+    {
+        if (((segment.initprot & (uint32) MAC::VMProtectionFlags::EXECUTE) == (uint32) MAC::VMProtectionFlags::EXECUTE)
+            //  || ((segment.maxprot & (uint32) MAC::VMProtectionFlags::EXECUTE) == (uint32) MAC::VMProtectionFlags::EXECUTE)
+        )
+        {
+            executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ segment.fileoff, segment.fileoff + segment.filesize });
+        }
+    }
 }
 
 bool MachOFile::SetDyldInfo()
@@ -1213,5 +1236,171 @@ void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewI
 
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
     GView::App::OpenBuffer(buffer, data->info.name);
+}
+
+bool MachOFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(dissasembler.Init(is64, !shouldSwapEndianess), false, "");
+
+    static auto previousOpcodeMask = showOpcodesMask;
+    if (previousOpcodeMask != showOpcodesMask)
+    {
+        cacheBuffer.clear();
+        cacheDiscard.clear();
+        previousOpcodeMask = showOpcodesMask;
+    }
+
+    if (cacheBuffer.count(offset) > 0)
+    {
+        result = cacheBuffer.at(offset);
+        return true;
+    }
+
+    if (cacheDiscard.count(offset) > 0)
+    {
+        return false;
+    }
+
+    GView::Dissasembly::Instruction ins{ 0 };
+    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
+    {
+        if (dissasembler.IsCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_CALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
+    {
+        if (dissasembler.IsLCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LCALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
+    {
+        if (dissasembler.IsJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_JUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
+    {
+        if (dissasembler.IsLJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LJUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
+    {
+        if (dissasembler.IsBreakpointInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_BREAKPOINT_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
+    {
+        GView::Dissasembly::Instruction ins2{ 0 };
+        const auto offset2 = offset + ins.size;
+        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
+
+        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size + ins2.size;
+            result.color        = START_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
+    {
+        if (dissasembler.IsFunctionEndInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = END_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    cacheDiscard[offset] = false;
+
+    return false;
+}
+
+bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(buf.IsValid(), false, "");
+    result.color = ColorPair{ Color::Transparent, Color::Transparent };
+    CHECK(showOpcodesMask != 0, false, "");
+
+    switch (header.cputype)
+    {
+    case MAC::CPU_TYPE_I386:
+    case MAC::CPU_TYPE_X86_64:
+    {
+        auto* p = buf.begin();
+        switch (*p)
+        {
+        case 0xFE:
+        case 0xCE:
+            if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
+            {
+                if (buf.GetLength() >= 4)
+                {
+                    if (*(uint32*) p == MAC::MH_MAGIC || *(uint32*) p == MAC::MH_CIGAM)
+                    {
+                        result.start = offset;
+                        result.end   = offset + 3;
+                        result.color = EXE_MARKER_COLOR;
+                        return true;
+                    } // do not break
+                }
+            }
+        default:
+            for (const auto& [start, end] : executableZonesFAs)
+            {
+                if (offset >= start && offset < end)
+                {
+                    return GetColorForBufferIntel(offset, buf, result);
+                }
+            }
+            break;
+        }
+    }
+    default:
+        break;
+    }
+
+    return false;
 }
 } // namespace GView::Type::MachO
