@@ -293,6 +293,7 @@ namespace View
             bool noItemsVisible;
             bool showMetaData;
             bool prettyFormat;
+            bool highlightSimilarTokens;
 
             std::vector<TokenPosition> backupedTokenPositionList;
 

@@ -99,9 +99,10 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         config.Initialize();
 
     // load the entire data into a file
-    auto buf           = obj->GetData().GetEntireFile();
-    this->text         = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
-    this->prettyFormat = true;
+    auto buf                     = obj->GetData().GetEntireFile();
+    this->text                   = GView::Utils::CharacterEncoding::ConvertToUnicode16(buf);
+    this->prettyFormat           = true;
+    this->highlightSimilarTokens = true;
 
     this->Parse();
 
@@ -1028,6 +1029,8 @@ void Instance::Paint(Graphics::Renderer& renderer)
     {
         this->currentHash = 0;
     }
+    if (!this->highlightSimilarTokens)
+        this->currentHash = 0;
 
     const int32 scroll_right  = Scroll.x + (int32) this->GetWidth() - 1;
     const int32 scroll_bottom = Scroll.y + (int32) this->GetHeight() - 1;
@@ -2193,7 +2196,8 @@ enum class PropertyID : uint32
     NoOfLines,
     // View
     Pretty,
-    ShowMetaData
+    ShowMetaData,
+    HighlightSimilarTokens,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2240,6 +2244,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
     case PropertyID::ShowMetaData:
         value = this->showMetaData;
         return true;
+    case PropertyID::HighlightSimilarTokens:
+        value = this->highlightSimilarTokens;
+        return true;
     case PropertyID::MaxTokenWidth:
         value = this->settings->maxTokenSize.Width;
         return true;
@@ -2282,6 +2289,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::Pretty:
         this->prettyFormat = std::get<bool>(value);
         Parse();
+        return true;
+    case PropertyID::HighlightSimilarTokens:
+        this->highlightSimilarTokens = std::get<bool>(value);
         return true;
     case PropertyID::ShowMetaData:
         this->showMetaData = std::get<bool>(value);
@@ -2335,6 +2345,7 @@ const vector<Property> Instance::GetPropertiesList()
         // View
         { BT(PropertyID::Pretty), "View", "Auto format text", PropertyType::Boolean },
         { BT(PropertyID::ShowMetaData), "View", "Show/Hide metadate", PropertyType::Boolean },
+        { BT(PropertyID::HighlightSimilarTokens), "View", "Highlight similar tokens", PropertyType::Boolean },
     };
 }
 #undef BT
