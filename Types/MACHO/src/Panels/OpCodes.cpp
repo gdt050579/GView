@@ -1,4 +1,4 @@
-#include "macho.hpp"
+#include "MachO.hpp"
 
 using namespace AppCUI::Controls;
 
