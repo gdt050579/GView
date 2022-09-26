@@ -524,7 +524,7 @@ namespace Dissasembly
     constexpr auto MNEMONIC_SIZE = 32U;
     constexpr auto OP_STR_SIZE   = 160U;
 
-    struct Instruction
+    struct CORE_EXPORT Instruction
     {
         uint32 id;
         uint64 address;
@@ -542,14 +542,14 @@ namespace Dissasembly
 
       public:
         bool Init(bool isx64, bool isLittleEndian);
-        inline bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
-        inline bool IsCallInstruction(const Instruction& instruction) const ;
-        inline bool IsLCallInstruction(const Instruction& instruction) const;
-        inline bool IsJmpInstruction(const Instruction& instruction) const;
-        inline bool IsLJmpInstruction(const Instruction& instruction) const;
-        inline bool IsBreakpointInstruction(const Instruction& instruction) const;
-        inline bool AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const;
-        inline bool IsFunctionEndInstruction(const Instruction& instruction) const;
+        bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool IsCallInstruction(const Instruction& instruction) const ;
+        bool IsLCallInstruction(const Instruction& instruction) const;
+        bool IsJmpInstruction(const Instruction& instruction) const;
+        bool IsLJmpInstruction(const Instruction& instruction) const;
+        bool IsBreakpointInstruction(const Instruction& instruction) const;
+        bool AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const;
+        bool IsFunctionEndInstruction(const Instruction& instruction) const;
         ~DissasemblerIntel();
     };
 } // namespace Dissasembly

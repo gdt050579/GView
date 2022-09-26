@@ -36,31 +36,31 @@ bool DissasemblerIntel::DissasembleInstruction(BufferView buf, uint64 va, Instru
     return true;
 }
 
-inline bool DissasemblerIntel::IsCallInstruction(const Instruction& instruction) const
+bool DissasemblerIntel::IsCallInstruction(const Instruction& instruction) const
 {
     CHECK(instruction.id == X86_INS_CALL, false, "");
     return true;
 }
 
-inline bool DissasemblerIntel::IsLCallInstruction(const Instruction& instruction) const
+bool DissasemblerIntel::IsLCallInstruction(const Instruction& instruction) const
 {
     CHECK(instruction.id == X86_INS_LCALL, false, "");
     return true;
 }
 
-inline bool DissasemblerIntel::IsJmpInstruction(const Instruction& instruction) const
+bool DissasemblerIntel::IsJmpInstruction(const Instruction& instruction) const
 {
     CHECK(instruction.id == X86_INS_JMP, false, "");
     return true;
 }
 
-inline bool DissasemblerIntel::IsLJmpInstruction(const Instruction& instruction) const
+bool DissasemblerIntel::IsLJmpInstruction(const Instruction& instruction) const
 {
     CHECK(instruction.id == X86_INS_LJMP, false, "");
     return true;
 }
 
-inline bool DissasemblerIntel::IsBreakpointInstruction(const Instruction& instruction) const
+bool DissasemblerIntel::IsBreakpointInstruction(const Instruction& instruction) const
 {
     switch (instruction.id)
     {
@@ -74,7 +74,7 @@ inline bool DissasemblerIntel::IsBreakpointInstruction(const Instruction& instru
     }
 }
 
-inline bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const
+bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const
 {
     switch (instruction1.id)
     {
@@ -177,7 +177,7 @@ inline bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& i
     }
 }
 
-inline bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction) const
+bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction) const
 {
     switch (instruction.id)
     {
