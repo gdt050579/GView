@@ -37,7 +37,6 @@ constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
 constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
 constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
-constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF07;
 
 Config Instance::config;
 
@@ -347,13 +346,6 @@ bool Instance::ShowFindDialog()
 bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
-}
-bool Instance::ShowDissasmDialog()
-{
-    const auto buffer = obj->GetData().CopyToBuffer(this->Cursor.currentPos, 0x1000);
-    DissasmDialog dlg(buffer, this->Cursor.currentPos, 0x1000);
-    CHECK(dlg.Show() == Dialogs::Result::Ok, false, "");
-    return true;
 }
 
 void Instance::ResetStringInfo()
@@ -1140,8 +1132,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
             commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
     }
 
-    commandBar.SetCommand(config.Keys.DissasmDialog, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
-
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
@@ -1367,9 +1357,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         {
             this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
         }
-        return true;
-    case BUFFERVIEW_CMD_DISSASM_DIALOG:
-        this->ShowDissasmDialog();
         return true;
     }
     return false;
@@ -1850,9 +1837,7 @@ enum class PropertyID : uint32
     ChangeAddressMode,
     GoToEntryPoint,
     ChangeSelectionType,
-    ShowHideStrings,
-    // dissasm
-    Dissasm
+    ShowHideStrings
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -1937,9 +1922,6 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::AddressType:
         value = this->currentAdrressMode;
-        return true;
-    case PropertyID::Dissasm:
-        value = config.Keys.DissasmDialog;
         return true;
     }
     return false;
@@ -2039,9 +2021,6 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowHideStrings:
         config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
         return true;
-    case PropertyID::Dissasm:
-        config.Keys.DissasmDialog = std::get<AppCUI::Input::Key>(value);
-        return true;
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
         return true;
@@ -2126,10 +2105,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
         { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
         { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
-        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
-
-        // dissasm
-        { BT(PropertyID::Dissasm), "Shortcuts", "Dissasm", PropertyType::Key },
+        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key }
     };
 }
 #undef BT

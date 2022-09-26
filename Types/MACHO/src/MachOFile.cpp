@@ -15,15 +15,6 @@ bool MachOFile::Update()
 
     panelsMask |= (1ULL << (uint8) Panels::IDs::Information);
 
-    switch (header.cputype)
-    {
-    case MAC::CPU_TYPE_I386:
-    case MAC::CPU_TYPE_X86_64:
-        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
-    default:
-        break;
-    }
-
     if (isMacho)
     {
         SetHeader(offset);
@@ -71,6 +62,15 @@ bool MachOFile::Update()
         if (ParseGoData())
         {
             panelsMask |= (1ULL << (uint8) Panels::IDs::GoInformation);
+        }
+
+        switch (header.cputype)
+        {
+        case MAC::CPU_TYPE_I386:
+        case MAC::CPU_TYPE_X86_64:
+            panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+        default:
+            break;
         }
     }
     else if (isFat)

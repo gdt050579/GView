@@ -65,7 +65,6 @@ namespace View
                 AppCUI::Input::Key GoToEntryPoint;
                 AppCUI::Input::Key ChangeSelectionType;
                 AppCUI::Input::Key ShowHideStrings;
-                AppCUI::Input::Key DissasmDialog;
             } Keys;
             bool Loaded;
 
@@ -193,7 +192,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual bool ShowDissasmDialog();
             virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
@@ -255,23 +253,6 @@ namespace View
             {
                 return resultedPos;
             }
-        };
-
-        class DissasmDialog : public Window
-        {
-            BufferView buffer;
-            Reference<ListView> list;
-            uint64 fa;
-            uint64 size;
-
-            GView::Dissasembly::DissasemblerIntel dissasembler{};
-
-            void Validate();
-
-          public:
-            DissasmDialog(BufferView buffer, uint64 fa, uint64 size);
-
-            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
         };
     } // namespace BufferViewer
 } // namespace View

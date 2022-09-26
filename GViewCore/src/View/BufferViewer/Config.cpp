@@ -28,7 +28,6 @@ void Config::Initialize()
         this->Keys.GoToEntryPoint        = sect.GetValue("Key.GoToEntryPoint").ToKey(Key::F7);
         this->Keys.ChangeSelectionType   = sect.GetValue("Key.ChangeSelectionType").ToKey(Key::F9);
         this->Keys.ShowHideStrings       = sect.GetValue("Key.ShowHideStrings").ToKey(Key::Alt | Key::F3);
-        this->Keys.DissasmDialog         = sect.GetValue("Key.DissasmDialog").ToKey(Key::Ctrl | Key::D);
     }
     else
     {
@@ -38,7 +37,6 @@ void Config::Initialize()
         this->Keys.GoToEntryPoint        = Key::F7;
         this->Keys.ChangeSelectionType   = Key::F9;
         this->Keys.ShowHideStrings       = Key::Alt | Key::F3;
-        this->Keys.DissasmDialog         = Key::Ctrl | Key::D;
     }
 
     this->Loaded = true;
