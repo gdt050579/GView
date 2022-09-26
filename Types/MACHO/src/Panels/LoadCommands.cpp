@@ -12,7 +12,7 @@ enum class Action : int32_t
     ChangeBase = 4
 };
 
-LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("&Commands")
+LoadCommands::LoadCommands(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("Co&mmands")
 {
     machO = _machO;
     win   = _win;

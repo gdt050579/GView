@@ -21,6 +21,8 @@ message("ZLIB_LIBRARIES => ${ZLIB_LIBRARIES}")
 target_include_directories(${PROJECT_NAME} PRIVATE ${ZLIB_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
 
+find_package(capstone CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
 
 if (MSVC)
     add_compile_options(-W3)

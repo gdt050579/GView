@@ -5,6 +5,20 @@
 
 namespace GView::Type::MachO
 {
+
+static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
+static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
+
+static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
+static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+
+static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue };
+
+static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::White, Color::Teal };
+static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Yellow, Color::Teal };
+
+static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+
 namespace Panels
 {
     enum class IDs : uint8
@@ -17,14 +31,16 @@ namespace Panels
         Dylib         = 0x5,
         DySymTab      = 0x6,
         CodeSign      = 0x7,
-        GoInformation = 0x8
+        GoInformation = 0x8,
+        OpCodes       = 0x9,
     };
 };
 
 class MachOFile : public TypeInterface,
                   public View::BufferViewer::OffsetTranslateInterface,
                   public View::ContainerViewer::EnumerateInterface,
-                  public View::ContainerViewer::OpenItemInterface
+                  public View::ContainerViewer::OpenItemInterface,
+                  public GView::View::BufferViewer::PositionToColorInterface
 {
   public:
     struct Colors
@@ -173,6 +189,14 @@ class MachOFile : public TypeInterface,
     // GO
     Golang::PcLnTab pcLnTab{};
 
+    uint32 showOpcodesMask{ 0 };
+    std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+    GView::Dissasembly::DissasemblerIntel dissasembler{};
+
+    // these are required here for Fat Containers (can't put them on function level)
+    std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
+    std::map<uint64, bool> cacheDiscard{};
+
   public:
     // OffsetTranslateInterface
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
@@ -196,6 +220,7 @@ class MachOFile : public TypeInterface,
     bool SetHeader(uint64& offset);
     bool SetLoadCommands(uint64& offset);
     bool SetSegmentsAndTheirSections();
+    void SetExecutableZones();
     bool SetDyldInfo();
     bool SetIdDylibs();
     bool SetMain(); // LC_MAIN & LC_UNIX_THREAD
@@ -216,6 +241,9 @@ class MachOFile : public TypeInterface,
 
   private:
     bool ComputeHash(const Buffer& buffer, uint8 hashType, std::string& output) const;
+
+    bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+    bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 };
 
 namespace Panels
@@ -495,6 +523,36 @@ namespace Panels
 
       public:
         GoFunctions(Reference<MachOFile> macho, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class OpCodes : public AppCUI::Controls::TabPage
+    {
+        Reference<MachOFile> macho;
+        Reference<Object> object;
+
+        Reference<AppCUI::Controls::Label> value;
+        Reference<AppCUI::Controls::ListView> list;
+        AppCUI::Controls::ListViewItem all;
+        AppCUI::Controls::ListViewItem header;
+        AppCUI::Controls::ListViewItem call;
+        AppCUI::Controls::ListViewItem lcall;
+        AppCUI::Controls::ListViewItem jmp;
+        AppCUI::Controls::ListViewItem ljmp;
+        AppCUI::Controls::ListViewItem bp;
+        AppCUI::Controls::ListViewItem fstart;
+        AppCUI::Controls::ListViewItem fend;
+
+        inline bool AllChecked();
+        inline bool AllUnChecked();
+        inline void SetMaskText();
+        inline void SetConfig(bool checked, uint16 position);
+
+      public:
+        OpCodes(Reference<Object> object, Reference<GView::Type::MachO::MachOFile> macho);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

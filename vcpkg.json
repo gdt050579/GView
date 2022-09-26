@@ -39,11 +39,12 @@
             "platform": "windows | linux | osx"
         },
         {
-            "name": "capstone",
+            "name": "zlib",
             "platform": "windows | linux | osx"
         },
         {
-            "name": "zlib",
+            "name": "capstone",
+            "features": [ "x86", "arm", "arm64" ],
             "platform": "windows | linux | osx"
         }
     ]

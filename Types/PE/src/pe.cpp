@@ -80,7 +80,7 @@ extern "C"
         }
 
         // translation
-        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         // set specific color for opcodes
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
@@ -88,10 +88,10 @@ extern "C"
         case PE::MachineType::I386:
         case PE::MachineType::IA64:
         case PE::MachineType::AMD64:
-            pe->x86x64ColorBuffer.memStartOffset = pe->imageBase;
-            pe->x86x64ColorBuffer.memEndOffset   = pe->imageBase + pe->virtualComputedSize;
-            settings.SetPositionToColorCallback(&pe->x86x64ColorBuffer);
-            break;
+        {
+            settings.SetPositionToColorCallback(pe.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
+        }
+        break;
         };
 
         // set entry point
@@ -169,27 +169,27 @@ UInt16 e_cp;
 UInt16 e_crlc;
 UInt16 e_res[4];)");
 
-//                uint32 typeImageDOSHeader = settings.AddType(
-//              "ImageDOSHeader",
-//              R"(UInt16 e_magic;
-//UInt16 e_cblp;
-//UInt16 e_cp;
-//UInt16 e_crlc;
-//UInt16 e_cparhdr;
-//UInt16 e_minalloc;
-//UInt16 e_maxalloc;
-//UInt16 e_ss;
-//UInt16 e_sp;
-//UInt16 e_csum;
-//UInt16 e_ip;
-//UInt16 e_cs;
-//UInt16 e_lfarlc;
-//UInt16 e_ovno;
-//UInt16 e_res[4];
-//UInt16 e_oemid;
-//UInt16 e_oeminfo;
-//UInt16 e_res2[10];
-//UInt32 e_lfanew;)");
+        //                uint32 typeImageDOSHeader = settings.AddType(
+        //              "ImageDOSHeader",
+        //              R"(UInt16 e_magic;
+        // UInt16 e_cblp;
+        // UInt16 e_cp;
+        // UInt16 e_crlc;
+        // UInt16 e_cparhdr;
+        // UInt16 e_minalloc;
+        // UInt16 e_maxalloc;
+        // UInt16 e_ss;
+        // UInt16 e_sp;
+        // UInt16 e_csum;
+        // UInt16 e_ip;
+        // UInt16 e_cs;
+        // UInt16 e_lfarlc;
+        // UInt16 e_ovno;
+        // UInt16 e_res[4];
+        // UInt16 e_oemid;
+        // UInt16 e_oeminfo;
+        // UInt16 e_res2[10];
+        // UInt32 e_lfanew;)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
 
@@ -230,14 +230,20 @@ UInt16 e_res[4];)");
             win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFiles(win->GetObject(), pe)), true);
             win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFunctions(pe, win)), false);
         }
+        if (pe->HasPanel(PE::Panels::IDs::OpCodes))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::OpCodes(win->GetObject(), pe)), true);
+        }
+
         return true;
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = "MZ";
-        sect["Priority"]    = 1;
-        sect["Description"] = "Portable executable format for Windows OS binaries";
+        sect["Pattern"]      = "MZ";
+        sect["Priority"]     = 1;
+        sect["Description"]  = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
     }
 }
 

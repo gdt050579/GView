@@ -505,6 +505,55 @@ namespace ZLIB
     CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
+namespace Dissasembly
+{
+    enum class Opcodes : uint32
+    {
+        Header        = 1,
+        Call          = 2,
+        LCall         = 4,
+        Jmp           = 8,
+        LJmp          = 16,
+        Breakpoint    = 32,
+        FunctionStart = 64,
+        FunctionEnd   = 128,
+        All           = 0xFFFFFFFF
+    };
+
+    constexpr auto BYTES_SIZE    = 24U;
+    constexpr auto MNEMONIC_SIZE = 32U;
+    constexpr auto OP_STR_SIZE   = 160U;
+
+    struct CORE_EXPORT Instruction
+    {
+        uint32 id;
+        uint64 address;
+        uint16 size;
+        uint8 bytes[BYTES_SIZE];
+        char mnemonic[MNEMONIC_SIZE];
+        char opStr[OP_STR_SIZE];
+    };
+
+    class CORE_EXPORT DissasemblerIntel
+    {
+      private:
+        size_t handle{ 0 };
+        bool isX64{ false };
+
+      public:
+        bool Init(bool isx64, bool isLittleEndian);
+        bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool IsCallInstruction(const Instruction& instruction) const ;
+        bool IsLCallInstruction(const Instruction& instruction) const;
+        bool IsJmpInstruction(const Instruction& instruction) const;
+        bool IsLJmpInstruction(const Instruction& instruction) const;
+        bool IsBreakpointInstruction(const Instruction& instruction) const;
+        bool AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const;
+        bool IsFunctionEndInstruction(const Instruction& instruction) const;
+        ~DissasemblerIntel();
+    };
+} // namespace Dissasembly
+
 namespace Compression
 {
     namespace LZXPRESS
@@ -958,7 +1007,7 @@ namespace View
 
             Token Next() const;
             Token Precedent() const;
-            
+
             Token& operator++();
             Token& operator--();
             Token operator+(uint32 offset) const;

@@ -12,6 +12,19 @@ bool ELFFile::Update()
     panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
 
+    switch (is64 ? header64.e_machine : header32.e_machine)
+    {
+    case EM_386:
+    case EM_486:
+    case EM_860:
+    case EM_960:
+    case EM_8051:
+    case EM_X86_64:
+        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+    default:
+        break;
+    }
+
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");
     if (header32.e_ident[EI_CLASS] != ELFCLASS32)
@@ -26,6 +39,8 @@ bool ELFFile::Update()
         offset += sizeof(Elf32_Ehdr);
     }
 
+    isLittleEndian = (header32.e_ident[EI_DATA] == ELFDATA2LSB);
+
     if (is64)
     {
         offset = header64.e_phoff;
@@ -33,6 +48,10 @@ bool ELFFile::Update()
         {
             Elf64_Phdr entry{};
             CHECK(obj->GetData().Copy<Elf64_Phdr>(offset, entry), false, "");
+            if ((entry.p_flags & PF_X) == PF_X)
+            {
+                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_offset + entry.p_filesz });
+            }
             segments64.emplace_back(entry);
             offset += sizeof(entry);
         }
@@ -44,6 +63,10 @@ bool ELFFile::Update()
         {
             Elf32_Phdr entry{};
             CHECK(obj->GetData().Copy<Elf32_Phdr>(offset, entry), false, "");
+            if ((entry.p_flags & PF_X) == PF_X)
+            {
+                executableZonesFAs.emplace_back(std::pair<uint64, uint64>{ entry.p_offset, entry.p_offset + entry.p_filesz });
+            }
             segments32.emplace_back(entry);
             offset += sizeof(entry);
         }
@@ -415,7 +438,7 @@ uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
     {
         for (const auto& section : sections64)
         {
-            if (section.sh_addr <= virtualAddress && virtualAddress <= section.sh_addr + section.sh_size)
+            if (section.sh_addr != 0 && section.sh_addr <= virtualAddress && virtualAddress <= section.sh_addr + section.sh_size)
             {
                 auto diff     = virtualAddress - section.sh_addr;
                 const auto fa = section.sh_offset + diff;
@@ -427,7 +450,7 @@ uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
     {
         for (const auto& section : sections32)
         {
-            if (section.sh_addr <= virtualAddress && virtualAddress <= (uint64) section.sh_addr + section.sh_size)
+            if (section.sh_addr != 0 && section.sh_addr <= virtualAddress && virtualAddress <= (uint64) section.sh_addr + section.sh_size)
             {
                 auto diff     = virtualAddress - section.sh_addr;
                 const auto fa = section.sh_offset + diff;
@@ -437,4 +460,226 @@ uint64 ELFFile::VAToFileOffset(uint64 virtualAddress)
     }
 
     return ELF_INVALID_ADDRESS;
+}
+
+uint64 ELFFile::GetImageBase() const
+{
+    if (is64)
+    {
+        for (const auto& segment : segments64)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                return segment.p_vaddr;
+            }
+        }
+    }
+    else
+    {
+        for (const auto& segment : segments32)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                return segment.p_vaddr;
+            }
+        }
+    }
+    return -1;
+}
+
+uint64 ELFFile::GetVirtualSize() const
+{
+    uint64 vSize = 0;
+    if (is64)
+    {
+        for (const auto& segment : segments64)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                vSize += segment.p_memsz;
+            }
+        }
+    }
+    else
+    {
+        for (const auto& segment : segments32)
+        {
+            if (segment.p_type == PT_LOAD)
+            {
+                vSize += segment.p_memsz;
+            }
+        }
+    }
+    return -1;
+}
+
+bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(dissasembler.Init(is64, isLittleEndian), false, "");
+
+    static auto previousOpcodeMask = showOpcodesMask;
+    static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
+    static std::map<uint64, bool> cacheDiscard{};
+
+    if (previousOpcodeMask != showOpcodesMask)
+    {
+        cacheBuffer.clear();
+        cacheDiscard.clear();
+        previousOpcodeMask = showOpcodesMask;
+    }
+
+    if (cacheBuffer.count(offset) > 0)
+    {
+        result = cacheBuffer.at(offset);
+        return true;
+    }
+
+    if (cacheDiscard.count(offset) > 0)
+    {
+        return false;
+    }
+
+    GView::Dissasembly::Instruction ins{ 0 };
+    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
+    {
+        if (dissasembler.IsCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_CALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
+    {
+        if (dissasembler.IsLCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LCALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
+    {
+        if (dissasembler.IsJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_JUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
+    {
+        if (dissasembler.IsLJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LJUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
+    {
+        if (dissasembler.IsBreakpointInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_BREAKPOINT_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
+    {
+        GView::Dissasembly::Instruction ins2{ 0 };
+        const auto offset2 = offset + ins.size;
+        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
+
+        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size + ins2.size;
+            result.color        = START_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
+    {
+        if (dissasembler.IsFunctionEndInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = END_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    cacheDiscard[offset] = false;
+
+    return false;
+}
+
+bool ELFFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(buf.IsValid(), false, "");
+    result.color = ColorPair{ Color::Transparent, Color::Transparent };
+    CHECK(showOpcodesMask != 0, false, "");
+
+    const auto machine = is64 ? header64.e_machine : header32.e_machine;
+    auto* p            = buf.begin();
+    switch (*p)
+    {
+    case 0x7F:
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
+        {
+            if (buf.GetLength() >= 4)
+            {
+                if (*(uint32*) p == 0x464C457F)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = EXE_MARKER_COLOR;
+                    return true;
+                } // do not break
+            }
+        }
+    default:
+        switch (machine)
+        {
+        case EM_386:
+        case EM_486:
+        case EM_860:
+        case EM_960:
+        case EM_8051:
+        case EM_X86_64:
+            for (const auto& [start, end] : executableZonesFAs)
+            {
+                if (offset >= start && offset < end)
+                {
+                    return GetColorForBufferIntel(offset, buf, result);
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    return false;
 }
