@@ -1150,22 +1150,19 @@ bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicode
     
     for (auto index = 0u; index < content.length();index++)
     {
-        if (content[index] == '\"')
+        if (index == 0)
         {
-            newContent.Add(content.substr(index - 1, index - preview));
-            newContent.Add("\\\"");
-            preview = index + 1;
+            if (content[index] == '\'')
+            {
+                newContent.Add(content.substr(index - 1, index - preview));
+                newContent.Add("\\\'");
+                preview = index + 1;
+            }
         }
-        else if (content[index] == '\'')
+        else if (content[index] == '\'' && content[index - 1] != '\\')
         {
             newContent.Add(content.substr(index - 1, index - preview));
             newContent.Add("\\\'");
-            preview = index + 1;
-        }
-        else if (content[index] == '`')
-        {
-            newContent.Add(content.substr(index - 1, index - preview));
-            newContent.Add("\`");
             preview = index + 1;
         }
     }
