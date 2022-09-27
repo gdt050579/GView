@@ -7,44 +7,40 @@ constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BNT_ID_OPEN   = 2;
 constexpr int32 BTN_ID_CANCEL = 3;
 
-constexpr uint32 CMD_ID_RELOAD_ORIGINAL = 0xFFFFFF00;
-constexpr uint32 CMD_ID_RELOAD          = 0xFFFFFF01;
-constexpr uint32 INVALID_CMD_ID         = 0xFFFFFFFF;
+constexpr int32 CMD_ID_RELOAD_ORIGINAL   = 10001;
+constexpr int32 CMD_ID_RELOAD            = 10002;
+constexpr int32 CMD_ID_SHOW_LINE_NUMBERS = 10003;
+constexpr int32 INVALID_CMD_ID           = -1;
 
 struct
 {
     std::string_view name;
     void (*run)(TextEditor& editor, uint32 start, uint32 end);
-} plugins[]{ { "Reverse", StringOperationsPlugins::Reverse },
-             { "UpperCase", StringOperationsPlugins::UpperCase },
-             { "LowerCase", StringOperationsPlugins::LowerCase },
-             { "Remove extra white spaces", StringOperationsPlugins::RemoveUnnecesaryWhiteSpaces },
-             { "Unescape characters", StringOperationsPlugins::UnescapedCharacters } };
+} plugins[]{ { "&Reverse", StringOperationsPlugins::Reverse },
+             { "&UpperCase", StringOperationsPlugins::UpperCase },
+             { "&LowerCase", StringOperationsPlugins::LowerCase },
+             { "Remove extra &white spaces", StringOperationsPlugins::RemoveUnnecesaryWhiteSpaces },
+             { "Un&escape characters", StringOperationsPlugins::UnescapedCharacters } };
 
 StringOpDialog::StringOpDialog(TokenObject& _tok, const char16* _text, Reference<ParseInterface> _parser)
-    : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn), tok(_tok), parser(_parser), editor(nullptr, 0), text(_text),
-      openInANewWindow(false)
+    : Window("String Operations", "d:c,w:80,h:20", WindowFlags::ProcessReturn | WindowFlags::Menu), tok(_tok), parser(_parser),
+      editor(nullptr, 0), text(_text), openInANewWindow(false)
 {
-    auto panel = Factory::Panel::Create(this, "Value", "l:1,t:1,r:1,b:3");
-    auto spl   = Factory::Splitter::Create(panel, "d:c", SplitterFlags::Vertical);
-    auto lst   = Factory::ListView::Create(
-          spl,
-          "d:c",
-          { "w:100,a:l,n:Operations" },
-          ListViewFlags::HideBorder | ListViewFlags::HideCurrentItemWhenNotFocused | ListViewFlags::PopupSearchBar);
-    this->txValue =
-          Factory::TextArea::Create(spl, "", "x:15,y:2,w:60,h:9", TextAreaFlags::ShowLineNumbers | TextAreaFlags::DisableAutoSelectOnFocus);
-
-    // list commands
-    lst->AddItem("Original value").SetData(CMD_ID_RELOAD_ORIGINAL);
-    lst->AddItem("Reload value").SetData(CMD_ID_RELOAD);
-    lst->AddItem("").SetType(ListViewItem::Type::Category);
+    auto tokMnu = this->AddMenu("&Token");
+    tokMnu->AddCommandItem("Restore &original value", CMD_ID_RELOAD_ORIGINAL);
+    tokMnu->AddCommandItem("Restore &current value", CMD_ID_RELOAD);
+    auto mnuView = this->AddMenu("&View");
+    mnuView->AddCheckItem("Show &line numbers", 1, true);
+    mnuView->AddCheckItem("&Word wrap", 1, false);
+    auto mnuPlugins = this->AddMenu("&Plugins");
     for (auto index = 0; index < ARRAY_LEN(plugins); index++)
     {
-        lst->AddItem(plugins[index].name).SetData(index);
+        mnuPlugins->AddCommandItem(plugins[index].name, index);
     }
 
-    spl->SetFirstPanelSize(20);
+    this->txValue =
+          Factory::TextArea::Create(this, "", "l:0,r:0,t:0,b:3", TextAreaFlags::ShowLineNumbers | TextAreaFlags::DisableAutoSelectOnFocus);
+
     // button
     Factory::Button::Create(this, "&Apply", "l:15,b:0,w:15", BTN_ID_OK);
     Factory::Button::Create(this, "&Open content", "l:31,b:0,w:15", BNT_ID_OPEN);
@@ -69,12 +65,8 @@ void StringOpDialog::UpdateValue(bool original)
     }
 }
 
-void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
+void StringOpDialog::RunStringOperation(uint32 id)
 {
-    // check if valid or separator
-    if (item.GetText(0).Len() == 0)
-        return;
-    uint32 id = static_cast<uint32>(item.GetData(INVALID_CMD_ID));
     if (id < ARRAY_LEN(plugins))
     {
         editor.Set(this->txValue->GetText());
@@ -98,6 +90,8 @@ void StringOpDialog::RunStringOperation(AppCUI::Controls::ListViewItem item)
             return;
         case CMD_ID_RELOAD:
             UpdateValue(false);
+            return;
+        case CMD_ID_SHOW_LINE_NUMBERS:         
             return;
         }
     }
@@ -143,9 +137,9 @@ bool StringOpDialog::OnEvent(Reference<Control> control, Event eventType, int ID
             return true;
         }
         break;
-    case Event::ListViewItemPressed:
-        RunStringOperation(control.ToObjectRef<ListView>()->GetCurrentItem());
-        control->SetFocus();
+    case Event::Command:
+        RunStringOperation(ID);
+        txValue->SetFocus();
         return true;
     case Event::WindowAccept:
         UpdateTokenValue();

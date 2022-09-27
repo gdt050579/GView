@@ -110,7 +110,8 @@ namespace Type
                 Imports,
                 TLS,
                 Symbols,
-                GoInformation
+                GoInformation,
+                OpCodes
             };
         };
         class VersionInformation
@@ -593,6 +594,7 @@ namespace Type
             AM33      = 0x01d3,
             POWERPC   = 0x01F0, // IBM PowerPC Little-Endian
             POWERPCFP = 0x01f1,
+            PPCBE     = 0x01f2, // Xbox 360 (aka Xenon)
             IA64      = 0x0200, // Intel 64
             MIPS16    = 0x0266, // MIPS
             ALPHA64   = 0x0284, // ALPHA64
@@ -667,13 +669,18 @@ namespace Type
             Manifest     = 24
         };
 
-        struct X86_X64_ColorBuffer : public GView::View::BufferViewer::PositionToColorInterface
-        {
-            uint64 memStartOffset, memEndOffset;
-            bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
-        };
+        static constexpr auto INS_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
+        static constexpr auto INS_LCALL_COLOR      = ColorPair{ Color::Red, Color::DarkGreen };
+        static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::White, Color::DarkRed };
+        static constexpr auto INS_LJUMP_COLOR      = ColorPair{ Color::Yellow, Color::DarkRed };
+        static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
+        static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
+        static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
+        static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
 
-        class PEFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+        class PEFile : public TypeInterface,
+                       public GView::View::BufferViewer::OffsetTranslateInterface,
+                       public GView::View::BufferViewer::PositionToColorInterface
         {
           public:
             struct ExportedFunction
@@ -722,15 +729,6 @@ namespace Type
                 uint32 dllIndex;
                 String Name;
             };
-            enum
-            {
-                SHOW_JUMPS  = 1,
-                SHOW_CALLS  = 2,
-                SHOW_FSTART = 4,
-                SHOW_FEND   = 8,
-                SHOW_MZPE   = 16,
-                SHOW_INT3   = 32
-            };
 
             struct SymbolInformation
             {
@@ -771,7 +769,9 @@ namespace Type
             uint32 sectStart, peStart;
             uint64 panelsMask;
 
-            X86_X64_ColorBuffer x86x64ColorBuffer;
+            uint32 showOpcodesMask{ 0 };
+            std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+            GView::Dissasembly::DissasemblerIntel dissasembler{};
 
             bool hdr64;
             bool isMetroApp;
@@ -836,6 +836,9 @@ namespace Type
 
             bool GetResourceImageInformation(const ResourceInformation& r, String& info);
             bool LoadIcon(const ResourceInformation& r, Image& img);
+
+            bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+            bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 
             std::string_view GetTypeName() override
             {
@@ -1095,6 +1098,36 @@ namespace Type
 
               public:
                 GoFunctions(Reference<PEFile> pe, Reference<GView::View::WindowInterface> win);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+
+            class OpCodes : public AppCUI::Controls::TabPage
+            {
+                Reference<PEFile> pe;
+                Reference<Object> object;
+
+                Reference<AppCUI::Controls::Label> value;
+                Reference<AppCUI::Controls::ListView> list;
+                AppCUI::Controls::ListViewItem all;
+                AppCUI::Controls::ListViewItem header;
+                AppCUI::Controls::ListViewItem call;
+                AppCUI::Controls::ListViewItem lcall;
+                AppCUI::Controls::ListViewItem jmp;
+                AppCUI::Controls::ListViewItem ljmp;
+                AppCUI::Controls::ListViewItem bp;
+                AppCUI::Controls::ListViewItem fstart;
+                AppCUI::Controls::ListViewItem fend;
+
+                inline bool AllChecked();
+                inline bool AllUnChecked();
+                inline void SetMaskText();
+                inline void SetConfig(bool checked, uint16 position);
+
+              public:
+                OpCodes(Reference<Object> object, Reference<GView::Type::PE::PEFile> pe);
 
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

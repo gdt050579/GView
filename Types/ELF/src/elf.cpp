@@ -100,6 +100,20 @@ extern "C"
         // translation
         settings.SetOffsetTranslationList({ "VA" }, elf.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
+        // set specific color for opcodes
+        const auto machine = elf->is64 ? elf->header64.e_machine : elf->header32.e_machine;
+        switch (machine)
+        {
+        case ELF::EM_386:
+        case ELF::EM_486:
+        case ELF::EM_860:
+        case ELF::EM_960:
+        case ELF::EM_8051:
+        case ELF::EM_X86_64:
+            settings.SetPositionToColorCallback(elf.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
+            break;
+        };
+
         win->CreateViewer("BufferView", settings);
     }
 
@@ -138,13 +152,19 @@ extern "C"
         {
             win->AddPanel(Pointer<TabPage>(new ELF::Panels::DynamicSymbols(elf, win)), false);
         }
+        if (elf->HasPanel(ELF::Panels::IDs::OpCodes))
+        {
+            win->AddPanel(Pointer<TabPage>(new ELF::Panels::OpCodes(win->GetObject(), elf)), true);
+        }
 
         return true;
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]  = "hex:'7F 45 4C 46'";
-        sect["Priority"] = 1;
+        sect["Pattern"]      = "hex:'7F 45 4C 46'";
+        sect["Priority"]     = 1;
+        sect["Description"]  = "Executable and Linkable Format (for UNIX systems)";
+        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
     }
 }

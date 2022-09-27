@@ -109,6 +109,16 @@ extern "C"
                     i++;
                 }
             }
+
+            // set specific color for opcodes
+            switch (machO->header.cputype)
+            {
+            case MAC::CPU_TYPE_I386:
+            case MAC::CPU_TYPE_X86_64:
+                settings.SetPositionToColorCallback(machO.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
+            default:
+                break;
+            }
         }
         else if (machO->isFat)
         {
@@ -222,6 +232,11 @@ extern "C"
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoFiles(win->GetObject(), machO)), true);
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoFunctions(machO, win)), false);
             }
+
+            if (machO->HasPanel(MachO::Panels::IDs::OpCodes))
+            {
+                win->AddPanel(Pointer<TabPage>(new MachO::Panels::OpCodes(win->GetObject(), machO)), true);
+            }
         }
 
         return true;
@@ -241,7 +256,9 @@ extern "C"
             "hex:'" + BinaryToHexString(FAT_CIGAM_64, sizeof(FAT_CIGAM_64)) + "'"
         };
 
-        sect["Pattern"]  = patterns;
-        sect["Priority"] = 1;
+        sect["Pattern"]      = patterns;
+        sect["Priority"]     = 1;
+        sect["Description"]  = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
+        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
     }
 }

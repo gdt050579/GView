@@ -7,6 +7,7 @@ enum class CommandID
     Help,
     Open,
     Reset,
+    ListTypes,
     UpdateConfig
 };
 
@@ -34,6 +35,7 @@ CommandInfo commands[] = {
     { CommandID::Help, _U(help) },
     { CommandID::Open, _U(open) },
     { CommandID::Reset, _U(reset) },
+    { CommandID::ListTypes, _U(list-types) },
     { CommandID::UpdateConfig, _U(updateconfig) },
 };
 
@@ -56,6 +58,9 @@ Where <command> is on of:
                           adding new plugins (if any). For old plugins new
                           configuration options will be added as well. 
                           Ex: 'GView updateConfig'                  
+
+   list-types             List all available types (as loaded from gview.ini).
+                          Ex: 'GView list-types'        
 )HELP";
 
 void ShowHelp()
@@ -78,6 +83,20 @@ CommandID GetCommandID(T name)
 
     // if nothing is recognize
     return CommandID::Unknown;
+}
+
+bool ListTypes()
+{
+    CHECK(GView::App::Init(), false, "");
+    auto cnt = GView::App::GetTypePluginsCount();
+    std::cout << "Types : " << cnt << std::endl;
+    for (auto index = 0U; index < cnt; index++)
+    {
+        auto name = GView::App::GetTypePluginName(index);
+        auto desc = GView::App::GetTypePluginDescription(index);
+        std::cout << " " << std::left << std:: setw(15) << name << desc << std::endl;
+    }
+    return true;
 }
 
 template <typename T>
@@ -117,6 +136,9 @@ int main(int argc, const char** argv)
         return 0;
     case CommandID::Reset:
         GView::App::ResetConfiguration();
+        return 0;
+    case CommandID::ListTypes:
+        ListTypes();
         return 0;
     case CommandID::Open:
         return ProcessOpenCommand(argc, argv, 2);

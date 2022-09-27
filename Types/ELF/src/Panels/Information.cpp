@@ -73,7 +73,7 @@ void Information::UpdateHeader()
               .SetType(ListViewItem::Type::Emphasized_2);
 
         const auto machineName = ELF::GetNameFromElfMachine(header.e_machine);
-        const auto machineHex  = nf.ToString(header.e_type, hex);
+        const auto machineHex  = nf.ToString(header.e_machine, hex);
         general->AddItem({ "Machine", ls.Format(format.data(), machineName.data(), machineHex.data()) })
               .SetType(ListViewItem::Type::Emphasized_1);
 
@@ -135,7 +135,7 @@ void Information::UpdateHeader()
               .SetType(ListViewItem::Type::Emphasized_2);
 
         const auto machineName = ELF::GetNameFromElfMachine(header.e_machine);
-        const auto machineHex  = nf.ToString(header.e_type, hex);
+        const auto machineHex  = nf.ToString(header.e_machine, hex);
         general->AddItem({ "Machine", ls.Format(format.data(), machineName.data(), machineHex.data()) })
               .SetType(ListViewItem::Type::Emphasized_1);
 

@@ -293,6 +293,7 @@ namespace View
             bool noItemsVisible;
             bool showMetaData;
             bool prettyFormat;
+            bool highlightSimilarTokens;
 
             std::vector<TokenPosition> backupedTokenPositionList;
 
@@ -322,11 +323,13 @@ namespace View
 
             void MakeTokenVisible(uint32 index);
 
-            void MoveToToken(uint32 index, bool selected);
+            void MoveToToken(uint32 index, bool selected, bool makeVisibleIfHidden);
             void MoveLeft(bool selected, bool stopAfterFirst);
             void MoveRight(bool selected, bool stopAfterFirst);
             void MoveUp(uint32 times, bool selected);
             void MoveDown(uint32 times, bool selected);
+            void MoveToNextSimilarToken(int32 direction);
+
             void SetFoldStatus(uint32 index, FoldStatus foldStatus, bool recursive);
             void ExpandAll();
             void FoldAll();
@@ -457,7 +460,7 @@ namespace View
             
             void UpdateValue(bool original);
             void UpdateTokenValue();
-            void RunStringOperation(AppCUI::Controls::ListViewItem item);
+            void RunStringOperation(uint32 commandID);
           public:
             StringOpDialog(TokenObject& tok, const char16* text, Reference<ParseInterface> parser);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;

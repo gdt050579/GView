@@ -41,8 +41,9 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "json" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = "json";
+        sect["Priority"]    = 1;
+        sect["Description"] = "JavaScript Object Notation file format (*.json)";
     }
 }
 

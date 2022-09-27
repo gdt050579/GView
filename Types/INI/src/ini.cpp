@@ -42,8 +42,9 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "ini", "toml" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = { "ini", "toml" };
+        sect["Priority"]    = 1;
+        sect["Description"] = "Initialization file (*.ini, *.toml)";
     }
 }
 

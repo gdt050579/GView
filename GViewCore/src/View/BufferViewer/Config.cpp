@@ -12,6 +12,7 @@ void Config::Update(IniSection sect)
     sect.UpdateValue("Key.ChangeSelectionType", Key::F9, true);
     sect.UpdateValue("Key.ShowHideStrings", Key::F4 | Key::Alt, true);
 }
+
 void Config::Initialize()
 {
     this->Colors.Ascii   = ColorPair{ Color::Red, Color::DarkBlue };
