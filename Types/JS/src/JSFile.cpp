@@ -1152,17 +1152,17 @@ bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicode
     {
         if (index == 0)
         {
-            if (content[index] == '\'')
+            if (content[index] == '`')
             {
                 newContent.Add(content.substr(index - 1, index - preview));
-                newContent.Add("\\\'");
+                newContent.Add("\\'");
                 preview = index + 1;
             }
         }
-        else if (content[index] == '\'' && content[index - 1] != '\\')
+        else if (content[index] == '`' && content[index - 1] != '\\')
         {
             newContent.Add(content.substr(index - 1, index - preview));
-            newContent.Add("\\\'");
+            newContent.Add("\\'");
             preview = index + 1;
         }
     }
@@ -1170,9 +1170,9 @@ bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::Unicode
     {
         newContent.Add(content.substr(preview, content.length() - preview));
     }
-    result.Set("\'");
+    result.Set("`");
     result.Add(newContent);
-    result.Add("\'");
+    result.Add("`");
     return true;
 }
 } // namespace GView::Type::JS
