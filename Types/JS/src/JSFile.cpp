@@ -1145,9 +1145,37 @@ bool JSFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeS
 }
 bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
-    result.Set("\"");
-    result.Add(content);
-    result.Add("\"");
+    UnicodeStringBuilder newContent;
+    int32 preview = 0u;
+    
+    for (auto index = 0u; index < content.length();index++)
+    {
+        if (content[index] == '\"')
+        {
+            newContent.Add(content.substr(index - 1, index - preview));
+            newContent.Add("\\\"");
+            preview = index + 1;
+        }
+        else if (content[index] == '\'')
+        {
+            newContent.Add(content.substr(index - 1, index - preview));
+            newContent.Add("\\\'");
+            preview = index + 1;
+        }
+        else if (content[index] == '`')
+        {
+            newContent.Add(content.substr(index - 1, index - preview));
+            newContent.Add("\`");
+            preview = index + 1;
+        }
+    }
+    if (preview != content.length())
+    {
+        newContent.Add(content.substr(preview, content.length() - preview));
+    }
+    result.Set("\'");
+    result.Add(newContent);
+    result.Add("\'");
     return true;
 }
 } // namespace GView::Type::JS
