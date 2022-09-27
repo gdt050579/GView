@@ -10,6 +10,13 @@ namespace Type
     {
         constexpr uint32 SIZABLE_VALUE = 32;
 
+        enum class BlockType
+        {
+            Block,
+            Expression,
+            Array,
+            None
+        };
         namespace TokenType
         {
             constexpr uint32 None            = 0xFFFFFFFF;
@@ -269,11 +276,14 @@ namespace Type
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             uint32 TokenizeOperator(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
+            uint32 TokenizeList(
+                  const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 idx);
             uint32 TokenizePreprocessDirective(
                   const GView::View::LexicalViewer::TextParser& text,
                   GView::View::LexicalViewer::TokensList& list,
                   GView::View::LexicalViewer::BlocksList& blocks,
                   uint32 pos);
+            BlockType GetBlockTypeWhichContainLastToken(const GView::View::LexicalViewer::TokensList& tokenList);
             void BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax);
             void IndentSimpleInstructions(GView::View::LexicalViewer::TokensList& list);
             void CreateFoldUnfoldLinks(GView::View::LexicalViewer::SyntaxManager& syntax);

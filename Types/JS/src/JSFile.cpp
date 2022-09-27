@@ -547,7 +547,7 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
     if (next - pos > SIZABLE_VALUE)
         flags = flags | TokenFlags::Sizeable;
         */
-    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags |TokenFlags::Sizeable);
+    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags | TokenFlags::Sizeable);
     return next;
 }
 uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -617,24 +617,68 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
     }
 }
 
+BlockType JSFile::GetBlockTypeWhichContainLastToken(const TokensList& tokenList)
+{
+    TokenIndexStack blockToken;
+
+    auto indexArrayBlock      = 0u;
+    auto len                  = tokenList.Len();
+    Token currentToken        = tokenList.GetLastToken();
+    uint32_t currentTokenType = currentToken.GetTypeID(TokenType::None);
+    while (currentTokenType != TokenType::None)
+    {
+        switch (currentTokenType)
+        {
+        case TokenType::BlockClose:
+        case TokenType::ExpressionClose:
+        case TokenType::ArrayClose:
+            blockToken.Push(currentToken.GetIndex());
+            break;
+        case TokenType::BlockOpen:
+        {
+            auto lastBlock = blockToken.Pop();
+            if (lastBlock == Token::INVALID_INDEX)
+                return BlockType::Block;
+            if (tokenList[lastBlock].GetTypeID(TokenType::None) != TokenType::BlockClose)
+                return BlockType::None;
+            break;
+        }
+        case TokenType::ExpressionOpen:
+        {
+            auto lastBlock = blockToken.Pop();
+            if (lastBlock == Token::INVALID_INDEX)
+                return BlockType::Expression;
+            if (tokenList[lastBlock].GetTypeID(TokenType::None) != TokenType::ExpressionClose)
+                return BlockType::None;
+            break;
+        }
+        case TokenType::ArrayOpen:
+        {
+            auto lastBlock = blockToken.Pop();
+            if (lastBlock == Token::INVALID_INDEX)
+                return BlockType::Array;
+            if (tokenList[lastBlock].GetTypeID(TokenType::None) != TokenType::ArrayClose)
+                return BlockType::None;
+            break;
+        }
+        }
+        currentToken     = currentToken.Precedent();
+        currentTokenType = currentToken.GetTypeID(TokenType::None);
+    }
+    return BlockType::None;
+}
+
 uint32 JSFile::TokenizeList(const TextParser& text, TokensList& tokenList, uint32 idx)
 {
     TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
 
     Token token = tokenList.GetLastToken();
-    if (token.Precedent().GetTypeID(TokenType::None) == TokenType::Operator_TWO_POINTS)
+    if (GetBlockTypeWhichContainLastToken(tokenList) == BlockType::Block)
         align |= TokenAlignament::NewLineAfter;
     else
         align |= TokenAlignament::WrapToNextLine;
 
-    tokenList.Add(
-          TokenType::Comma,
-          idx,
-          idx + 1,
-          TokenColor::Operator,
-          TokenDataType::None,
-          align,
-          TokenFlags::DisableSimilaritySearch);
+    tokenList.Add(TokenType::Comma, idx, idx + 1, TokenColor::Operator, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
     idx++;
     return idx;
 }
@@ -1155,14 +1199,15 @@ void JSFile::OperatorAlignament(GView::View::LexicalViewer::TokensList& tokenLis
 }
 bool JSFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
 {
-    return TextParser::ExtractContentFromString(string, result, StringFormat::DoubleQuotes | StringFormat::SingleQuotes| StringFormat::Apostrophe);
+    return TextParser::ExtractContentFromString(
+          string, result, StringFormat::DoubleQuotes | StringFormat::SingleQuotes | StringFormat::Apostrophe);
 }
 bool JSFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
 {
     UnicodeStringBuilder newContent;
     int32 preview = 0u;
-    
-    for (auto index = 0u; index < content.length();index++)
+
+    for (auto index = 0u; index < content.length(); index++)
     {
         if (index == 0)
         {
