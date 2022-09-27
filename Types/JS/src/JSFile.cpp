@@ -616,6 +616,28 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
         return next;
     }
 }
+
+uint32 JSFile::TokenizeList(const TextParser& text, TokensList& tokenList, uint32 idx)
+{
+    TokenAlignament align = TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter;
+
+    Token token = tokenList.GetLastToken();
+    if (token.Precedent().GetTypeID(TokenType::None) == TokenType::Operator_TWO_POINTS)
+        align |= TokenAlignament::NewLineAfter;
+    else
+        align |= TokenAlignament::WrapToNextLine;
+
+    tokenList.Add(
+          TokenType::Comma,
+          idx,
+          idx + 1,
+          TokenColor::Operator,
+          TokenDataType::None,
+          align,
+          TokenFlags::DisableSimilaritySearch);
+    idx++;
+    return idx;
+}
 uint32 JSFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
     auto eol   = text.ParseUntillEndOfLine(pos);
@@ -842,15 +864,7 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             idx = next;
             break;
         case CharType::Comma:
-            tokenList.Add(
-                  TokenType::Comma,
-                  idx,
-                  idx + 1,
-                  TokenColor::Operator,
-                  TokenDataType::None,
-                  TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter | TokenAlignament::WrapToNextLine,
-                  TokenFlags::DisableSimilaritySearch);
-            idx++;
+            idx = TokenizeList(text, tokenList, idx);
             break;
         case CharType::Semicolumn:
             tokenList.Add(
