@@ -23,6 +23,9 @@ class PCAPFile : public TypeInterface
     {
         return "PCAP";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 };
 
 namespace Panels
