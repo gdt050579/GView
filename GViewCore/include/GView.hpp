@@ -34,6 +34,7 @@ struct CORE_EXPORT TypeInterface
     Object* obj;
 
     virtual std::string_view GetTypeName() = 0;
+    virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
     template <typename T>

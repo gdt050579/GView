@@ -10,6 +10,9 @@ class DefaultType : public TypeInterface
     {
         return "GENERIC";
     }
+    void RunCommand(std::string_view commandName) override
+    {
+    }
     ~DefaultType()
     {
     }

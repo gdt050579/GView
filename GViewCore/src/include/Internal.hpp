@@ -496,6 +496,7 @@ namespace App
         Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
+        Reference<Type::Plugin> typePlugin;
         ItemHandle cursorInfoHandle;
         std::unique_ptr<GView::Object> obj;
         unsigned int defaultCursorViewSize;
@@ -509,7 +510,7 @@ namespace App
         void ShowCopyDialog();
 
       public:
-        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);
+        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
 
         void Start();
 
