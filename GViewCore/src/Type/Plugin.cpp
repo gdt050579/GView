@@ -106,6 +106,26 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
         this->extension = EXTENSION_EMPTY_HASH;
     }
 
+    // commands
+    for (auto item: section)
+    {
+        auto entryName = item.GetName();
+        if (String::StartsWith(entryName, "command.",true))
+        {
+            auto key = item.AsKey();
+            if ((key.has_value()) && (entryName.size() > 8 /* size of Command. */))
+            {
+                // we have a valid command and key
+                if (this->commands.size() == 0)
+                    this->commands.reserve(4);
+                auto& cmd = this->commands.emplace_back();
+                cmd.key   = key.value();
+                cmd.name  = entryName;
+            }
+        }
+    }
+        
+
     this->Loaded  = false;
     this->Invalid = false;
 
