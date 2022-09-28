@@ -225,7 +225,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
             horizontalPanels->SetFocus();
             return true;
         }
-        if ((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START+1000))
+        if (((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START + 1000)) && (this->typePlugin.IsValid()))
         {
             this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[ID - CMD_FOR_TYPE_PLUGIN_START].name);
             return true;
@@ -250,11 +250,14 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
     commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
     // add commands from type plugin
-    auto idx = 0;
-    for (auto& cmd : typePlugin->GetCommands())
+    if (this->typePlugin.IsValid())
     {
-        commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
-        idx++;
+        auto idx = 0;
+        for (auto& cmd : typePlugin->GetCommands())
+        {
+            commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
+            idx++;
+        }
     }
     // add all generic plugins
     this->gviewApp->UpdateCommandBar(commandBar);
