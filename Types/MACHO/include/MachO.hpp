@@ -5,7 +5,6 @@
 
 namespace GView::Type::MachO
 {
-
 static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
 static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
 
@@ -181,6 +180,7 @@ class MachOFile : public TypeInterface,
     bool isFat;
     bool shouldSwapEndianess;
     bool is64;
+    bool signatureChecked{ false };
 
     uint64 panelsMask;
     uint32 currentItemIndex;

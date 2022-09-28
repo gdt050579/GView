@@ -1436,17 +1436,16 @@ void MachOFile::RunCommand(std::string_view commandName)
 {
     if (commandName == "DigitalSignature")
     {
-        static bool signatureChecked = false;
-        if (!signatureChecked)
+        if (isFat)
         {
-            if (SetCodeSignature())
-            {
-                signatureChecked = true;
-            }
-            else
-            {
-                codeSignature.reset();
-            }
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "This is a FAT binary! Each item should have its own signature!");
+            return;
+        }
+
+        if (!signatureChecked) // no guarantee that we open the same file bundled into a FAT binary
+        {
+            codeSignature.reset();
+            signatureChecked = SetCodeSignature();
         }
 
         if (codeSignature.has_value())
