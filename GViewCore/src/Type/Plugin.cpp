@@ -120,7 +120,7 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
                     this->commands.reserve(4);
                 auto& cmd = this->commands.emplace_back();
                 cmd.key   = key.value();
-                cmd.name  = entryName;
+                cmd.name  = entryName.substr(8);
             }
         }
     }

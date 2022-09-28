@@ -2226,3 +2226,11 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
 
     return false;
 }
+
+void PEFile::RunCommand(std::string_view commandName)
+{
+    if (commandName == "CheckSignature")
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This need to be implemented !");
+    }
+}

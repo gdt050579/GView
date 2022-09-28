@@ -1,6 +1,7 @@
 #include "pe.hpp"
 
 using namespace AppCUI;
+using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
@@ -240,10 +241,11 @@ UInt16 e_res[4];)");
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]      = "MZ";
-        sect["Priority"]     = 1;
-        sect["Description"]  = "Portable executable format for Windows OS binaries";
-        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Pattern"]                = "MZ";
+        sect["Priority"]               = 1;
+        sect["Description"]            = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"]           = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.CheckSignature"] = Key::F8 | Key::Alt;
     }
 }
 
