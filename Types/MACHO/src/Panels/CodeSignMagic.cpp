@@ -9,10 +9,12 @@ enum class Action : int32
     MoreInfo = 1
 };
 
-CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO) : Window("CodeSignMagic", "d:c", WindowFlags::FixedPosition), machO(_machO)
+CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO)
+    : Window("CodeSignMagic", "x:25%,y:5%,w:50%,h:92%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), machO(_machO)
 {
     machO   = _machO;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:90%", { "n:Key,w:18", "n:Value,w:48" }, ListViewFlags::None);
+    general = Factory::ListView::Create(
+          this, "x:0,y:0,w:100%,h:100%", { "n:Key,w:30%", "n:Value,w:70%" }, ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }
@@ -433,7 +435,7 @@ void CodeSignMagic::UpdateCodeDirectory(
 void CodeSignMagic::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
-    general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
+    // general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
 }
 
 void CodeSignMagic::MoreInfo()
@@ -480,21 +482,23 @@ bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandB
 
 bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    if (evnt == Event::ListViewItemPressed)
+    switch (evnt)
     {
+    case Event::ListViewItemPressed:
         return true;
-    }
-
-    if (evnt == Event::Command)
-    {
+    case Event::WindowClose:
+        return Exit();
+    case Event::Command:
         switch (static_cast<Action>(controlID))
         {
         case Action::MoreInfo:
             MoreInfo();
-            return true;
+            return Exit();
+        default:
+            break;
         }
+    default:
+        return false;
     }
-
-    return false;
 }
 } // namespace GView::Type::MachO::Panels

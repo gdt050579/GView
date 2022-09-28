@@ -1406,6 +1406,7 @@ void MachOFile::RunCommand(std::string_view commandName)
         if (!signatureChecked)
         {
             SetCodeSignature();
+            signatureChecked = true;
         }
 
         if (codeSignature.has_value())
