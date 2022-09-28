@@ -432,12 +432,6 @@ void CodeSignMagic::UpdateCodeDirectory(
     }
 }
 
-void CodeSignMagic::RecomputePanelsPositions()
-{
-    CHECKRET(general.IsValid(), "");
-    // general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
-}
-
 void CodeSignMagic::MoreInfo()
 {
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
@@ -470,7 +464,6 @@ void CodeSignMagic::Update()
     UpdateSuperBlob();
     UpdateSlots();
     UpdateBlobs();
-    RecomputePanelsPositions();
 }
 
 bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

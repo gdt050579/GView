@@ -520,7 +520,6 @@ namespace Panels
 
 namespace Commands
 {
-
     class CodeSignMagic : public AppCUI::Controls::Window
     {
       private:
@@ -546,18 +545,12 @@ namespace Commands
               const std::string& cdHash,
               const std::vector<std::pair<std::string, std::string>>& slotsHashes);
 
-        void RecomputePanelsPositions();
-
         void MoreInfo();
 
       public:
         CodeSignMagic(Reference<MachOFile> machO);
 
         void Update();
-        virtual void OnAfterResize(int newWidth, int newHeight) override
-        {
-            RecomputePanelsPositions();
-        }
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
