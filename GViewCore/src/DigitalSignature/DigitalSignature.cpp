@@ -434,7 +434,11 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                             if (attribute.contentTypeData.Contains("\n"))
                             {
                                 std::string_view subString{ attribute.contentTypeData.GetText(), attribute.contentTypeData.Len() };
-                                subString = { subString.data() + subString.find(startMarker) + startMarker.length(), subString.find('\n') };
+
+                                const auto indexStartMarker = subString.find(startMarker);
+                                const auto indexNewLine     = subString.find('\n', indexStartMarker);
+                                const auto newLength        = indexNewLine - indexStartMarker - startMarker.length();
+                                subString                   = { subString.data() + indexStartMarker + startMarker.length(), newLength };
 
                                 hash.Set(subString.data(), (uint32) subString.length());
                             }
