@@ -390,47 +390,6 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 
-    class CodeSignMagic : public AppCUI::Controls::Window
-    {
-      private:
-        Reference<MachOFile> machO;
-        Reference<GView::View::WindowInterface> win;
-        Reference<AppCUI::Controls::ListView> general;
-
-        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
-        ListViewItem cmsSize;       // MAC CMS signature/digital signature
-        ListViewItem humanReadable; // MAC CMS signature/digital signature
-        ListViewItem PEMs;          // MAC CMS signature/digital signature
-
-        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
-        void UpdateLinkeditDataCommand();
-        void UpdateSuperBlob();
-        void UpdateSlots();
-        void UpdateBlobs();
-        void UpdateCodeDirectory(
-              const MAC::CS_CodeDirectory& code,
-              const std::string& identifier,
-              const std::string& cdHash,
-              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
-
-        void RecomputePanelsPositions();
-
-        void MoreInfo();
-
-      public:
-        CodeSignMagic(Reference<MachOFile> machO);
-
-        void Update();
-        virtual void OnAfterResize(int newWidth, int newHeight) override
-        {
-            RecomputePanelsPositions();
-        }
-        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
-    };
-
     class GoInformation : public TabPage
     {
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
@@ -558,4 +517,49 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
+
+namespace Commands
+{
+
+    class CodeSignMagic : public AppCUI::Controls::Window
+    {
+      private:
+        Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> general;
+
+        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
+        ListViewItem cmsSize;       // MAC CMS signature/digital signature
+        ListViewItem humanReadable; // MAC CMS signature/digital signature
+        ListViewItem PEMs;          // MAC CMS signature/digital signature
+
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        void UpdateLinkeditDataCommand();
+        void UpdateSuperBlob();
+        void UpdateSlots();
+        void UpdateBlobs();
+        void UpdateCodeDirectory(
+              const MAC::CS_CodeDirectory& code,
+              const std::string& identifier,
+              const std::string& cdHash,
+              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
+
+        void RecomputePanelsPositions();
+
+        void MoreInfo();
+
+      public:
+        CodeSignMagic(Reference<MachOFile> machO);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
+        {
+            RecomputePanelsPositions();
+        }
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+} // namespace Commands
 } // namespace GView::Type::MachO

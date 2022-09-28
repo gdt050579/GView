@@ -251,10 +251,10 @@ extern "C"
             "hex:'" + BinaryToHexString(FAT_CIGAM_64, sizeof(FAT_CIGAM_64)) + "'"
         };
 
-        sect["Pattern"]                = patterns;
-        sect["Priority"]               = 1;
-        sect["Description"]            = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
-        sect["OpCodes.Mask"]           = (uint32) GView::Dissasembly::Opcodes::All;
-        sect["Command.CheckSignature"] = AppCUI::Input::Key::Alt | AppCUI::Input::Key::F8;
+        sect["Pattern"]                  = patterns;
+        sect["Priority"]                 = 1;
+        sect["Description"]              = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
+        sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.DigitalSignature"] = AppCUI::Input::Key::Alt | AppCUI::Input::Key::F8;
     }
 }

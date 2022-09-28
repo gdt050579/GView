@@ -1434,7 +1434,7 @@ bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Bu
 
 void MachOFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "CheckSignature")
+    if (commandName == "DigitalSignature")
     {
         static bool signatureChecked = false;
         if (!signatureChecked)
@@ -1451,7 +1451,7 @@ void MachOFile::RunCommand(std::string_view commandName)
 
         if (codeSignature.has_value())
         {
-            MachO::Panels::CodeSignMagic(this).Show();
+            MachO::Commands::CodeSignMagic(this).Show();
         }
         else
         {

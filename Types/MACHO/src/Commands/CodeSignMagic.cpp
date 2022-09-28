@@ -1,6 +1,6 @@
 #include "MachO.hpp"
 
-namespace GView::Type::MachO::Panels
+namespace GView::Type::MachO::Commands
 {
 using namespace AppCUI::Controls;
 
@@ -501,4 +501,4 @@ bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
         return false;
     }
 }
-} // namespace GView::Type::MachO::Panels
+} // namespace GView::Type::MachO::Commands
