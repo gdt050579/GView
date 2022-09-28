@@ -207,9 +207,8 @@ class MachOFile : public TypeInterface,
     {
         return "Mach-O";
     }
-    void RunCommand(std::string_view) override
-    {
-    }
+
+    void RunCommand(std::string_view) override;
 
   public:
     MachOFile(Reference<GView::Utils::DataCache> file);

@@ -1403,4 +1403,12 @@ bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Bu
 
     return false;
 }
+
+void MachOFile::RunCommand(std::string_view commandName)
+{
+    if (commandName == "CheckSignature")
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This need to be implemented !");
+    }
+}
 } // namespace GView::Type::MachO
