@@ -6,16 +6,13 @@ using namespace AppCUI::Controls;
 
 enum class Action : int32
 {
-    GoTo     = 1,
-    Select   = 2,
-    MoreInfo = 3
+    MoreInfo = 1
 };
 
-CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSig&nMagic")
+CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO) : Window("CodeSignMagic", "d:c", WindowFlags::FixedPosition), machO(_machO)
 {
     machO   = _machO;
-    win     = _win;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Key,w:18", "n:Value,w:48" }, ListViewFlags::None);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:90%", { "n:Key,w:18", "n:Value,w:48" }, ListViewFlags::None);
 
     Update();
 }
@@ -439,22 +436,6 @@ void CodeSignMagic::RecomputePanelsPositions()
     general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
 }
 
-void CodeSignMagic::GoToSelectedOffset()
-{
-    CHECKRET(cmsOffset.IsValid(), "");
-    CHECKRET(cmsOffset.IsCurrent(), "");
-
-    win->GetCurrentView()->GoTo(cmsOffset.GetData(0));
-}
-
-void CodeSignMagic::SelectArea()
-{
-    CHECKRET(cmsOffset.IsValid(), "");
-    CHECKRET(cmsOffset.IsCurrent(), "");
-
-    win->GetCurrentView()->Select(cmsOffset.GetData(0), cmsSize.GetData(0));
-}
-
 void CodeSignMagic::MoreInfo()
 {
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
@@ -492,8 +473,6 @@ void CodeSignMagic::Update()
 
 bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
-    commandBar.SetCommand(AppCUI::Input::Key::F9, "Select", static_cast<int32_t>(Action::Select));
     commandBar.SetCommand(AppCUI::Input::Key::Ctrl | AppCUI::Input::Key::Enter, "More Info", static_cast<int32_t>(Action::MoreInfo));
 
     return true;
@@ -501,11 +480,8 @@ bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandB
 
 bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    CHECK(TabPage::OnEvent(ctrl, evnt, controlID) == false, true, "");
-
     if (evnt == Event::ListViewItemPressed)
     {
-        GoToSelectedOffset();
         return true;
     }
 
@@ -513,12 +489,6 @@ bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
     {
         switch (static_cast<Action>(controlID))
         {
-        case Action::GoTo:
-            GoToSelectedOffset();
-            return true;
-        case Action::Select:
-            SelectArea();
-            return true;
         case Action::MoreInfo:
             MoreInfo();
             return true;

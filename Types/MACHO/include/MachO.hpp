@@ -30,9 +30,8 @@ namespace Panels
         DyldInfo      = 0x4,
         Dylib         = 0x5,
         DySymTab      = 0x6,
-        CodeSign      = 0x7,
-        GoInformation = 0x8,
-        OpCodes       = 0x9,
+        GoInformation = 0x7,
+        OpCodes       = 0x8,
     };
 };
 
@@ -391,7 +390,7 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 
-    class CodeSignMagic : public AppCUI::Controls::TabPage
+    class CodeSignMagic : public AppCUI::Controls::Window
     {
       private:
         Reference<MachOFile> machO;
@@ -418,12 +417,10 @@ namespace Panels
 
         void RecomputePanelsPositions();
 
-        void GoToSelectedOffset();
-        void SelectArea();
         void MoreInfo();
 
       public:
-        CodeSignMagic(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
+        CodeSignMagic(Reference<MachOFile> machO);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override

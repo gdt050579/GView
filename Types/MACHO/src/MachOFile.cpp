@@ -28,7 +28,6 @@ bool MachOFile::Update()
         SetSourceVersion();
         SetUUID();
         SetLinkEditData();
-        SetCodeSignature();
         SetVersionMin();
 
         panelsMask |= (1ULL << (uint8) Panels::IDs::LoadCommands);
@@ -52,11 +51,6 @@ bool MachOFile::Update()
         if (dySymTab.has_value())
         {
             panelsMask |= (1ULL << (uint8) Panels::IDs::DySymTab);
-        }
-
-        if (codeSignature.has_value())
-        {
-            panelsMask |= (1ULL << (uint8) Panels::IDs::CodeSign);
         }
 
         if (ParseGoData())
@@ -1408,7 +1402,20 @@ void MachOFile::RunCommand(std::string_view commandName)
 {
     if (commandName == "CheckSignature")
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", "This need to be implemented !");
+        static bool signatureChecked = false;
+        if (!signatureChecked)
+        {
+            SetCodeSignature();
+        }
+
+        if (codeSignature.has_value())
+        {
+            MachO::Panels::CodeSignMagic(this).Show();
+        }
+        else
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Code signature not found!");
+        }
     }
 }
 } // namespace GView::Type::MachO
