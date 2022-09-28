@@ -371,6 +371,10 @@ namespace Type
         {
             return description;
         }
+        inline const std::vector<PluginCommand>& GetCommands() const
+        {
+            return commands;
+        }
     };
 } // namespace Type
 
