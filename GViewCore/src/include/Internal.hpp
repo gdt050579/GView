@@ -426,6 +426,8 @@ namespace App
         bool LoadSettings();
         void OpenFile();
         void ShowErrors();
+
+        Reference<Type::Plugin> IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext); 
         bool Add(
               GView::Object::Type objType,
               std::unique_ptr<AppCUI::OS::DataObject> data,

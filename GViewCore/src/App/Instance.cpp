@@ -152,17 +152,8 @@ bool Instance::Init()
     dsk->Handlers()->OnStart = this;
     return true;
 }
-bool Instance::Add(
-      GView::Object::Type objType,
-      std::unique_ptr<AppCUI::OS::DataObject> data,
-      const AppCUI::Utils::ConstString& name,
-      const AppCUI::Utils::ConstString& path,
-      uint32 PID,
-      std::string_view ext)
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext)
 {
-    GView::Utils::DataCache cache;
-    CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
-
     auto buf  = cache.Get(0, 0x8800, false);
     auto* plg = &this->defaultPlugin;
     // iterate from existing types
@@ -174,6 +165,21 @@ bool Instance::Add(
             break;
         }
     }
+    return plg;
+}
+bool Instance::Add(
+      GView::Object::Type objType,
+      std::unique_ptr<AppCUI::OS::DataObject> data,
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      uint32 PID,
+      std::string_view ext)
+{
+    GView::Utils::DataCache cache;
+    CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
+
+    auto plg = IdentifyTypePlugin(cache,ext);
+
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
     CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
