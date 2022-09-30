@@ -33,6 +33,7 @@ namespace Type
             constexpr uint32 Semicolumn      = 10;
             constexpr uint32 Preprocess      = 11;
             constexpr uint32 Word            = 12;
+            constexpr uint32 RegEx           = 13;
 
             constexpr uint32 Keyword_Clearinterval = 1000;
             constexpr uint32 Keyword_Java          = 1001;
@@ -274,7 +275,9 @@ namespace Type
         {
             uint32 TokenizeWord(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
-            uint32 TokenizeOperator(
+            int32 ParseRegEx(
+                  const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
+			uint32 TokenizeOperator(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             uint32 TokenizeList(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 idx);
