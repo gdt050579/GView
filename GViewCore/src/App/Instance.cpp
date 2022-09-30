@@ -154,8 +154,11 @@ bool Instance::Init()
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext)
 {
-    auto buf  = cache.Get(0, 0x8800, false);
-    auto* plg = &this->defaultPlugin;
+    auto buf    = cache.Get(0, 0x8800, false);
+    auto* plg   = &this->defaultPlugin;
+    auto bomLen = 0U;
+    auto end    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
+
     // iterate from existing types
     for (auto& pType : this->typePlugins)
     {
@@ -178,7 +181,7 @@ bool Instance::Add(
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
-    auto plg = IdentifyTypePlugin(cache,ext);
+    auto plg = IdentifyTypePlugin(cache, ext);
 
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
@@ -207,7 +210,9 @@ bool Instance::AddFolder(const std::filesystem::path& path)
 
     GView::Utils::DataCache cache;
     auto win = std::make_unique<FileWindow>(
-          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this, nullptr);
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0),
+          this,
+          nullptr);
 
     // instantiate window
     while (true)
