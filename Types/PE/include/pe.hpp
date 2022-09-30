@@ -844,6 +844,7 @@ namespace Type
             {
                 return "PE";
             }
+            void RunCommand(std::string_view) override;
 
             static std::string_view ResourceIDToName(ResourceType resType);
             static std::string_view LanguageIDToName(uint32 langID);

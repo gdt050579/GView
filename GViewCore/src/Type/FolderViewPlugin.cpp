@@ -41,6 +41,9 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     {
         return "Folder";
     }
+    void RunCommand(std::string_view commandName) override
+    {
+    }
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;

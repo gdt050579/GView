@@ -27,6 +27,9 @@ class JOBFile : public TypeInterface
     {
         return "JOB";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 };
 
 namespace Panels

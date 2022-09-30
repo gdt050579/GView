@@ -135,7 +135,7 @@ namespace Utils
             if (text == nullptr)
                 return UnicodeString();
             auto* tmp = new char16[size];
-            memcpy(tmp, text, this->size*sizeof(char16));
+            memcpy(tmp, text, this->size * sizeof(char16));
             return UnicodeString(tmp, size, size);
         }
         inline void Destroy()
@@ -240,6 +240,7 @@ namespace Utils
             uint8 internalBuffer[16];
 
             BufferView ToUTF8(char16 ch);
+
           public:
             inline BufferView Encode(char16 ch, Encoding encoding)
             {
@@ -327,10 +328,17 @@ namespace Type
         }
     };
 
+    struct PluginCommand
+    {
+        FixSizeString<25> name;
+        Input::Key key;
+    };
+
     class Plugin
     {
         SimplePattern pattern;
         std::vector<SimplePattern> patterns;
+        std::vector<PluginCommand> commands;
         uint64 extension;
         std::set<uint64> extensions;
         FixSizeString<27> name;
@@ -362,6 +370,10 @@ namespace Type
         inline std::string_view GetDescription() const
         {
             return description;
+        }
+        inline const std::vector<PluginCommand>& GetCommands() const
+        {
+            return commands;
         }
     };
 } // namespace Type
@@ -484,6 +496,7 @@ namespace App
         Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
+        Reference<Type::Plugin> typePlugin;
         ItemHandle cursorInfoHandle;
         std::unique_ptr<GView::Object> obj;
         unsigned int defaultCursorViewSize;
@@ -497,7 +510,7 @@ namespace App
         void ShowCopyDialog();
 
       public:
-        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);
+        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
 
         void Start();
 

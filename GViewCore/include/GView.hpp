@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.230.0"
+#define GVIEW_VERSION "0.232.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -34,6 +34,7 @@ struct CORE_EXPORT TypeInterface
     Object* obj;
 
     virtual std::string_view GetTypeName() = 0;
+    virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
     template <typename T>

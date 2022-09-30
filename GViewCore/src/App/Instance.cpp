@@ -178,7 +178,8 @@ bool Instance::Add(
     auto contentType = plg->CreateInstance();
     CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
-    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this);
+    auto win =
+          std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this, plg);
 
     // instantiate window
     while (true)
@@ -200,7 +201,7 @@ bool Instance::AddFolder(const std::filesystem::path& path)
 
     GView::Utils::DataCache cache;
     auto win = std::make_unique<FileWindow>(
-          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this);
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this, nullptr);
 
     // instantiate window
     while (true)

@@ -78,6 +78,9 @@ class PrefetchFile : public TypeInterface
     {
         return "Prefetch";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 
   private:
     bool SetFilename();

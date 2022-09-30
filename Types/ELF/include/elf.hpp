@@ -108,6 +108,9 @@ class ELFFile : public TypeInterface,
     {
         return "ELF";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 };
 
 namespace Panels

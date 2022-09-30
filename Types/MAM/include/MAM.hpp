@@ -22,6 +22,9 @@ class MAMFile : public TypeInterface
     {
         return "MAM";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 };
 
 namespace Panels
