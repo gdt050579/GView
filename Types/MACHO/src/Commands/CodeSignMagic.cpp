@@ -113,7 +113,11 @@ void CodeSignMagic::UpdateBlobs()
         {
             const auto& code = machO->codeSignature->codeDirectory;
             UpdateCodeDirectory(
-                  code, machO->codeSignature->cdHash, machO->codeSignature->codeDirectoryIdentifier, machO->codeSignature->cdSlotsHashes);
+                  code,
+                  machO->codeSignature->cdHash,
+                  machO->codeSignature->codeDirectoryIdentifier,
+                  machO->codeSignature->cdSlotsHashes,
+                  machO->codeSignature->specialSlotsHashes);
         }
         break;
         case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
@@ -177,9 +181,10 @@ void CodeSignMagic::UpdateBlobs()
             const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
             UpdateCodeDirectory(
                   code,
-                  machO->codeSignature->acdHashes[alternateDirectoryCount],
-                  machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
-                  machO->codeSignature->acdSlotsHashes[alternateDirectoryCount]);
+                  machO->codeSignature->acdHashes.at(alternateDirectoryCount),
+                  machO->codeSignature->alternateDirectoriesIdentifiers.at(alternateDirectoryCount),
+                  machO->codeSignature->acdSlotsHashes.at(alternateDirectoryCount),
+                  machO->codeSignature->alternateSpecialSlotsHashes.at(alternateDirectoryCount));
             alternateDirectoryCount++;
         }
         break;
@@ -223,7 +228,8 @@ void CodeSignMagic::UpdateCodeDirectory(
       const MAC::CS_CodeDirectory& code,
       const std::string& cdHash,
       const std::string& identifier,
-      const std::vector<std::pair<std::string, std::string>>& slotsHashes)
+      const std::vector<MachO::MachOFile::HashPair>& slotsHashes,
+      const std::map<MAC::CodeSignMagic, MachO::MachOFile::HashPair>& specialSlotsHashes)
 {
     LocalString<1024> ls;
     NumericFormatter nf;
@@ -319,6 +325,29 @@ void CodeSignMagic::UpdateCodeDirectory(
     const auto hexSpecialSlots = nf2.ToString(code.nSpecialSlots, hex);
     general->AddItem({ "Special Slots", ls.Format("%-26s (%s)", nSpecialSlots.data(), hexSpecialSlots.data()) });
 
+    for (auto it = specialSlotsHashes.rbegin(); it != specialSlotsHashes.rend(); it++)
+    {
+        const auto& [slot, value]     = *it;
+        const auto& [found, computed] = value;
+
+        const auto& magic = MAC::CodeSignSlotNames.at(slot).data();
+        if (found == computed)
+        {
+            general->AddItem({ "", ls.Format("Slot #(-%u) %-26s %s", slot, magic, found.c_str()) })
+                  .SetType(ListViewItem::Type::Emphasized_2);
+        }
+        else if (found.starts_with('0') && computed.empty())
+        {
+            general->AddItem({ "", ls.Format("Slot #(-%u) %-26s Not bound!", slot, magic) })
+                  .SetType(ListViewItem::Type::WarningInformation);
+        }
+        else
+        {
+            general->AddItem({ "", ls.Format("Slot #(-%u) %-26s %s != %s", slot, magic, found.c_str(), computed.c_str()) })
+                  .SetType(ListViewItem::Type::ErrorInformation);
+        }
+    }
+
     const auto nCodeSlots   = nf.ToString(code.nCodeSlots, dec);
     const auto hexCodeSlots = nf2.ToString(code.nCodeSlots, hex);
     general->AddItem({ "Code Slots", ls.Format("%-26s (%s)", nCodeSlots.data(), hexCodeSlots.data()) });
@@ -334,7 +363,7 @@ void CodeSignMagic::UpdateCodeDirectory(
             }
             else
             {
-                auto hash = general->AddItem({ "", ls.Format("Slot #(%u) %s (%s)", i, found.c_str(), computed.c_str()) });
+                auto hash = general->AddItem({ "", ls.Format("Slot #(%u) %s != %s", i, found.c_str(), computed.c_str()) });
                 hash.SetType(ListViewItem::Type::ErrorInformation);
             }
             i++;

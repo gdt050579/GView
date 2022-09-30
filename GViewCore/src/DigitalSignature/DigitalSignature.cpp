@@ -336,6 +336,11 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         {
             throw std::runtime_error("Unable to parse this number of signers!");
         }
+        if (signer.count == ERR_SIGNER)
+        {
+            continue;
+        }
+
         for (int32 j = 0; j < signer.count; j++)
         {
             X509_ATTRIBUTE* attr = CMS_signed_get_attr(si, j); // no need to free (pointer from CMS structure)

@@ -115,6 +115,12 @@ class MachOFile : public TypeInterface,
         std::vector<MyNList> objects;
     };
 
+    struct HashPair
+    {
+        std::string found;
+        std::string computed;
+    };
+
     struct CodeSignature
     {
         MAC::linkedit_data_command ledc;
@@ -123,11 +129,11 @@ class MachOFile : public TypeInterface,
         MAC::CS_CodeDirectory codeDirectory;
         std::string codeDirectoryIdentifier;
         std::string cdHash;
-        std::vector<std::pair<std::string, std::string>> cdSlotsHashes; // per normal slots
+        std::vector<HashPair> cdSlotsHashes; // per normal slots
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
         std::vector<std::string> alternateDirectoriesIdentifiers;
         std::vector<std::string> acdHashes;
-        std::vector<std::vector<std::pair<std::string, std::string>>> acdSlotsHashes; // per normal slots
+        std::vector<std::vector<HashPair>> acdSlotsHashes; // per normal slots
 
         struct
         {
@@ -156,6 +162,9 @@ class MachOFile : public TypeInterface,
             bool errorSig = false;
             DigitalSignature::Signature sig;
         } signature;
+
+        std::map<MAC::CodeSignMagic, HashPair> specialSlotsHashes{};
+        std::vector<std::map<MAC::CodeSignMagic, HashPair>> alternateSpecialSlotsHashes{};
     };
 
   public:
@@ -543,7 +552,8 @@ namespace Commands
               const MAC::CS_CodeDirectory& code,
               const std::string& identifier,
               const std::string& cdHash,
-              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
+              const std::vector<MachO::MachOFile::HashPair>& slotsHashes,
+              const std::map<MAC::CodeSignMagic, MachO::MachOFile::HashPair>& specialSlotsHashes);
 
         void MoreInfo();
 
