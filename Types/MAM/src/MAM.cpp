@@ -57,9 +57,10 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]   = "hex:'4D 41 4D 04'";
-        sect["Extension"] = "pf";
-        sect["Priority"]  = 1;
-        sect["Description"] = "PF file format (*.pf)";
+        sect["Pattern"]            = "hex:'4D 41 4D 04'";
+        sect["Extension"]          = "pf";
+        sect["Priority"]           = 1;
+        sect["Description"]        = "PF file format (*.pf)";
+        sect["Command.Decompress"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
     }
 }
