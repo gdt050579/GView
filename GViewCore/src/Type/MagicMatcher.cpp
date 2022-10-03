@@ -32,6 +32,8 @@ bool MagicMatcher::Init(std::string_view text)
     {
         while ((p < e) && (hexCharTypes[*p] == SEP))
             p++;
+        if (p >= e)
+            break;
         CHECK(p + 2 <= e, false, "");
         auto v1 = hexCharTypes[*p];
         auto v2 = hexCharTypes[p[1]];
@@ -39,9 +41,10 @@ bool MagicMatcher::Init(std::string_view text)
         this->u8[count++] = (v1 << 4) | v2;
         if (count >= ARRAY_LEN(this->u8))
             break;
+        p += 2;
     }
     // all good
-    return true;
+    return count>0;
 }
 bool MagicMatcher::Match(AppCUI::Utils::BufferView buf, std::u16string_view text)
 {

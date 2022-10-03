@@ -163,14 +163,14 @@ bool Plugin::Validate(BufferView buf, std::string_view extension)
     {
         if (this->pattern)
         {
-            matched = this->pattern->Match(buf, nullptr);
+            matched = this->pattern->Match(buf, u"");
         }
     }
     else
     {
         for (auto& p : this->patterns)
         {
-            if ((matched = p->Match(buf, nullptr)) == true)
+            if ((matched = p->Match(buf, u"")) == true)
                 break;
         }
     }
