@@ -221,11 +221,6 @@ extern "C"
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::SymTab(machO, win)), false);
             }
 
-            if (machO->HasPanel(MachO::Panels::IDs::CodeSign))
-            {
-                win->AddPanel(Pointer<TabPage>(new MachO::Panels::CodeSignMagic(machO, win)), true);
-            }
-
             if (machO->HasPanel(MachO::Panels::IDs::GoInformation))
             {
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoInformation(win->GetObject(), machO)), true);
@@ -256,9 +251,10 @@ extern "C"
             "magic:" + BinaryToHexString(FAT_CIGAM_64, sizeof(FAT_CIGAM_64))
         };
 
-        sect["Pattern"]      = patterns;
-        sect["Priority"]     = 1;
-        sect["Description"]  = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
-        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Pattern"]                  = patterns;
+        sect["Priority"]                 = 1;
+        sect["Description"]              = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
+        sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.DigitalSignature"] = AppCUI::Input::Key::Alt | AppCUI::Input::Key::F8;
     }
 }

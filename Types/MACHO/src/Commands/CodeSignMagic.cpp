@@ -1,21 +1,20 @@
 #include "MachO.hpp"
 
-namespace GView::Type::MachO::Panels
+namespace GView::Type::MachO::Commands
 {
 using namespace AppCUI::Controls;
 
 enum class Action : int32
 {
-    GoTo     = 1,
-    Select   = 2,
-    MoreInfo = 3
+    MoreInfo = 1
 };
 
-CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO, Reference<GView::View::WindowInterface> _win) : TabPage("CodeSig&nMagic")
+CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO)
+    : Window("CodeSignMagic", "x:25%,y:5%,w:50%,h:92%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), machO(_machO)
 {
     machO   = _machO;
-    win     = _win;
-    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:10", { "n:Key,w:18", "n:Value,w:48" }, ListViewFlags::None);
+    general = Factory::ListView::Create(
+          this, "x:0,y:0,w:100%,h:100%", { "n:Key,w:30%", "n:Value,w:70%" }, ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }
@@ -114,7 +113,11 @@ void CodeSignMagic::UpdateBlobs()
         {
             const auto& code = machO->codeSignature->codeDirectory;
             UpdateCodeDirectory(
-                  code, machO->codeSignature->cdHash, machO->codeSignature->codeDirectoryIdentifier, machO->codeSignature->cdSlotsHashes);
+                  code,
+                  machO->codeSignature->cdHash,
+                  machO->codeSignature->codeDirectoryIdentifier,
+                  machO->codeSignature->cdSlotsHashes,
+                  machO->codeSignature->specialSlotsHashes);
         }
         break;
         case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
@@ -178,9 +181,10 @@ void CodeSignMagic::UpdateBlobs()
             const auto& code = machO->codeSignature->alternateDirectories[alternateDirectoryCount];
             UpdateCodeDirectory(
                   code,
-                  machO->codeSignature->acdHashes[alternateDirectoryCount],
-                  machO->codeSignature->alternateDirectoriesIdentifiers[alternateDirectoryCount],
-                  machO->codeSignature->acdSlotsHashes[alternateDirectoryCount]);
+                  machO->codeSignature->acdHashes.at(alternateDirectoryCount),
+                  machO->codeSignature->alternateDirectoriesIdentifiers.at(alternateDirectoryCount),
+                  machO->codeSignature->acdSlotsHashes.at(alternateDirectoryCount),
+                  machO->codeSignature->alternateSpecialSlotsHashes.at(alternateDirectoryCount));
             alternateDirectoryCount++;
         }
         break;
@@ -224,7 +228,8 @@ void CodeSignMagic::UpdateCodeDirectory(
       const MAC::CS_CodeDirectory& code,
       const std::string& cdHash,
       const std::string& identifier,
-      const std::vector<std::pair<std::string, std::string>>& slotsHashes)
+      const std::vector<MachO::MachOFile::HashPair>& slotsHashes,
+      const std::map<MAC::CodeSignMagic, MachO::MachOFile::HashPair>& specialSlotsHashes)
 {
     LocalString<1024> ls;
     NumericFormatter nf;
@@ -320,6 +325,29 @@ void CodeSignMagic::UpdateCodeDirectory(
     const auto hexSpecialSlots = nf2.ToString(code.nSpecialSlots, hex);
     general->AddItem({ "Special Slots", ls.Format("%-26s (%s)", nSpecialSlots.data(), hexSpecialSlots.data()) });
 
+    for (auto it = specialSlotsHashes.rbegin(); it != specialSlotsHashes.rend(); it++)
+    {
+        const auto& [slot, value]     = *it;
+        const auto& [found, computed] = value;
+
+        const auto& magic = MAC::CodeSignSlotNames.at(slot).data();
+        if (found == computed)
+        {
+            general->AddItem({ "", ls.Format("Slot #(-%u) %-26s %s", slot, magic, found.c_str()) })
+                  .SetType(ListViewItem::Type::Emphasized_2);
+        }
+        else if (found.starts_with('0') && computed.empty())
+        {
+            general->AddItem({ "", ls.Format("Slot #(-%u) %-26s Not bound!", slot, magic) })
+                  .SetType(ListViewItem::Type::WarningInformation);
+        }
+        else
+        {
+            general->AddItem({ "", ls.Format("Slot #(-%u) %-26s %s != %s", slot, magic, found.c_str(), computed.c_str()) })
+                  .SetType(ListViewItem::Type::ErrorInformation);
+        }
+    }
+
     const auto nCodeSlots   = nf.ToString(code.nCodeSlots, dec);
     const auto hexCodeSlots = nf2.ToString(code.nCodeSlots, hex);
     general->AddItem({ "Code Slots", ls.Format("%-26s (%s)", nCodeSlots.data(), hexCodeSlots.data()) });
@@ -335,7 +363,7 @@ void CodeSignMagic::UpdateCodeDirectory(
             }
             else
             {
-                auto hash = general->AddItem({ "", ls.Format("Slot #(%u) %s (%s)", i, found.c_str(), computed.c_str()) });
+                auto hash = general->AddItem({ "", ls.Format("Slot #(%u) %s != %s", i, found.c_str(), computed.c_str()) });
                 hash.SetType(ListViewItem::Type::ErrorInformation);
             }
             i++;
@@ -433,28 +461,6 @@ void CodeSignMagic::UpdateCodeDirectory(
     }
 }
 
-void CodeSignMagic::RecomputePanelsPositions()
-{
-    CHECKRET(general.IsValid(), "");
-    general->Resize(GetWidth(), std::min<>(static_cast<int>(general->GetItemsCount() + 3), GetHeight()));
-}
-
-void CodeSignMagic::GoToSelectedOffset()
-{
-    CHECKRET(cmsOffset.IsValid(), "");
-    CHECKRET(cmsOffset.IsCurrent(), "");
-
-    win->GetCurrentView()->GoTo(cmsOffset.GetData(0));
-}
-
-void CodeSignMagic::SelectArea()
-{
-    CHECKRET(cmsOffset.IsValid(), "");
-    CHECKRET(cmsOffset.IsCurrent(), "");
-
-    win->GetCurrentView()->Select(cmsOffset.GetData(0), cmsSize.GetData(0));
-}
-
 void CodeSignMagic::MoreInfo()
 {
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
@@ -487,13 +493,10 @@ void CodeSignMagic::Update()
     UpdateSuperBlob();
     UpdateSlots();
     UpdateBlobs();
-    RecomputePanelsPositions();
 }
 
 bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::Enter, "GoTo", static_cast<int32_t>(Action::GoTo));
-    commandBar.SetCommand(AppCUI::Input::Key::F9, "Select", static_cast<int32_t>(Action::Select));
     commandBar.SetCommand(AppCUI::Input::Key::Ctrl | AppCUI::Input::Key::Enter, "More Info", static_cast<int32_t>(Action::MoreInfo));
 
     return true;
@@ -501,30 +504,23 @@ bool CodeSignMagic::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandB
 
 bool CodeSignMagic::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
 {
-    CHECK(TabPage::OnEvent(ctrl, evnt, controlID) == false, true, "");
-
-    if (evnt == Event::ListViewItemPressed)
+    switch (evnt)
     {
-        GoToSelectedOffset();
+    case Event::ListViewItemPressed:
         return true;
-    }
-
-    if (evnt == Event::Command)
-    {
+    case Event::WindowClose:
+        return Exit();
+    case Event::Command:
         switch (static_cast<Action>(controlID))
         {
-        case Action::GoTo:
-            GoToSelectedOffset();
-            return true;
-        case Action::Select:
-            SelectArea();
-            return true;
         case Action::MoreInfo:
             MoreInfo();
-            return true;
+            return Exit();
+        default:
+            break;
         }
+    default:
+        return false;
     }
-
-    return false;
 }
-} // namespace GView::Type::MachO::Panels
+} // namespace GView::Type::MachO::Commands
