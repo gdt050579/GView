@@ -191,7 +191,7 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = "hex:'00 00 00 00 00 00 00 00'";
+        sect["Pattern"]     = "magic:00 00 00 00 00 00 00 00";
         sect["Extension"]   = "iso";
         sect["Priority"]    = 1;
         sect["Description"] = "Optical disk image (*.iso)";
