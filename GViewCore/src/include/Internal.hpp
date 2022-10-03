@@ -336,8 +336,8 @@ namespace Type
 
     class Plugin
     {
-        SimplePattern pattern;
-        std::vector<SimplePattern> patterns;
+        Matcher::Interface* pattern;
+        std::vector<Matcher::Interface*> patterns;
         std::vector<PluginCommand> commands;
         uint64 extension;
         std::set<uint64> extensions;

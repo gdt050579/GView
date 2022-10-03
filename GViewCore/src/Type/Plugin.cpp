@@ -31,10 +31,11 @@ uint64 ExtensionToHash(std::string_view ext)
 
 Plugin::Plugin()
 {
-    this->extension  = EXTENSION_EMPTY_HASH;
-    this->Loaded     = false;
-    this->Invalid    = false;
-    this->priority   = 0;
+    this->extension = EXTENSION_EMPTY_HASH;
+    this->Loaded    = false;
+    this->Invalid   = false;
+    this->priority  = 0;
+    this->pattern   = nullptr;
     // functions
     this->fnValidate       = nullptr;
     this->fnCreateInstance = nullptr;
@@ -63,23 +64,24 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
     this->priority = std::max<>(section.GetValue("Priority").ToUInt32(0xFFFF), 0xFFFFU);
 
     // patterns
-    auto MatchOffset  = section.GetValue("MatchOffset").ToUInt32(0);
     auto PatternValue = section.GetValue("Pattern");
     if (PatternValue.HasValue())
     {
         if (PatternValue.IsArray())
         {
             auto count = PatternValue.GetArrayCount();
+            this->patterns.reserve(count + 1);
             for (uint32 index = 0; index < count; index++)
             {
-                SimplePattern sp;
-                CHECK(sp.Init(PatternValue[index].ToStringView(), MatchOffset), false, "Invalid patern !");
-                this->patterns.push_back(sp);
+                Matcher::Interface* p = Matcher::CreateFromString(PatternValue[index].ToStringView());
+                CHECK(p, false, "Invalid pattern !");
+                this->patterns.push_back(p);
             }
         }
         else
         {
-            CHECK(this->pattern.Init(PatternValue.ToStringView(), MatchOffset), false, "Invalid pattern !");
+            this->pattern = Matcher::CreateFromString(PatternValue.ToStringView());
+            CHECK(this->pattern, false, "Invalid pattern !");
         }
     }
 
@@ -107,10 +109,10 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
     }
 
     // commands
-    for (auto item: section)
+    for (auto item : section)
     {
         auto entryName = item.GetName();
-        if (String::StartsWith(entryName, "command.",true))
+        if (String::StartsWith(entryName, "command.", true))
         {
             auto key = item.AsKey();
             if ((key.has_value()) && (entryName.size() > 8 /* size of Command. */))
@@ -124,7 +126,6 @@ bool Plugin::Init(AppCUI::Utils::IniSection section)
             }
         }
     }
-        
 
     this->Loaded  = false;
     this->Invalid = false;
@@ -160,16 +161,16 @@ bool Plugin::Validate(BufferView buf, std::string_view extension)
     // check if matches any of the existing patterns
     if (this->patterns.empty())
     {
-        if (this->pattern.Empty() == false)
+        if (this->pattern)
         {
-            matched = this->pattern.Match(buf);
+            matched = this->pattern->Match(buf, nullptr);
         }
     }
     else
     {
         for (auto& p : this->patterns)
         {
-            if ((matched = p.Match(buf)) == true)
+            if ((matched = p->Match(buf, nullptr)) == true)
                 break;
         }
     }
