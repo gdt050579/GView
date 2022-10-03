@@ -320,13 +320,23 @@ namespace Type
         };
         class MagicMatcher : public Interface
         {
+            union
+            {
+                uint8 u8[16];
+                uint16 u16[8];
+                uint32 u32[4];
+                uint64 u64[2];
+            };
+            uint8 count;
           public:
+            MagicMatcher() : count(0)
+            {
+            }
             virtual bool Init(std::string_view text) override;
             virtual bool Match(AppCUI::Utils::BufferView buf, std::u16string_view text) override;
         };
         Interface* CreateFromString(std::string_view stringRepresentation);
     } // namespace Matcher
-
 
     struct PluginCommand
     {
@@ -427,7 +437,7 @@ namespace App
         void OpenFile();
         void ShowErrors();
 
-        Reference<Type::Plugin> IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext); 
+        Reference<Type::Plugin> IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext);
         bool Add(
               GView::Object::Type objType,
               std::unique_ptr<AppCUI::OS::DataObject> data,
