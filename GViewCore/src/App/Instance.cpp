@@ -157,7 +157,9 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(GView::Utils::DataCa
     auto buf    = cache.Get(0, 0x8800, false);
     auto* plg   = &this->defaultPlugin;
     auto bomLen = 0U;
-    auto end    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
+    auto enc    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
+    auto text   = enc != GView::Utils::CharacterEncoding::Encoding::Binary ? GView::Utils::CharacterEncoding::ConvertToUnicode16(buf)
+                                                                           : GView::Utils::UnicodeString();
 
     // iterate from existing types
     for (auto& pType : this->typePlugins)

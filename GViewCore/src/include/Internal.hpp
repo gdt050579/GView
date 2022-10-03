@@ -311,22 +311,22 @@ namespace Type
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace FolderViewPlugin
 
-    constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
-    class SimplePattern
+    namespace Matcher
     {
-        unsigned char CharactersToMatch[MAX_PATTERN_VALUES];
-        unsigned char Count;
-        unsigned short Offset;
-
-      public:
-        SimplePattern();
-        bool Init(std::string_view text, unsigned int ofs);
-        bool Match(AppCUI::Utils::BufferView buf) const;
-        inline bool Empty() const
+        struct Interface
         {
-            return Count == 0;
-        }
-    };
+            virtual bool Init(std::string_view text)                                    = 0;
+            virtual bool Match(AppCUI::Utils::BufferView buf, std::u16string_view text) = 0;
+        };
+        class MagicMatcher : public Interface
+        {
+          public:
+            virtual bool Init(std::string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, std::u16string_view text) override;
+        };
+        Interface* CreateFromString(std::string_view stringRepresentation);
+    } // namespace Matcher
+
 
     struct PluginCommand
     {
