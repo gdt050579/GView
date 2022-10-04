@@ -155,6 +155,8 @@ bool Plugin::LoadPlugin()
 }
 bool Plugin::MatchExtension(uint64 extensionHash)
 {
+    if (this->Invalid)
+        return false;
     if ((this->extension == EXTENSION_EMPTY_HASH) || (this->extensions.empty()))
         return false;
     if (this->extensions.empty())
@@ -164,6 +166,8 @@ bool Plugin::MatchExtension(uint64 extensionHash)
 }
 bool Plugin::MatchContent(AppCUI::Utils::BufferView buf)
 {
+    if (this->Invalid)
+        return false;
     if (this->patterns.empty())
     {
         if (this->pattern)
@@ -181,7 +185,20 @@ bool Plugin::MatchContent(AppCUI::Utils::BufferView buf)
     }
     return false;
 }
-
+bool Plugin::IsOfType(AppCUI::Utils::BufferView buf)
+{
+    if (this->Invalid)
+        return false;
+    if (!this->Loaded)
+    {
+        this->Invalid = !LoadPlugin();
+        this->Loaded  = !this->Invalid;
+        if (this->Invalid)
+            return false; // something went wrong when loading he plugin
+    }
+    // all good -> code is loaded
+    return fnValidate(buf, "");
+}
 bool Plugin::Validate(BufferView buf, std::string_view extension)
 {
     if (this->Invalid)

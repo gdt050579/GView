@@ -368,6 +368,7 @@ namespace Type
         void Init();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf);
+        bool IsOfType(AppCUI::Utils::BufferView buf);
         bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance() const;
