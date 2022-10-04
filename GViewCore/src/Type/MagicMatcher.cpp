@@ -46,7 +46,7 @@ bool MagicMatcher::Init(std::string_view text)
     // all good
     return count>0;
 }
-bool MagicMatcher::Match(AppCUI::Utils::BufferView buf, std::u16string_view text)
+bool MagicMatcher::Match(AppCUI::Utils::BufferView buf, TextParser& )
 {
     const auto* p = buf.GetData();
     CHECK(buf.GetLength() >= count, false, "");

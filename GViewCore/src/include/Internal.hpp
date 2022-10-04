@@ -313,10 +313,25 @@ namespace Type
 
     namespace Matcher
     {
+        class TextParser
+        {
+            struct
+            {
+                const char16* text;
+                uint32 size;
+            } Raw;
+            struct
+            {
+                const char16* text;
+                uint32 size;
+            } Text;           
+          public:
+            TextParser(const char16* text, uint32 size);
+        };
         struct Interface
         {
             virtual bool Init(std::string_view text)                                    = 0;
-            virtual bool Match(AppCUI::Utils::BufferView buf, std::u16string_view text) = 0;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) = 0;
         };
         class MagicMatcher : public Interface
         {
@@ -333,7 +348,7 @@ namespace Type
             {
             }
             virtual bool Init(std::string_view text) override;
-            virtual bool Match(AppCUI::Utils::BufferView buf, std::u16string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
         };
         Interface* CreateFromString(std::string_view stringRepresentation);
     } // namespace Matcher
@@ -367,7 +382,7 @@ namespace Type
         bool Init(AppCUI::Utils::IniSection section);
         void Init();
         bool MatchExtension(uint64 extensionHash);
-        bool MatchContent(AppCUI::Utils::BufferView buf);
+        bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
         bool IsOfType(AppCUI::Utils::BufferView buf);
         bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;

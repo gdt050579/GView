@@ -164,7 +164,7 @@ bool Plugin::MatchExtension(uint64 extensionHash)
     else
         return this->extensions.contains(extensionHash);
 }
-bool Plugin::MatchContent(AppCUI::Utils::BufferView buf)
+bool Plugin::MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser)
 {
     if (this->Invalid)
         return false;
@@ -172,14 +172,14 @@ bool Plugin::MatchContent(AppCUI::Utils::BufferView buf)
     {
         if (this->pattern)
         {
-            return this->pattern->Match(buf, u"");
+            return this->pattern->Match(buf, textParser);
         }
     }
     else
     {
         for (auto& p : this->patterns)
         {
-            if (p->Match(buf, u""))
+            if (p->Match(buf, textParser))
                 return true;
         }
     }
@@ -205,18 +205,19 @@ bool Plugin::Validate(BufferView buf, std::string_view extension)
         return false; // a load in memory attempt was tryed and failed
     bool matched = false;
     // check if matches any of the existing patterns
+    Matcher::TextParser tempTXT(nullptr, 0);
     if (this->patterns.empty())
     {
         if (this->pattern)
         {
-            matched = this->pattern->Match(buf, u"");
+            matched = this->pattern->Match(buf, tempTXT);
         }
     }
     else
     {
         for (auto& p : this->patterns)
         {
-            if ((matched = p->Match(buf, u"")) == true)
+            if ((matched = p->Match(buf, tempTXT)) == true)
                 break;
         }
     }
