@@ -42,7 +42,7 @@ extern "C"
     {
         sect["Extension"]   = { "cpp", "c", "h", "hpp" };
         sect["Priority"]    = 1;
-        sect["Pattern"]     = { "starstwith:#include" };
+        sect["Pattern"]     = { "startswith:#include" };
         sect["Description"] = "C/C++ language file (*.h, *.hpp, *.c, *.cpp)";
     }
 }
