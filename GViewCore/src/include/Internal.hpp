@@ -327,6 +327,14 @@ namespace Type
             } Text;           
           public:
             TextParser(const char16* text, uint32 size);
+            inline const char16* GetText() const
+            {
+                return Text.text;
+            }
+            inline uint32 GetTextLength() const
+            {
+                return Text.size;
+            }
         };
         struct Interface
         {
@@ -347,6 +355,13 @@ namespace Type
             MagicMatcher() : count(0)
             {
             }
+            virtual bool Init(std::string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
+        };
+        class StartsWithMatcher : public Interface
+        {
+            FixSizeString<61> value;
+          public:
             virtual bool Init(std::string_view text) override;
             virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
         };

@@ -3,6 +3,7 @@ target_sources(GViewCore PRIVATE
 	Plugin.cpp 
 	Matcher.cpp 
         MagicMatcher.cpp
+	StartsWithMatcher.cpp
 	TextParser.cpp
 	FolderViewPlugin.cpp)
 
