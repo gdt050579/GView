@@ -418,6 +418,8 @@ namespace Type
         {
             return commands;
         }
+
+        static uint64 ExtensionToHash(std::string_view ext);
     };
 } // namespace Type
 
