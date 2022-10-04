@@ -106,7 +106,7 @@ int ProcessOpenCommand(int argc, T argv, int start)
 
     while (start < argc)
     {
-        GView::App::OpenFile(argv[start]);
+        GView::App::OpenFile(argv[start], GView::App::OpenMethod::FirstMatch);
         start++;
     }
 

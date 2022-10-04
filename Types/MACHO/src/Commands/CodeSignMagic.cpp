@@ -467,7 +467,8 @@ void CodeSignMagic::MoreInfo()
     {
         GView::App::OpenBuffer(
               BufferView{ machO->codeSignature->signature.humanReadable.GetText(), machO->codeSignature->signature.humanReadable.Len() },
-              "Digital Signature - CMS human readable");
+              "Digital Signature - CMS human readable",
+              GView::App::OpenMethod::BestMatch);
     }
 
     if (PEMs.IsValid() && PEMs.IsCurrent())
@@ -481,7 +482,8 @@ void CodeSignMagic::MoreInfo()
             input += "\n";
         }
 
-        GView::App::OpenBuffer(BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates");
+        GView::App::OpenBuffer(
+              BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates", GView::App::OpenMethod::BestMatch);
     }
 }
 

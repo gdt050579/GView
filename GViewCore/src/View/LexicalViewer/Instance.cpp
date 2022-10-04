@@ -1409,7 +1409,7 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         // Buffer build --> open
         LocalString<128> tmpName;
 
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start));
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start),GView::App::OpenMethod::BestMatch);
     }
     else
     {
@@ -1955,7 +1955,7 @@ void Instance::ShowSaveAsDialog()
     AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
     if (dlg.ShouldOpenANewWindow())
     {
-        GView::App::OpenFile(tmpPath);
+        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch);
     }
 }
 std::string_view Instance::GetName()

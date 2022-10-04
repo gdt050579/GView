@@ -43,7 +43,7 @@ bool MAMFile::Decompress()
 
     CHECK(GView::Compression::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
 
-    GView::App::OpenBuffer(uncompressed, obj->GetName());
+    GView::App::OpenBuffer(uncompressed, obj->GetName(), GView::App::OpenMethod::BestMatch);
 
     return true;
 }

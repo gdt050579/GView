@@ -71,7 +71,7 @@ void TOCEntries::OpenCurrentEntry()
     Buffer bufferDecompressed{};
     CHECKRET(ZLIB::Decompress(bufferCompressed, bufferCompressed.GetLength(), bufferDecompressed, entry->uncmprsdDataSize), "");
 
-    GView::App::OpenBuffer(BufferView{ bufferDecompressed }, entry->name);
+    GView::App::OpenBuffer(BufferView{ bufferDecompressed }, entry->name, GView::App::OpenMethod::BestMatch);
 }
 
 void TOCEntries::Update()

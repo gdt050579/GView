@@ -324,7 +324,8 @@ namespace Type
             {
                 const char16* text;
                 uint32 size;
-            } Text;           
+            } Text;
+
           public:
             TextParser(const char16* text, uint32 size);
             inline const char16* GetText() const
@@ -338,7 +339,7 @@ namespace Type
         };
         struct Interface
         {
-            virtual bool Init(std::string_view text)                                    = 0;
+            virtual bool Init(std::string_view text)                            = 0;
             virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) = 0;
         };
         class MagicMatcher : public Interface
@@ -351,6 +352,7 @@ namespace Type
                 uint64 u64[2];
             };
             uint8 count;
+
           public:
             MagicMatcher() : count(0)
             {
@@ -361,6 +363,7 @@ namespace Type
         class StartsWithMatcher : public Interface
         {
             FixSizeString<61> value;
+
           public:
             virtual bool Init(std::string_view text) override;
             virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
@@ -479,14 +482,16 @@ namespace App
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
               uint32 PID,
-              std::string_view ext);
+              std::string_view ext,
+              OpenMethod method,
+              std::string_view typeName);
         bool AddFolder(const std::filesystem::path& path);
 
       public:
         Instance();
         bool Init();
-        bool AddFileWindow(const std::filesystem::path& path);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension);
+        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, OpenMethod method, string_view typeName);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters

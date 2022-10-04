@@ -178,7 +178,9 @@ bool Instance::Add(
       const AppCUI::Utils::ConstString& name,
       const AppCUI::Utils::ConstString& path,
       uint32 PID,
-      std::string_view ext)
+      std::string_view ext,
+      OpenMethod method,
+      std::string_view typeName)
 {
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
@@ -237,7 +239,7 @@ void Instance::ShowErrors()
     err.Show();
     errList.Clear();
 }
-bool Instance::AddFileWindow(const std::filesystem::path& path)
+bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName)
 {
     try
     {
@@ -253,7 +255,15 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
                 errList.AddError("Fail to open file: %s", path.u8string().c_str());
                 RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
             }
-            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
+            return Add(
+                  Object::Type::File,
+                  std::move(f),
+                  path.filename().u16string(),
+                  path.u16string(),
+                  0,
+                  path.extension().string(),
+                  method,
+                  typeName);
         }
     }
     catch (std::filesystem::filesystem_error /* e */)
@@ -262,7 +272,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
 }
-bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension)
+bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, OpenMethod method, string_view typeName)
 {
     auto f = std::make_unique<AppCUI::OS::MemoryFile>();
     if (f->Create(buf.GetData(), buf.GetLength()) == false)
@@ -270,14 +280,14 @@ bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_v
         errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
         RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
     }
-    return Add(Object::Type::MemoryBuffer, std::move(f), name, "", 0, typeExtension);
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, "", 0, "", method, typeName);
 }
 void Instance::OpenFile()
 {
     auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", ".");
     if (res.has_value())
     {
-        if (AddFileWindow(res.value()) == false)
+        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
             ShowErrors();
     }
 }
