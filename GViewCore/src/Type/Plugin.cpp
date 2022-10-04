@@ -153,6 +153,35 @@ bool Plugin::LoadPlugin()
 
     return true;
 }
+bool Plugin::MatchExtension(uint64 extensionHash)
+{
+    if ((this->extension == EXTENSION_EMPTY_HASH) || (this->extensions.empty()))
+        return false;
+    if (this->extensions.empty())
+        return extensionHash == this->extension;
+    else
+        return this->extensions.contains(extensionHash);
+}
+bool Plugin::MatchContent(AppCUI::Utils::BufferView buf)
+{
+    if (this->patterns.empty())
+    {
+        if (this->pattern)
+        {
+            return this->pattern->Match(buf, u"");
+        }
+    }
+    else
+    {
+        for (auto& p : this->patterns)
+        {
+            if (p->Match(buf, u""))
+                return true;
+        }
+    }
+    return false;
+}
+
 bool Plugin::Validate(BufferView buf, std::string_view extension)
 {
     if (this->Invalid)
