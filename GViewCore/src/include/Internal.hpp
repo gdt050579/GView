@@ -477,6 +477,10 @@ namespace App
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+        Reference<Type::Plugin> IdentifyTypePlugin_Select(
+              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+        Reference<Type::Plugin> IdentifyTypePlugin_WithSelectedType(
+              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash, std::string_view typeName);
         Reference<Type::Plugin> IdentifyTypePlugin(
               GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName);
         bool Add(
