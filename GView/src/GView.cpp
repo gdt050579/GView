@@ -23,20 +23,20 @@ struct CommandInfo
 
 // clang-format off
 #ifdef BUILD_FOR_WINDOWS
-#    define _U(x) (u#x)
+#    define _U(x) (u##x)
 #    define _CHAR16_FROM_WCHAR(x) ((char16*)x)
 #else
-#    define _U(x) (#x)
+#    define _U(x) (##x)
 #    define _CHAR16_FROM_WCHAR(x) (x)
 #endif
 // clang-format on
 
 CommandInfo commands[] = {
-    { CommandID::Help, _U(help) },
-    { CommandID::Open, _U(open) },
-    { CommandID::Reset, _U(reset) },
-    { CommandID::ListTypes, _U(list - types) },
-    { CommandID::UpdateConfig, _U(updateconfig) },
+    { CommandID::Help, _U("help") },
+    { CommandID::Open, _U("open") },
+    { CommandID::Reset, _U("reset") },
+    { CommandID::ListTypes, _U("list-types") },
+    { CommandID::UpdateConfig, _U("updateconfig") },
 };
 
 std::string_view help = R"HELP(
@@ -112,7 +112,7 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex)
     auto method = GView::App::OpenMethod::FirstMatch;
 
     // check options
-    for (;start<argc;start++)
+    for (; start < argc; start++)
     {
         if (argv[start][0] == '-')
         {
