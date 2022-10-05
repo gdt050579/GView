@@ -152,26 +152,63 @@ bool Instance::Init()
     dsk->Handlers()->OnStart = this;
     return true;
 }
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
+      AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
+{
+    // check for extension first
+    if (extensionHash != 0)
+    {
+        for (auto& pType : this->typePlugins)
+        {
+            if (pType.MatchExtension(extensionHash))
+            {
+                if (pType.IsOfType(buf, textParser))
+                    return &pType;
+            }
+        }
+    }
+
+    // check the content
+    for (auto& pType : this->typePlugins)
+    {
+        if (pType.MatchContent(buf,textParser))
+        {
+            if (pType.IsOfType(buf, textParser))
+                return &pType;
+        }
+    }
+
+    // nothing matched => return the default plugin
+    return &this->defaultPlugin;
+}
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
       GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName)
 {
     auto buf    = cache.Get(0, 0x8800, false);
-    auto* plg   = &this->defaultPlugin;
     auto bomLen = 0U;
     auto enc    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
     auto text   = enc != GView::Utils::CharacterEncoding::Encoding::Binary ? GView::Utils::CharacterEncoding::ConvertToUnicode16(buf)
                                                                            : GView::Utils::UnicodeString();
+    auto tp     = GView::Type::Matcher::TextParser(text.text, text.size);
 
-    // iterate from existing types
-    for (auto& pType : this->typePlugins)
+    switch (method)
     {
-        if (pType.Validate(buf, ext))
-        {
-            plg = &pType;
-            break;
-        }
+    case OpenMethod::FirstMatch:
+        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
+    case OpenMethod::BestMatch:
+        //GDT: use FirstMath for the moment
+        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
+    case OpenMethod::Select:
+        // GDT: use FirstMath for the moment
+        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
+    case OpenMethod::ForceType:
+        // GDT: use FirstMath for the moment
+        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
     }
-    return plg;
+    
+    // for other methods --> return the default plugin
+    return &this->defaultPlugin;
+
 }
 bool Instance::Add(
       GView::Object::Type objType,

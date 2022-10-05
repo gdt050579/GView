@@ -207,7 +207,7 @@ bool Plugin::MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& te
     }
     return false;
 }
-bool Plugin::IsOfType(AppCUI::Utils::BufferView buf)
+bool Plugin::IsOfType(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser)
 {
     if (this->Invalid)
         return false;
@@ -221,49 +221,7 @@ bool Plugin::IsOfType(AppCUI::Utils::BufferView buf)
     // all good -> code is loaded
     return fnValidate(buf, "");
 }
-bool Plugin::Validate(BufferView buf, std::string_view extension)
-{
-    if (this->Invalid)
-        return false; // a load in memory attempt was tryed and failed
-    bool matched = false;
-    // check if matches any of the existing patterns
-    Matcher::TextParser tempTXT(nullptr, 0);
-    if (this->patterns.empty())
-    {
-        if (this->pattern)
-        {
-            matched = this->pattern->Match(buf, tempTXT);
-        }
-    }
-    else
-    {
-        for (auto& p : this->patterns)
-        {
-            if ((matched = p->Match(buf, tempTXT)) == true)
-                break;
-        }
-    }
-    if ((!matched) && ((this->extension != EXTENSION_EMPTY_HASH) || (!this->extensions.empty())))
-    {
-        auto hash = ExtensionToHash(extension);
-        if (this->extensions.empty())
-            matched = hash == this->extension;
-        else
-            matched = this->extensions.contains(hash);
-    }
-    // if initial prefilter was not matched --> exit
-    if (!matched)
-        return false;
-    if (!this->Loaded)
-    {
-        this->Invalid = !LoadPlugin();
-        this->Loaded  = !this->Invalid;
-        if (this->Invalid)
-            return false; // something went wrong when loading he plugin
-    }
-    // all good -> code is loaded
-    return fnValidate(buf, extension);
-}
+
 bool Plugin::PopulateWindow(Reference<GView::View::WindowInterface> win) const
 {
     CHECK(!this->Invalid, false, "Invalid plugin (not loaded properly or no valid exports)");

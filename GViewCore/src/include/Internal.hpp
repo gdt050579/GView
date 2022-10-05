@@ -401,8 +401,7 @@ namespace Type
         void Init();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
-        bool IsOfType(AppCUI::Utils::BufferView buf);
-        bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
+        bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance() const;
         inline bool operator<(const Plugin& plugin) const
@@ -476,6 +475,8 @@ namespace App
         void OpenFile();
         void ShowErrors();
 
+        Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
+              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin(
               GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName);
         bool Add(
