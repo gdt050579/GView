@@ -35,12 +35,12 @@ CommandInfo commands[] = {
     { CommandID::Help, _U(help) },
     { CommandID::Open, _U(open) },
     { CommandID::Reset, _U(reset) },
-    { CommandID::ListTypes, _U(list-types) },
+    { CommandID::ListTypes, _U(list - types) },
     { CommandID::UpdateConfig, _U(updateconfig) },
 };
 
 std::string_view help = R"HELP(
-Use: GView <command> <options> [File|Files|Folder]
+Use: GView <command> [File|Files|Folder] <options> 
 Where <command> is on of:
    help                   Shows this help
                           Ex: 'GView help'
@@ -60,7 +60,10 @@ Where <command> is on of:
                           Ex: 'GView updateConfig'                  
 
    list-types             List all available types (as loaded from gview.ini).
-                          Ex: 'GView list-types'        
+                          Ex: 'GView list-types' 
+And <options> are:
+   -type:<type>           Specify the type of the file (if knwon)
+                          Ex: 'GView open a.temp -type:PE'     
 )HELP";
 
 void ShowHelp()
@@ -94,19 +97,50 @@ bool ListTypes()
     {
         auto name = GView::App::GetTypePluginName(index);
         auto desc = GView::App::GetTypePluginDescription(index);
-        std::cout << " " << std::left << std:: setw(15) << name << desc << std::endl;
+        std::cout << " " << std::left << std::setw(15) << name << desc << std::endl;
     }
     return true;
 }
 
 template <typename T>
-int ProcessOpenCommand(int argc, T argv, int start)
+int ProcessOpenCommand(int argc, T** argv, int startIndex)
 {
     CHECK(GView::App::Init(), 1, "");
+    auto start = startIndex;
+    LocalString<128> tempString;
+    LocalString<16> type;
+    auto method = GView::App::OpenMethod::FirstMatch;
 
+    // check options
+    for (;start<argc;start++)
+    {
+        if (argv[start][0] == '-')
+        {
+            // options are always in ASCII format
+            tempString.Clear();
+            const T* p = argv[start];
+            while ((*p))
+            {
+                tempString.AddChar(static_cast<char>(*p));
+                p++;
+            }
+            if (tempString.StartsWith("-type:", true))
+            {
+                method = GView::App::OpenMethod::ForceType;
+                type.Set(tempString.ToStringView().substr(6));
+                continue;
+            }
+            std::cout << "Unknwon option: " << tempString.ToStringView() << std::endl;
+            std::cout << "Type 'GView help' for a detailed list of available options" << std::endl;
+            return 1;
+        }
+    }
+    start = startIndex;
     while (start < argc)
     {
-        GView::App::OpenFile(argv[start], GView::App::OpenMethod::FirstMatch);
+        // skip options
+        if (argv[start][0] != '-')
+            GView::App::OpenFile(argv[start], method, type.ToStringView());
         start++;
     }
 
