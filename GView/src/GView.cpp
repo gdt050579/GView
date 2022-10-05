@@ -124,10 +124,10 @@ int ProcessOpenCommand(int argc, T** argv, int startIndex)
                 tempString.AddChar(static_cast<char>(*p));
                 p++;
             }
-            if (tempString.StartsWith("-type:", true))
+            if (tempString.StartsWith("--type:", true))
             {
                 method = GView::App::OpenMethod::ForceType;
-                type.Set(tempString.ToStringView().substr(6));
+                type.Set(tempString.ToStringView().substr(7));
                 continue;
             }
             std::cout << "Unknwon option: " << tempString.ToStringView() << std::endl;
