@@ -28,6 +28,28 @@ uint64 Plugin::ExtensionToHash(std::string_view ext)
     }
     return hash;
 }
+uint64 Plugin::ExtensionToHash(std::u16string_view ext)
+{
+    // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+    if (ext.empty())
+        return 0;
+    auto* s = (const uint16*) ext.data();
+    auto* e = s + ext.size();
+    if ((*s) == '.')
+        s++;
+    uint64 hash = EXTENSION_EMPTY_HASH;
+    while (s < e)
+    {
+        uint8 c = static_cast<uint8>((*s) & 0xFF);
+        if ((c >= 'A') && (c <= 'Z'))
+            c |= 0x20;
+
+        hash = hash ^ c;
+        hash = hash * 0x00000100000001B3ULL;
+        s++;
+    }
+    return hash;
+}
 
 Plugin::Plugin()
 {

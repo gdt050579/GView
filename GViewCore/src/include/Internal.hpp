@@ -423,6 +423,7 @@ namespace Type
         }
 
         static uint64 ExtensionToHash(std::string_view ext);
+        static uint64 ExtensionToHash(std::u16string_view ext);
     };
 } // namespace Type
 
@@ -475,14 +476,14 @@ namespace App
         void OpenFile();
         void ShowErrors();
 
-        Reference<Type::Plugin> IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext);
+        Reference<Type::Plugin> IdentifyTypePlugin(
+              GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName);
         bool Add(
               GView::Object::Type objType,
               std::unique_ptr<AppCUI::OS::DataObject> data,
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
               uint32 PID,
-              std::string_view ext,
               OpenMethod method,
               std::string_view typeName);
         bool AddFolder(const std::filesystem::path& path);
@@ -491,7 +492,7 @@ namespace App
         Instance();
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, OpenMethod method, string_view typeName);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters

@@ -135,7 +135,12 @@ void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, 
 void GView::App::OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name, method, typeName);
+        gviewAppInstance->AddBufferWindow(buf, name, "",  method, typeName);
+}
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName)
+{
+    if (gviewAppInstance)
+        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)

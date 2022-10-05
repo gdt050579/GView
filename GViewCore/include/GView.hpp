@@ -33,7 +33,7 @@ struct CORE_EXPORT TypeInterface
 {
     Object* obj;
 
-    virtual std::string_view GetTypeName() = 0;
+    virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
@@ -544,7 +544,7 @@ namespace Dissasembly
       public:
         bool Init(bool isx64, bool isLittleEndian);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
-        bool IsCallInstruction(const Instruction& instruction) const ;
+        bool IsCallInstruction(const Instruction& instruction) const;
         bool IsLCallInstruction(const Instruction& instruction) const;
         bool IsJmpInstruction(const Instruction& instruction) const;
         bool IsLJmpInstruction(const Instruction& instruction) const;
@@ -1261,6 +1261,8 @@ namespace App
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
     void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT
+    OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

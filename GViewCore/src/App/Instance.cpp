@@ -152,7 +152,8 @@ bool Instance::Init()
     dsk->Handlers()->OnStart = this;
     return true;
 }
-Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(GView::Utils::DataCache& cache, std::string_view ext)
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
+      GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName)
 {
     auto buf    = cache.Get(0, 0x8800, false);
     auto* plg   = &this->defaultPlugin;
@@ -178,14 +179,21 @@ bool Instance::Add(
       const AppCUI::Utils::ConstString& name,
       const AppCUI::Utils::ConstString& path,
       uint32 PID,
-      std::string_view ext,
       OpenMethod method,
       std::string_view typeName)
 {
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
-    auto plg = IdentifyTypePlugin(cache, ext);
+    // extract extension
+    LocalUnicodeStringBuilder<256> temp;
+    CHECK(temp.Set(path), false, "Fail to get path object");
+    // search for the last "."
+    auto pos     = temp.ToStringView().find_last_of('.');
+    auto extHash = pos != u16string_view::npos ? GView::Type::Plugin::ExtensionToHash(temp.ToStringView().substr(pos))
+                                               : GView::Type::Plugin::ExtensionToHash("");
+
+    auto plg = IdentifyTypePlugin(cache, extHash, method, typeName);
 
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
@@ -255,15 +263,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod metho
                 errList.AddError("Fail to open file: %s", path.u8string().c_str());
                 RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
             }
-            return Add(
-                  Object::Type::File,
-                  std::move(f),
-                  path.filename().u16string(),
-                  path.u16string(),
-                  0,
-                  path.extension().string(),
-                  method,
-                  typeName);
+            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName);
         }
     }
     catch (std::filesystem::filesystem_error /* e */)
@@ -272,7 +272,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod metho
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
 }
-bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, OpenMethod method, string_view typeName)
+bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName)
 {
     auto f = std::make_unique<AppCUI::OS::MemoryFile>();
     if (f->Create(buf.GetData(), buf.GetLength()) == false)
@@ -280,7 +280,7 @@ bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, OpenMeth
         errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
         RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
     }
-    return Add(Object::Type::MemoryBuffer, std::move(f), name, "", 0, "", method, typeName);
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName);
 }
 void Instance::OpenFile()
 {
