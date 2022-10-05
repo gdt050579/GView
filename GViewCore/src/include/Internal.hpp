@@ -544,6 +544,13 @@ namespace App
         std::string_view GetTypePluginDescription(uint32 index);
     };
 
+    class SelectTypeDialog : public Window
+    {
+      public:
+        SelectTypeDialog(const std::vector<GView::Type::Plugin>& typePlugins);
+        bool OnEvent(Reference<Control>, Event eventType, int) override;
+    };
+
     class FileWindowProperties : public Window
     {
       public:

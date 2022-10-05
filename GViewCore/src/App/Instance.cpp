@@ -196,8 +196,10 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
       AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
 {
+    SelectTypeDialog dlg(this->typePlugins);
+    dlg.Show();
     // GDT: for the moment a default implementation
-    return IdentifyTypePlugin_FirstMatch(buf, textParser, extensionHash);
+    return &this->defaultPlugin;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
       AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
