@@ -26,7 +26,7 @@ struct CommandInfo
 #    define _U(x) (u##x)
 #    define _CHAR16_FROM_WCHAR(x) ((char16*)x)
 #else
-#    define _U(x) (##x)
+#    define _U(x) (x)
 #    define _CHAR16_FROM_WCHAR(x) (x)
 #endif
 // clang-format on
