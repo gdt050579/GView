@@ -179,7 +179,7 @@ bool Plugin::MatchExtension(uint64 extensionHash)
 {
     if (this->Invalid)
         return false;
-    if ((this->extension == EXTENSION_EMPTY_HASH) || (this->extensions.empty()))
+    if ((this->extension == EXTENSION_EMPTY_HASH) && (this->extensions.empty()))
         return false;
     if (this->extensions.empty())
         return extensionHash == this->extension;
