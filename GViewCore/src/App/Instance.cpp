@@ -228,6 +228,46 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
     // nothing matched => return the default plugin
     return &this->defaultPlugin;
 }
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
+      AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
+{
+    auto plg   = &this->defaultPlugin;
+    auto count = 0;
+    if (extensionHash != 0)
+    {
+        for (auto& pType : this->typePlugins)
+        {
+            if (pType.MatchExtension(extensionHash))
+            {
+                if (pType.IsOfType(buf, textParser))
+                {
+                    count++;
+                    plg = &pType;
+                    if (count > 1) // at least two options
+                        return IdentifyTypePlugin_Select(buf, textParser, extensionHash);
+                }
+            }
+        }
+    }
+
+    // check the content
+    for (auto& pType : this->typePlugins)
+    {
+        if (pType.MatchContent(buf, textParser))
+        {
+            if (pType.IsOfType(buf, textParser))
+            {
+                count++;
+                plg = &pType;
+                if (count > 1) // at least two options
+                    return IdentifyTypePlugin_Select(buf, textParser, extensionHash);
+            }
+        }
+    }
+
+    // nothing matched => return the default plugin
+    return plg;
+}
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
       GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName)
 {
@@ -243,8 +283,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
     case OpenMethod::FirstMatch:
         return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
     case OpenMethod::BestMatch:
-        // GDT: use FirstMath for the moment
-        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
+        return IdentifyTypePlugin_BestMatch(buf, tp, extensionHash);
     case OpenMethod::Select:
         return IdentifyTypePlugin_Select(buf, tp, extensionHash);
     case OpenMethod::ForceType:

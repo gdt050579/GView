@@ -477,6 +477,8 @@ namespace App
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+        Reference<Type::Plugin> IdentifyTypePlugin_BestMatch(
+              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_Select(
               AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_WithSelectedType(
