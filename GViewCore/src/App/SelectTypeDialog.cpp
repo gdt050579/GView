@@ -125,7 +125,7 @@ SelectTypeDialog::SelectTypeDialog(
 
     canvas = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
 
-    PaintBuffer();
+    PaintHex();
 
     LocalString<128> tmp;
 
@@ -227,7 +227,8 @@ void SelectTypeDialog::PaintHex()
 
     LocalString<128> tmp;
     AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::DOS_437);
-    c->Resize(74, std::max<>(18u, static_cast<uint32>((buf.GetLength() >> 4))), '*', cfg->Text.Normal);
+    c->Resize(74, std::max<>(18u, static_cast<uint32>((buf.GetLength() >> 4))), ' ', cfg->Text.Normal);
+    c->Clear(' ', cfg->Text.Normal);
     while (s < e)
     {
         if (x == 0)
@@ -261,6 +262,7 @@ void SelectTypeDialog::PaintBuffer()
     AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::DOS_437);
     // c->Clear(' ', cfg->Text.Normal);
     c->Resize(74, std::max<>(18u, static_cast<uint32>((1+buf.GetLength()/74))), ' ', cfg->Text.Normal);
+    c->Clear(' ', cfg->Text.Normal);
     while (s < e)
     {
         auto ch = cp[*s];
