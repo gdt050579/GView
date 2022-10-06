@@ -547,7 +547,11 @@ namespace App
     class SelectTypeDialog : public Window
     {
       public:
-        SelectTypeDialog(const std::vector<GView::Type::Plugin>& typePlugins);
+        SelectTypeDialog(
+              std::vector<GView::Type::Plugin>& typePlugins,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
     };
 
