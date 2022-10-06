@@ -77,73 +77,176 @@ class PluginsThatMatches
     }
     inline bool IsMatchByExtension(uint32 index) const
     {
-        return (bitmapExtension[index / 8] & (1<<(index & 7U))) != 0;
+        return (bitmapExtension[index / 8] & (1 << (index & 7U))) != 0;
     }
     inline bool IsMatchByContent(uint32 index) const
     {
-        return (bitmapContent[index / 8] & (1<<(index & 7U))) != 0;
+        return (bitmapContent[index / 8] & (1 << (index & 7U))) != 0;
     }
     inline uint32 GetTypePluginsCount() const
     {
         return countTypePlugins;
     }
 };
-
+std::string_view BuildTypeName(String& output, GView::Type::Plugin& plg)
+{
+    output.Set(plg.GetName());
+    output.AddChars(' ', 12);
+    output.Truncate(12);
+    output.Add(": ");
+    output.Add(plg.GetDescription());
+    return output.ToStringView();
+}
 SelectTypeDialog::SelectTypeDialog(
       std::vector<GView::Type::Plugin>& typePlugins,
-      AppCUI::Utils::BufferView buf,
-      GView::Type::Matcher::TextParser& textParser,
+      AppCUI::Utils::BufferView _buf,
+      GView::Type::Matcher::TextParser& _textParser,
       uint64 extensionHash)
-    : Window("Select type", "d:c,w:80,h:24", WindowFlags::ProcessReturn)
+    : Window("Select type", "d:c,w:80,h:24", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser)
 {
     PluginsThatMatches pm(typePlugins, buf, textParser, extensionHash);
-    auto lstView = Factory::ListView::Create(this, "x:1,y:1,w:40,h:18", { "n:Name,w:7,a:l", "n:Description,w:100,a:l" },ListViewFlags::SearchMode|ListViewFlags::HideColumns);
+
+    auto lbType = Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
+    auto lbName = Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
+    auto lbPath = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
+    auto cbType = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
+    auto txName = Factory::TextField::Create(this, "", "l:12,t:3,r:1", TextFieldFlags::Readonly);
+
+    // auto rbHexView    = Factory::RadioBox::Create(this, "&Hex", "x:1,y:7,w:10", 123);
+    // auto rbBufferView = Factory::RadioBox::Create(this, "&Buffer", "x:1,y:8,w:10", 123);
+    // auto rbTextView   = Factory::RadioBox::Create(this, "&Text", "x:1,y:9,w:10", 123);
+
+    canvas = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
+
+    PaintHex();
+
+    LocalString<128> tmp;
+
     if (pm.HasExtesionMatches())
     {
-        lstView->AddItem("Matched by extension").SetType(ListViewItem::Type::Category);
+        cbType->AddSeparator("Matched by extension");
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
             if (pm.IsMatchByExtension(idx))
             {
-                auto& plg = typePlugins[idx];
-                auto item = lstView->AddItem(plg.GetName());
-                item.SetText(1, plg.GetDescription());
-                item.SetType(ListViewItem::Type::Highlighted);
-                item.SetData(static_cast<uint64>(idx));
+                auto item = cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]));
             }
         }
     }
     if (pm.HasContentMatches())
     {
-        lstView->AddItem("Matched by content").SetType(ListViewItem::Type::Category);
+        cbType->AddSeparator("Matched by content");
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
             if (pm.IsMatchByContent(idx))
             {
-                auto& plg = typePlugins[idx];
-                auto item = lstView->AddItem(plg.GetName());
-                item.SetText(1, plg.GetDescription());
-                item.SetType(ListViewItem::Type::Emphasized_1);
-                item.SetData(static_cast<uint64>(idx));
+                auto item = cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]));
             }
         }
     }
     if (pm.HasNoMatches())
     {
-        lstView->AddItem("Not matched").SetType(ListViewItem::Type::Category);
+        cbType->AddSeparator("Not matched");
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
             if ((pm.IsMatchByContent(idx) == false) && (pm.IsMatchByExtension(idx) == false))
             {
-                auto& plg = typePlugins[idx];
-                auto item = lstView->AddItem(plg.GetName());
-                item.SetText(1, plg.GetDescription());
-                item.SetType(ListViewItem::Type::GrayedOut);
-                item.SetData(static_cast<uint64>(idx));
+                auto item = cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]));
             }
         }
     }
-    lstView->SetCurrentItem(lstView->GetItem(1));
+
+    // auto sp      = Factory::Splitter::Create(this, "l:0,t:7,r:0,b:3", SplitterFlags::Vertical);
+    // auto lstView = Factory::ListView::Create(
+    //       sp, "d:c", { "n:Name,w:7,a:l", "n:Description,w:100,a:l" }, ListViewFlags::SearchMode | ListViewFlags::HideColumns);
+    // auto tab = Factory::Tab::Create(sp, "d:c");
+    // auto pgHex = Factory::TabPage::Create(tab, "&Hex view");
+    // sp->SetFirstPanelSize(40);
+    // if (pm.HasExtesionMatches())
+    //{
+    //     lstView->AddItem("Matched by extension").SetType(ListViewItem::Type::Category);
+    //     for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
+    //     {
+    //         if (pm.IsMatchByExtension(idx))
+    //         {
+    //             auto& plg = typePlugins[idx];
+    //             auto item = lstView->AddItem(plg.GetName());
+    //             item.SetText(1, plg.GetDescription());
+    //             item.SetType(ListViewItem::Type::Highlighted);
+    //             item.SetData(static_cast<uint64>(idx));
+    //         }
+    //     }
+    // }
+    // if (pm.HasContentMatches())
+    //{
+    //     lstView->AddItem("Matched by content").SetType(ListViewItem::Type::Category);
+    //     for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
+    //     {
+    //         if (pm.IsMatchByContent(idx))
+    //         {
+    //             auto& plg = typePlugins[idx];
+    //             auto item = lstView->AddItem(plg.GetName());
+    //             item.SetText(1, plg.GetDescription());
+    //             item.SetType(ListViewItem::Type::Emphasized_1);
+    //             item.SetData(static_cast<uint64>(idx));
+    //         }
+    //     }
+    // }
+    // if (pm.HasNoMatches())
+    //{
+    //     lstView->AddItem("Not matched").SetType(ListViewItem::Type::Category);
+    //     for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
+    //     {
+    //         if ((pm.IsMatchByContent(idx) == false) && (pm.IsMatchByExtension(idx) == false))
+    //         {
+    //             auto& plg = typePlugins[idx];
+    //             auto item = lstView->AddItem(plg.GetName());
+    //             item.SetText(1, plg.GetDescription());
+    //             item.SetType(ListViewItem::Type::GrayedOut);
+    //             item.SetData(static_cast<uint64>(idx));
+    //         }
+    //     }
+    // }
+    // lstView->SetCurrentItem(lstView->GetItem(1));
+}
+void SelectTypeDialog::PaintHex()
+{
+    auto c   = canvas->GetCanvas();
+    auto s   = buf.begin();
+    auto e   = buf.end();
+    auto x   = 0;
+    auto y   = 0;
+    auto cfg = this->GetConfig();
+
+    LocalString<128> tmp;
+    AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::DOS_437);
+    // c->Clear(' ', cfg->Text.Normal);
+    c->Resize(78, std::max<>(12u, static_cast<uint32>((buf.GetLength() >> 4))), ' ', cfg->Text.Normal);
+    while (s < e)
+    {
+        if (x == 0)
+        {
+            c->WriteSingleLineText(0, y, tmp.Format("%03X", y * 16), cfg->Text.Emphasized1);
+        }
+        c->WriteSingleLineText(x * 3 + 6, y, tmp.Format("%02X", *s), NoColorPair);
+        c->WriteCharacter(x + 48 + 9, y, cp[*s], cfg->Text.Highlighted);
+        x++;
+        if (x == 16)
+        {
+            x = 0;
+            y++;
+        }
+        s++;
+    }
+    c->DrawVerticalLine(4 * 3 + 5, 0, y, cfg->Text.Inactive, true);
+    c->DrawVerticalLine(8 * 3 + 5, 0, y, cfg->Text.Inactive, true);
+    c->DrawVerticalLine(12 * 3 + 5, 0, y, cfg->Text.Inactive, true);
+}
+void SelectTypeDialog::PaintBuffer()
+{
+}
+void SelectTypeDialog::PaintText()
+{
 }
 bool SelectTypeDialog::OnEvent(Reference<Control> ctrl, Event eventType, int id)
 {

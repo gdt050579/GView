@@ -546,6 +546,12 @@ namespace App
 
     class SelectTypeDialog : public Window
     {
+        Reference<CanvasViewer> canvas;
+        AppCUI::Utils::BufferView buf;
+        GView::Type::Matcher::TextParser& textParser;
+        void PaintHex();
+        void PaintBuffer();
+        void PaintText();
       public:
         SelectTypeDialog(
               std::vector<GView::Type::Plugin>& typePlugins,
