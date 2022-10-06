@@ -102,7 +102,7 @@ SelectTypeDialog::SelectTypeDialog(
       AppCUI::Utils::BufferView _buf,
       GView::Type::Matcher::TextParser& _textParser,
       uint64 extensionHash)
-    : Window("Select type", "d:c,w:80,h:24", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser)
+    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser)
 {
     PluginsThatMatches pm(typePlugins, buf, textParser, extensionHash);
 
@@ -125,7 +125,7 @@ SelectTypeDialog::SelectTypeDialog(
 
     canvas = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
 
-    PaintHex();
+    PaintBuffer();
 
     LocalString<128> tmp;
 
@@ -227,8 +227,7 @@ void SelectTypeDialog::PaintHex()
 
     LocalString<128> tmp;
     AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::DOS_437);
-    // c->Clear(' ', cfg->Text.Normal);
-    c->Resize(78, std::max<>(12u, static_cast<uint32>((buf.GetLength() >> 4))), ' ', cfg->Text.Normal);
+    c->Resize(74, std::max<>(18u, static_cast<uint32>((buf.GetLength() >> 4))), '*', cfg->Text.Normal);
     while (s < e)
     {
         if (x == 0)
@@ -251,6 +250,28 @@ void SelectTypeDialog::PaintHex()
 }
 void SelectTypeDialog::PaintBuffer()
 {
+    auto c   = canvas->GetCanvas();
+    auto s   = buf.begin();
+    auto e   = buf.end();
+    auto x   = 0;
+    auto y   = 0;
+    auto cfg = this->GetConfig();
+
+    LocalString<128> tmp;
+    AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::DOS_437);
+    // c->Clear(' ', cfg->Text.Normal);
+    c->Resize(74, std::max<>(18u, static_cast<uint32>((1+buf.GetLength()/74))), ' ', cfg->Text.Normal);
+    while (s < e)
+    {
+        c->WriteCharacter(x, y, cp[*s], cfg->Text.Normal);
+        x++;
+        if (x == 74)
+        {
+            x = 0;
+            y++;
+        }
+        s++;
+    }
 }
 void SelectTypeDialog::PaintText()
 {
