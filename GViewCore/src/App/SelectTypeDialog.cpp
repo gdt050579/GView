@@ -118,14 +118,14 @@ SelectTypeDialog::SelectTypeDialog(
     {
         cbView->AddItem("Text");
         cbView->AddItem("Text with word wrap");
-    }    
+    }
     // auto rbHexView    = Factory::RadioBox::Create(this, "&Hex", "x:1,y:7,w:10", 123);
     // auto rbBufferView = Factory::RadioBox::Create(this, "&Buffer", "x:1,y:8,w:10", 123);
     // auto rbTextView   = Factory::RadioBox::Create(this, "&Text", "x:1,y:9,w:10", 123);
 
     canvas = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
 
-    PaintHex();
+    PaintText();
 
     LocalString<128> tmp;
 
@@ -233,9 +233,9 @@ void SelectTypeDialog::PaintHex()
     {
         if (x == 0)
         {
-            c->WriteSingleLineText(0, y, tmp.Format("%03X", y * 16), cfg->Text.Emphasized1);
+            c->WriteSingleLineText(0, y, tmp.Format("%04X", y * 16), cfg->Text.Emphasized1);
         }
-        c->WriteSingleLineText(x * 3 + 6, y, tmp.Format("%02X", *s), NoColorPair);
+        c->WriteSingleLineText(x * 3 + 7, y, tmp.Format("%02X", *s), NoColorPair);
         c->WriteCharacter(x + 48 + 9, y, cp[*s], cfg->Text.Highlighted);
         x++;
         if (x == 16)
@@ -245,9 +245,9 @@ void SelectTypeDialog::PaintHex()
         }
         s++;
     }
-    c->DrawVerticalLine(4 * 3 + 5, 0, y, cfg->Text.Inactive, true);
-    c->DrawVerticalLine(8 * 3 + 5, 0, y, cfg->Text.Inactive, true);
-    c->DrawVerticalLine(12 * 3 + 5, 0, y, cfg->Text.Inactive, true);
+    c->DrawVerticalLine(4 * 3 + 6, 0, y, cfg->Text.Inactive, true);
+    c->DrawVerticalLine(8 * 3 + 6, 0, y, cfg->Text.Inactive, true);
+    c->DrawVerticalLine(12 * 3 + 6, 0, y, cfg->Text.Inactive, true);
 }
 void SelectTypeDialog::PaintBuffer()
 {
@@ -261,7 +261,7 @@ void SelectTypeDialog::PaintBuffer()
     LocalString<128> tmp;
     AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::DOS_437);
     // c->Clear(' ', cfg->Text.Normal);
-    c->Resize(74, std::max<>(18u, static_cast<uint32>((1+buf.GetLength()/74))), ' ', cfg->Text.Normal);
+    c->Resize(74, std::max<>(18u, static_cast<uint32>((1 + buf.GetLength() / 74))), ' ', cfg->Text.Normal);
     c->Clear(' ', cfg->Text.Normal);
     while (s < e)
     {
@@ -278,6 +278,44 @@ void SelectTypeDialog::PaintBuffer()
 }
 void SelectTypeDialog::PaintText()
 {
+    auto c   = canvas->GetCanvas();
+    auto s   = textParser.GetText();
+    auto e   = s + textParser.GetTextLength();
+    auto x   = 0;
+    auto y   = 0;
+    auto cfg = this->GetConfig();
+
+    c->Resize(160, 200, ' ', cfg->Text.Normal);
+    c->Clear(' ', cfg->Text.Normal);
+    while (s < e)
+    {
+        switch (*s)
+        {
+        case '\n':
+            x = 0;
+            y++;
+            s++;
+            if ((s < e) && ((*s) == '\r'))
+                s++;
+            break;
+        case '\r':
+            x = 0;
+            y++;
+            s++;
+            if ((s < e) && ((*s) == '\n'))
+                s++;
+            break;
+        case '\t':
+            x = ((x + 4) >> 2) << 2;
+            s++;
+            break;
+        default:
+            c->WriteCharacter(x, y, *s, cfg->Text.Normal);
+            s++;
+            x++;
+            break;
+        }
+    }
 }
 bool SelectTypeDialog::OnEvent(Reference<Control> ctrl, Event eventType, int id)
 {
