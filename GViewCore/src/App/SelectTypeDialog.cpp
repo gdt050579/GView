@@ -40,7 +40,7 @@ class PluginsThatMatches
                 {
                     if (pType.IsOfType(buf, textParser))
                     {
-                        bitmapExtension[idx / 8] |= static_cast<uint8>(1 << (idx & 7));
+                        bitmapExtension[idx / 8] |= static_cast<uint8>(1 << (idx & 7U));
                         countExtensionMatches++;
                     }
                 }
@@ -56,7 +56,7 @@ class PluginsThatMatches
                 if (pType.IsOfType(buf, textParser))
                 {
                     bitmapContent[idx / 8U] |= static_cast<uint8>(1U << (idx & 7U));
-                    countExtensionMatches++;
+                    countContentMatches++;
                 }
             }
             idx++;
