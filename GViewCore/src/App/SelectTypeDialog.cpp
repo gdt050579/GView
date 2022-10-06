@@ -263,7 +263,8 @@ void SelectTypeDialog::PaintBuffer()
     c->Resize(74, std::max<>(18u, static_cast<uint32>((1+buf.GetLength()/74))), ' ', cfg->Text.Normal);
     while (s < e)
     {
-        c->WriteCharacter(x, y, cp[*s], cfg->Text.Normal);
+        auto ch = cp[*s];
+        c->WriteCharacter(x, y, ch, cfg->Text.Normal);
         x++;
         if (x == 74)
         {
