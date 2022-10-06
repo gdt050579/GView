@@ -125,7 +125,7 @@ SelectTypeDialog::SelectTypeDialog(
 
     canvas = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
 
-    PaintText();
+    PaintBuffer();
 
     LocalString<128> tmp;
 
