@@ -478,13 +478,34 @@ namespace App
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_BestMatch(
-              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_Select(
-              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_WithSelectedType(
-              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash, std::string_view typeName);
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash,
+              std::string_view typeName);
         Reference<Type::Plugin> IdentifyTypePlugin(
-              GView::Utils::DataCache& cache, uint64 extensionHash, OpenMethod method, std::string_view typeName);
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              GView::Utils::DataCache& cache,
+              uint64 extensionHash,
+              OpenMethod method,
+              std::string_view typeName);
         bool Add(
               GView::Object::Type objType,
               std::unique_ptr<AppCUI::OS::DataObject> data,
@@ -566,6 +587,9 @@ namespace App
 
       public:
         SelectTypeDialog(
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
               std::vector<GView::Type::Plugin>& typePlugins,
               AppCUI::Utils::BufferView buf,
               GView::Type::Matcher::TextParser& textParser,
