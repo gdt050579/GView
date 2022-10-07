@@ -91,8 +91,8 @@ class PluginsThatMatches
 std::string_view BuildTypeName(String& output, GView::Type::Plugin& plg)
 {
     output.Set(plg.GetName());
-    output.AddChars(' ', 12);
-    output.Truncate(12);
+    output.AddChars(' ', 8);
+    output.Truncate(8);
     output.Add(": ");
     output.Add(plg.GetDescription());
     return output.ToStringView();
@@ -108,10 +108,13 @@ SelectTypeDialog::SelectTypeDialog(
 
     auto lbType = Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
     auto lbName = Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
+    auto lbSize = Factory::Label::Create(this, "&Size", "x:50,y:3,w:10");
     auto lbPath = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
     auto lbView = Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
     auto cbType = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
-    auto txName = Factory::TextField::Create(this, "", "l:12,t:3,r:1", TextFieldFlags::Readonly);
+    auto txName = Factory::TextField::Create(this, "", "x:12,y:3,w:33", TextFieldFlags::Readonly);
+    auto txSize = Factory::TextField::Create(this, "", "l:56,t:3,r:1", TextFieldFlags::Readonly);
+    auto txPath = Factory::TextField::Create(this, "", "l:12,t:5,r:1", TextFieldFlags::Readonly);
     auto cbView = Factory::ComboBox::Create(this, "l:12,t:7,r:1", "Buffer,Hex");
 
     if (textParser.GetTextLength() > 0)
