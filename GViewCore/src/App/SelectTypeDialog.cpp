@@ -182,11 +182,45 @@ void SelectTypeDialog::PopulateViewModes()
         cbView->AddSeparator("Text view");
         cbView->AddItem("Text view", PreviewMode::Text);
         cbView->AddItem("Text view (with line wrapping)", PreviewMode::TextWrapped);
+
+        // check if the text requires wrap or not
+        auto* p         = textParser.GetText();
+        auto* e         = p + textParser.GetTextLength();
+        auto nrLines    = 0U;
+        auto lineLength = 0U;
+        auto largeLines = 0U;
+        while (p < e)
+        {
+            if (((*p) == '\n') || ((*p) == '\r'))
+            {
+                if (lineLength > 100)
+                    largeLines++;
+                nrLines++;
+                if ((p + 1 < e) && (((p[1]) == '\n') || ((p[1]) == '\r')) && (p[0] != p[1]))
+                    p++;
+                p++;
+                lineLength = 0;
+                continue;
+            }
+            lineLength++;
+            p++;
+        }
+        defaultViewMode = largeLines > 5 ? PreviewMode::TextWrapped : PreviewMode::Text;
     }
     else
     {
         cbView->AddItem("Buffer view", PreviewMode::Buffer);
         cbView->AddItem("Hex vew", PreviewMode::Hex);
+    }
+    // search for the appropiate view mode
+    auto cnt = cbView->GetItemsCount();
+    for (auto idx = 0; idx < cnt; idx++)
+    {
+        if (cbView->GetItemUserData(idx, 0) == defaultViewMode)
+        {
+            cbView->SetCurentItemIndex(idx);
+            return;
+        }
     }
 }
 void SelectTypeDialog::PaintHex()
