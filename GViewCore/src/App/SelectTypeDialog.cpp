@@ -4,6 +4,14 @@ namespace GView::App
 {
 using namespace AppCUI::Controls;
 
+namespace PreviewMode
+{
+    constexpr uint64 Buffer      = 100;
+    constexpr uint64 Hex         = 101;
+    constexpr uint64 Text        = 102;
+    constexpr uint64 TextWrapped = 103;
+} // namespace PreviewMode
+
 class PluginsThatMatches
 {
     uint8 bitmapExtension[256];
@@ -97,6 +105,7 @@ std::string_view BuildTypeName(String& output, GView::Type::Plugin& plg)
     output.Add(plg.GetDescription());
     return output.ToStringView();
 }
+
 SelectTypeDialog::SelectTypeDialog(
       std::vector<GView::Type::Plugin>& typePlugins,
       AppCUI::Utils::BufferView _buf,
@@ -104,32 +113,28 @@ SelectTypeDialog::SelectTypeDialog(
       uint64 extensionHash)
     : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser)
 {
-    PluginsThatMatches pm(typePlugins, buf, textParser, extensionHash);
-
     auto lbType = Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
     auto lbName = Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
     auto lbSize = Factory::Label::Create(this, "&Size", "x:50,y:3,w:10");
     auto lbPath = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
     auto lbView = Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
-    auto cbType = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
+    cbType      = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
     auto txName = Factory::TextField::Create(this, "", "x:12,y:3,w:33", TextFieldFlags::Readonly);
     auto txSize = Factory::TextField::Create(this, "", "l:56,t:3,r:1", TextFieldFlags::Readonly);
     auto txPath = Factory::TextField::Create(this, "", "l:12,t:5,r:1", TextFieldFlags::Readonly);
-    auto cbView = Factory::ComboBox::Create(this, "l:12,t:7,r:1", "Buffer,Hex");
+    cbView      = Factory::ComboBox::Create(this, "l:12,t:7,r:1");
+    canvas      = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
 
-    if (textParser.GetTextLength() > 0)
-    {
-        cbView->AddItem("Text");
-        cbView->AddItem("Text with word wrap");
-    }
-    // auto rbHexView    = Factory::RadioBox::Create(this, "&Hex", "x:1,y:7,w:10", 123);
-    // auto rbBufferView = Factory::RadioBox::Create(this, "&Buffer", "x:1,y:8,w:10", 123);
-    // auto rbTextView   = Factory::RadioBox::Create(this, "&Text", "x:1,y:9,w:10", 123);
-
-    canvas = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
-
-    PaintBuffer();
-
+    PopulateViewModes();
+    PopulateTypes(typePlugins, buf, textParser, extensionHash);
+}
+void SelectTypeDialog::PopulateTypes(
+      std::vector<GView::Type::Plugin>& typePlugins,
+      AppCUI::Utils::BufferView buf,
+      GView::Type::Matcher::TextParser& textParser,
+      uint64 extensionHash)
+{
+    PluginsThatMatches pm(typePlugins, buf, textParser, extensionHash);
     LocalString<128> tmp;
 
     if (pm.HasExtesionMatches())
@@ -165,59 +170,24 @@ SelectTypeDialog::SelectTypeDialog(
             }
         }
     }
-
-    // auto sp      = Factory::Splitter::Create(this, "l:0,t:7,r:0,b:3", SplitterFlags::Vertical);
-    // auto lstView = Factory::ListView::Create(
-    //       sp, "d:c", { "n:Name,w:7,a:l", "n:Description,w:100,a:l" }, ListViewFlags::SearchMode | ListViewFlags::HideColumns);
-    // auto tab = Factory::Tab::Create(sp, "d:c");
-    // auto pgHex = Factory::TabPage::Create(tab, "&Hex view");
-    // sp->SetFirstPanelSize(40);
-    // if (pm.HasExtesionMatches())
-    //{
-    //     lstView->AddItem("Matched by extension").SetType(ListViewItem::Type::Category);
-    //     for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
-    //     {
-    //         if (pm.IsMatchByExtension(idx))
-    //         {
-    //             auto& plg = typePlugins[idx];
-    //             auto item = lstView->AddItem(plg.GetName());
-    //             item.SetText(1, plg.GetDescription());
-    //             item.SetType(ListViewItem::Type::Highlighted);
-    //             item.SetData(static_cast<uint64>(idx));
-    //         }
-    //     }
-    // }
-    // if (pm.HasContentMatches())
-    //{
-    //     lstView->AddItem("Matched by content").SetType(ListViewItem::Type::Category);
-    //     for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
-    //     {
-    //         if (pm.IsMatchByContent(idx))
-    //         {
-    //             auto& plg = typePlugins[idx];
-    //             auto item = lstView->AddItem(plg.GetName());
-    //             item.SetText(1, plg.GetDescription());
-    //             item.SetType(ListViewItem::Type::Emphasized_1);
-    //             item.SetData(static_cast<uint64>(idx));
-    //         }
-    //     }
-    // }
-    // if (pm.HasNoMatches())
-    //{
-    //     lstView->AddItem("Not matched").SetType(ListViewItem::Type::Category);
-    //     for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
-    //     {
-    //         if ((pm.IsMatchByContent(idx) == false) && (pm.IsMatchByExtension(idx) == false))
-    //         {
-    //             auto& plg = typePlugins[idx];
-    //             auto item = lstView->AddItem(plg.GetName());
-    //             item.SetText(1, plg.GetDescription());
-    //             item.SetType(ListViewItem::Type::GrayedOut);
-    //             item.SetData(static_cast<uint64>(idx));
-    //         }
-    //     }
-    // }
-    // lstView->SetCurrentItem(lstView->GetItem(1));
+}
+void SelectTypeDialog::PopulateViewModes()
+{
+    auto defaultViewMode = PreviewMode::Buffer;
+    if (textParser.GetTextLength() > 0)
+    {
+        cbView->AddSeparator("Binary view");
+        cbView->AddItem("Buffer view", PreviewMode::Buffer);
+        cbView->AddItem("Hex vew", PreviewMode::Hex);
+        cbView->AddSeparator("Text view");
+        cbView->AddItem("Text view", PreviewMode::Text);
+        cbView->AddItem("Text view (with line wrapping)", PreviewMode::TextWrapped);
+    }
+    else
+    {
+        cbView->AddItem("Buffer view", PreviewMode::Buffer);
+        cbView->AddItem("Hex vew", PreviewMode::Hex);
+    }
 }
 void SelectTypeDialog::PaintHex()
 {
