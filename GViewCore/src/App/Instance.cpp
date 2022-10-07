@@ -209,9 +209,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
 {
     SelectTypeDialog dlg(name, path, dataSize, this->typePlugins, buf, textParser, extensionHash);
     if (dlg.Show() == Dialogs::Result::Ok)
-    {
-    }
-    return &this->defaultPlugin;
+        return dlg.GetSelectedPlugin(&this->defaultPlugin);
+    return nullptr;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
       AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
@@ -339,6 +338,7 @@ bool Instance::Add(
                                                : GView::Type::Plugin::ExtensionToHash("");
 
     auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName);
+    CHECK(plg, false, "Unable to identify a valid plugin open canceled !");
 
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
