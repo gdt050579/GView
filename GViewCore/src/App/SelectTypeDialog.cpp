@@ -136,6 +136,8 @@ SelectTypeDialog::SelectTypeDialog(
 
     PopulateViewModes();
     PopulateTypes(typePlugins, buf, textParser, extensionHash);
+
+    btnOK->SetFocus();
 }
 void SelectTypeDialog::PopulateTypes(
       std::vector<GView::Type::Plugin>& typePlugins,
