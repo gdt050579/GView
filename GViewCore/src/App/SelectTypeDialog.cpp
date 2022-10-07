@@ -351,6 +351,13 @@ void SelectTypeDialog::PaintText(bool wrap)
 }
 bool SelectTypeDialog::OnEvent(Reference<Control> ctrl, Event eventType, int id)
 {
+    switch (eventType)
+    {
+    case Event::ComboBoxSelectedItemChanged:
+        if (ctrl == cbView)
+            UpdateView(cbView->GetCurrentItemUserData(0));
+        return true;
+    }
     return Window::OnEvent(ctrl, eventType, id);
 }
 } // namespace GView::App
