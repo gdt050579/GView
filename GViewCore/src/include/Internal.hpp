@@ -553,7 +553,7 @@ namespace App
         GView::Type::Matcher::TextParser& textParser;
         void PaintHex();
         void PaintBuffer();
-        void PaintText();
+        void PaintText(bool wrap);
 
         void UpdateView(uint64 mode);
         void PopulateViewModes();

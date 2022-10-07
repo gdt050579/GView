@@ -223,7 +223,6 @@ void SelectTypeDialog::PopulateViewModes()
             return;
         }
     }
-    
 }
 void SelectTypeDialog::UpdateView(uint64 mode)
 {
@@ -236,9 +235,10 @@ void SelectTypeDialog::UpdateView(uint64 mode)
         PaintHex();
         break;
     case PreviewMode::Text:
-        PaintText();
+        PaintText(false);
         break;
     case PreviewMode::TextWrapped:
+        PaintText(true);
         break;
     }
 }
@@ -303,7 +303,7 @@ void SelectTypeDialog::PaintBuffer()
         s++;
     }
 }
-void SelectTypeDialog::PaintText()
+void SelectTypeDialog::PaintText(bool wrap)
 {
     auto c   = canvas->GetCanvas();
     auto s   = textParser.GetText();
@@ -340,6 +340,11 @@ void SelectTypeDialog::PaintText()
             c->WriteCharacter(x, y, *s, cfg->Text.Normal);
             s++;
             x++;
+            if ((x > 74) && (wrap))
+            {
+                x = 0;
+                y++;
+            }
             break;
         }
     }
