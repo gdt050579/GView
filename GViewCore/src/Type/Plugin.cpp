@@ -9,7 +9,7 @@ constexpr uint64 EXTENSION_EMPTY_HASH = 0xcbf29ce484222325ULL;
 uint64 Plugin::ExtensionToHash(std::string_view ext)
 {
     // use FNV algorithm ==> https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-    if (ext.empty())
+    if ((ext.empty()) || (ext.size()==0))
         return 0;
     auto* s = (const uint8*) ext.data();
     auto* e = s + ext.size();
