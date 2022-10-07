@@ -555,6 +555,7 @@ namespace App
         void PaintBuffer();
         void PaintText(bool wrap);
 
+        void Validate();
         void UpdateView(uint64 mode);
         void PopulateViewModes();
         void PopulateTypes(

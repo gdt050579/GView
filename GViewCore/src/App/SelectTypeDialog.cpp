@@ -3,7 +3,8 @@
 namespace GView::App
 {
 using namespace AppCUI::Controls;
-
+constexpr int BTN_COMMAND_OK     = 12345;
+constexpr int BTN_COMMAND_CANCEL = 12346;
 namespace PreviewMode
 {
     constexpr uint64 Buffer      = 100;
@@ -113,17 +114,25 @@ SelectTypeDialog::SelectTypeDialog(
       uint64 extensionHash)
     : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser)
 {
-    auto lbType = Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
-    auto lbName = Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
-    auto lbSize = Factory::Label::Create(this, "&Size", "x:50,y:3,w:10");
-    auto lbPath = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
-    auto lbView = Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
-    cbType      = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
-    auto txName = Factory::TextField::Create(this, "", "x:12,y:3,w:33", TextFieldFlags::Readonly);
-    auto txSize = Factory::TextField::Create(this, "", "l:56,t:3,r:1", TextFieldFlags::Readonly);
-    auto txPath = Factory::TextField::Create(this, "", "l:12,t:5,r:1", TextFieldFlags::Readonly);
-    cbView      = Factory::ComboBox::Create(this, "l:12,t:7,r:1");
-    canvas      = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
+    auto lbType    = Factory::Label::Create(this, "&Type", "x:1,y:1,w:10");
+    auto lbName    = Factory::Label::Create(this, "&Name", "x:1,y:3,w:10");
+    auto lbSize    = Factory::Label::Create(this, "&Size", "x:50,y:3,w:10");
+    auto lbPath    = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
+    auto lbView    = Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
+    cbType         = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
+    auto txName    = Factory::TextField::Create(this, "", "x:12,y:3,w:33", TextFieldFlags::Readonly);
+    auto txSize    = Factory::TextField::Create(this, "", "l:56,t:3,r:1", TextFieldFlags::Readonly);
+    auto txPath    = Factory::TextField::Create(this, "", "l:12,t:5,r:1", TextFieldFlags::Readonly);
+    cbView         = Factory::ComboBox::Create(this, "l:12,t:7,r:1");
+    canvas         = Factory::CanvasViewer::Create(this, "l:1,t:8,r:1,b:3", 100, 100, ViewerFlags::Border);
+    auto btnOK     = Factory::Button::Create(this, "&Ok", "b:0,l:20,w:15", BTN_COMMAND_OK);
+    auto btnCancel = Factory::Button::Create(this, "&Cancel", "b:0,l:40,w:15", BTN_COMMAND_CANCEL);
+    // hot keys
+    cbView->SetHotKey('V');
+    cbType->SetHotKey('T');
+    txPath->SetHotKey('P');
+    txSize->SetHotKey('S');
+    txName->SetHotKey('N');
 
     PopulateViewModes();
     PopulateTypes(typePlugins, buf, textParser, extensionHash);
@@ -349,6 +358,9 @@ void SelectTypeDialog::PaintText(bool wrap)
         }
     }
 }
+void SelectTypeDialog::Validate()
+{
+}
 bool SelectTypeDialog::OnEvent(Reference<Control> ctrl, Event eventType, int id)
 {
     switch (eventType)
@@ -357,7 +369,25 @@ bool SelectTypeDialog::OnEvent(Reference<Control> ctrl, Event eventType, int id)
         if (ctrl == cbView)
             UpdateView(cbView->GetCurrentItemUserData(0));
         return true;
+    case Event::ButtonClicked:
+        if (id == BTN_COMMAND_OK)
+        {
+            Validate();
+            return true;
+        }
+        if (id == BTN_COMMAND_CANCEL)
+        {
+            Exit(Dialogs::Result::Cancel);
+            return true;
+        }
+        return true;
+    case Event::WindowAccept:
+        Validate();
+        return true;
+    case Event::WindowClose:
+        Exit(Dialogs::Result::Cancel);
+        return true;
     }
-    return Window::OnEvent(ctrl, eventType, id);
+    return false;
 }
 } // namespace GView::App
