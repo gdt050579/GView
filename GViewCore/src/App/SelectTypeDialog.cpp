@@ -3,8 +3,10 @@
 namespace GView::App
 {
 using namespace AppCUI::Controls;
-constexpr int BTN_COMMAND_OK     = 12345;
-constexpr int BTN_COMMAND_CANCEL = 12346;
+constexpr int BTN_COMMAND_OK          = 12345;
+constexpr int BTN_COMMAND_CANCEL      = 12346;
+constexpr uint32 INVALID_TYPE_INDEX   = 0xFFFFFFFF;
+constexpr uint32 DEFAULT_PLUGIN_INDEX = 0xFFFFFF;
 namespace PreviewMode
 {
     constexpr uint64 Buffer      = 100;
@@ -111,11 +113,12 @@ SelectTypeDialog::SelectTypeDialog(
       const AppCUI::Utils::ConstString& name,
       const AppCUI::Utils::ConstString& path,
       uint64 dataSize,
-      std::vector<GView::Type::Plugin>& typePlugins,
+      std::vector<GView::Type::Plugin>& _typePlugins,
       AppCUI::Utils::BufferView _buf,
       GView::Type::Matcher::TextParser& _textParser,
       uint64 extensionHash)
-    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), buf(_buf), textParser(_textParser)
+    : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), typePlugins(_typePlugins), buf(_buf), textParser(_textParser),
+      result(nullptr), shouldUseDefaultPlugin(false)
 {
     NumericFormatter num;
     NumericFormat numFormat(NumericFormatFlags::None, 10, 3, ',');
@@ -159,9 +162,7 @@ void SelectTypeDialog::PopulateTypes(
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
             if (pm.IsMatchByExtension(idx))
-            {
-                auto item = cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]));
-            }
+                cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]), idx);
         }
     }
     if (pm.HasContentMatches())
@@ -170,10 +171,12 @@ void SelectTypeDialog::PopulateTypes(
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
             if (pm.IsMatchByContent(idx))
-            {
-                auto item = cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]));
-            }
+                cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]), idx);
         }
+    }
+    {
+        cbType->AddSeparator("Defaults");
+        cbType->AddItem("Unknown type (Buffer or Text)", DEFAULT_PLUGIN_INDEX);
     }
     if (pm.HasNoMatches())
     {
@@ -181,9 +184,7 @@ void SelectTypeDialog::PopulateTypes(
         for (auto idx = 0U; idx < pm.GetTypePluginsCount(); idx++)
         {
             if ((pm.IsMatchByContent(idx) == false) && (pm.IsMatchByExtension(idx) == false))
-            {
-                auto item = cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]));
-            }
+                cbType->AddItem(BuildTypeName(tmp, typePlugins[idx]), idx);
         }
     }
 }
@@ -367,6 +368,26 @@ void SelectTypeDialog::PaintText(bool wrap)
 }
 void SelectTypeDialog::Validate()
 {
+    auto idx               = cbType->GetCurrentItemUserData(INVALID_TYPE_INDEX);
+    result                 = nullptr;
+    shouldUseDefaultPlugin = false;
+
+    if (idx == INVALID_TYPE_INDEX)
+        return;
+    if (idx == DEFAULT_PLUGIN_INDEX)
+    {
+        shouldUseDefaultPlugin = true;
+        Exit(Dialogs::Result::Ok);
+        return;
+    }
+    auto* plg = &typePlugins[idx];
+    if (plg->IsOfType(buf, textParser) == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Selected plugin can not process/match current buffer/text !");
+        return;
+    }
+    result = plg;
+    Exit(Dialogs::Result::Ok);
 }
 bool SelectTypeDialog::OnEvent(Reference<Control> ctrl, Event eventType, int id)
 {

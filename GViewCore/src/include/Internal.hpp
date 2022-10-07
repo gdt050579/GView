@@ -572,6 +572,11 @@ namespace App
 
         AppCUI::Utils::BufferView buf;
         GView::Type::Matcher::TextParser& textParser;
+        std::vector<GView::Type::Plugin>& typePlugins;
+
+        GView::Type::Plugin* result;
+        bool shouldUseDefaultPlugin;
+
         void PaintHex();
         void PaintBuffer();
         void PaintText(bool wrap);
