@@ -208,8 +208,9 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
       uint64 extensionHash)
 {
     SelectTypeDialog dlg(name, path, dataSize, this->typePlugins, buf, textParser, extensionHash);
-    dlg.Show();
-    // GDT: for the moment a default implementation
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+    }
     return &this->defaultPlugin;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(

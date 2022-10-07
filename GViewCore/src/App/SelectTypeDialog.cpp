@@ -118,7 +118,7 @@ SelectTypeDialog::SelectTypeDialog(
       GView::Type::Matcher::TextParser& _textParser,
       uint64 extensionHash)
     : Window("Select type", "d:c,w:80,h:28", WindowFlags::ProcessReturn), typePlugins(_typePlugins), buf(_buf), textParser(_textParser),
-      result(nullptr), shouldUseDefaultPlugin(false)
+      result(nullptr)
 {
     NumericFormatter num;
     NumericFormat numFormat(NumericFormatFlags::None, 10, 3, ',');
@@ -370,13 +370,11 @@ void SelectTypeDialog::Validate()
 {
     auto idx               = cbType->GetCurrentItemUserData(INVALID_TYPE_INDEX);
     result                 = nullptr;
-    shouldUseDefaultPlugin = false;
 
     if (idx == INVALID_TYPE_INDEX)
         return;
     if (idx == DEFAULT_PLUGIN_INDEX)
     {
-        shouldUseDefaultPlugin = true;
         Exit(Dialogs::Result::Ok);
         return;
     }

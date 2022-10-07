@@ -575,7 +575,6 @@ namespace App
         std::vector<GView::Type::Plugin>& typePlugins;
 
         GView::Type::Plugin* result;
-        bool shouldUseDefaultPlugin;
 
         void PaintHex();
         void PaintBuffer();
@@ -600,6 +599,10 @@ namespace App
               GView::Type::Matcher::TextParser& textParser,
               uint64 extensionHash);
         bool OnEvent(Reference<Control>, Event eventType, int) override;
+        inline Reference<GView::Type::Plugin> GetSelectedPlugin(Reference<GView::Type::Plugin> errorValue) const
+        {
+            return result ? result : errorValue;
+        }
     };
 
     class FileWindowProperties : public Window
