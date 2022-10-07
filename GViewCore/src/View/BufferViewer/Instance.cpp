@@ -106,7 +106,7 @@ void Instance::OpenCurrentSelection()
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
             return;
         }
-        GView::App::OpenBuffer(buf, temp, GView::App::OpenMethod::BestMatch);
+        GView::App::OpenBuffer(buf, temp, GView::App::OpenMethod::Select);
     }
 }
 void Instance::UpdateCurrentSelection()

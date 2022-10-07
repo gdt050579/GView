@@ -1409,7 +1409,7 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         // Buffer build --> open
         LocalString<128> tmpName;
 
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start),GView::App::OpenMethod::BestMatch);
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start),GView::App::OpenMethod::Select);
     }
     else
     {
