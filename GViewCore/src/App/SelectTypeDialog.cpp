@@ -214,7 +214,7 @@ void SelectTypeDialog::PopulateViewModes()
     }
     // search for the appropiate view mode
     auto cnt = cbView->GetItemsCount();
-    for (auto idx = 0; idx < cnt; idx++)
+    for (auto idx = 0U; idx < cnt; idx++)
     {
         if (cbView->GetItemUserData(idx, 0) == defaultViewMode)
         {
@@ -222,7 +222,26 @@ void SelectTypeDialog::PopulateViewModes()
             return;
         }
     }
+    UpdateView(defaultViewMode);
 }
+void SelectTypeDialog::UpdateView(uint64 mode)
+{
+    switch (mode)
+    {
+    case PreviewMode::Buffer:
+        PaintBuffer();
+        break;
+    case PreviewMode::Hex:
+        PaintHex();
+        break;
+    case PreviewMode::Text:
+        PaintText();
+        break;
+    case PreviewMode::TextWrapped:
+        break;
+    }
+}
+
 void SelectTypeDialog::PaintHex()
 {
     auto c   = canvas->GetCanvas();

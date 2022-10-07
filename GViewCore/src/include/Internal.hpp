@@ -555,6 +555,7 @@ namespace App
         void PaintBuffer();
         void PaintText();
 
+        void UpdateView(uint64 mode);
         void PopulateViewModes();
         void PopulateTypes(
               std::vector<GView::Type::Plugin>& typePlugins,
