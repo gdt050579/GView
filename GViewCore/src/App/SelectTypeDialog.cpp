@@ -219,10 +219,11 @@ void SelectTypeDialog::PopulateViewModes()
         if (cbView->GetItemUserData(idx, 0) == defaultViewMode)
         {
             cbView->SetCurentItemIndex(idx);
+            UpdateView(defaultViewMode);
             return;
         }
     }
-    UpdateView(defaultViewMode);
+    
 }
 void SelectTypeDialog::UpdateView(uint64 mode)
 {
