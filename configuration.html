@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GView configuration file &mdash; GView  documentation</title><link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+        <script src="_static/language_data.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> GView
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="description.html">GView description</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">GView usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">GView architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="core.html">GView Core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="global_plugins.html">GView Global Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="specific_plugins.html">GView Specific Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="development.html">GView development</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">GView contributing</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">GView</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>GView configuration file</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/configuration.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <div class="section" id="gview-configuration-file">
+<h1>GView configuration file<a class="headerlink" href="#gview-configuration-file" title="Permalink to this headline">¶</a></h1>
+<p>GView is configured via <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> file (that should be located next to GView executable). If the file is missing, running a simple <code class="docutils literal notranslate"><span class="pre">GView</span> <span class="pre">reset</span></code> command from the CLI should restore it.</p>
+<p>The following section should be seen in a <code class="docutils literal notranslate"><span class="pre">GView.ini</span></code> file:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">[GView]</span></code> - a section with the general configuration for GView. Tipically it contains associated key for changing the view, cache size, etc.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[AppCUI]</span></code> - a section with the general configuration for AppCUI framework (color, frontend, etc)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[Type.&lt;XXX&gt;]</span></code> - various sections that describe characteristics of each supported type in GView</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">[View.&lt;xxx&gt;]</span></code> - various section for each smart view</p></li>
+</ul>
+<div class="section" id="types">
+<h2>Types<a class="headerlink" href="#types" title="Permalink to this headline">¶</a></h2>
+<p>A <code class="docutils literal notranslate"><span class="pre">[Type.xxx]`</span></code> section usually contains the following:</p>
+<ul>
+<li><p>a <cite>Description</cite> field that explains the type of the plugin</p></li>
+<li><p>a <cite>Extension</cite> field that can be a simple string or a list of strings containing the list of extensions associated with this field.</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Extension</span> <span class="o">=</span> <span class="s">exe</span>
+</pre></div>
+</div>
+<p>or</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Extension</span> <span class="o">=</span> <span class="s">[&quot;h&quot;,&quot;hpp&quot;,&quot;cpp&quot;,&quot;c&quot;]</span>
+</pre></div>
+</div>
+</li>
+<li><p>a <code class="docutils literal notranslate"><span class="pre">Pattern</span></code> field that provides some rules that if match the entire plugin is loaded in memory and checked against the content. This ensures quick validation of the content so that not all plugins are loaded in memory.
+A pattern is a string with the following format: <strong>rule</strong>:<cite>parameters</cite>, where <strong>rule</strong> can be one of the following:</p></li>
+</ul>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 17%" />
+<col style="width: 8%" />
+<col style="width: 46%" />
+<col style="width: 29%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Rule</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Usage</p></th>
+<th class="head"><p>Example</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>magic</p></td>
+<td><p>Binary
+Files</p></td>
+<td><p>Identifies a binary magic from the start of the
+file. A magic must be foollowed by a list of hex
+values separated with spaces</p></td>
+<td><p><strong>magic</strong>:FF 20 30</p></td>
+</tr>
+<tr class="row-odd"><td><p>startswith</p></td>
+<td><p>Text
+Files</p></td>
+<td><p>Checks if a file starts with a specific text</p></td>
+<td><p><strong>startswith</strong>:#include</p></td>
+</tr>
+<tr class="row-even"><td><p>linestartswith</p></td>
+<td><p>Text
+Files</p></td>
+<td><p>Checks if one of the first 10 lines from a text
+file starts with a specific text</p></td>
+<td><p><strong>linestartswith</strong>:#define</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Gavriluț Dragoș, Mutu Gheorghiță, Andrei Damian, Raul Zaharia.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
