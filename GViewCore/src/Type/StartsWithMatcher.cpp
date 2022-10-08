@@ -14,7 +14,7 @@ bool StartsWithMatcher::Match(AppCUI::Utils::BufferView buf, TextParser& text)
     if (sz < this->value.Len())
         return false;
     auto* p = text.GetText();
-    auto* e = p + sz;
+    auto* e = p + this->value.Len();
     auto* c = this->value.GetText();
     while ((p < e) && ((*p) == (*c)))
     {
