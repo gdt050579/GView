@@ -68,6 +68,7 @@ Instance::Instance()
 {
     this->defaultCacheSize  = DEFAULT_CACHE_SIZE;
     this->Keys.changeViews  = Key::F4;
+    this->Keys.choseNewType = Key::Alt | Key::F1;
     this->Keys.find         = Key::Alt | Key::F7;
     this->Keys.switchToView = Key::Alt | Key::F;
     this->Keys.goTo         = Key::F5;
@@ -120,6 +121,7 @@ bool Instance::LoadSettings()
     this->Keys.switchToView = sect.GetValue("Key.SwitchToView").ToKey(Key::F | Key::Alt);
     this->Keys.find         = sect.GetValue("Key.Find").ToKey(Key::F7 | Key::Alt);
     this->Keys.goTo         = sect.GetValue("Key.GoTo").ToKey(Key::F5);
+    this->Keys.choseNewType = sect.GetValue("Key.ChoseType").ToKey(Key::F1 | Key::Alt);
 
     return true;
 }

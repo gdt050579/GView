@@ -101,6 +101,7 @@ bool GView::App::ResetConfiguration()
     ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
     ini["GView"]["Key.GoTo"]         = Key::F5;
     ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
+    ini["GView"]["Key.ChoseType"]    = Key::Alt | Key::F1;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
@@ -135,7 +136,7 @@ void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, 
 void GView::App::OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name, "",  method, typeName);
+        gviewAppInstance->AddBufferWindow(buf, name, "", method, typeName);
 }
 void GView::App::OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName)
 {

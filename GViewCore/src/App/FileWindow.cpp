@@ -17,6 +17,7 @@ constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
 constexpr int CMD_GOTO                   = 30012346;
 constexpr int CMD_FIND                   = 30012347;
+constexpr int CMD_CHOSE_NEW_TYPE         = 30012348;
 constexpr int CMD_FOR_TYPE_PLUGIN_START  = 50000000;
 
 class CursorInformation : public UserControl
@@ -249,6 +250,7 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
           this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
     commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
+    commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);
     // add commands from type plugin
     if (this->typePlugin.IsValid())
     {

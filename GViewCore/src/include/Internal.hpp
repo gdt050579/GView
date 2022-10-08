@@ -487,6 +487,7 @@ namespace App
             AppCUI::Input::Key switchToView;
             AppCUI::Input::Key goTo;
             AppCUI::Input::Key find;
+            AppCUI::Input::Key choseNewType;
         } Keys;
 
         bool BuildMainMenus();
@@ -562,6 +563,10 @@ namespace App
         constexpr inline AppCUI::Input::Key GetFindKey() const
         {
             return this->Keys.find;
+        }
+        constexpr inline AppCUI::Input::Key GetChoseNewTypeKey() const
+        {
+            return this->Keys.choseNewType;
         }
 
         // property interface
