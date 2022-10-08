@@ -219,6 +219,16 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         case CMD_FIND:
             ShowFindDialog();
             return true;
+        case CMD_CHOSE_NEW_TYPE:
+            if (this->obj->GetObjectType() == Object::Type::File)
+            {
+                GView::App::OpenFile(this->obj->GetPath(), OpenMethod::Select);
+            }
+            else
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet for this type of object (buffer/PID/Folder)");
+            }
+            return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
