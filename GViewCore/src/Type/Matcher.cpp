@@ -31,7 +31,7 @@ Interface* CreateFromString(std::string_view str)
         if (str.starts_with("linestartswith:"))
         {
             i    = new LineStartsWithMatcher();
-            data = str.substr(11);
+            data = str.substr(15);
         }
         break;
     }

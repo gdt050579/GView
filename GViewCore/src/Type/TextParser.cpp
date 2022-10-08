@@ -52,7 +52,6 @@ void TextParser::ComputeLineOffsets()
         while ((p < e) && (((*p) == ' ') || ((*p) == '\t')))
             p++;
         this->Lines.offsets[this->Lines.count++] = static_cast<uint32>(p - this->Raw.text);
-        this->Lines.count++;
         // skip until a new line
         while ((p < e) && ((*p) != '\n') && ((*p) != '\r'))
             p++;
