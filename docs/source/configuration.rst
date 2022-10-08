@@ -47,3 +47,16 @@ A ``[Type.xxx]``` section usually contains the following:
 |                  | Files   | file starts with a specific text                 |                                |
 +------------------+---------+--------------------------------------------------+--------------------------------+
 
+  Examples:
+  
+  ..  code-block:: ini
+
+      Pattern = "magic:4D 5A" ; identifies possible Windows binary files (that starts with a ``MZ``)
+      
+  or
+  
+  ..  code-block:: ini
+
+      Pattern = ["startswith:ABC","linestartswith:test"] ; identifies a text file where either the firs line starts with `ABC`  
+                                                         ; or there is a line within the first 10 lines that starts with `test`
+
