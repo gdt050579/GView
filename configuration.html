@@ -134,6 +134,17 @@ file starts with a specific text</p></td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<div><p>Examples:</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Pattern</span> <span class="o">=</span> <span class="s">&quot;magic:4D 5A&quot; ; identifies possible Windows binary files (that starts with a ``MZ``)</span>
+</pre></div>
+</div>
+<p>or</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="na">Pattern</span> <span class="o">=</span> <span class="s">[&quot;startswith:ABC&quot;,&quot;linestartswith:test&quot;] ; identifies a text file where either the firs line starts with `ABC`</span>
+<span class="s">                                                   ; or there is a line within the first 10 lines that starts with `test`</span>
+</pre></div>
+</div>
+</div></blockquote>
 </div>
 </div>
 
