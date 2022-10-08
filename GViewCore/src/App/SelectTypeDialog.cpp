@@ -191,7 +191,8 @@ void SelectTypeDialog::PopulateTypes(
 void SelectTypeDialog::PopulateViewModes()
 {
     auto defaultViewMode = PreviewMode::Buffer;
-    if (textParser.GetTextLength() > 0)
+    auto txt             = textParser.GetText();
+    if (!txt.empty())
     {
         cbView->AddSeparator("Binary view");
         cbView->AddItem("Buffer view", PreviewMode::Buffer);
@@ -201,8 +202,8 @@ void SelectTypeDialog::PopulateViewModes()
         cbView->AddItem("Text view (with line wrapping)", PreviewMode::TextWrapped);
 
         // check if the text requires wrap or not
-        auto* p         = textParser.GetText();
-        auto* e         = p + textParser.GetTextLength();
+        auto* p         = txt.data();
+        auto* e         = p + txt.size();
         auto nrLines    = 0U;
         auto lineLength = 0U;
         auto largeLines = 0U;
@@ -323,8 +324,9 @@ void SelectTypeDialog::PaintBuffer()
 void SelectTypeDialog::PaintText(bool wrap)
 {
     auto c   = canvas->GetCanvas();
-    auto s   = textParser.GetText();
-    auto e   = s + textParser.GetTextLength();
+    auto txt = textParser.GetText();
+    auto s   = txt.data();
+    auto e   = s + txt.size();
     auto x   = 0;
     auto y   = 0;
     auto cfg = this->GetConfig();

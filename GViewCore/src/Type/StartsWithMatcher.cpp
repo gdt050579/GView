@@ -10,10 +10,10 @@ bool StartsWithMatcher::Init(std::string_view text)
 }
 bool StartsWithMatcher::Match(AppCUI::Utils::BufferView buf, TextParser& text)
 {
-    auto sz = text.GetTextLength();
-    if (sz < this->value.Len())
+    auto txt = text.GetText();
+    if (txt.size() < this->value.Len())
         return false;
-    auto* p = text.GetText();
+    auto* p = txt.data();
     auto* e = p + this->value.Len();
     auto* c = this->value.GetText();
     while ((p < e) && ((*p) == (*c)))

@@ -333,15 +333,12 @@ namespace Type
                 bool computed;
             } Lines;
             void ComputeLineOffsets();
+
           public:
             TextParser(const char16* text, uint32 size);
-            inline const char16* GetText() const
+            inline std::u16string_view GetText() const
             {
-                return Text.text;
-            }
-            inline uint32 GetTextLength() const
-            {
-                return Text.size;
+                return { Text.text, static_cast<size_t>(Text.size) };
             }
             inline std::span<uint32> GetLines()
             {
