@@ -38,8 +38,8 @@ TextParser::TextParser(const char16* text, uint32 size)
 }
 void TextParser::ComputeLineOffsets()
 {
-    auto p            = this->Raw.text;
-    auto e            = this->Raw.text + this->Raw.size;
+    auto p            = this->Text.text;
+    auto e            = this->Text.text + this->Text.size;
     auto maxLines     = ARRAY_LEN(this->Lines.offsets);
     this->Lines.count = 0;
 
@@ -51,7 +51,7 @@ void TextParser::ComputeLineOffsets()
         // skip any space or tab
         while ((p < e) && (((*p) == ' ') || ((*p) == '\t')))
             p++;
-        this->Lines.offsets[this->Lines.count++] = static_cast<uint32>(p - this->Raw.text);
+        this->Lines.offsets[this->Lines.count++] = static_cast<uint32>(p - this->Text.text);
         // skip until a new line
         while ((p < e) && ((*p) != '\n') && ((*p) != '\r'))
             p++;
