@@ -4,6 +4,7 @@ target_sources(GViewCore PRIVATE
 	Matcher.cpp 
         MagicMatcher.cpp
 	StartsWithMatcher.cpp
+	LineStartsWithMatcher.cpp
 	TextParser.cpp
 	FolderViewPlugin.cpp)
 

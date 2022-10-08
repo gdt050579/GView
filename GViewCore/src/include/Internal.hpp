@@ -3,6 +3,7 @@
 #include "GView.hpp"
 
 #include <set>
+#include <span>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -325,7 +326,13 @@ namespace Type
                 const char16* text;
                 uint32 size;
             } Text;
-
+            struct
+            {
+                uint32 offsets[10];
+                uint32 count;
+                bool computed;
+            } Lines;
+            void ComputeLineOffsets();
           public:
             TextParser(const char16* text, uint32 size);
             inline const char16* GetText() const
@@ -335,6 +342,12 @@ namespace Type
             inline uint32 GetTextLength() const
             {
                 return Text.size;
+            }
+            inline std::span<uint32> GetLines()
+            {
+                if (!Lines.computed)
+                    ComputeLineOffsets();
+                return std::span<uint32>(this->Lines.offsets, static_cast<size_t>(this->Lines.count));
             }
         };
         struct Interface
@@ -363,6 +376,15 @@ namespace Type
         class StartsWithMatcher : public Interface
         {
             FixSizeString<61> value;
+
+          public:
+            virtual bool Init(std::string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
+        };
+        class LineStartsWithMatcher : public Interface
+        {
+            FixSizeString<61> value;
+            bool CheckStartsWith(TextParser& text, uint32 offset);
 
           public:
             virtual bool Init(std::string_view text) override;
