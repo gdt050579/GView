@@ -93,7 +93,7 @@ namespace View
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
-            uint32 textLinesOffset;
+            //uint32 textLinesOffset;
             uint16 zoneID; // TODO: maybe can be replaced by the index in an array
             bool isCollapsed;
 
@@ -264,6 +264,7 @@ namespace View
             uint64 GetZonesMaxSize() const;
 
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
+            inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
             void WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const;
 

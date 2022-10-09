@@ -224,25 +224,8 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                     return false;
                 }
             }
-            else
-            {
-                dli.textLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
-                if (currentLineIndex + zones[i]->textLinesOffset < zones[i]->endingLineIndex)
-                    dli.textLineToDraw = currentLineIndex;
-                if (i + 1 >= zonesCount)
-                {
-                    if (!config.ShowFileContent)
-                        return true;
-                    return WriteTextLineToChars(dli);
-                }
-                if (currentLineIndex < zones[i + 1]->startLineIndex)
-                {
-                    if (!config.ShowFileContent)
-                        return true;
-                    return WriteTextLineToChars(dli);
-                }
-            }
         }
+        assert(false);
     }
     else
     {
@@ -547,51 +530,51 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
     }
     dli.chText = dli.chNameAndSize;
 
-    if (zone->data.canBeCollapsed)
+    if (zone->data.canBeCollapsed && dli.textLineToDraw == 0)
     {
-        if (dli.textLineToDraw == 0)
+        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%u] ", zone->data.size);
+        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+    }
+    else
+    {
+        if (!zone->isCollapsed)
         {
-            AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%u] ", zone->data.size);
-            RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
-        }
-        else
-        {
-            if (!zone->isCollapsed)
+            if (zone->data.startingOffset + zone->data.size <= this->obj->GetData().GetSize())
             {
-                if (zone->data.startingOffset + zone->data.size <= this->obj->GetData().GetSize())
+                // TODO: hack-ish, maybe find another alternative or reset it down
+                if (!zone->data.canBeCollapsed)
+                    dli.textLineToDraw++;
+
+                uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
+                if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
                 {
-                    uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
-                    if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
-                    {
-                        dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
-                    }
-                    const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
-                    const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
-
-                    dli.start         = buf.GetData();
-                    dli.end           = buf.GetData() + buf.GetLength();
-                    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
-                    dli.chText        = dli.chNameAndSize;
-
-                    const bool activeColor = this->HasFocus();
-                    const auto textColor   = activeColor ? config.Colors.Line : config.Colors.Inactive;
-
-                    while (dli.start < dli.end)
-                    {
-                        dli.chText->Code  = codePage[*dli.start];
-                        dli.chText->Color = textColor;
-                        dli.chText++;
-                        dli.start++;
-                    }
+                    dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
                 }
-                else
+                const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
+                const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
+
+                dli.start         = buf.GetData();
+                dli.end           = buf.GetData() + buf.GetLength();
+                dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+                dli.chText        = dli.chNameAndSize;
+
+                const bool activeColor = this->HasFocus();
+                auto textColor   = activeColor ? config.Colors.Line : config.Colors.Inactive;
+                if (!zone->data.canBeCollapsed)
+                    textColor = config.Colors.Normal;
+
+                while (dli.start < dli.end)
                 {
-                    AddStringToChars(
-                          dli,
-                          config.Colors.StructureColor,
-                          "\tNot enough data for offset: %u",
-                          zone->data.startingOffset + zone->data.size);
+                    dli.chText->Code  = codePage[*dli.start];
+                    dli.chText->Color = textColor;
+                    dli.chText++;
+                    dli.start++;
                 }
+            }
+            else
+            {
+                AddStringToChars(
+                      dli, config.Colors.StructureColor, "\tNot enough data for offset: %u", zone->data.startingOffset + zone->data.size);
             }
         }
     }
@@ -694,29 +677,55 @@ void Instance::RecomputeDissasmZones()
         mappingData[OffsetToLinePosition(zone.first).line].emplace_back(&zone.second, DissasmParseZoneType::CollapsibleAndTextZone);
     }
 
-    uint32 lastEndMinusLastOffset = 0;
-    uint32 lastZoneEndingIndex    = 0;
-    uint16 currentIndex           = 0;
+    uint32 lastZoneEndingIndex = 0;
+    uint16 currentIndex        = 0;
+    uint32 textLinesOffset     = 0;
     settings->parseZones.clear();
 
-    for (auto& mapping : mappingData)
+    for (const auto& mapping : mappingData)
     {
-        for (auto& entry : mapping.second)
+        for (const auto& entry : mapping.second)
         {
+            uint32 zoneStartingLine = mapping.first;
+            if (zoneStartingLine < lastZoneEndingIndex || !config.ShowFileContent)
+                zoneStartingLine = lastZoneEndingIndex;
+            if (zoneStartingLine > lastZoneEndingIndex)
+            {
+                const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset });
+                textLinesOffset += zoneStartingLine - lastZoneEndingIndex;
+                const uint64 endTextOffset = LinePositionToOffset({ textLinesOffset });
+
+                auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+
+                collapsibleZone->data            = { startingTextOffset, endTextOffset - startingTextOffset + 1, false };
+                collapsibleZone->startLineIndex  = lastZoneEndingIndex;
+                collapsibleZone->isCollapsed     = false;
+                collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
+                // collapsibleZone->textLinesOffset = textLinesOffset;
+                collapsibleZone->zoneID       = currentIndex++;
+                collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
+                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+
+                if (!collapsibleZone->isCollapsed)
+                    collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
+
+                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
+                lastZoneEndingIndex = collapsibleZone->endingLineIndex;
+                settings->parseZones.push_back(std::move(collapsibleZone));
+            }
+
             switch (entry.zoneType)
             {
             case DissasmParseZoneType::StructureParseZone:
             {
-                auto convertedData        = static_cast<DissasmType*>(entry.data);
-                auto parseZone            = std::make_unique<DissasmParseStructureZone>();
-                parseZone->startLineIndex = mapping.first;
-                if (parseZone->startLineIndex < lastZoneEndingIndex || !config.ShowFileContent)
-                    parseZone->startLineIndex = lastZoneEndingIndex;
+                const auto convertedData   = static_cast<DissasmType*>(entry.data);
+                auto parseZone             = std::make_unique<DissasmParseStructureZone>();
+                parseZone->startLineIndex  = zoneStartingLine;
                 parseZone->endingLineIndex = parseZone->startLineIndex + 1;
                 parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
                 parseZone->extendedSize    = convertedData->GetExpandedSize() - 1;
-                parseZone->textLinesOffset = parseZone->startLineIndex - lastEndMinusLastOffset;
-                parseZone->dissasmType     = *convertedData;
+                // parseZone->textLinesOffset = textLinesOffset;
+                parseZone->dissasmType = *convertedData;
                 parseZone->levels.push_back(0);
                 parseZone->types.emplace_back(parseZone->dissasmType);
                 parseZone->structureIndex        = 0;
@@ -728,49 +737,45 @@ void Instance::RecomputeDissasmZones()
                 if (!parseZone->isCollapsed)
                     parseZone->endingLineIndex += parseZone->extendedSize;
 
-                lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
-                lastZoneEndingIndex    = parseZone->endingLineIndex;
+                // lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
+                lastZoneEndingIndex = parseZone->endingLineIndex;
                 settings->parseZones.push_back(std::move(parseZone));
             }
             break;
             case DissasmParseZoneType::DissasmCodeParseZone:
             {
-                auto convertedData       = static_cast<DisassemblyZone*>(entry.data);
-                auto codeZone            = std::make_unique<DissasmCodeZone>();
-                codeZone->zoneDetails    = *convertedData;
-                codeZone->startLineIndex = mapping.first;
-                if (codeZone->startLineIndex < lastZoneEndingIndex || !config.ShowFileContent)
-                    codeZone->startLineIndex = lastZoneEndingIndex;
+                const auto convertedData  = static_cast<DisassemblyZone*>(entry.data);
+                auto codeZone             = std::make_unique<DissasmCodeZone>();
+                codeZone->zoneDetails     = *convertedData;
+                codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-                codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
-                codeZone->zoneID          = currentIndex++;
-                codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
+                // codeZone->textLinesOffset = textLinesOffset;
+                codeZone->zoneID   = currentIndex++;
+                codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
 
-                lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
-                lastZoneEndingIndex    = codeZone->endingLineIndex;
+                // lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
+                lastZoneEndingIndex = codeZone->endingLineIndex;
                 settings->parseZones.push_back(std::move(codeZone));
             }
             break;
             case DissasmParseZoneType::CollapsibleAndTextZone:
             {
-                auto convertedData              = static_cast<CollapsibleAndTextData*>(entry.data);
-                auto collapsibleZone            = std::make_unique<CollapsibleAndTextZone>();
-                collapsibleZone->data           = *convertedData;
-                collapsibleZone->startLineIndex = mapping.first;
-                if (collapsibleZone->startLineIndex < lastZoneEndingIndex)
-                    collapsibleZone->startLineIndex = lastZoneEndingIndex;
+                const auto convertedData         = static_cast<CollapsibleAndTextData*>(entry.data);
+                auto collapsibleZone             = std::make_unique<CollapsibleAndTextZone>();
+                collapsibleZone->data            = *convertedData;
+                collapsibleZone->startLineIndex  = zoneStartingLine;
                 collapsibleZone->isCollapsed     = Layout.structuresInitialCollapsedState;
                 collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
-                collapsibleZone->textLinesOffset = collapsibleZone->startLineIndex - lastEndMinusLastOffset;
-                collapsibleZone->zoneID          = currentIndex++;
-                collapsibleZone->zoneType        = DissasmParseZoneType::CollapsibleAndTextZone;
-                collapsibleZone->extendedSize    = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+                // collapsibleZone->textLinesOffset = textLinesOffset;
+                collapsibleZone->zoneID       = currentIndex++;
+                collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
+                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
 
                 if (!collapsibleZone->isCollapsed)
                     collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
 
-                lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
-                lastZoneEndingIndex    = collapsibleZone->endingLineIndex;
+                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
+                lastZoneEndingIndex = collapsibleZone->endingLineIndex;
                 settings->parseZones.push_back(std::move(collapsibleZone));
             }
             break;
@@ -780,6 +785,31 @@ void Instance::RecomputeDissasmZones()
 
     if (settings->parseZones.empty())
         return;
+
+    const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset });
+    const uint64 totalFileSize      = this->obj->GetData().GetSize();
+    if (startingTextOffset >= totalFileSize)
+        return;
+
+    const uint64 zoneSize = totalFileSize - startingTextOffset + 1;
+
+    auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+
+    collapsibleZone->data            = { startingTextOffset, zoneSize, false };
+    collapsibleZone->startLineIndex  = lastZoneEndingIndex;
+    collapsibleZone->isCollapsed     = false;
+    collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
+    // collapsibleZone->textLinesOffset = textLinesOffset;
+    collapsibleZone->zoneID       = currentIndex++;
+    collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
+    collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+
+    if (!collapsibleZone->isCollapsed)
+        collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
+
+    // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
+    lastZoneEndingIndex = collapsibleZone->endingLineIndex;
+    settings->parseZones.push_back(std::move(collapsibleZone));
 
     // vector<CollapsibleAndTextData> textData;
     // const uint32 textLinesCount = obj->GetData().GetSize() / Layout.textSize;
@@ -824,6 +854,11 @@ uint64 Instance::GetZonesMaxSize() const
 Instance::LinePosition Instance::OffsetToLinePosition(uint64 offset) const
 {
     return { static_cast<uint32>(offset / Layout.textSize), static_cast<uint32>(offset % Layout.textSize) };
+}
+
+uint64 Instance::LinePositionToOffset(LinePosition linePosition) const
+{
+    return static_cast<uint64>(linePosition.line) * Layout.textSize + linePosition.offset;
 }
 
 vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset) const
