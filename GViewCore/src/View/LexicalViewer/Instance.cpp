@@ -1627,6 +1627,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     case Key::F:
         FoldAll();
         return true;
+    case Key::A:
+        ShowFindAllDialog();
+        return true;
     case Key::N:
     case Key::Ctrl | Key::PageDown:
         MoveToNextSimilarToken(1);
@@ -1956,6 +1959,13 @@ void Instance::ShowSaveAsDialog()
     if (dlg.ShouldOpenANewWindow())
     {
         GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch);
+    }
+}
+void Instance::ShowFindAllDialog()
+{
+    FindAllDialog dlg(0, 1);
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
     }
 }
 std::string_view Instance::GetName()

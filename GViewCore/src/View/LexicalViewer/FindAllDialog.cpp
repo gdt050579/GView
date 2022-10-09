@@ -8,51 +8,25 @@ using namespace AppCUI::Input;
 constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BTN_ID_CANCEL = 2;
 
-GoToDialog::GoToDialog(uint32 currentLine, uint32 _maxLines)
-    : Window("GoTo", "d:c,w:40,h:8", WindowFlags::ProcessReturn), maxLines(_maxLines)
+FindAllDialog::FindAllDialog(uint32 currentLine, uint32 _maxLines)
+    : Window("All apearences", "d:c,w:80,h:20", WindowFlags::ProcessReturn), maxLines(_maxLines)
 {
     LocalString<128> tmp;
     this->selectedLineNo = 0;
 
-    Factory::Label::Create(this, tmp.Format("&Line (1..%u)", _maxLines), "x:1,y:1,w:16");
-    txLineNumber = Factory::TextField::Create(this, tmp.Format("%u", currentLine), "x:17,y:1,w:19");
-    txLineNumber->SetHotKey('L');
+    auto lst = Factory::ListView::Create(this, "l:1,t:0,r:1,b:3", { "n:Line,a:l,w:6", "n:Content,a:l,w:200" }); 
 
-    Factory::Button::Create(this, "&OK", "l:5,b:0,w:13", BTN_ID_OK);
-    Factory::Button::Create(this, "&Cancel", "l:20,b:0,w:13", BTN_ID_CANCEL);
-    txLineNumber->SetFocus();
+    Factory::Button::Create(this, "&OK", "l:25,b:0,w:13", BTN_ID_OK);
+    Factory::Button::Create(this, "&Cancel", "l:40,b:0,w:13", BTN_ID_CANCEL);
 }
 
-void GoToDialog::Validate()
+void FindAllDialog::Validate()
 {
-    LocalString<128> tmp;
-    LocalString<256> error;
-
-
-    if (tmp.Set(txLineNumber->GetText()) == false)
-    {
-        Dialogs::MessageBox::ShowError("Error", "Fail to get the line number of the numerical field !");
-        txLineNumber->SetFocus();
-        return;
-    }
-    auto lineNo = Number::ToUInt32(tmp, NumberParseFlags::BaseAuto);
-    if (!lineNo.has_value())
-    {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Value `%s` is not a valid number !", tmp.GetText()));
-        txLineNumber->SetFocus();
-        return;
-    }
-    if ((lineNo.value() > maxLines) || (lineNo.value() < 1))
-    {
-        Dialogs::MessageBox::ShowError("Error", error.Format("Valid line number are between 1 and %u", maxLines));
-        txLineNumber->SetFocus();
-        return;
-    }
-    selectedLineNo = lineNo.value();
+    selectedLineNo = 0;
     Exit(Dialogs::Result::Ok);
 }
 
-bool GoToDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
+bool FindAllDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
     switch (eventType)
     {

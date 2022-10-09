@@ -344,6 +344,7 @@ namespace View
             void DeleteTokens();
             void ShowPlugins();
             void ShowSaveAsDialog();
+            void ShowFindAllDialog();
             void ShowRefactorDialog(TokenObject& tok);
             void ShowStringOpDialog(TokenObject& tok);
 
@@ -526,6 +527,21 @@ namespace View
 
           public:
             GoToDialog(uint32 currentLine, uint32 maxLines);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint32 GetSelectedLineNo() const
+            {
+                return selectedLineNo;
+            }
+        };
+        class FindAllDialog : public Window
+        {
+            uint32 selectedLineNo;
+            uint32 maxLines;
+            void Validate();
+
+          public:
+            FindAllDialog(uint32 currentLine, uint32 maxLines);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline uint32 GetSelectedLineNo() const
