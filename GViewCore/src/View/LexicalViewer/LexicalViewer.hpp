@@ -537,11 +537,10 @@ namespace View
         class FindAllDialog : public Window
         {
             uint32 selectedLineNo;
-            uint32 maxLines;
             void Validate();
 
           public:
-            FindAllDialog(uint32 currentLine, uint32 maxLines);
+            FindAllDialog(uint64 hash,const std::vector<TokenObject>& tokens, const char16* txt);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline uint32 GetSelectedLineNo() const

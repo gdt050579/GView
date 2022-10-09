@@ -1963,7 +1963,17 @@ void Instance::ShowSaveAsDialog()
 }
 void Instance::ShowFindAllDialog()
 {
-    FindAllDialog dlg(0, 1);
+    if (noItemsVisible)
+        return;
+    const auto& tok = this->tokens[this->currentTokenIndex];
+    if (tok.hash == 0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This type of token has similarity search disabled !");
+        return;
+    }
+
+    FindAllDialog dlg(tok.hash, this->tokens, this->text.text);
+
     if (dlg.Show() == Dialogs::Result::Ok)
     {
     }
