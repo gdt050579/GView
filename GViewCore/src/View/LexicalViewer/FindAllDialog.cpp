@@ -5,17 +5,18 @@ namespace GView::View::LexicalViewer
 
 using namespace AppCUI::Input;
 
-constexpr int32 BTN_ID_OK     = 1;
-constexpr int32 BTN_ID_CANCEL = 2;
+constexpr int32 BTN_ID_OK             = 1;
+constexpr int32 BTN_ID_CANCEL         = 2;
+constexpr uint32 INVALID_TOKEN_NUMBER = 0xFFFFFFFF;
 
 FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens, const char16* txt)
     : Window("All apearences", "d:c,w:80,h:20", WindowFlags::ProcessReturn)
 {
     LocalString<128> tmp;
     LocalUnicodeStringBuilder<512> content;
-    this->selectedLineNo = 0;
+    this->selectedTokenIndex = INVALID_TOKEN_NUMBER;
 
-    auto lst = Factory::ListView::Create(this, "l:1,t:0,r:1,b:3", { "n:Line,a:l,w:6", "n:Content,a:l,w:200" });
+    lst = Factory::ListView::Create(this, "l:1,t:0,r:1,b:3", { "n:Line,a:l,w:6", "n:Content,a:l,w:200" });
     // add all lines
     auto len      = static_cast<uint32>(tokens.size());
     auto lastLine = 0xFFFFFFFFU;
@@ -27,6 +28,7 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
         if (tok.lineNo == lastLine)
             continue;
         auto item = lst->AddItem(tmp.Format("%d", tok.lineNo));
+        item.SetData(idx);
         auto start = idx;
         while ((start > 0) && (tokens[start].lineNo == tok.lineNo))
             start--;
@@ -64,7 +66,9 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
 
 void FindAllDialog::Validate()
 {
-    selectedLineNo = 0;
+    selectedTokenIndex = lst->GetCurrentItem().GetData(INVALID_TOKEN_NUMBER);
+    if (selectedTokenIndex == INVALID_TOKEN_NUMBER)
+        return;
     Exit(Dialogs::Result::Ok);
 }
 
@@ -83,6 +87,9 @@ bool FindAllDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         }
         break;
+    case Event::ListViewItemPressed:
+        Validate();
+        return true;
     case Event::WindowAccept:
         Validate();
         return true;

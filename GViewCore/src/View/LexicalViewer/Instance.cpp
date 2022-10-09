@@ -1976,6 +1976,7 @@ void Instance::ShowFindAllDialog()
 
     if (dlg.Show() == Dialogs::Result::Ok)
     {
+        MoveToToken(dlg.GetSelectedTokenIndex(), false, true);
     }
 }
 std::string_view Instance::GetName()
