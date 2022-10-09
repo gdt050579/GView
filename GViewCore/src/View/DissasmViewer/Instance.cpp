@@ -552,6 +552,18 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 }
                 const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
                 const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
+                if (!buf.IsValid())
+                {
+                    AddStringToChars(
+                          dli, config.Colors.StructureColor, "\tInvalid buff at position: %u", zone->data.startingOffset + zone->data.size);
+
+                    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
+                    const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
+
+                    // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
+                    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+                    return true;
+                }
 
                 dli.start         = buf.GetData();
                 dli.end           = buf.GetData() + buf.GetLength();
@@ -559,7 +571,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 dli.chText        = dli.chNameAndSize;
 
                 const bool activeColor = this->HasFocus();
-                auto textColor   = activeColor ? config.Colors.Line : config.Colors.Inactive;
+                auto textColor         = activeColor ? config.Colors.Line : config.Colors.Inactive;
                 if (!zone->data.canBeCollapsed)
                     textColor = config.Colors.Normal;
 
@@ -791,7 +803,7 @@ void Instance::RecomputeDissasmZones()
     if (startingTextOffset >= totalFileSize)
         return;
 
-    const uint64 zoneSize = totalFileSize - startingTextOffset + 1;
+    const uint64 zoneSize = totalFileSize - startingTextOffset;
 
     auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
 
