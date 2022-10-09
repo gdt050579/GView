@@ -1,6 +1,7 @@
 #include "pe.hpp"
 
 using namespace AppCUI;
+using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
@@ -80,7 +81,7 @@ extern "C"
         }
 
         // translation
-        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         // set specific color for opcodes
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
@@ -88,10 +89,10 @@ extern "C"
         case PE::MachineType::I386:
         case PE::MachineType::IA64:
         case PE::MachineType::AMD64:
-            pe->x86x64ColorBuffer.memStartOffset = pe->imageBase;
-            pe->x86x64ColorBuffer.memEndOffset   = pe->imageBase + pe->virtualComputedSize;
-            settings.SetPositionToColorCallback(&pe->x86x64ColorBuffer);
-            break;
+        {
+            settings.SetPositionToColorCallback(pe.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
+        }
+        break;
         };
 
         // set entry point
@@ -231,13 +232,27 @@ UInt16 e_res[4];)");
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Icons(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Symbols))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Symbols(pe, win)), false);
+        if (pe->HasPanel(PE::Panels::IDs::GoInformation))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoInformation(win->GetObject(), pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFiles(win->GetObject(), pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFunctions(pe, win)), false);
+        }
+        if (pe->HasPanel(PE::Panels::IDs::OpCodes))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::OpCodes(win->GetObject(), pe)), true);
+        }
+
         return true;
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect.UpdateValue("Pattern", "MZ", false);
-        sect.UpdateValue("Priority", 1, false);
+        sect["Pattern"]                = "magic:4D 5A";
+        sect["Priority"]               = 1;
+        sect["Description"]            = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"]           = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.CheckSignature"] = Key::F8 | Key::Alt;
     }
 }
 

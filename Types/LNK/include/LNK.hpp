@@ -41,6 +41,9 @@ class LNKFile : public TypeInterface
     {
         return "LNK";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 };
 
 namespace Panels

@@ -221,7 +221,7 @@ static std::map<uint32, std::string_view> languageCode = {
     { 20490, "Spanish (Puerto Rico)" },
 };
 
-uint32_t SectionALIGN(uint32_t value, uint32_t alignValue)
+inline static uint32 SectionALIGN(uint32 value, uint32 alignValue)
 {
     if (alignValue == 0)
         return value;
@@ -292,6 +292,26 @@ bool PEFile::ReadUnicodeLengthString(uint32 FileAddress, char* text, uint32 maxS
     return true;
 }
 
+uint64 PEFile::VAtoFA(uint64 va) const
+{
+    const auto rva = va - imageBase;
+
+    CHECK(nrSections > 0, PE_INVALID_ADDRESS, "");
+    CHECK(rva >= sect[0].VirtualAddress, PE_INVALID_ADDRESS, "");
+
+    for (uint32 i = 0; i < nrSections; i++)
+    {
+        const auto start = sect[i].VirtualAddress;
+        const auto end   = start + sect[i].Misc.VirtualSize;
+        if (rva >= start && rva < end)
+        {
+            return rva - sect[i].VirtualAddress + sect[i].PointerToRawData;
+        }
+    }
+
+    RETURNERROR(PE_INVALID_ADDRESS, "Address not found!");
+}
+
 uint64 PEFile::RVAtoFilePointer(uint64 RVA)
 {
     if (RVA < sect[0].VirtualAddress)
@@ -346,6 +366,8 @@ std::string_view PEFile::GetMachine()
         return "AMD 64";
     case MachineType::ARM:
         return "ARM";
+    case MachineType::ARM64:
+        return "ARM64";
     case MachineType::CEE:
         return "CEE";
     case MachineType::CEF:
@@ -368,6 +390,8 @@ std::string_view PEFile::GetMachine()
         return "POWER PC";
     case MachineType::POWERPCFP:
         return "POWER PC (FP)";
+    case MachineType::PPCBE:
+        return "Xbox 360 (Xenon)";
     case MachineType::R10000:
         return "R 10000";
     case MachineType::R3000:
@@ -451,9 +475,9 @@ uint64_t PEFile::FilePointerToRVA(uint64_t fileAddress)
     return PE_INVALID_ADDRESS;
 }
 
-uint64_t PEFile::FilePointerToVA(uint64_t fileAddress)
+uint64 PEFile::FilePointerToVA(uint64_t fileAddress)
 {
-    uint64_t RVA;
+    uint64 RVA;
 
     if ((RVA = FilePointerToRVA(fileAddress)) != PE_INVALID_ADDRESS)
         return RVA + imageBase;
@@ -682,7 +706,7 @@ bool PEFile::BuildTLS()
 
 void PEFile::BuildVersionInfo()
 {
-    uint32_t szRead;
+    uint32 szRead;
 
     for (auto& ri : this->res)
     {
@@ -1656,11 +1680,31 @@ bool PEFile::Update()
 
     hasOverlay = computedSize < obj->GetData().GetSize();
 
+    for (auto i = 0U; i < nrSections; i++)
+    {
+        const auto& section = sect[i];
+        if ((section.Characteristics & __IMAGE_SCN_MEM_EXECUTE) == __IMAGE_SCN_MEM_EXECUTE)
+        {
+            executableZonesFAs.emplace_back(
+                  std::pair<uint64, uint64>{ section.PointerToRawData, section.PointerToRawData + section.SizeOfRawData });
+        }
+    }
+
     // Default panels
     ADD_PANEL(Panels::IDs::Information);
     ADD_PANEL(Panels::IDs::Directories);
     ADD_PANEL(Panels::IDs::Sections);
     ADD_PANEL(Panels::IDs::Headers);
+
+    switch ((PE::MachineType) nth32.FileHeader.Machine)
+    {
+    case PE::MachineType::I386:
+    case PE::MachineType::IA64:
+    case PE::MachineType::AMD64:
+        ADD_PANEL(Panels::IDs::OpCodes);
+    default:
+        break;
+    }
 
     if (impDLL.size() > 0)
         ADD_PANEL(Panels::IDs::Imports);
@@ -1684,7 +1728,7 @@ bool PEFile::Update()
 
     if (this->hdr64)
     {
-        if (nth64.FileHeader.PointerToSymbolTable != 0)
+        if (nth64.FileHeader.PointerToSymbolTable != 0 && nth64.FileHeader.NumberOfSymbols != 0)
         {
             ADD_PANEL(Panels::IDs::Symbols);
             BuildSymbols();
@@ -1692,11 +1736,16 @@ bool PEFile::Update()
     }
     else
     {
-        if (nth32.FileHeader.PointerToSymbolTable != 0)
+        if (nth32.FileHeader.PointerToSymbolTable != 0 && nth32.FileHeader.NumberOfSymbols != 0)
         {
             ADD_PANEL(Panels::IDs::Symbols);
             BuildSymbols();
         }
+    }
+
+    if (ParseGoData())
+    {
+        ADD_PANEL(Panels::IDs::GoInformation);
     }
 
     return true;
@@ -1774,4 +1823,414 @@ bool PEFile::BuildSymbols()
     }
 
     return true;
+}
+
+bool PEFile::ParseGoData()
+{
+    CHECK(ParseGoBuild(), false, "");
+    ParseGoBuildInfo();
+
+    // we assume we parsed the symbols first!
+    if (symbols.empty() == false)
+    {
+        std::map<std::string_view, ImageSymbol> pclntabSymbols{
+            { "runtime.pclntab", { 0 } }, { "runtime.epclntab", { 0 } }, { "pclntab", { 0 } }, { "epclntab", { 0 } }
+        };
+
+        for (const auto& symbol : symbols)
+        {
+            for (auto& [pclntabSymbol, value] : pclntabSymbols)
+            {
+                if (symbol.name.Equals(pclntabSymbol.data()))
+                {
+                    value = symbol.is;
+                }
+            }
+        }
+
+        auto& start = pclntabSymbols.at("runtime.pclntab");
+        auto& end   = pclntabSymbols.at("runtime.epclntab");
+        if (start.Value == 0 || end.Value == 0)
+        {
+            start = pclntabSymbols.at("pclntab");
+            end   = pclntabSymbols.at("epclntab");
+        }
+
+        const auto cacheSize = obj->GetData().GetCacheSize();
+        if (start.Value < end.Value && end.Value - start.Value < cacheSize && start.SectionNumber == end.SectionNumber)
+        {
+            const auto fa       = static_cast<uint64>(sect[start.SectionNumber - 1ULL].PointerToRawData);
+            const auto fileView = obj->GetData().CopyToBuffer(fa + start.Value, static_cast<uint32>(fa + end.Value - start.Value), false);
+            if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
+            {
+                return true;
+            }
+        }
+    }
+
+    // parse raw
+    const auto pcLnTabSigsCandidates = FindPcLnTabSigsCandidates();
+    CHECK(pcLnTabSigsCandidates.empty() == false, false, "");
+
+    bool found = false;
+    for (const auto& candidatesVA : pcLnTabSigsCandidates)
+    {
+        const auto cacheSize = obj->GetData().GetCacheSize();
+        const auto fa        = VAtoFA(candidatesVA);
+        const auto fileView  = obj->GetData().CopyToBuffer(fa, cacheSize, false);
+        if (pcLnTab.Process(fileView, hdr64 ? Golang::Architecture::x64 : Golang::Architecture::x86))
+        {
+            return true;
+        }
+    }
+
+    RETURNERROR(false, "Go PcLnTab not found!");
+}
+
+bool PEFile::ParseGoBuild()
+{
+    constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
+    constexpr std::string_view goBuildEnd{ "\"\n \xff" };
+
+    const auto cacheSize = obj->GetData().GetCacheSize();
+    const auto fileSize  = obj->GetData().GetSize();
+
+    const auto fileViewBuildId = obj->GetData().CopyToBuffer(0, cacheSize, false);
+
+    // we should find go build id at the start of the file
+    const std::string_view bufferBuildId{ reinterpret_cast<char*>(fileViewBuildId.GetData()),
+                                          fileViewBuildId.GetLength() }; // force for find
+    const auto sPos = bufferBuildId.find(goBuildPrefix);
+    CHECK(sPos != std::string::npos, false, "");
+
+    const auto ePos = bufferBuildId.find(goBuildEnd, sPos + 1);
+    CHECK(ePos != std::string::npos, false, "");
+
+    const std::string_view buildID{ bufferBuildId.data() + sPos + goBuildPrefix.size(), ePos - sPos - goBuildPrefix.size() };
+    pcLnTab.SetBuildId(buildID);
+
+    return true;
+}
+
+bool PEFile::ParseGoBuildInfo()
+{
+    // we should find go build info at the start of the file .data section
+    constexpr uint32 flags = __IMAGE_SCN_CNT_INITIALIZED_DATA | __IMAGE_SCN_MEM_READ | __IMAGE_SCN_MEM_WRITE;
+    auto dataOffset        = 0ULL;
+    for (auto i = 0U; i < nrSections; i++)
+    {
+        if (sect[i].VirtualAddress != 0 && (sect[i].Characteristics & flags) == flags)
+        {
+            dataOffset = static_cast<uint64>(sect[i].PointerToRawData);
+            break;
+        }
+    }
+    CHECK(dataOffset != 0, false, "");
+
+    constexpr std::string_view buildInfoMagic{ "\xff Go buildinf:" };
+    constexpr uint16 buildInfoAlign{ 16 };
+    constexpr uint16 buildInfoSize{ 32 };
+
+    const auto cacheSize = obj->GetData().GetCacheSize();
+    const auto fileSize  = obj->GetData().GetSize();
+
+    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(dataOffset, cacheSize, false);
+    CHECK(fileViewBuildInfo.IsValid(), false, "");
+    const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()),
+                                            fileViewBuildInfo.GetLength() }; // force for find
+    auto sPos = bufferBuildInfo.find(buildInfoMagic);
+    CHECK(sPos != std::string::npos, false, "");
+
+    CHECK(bufferBuildInfo.size() - sPos >= buildInfoSize, false, "");
+
+    const std::string_view buildInfo{ bufferBuildInfo.data() + sPos + 1, buildInfoSize };
+
+    constexpr auto ptrOffset = 13;
+    const uint8 ptrSize      = buildInfo[ptrOffset];
+    const uint8 endianess    = buildInfo[ptrOffset + 1];
+
+    uint64 runtimeBuildVersionVA = 0;
+    uint64 runtimeModInfoVA      = 0;
+    if (ptrSize == 4)
+    {
+        runtimeBuildVersionVA = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
+        runtimeModInfoVA      = *reinterpret_cast<uint32*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
+    }
+    else
+    {
+        runtimeBuildVersionVA = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2));
+        runtimeModInfoVA      = *reinterpret_cast<uint64*>(const_cast<char*>(buildInfo.data() + ptrOffset + 2 + ptrSize));
+    }
+
+    const auto runtimeBuildVersionFA = VAtoFA(runtimeBuildVersionVA);
+    const auto runtimeModInfoFA      = VAtoFA(runtimeModInfoVA);
+
+    const auto ptrRuntimeBuildVersion = obj->GetData().CopyToBuffer(runtimeBuildVersionFA, ptrSize * 2, false);
+    const auto ptrViewRuntimeModInfo  = obj->GetData().CopyToBuffer(runtimeModInfoFA, ptrSize * 2, false);
+    CHECK(ptrRuntimeBuildVersion.IsValid(), false, "");
+    CHECK(ptrViewRuntimeModInfo.IsValid(), false, "");
+
+    uint64 strRuntimeBuildVersionVA     = 0;
+    uint64 strRuntimeBuildVersionLength = 0;
+    uint64 strViewRuntimeModInfoVA      = 0;
+    uint64 strViewRuntimeModInfoLength  = 0;
+    if (ptrSize == 4)
+    {
+        strRuntimeBuildVersionVA     = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData());
+        strRuntimeBuildVersionLength = *reinterpret_cast<uint32*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData());
+        strViewRuntimeModInfoLength  = *reinterpret_cast<uint32*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
+    }
+    else
+    {
+        strRuntimeBuildVersionVA     = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData());
+        strRuntimeBuildVersionLength = *reinterpret_cast<uint64*>(ptrRuntimeBuildVersion.GetData() + ptrSize);
+        strViewRuntimeModInfoVA      = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData());
+        strViewRuntimeModInfoLength  = *reinterpret_cast<uint64*>(ptrViewRuntimeModInfo.GetData() + ptrSize);
+    }
+
+    const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
+    const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
+
+    const auto fileViewRuntimeBuildVersion =
+          obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, static_cast<uint32>(strRuntimeBuildVersionLength), false);
+    CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
+    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
+                                                strRuntimeBuildVersionLength };
+    pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
+
+    const auto fileViewRuntimeModInfo =
+          obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
+    CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
+    std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
+    if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
+    {
+        runtimeModInfo = std::string_view{ runtimeModInfo.data() + 16, strViewRuntimeModInfoLength - 16 - 16 };
+    }
+    pcLnTab.SetRuntimeBuildModInfo(runtimeModInfo);
+
+    return true;
+}
+
+std::vector<uint64> PEFile::FindPcLnTabSigsCandidates() const
+{
+    constexpr std::string_view pclntabSigs[6]{ { "\xFB\xFF\xFF\xFF\x00\x00", 6 }, { "\xFA\xFF\xFF\xFF\x00\x00", 6 },
+                                               { "\xF0\xFF\xFF\xFF\x00\x00", 6 }, { "\xFF\xFF\xFF\xFB\x00\x00", 6 },
+                                               { "\xFF\xFF\xFF\xFA\x00\x00", 6 }, { "\xFF\xFF\xFF\xF0\x00\x00", 6 } };
+
+    std::vector<uint64> indexes;
+    indexes.reserve(10); // usually not that many sigs found matching
+
+    for (uint32 i = 0; i < nrSections; i++)
+    {
+        const auto sectionBuffer = obj->GetData().CopyToBuffer(sect[i].PointerToRawData, sect[i].SizeOfRawData);
+        CHECK(sectionBuffer.IsValid(), indexes, "");
+        const auto section = std::string_view{ reinterpret_cast<char*>(sectionBuffer.GetData()), sectionBuffer.GetLength() };
+
+        for (const auto& sig : pclntabSigs)
+        {
+            uint64 index = 0;
+            while ((index = section.find(sig, index)) != std::string::npos)
+            {
+                if (index != std::string::npos && index < sect[i].SizeOfRawData)
+                {
+                    indexes.push_back(index + sect[i].VirtualAddress + imageBase);
+                }
+                index += sig.size();
+            }
+        }
+    }
+
+    return indexes;
+}
+
+bool PEFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(dissasembler.Init(hdr64, true), false, "");
+
+    static auto previousOpcodeMask = showOpcodesMask;
+    static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
+    static std::map<uint64, bool> cacheDiscard{};
+
+    if (previousOpcodeMask != showOpcodesMask)
+    {
+        cacheBuffer.clear();
+        cacheDiscard.clear();
+        previousOpcodeMask = showOpcodesMask;
+    }
+
+    if (cacheBuffer.count(offset) > 0)
+    {
+        result = cacheBuffer.at(offset);
+        return true;
+    }
+
+    if (cacheDiscard.count(offset) > 0)
+    {
+        return false;
+    }
+
+    GView::Dissasembly::Instruction ins{ 0 };
+    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
+    {
+        if (dissasembler.IsCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_CALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
+    {
+        if (dissasembler.IsLCallInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LCALL_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
+    {
+        if (dissasembler.IsJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_JUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
+    {
+        if (dissasembler.IsLJmpInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_LJUMP_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
+    {
+        if (dissasembler.IsBreakpointInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = INS_BREAKPOINT_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
+    {
+        GView::Dissasembly::Instruction ins2{ 0 };
+        const auto offset2 = offset + ins.size;
+        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
+
+        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size + ins2.size;
+            result.color        = START_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
+    {
+        if (dissasembler.IsFunctionEndInstruction(ins))
+        {
+            result.start        = offset;
+            result.end          = offset + ins.size;
+            result.color        = END_FUNCTION_COLOR;
+            cacheBuffer[offset] = result;
+            return true;
+        }
+    }
+
+    cacheDiscard[offset] = false;
+
+    return false;
+}
+
+bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
+{
+    CHECK(buf.IsValid(), false, "");
+    result.color = ColorPair{ Color::Transparent, Color::Transparent };
+    CHECK(showOpcodesMask != 0, false, "");
+
+    auto* p = buf.begin();
+    switch (*p)
+    {
+    case 0x4D:
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
+        {
+            if (buf.GetLength() >= 4)
+            {
+                if (*(uint16*) p == 0x5A4D && (p[2] == 0x00 || p[2] == 0x90 || p[2] == 0x78) && p[3] == 0x00)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    result.color = EXE_MARKER_COLOR;
+                    return true;
+                } // do not break
+            }
+        }
+    case 0x50:
+        if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Header) == (uint32) GView::Dissasembly::Opcodes::Header))
+        {
+            if (buf.GetLength() >= 4)
+            {
+                if (*(uint32*) p == 0x00004550)
+                {
+                    result.start = offset;
+                    result.end   = offset + 3;
+                    result.color = END_FUNCTION_COLOR;
+                    result.color = EXE_MARKER_COLOR;
+                    return true;
+                } // do not break
+            }
+        }
+    default:
+        switch ((PE::MachineType) nth32.FileHeader.Machine)
+        {
+        case PE::MachineType::I386:
+        case PE::MachineType::IA64:
+        case PE::MachineType::AMD64:
+            for (const auto& [start, end] : executableZonesFAs)
+            {
+                if (offset >= start && offset < end)
+                {
+                    return GetColorForBufferIntel(offset, buf, result);
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    return false;
+}
+
+void PEFile::RunCommand(std::string_view commandName)
+{
+    if (commandName == "CheckSignature")
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This need to be implemented !");
+    }
 }

@@ -1,0 +1,4 @@
+file(GLOB_RECURSE SRC_ALL CONFIGURE_DEPENDS *.cpp *.h)
+SOURCE_GROUP(TREE "${PROJECT_SOURCE_DIR}/Types/PE/src/Panels" FILES ${SRC_ALL})
+# target_sources(PE PRIVATE ${SRC_ALL})
+

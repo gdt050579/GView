@@ -297,6 +297,8 @@ uint32 TextParser::ParseString(uint32 index, StringFormat format) const
             break;
         if ((ch == '\'') && (HAS_FLAG(format, StringFormat::SingleQuotes)))
             break;
+        if ((ch == '`') && (HAS_FLAG(format, StringFormat::Apostrophe)))
+            break;
         // string does not starts with a valid string character
         return size;
     }
@@ -397,6 +399,14 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
                 index += 2;
             }
             break;
+        case 'o':
+        case 'O':
+            if (HAS_FLAG(format, NumberFormat::OctFormatOo))
+            {
+                base = 8;
+                index += 2;
+            }
+            break;
         }
     }
     auto* p                     = text + index;
@@ -409,6 +419,21 @@ uint32 TextParser::ParseNumber(uint32 index, NumberFormat format) const
         while (index < size)
         {
             validCharacter = (((*p) == '0') || ((*p) == '1'));
+            VALIDATE_NUMBER_SEPARATOR;
+
+            if (validCharacter)
+            {
+                p++;
+                index++;
+                continue;
+            }
+            break;
+        }
+        break;
+    case 8:
+        while (index < size)
+        {
+            validCharacter = (((*p) >= '0') && ((*p) <= '7'));
             VALIDATE_NUMBER_SEPARATOR;
 
             if (validCharacter)
@@ -524,6 +549,60 @@ uint64 TextParser::ComputeHash64(u16string_view txt, bool ignoreCase)
     const uint8* e = reinterpret_cast<const uint8*>(txt.data() + txt.size());
     return TextParser_ComputeHash64(p, e, ignoreCase);
 }
+bool ExtractContentOfString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result,u16string_view stringMarker)
+{
+    if (string.starts_with(stringMarker))
+    {
+        if (string.ends_with(stringMarker))
+        {
+            if (string.size() >= (stringMarker.size() * 2))
+                return result.Set(string.substr(stringMarker.size(), string.size() - (stringMarker.size() * 2)));
+            else
+                return result.Set("");
+        }
+        else
+        {
+            return result.Set(string.substr(stringMarker.size()));
+        }
+    }
+    return false;
+}
+bool TextParser::ExtractContentFromString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result, StringFormat format)
+{
+    // check for """..."""
+    if (HAS_FLAG(format, (StringFormat::DoubleQuotes | StringFormat::MultiLine)))
+        if (ExtractContentOfString(string, result, u"\"\"\""))
+            return true;
+
+    // check for '''...'''
+    if (HAS_FLAG(format, (StringFormat::SingleQuotes | StringFormat::MultiLine)))
+        if (ExtractContentOfString(string, result, u"'''"))
+            return true;
+
+    // check for ```...```
+    if (HAS_FLAG(format, (StringFormat::Apostrophe | StringFormat::MultiLine)))
+        if (ExtractContentOfString(string, result, u"```"))
+            return true;
+
+    // check for "..."
+    if (HAS_FLAG(format, (StringFormat::DoubleQuotes)))
+        if (ExtractContentOfString(string, result, u"\""))
+            return true;
+
+    // check for '...'
+    if (HAS_FLAG(format, (StringFormat::SingleQuotes)))
+        if (ExtractContentOfString(string, result, u"'"))
+            return true;
+
+    // check for `...`
+    if (HAS_FLAG(format, (StringFormat::Apostrophe)))
+        if (ExtractContentOfString(string, result, u"`"))
+            return true;
+
+    // otherwise return the entire string
+    return result.Set(string);
+}
+
 #undef HAS_FLAG
 #undef VALIDATE_NUMBER_SEPARATOR
 } // namespace GView::View::LexicalViewer

@@ -543,11 +543,12 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
               auto type = CharType::GetCharType(ch);
               return (type == CharType::Word) || (type == CharType::Number);
           });
-    auto tokColor             = TokenColor::Word;
-    auto tokType              = Keyword::TextToKeywordID(text, pos, next);
-    auto align                = TokenAlignament::None;
-    auto opID                 = 0U;
-    bool disableSimilarSearch = false;
+    auto tokColor   = TokenColor::Word;
+    auto tokType    = Keyword::TextToKeywordID(text, pos, next);
+    auto align      = TokenAlignament::None;
+    auto opID       = 0U;
+    auto tokenFlags = TokenFlags::None;
+
     if (tokType == TokenType::None)
     {
         tokType = Constant::TextToConstantID(text, pos, next);
@@ -565,8 +566,8 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         }
         else
         {
-            tokColor             = TokenColor::Constant;
-            disableSimilarSearch = true;
+            tokColor   = TokenColor::Constant;
+            tokenFlags = TokenFlags::DisableSimilaritySearch;
         }
         auto lastTokenID = tokenList.GetLastTokenID();
         switch (lastTokenID & 0xFFFF)
@@ -590,9 +591,9 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
     }
     else
     {
-        tokColor             = TokenColor::Keyword;
-        align                = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
-        disableSimilarSearch = true;
+        tokColor   = TokenColor::Keyword;
+        align      = TokenAlignament::AddSpaceAfter | TokenAlignament::AddSpaceBefore;
+        tokenFlags = TokenFlags::DisableSimilaritySearch;
         if (((tokType >> 16) == KeywordsType::Else) && (tokenList.GetLastTokenID() == TokenType::BlockClose))
         {
             // if (...) { ... } else ...
@@ -600,7 +601,7 @@ uint32 CPPFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text,
         }
     }
 
-    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, disableSimilarSearch);
+    tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, tokenFlags);
     return next;
 }
 uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
@@ -639,7 +640,7 @@ uint32 CPPFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& t
             break;
         }
 
-        tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, true);
+        tokenList.Add(tokenType, pos, pos + sz, TokenColor::Operator, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
         return pos + sz;
     }
     else
@@ -653,7 +654,7 @@ uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& 
 {
     auto eol   = text.ParseUntillEndOfLine(pos);
     auto start = pos;
-    pos        = text.ParseSpace(pos+1, SpaceType::SpaceAndTabs);
+    pos        = text.ParseSpace(pos + 1, SpaceType::SpaceAndTabs);
     if ((CharType::GetCharType(text[pos])) != CharType::Word)
     {
         // we have an error
@@ -674,16 +675,16 @@ uint32 CPPFile::TokenizePreprocessDirective(const TextParser& text, TokensList& 
           TokenColor::Preprocesor,
           TokenAlignament::StartsOnNewLine | TokenAlignament::AddSpaceAfter | TokenAlignament::NewLineAfter);
 
-    //auto tknIndex = list.Len();
-    //Tokenize(next, eol, text, list, blocks);
-    //auto tknCount = list.Len();
+    // auto tknIndex = list.Len();
+    // Tokenize(next, eol, text, list, blocks);
+    // auto tknCount = list.Len();
     //// change the color of every added token
-    //for (auto index = tknIndex; index < tknCount; index++)
-    //    list[index].SetTokenColor(TokenColor::Preprocesor);
+    // for (auto index = tknIndex; index < tknCount; index++)
+    //     list[index].SetTokenColor(TokenColor::Preprocesor);
     //// make sure that last token has a new line after it
-    //list.GetLastToken().UpdateAlignament(TokenAlignament::NewLineAfter);
+    // list.GetLastToken().UpdateAlignament(TokenAlignament::NewLineAfter);
     //// crete a block
-    //blocks.Add(tknIndex - 1, tknCount-1, BlockAlignament::AsBlockStartToken);
+    // blocks.Add(tknIndex - 1, tknCount-1, BlockAlignament::AsBlockStartToken);
 
     return eol;
 }
@@ -707,8 +708,7 @@ void CPPFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
             exprBlocks.Push(index);
             break;
         case TokenType::ExpressionClose:
-            syntax.blocks.Add(
-                  exprBlocks.Pop(), index, BlockAlignament::CurrentToken, BlockFlags::EndMarker | BlockFlags::ManualCollapse);
+            syntax.blocks.Add(exprBlocks.Pop(), index, BlockAlignament::CurrentToken, BlockFlags::EndMarker | BlockFlags::ManualCollapse);
             break;
         }
     }
@@ -717,8 +717,7 @@ void CPPFile::Tokenize(const TextParser& text, TokensList& tokenList, BlocksList
 {
     Tokenize(0, text.Len(), text, tokenList, blocks);
 }
-void CPPFile::Tokenize(
-      uint32 start, uint32 end, const TextParser& text, TokensList& tokenList, BlocksList& blocks)
+void CPPFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensList& tokenList, BlocksList& blocks)
 {
     auto idx  = start;
     auto next = 0U;
@@ -751,7 +750,7 @@ void CPPFile::Tokenize(
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
                   TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
-                  true);
+                  TokenFlags::DisableSimilaritySearch);
             idx = next;
             break;
         case CharType::Comment:
@@ -763,23 +762,51 @@ void CPPFile::Tokenize(
                   TokenColor::Comment,
                   TokenDataType::MetaInformation,
                   TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
-                  true);
+                  TokenFlags::DisableSimilaritySearch);
             idx = next;
             break;
         case CharType::ArrayOpen:
-            tokenList.Add(TokenType::ArrayOpen, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(
+                  TokenType::ArrayOpen,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenDataType::None,
+                  TokenAlignament::None,
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::ArrayClose:
-            tokenList.Add(TokenType::ArrayClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(
+                  TokenType::ArrayClose,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenDataType::None,
+                  TokenAlignament::None,
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::ExpressionOpen:
-            tokenList.Add(TokenType::ExpressionOpen, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(
+                  TokenType::ExpressionOpen,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenDataType::None,
+                  TokenAlignament::None,
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::ExpressionClose:
-            tokenList.Add(TokenType::ExpressionClose, idx, idx + 1, TokenColor::Operator, TokenDataType::None, TokenAlignament::None, true);
+            tokenList.Add(
+                  TokenType::ExpressionClose,
+                  idx,
+                  idx + 1,
+                  TokenColor::Operator,
+                  TokenDataType::None,
+                  TokenAlignament::None,
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::BlockOpen:
@@ -790,7 +817,7 @@ void CPPFile::Tokenize(
                   TokenColor::Operator,
                   TokenDataType::None,
                   TokenAlignament::NewLineAfter | TokenAlignament::AddSpaceBefore,
-                  true);
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::BlockClose:
@@ -801,7 +828,7 @@ void CPPFile::Tokenize(
                   TokenColor::Operator,
                   TokenDataType::None,
                   TokenAlignament::StartsOnNewLine | TokenAlignament::NewLineAfter | TokenAlignament::ClearIndentAfterPaint,
-                  true);
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::Number:
@@ -822,7 +849,7 @@ void CPPFile::Tokenize(
                   TokenColor::Operator,
                   TokenDataType::None,
                   TokenAlignament::AddSpaceBefore | TokenAlignament::AddSpaceAfter,
-                  true);
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::Semicolumn:
@@ -833,7 +860,7 @@ void CPPFile::Tokenize(
                   TokenColor::Operator,
                   TokenDataType::None,
                   TokenAlignament::NewLineAfter | TokenAlignament::AfterPreviousToken | TokenAlignament::ClearIndentAfterPaint,
-                  true);
+                  TokenFlags::DisableSimilaritySearch);
             idx++;
             break;
         case CharType::Preprocess:
@@ -1076,5 +1103,13 @@ void CPPFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
     BuildBlocks(syntax);
     IndentSimpleInstructions(syntax.tokens);
     CreateFoldUnfoldLinks(syntax);
+}
+bool CPPFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(string, result, StringFormat::All);
+}
+bool CPPFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    NOT_IMPLEMENTED(false);
 }
 } // namespace GView::Type::CPP

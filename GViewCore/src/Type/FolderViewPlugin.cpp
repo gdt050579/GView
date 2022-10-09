@@ -41,6 +41,9 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     {
         return "Folder";
     }
+    void RunCommand(std::string_view commandName) override
+    {
+    }
 
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
@@ -57,9 +60,9 @@ bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Contro
             return false; // empty directory
         return dirIT->exists();
     }
-    catch (...)
+    catch (std::filesystem::filesystem_error const& ex)
     {
-        return false;
+        RETURNERROR(false, ex.what());
     }
 }
 bool FolderType::PopulateItem(TreeViewItem item)
@@ -106,7 +109,7 @@ void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::
 {
     std::filesystem::path path = root;
     path /= relativePath;
-    GView::App::OpenFile(path);
+    GView::App::OpenFile(path,GView::App::OpenMethod::BestMatch);
 }
 TypeInterface* CreateInstance(const std::filesystem::path& path)
 {

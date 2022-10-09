@@ -14,6 +14,8 @@ using namespace AppCUI::Utils;
 
 GView::App::Instance* gviewAppInstance = nullptr;
 
+constexpr uint32 DEFAULT_CACHE_SIZE = 0xA00000; // 10 MB // sync this with the one from App/Instance.cpp
+
 bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
 {
     // First load the plugin
@@ -94,17 +96,22 @@ bool GView::App::ResetConfiguration()
     }
 
     // generic GView settings
-    ini["GView"]["CacheSize"]        = 0x100000;
+    ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
     ini["GView"]["Key.ChangeView"]   = Key::F4;
     ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
     ini["GView"]["Key.GoTo"]         = Key::F5;
     ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
+    ini["GView"]["Key.ChoseType"]    = Key::Alt | Key::F1;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path)
+void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName)
+{
+    OpenFile(path, OpenMethod::ForceType, typeName);
+}
+void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName)
 {
     if (gviewAppInstance)
     {
@@ -112,24 +119,29 @@ void GView::App::OpenFile(const std::filesystem::path& path)
         {
             if (path.is_absolute())
             {
-                gviewAppInstance->AddFileWindow(path);
+                gviewAppInstance->AddFileWindow(path, method, typeName);
             }
             else
             {
                 const auto absPath = std::filesystem::canonical(path);
-                gviewAppInstance->AddFileWindow(absPath);
+                gviewAppInstance->AddFileWindow(absPath, method, typeName);
             }
         }
         catch (std::filesystem::filesystem_error /* e */)
         {
-            gviewAppInstance->AddFileWindow(path);
+            gviewAppInstance->AddFileWindow(path, method, typeName);
         }
     }
 }
-void GView::App::OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension)
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name, typeExtension);
+        gviewAppInstance->AddBufferWindow(buf, name, "", method, typeName);
+}
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName)
+{
+    if (gviewAppInstance)
+        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)
@@ -141,4 +153,19 @@ uint32 GView::App::GetObjectsCount()
 {
     CHECK(gviewAppInstance, 0U, "GView was not initialized !");
     return gviewAppInstance->GetObjectsCount();
+}
+std::string_view GView::App::GetTypePluginName(uint32 index)
+{
+    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginName(index);
+}
+std::string_view GView::App::GetTypePluginDescription(uint32 index)
+{
+    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginDescription(index);
+}
+uint32 CORE_EXPORT GView::App::GetTypePluginsCount()
+{
+    CHECK(gviewAppInstance, 0, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginsCount();
 }

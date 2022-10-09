@@ -17,6 +17,8 @@ constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
 constexpr int CMD_GOTO                   = 30012346;
 constexpr int CMD_FIND                   = 30012347;
+constexpr int CMD_CHOSE_NEW_TYPE         = 30012348;
+constexpr int CMD_FOR_TYPE_PLUGIN_START  = 50000000;
 
 class CursorInformation : public UserControl
 {
@@ -34,8 +36,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp)
-    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj))
+FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp, Reference<Type::Plugin> _typePlugin)
+    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj)), typePlugin(_typePlugin)
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -217,11 +219,26 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         case CMD_FIND:
             ShowFindDialog();
             return true;
+        case CMD_CHOSE_NEW_TYPE:
+            if (this->obj->GetObjectType() == Object::Type::File)
+            {
+                GView::App::OpenFile(this->obj->GetPath(), OpenMethod::Select);
+            }
+            else
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet for this type of object (buffer/PID/Folder)");
+            }
+            return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
             horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
             horizontalPanels->SetFocus();
+            return true;
+        }
+        if (((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START + 1000)) && (this->typePlugin.IsValid()))
+        {
+            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[ID - CMD_FOR_TYPE_PLUGIN_START].name);
             return true;
         }
         break;
@@ -243,6 +260,17 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
           this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
     commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
+    commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);
+    // add commands from type plugin
+    if (this->typePlugin.IsValid())
+    {
+        auto idx = 0;
+        for (auto& cmd : typePlugin->GetCommands())
+        {
+            commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
+            idx++;
+        }
+    }
     // add all generic plugins
     this->gviewApp->UpdateCommandBar(commandBar);
     return true;

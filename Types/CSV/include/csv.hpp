@@ -35,6 +35,9 @@ namespace Type
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;
+            void RunCommand(std::string_view) override
+            {
+            }
             bool Update(Reference<GView::Object> obj);
             bool HasPanel(Panels::IDs id);
             void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);

@@ -34,13 +34,16 @@ extern "C"
 
         settings.AddZone(0, sizeof(ICO::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         settings.AddZone(
-              sizeof(ICO::Header), sizeof(ICO::DirectoryEntry) * ico->dirs.size(), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
+              sizeof(ICO::Header),
+              sizeof(ICO::DirectoryEntry) * ico->dirs.size(),
+              ColorPair{ Color::Olive, Color::DarkBlue },
+              "Image entries");
 
         uint8 idx = 1;
         for (auto& e : ico->dirs)
         {
             settings.AddZone(e.cursor.offset, e.cursor.size, ColorPair{ Color::Silver, Color::DarkBlue }, tempStr.Format("Img #%d", idx));
-            if (idx<10)
+            if (idx < 10)
                 settings.AddBookmark(idx, e.cursor.offset);
             idx++;
         }
@@ -50,8 +53,8 @@ extern "C"
     {
         GView::View::ImageViewer::Settings settings;
         settings.SetLoadImageCallback(ico.ToBase<View::ImageViewer::LoadImageInterface>());
-        
-        for (uint32 idx = 0; idx < ico->dirs.size();idx++)
+
+        for (uint32 idx = 0; idx < ico->dirs.size(); idx++)
         {
             settings.AddImage(ico->dirs[idx].ico.offset, ico->dirs[idx].ico.size);
         }
@@ -76,10 +79,11 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect["Pattern"] = {
-            "hex:'00 00 01 00'",
-            "hex:'00 00 02 00'",
+            "magic:00 00 01 00",
+            "magic:00 00 02 00",
         };
         sect["Priority"] = 1;
+        sect["Description"] = "Icon/Cursor image file (*.ico, *.cur)";
     }
 }
 

@@ -29,6 +29,9 @@ class JTFile : public TypeInterface
     {
         return "JT";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
 };
 
 namespace Panels

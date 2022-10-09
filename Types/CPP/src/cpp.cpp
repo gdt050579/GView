@@ -40,8 +40,10 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "cpp", "c", "h", "hpp" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = { "cpp", "c", "h", "hpp" };
+        sect["Priority"]    = 1;
+        sect["Pattern"]     = { "linestartswith:#include", "linestartswith:#pragma", "linestartswith:#define" };
+        sect["Description"] = "C/C++ language file (*.h, *.hpp, *.c, *.cpp)";
     }
 }
 

@@ -152,7 +152,7 @@ namespace View
 
             void UpdateCurrentSelection();
 
-            void PrepareDrawLineInfo (DrawLineInfo& dli);
+            void PrepareDrawLineInfo(DrawLineInfo& dli);
             void WriteHeaders(Renderer& renderer);
             void WriteLineAddress(DrawLineInfo& dli);
             void WriteLineNumbersToChars(DrawLineInfo& dli);
@@ -175,8 +175,9 @@ namespace View
             ColorPair OffsetToColor(uint64 offset);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
-            
+
             void OpenCurrentSelection();
+
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
 
@@ -185,7 +186,7 @@ namespace View
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            
+
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;

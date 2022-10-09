@@ -72,9 +72,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        static const std::initializer_list<std::string> patterns{ "hex:'A1 B2 C3 D4'", "hex:'D4 C3 B2 A1'" };
-        sect["Pattern"]   = patterns;
-        sect["Extension"] = "pcap";
-        sect["Priority"]  = 1;
+        sect["Pattern"]     = { "magic:A1 B2 C3 D4", "magic:D4 C3 B2 A1" };
+        sect["Extension"]   = "pcap";
+        sect["Priority"]    = 1;
+        sect["Description"] = "Network Packet capture file format";
     }
 }

@@ -71,6 +71,9 @@ namespace Type
             {
                 return isIcoFormat ? "ICO" : "CURSOR";
             }
+            void RunCommand(std::string_view) override
+            {
+            }
 
             bool LoadImageToObject(Image& img, uint32 index) override;
         };

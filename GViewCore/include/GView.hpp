@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.205.0"
+#define GVIEW_VERSION "0.252.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -33,7 +33,8 @@ struct CORE_EXPORT TypeInterface
 {
     Object* obj;
 
-    virtual std::string_view GetTypeName() = 0;
+    virtual std::string_view GetTypeName()                = 0;
+    virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
     template <typename T>
@@ -342,6 +343,7 @@ namespace DigitalSignature
         String errorSignerVerify;
     };
 
+    constexpr auto ERR_SIGNER            = -1;
     constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
 
     struct CORE_EXPORT SignerAttributes
@@ -465,17 +467,22 @@ namespace Golang
     {
         char* name{ nullptr };
         Func64 func;
+        union FstEntry
+        {
+            FstEntry32* _32;
+            FstEntry64* _64;
+        } fstEntry{ nullptr };
     };
 
-    struct CORE_EXPORT GoPclntab112
+    struct CORE_EXPORT PcLnTab
     {
       private:
         void* context{ nullptr };
         void Reset();
 
       public:
-        GoPclntab112();
-        ~GoPclntab112();
+        PcLnTab();
+        ~PcLnTab();
         bool Process(const Buffer& buffer, Architecture arch);
         GoFunctionHeader* GetHeader() const;
         uint64 GetFilesCount() const;
@@ -483,15 +490,70 @@ namespace Golang
         uint64 GetFunctionsCount() const;
         bool GetFunction(uint64 index, Function& func) const;
         uint64 GetEntriesCount() const;
+        void SetBuildId(std::string_view buildId);
+        const std::string& GetBuildId() const;
+        void SetRuntimeBuildVersion(std::string_view runtimeBuildVersion);
+        const std::string& GetRuntimeBuildVersion() const;
+        void SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo);
+        const std::string& GetRuntimeBuildModInfo() const;
     };
 
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
 } // namespace Golang
 
-namespace Pyc
+namespace ZLIB
 {
-
+    CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
+
+namespace Dissasembly
+{
+    enum class Opcodes : uint32
+    {
+        Header        = 1,
+        Call          = 2,
+        LCall         = 4,
+        Jmp           = 8,
+        LJmp          = 16,
+        Breakpoint    = 32,
+        FunctionStart = 64,
+        FunctionEnd   = 128,
+        All           = 0xFFFFFFFF
+    };
+
+    constexpr auto BYTES_SIZE    = 24U;
+    constexpr auto MNEMONIC_SIZE = 32U;
+    constexpr auto OP_STR_SIZE   = 160U;
+
+    struct CORE_EXPORT Instruction
+    {
+        uint32 id;
+        uint64 address;
+        uint16 size;
+        uint8 bytes[BYTES_SIZE];
+        char mnemonic[MNEMONIC_SIZE];
+        char opStr[OP_STR_SIZE];
+    };
+
+    class CORE_EXPORT DissasemblerIntel
+    {
+      private:
+        size_t handle{ 0 };
+        bool isX64{ false };
+
+      public:
+        bool Init(bool isx64, bool isLittleEndian);
+        bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool IsCallInstruction(const Instruction& instruction) const;
+        bool IsLCallInstruction(const Instruction& instruction) const;
+        bool IsJmpInstruction(const Instruction& instruction) const;
+        bool IsLJmpInstruction(const Instruction& instruction) const;
+        bool IsBreakpointInstruction(const Instruction& instruction) const;
+        bool AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const;
+        bool IsFunctionEndInstruction(const Instruction& instruction) const;
+        ~DissasemblerIntel();
+    };
+} // namespace Dissasembly
 
 namespace Compression
 {
@@ -711,12 +773,13 @@ namespace View
         };
         enum class StringFormat : uint32
         {
-            SingleQuotes                = 0x00000001, // "..."
-            DoubleQuotes                = 0x00000002, // '...'
-            TripleQuotes                = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences        = 0x00000008, // "...\n..."
-            MultiLine                   = 0x00000010, // string accross mulitple lines
-            LineContinuityWithBackslash = 0x00000020, // "   \<newline>   "
+            SingleQuotes                = 0x00000001, // '...'
+            DoubleQuotes                = 0x00000002, // "..."
+            Apostrophe                  = 0x00000004, // `...`
+            TripleQuotes                = 0x00000008, // '''...''' or """...""" or ```...``` (pending on the SingleQuotes..Apostrophe flag)
+            AllowEscapeSequences        = 0x00000010, // "...\n..."
+            MultiLine                   = 0x00000020, // string accross mulitple lines
+            LineContinuityWithBackslash = 0x00000040, // "   \<newline>   "
             All                         = 0xFFFFFFFF, // all possible forms of strings
         };
         enum class NumberFormat : uint32
@@ -724,11 +787,12 @@ namespace View
             DecimalOnly           = 0,
             HexFormat0x           = 0x00000001,
             BinFormat0b           = 0x00000002,
-            FloatingPoint         = 0x00000004,
-            AllowSignBeforeNumber = 0x00000008,
-            AllowUnderline        = 0x00000010,
-            AllowSingleQuote      = 0x00000020,
-            ExponentFormat        = 0x00000040,
+            OctFormatOo           = 0x00000004,
+            FloatingPoint         = 0x00000008,
+            AllowSignBeforeNumber = 0x00000010,
+            AllowUnderline        = 0x00000020,
+            AllowSingleQuote      = 0x00000040,
+            ExponentFormat        = 0x00000080,
             All                   = 0xFFFFFFFF, // all possible forms of numbers
         };
         class CORE_EXPORT TextParser
@@ -770,9 +834,11 @@ namespace View
             uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
             static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
             static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
+            static bool ExtractContentFromString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result, StringFormat format);
         };
         class CORE_EXPORT TextEditor
         {
+          protected:
             bool Grow(size_t size);
 
           protected:
@@ -797,6 +863,7 @@ namespace View
             bool Set(std::string_view text);
             bool Set(std::u16string_view text);
             bool Resize(uint32 charactersCount, char16 fillChar = ' ');
+            void Clear();
             bool Reserve(uint32 charactersCount);
 
             char16& operator[](uint32 index);
@@ -854,6 +921,12 @@ namespace View
             Preprocesor,
             Datatype,
             Error,
+        };
+        enum class TokenFlags : uint8
+        {
+            None                    = 0,
+            DisableSimilaritySearch = 0x01,
+            Sizeable                = 0x02,
         };
         enum class BlockAlignament : uint8
         {
@@ -936,6 +1009,11 @@ namespace View
             Token Next() const;
             Token Precedent() const;
 
+            Token& operator++();
+            Token& operator--();
+            Token operator+(uint32 offset) const;
+            Token operator-(uint32 offset) const;
+
             u16string_view GetText() const;
             Block GetBlock() const;
 
@@ -974,7 +1052,7 @@ namespace View
                   TokenColor color,
                   TokenDataType dataType,
                   TokenAlignament align,
-                  bool disableSimilartySearch);
+                  TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
@@ -1020,9 +1098,11 @@ namespace View
         };
         struct CORE_EXPORT ParseInterface
         {
-            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) = 0;
-            virtual void PreprocessText(TextEditor& editor)                                    = 0;
-            virtual void AnalyzeText(SyntaxManager& syntax)                                    = 0;
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)                         = 0;
+            virtual void PreprocessText(TextEditor& editor)                                                            = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax)                                                            = 0;
+            virtual bool StringToContent(std::u16string_view stringValue, AppCUI::Utils::UnicodeStringBuilder& result) = 0;
+            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)     = 0;
         };
         struct PluginData
         {
@@ -1059,6 +1139,7 @@ namespace View
             void AddPlugin(Reference<Plugin> plugin);
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
+            void SetMaxTokenSize(Size sz);
         };
     }; // namespace LexicalViewer
 
@@ -1173,13 +1254,27 @@ namespace View
 }; // namespace View
 namespace App
 {
+    enum class OpenMethod
+    {
+        FirstMatch,
+        BestMatch,
+        Select,
+        ForceType
+    };
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
+    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT
+    OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
+    std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
+    std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
+    uint32 CORE_EXPORT GetTypePluginsCount();
+
 }; // namespace App
 }; // namespace GView
 
@@ -1187,3 +1282,4 @@ ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint32);
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::BlockFlags, AppCUI::uint16);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenFlags, AppCUI::uint8);

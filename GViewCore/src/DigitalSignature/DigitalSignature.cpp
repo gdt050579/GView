@@ -332,10 +332,15 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
         auto& signer       = output.signers[i];
 
         signer.count = CMS_signed_get_attr_count(si);
-        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER)
+        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER && signer.count != ERR_SIGNER)
         {
             throw std::runtime_error("Unable to parse this number of signers!");
         }
+        if (signer.count == ERR_SIGNER)
+        {
+            continue;
+        }
+
         for (int32 j = 0; j < signer.count; j++)
         {
             X509_ATTRIBUTE* attr = CMS_signed_get_attr(si, j); // no need to free (pointer from CMS structure)
@@ -434,7 +439,11 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
                             if (attribute.contentTypeData.Contains("\n"))
                             {
                                 std::string_view subString{ attribute.contentTypeData.GetText(), attribute.contentTypeData.Len() };
-                                subString = { subString.data() + subString.find(startMarker) + startMarker.length(), subString.find('\n') };
+
+                                const auto indexStartMarker = subString.find(startMarker);
+                                const auto indexNewLine     = subString.find('\n', indexStartMarker);
+                                const auto newLength        = indexNewLine - indexStartMarker - startMarker.length();
+                                subString                   = { subString.data() + indexStartMarker + startMarker.length(), newLength };
 
                                 hash.Set(subString.data(), (uint32) subString.length());
                             }

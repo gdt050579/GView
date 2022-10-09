@@ -65,8 +65,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "csv", "tsv" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = { "csv", "tsv" };
+        sect["Priority"]    = 1;
+        sect["Description"] = "Comma or Tab separated values (*.csv, *.tsv)";
     }
 }
 

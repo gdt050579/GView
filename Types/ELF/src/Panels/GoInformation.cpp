@@ -15,7 +15,7 @@ GoInformation::GoInformation(Reference<Object> _object, Reference<GView::Type::E
 
 void GoInformation::UpdateGoInformation()
 {
-    const auto goHeader = elf->pclntab112.GetHeader();
+    const auto goHeader = elf->pcLnTab.GetHeader();
     CHECKRET(goHeader != nullptr, "");
     list->AddItem("Info").SetType(ListViewItem::Type::Category);
 
@@ -31,7 +31,7 @@ void GoInformation::UpdateGoInformation()
     AddDecAndHexElement("Instruction Size Quantum", format, goHeader->instructionSizeQuantum);
     AddDecAndHexElement("Size Of UIntPtr", format, goHeader->sizeOfUintptr);
 
-    const auto entriesNo = elf->pclntab112.GetEntriesCount();
+    const auto entriesNo = elf->pcLnTab.GetEntriesCount();
     AddDecAndHexElement("# FST Entries", format, (uint32) entriesNo);
 
     list->AddItem("Note").SetType(ListViewItem::Type::Category);
@@ -43,8 +43,8 @@ void GoInformation::UpdateGoInformation()
     if (elf->noteName.empty() == false)
         list->AddItem({ "Note Name", ls.Format("%s", elf->noteName.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 
-    if (elf->buildId.empty() == false)
-        list->AddItem({ "Build ID", ls.Format("%s", elf->buildId.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
+    if (elf->pcLnTab.GetBuildId().empty() == false)
+        list->AddItem({ "Build ID", ls.Format("%s", elf->pcLnTab.GetBuildId().c_str()) }).SetType(ListViewItem::Type::Emphasized_1);
 
     if (elf->gnuString.empty() == false)
         list->AddItem({ "GNU String", ls.Format("%s", elf->gnuString.c_str()) }).SetType(ListViewItem::Type::Emphasized_1);

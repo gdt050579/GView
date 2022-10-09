@@ -43,7 +43,14 @@ namespace CharacterType
 
 #define CHAR_CASE(char_type, align)                                                                                                        \
     case CharacterType::char_type:                                                                                                         \
-        syntax.tokens.Add(TokenType::char_type, pos, pos + 1, TokenColor::Operator, TokenDataType::None, (align), true);                   \
+        syntax.tokens.Add(                                                                                                                 \
+              TokenType::char_type,                                                                                                        \
+              pos,                                                                                                                         \
+              pos + 1,                                                                                                                     \
+              TokenColor::Operator,                                                                                                        \
+              TokenDataType::None,                                                                                                         \
+              (align),                                                                                                                     \
+              TokenFlags::DisableSimilaritySearch);                                                                                        \
         pos++;                                                                                                                             \
         break;
 
@@ -154,7 +161,7 @@ void JSONFile::BuildBlocks(GView::View::LexicalViewer::SyntaxManager& syntax)
     len = syntax.blocks.Len();
     LocalString<128> tmp;
 
-    for (auto index = 0u;index<len;index++)
+    for (auto index = 0u; index < len; index++)
     {
         auto block = syntax.blocks[index];
         block.SetFoldMessage(tmp.Format("Tokens: %d", block.GetEndToken().GetIndex() - block.GetStartToken().GetIndex()));
@@ -178,5 +185,13 @@ void JSONFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
     ParseFile(syntax);
     BuildBlocks(syntax);
+}
+bool JSONFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    return TextParser::ExtractContentFromString(string, result, StringFormat::All);
+}
+bool JSONFile::ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)
+{
+    NOT_IMPLEMENTED(false);
 }
 } // namespace GView::Type::JSON
