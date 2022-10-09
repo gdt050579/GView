@@ -11,21 +11,30 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone
     DisassemblyZone& zone         = structureZone->zoneDetails;
     uint64 entryPointSizeUntilEnd = zone.size - zone.entryPoint;
 
+    if (dli.textLineToDraw == 0)
+    {
+        dli.renderer.WriteSingleLineText(
+              Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
+        return true;
+    }
+
     csh handle;
 
+    // TODO: move this in onCreate and use a boolean value if enabled
     if (!cs_support(CS_ARCH_X86))
     {
+        WriteErrorToScreen(dli, "Capstone does not support X86");
         return false;
     }
 
-    auto resCode = cs_open(CS_ARCH_X86, CS_MODE_32, &handle);
+    const auto resCode = cs_open(CS_ARCH_X86, CS_MODE_32, &handle);
     if (resCode != CS_ERR_OK)
     {
-        auto res = cs_strerror(resCode);
+        WriteErrorToScreen(dli, cs_strerror(resCode));
         return false;
     }
 
-    auto instructionData = obj->GetData().Get(zone.startingZonePoint, zone.size,false);
+    const auto instructionData = obj->GetData().Get(zone.entryPoint, entryPointSizeUntilEnd, false);
     if (!instructionData.IsValid())
         return true;
 
@@ -45,10 +54,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone
         printf("ERROR: Failed to disassemble given code!\n");
 
     cs_close(&handle);
-
-
-    dli.renderer.WriteSingleLineText(
-          Layout.startingTextLineOffset, structureZone->startLineIndex + 1, "Dissasm zone", config.Colors.Normal);
 
     return true;
 }

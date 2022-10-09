@@ -265,6 +265,7 @@ namespace View
 
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
+            void WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const;
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
