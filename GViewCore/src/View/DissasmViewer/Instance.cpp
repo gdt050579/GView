@@ -539,6 +539,10 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
     {
         if (!zone->isCollapsed)
         {
+            // TODO: hack-ish, maybe find another alternative or reset it down
+            if (!zone->data.canBeCollapsed)
+                dli.textLineToDraw++;
+
             uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
             if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
             {
@@ -548,9 +552,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
             if (startingOffset + dataNeeded <= this->obj->GetData().GetSize())
             {
-                // TODO: hack-ish, maybe find another alternative or reset it down
-                if (!zone->data.canBeCollapsed)
-                    dli.textLineToDraw++;
+                
                 
                 const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
@@ -710,14 +712,14 @@ void Instance::RecomputeDissasmZones()
 
                 auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
 
-                collapsibleZone->data            = { startingTextOffset, endTextOffset - startingTextOffset + 1, false };
+                collapsibleZone->data            = { startingTextOffset, endTextOffset - startingTextOffset, false };
                 collapsibleZone->startLineIndex  = lastZoneEndingIndex;
                 collapsibleZone->isCollapsed     = false;
-                collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
+                collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex;
                 // collapsibleZone->textLinesOffset = textLinesOffset;
                 collapsibleZone->zoneID       = currentIndex++;
                 collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
-                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize);
 
                 if (!collapsibleZone->isCollapsed)
                     collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
@@ -811,7 +813,7 @@ void Instance::RecomputeDissasmZones()
     collapsibleZone->data            = { startingTextOffset, zoneSize, false };
     collapsibleZone->startLineIndex  = lastZoneEndingIndex;
     collapsibleZone->isCollapsed     = false;
-    collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
+    collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex;
     // collapsibleZone->textLinesOffset = textLinesOffset;
     collapsibleZone->zoneID       = currentIndex++;
     collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
