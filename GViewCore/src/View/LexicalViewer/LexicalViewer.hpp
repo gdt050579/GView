@@ -541,7 +541,7 @@ namespace View
             void Validate();
 
           public:
-            FindAllDialog(uint64 hash,const std::vector<TokenObject>& tokens, const char16* txt);
+            FindAllDialog(const TokenObject& currentToken,const std::vector<TokenObject>& tokens, const char16* txt);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline uint32 GetSelectedTokenIndex() const

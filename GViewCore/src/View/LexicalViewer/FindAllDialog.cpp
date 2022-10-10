@@ -9,7 +9,7 @@ constexpr int32 BTN_ID_OK             = 1;
 constexpr int32 BTN_ID_CANCEL         = 2;
 constexpr uint32 INVALID_TOKEN_NUMBER = 0xFFFFFFFF;
 
-FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens, const char16* txt)
+FindAllDialog::FindAllDialog(const TokenObject& currentToken, const std::vector<TokenObject>& tokens, const char16* txt)
     : Window("All apearences", "d:c,w:80,h:20", WindowFlags::ProcessReturn)
 {
     LocalString<128> tmp;
@@ -23,7 +23,7 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
     for (auto idx = 0U; idx < len; idx++)
     {
         const auto& tok = tokens[idx];
-        if (tok.hash != hash)
+        if (tok.hash != currentToken.hash)
             continue;
         if (tok.lineNo == lastLine)
             continue;
@@ -59,6 +59,7 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
         item.SetText(1, content);
         lastLine = tok.lineNo;
     }
+    lst->SetSearchString(currentToken.GetText(txt));
 
     Factory::Button::Create(this, "&OK", "l:25,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:40,b:0,w:13", BTN_ID_CANCEL);

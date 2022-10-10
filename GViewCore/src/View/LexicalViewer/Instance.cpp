@@ -1971,7 +1971,7 @@ void Instance::ShowFindAllDialog()
         return;
     }
 
-    FindAllDialog dlg(tok.hash, this->tokens, this->text.text);
+    FindAllDialog dlg(tok, this->tokens, this->text.text);
 
     if (dlg.Show() == Dialogs::Result::Ok)
     {
