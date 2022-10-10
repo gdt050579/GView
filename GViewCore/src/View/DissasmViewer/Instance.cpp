@@ -552,9 +552,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
             if (startingOffset + dataNeeded <= this->obj->GetData().GetSize())
             {
-                
-                
-                const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
+                const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
                 {
                     AddStringToChars(
@@ -584,6 +582,15 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                     dli.chText->Color = textColor;
                     dli.chText++;
                     dli.start++;
+                }
+
+                HighlightSelectionText(dli, buf.GetLength());
+
+                const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+                if (cursorLine == dli.screenLineToDraw)
+                {
+                    const uint32 index             = this->Cursor.currentPos % Layout.textSize;
+                    dli.chNameAndSize[index].Color = config.Colors.Selection;
                 }
             }
             else
@@ -658,6 +665,8 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
             if (lineToDrawTo < selectionEndLine)
                 endIndex = static_cast<uint32>(maxLineLength);
             // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
+            //TODO: variables can be skipped, use startingPointer < EndPointer
+            const auto savedChText = dli.chText;
             dli.chText = dli.chNameAndSize + startingIndex;
             while (startingIndex < endIndex)
             {
@@ -665,6 +674,7 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
                 dli.chText++;
                 startingIndex++;
             }
+            dli.chText = savedChText;
         }
     }
 }
