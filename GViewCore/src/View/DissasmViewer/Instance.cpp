@@ -539,18 +539,19 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
     {
         if (!zone->isCollapsed)
         {
-            if (zone->data.startingOffset + zone->data.size <= this->obj->GetData().GetSize())
+            uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
+            if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
+            {
+                dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
+            }
+            const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
+
+            if (startingOffset + dataNeeded <= this->obj->GetData().GetSize())
             {
                 // TODO: hack-ish, maybe find another alternative or reset it down
                 if (!zone->data.canBeCollapsed)
                     dli.textLineToDraw++;
-
-                uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
-                if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
-                {
-                    dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
-                }
-                const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
+                
                 const auto buf              = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
                 {
