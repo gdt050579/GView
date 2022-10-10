@@ -826,7 +826,7 @@ void Instance::BakupTokensPositions()
     backupedTokenPositionList.clear();
     for (const auto& tok : this->tokens)
     {
-        backupedTokenPositionList.push_back({ 0, 0, 1, 1, TokenStatus::None });
+        backupedTokenPositionList.push_back(tok.pos);
     }
 }
 void Instance::RestoreTokensPositionsFromBackup()
@@ -836,8 +836,7 @@ void Instance::RestoreTokensPositionsFromBackup()
     auto index = static_cast<size_t>(0);
     for (auto& tok : this->tokens)
     {
-        const auto& bakPos = this->backupedTokenPositionList[index];
-        // copy from bakPos to tok
+        tok.pos = this->backupedTokenPositionList[index];
         index++;
     }
     backupedTokenPositionList.clear();
@@ -1409,7 +1408,7 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         // Buffer build --> open
         LocalString<128> tmpName;
 
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start),GView::App::OpenMethod::Select);
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start), GView::App::OpenMethod::Select);
     }
     else
     {
