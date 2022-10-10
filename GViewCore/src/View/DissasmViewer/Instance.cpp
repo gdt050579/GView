@@ -173,9 +173,23 @@ void Instance::AddNewCollapsibleZone()
     const uint64 offsetEnd   = selection.GetSelectionEnd(0);
 
     const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
-    if (!zonesFound.empty())
+    if (zonesFound.empty() || zonesFound.size() != 1)
     {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection where other zones do not exist!");
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single text zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::CollapsibleAndTextZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone!");
+        return;
+    }
+
+    auto data = static_cast<CollapsibleAndTextZone*>(zone.get());
+    if (data->data.canBeCollapsed)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone that cannot be collapsed!");
         return;
     }
 
@@ -665,9 +679,9 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
             if (lineToDrawTo < selectionEndLine)
                 endIndex = static_cast<uint32>(maxLineLength);
             // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
-            //TODO: variables can be skipped, use startingPointer < EndPointer
+            // TODO: variables can be skipped, use startingPointer < EndPointer
             const auto savedChText = dli.chText;
-            dli.chText = dli.chNameAndSize + startingIndex;
+            dli.chText             = dli.chNameAndSize + startingIndex;
             while (startingIndex < endIndex)
             {
                 dli.chText->Color = Cfg.Selection.Editor;
@@ -908,7 +922,8 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
 
     for (uint32 line = lineStart; line <= lineEnd && zoneIndex < zonesCount; line++)
     {
-        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex)
+        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
+            (result.empty() || result.back().zoneIndex != zoneIndex))
             result.emplace_back(zoneIndex, line);
         else if (line >= zones[zoneIndex]->endingLineIndex)
             zoneIndex++;
