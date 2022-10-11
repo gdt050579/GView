@@ -68,7 +68,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
             dli.chText++;
             start++;
         }
-        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars.GetBuffer(), false);
+        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
         return true;
     }
     zone->isInit               = true;
@@ -141,6 +141,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     cs_close(&handle);
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars.GetBuffer(), false);
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
     return true;
 }

@@ -704,16 +704,16 @@ void Instance::RecomputeDissasmZones()
     std::map<uint32, std::vector<MappingZonesData>> mappingData;
     for (auto& mapping : this->settings->dissasmTypeMapped)
     {
-        mappingData[OffsetToLinePosition(mapping.first).line].emplace_back(&mapping.second, DissasmParseZoneType::StructureParseZone);
+        mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
     }
     for (auto& dissasmZone : settings->disassemblyZones)
     {
-        mappingData[OffsetToLinePosition(dissasmZone.first).line].emplace_back(
-              &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone);
+        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back(
+              { &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
     }
     for (auto& zone : settings->collapsibleAndTextZones)
     {
-        mappingData[OffsetToLinePosition(zone.first).line].emplace_back(&zone.second, DissasmParseZoneType::CollapsibleAndTextZone);
+        mappingData[OffsetToLinePosition(zone.first).line].push_back({ &zone.second, DissasmParseZoneType::CollapsibleAndTextZone });
     }
 
     uint32 lastZoneEndingIndex = 0;
@@ -931,7 +931,7 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
     {
         if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
             (result.empty() || result.back().zoneIndex != zoneIndex))
-            result.emplace_back(zoneIndex, line);
+            result.push_back({ zoneIndex, line });
         else if (line >= zones[zoneIndex]->endingLineIndex)
             zoneIndex++;
     }
@@ -957,7 +957,7 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
 
     const int32 sizeToAdjust = static_cast<int32>(newExtendedSize) - zone->extendedSize;
     zone->endingLineIndex += sizeToAdjust;
-    bool foundZone           = false;
+    bool foundZone = false;
     for (const auto& availableZone : settings->parseZones)
     {
         if (foundZone)
