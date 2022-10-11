@@ -96,7 +96,7 @@ namespace View
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
-            //uint32 textLinesOffset;
+            // uint32 textLinesOffset;
             uint16 zoneID; // TODO: maybe can be replaced by the index in an array
             bool isCollapsed;
 
@@ -271,7 +271,7 @@ namespace View
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;
 
-            //Utils
+            // Utils
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
@@ -287,7 +287,7 @@ namespace View
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
 
-            //Operations
+            // Operations
             void AddNewCollapsibleZone();
 
           public:

@@ -789,7 +789,7 @@ void Instance::RecomputeDissasmZones()
                 codeZone->zoneDetails     = *convertedData;
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
+                codeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
                 codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
