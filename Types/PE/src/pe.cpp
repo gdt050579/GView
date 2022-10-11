@@ -196,7 +196,6 @@ UInt16 e_res[4];)");
         // UInt32 e_lfanew;)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
-        settings.AddVariable(543, "ImageDOSHeader", typeImageDOSHeader);
 
         win->CreateViewer("DissasmView", settings);
     }
