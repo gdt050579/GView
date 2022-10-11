@@ -15,6 +15,9 @@ namespace View
     {
         using namespace AppCUI;
 
+        static constexpr size_t CACHE_OFFSETS_DIFFERENCE = 500;
+        static constexpr size_t DISSASM_MAX_CACHED_LINES = 200;
+
         struct Config
         {
             struct
@@ -125,7 +128,12 @@ namespace View
 
         struct DissasmCodeZone : public ParseZone
         {
+            uint32 startingCacheLineIndex;
+            uint64 lastInstrOffsetInCachedLines;
+            std::vector<CharacterBuffer> cachedLines;
+            std::vector<uint64> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
+            bool isInit;
         };
 
         struct SettingsData
@@ -250,7 +258,7 @@ namespace View
                   DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
-            bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* structureZone);
+            bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
@@ -263,10 +271,13 @@ namespace View
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;
 
+            //Utils
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
             void WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const;
+
+            void AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 

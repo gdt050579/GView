@@ -783,14 +783,21 @@ void Instance::RecomputeDissasmZones()
             break;
             case DissasmParseZoneType::DissasmCodeParseZone:
             {
+                // TODO: resize vectors! -> there could be done some approximations for the best speed
                 const auto convertedData  = static_cast<DisassemblyZone*>(entry.data);
                 auto codeZone             = std::make_unique<DissasmCodeZone>();
                 codeZone->zoneDetails     = *convertedData;
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
                 codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
+
+                codeZone->isInit = false;
+                // initial offset is the entry point
+                codeZone->cachedCodeOffsets.push_back(convertedData->entryPoint);
+                codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
 
                 // lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
                 lastZoneEndingIndex = codeZone->endingLineIndex;
@@ -935,6 +942,34 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
 void Instance::WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const
 {
     dli.renderer.WriteSingleLineText(Layout.startingTextLineOffset, dli.screenLineToDraw + 1, error, Cfg.Editor.Normal);
+}
+
+void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize)
+{
+    if (zone->isCollapsed)
+    {
+        zone->extendedSize = newExtendedSize;
+        return;
+    }
+    if (zone->extendedSize == newExtendedSize)
+        return;
+    selection.Clear();
+
+    const int32 sizeToAdjust = static_cast<int32>(newExtendedSize) - zone->extendedSize;
+    zone->endingLineIndex += sizeToAdjust;
+    bool foundZone           = false;
+    for (const auto& availableZone : settings->parseZones)
+    {
+        if (foundZone)
+        {
+            availableZone->startLineIndex += sizeToAdjust;
+            availableZone->endingLineIndex += sizeToAdjust;
+        }
+        if (availableZone->zoneID == zone->zoneID)
+            foundZone = true;
+    }
+    zone->extendedSize = newExtendedSize;
+    assert(foundZone);
 }
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
