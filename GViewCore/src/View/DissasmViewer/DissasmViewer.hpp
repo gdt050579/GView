@@ -3,6 +3,7 @@
 #include "Internal.hpp"
 
 #include <unordered_map>
+#include <utility>
 #include <deque>
 #include <list>
 
@@ -13,6 +14,9 @@ namespace View
     namespace DissasmViewer
     {
         using namespace AppCUI;
+
+        static constexpr size_t CACHE_OFFSETS_DIFFERENCE = 500;
+        static constexpr size_t DISSASM_MAX_CACHED_LINES = 200;
 
         struct Config
         {
@@ -31,17 +35,21 @@ namespace View
             struct
             {
                 AppCUI::Input::Key AddNewType;
+                AppCUI::Input::Key ShowFileContentKey;
             } Keys;
             bool Loaded;
 
+            bool ShowFileContent;
             static void Update(IniSection sect);
             void Initialize();
         };
 
-        struct DissasemblyZone
+        struct DisassemblyZone
         {
+            uint64 startingZonePoint;
             uint64 size;
-            DissasemblyLanguage language;
+            uint64 entryPoint;
+            DisassemblyLanguage language;
         };
 
         enum class InternalDissasmType : uint8
@@ -79,7 +87,8 @@ namespace View
         enum class DissasmParseZoneType : uint8
         {
             StructureParseZone,
-            DissasmCodeParseZone
+            DissasmCodeParseZone,
+            CollapsibleAndTextZone
         };
 
         struct ParseZone
@@ -87,8 +96,8 @@ namespace View
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
-            uint32 textLinesOffset;
-            uint16 zoneID;
+            // uint32 textLinesOffset;
+            uint16 zoneID; // TODO: maybe can be replaced by the index in an array
             bool isCollapsed;
 
             DissasmParseZoneType zoneType;
@@ -101,26 +110,45 @@ namespace View
             std::list<std::reference_wrapper<const DissasmType>> types;
             std::list<int32> levels;
             uint64 textFileOffset;
-            uint64 initalTextFileOffset;
+            uint64 initialTextFileOffset;
+        };
+
+        struct CollapsibleAndTextData
+        {
+            uint64 startingOffset;
+            uint64 size;
+
+            bool canBeCollapsed;
+        };
+
+        struct CollapsibleAndTextZone : public ParseZone
+        {
+            CollapsibleAndTextData data;
         };
 
         struct DissasmCodeZone : public ParseZone
         {
-            DissasemblyZone zoneDetails;
+            uint32 startingCacheLineIndex;
+            uint64 lastInstrOffsetInCachedLines;
+            std::vector<CharacterBuffer> cachedLines;
+            std::vector<uint64> cachedCodeOffsets;
+            DisassemblyZone zoneDetails;
+            bool isInit;
         };
 
         struct SettingsData
         {
-            DissasemblyLanguage defaultLanguage;
-            std::map<uint64, DissasemblyZone> dissasemblyZones;
+            DisassemblyLanguage defaultLanguage;
+            std::map<uint64, DisassemblyZone> disassemblyZones;
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-            std::unordered_map<uint64, string_view> memoryMappings; // memmory locations to functions
+            std::unordered_map<uint64, string_view> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
-            std::map<uint64, DissasmType> dissasmTypeMapped;          // mapped types against the offset of the file
-            std::unordered_map<TypeID, DissasmType> userDeginedTypes; // user defined typess
+            std::map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
+            std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
+            std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
             SettingsData();
         };
 
@@ -137,11 +165,9 @@ namespace View
                 uint32 currentLineFromOffset;
                 uint32 screenLineToDraw;
                 uint32 textLineToDraw;
-                AppCUI::Graphics::Renderer& renderer;
-                bool wasInsideStructure;
-                uint32 lastZoneIndexToReset;
-                DrawLineInfo(AppCUI::Graphics::Renderer& renderer)
-                    : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), wasInsideStructure(false)
+
+                Renderer& renderer;
+                DrawLineInfo(Renderer& renderer) : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer)
                 {
                 }
             };
@@ -180,10 +206,10 @@ namespace View
 
             struct
             {
-                //uint8 buffer[256];
+                // uint8 buffer[256];
                 uint32 size;
                 uint64 start, end;
-                //bool highlight;
+                // bool highlight;
             } CurrentSelection;
 
             struct ButtonsData
@@ -201,6 +227,18 @@ namespace View
                 std::vector<ButtonsData> buttons;
             } MyLine;
 
+            struct ZoneLocation
+            {
+                uint32 zoneIndex;
+                uint32 zoneLine;
+            };
+
+            struct LinePosition
+            {
+                uint32 line;
+                uint32 offset;
+            };
+
             FixSizeString<16> name;
 
             Reference<GView::Object> obj;
@@ -209,6 +247,8 @@ namespace View
             CharacterBuffer chars;
             Utils::Selection selection;
             CodePage codePage;
+            Menu rightClickMenu;
+            uint64 rightClickOffset;
 
             inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
@@ -216,7 +256,9 @@ namespace View
             bool WriteTextLineToChars(DrawLineInfo& dli);
             bool WriteStructureToScreen(
                   DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
+            bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
+            bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
@@ -226,6 +268,16 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
             void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
+            void RecomputeDissasmZones();
+            uint64 GetZonesMaxSize() const;
+
+            // Utils
+            inline LinePosition OffsetToLinePosition(uint64 offset) const;
+            inline uint64 LinePositionToOffset(LinePosition linePosition) const;
+            vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
+            void WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const;
+
+            void AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
@@ -234,6 +286,9 @@ namespace View
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
+
+            // Operations
+            void AddNewCollapsibleZone();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -262,7 +317,7 @@ namespace View
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 
-            // Proporty interface
+            // Property interface
             virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
             virtual bool SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error) override;
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
