@@ -546,7 +546,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
     if (zone->data.canBeCollapsed && dli.textLineToDraw == 0)
     {
-        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%u] ", zone->data.size);
+        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%ull] ", zone->data.size);
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
     }
     else
@@ -562,7 +562,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             {
                 dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
             }
-            const uint64 startingOffset = zone->data.startingOffset + (dli.textLineToDraw - 1) * Layout.textSize;
+            const uint64 startingOffset = zone->data.startingOffset + (static_cast<uint64>(dli.textLineToDraw) - 1ull) * Layout.textSize;
 
             if (startingOffset + dataNeeded <= this->obj->GetData().GetSize())
             {
@@ -570,7 +570,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 if (!buf.IsValid())
                 {
                     AddStringToChars(
-                          dli, config.Colors.StructureColor, "\tInvalid buff at position: %u", zone->data.startingOffset + zone->data.size);
+                          dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -610,7 +610,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             else
             {
                 AddStringToChars(
-                      dli, config.Colors.StructureColor, "\tNot enough data for offset: %u", zone->data.startingOffset + zone->data.size);
+                      dli, config.Colors.StructureColor, "\tNot enough data for offset: %ull", zone->data.startingOffset + zone->data.size);
             }
         }
     }
