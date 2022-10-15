@@ -27,6 +27,35 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
     return values[left];
 }
 
+inline void DissasmAddColorsToInstruction(const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout)
+{
+    cb.Clear();
+
+    LocalString<128> string;
+    string.SetChars(' ', std::min<uint16>(128, layout.startingTextLineOffset));
+    cb.Add(string);
+
+    string.SetFormat("0x%" PRIx64 ":           ", insn.address);
+    cb.Add(string, cfg.Colors.AsmOffsetColor);
+
+    string.SetFormat("%s ", insn.mnemonic);
+    cb.Add(string, cfg.Colors.AsmWorkRegisterColor);
+
+    string.SetFormat("%s", insn.op_str);
+    if (string.Len() > 0)
+        cb.Add(string, cfg.Colors.AsmDefaultColor);
+
+    // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
+
+    // auto c = zone->cachedLines[j].GetBuffer();
+    // for (uint32 i = 0; i < string.Len(); i++)
+    //{
+    //     c->Code  = codePage[string[i]];
+    //     c->Color = config.Colors.Normal;
+    //     c++;
+    // }
+}
+
 bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0)
@@ -35,33 +64,43 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return true;
     }
 
-    auto clearChar = this->chars.GetBuffer();
-    for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
-    {
-        clearChar->Code  = codePage[' '];
-        clearChar->Color = config.Colors.Normal;
-        clearChar++;
-    }
+    chars.Clear();
+    // auto clearChar = this->chars.GetBuffer();
+    // for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
+    //{
+    //     clearChar->Code  = codePage[' '];
+    //     clearChar->Color = config.Colors.Normal;
+    //     clearChar++;
+    // }
 
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
 
     if (dli.textLineToDraw == 0)
     {
-        AddStringToChars(dli, config.Colors.StructureColor, "Dissasm zone");
-        //dli.renderer.WriteSingleLineText(
-        //      Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
+        LocalString<256> spaces;
+        spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
+        chars.Set(spaces);
+        constexpr std::string_view zoneName = "Dissasm zone";
+        chars.Add(zoneName.data(), config.Colors.StructureColor);
+        // dli.renderer.WriteSingleLineText(
+        //       Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
 
-        HighlightSelectionText(dli, sizeof("Dissasm zone"));
+        HighlightSelectionText(dli, zoneName.size());
 
         const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
         if (cursorLine == dli.screenLineToDraw)
         {
-            const uint32 index             = this->Cursor.currentPos % Layout.textSize;
-            dli.chNameAndSize[index].Color = config.Colors.Selection;
+            const uint32 index = this->Cursor.currentPos % Layout.textSize + Layout.startingTextLineOffset;
+
+            if (index < chars.Len())
+                chars.GetBuffer()[index].Color = config.Colors.Selection;
+            else
+                dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
         }
 
-        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
+        // const auto bufferToDraw = CharacterView{ chars.GetBuffer(), (uint32) (dli.chText - this->chars.GetBuffer()) };
+        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
         AdjustZoneExtendedSize(zone, 100);
@@ -72,26 +111,23 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (zone->isInit && currentLine >= zone->startingCacheLineIndex)
     {
         const uint32 lineAsmToDraw = currentLine - zone->startingCacheLineIndex;
-        auto start                 = zone->cachedLines[lineAsmToDraw].GetBuffer();
-        auto end                   = zone->cachedLines[lineAsmToDraw].GetBuffer() + zone->cachedLines[lineAsmToDraw].Len();
-        // TODO: check not to overflow
-        while (start != end)
-        {
-            *dli.chText = *start;
-            dli.chText++;
-            start++;
-        }
+        chars.Set(zone->cachedLines[lineAsmToDraw]);
 
-        HighlightSelectionText(dli, dli.chText - dli.chNameAndSize);
+        HighlightSelectionText(dli, chars.Len());
 
         const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
         if (cursorLine == dli.screenLineToDraw)
         {
-            const uint32 index             = this->Cursor.currentPos % Layout.textSize;
-            dli.chNameAndSize[index].Color = config.Colors.Selection;
+            const uint32 index = this->Cursor.currentPos % Layout.textSize + Layout.startingTextLineOffset;
+
+            if (index < chars.Len())
+                chars.GetBuffer()[index].Color = config.Colors.Selection;
+            else
+                dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
         }
 
-        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
+        const auto bufferToDraw = CharacterView{ chars.GetBuffer(), zone->cachedLines[lineAsmToDraw].Len() };
+        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
         return true;
     }
     zone->isInit               = true;
@@ -127,31 +163,22 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
           handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES, &insn);
     if (count > 0)
     {
-        LocalString<192> string;
         for (size_t j = 0; j < count; j++)
         {
-            zone->cachedLines[j].Fill(' ', Layout.textSize);
-            string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
-
-            auto c = zone->cachedLines[j].GetBuffer();
-            for (uint32 i = 0; i < string.Len(); i++)
-            {
-                c->Code  = codePage[string[i]];
-                c->Color = config.Colors.Normal;
-                c++;
-            }
+            DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout);
 
             if (lineAsmToDraw == j)
             {
-                auto start = zone->cachedLines[lineAsmToDraw].GetBuffer();
-                auto end   = zone->cachedLines[lineAsmToDraw].GetBuffer() + zone->cachedLines[lineAsmToDraw].Len();
-                // TODO: check not to overflow
-                while (start != end)
-                {
-                    *dli.chText = *start;
-                    dli.chText++;
-                    start++;
-                }
+                chars.Set(zone->cachedLines[lineAsmToDraw]);
+                // auto start = zone->cachedLines[lineAsmToDraw].GetBuffer();
+                // auto end   = zone->cachedLines[lineAsmToDraw].GetBuffer() + zone->cachedLines[lineAsmToDraw].Len();
+                //// TODO: check not to overflow
+                // while (start != end)
+                //{
+                //     *dli.chText = *start;
+                //     dli.chText++;
+                //     start++;
+                // }
             }
         }
 
@@ -164,6 +191,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     cs_close(&handle);
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
+    const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
     return true;
 }

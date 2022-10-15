@@ -31,6 +31,14 @@ namespace View
                 ColorPair OutsideZone;
                 ColorPair StructureColor;
                 ColorPair DataTypeColor;
+                ColorPair AsmOffsetColor;                // 0xsomthing
+                ColorPair AsmIrrelevantInstructionColor; // int3
+                ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
+                ColorPair AsmStackRegisterColor;         // eax, ebx,ecx, edx
+                ColorPair AsmCompareInstructionColor;    // test, cmp
+                ColorPair AsmFunctionColor;              // ret call
+                ColorPair AsmLocationInstruction;        // dword ptr[ ]
+                ColorPair AsmDefaultColor;               // rest of things
             } Colors;
             struct
             {
@@ -152,6 +160,15 @@ namespace View
             SettingsData();
         };
 
+        struct LayoutDissasm
+        {
+            uint32 visibleRows;
+            uint32 totalCharactersPerLine;
+            uint32 textSize; // charactersPerLine minus the left parts
+            uint32 startingTextLineOffset;
+            bool structuresInitialCollapsedState;
+        };
+
         class Instance : public View::ViewControl
         {
             struct DrawLineInfo
@@ -195,14 +212,7 @@ namespace View
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
 
-            struct LayoutDissasm
-            {
-                uint32 visibleRows;
-                uint32 totalCharactersPerLine;
-                uint32 textSize; // charactersPerLine minus the left parts
-                uint32 startingTextLineOffset;
-                bool structuresInitialCollapsedState;
-            } Layout;
+            LayoutDissasm Layout;
 
             struct
             {
