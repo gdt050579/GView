@@ -35,15 +35,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return true;
     }
 
-    if (dli.textLineToDraw == 0)
-    {
-        dli.renderer.WriteSingleLineText(
-              Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
-        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
-        AdjustZoneExtendedSize(zone, 100);
-        return true;
-    }
-
     auto clearChar = this->chars.GetBuffer();
     for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
     {
@@ -54,6 +45,28 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
+
+    if (dli.textLineToDraw == 0)
+    {
+        AddStringToChars(dli, config.Colors.StructureColor, "Dissasm zone");
+        //dli.renderer.WriteSingleLineText(
+        //      Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
+
+        HighlightSelectionText(dli, sizeof("Dissasm zone"));
+
+        const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+        if (cursorLine == dli.screenLineToDraw)
+        {
+            const uint32 index             = this->Cursor.currentPos % Layout.textSize;
+            dli.chNameAndSize[index].Color = config.Colors.Selection;
+        }
+
+        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
+
+        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+        AdjustZoneExtendedSize(zone, 100);
+        return true;
+    }
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
     if (zone->isInit && currentLine >= zone->startingCacheLineIndex)
@@ -68,6 +81,16 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
             dli.chText++;
             start++;
         }
+
+        HighlightSelectionText(dli, dli.chText - dli.chNameAndSize);
+
+        const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+        if (cursorLine == dli.screenLineToDraw)
+        {
+            const uint32 index             = this->Cursor.currentPos % Layout.textSize;
+            dli.chNameAndSize[index].Color = config.Colors.Selection;
+        }
+
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, false);
         return true;
     }
