@@ -17,10 +17,11 @@ void CommentDataWindow::Validate()
     Exit(Dialogs::Result::Ok);
 }
 
-CommentDataWindow::CommentDataWindow() : Window("Add comment", "d:c,w:60,h:7", WindowFlags::ProcessReturn)
+CommentDataWindow::CommentDataWindow(std::string initialComment) : Window("Add comment", "d:c,w:60,h:7", WindowFlags::ProcessReturn)
 {
+    data = initialComment;
     Factory::Label::Create(this, "&Comment", "x:1,y:1,w:8");
-    commentTextField = Factory::TextField::Create(this, "", "x:10,y:1,w:46");
+    commentTextField = Factory::TextField::Create(this, initialComment, "x:10,y:1,w:46");
     commentTextField->SetHotKey('C');
 
     Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);

@@ -146,7 +146,9 @@ namespace View
             std::unordered_map<uint32, std::string> comments;
             bool isInit;
 
-            void AddComment(uint32 line, std::string comment);
+            void AddOrUpdateComment(uint32 line, std::string comment);
+            bool HasComment(uint32 line, std::string& comment) const;
+            void RemoveComment(uint32 line);
         };
 
         struct SettingsData
@@ -312,6 +314,7 @@ namespace View
             // Operations
             void AddNewCollapsibleZone();
             void AddComment();
+            void RemoveComment();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -355,7 +358,7 @@ namespace View
 
             void Validate();
           public:
-            CommentDataWindow();
+            CommentDataWindow(std::string initialComment);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline std::string GetResult() const
             {
