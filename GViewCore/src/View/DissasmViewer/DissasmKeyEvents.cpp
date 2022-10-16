@@ -8,6 +8,7 @@ constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
 constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT       = 4;
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -228,7 +229,12 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Ctrl | Key::Right:
         MoveScrollTo(this->Cursor.startView + 1);
         return true;
-    };
+    }
+    if (charCode == ';')
+    {
+        AddComment();
+        return true;
+    }
     return false;
 }
 
@@ -256,6 +262,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case RIGHT_CLICK_MENU_CMD_COLLAPSE:
             AddNewCollapsibleZone();
+            return true;
+        case RIGHT_CLICK_ADD_COMMENT:
+            AddComment();
             return true;
         default:
             return false;

@@ -39,6 +39,7 @@ namespace View
                 ColorPair AsmFunctionColor;              // ret call
                 ColorPair AsmLocationInstruction;        // dword ptr[ ]
                 ColorPair AsmJumpInstruction;            // jmp
+                ColorPair AsmComment;                    // comments added by user
                 ColorPair AsmDefaultColor;               // rest of things
             } Colors;
             struct
@@ -142,7 +143,10 @@ namespace View
             std::vector<CharacterBuffer> cachedLines;
             std::vector<uint64> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
+            std::unordered_map<uint32, std::string> comments;
             bool isInit;
+
+            void AddComment(uint32 line, std::string comment);
         };
 
         struct SettingsData
@@ -307,6 +311,7 @@ namespace View
 
             // Operations
             void AddNewCollapsibleZone();
+            void AddComment();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -341,6 +346,21 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+        }; // Instance
+
+        class CommentDataWindow : public Window
+        {
+            std::string data;
+            Reference<TextField> commentTextField;
+
+            void Validate();
+          public:
+            CommentDataWindow();
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline std::string GetResult() const
+            {
+                return data;
+            }
         };
     } // namespace DissasmViewer
 } // namespace View

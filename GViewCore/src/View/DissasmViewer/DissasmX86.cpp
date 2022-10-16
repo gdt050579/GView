@@ -90,6 +90,7 @@ inline void DissasmAddColorsToInstruction(
     const std::string_view op_str = insn.op_str;
     if (!op_str.empty())
     {
+        // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
         auto checkValidAndAdd = [&cb, &cfg, &lambdaBuffer, &data](std::string_view token)
         {
@@ -190,7 +191,17 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (zone->isInit && currentLine >= zone->startingCacheLineIndex)
     {
         const uint32 lineAsmToDraw = currentLine - zone->startingCacheLineIndex;
+
         chars.Set(zone->cachedLines[lineAsmToDraw]);
+
+        //TODO: maybe update line inside lineToDraw instead of drawing the comment every time
+        auto it  = zone->comments.find(lineAsmToDraw);
+        if (it != zone->comments.end())
+        {
+            char tmp[] = "    //";
+            chars.Add(tmp, config.Colors.AsmComment);
+            chars.Add(it->second, config.Colors.AsmComment);
+        }
 
         HighlightSelectionText(dli, chars.Len());
 
@@ -205,7 +216,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
                 dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
         }
 
-        const auto bufferToDraw = CharacterView{ chars.GetBuffer(), zone->cachedLines[lineAsmToDraw].Len() };
+        const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
         return true;
     }
