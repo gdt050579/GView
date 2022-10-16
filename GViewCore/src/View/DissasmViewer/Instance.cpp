@@ -14,17 +14,19 @@ constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
 constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT       = 4;
 
 struct
 {
     int commandID;
     string_view text;
+    // Input::Key shortcutKey = Input::Key::None;
     ItemHandle handle = InvalidItemHandle;
-} RIGHT_CLICK_MENU_COMMANDS[] = {
-    { RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
-    { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
-    { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
-    { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },
+} RIGHT_CLICK_MENU_COMMANDS[] = { /*{ RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
+                                  { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
+                                  { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
+                                  { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },*/
+                                  { RIGHT_CLICK_ADD_COMMENT, "Add comment" }
 };
 
 Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
@@ -68,7 +70,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     }
     rightClickOffset = 0;
 
-    //TODO: to be moved inside plugin for some sort of API for token<->color
+    // TODO: to be moved inside plugin for some sort of API for token<->color
     asmData.instructionToColor = {
         { *((uint32*) "int3"), config.Colors.AsmIrrelevantInstructionColor },
         { *((uint32*) "ret"), config.Colors.AsmFunctionColor },
@@ -210,6 +212,40 @@ void Instance::AddNewCollapsibleZone()
     // TODO:
     settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
     RecomputeDissasmZones();
+}
+
+void Instance::AddComment()
+{
+    const uint64 offsetStart = Cursor.currentPos;
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].zoneLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    selection.Clear();
+    CommentDataWindow dlg;
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+        convertedZone->AddComment(zonesFound[0].zoneLine, dlg.GetResult());
+    }
 }
 
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
@@ -948,7 +984,7 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
     {
         if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
             (result.empty() || result.back().zoneIndex != zoneIndex))
-            result.push_back({ zoneIndex, line });
+            result.push_back({ zoneIndex, line - zones[zoneIndex]->startLineIndex });
         else if (line >= zones[zoneIndex]->endingLineIndex)
             zoneIndex++;
     }
@@ -1143,4 +1179,9 @@ Instance::~Instance()
         settings->buffersToDelete.pop_back();
         delete bufferToDelete;
     }
+}
+
+void DissasmCodeZone::AddComment(uint32 line, std::string comment)
+{
+    comments[line - 1] = std::move(comment);
 }
