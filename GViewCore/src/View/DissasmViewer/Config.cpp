@@ -21,12 +21,13 @@ void Config::Initialize()
     this->Colors.StructureColor                = ColorPair{ Color::Magenta, Color::DarkBlue };
     this->Colors.DataTypeColor                 = ColorPair{ Color::Green, Color::DarkBlue };
     this->Colors.AsmOffsetColor                = ColorPair{ Color::White, Color::DarkBlue };
-    this->Colors.AsmIrrelevantInstructionColor = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmWorkRegisterColor          = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->Colors.AsmStackRegisterColor         = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmCompareInstructionColor    = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmFunctionColor              = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmLocationInstruction        = ColorPair{ Color::Green, Color::DarkBlue };
+    this->Colors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->Colors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::DarkBlue };
+    this->Colors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::DarkBlue };
+    this->Colors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::DarkBlue };
+    this->Colors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
+    this->Colors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
+    this->Colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
     this->Colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
 
     bool foundSettings = false;

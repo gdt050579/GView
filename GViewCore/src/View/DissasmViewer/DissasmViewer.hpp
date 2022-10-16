@@ -34,10 +34,11 @@ namespace View
                 ColorPair AsmOffsetColor;                // 0xsomthing
                 ColorPair AsmIrrelevantInstructionColor; // int3
                 ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
-                ColorPair AsmStackRegisterColor;         // eax, ebx,ecx, edx
+                ColorPair AsmStackRegisterColor;         // ebp, edi, esi
                 ColorPair AsmCompareInstructionColor;    // test, cmp
                 ColorPair AsmFunctionColor;              // ret call
                 ColorPair AsmLocationInstruction;        // dword ptr[ ]
+                ColorPair AsmJumpInstruction;            // jmp
                 ColorPair AsmDefaultColor;               // rest of things
             } Colors;
             struct
@@ -169,6 +170,11 @@ namespace View
             bool structuresInitialCollapsedState;
         };
 
+        struct AsmData
+        {
+            std::map<uint32, ColorPair> instructionToColor;
+        };
+
         class Instance : public View::ViewControl
         {
             struct DrawLineInfo
@@ -259,6 +265,8 @@ namespace View
             CodePage codePage;
             Menu rightClickMenu;
             uint64 rightClickOffset;
+
+            AsmData asmData;
 
             inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 

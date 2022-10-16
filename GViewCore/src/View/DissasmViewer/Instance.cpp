@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <cassert>
+#include <unordered_map>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -66,6 +67,18 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
         menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
     rightClickOffset = 0;
+
+    asmData.instructionToColor = {
+        { *((uint32*) "int3"), config.Colors.AsmIrrelevantInstructionColor },
+        { *((uint32*) "ret"), config.Colors.AsmFunctionColor },
+        { *((uint32*) "call"), config.Colors.AsmFunctionColor },
+        { *((uint32*) "cmp"), config.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "test"), config.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "word"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "dwor"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "qwor"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "ptr"), config.Colors.AsmLocationInstruction },
+    };
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -570,7 +583,10 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 if (!buf.IsValid())
                 {
                     AddStringToChars(
-                          dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
+                          dli,
+                          config.Colors.StructureColor,
+                          "\tInvalid buff at position: %ull",
+                          zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -789,7 +805,7 @@ void Instance::RecomputeDissasmZones()
                 codeZone->zoneDetails     = *convertedData;
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-                codeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
                 codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;

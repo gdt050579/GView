@@ -27,33 +27,120 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
     return values[left];
 }
 
-inline void DissasmAddColorsToInstruction(const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout)
+inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg, const AsmData& data)
+{
+    if (keyword.empty())
+        return cfg.Colors.AsmDefaultColor;
+    if (keyword[0] == 'j')
+        return cfg.Colors.AsmJumpInstruction;
+
+    LocalString<4> holder;
+    holder.Set(keyword);
+    const uint32 val = *reinterpret_cast<const uint32*>(holder.GetText());
+
+    const auto it = data.instructionToColor.find(val);
+    if (it != data.instructionToColor.end())
+    {
+        return it->second;
+    }
+
+    if (keyword.size() < 4)
+    {
+        // General registers: EAX EBX ECX EDX -> AsmWorkRegisterColor
+        // 16 bits: AX BX CX DX -> AsmWorkRegisterColor
+        // 8 bits: AH AL BH BL CH CL DH DL -> AsmWorkRegisterColor
+        // Segment registers: CS DS ES FS GS SS -> AsmWorkRegisterColor
+        // Index and pointers: ESI EDI EBP EIP ESP along with variations (ESI, SI) AsmStackRegisterColor
+        switch (keyword[keyword.size() - 1])
+        {
+        case 'x':
+        case 's':
+        case 'l':
+        case 'h':
+            return cfg.Colors.AsmWorkRegisterColor;
+        case 'p':
+        case 'i':
+            return cfg.Colors.AsmStackRegisterColor;
+        default:
+            break;
+        }
+    }
+
+    return cfg.Colors.AsmDefaultColor;
+}
+
+inline void DissasmAddColorsToInstruction(
+      const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout, AsmData& data)
 {
     cb.Clear();
 
     LocalString<128> string;
-    string.SetChars(' ', std::min<uint16>(128, layout.startingTextLineOffset));
+    string.SetChars(' ', std::min<uint8>(128, static_cast<uint8>(layout.startingTextLineOffset)));
     cb.Add(string);
 
-    string.SetFormat("0x%" PRIx64 ":           ", insn.address);
+    string.SetFormat("0x%" PRIx64 ":     ", insn.address);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
 
-    string.SetFormat("%s ", insn.mnemonic);
-    cb.Add(string, cfg.Colors.AsmWorkRegisterColor);
+    string.SetFormat("%s", insn.mnemonic);
+    const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
+    cb.Add(string, color);
 
-    string.SetFormat("%s", insn.op_str);
-    if (string.Len() > 0)
-        cb.Add(string, cfg.Colors.AsmDefaultColor);
+    const std::string_view op_str = insn.op_str;
+    if (!op_str.empty())
+    {
+        LocalString<32> lambdaBuffer;
+        auto checkValidAndAdd = [&cb, &cfg, &lambdaBuffer, &data](std::string_view token)
+        {
+            lambdaBuffer.Clear();
+            if (token.length() > 2 && token[0] == '0' && token[1] == 'x')
+            {
+                cb.Add(token.data(), cfg.Colors.AsmOffsetColor);
+                return;
+            }
+            lambdaBuffer.Set(token.data());
+            const ColorPair color = GetASMColorPairByKeyword(token, cfg, data);
+            cb.Add(token, color);
+        };
+
+        if (op_str.length() > 2 && op_str[0] == '0' && op_str[1] == 'x')
+        {
+            cb.Add(" ");
+            checkValidAndAdd(op_str);
+            return;
+        }
+
+        char lastOp = ' ';
+        LocalString<32> buffer;
+        for (const char c : op_str)
+        {
+            if (c == ' ' || c == ',' || c == '[' || c == ']')
+            {
+                if (buffer.Len() > 0)
+                {
+                    if (lastOp != '[')
+                        cb.Add(" ");
+                    checkValidAndAdd(buffer.GetText());
+                    buffer.Clear();
+                }
+                if (c != ' ')
+                {
+                    const char tmp[3] = { ' ', c, '\0' };
+                    const char* start = (c == '[') ? tmp : tmp + 1;
+                    cb.Add(start, cfg.Colors.AsmCompareInstructionColor);
+                }
+                lastOp = c;
+                continue;
+            }
+            buffer.AddChar(c);
+        }
+        if (buffer.Len() > 0)
+        {
+            cb.Add(" ");
+            checkValidAndAdd(buffer.GetText());
+        }
+    }
 
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
-
-    // auto c = zone->cachedLines[j].GetBuffer();
-    // for (uint32 i = 0; i < string.Len(); i++)
-    //{
-    //     c->Code  = codePage[string[i]];
-    //     c->Color = config.Colors.Normal;
-    //     c++;
-    // }
 }
 
 bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
@@ -65,13 +152,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     }
 
     chars.Clear();
-    // auto clearChar = this->chars.GetBuffer();
-    // for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
-    //{
-    //     clearChar->Code  = codePage[' '];
-    //     clearChar->Color = config.Colors.Normal;
-    //     clearChar++;
-    // }
 
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
@@ -83,8 +163,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         chars.Set(spaces);
         constexpr std::string_view zoneName = "Dissasm zone";
         chars.Add(zoneName.data(), config.Colors.StructureColor);
-        // dli.renderer.WriteSingleLineText(
-        //       Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
 
         HighlightSelectionText(dli, zoneName.size());
 
@@ -99,7 +177,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
                 dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
         }
 
-        // const auto bufferToDraw = CharacterView{ chars.GetBuffer(), (uint32) (dli.chText - this->chars.GetBuffer()) };
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
@@ -165,20 +242,11 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     {
         for (size_t j = 0; j < count; j++)
         {
-            DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout);
+            DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout, asmData);
 
             if (lineAsmToDraw == j)
             {
                 chars.Set(zone->cachedLines[lineAsmToDraw]);
-                // auto start = zone->cachedLines[lineAsmToDraw].GetBuffer();
-                // auto end   = zone->cachedLines[lineAsmToDraw].GetBuffer() + zone->cachedLines[lineAsmToDraw].Len();
-                //// TODO: check not to overflow
-                // while (start != end)
-                //{
-                //     *dli.chText = *start;
-                //     dli.chText++;
-                //     start++;
-                // }
             }
         }
 
