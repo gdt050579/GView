@@ -27,6 +27,7 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
     return values[left];
 }
 
+// TODO: to be moved inside plugin for some sort of API for token<->color
 inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg, const AsmData& data)
 {
     if (keyword.empty())
@@ -69,6 +70,7 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg,
     return cfg.Colors.AsmDefaultColor;
 }
 
+// TODO: to be moved inside plugin for some sort of API for token<->color
 inline void DissasmAddColorsToInstruction(
       const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout, AsmData& data)
 {

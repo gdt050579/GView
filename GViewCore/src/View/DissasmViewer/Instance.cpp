@@ -68,6 +68,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     }
     rightClickOffset = 0;
 
+    //TODO: to be moved inside plugin for some sort of API for token<->color
     asmData.instructionToColor = {
         { *((uint32*) "int3"), config.Colors.AsmIrrelevantInstructionColor },
         { *((uint32*) "ret"), config.Colors.AsmFunctionColor },
