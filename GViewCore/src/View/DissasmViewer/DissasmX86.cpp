@@ -1,10 +1,14 @@
 #include "DissasmViewer.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
+#include <ranges>
 #include <utility>
+#include <list>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
+
+#define DISSASM_INSTRUCTION_OFFSET_MARGIN 500
 
 uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset)
 {
@@ -83,7 +87,7 @@ inline void DissasmAddColorsToInstruction(
     string.SetFormat("0x%" PRIx64 ":     ", insn.address);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
 
-    string.SetFormat("%s", insn.mnemonic);
+    string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
     cb.Add(string, color);
 
@@ -146,6 +150,119 @@ inline void DissasmAddColorsToInstruction(
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
 }
 
+inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj)
+{
+    csh handle;
+    const auto resCode = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
+    if (resCode != CS_ERR_OK)
+    {
+        // WriteErrorToScreen(dli, cs_strerror(resCode));
+        return false;
+    }
+
+    const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, zoneDetails.size, false);
+
+    size_t minimalValue = offsets[0];
+
+    cs_insn* insn     = cs_malloc(handle);
+    size_t lastOffset = offsets[0];
+
+    constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
+
+    // TODO: change method!
+    uint8 mapper[(int) 'g'] = { 0 };
+    for (int i = '0'; i <= '9'; i++)
+        mapper[i] = i - '0';
+    uint8 value = 10;
+    for (int i = 'a'; i <= 'f'; i++)
+        mapper[i] = value++;
+
+    std::list<uint64> finalOffsets;
+
+    size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
+    size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
+    size_t endAddress = zoneDetails.size;
+    auto data         = instructionData.GetData() + address;
+
+    //std::string saved1 = "s1", saved2 = "s2";
+    uint64 startingOffset = offsets[0];
+
+    size_t lastSize = size;
+    std::vector<uint64> tempStorage;
+    tempStorage.push_back(lastOffset);
+
+    do
+    {
+        if (size > lastSize)
+        {
+            lastSize = size;
+            tempStorage.reserve(size / DISSASM_INSTRUCTION_OFFSET_MARGIN + 1);
+        }
+
+        while (address < endAddress)
+        {
+            if (!cs_disasm_iter(handle, &data, &size, &address, insn))
+                break;
+
+            if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP) && insn->op_str[0] == '0' && insn->op_str[1] == 'x')
+            {
+                uint64 computedValue = 0;
+                char* ptr            = &insn->op_str[2];
+                while (*ptr && *ptr != ' ' && *ptr != ',')
+                {
+                    computedValue = computedValue * 16 + mapper[*ptr];
+                    ptr++;
+                }
+                if (computedValue < minimalValue && computedValue >= zoneDetails.startingZonePoint)
+                {
+                    minimalValue = computedValue;
+                    //saved1       = insn->mnemonic;
+                    //saved2       = insn->op_str;
+                }
+            }
+            const size_t adjustedSize = address + zoneDetails.startingZonePoint;
+            if (adjustedSize - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN)
+            {
+                lastOffset = adjustedSize;
+                tempStorage.push_back(lastOffset);
+                // if (pushBack)
+                //     finalOffsets.push_back(lastOffset);
+                // else
+                //     finalOffsets.push_front(lastOffset);
+            }
+        }
+        if (minimalValue >= startingOffset)
+            break;
+
+        for (auto& it : std::ranges::reverse_view(tempStorage))
+            finalOffsets.push_front(it);
+        tempStorage.clear();
+
+        // pushBack                       = false;
+        const size_t zoneSizeToAnalyze = startingOffset - minimalValue;
+        tempStorage.push_back(minimalValue);
+        // finalOffsets.push_front(minimalValue);
+
+        address        = minimalValue - zoneDetails.startingZonePoint;
+        endAddress     = zoneSizeToAnalyze + address;
+        size           = address + zoneSizeToAnalyze;
+        data           = instructionData.GetData() + address;
+        lastOffset     = minimalValue;
+        startingOffset = minimalValue;
+    } while (true);
+
+    for (auto& it : std::ranges::reverse_view(tempStorage))
+        finalOffsets.push_front(it);
+
+    offsets.clear();
+    offsets.reserve(finalOffsets.size());
+    for (auto& it : finalOffsets)
+        offsets.push_back(it);
+
+    cs_close(&handle);
+    return true;
+}
+
 bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0)
@@ -194,8 +311,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
         chars.Set(zone->cachedLines[lineAsmToDraw]);
 
-        //TODO: maybe update line inside lineToDraw instead of drawing the comment every time
-        auto it  = zone->comments.find(lineAsmToDraw);
+        // TODO: maybe update line inside lineToDraw instead of drawing the comment every time
+        auto it = zone->comments.find(lineAsmToDraw);
         if (it != zone->comments.end())
         {
             char tmp[] = "    //";
@@ -220,10 +337,15 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
         return true;
     }
-    zone->isInit               = true;
+
+    if (!zone->isInit)
+    {
+        populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj);
+        zone->isInit = true;
+    }
     const uint32 lineAsmToDraw = zone->startingCacheLineIndex - currentLine;
 
-    assert(zone->zoneDetails.size > zone->zoneDetails.entryPoint);
+    // assert(zone->zoneDetails.size > zone->zoneDetails.entryPoint);
 
     const uint64 latestOffset      = SearchForClosestOffset(zone->cachedCodeOffsets, zone->lastInstrOffsetInCachedLines);
     const uint64 remainingZoneSize = zone->zoneDetails.size - latestOffset;
