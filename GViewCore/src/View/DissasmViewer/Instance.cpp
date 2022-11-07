@@ -879,6 +879,7 @@ void Instance::RecomputeDissasmZones()
                 codeZone->zoneDetails     = *convertedData;
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+                codeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
                 codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
@@ -888,6 +889,9 @@ void Instance::RecomputeDissasmZones()
                 // initial offset is the entry point
                 codeZone->cachedCodeOffsets.push_back(convertedData->entryPoint);
                 codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
+
+                if (!codeZone->isCollapsed)
+                    codeZone->endingLineIndex += codeZone->extendedSize;
 
                 // lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
                 lastZoneEndingIndex = codeZone->endingLineIndex;

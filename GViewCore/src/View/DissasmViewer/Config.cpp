@@ -8,6 +8,7 @@ void Config::Update(IniSection sect)
     sect.UpdateValue("AddNewType", Key::F5, true);
     sect.UpdateValue("ShowFileContentKey", Key::F9, true);
     sect.UpdateValue("ShowFileContent", true, true);
+    sect.UpdateValue("AsmExportToFile", Key::F8, true);
 }
 void Config::Initialize()
 {
@@ -40,6 +41,7 @@ void Config::Initialize()
         {
             this->Keys.AddNewType         = sect.GetValue("AddNewType").ToKey(Key::F6);
             this->Keys.ShowFileContentKey = sect.GetValue("ShowFileContentKey").ToKey(Key::F9);
+            this->Keys.ExportAsmToFile    = sect.GetValue("AsmExportToFile").ToKey(Key::F8);
             this->ShowFileContent         = sect.GetValue("ShowFileContent").ToBool(true);
             foundSettings                 = true;
         }
@@ -48,6 +50,7 @@ void Config::Initialize()
     {
         this->Keys.AddNewType         = Key::F6;
         this->Keys.ShowFileContentKey = Key::F9;
+        this->Keys.ExportAsmToFile    = Key::F8;
         this->ShowFileContent         = true;
     }
 

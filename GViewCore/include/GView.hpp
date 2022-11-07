@@ -1169,6 +1169,13 @@ namespace View
             Count
         };
 
+        enum class DissasmArchitecture : uint8
+        {
+            x86,
+            x64,
+            Other
+        };
+
         enum class VariableType : uint32
         {
             UInt8,
@@ -1196,7 +1203,11 @@ namespace View
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
             void AddDisassemblyZone(
-                  uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+                  uint64 zoneStart,
+                  uint64 zoneSize,
+                  uint64 zoneDissasmStartPoint,
+                  DissasmArchitecture architecture,
+                  DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name);
             void AddCollapsibleZone(uint64 offset, uint64 size);

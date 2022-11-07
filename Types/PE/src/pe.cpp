@@ -159,7 +159,9 @@ extern "C"
                     const uint32 entryPoint =
                           pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
+                    DissasmViewer::DissasmArchitecture architecture =
+                          pe->hdr64 ? DissasmViewer::DissasmArchitecture::x64 : DissasmViewer::DissasmArchitecture::x86;
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, architecture);
                     break;
                 }
             }

@@ -15,7 +15,7 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
     assert(!values.empty());
     uint32 left  = 0;
     uint32 right = values.size() - 1u;
-    while (left != right)
+    while (left < right)
     {
         const uint32 mid = (left + right) / 2;
         if (searchedOffset == values[mid])
@@ -25,8 +25,8 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
         else
             left = mid + 1;
     }
-    if (right < values.size() - 1 && searchedOffset - values[left] < values[right + 1] - searchedOffset)
-        return values[right + 1];
+    if (left > 0 && values[left] > searchedOffset)
+        return values[left - 1];
 
     return values[left];
 }
@@ -150,10 +150,10 @@ inline void DissasmAddColorsToInstruction(
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
 }
 
-inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj)
+inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj, int internalArchitecture)
 {
     csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
+    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle);
     if (resCode != CS_ERR_OK)
     {
         // WriteErrorToScreen(dli, cs_strerror(resCode));
@@ -184,7 +184,7 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
     size_t endAddress = zoneDetails.size;
     auto data         = instructionData.GetData() + address;
 
-    //std::string saved1 = "s1", saved2 = "s2";
+    // std::string saved1 = "s1", saved2 = "s2";
     uint64 startingOffset = offsets[0];
 
     size_t lastSize = size;
@@ -208,6 +208,7 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
             {
                 uint64 computedValue = 0;
                 char* ptr            = &insn->op_str[2];
+                // TODO: also check not to overflow access!
                 while (*ptr && *ptr != ' ' && *ptr != ',')
                 {
                     computedValue = computedValue * 16 + mapper[*ptr];
@@ -216,8 +217,8 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
                 if (computedValue < minimalValue && computedValue >= zoneDetails.startingZonePoint)
                 {
                     minimalValue = computedValue;
-                    //saved1       = insn->mnemonic;
-                    //saved2       = insn->op_str;
+                    // saved1       = insn->mnemonic;
+                    // saved2       = insn->op_str;
                 }
             }
             const size_t adjustedSize = address + zoneDetails.startingZonePoint;
@@ -271,6 +272,12 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return true;
     }
 
+    if (zone->zoneDetails.architecture == DissasmArchitecture::Other)
+    {
+        WriteErrorToScreen(dli, "Unsupported architecture!");
+        return true;
+    }
+
     chars.Clear();
 
     dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
@@ -284,6 +291,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         constexpr std::string_view zoneName = "Dissasm zone";
         chars.Add(zoneName.data(), config.Colors.StructureColor);
 
+        // TODO: maybe extract this as methods?
         HighlightSelectionText(dli, zoneName.size());
 
         const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
@@ -300,48 +308,65 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
-        AdjustZoneExtendedSize(zone, 100);
+
+        // TODO: instead of this maybe call something on init? and move init up
         return true;
     }
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
-    if (zone->isInit && currentLine >= zone->startingCacheLineIndex)
-    {
-        const uint32 lineAsmToDraw = currentLine - zone->startingCacheLineIndex;
+    // TODO: reenable caching
+    /*
+    //if (zone->isInit && currentLine >= zone->startingCacheLineIndex &&
+    //    currentLine - zone->startingCacheLineIndex < DISSASM_MAX_CACHED_LINES)
+    //{
+    //    const uint32 lineAsmToDraw = currentLine - zone->startingCacheLineIndex;
 
-        chars.Set(zone->cachedLines[lineAsmToDraw]);
+    //    chars.Set(zone->cachedLines[lineAsmToDraw]);
 
-        // TODO: maybe update line inside lineToDraw instead of drawing the comment every time
-        auto it = zone->comments.find(lineAsmToDraw);
-        if (it != zone->comments.end())
-        {
-            char tmp[] = "    //";
-            chars.Add(tmp, config.Colors.AsmComment);
-            chars.Add(it->second, config.Colors.AsmComment);
-        }
+    //    // TODO: maybe update line inside lineToDraw instead of drawing the comment every time
+    //    const auto it = zone->comments.find(lineAsmToDraw);
+    //    if (it != zone->comments.end())
+    //    {
+    //        constexpr char tmp[] = "    //";
+    //        chars.Add(tmp, config.Colors.AsmComment);
+    //        chars.Add(it->second, config.Colors.AsmComment);
+    //    }
 
-        HighlightSelectionText(dli, chars.Len());
+    //    HighlightSelectionText(dli, chars.Len());
 
-        const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
-        if (cursorLine == dli.screenLineToDraw)
-        {
-            const uint32 index = this->Cursor.currentPos % Layout.textSize + Layout.startingTextLineOffset;
+    //    const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+    //    if (cursorLine == dli.screenLineToDraw)
+    //    {
+    //        const uint32 index = this->Cursor.currentPos % Layout.textSize + Layout.startingTextLineOffset;
 
-            if (index < chars.Len())
-                chars.GetBuffer()[index].Color = config.Colors.Selection;
-            else
-                dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
-        }
+    //        if (index < chars.Len())
+    //            chars.GetBuffer()[index].Color = config.Colors.Selection;
+    //        else
+    //            dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
+    //    }
 
-        const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
-        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
-        return true;
-    }
+    //    const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
+    //    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    //    return true;
+    //}*/
 
     if (!zone->isInit)
     {
-        populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj);
+        populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture);
+        zone->lastInstrOffsetInCachedLines = SearchForClosestOffset(zone->cachedCodeOffsets, zone->lastInstrOffsetInCachedLines);
+        switch (zone->zoneDetails.architecture)
+        {
+        case DissasmArchitecture::x86:
+            zone->internalArchitecture = CS_MODE_32;
+            break;
+        case DissasmArchitecture::x64:
+            zone->internalArchitecture = CS_MODE_64;
+            break;
+        case DissasmArchitecture::Other:
+            return false;
+        }
         zone->isInit = true;
+        AdjustZoneExtendedSize(zone, zone->zoneDetails.size / 4); // approximating initial size
     }
     const uint32 lineAsmToDraw = zone->startingCacheLineIndex - currentLine;
 
@@ -359,7 +384,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     }
 
     csh handle;
-    const auto resCode = cs_open(CS_ARCH_X86, CS_MODE_32, &handle);
+    const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(zone->internalArchitecture), &handle);
     if (resCode != CS_ERR_OK)
     {
         WriteErrorToScreen(dli, cs_strerror(resCode));
@@ -367,34 +392,122 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     }
 
     const auto instructionData = obj->GetData().Get(latestOffset, remainingZoneSize, false);
+    // TODO: write err instead of returning true
     if (!instructionData.IsValid())
-        return true;
-
-    cs_insn* insn;
-    size_t count = cs_disasm(
-          handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES, &insn);
-    if (count > 0)
     {
-        for (size_t j = 0; j < count; j++)
-        {
-            DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout, asmData);
-
-            if (lineAsmToDraw == j)
-            {
-                chars.Set(zone->cachedLines[lineAsmToDraw]);
-            }
-        }
-
-        cs_free(insn, count);
+        WriteErrorToScreen(dli, "ERROR: extract valid data from file!");
+        cs_close(&handle);
+        return false;
     }
-    else
-    {
-        WriteErrorToScreen(dli, "ERROR: Failed to disassemble given code!");
-    }
+
+    cs_insn* insn = cs_malloc(handle);
+
+    // size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
+    // size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
+    // size_t endAddress = zoneDetails.size;
+
+    // if (!cs_disasm_iter(handle, &data, &size, &address, insn))
+    //     break;
+
+    cs_free(insn, 1);
+
+    // cs_insn* insn;
+    // const size_t count = cs_disasm(
+    //       handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES, &insn);
+    // if (count > 0)
+    //{
+    //     for (size_t j = 0; j < count; j++)
+    //     {
+    //         DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout, asmData);
+
+    //        if (lineAsmToDraw == j)
+    //        {
+    //            chars.Set(zone->cachedLines[lineAsmToDraw]);
+    //        }
+    //    }
+
+    //    cs_free(insn, count);
+    //}
+    // else
+    //{
+    //    WriteErrorToScreen(dli, "ERROR: Failed to disassemble given code!");
+    //}
 
     cs_close(&handle);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
     return true;
+}
+
+void Instance::CommandExportAsmFile()
+{
+    int zoneIndex = 0;
+    LocalString<128> string;
+    for (const auto& zone : settings->parseZones)
+    {
+        if (zone->zoneType == DissasmParseZoneType::DissasmCodeParseZone)
+        {
+            AppCUI::Utils::UnicodeStringBuilder sb;
+            sb.Add(obj->GetPath());
+            LocalString<32> fileName;
+            fileName.SetFormat(".x86.z%d.asm", zoneIndex);
+            sb.Add(fileName);
+
+            AppCUI::OS::File f;
+            if (!f.Create(sb.ToStringView(), true))
+            {
+                continue;
+            }
+            if (!f.OpenWrite(sb.ToStringView()))
+            {
+                f.Close();
+                continue;
+            }
+
+            f.Write("ASMZoneZone\n", sizeof("ASMZoneZone\n") - 1);
+
+            csh handle;
+            const auto resCode = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
+            if (resCode != CS_ERR_OK)
+            {
+                f.Write(cs_strerror(resCode));
+                f.Close();
+            }
+
+            cs_insn* insn = cs_malloc(handle);
+
+            const auto dissamZone      = static_cast<DissasmCodeZone*>(zone.get());
+            const uint64 staringOffset = dissamZone->cachedCodeOffsets[0];
+            size_t size                = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
+
+            size_t address          = 0;
+            const size_t endAddress = size;
+
+            const auto dataBuffer = obj->GetData().Get(staringOffset, size, false);
+            if (!dataBuffer.IsValid())
+            {
+                f.Write("Failed to get data from file!");
+                f.Close();
+                continue;
+            }
+            auto data = dataBuffer.GetData();
+
+            while (address < endAddress)
+            {
+                if (!cs_disasm_iter(handle, &data, &size, &address, insn))
+                    break;
+
+                string.SetFormat("0x%" PRIx64 ":     %-10s %s\n", insn->address + staringOffset, insn->mnemonic, insn->op_str);
+                f.Write(string.GetText(), string.Len());
+            }
+
+            cs_free(insn, 1);
+            cs_close(&handle);
+            f.Close();
+            zoneIndex++;
+
+            GView::App::OpenFile(sb.ToStringView(), App::OpenMethod::BestMatch);
+        }
+    }
 }

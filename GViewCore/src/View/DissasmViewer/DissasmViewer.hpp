@@ -6,6 +6,7 @@
 #include <utility>
 #include <deque>
 #include <list>
+#include <capstone/capstone.h>
 
 namespace GView
 {
@@ -15,8 +16,9 @@ namespace View
     {
         using namespace AppCUI;
 
-        static constexpr size_t CACHE_OFFSETS_DIFFERENCE = 500;
-        static constexpr size_t DISSASM_MAX_CACHED_LINES = 200;
+        static constexpr size_t CACHE_OFFSETS_DIFFERENCE      = 500;
+        static constexpr size_t DISSASM_MAX_CACHED_LINES      = 50;
+        static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
 
         struct Config
         {
@@ -46,6 +48,7 @@ namespace View
             {
                 AppCUI::Input::Key AddNewType;
                 AppCUI::Input::Key ShowFileContentKey;
+                AppCUI::Input::Key ExportAsmToFile;
             } Keys;
             bool Loaded;
 
@@ -60,6 +63,7 @@ namespace View
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;
+            DissasmArchitecture architecture;
         };
 
         enum class InternalDissasmType : uint8
@@ -144,6 +148,7 @@ namespace View
             std::vector<uint64> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
             std::unordered_map<uint32, std::string> comments;
+            int internalArchitecture; //used for dissasm libraries
             bool isInit;
 
             void AddOrUpdateComment(uint32 line, std::string comment);
@@ -315,6 +320,7 @@ namespace View
             void AddNewCollapsibleZone();
             void AddComment();
             void RemoveComment();
+            void CommandExportAsmFile();
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
@@ -357,6 +363,7 @@ namespace View
             Reference<TextField> commentTextField;
 
             void Validate();
+
           public:
             CommentDataWindow(std::string initialComment);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
