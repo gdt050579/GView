@@ -4,13 +4,14 @@
 #include <ranges>
 #include <utility>
 #include <list>
+#include <cmath>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
 #define DISSASM_INSTRUCTION_OFFSET_MARGIN 500
 
-uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset)
+AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine)
 {
     assert(!values.empty());
     uint32 left  = 0;
@@ -18,14 +19,14 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
     while (left < right)
     {
         const uint32 mid = (left + right) / 2;
-        if (searchedOffset == values[mid])
-            return searchedOffset;
-        if (searchedOffset < values[mid])
+        if (searchedLine == values[mid].line)
+            return values[mid];
+        if (searchedLine < values[mid].line)
             right = mid - 1;
         else
             left = mid + 1;
     }
-    if (left > 0 && values[left] > searchedOffset)
+    if (left > 0 && values[left].line > searchedLine)
         return values[left - 1];
 
     return values[left];
@@ -150,7 +151,122 @@ inline void DissasmAddColorsToInstruction(
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
 }
 
-inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj, int internalArchitecture)
+// inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj, int internalArchitecture)
+//{
+//     csh handle;
+//     const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle);
+//     if (resCode != CS_ERR_OK)
+//     {
+//         // WriteErrorToScreen(dli, cs_strerror(resCode));
+//         return false;
+//     }
+//
+//     const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, zoneDetails.size, false);
+//
+//     size_t minimalValue = offsets[0];
+//
+//     cs_insn* insn     = cs_malloc(handle);
+//     size_t lastOffset = offsets[0];
+//
+//     constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
+//
+//     // TODO: change method!
+//     uint8 mapper[(int) 'g'] = { 0 };
+//     for (int i = '0'; i <= '9'; i++)
+//         mapper[i] = i - '0';
+//     uint8 value = 10;
+//     for (int i = 'a'; i <= 'f'; i++)
+//         mapper[i] = value++;
+//
+//     std::list<uint64> finalOffsets;
+//
+//     size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
+//     size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
+//     size_t endAddress = zoneDetails.size;
+//     auto data         = instructionData.GetData() + address;
+//
+//     // std::string saved1 = "s1", saved2 = "s2";
+//     uint64 startingOffset = offsets[0];
+//
+//     size_t lastSize = size;
+//     std::vector<uint64> tempStorage;
+//     tempStorage.push_back(lastOffset);
+//
+//     do
+//     {
+//         if (size > lastSize)
+//         {
+//             lastSize = size;
+//             tempStorage.reserve(size / DISSASM_INSTRUCTION_OFFSET_MARGIN + 1);
+//         }
+//
+//         while (address < endAddress)
+//         {
+//             if (!cs_disasm_iter(handle, &data, &size, &address, insn))
+//                 break;
+//
+//             if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP) && insn->op_str[0] == '0' && insn->op_str[1] == 'x')
+//             {
+//                 uint64 computedValue = 0;
+//                 char* ptr            = &insn->op_str[2];
+//                 // TODO: also check not to overflow access!
+//                 while (*ptr && *ptr != ' ' && *ptr != ',')
+//                 {
+//                     computedValue = computedValue * 16 + mapper[*ptr];
+//                     ptr++;
+//                 }
+//                 if (computedValue < minimalValue && computedValue >= zoneDetails.startingZonePoint)
+//                 {
+//                     minimalValue = computedValue;
+//                     // saved1       = insn->mnemonic;
+//                     // saved2       = insn->op_str;
+//                 }
+//             }
+//             const size_t adjustedSize = address + zoneDetails.startingZonePoint;
+//             if (adjustedSize - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN)
+//             {
+//                 lastOffset = adjustedSize;
+//                 tempStorage.push_back(lastOffset);
+//                 // if (pushBack)
+//                 //     finalOffsets.push_back(lastOffset);
+//                 // else
+//                 //     finalOffsets.push_front(lastOffset);
+//             }
+//         }
+//         if (minimalValue >= startingOffset)
+//             break;
+//
+//         for (auto& it : std::ranges::reverse_view(tempStorage))
+//             finalOffsets.push_front(it);
+//         tempStorage.clear();
+//
+//         // pushBack                       = false;
+//         const size_t zoneSizeToAnalyze = startingOffset - minimalValue;
+//         tempStorage.push_back(minimalValue);
+//         // finalOffsets.push_front(minimalValue);
+//
+//         address        = minimalValue - zoneDetails.startingZonePoint;
+//         endAddress     = zoneSizeToAnalyze + address;
+//         size           = address + zoneSizeToAnalyze;
+//         data           = instructionData.GetData() + address;
+//         lastOffset     = minimalValue;
+//         startingOffset = minimalValue;
+//     } while (true);
+//
+//     for (auto& it : std::ranges::reverse_view(tempStorage))
+//         finalOffsets.push_front(it);
+//
+//     offsets.clear();
+//     offsets.reserve(finalOffsets.size());
+//     for (auto& it : finalOffsets)
+//         offsets.push_back(it);
+//
+//     cs_close(&handle);
+//     return true;
+// }
+
+inline bool populate_offsets_vector(
+      vector<AsmOffsetLine>& offsets, DisassemblyZone& zoneDetails, GView::Object& obj, int internalArchitecture)
 {
     csh handle;
     const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(internalArchitecture), &handle);
@@ -162,10 +278,10 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
 
     const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, zoneDetails.size, false);
 
-    size_t minimalValue = offsets[0];
+    size_t minimalValue = offsets[0].offset;
 
     cs_insn* insn     = cs_malloc(handle);
-    size_t lastOffset = offsets[0];
+    size_t lastOffset = offsets[0].offset;
 
     constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
 
@@ -185,18 +301,18 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
     auto data         = instructionData.GetData() + address;
 
     // std::string saved1 = "s1", saved2 = "s2";
-    uint64 startingOffset = offsets[0];
+    uint64 startingOffset = offsets[0].offset;
 
     size_t lastSize = size;
-    std::vector<uint64> tempStorage;
-    tempStorage.push_back(lastOffset);
+    // std::vector<uint64> tempStorage;
+    // tempStorage.push_back(lastOffset);
 
     do
     {
         if (size > lastSize)
         {
             lastSize = size;
-            tempStorage.reserve(size / DISSASM_INSTRUCTION_OFFSET_MARGIN + 1);
+            // tempStorage.reserve(size / DISSASM_INSTRUCTION_OFFSET_MARGIN + 1);
         }
 
         while (address < endAddress)
@@ -225,23 +341,13 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
             if (adjustedSize - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN)
             {
                 lastOffset = adjustedSize;
-                tempStorage.push_back(lastOffset);
-                // if (pushBack)
-                //     finalOffsets.push_back(lastOffset);
-                // else
-                //     finalOffsets.push_front(lastOffset);
             }
         }
         if (minimalValue >= startingOffset)
             break;
 
-        for (auto& it : std::ranges::reverse_view(tempStorage))
-            finalOffsets.push_front(it);
-        tempStorage.clear();
-
         // pushBack                       = false;
         const size_t zoneSizeToAnalyze = startingOffset - minimalValue;
-        tempStorage.push_back(minimalValue);
         // finalOffsets.push_front(minimalValue);
 
         address        = minimalValue - zoneDetails.startingZonePoint;
@@ -252,13 +358,25 @@ inline bool populate_offsets_vector(vector<uint64>& offsets, DisassemblyZone& zo
         startingOffset = minimalValue;
     } while (true);
 
-    for (auto& it : std::ranges::reverse_view(tempStorage))
-        finalOffsets.push_front(it);
+    size       = zoneDetails.size;
+    address    = minimalValue - zoneDetails.startingZonePoint;
+    data       = instructionData.GetData() + address;
+    lastOffset = address;
 
+    uint32 lineIndex = 0;
     offsets.clear();
-    offsets.reserve(finalOffsets.size());
-    for (auto& it : finalOffsets)
-        offsets.push_back(it);
+    offsets.push_back({ minimalValue, 0 });
+
+    while (cs_disasm_iter(handle, &data, &size, &address, insn))
+    {
+        lineIndex++;
+        if (address - lastOffset >= DISSASM_INSTRUCTION_OFFSET_MARGIN)
+        {
+            lastOffset                = address;
+            const size_t adjustedSize = address + zoneDetails.startingZonePoint;
+            offsets.push_back({ adjustedSize, lineIndex });
+        }
+    }
 
     cs_close(&handle);
     return true;
@@ -350,10 +468,20 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     //    return true;
     //}*/
 
+    // TODO: move this in onCreate and use a boolean value if enabled
+    if (!cs_support(CS_ARCH_X86))
+    {
+        WriteErrorToScreen(dli, "Capstone does not support X86");
+        AdjustZoneExtendedSize(zone, 1);
+        return false;
+    }
+
     if (!zone->isInit)
     {
         populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture);
-        zone->lastInstrOffsetInCachedLines = SearchForClosestOffset(zone->cachedCodeOffsets, zone->lastInstrOffsetInCachedLines);
+        zone->lastDrawnLine   = 0;
+        auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
+        zone->lastClosestLine = closestData.line;
         switch (zone->zoneDetails.architecture)
         {
         case DissasmArchitecture::x86:
@@ -367,20 +495,44 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         }
         zone->isInit = true;
         AdjustZoneExtendedSize(zone, zone->zoneDetails.size / 4); // approximating initial size
+
+        zone->asmAddress = 0;
+        zone->asmSize    = zone->zoneDetails.size - zone->asmAddress;
+
+        const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, zone->asmSize, false);
+        zone->lastData             = instructionData;
+        if (!instructionData.IsValid())
+        {
+            WriteErrorToScreen(dli, "ERROR: extract valid data from file!");
+            return false;
+        }
+        zone->asmData = const_cast<uint8*>(instructionData.GetData());
     }
-    const uint32 lineAsmToDraw = zone->startingCacheLineIndex - currentLine;
 
-    // assert(zone->zoneDetails.size > zone->zoneDetails.entryPoint);
-
-    const uint64 latestOffset      = SearchForClosestOffset(zone->cachedCodeOffsets, zone->lastInstrOffsetInCachedLines);
-    const uint64 remainingZoneSize = zone->zoneDetails.size - latestOffset;
-
-    // TODO: move this in onCreate and use a boolean value if enabled
-    if (!cs_support(CS_ARCH_X86))
+    uint32 lineDifferences = 1;
+    if (currentLine < zone->lastDrawnLine || currentLine - zone->lastDrawnLine > 1)
     {
-        WriteErrorToScreen(dli, "Capstone does not support X86");
-        AdjustZoneExtendedSize(zone, 1);
-        return false;
+        auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, currentLine);
+        zone->lastClosestLine = closestData.line;
+        zone->asmAddress      = closestData.offset - zone->cachedCodeOffsets[0].offset;
+        zone->asmSize         = zone->zoneDetails.size - zone->asmAddress;
+        if (closestData.line != zone->lastClosestLine)
+        {
+            const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, zone->asmSize, false);
+            zone->lastData             = instructionData;
+            if (!instructionData.IsValid())
+            {
+                WriteErrorToScreen(dli, "ERROR: extract valid data from file!");
+                return false;
+            }
+        }
+        zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
+        // if (currentLine > zone->lastDrawnLine)
+        //     lineDifferences = currentLine - zone->lastDrawnLine + 1;
+        if (currentLine < zone->lastDrawnLine)
+        {
+            lineDifferences = currentLine - closestData.line + 1;
+        }
     }
 
     csh handle;
@@ -388,52 +540,94 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (resCode != CS_ERR_OK)
     {
         WriteErrorToScreen(dli, cs_strerror(resCode));
-        return false;
-    }
-
-    const auto instructionData = obj->GetData().Get(latestOffset, remainingZoneSize, false);
-    // TODO: write err instead of returning true
-    if (!instructionData.IsValid())
-    {
-        WriteErrorToScreen(dli, "ERROR: extract valid data from file!");
-        cs_close(&handle);
-        return false;
+        return true;
     }
 
     cs_insn* insn = cs_malloc(handle);
 
-    // size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
-    // size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
-    // size_t endAddress = zoneDetails.size;
+    while (lineDifferences > 0)
+    {
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, (size_t*) &zone->asmAddress, insn))
+        {
+            WriteErrorToScreen(dli, "Failed to dissasm!");
+            return true;
+        }
+        lineDifferences--;
+    }
 
-    // if (!cs_disasm_iter(handle, &data, &size, &address, insn))
-    //     break;
+    DissasmAddColorsToInstruction(*insn, chars, codePage, config, Layout, asmData);
 
     cs_free(insn, 1);
-
-    // cs_insn* insn;
-    // const size_t count = cs_disasm(
-    //       handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES, &insn);
-    // if (count > 0)
-    //{
-    //     for (size_t j = 0; j < count; j++)
-    //     {
-    //         DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout, asmData);
-
-    //        if (lineAsmToDraw == j)
-    //        {
-    //            chars.Set(zone->cachedLines[lineAsmToDraw]);
-    //        }
-    //    }
-
-    //    cs_free(insn, count);
-    //}
-    // else
-    //{
-    //    WriteErrorToScreen(dli, "ERROR: Failed to disassemble given code!");
-    //}
-
     cs_close(&handle);
+
+    zone->lastDrawnLine = currentLine;
+
+    // const uint32 lineAsmToDraw = zone->startingCacheLineIndex - currentLine;
+
+    // assert(zone->zoneDetails.size > zone->zoneDetails.entryPoint);
+
+    // const uint64 latestOffset      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastInstrOffsetInCachedLines);
+    // const uint64 remainingZoneSize = zone->zoneDetails.size - latestOffset;
+
+    //// TODO: move this in onCreate and use a boolean value if enabled
+    // if (!cs_support(CS_ARCH_X86))
+    //{
+    //     WriteErrorToScreen(dli, "Capstone does not support X86");
+    //     AdjustZoneExtendedSize(zone, 1);
+    //     return false;
+    // }
+
+    // csh handle;
+    // const auto resCode = cs_open(CS_ARCH_X86, static_cast<cs_mode>(zone->internalArchitecture), &handle);
+    // if (resCode != CS_ERR_OK)
+    //{
+    //     WriteErrorToScreen(dli, cs_strerror(resCode));
+    //     return false;
+    // }
+
+    // const auto instructionData = obj->GetData().Get(latestOffset, remainingZoneSize, false);
+    //// TODO: write err instead of returning true
+    // if (!instructionData.IsValid())
+    //{
+    //     WriteErrorToScreen(dli, "ERROR: extract valid data from file!");
+    //     cs_close(&handle);
+    //     return false;
+    // }
+
+    // cs_insn* insn = cs_malloc(handle);
+
+    //// size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
+    //// size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
+    //// size_t endAddress = zoneDetails.size;
+
+    //// if (!cs_disasm_iter(handle, &data, &size, &address, insn))
+    ////     break;
+
+    // cs_free(insn, 1);
+
+    //// cs_insn* insn;
+    //// const size_t count = cs_disasm(
+    ////       handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES,
+    ///&insn); / if (count > 0)
+    ////{
+    ////     for (size_t j = 0; j < count; j++)
+    ////     {
+    ////         DissasmAddColorsToInstruction(insn[j], zone->cachedLines[j], codePage, config, Layout, asmData);
+
+    ////        if (lineAsmToDraw == j)
+    ////        {
+    ////            chars.Set(zone->cachedLines[lineAsmToDraw]);
+    ////        }
+    ////    }
+
+    ////    cs_free(insn, count);
+    ////}
+    //// else
+    ////{
+    ////    WriteErrorToScreen(dli, "ERROR: Failed to disassemble given code!");
+    ////}
+
+    // cs_close(&handle);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
@@ -478,7 +672,7 @@ void Instance::CommandExportAsmFile()
             cs_insn* insn = cs_malloc(handle);
 
             const auto dissamZone      = static_cast<DissasmCodeZone*>(zone.get());
-            const uint64 staringOffset = dissamZone->cachedCodeOffsets[0];
+            const uint64 staringOffset = dissamZone->cachedCodeOffsets[0].offset;
             size_t size                = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
 
             size_t address          = 0;

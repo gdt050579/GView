@@ -140,15 +140,28 @@ namespace View
             CollapsibleAndTextData data;
         };
 
+        struct AsmOffsetLine
+        {
+            uint64 offset;
+            uint32 line;
+        };
+
         struct DissasmCodeZone : public ParseZone
         {
-            uint32 startingCacheLineIndex;
-            uint64 lastInstrOffsetInCachedLines;
-            std::vector<CharacterBuffer> cachedLines;
-            std::vector<uint64> cachedCodeOffsets;
+            // uint32 startingCacheLineIndex;
+            // uint64 lastInstrOffsetInCachedLines;
+            // std::vector<CharacterBuffer> cachedLines;
+            uint32 lastDrawnLine; //optimization not to recompute buffer every time
+            uint32 lastClosestLine;
+            BufferView lastData;
+
+            const uint8* asmData;
+            int64 asmSize, asmAddress;
+
+            std::vector<AsmOffsetLine> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
             std::unordered_map<uint32, std::string> comments;
-            int internalArchitecture; //used for dissasm libraries
+            int internalArchitecture; // used for dissasm libraries
             bool isInit;
 
             void AddOrUpdateComment(uint32 line, std::string comment);

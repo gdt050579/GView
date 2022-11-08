@@ -887,8 +887,8 @@ void Instance::RecomputeDissasmZones()
 
                 codeZone->isInit = false;
                 // initial offset is the entry point
-                codeZone->cachedCodeOffsets.push_back(convertedData->entryPoint);
-                codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
+                codeZone->cachedCodeOffsets.push_back({ convertedData->entryPoint, 0 });
+                //codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
 
                 if (!codeZone->isCollapsed)
                     codeZone->endingLineIndex += codeZone->extendedSize;
