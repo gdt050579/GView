@@ -410,18 +410,18 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         chars.Add(zoneName.data(), config.Colors.StructureColor);
 
         // TODO: maybe extract this as methods?
-        HighlightSelectionText(dli, zoneName.size());
+        HighlightSelectionAndDrawCursorText(dli, zoneName.size(), zoneName.size() + Layout.startingTextLineOffset);
 
-        const uint32 cursorLine = Cursor.lineInView;
-        if (cursorLine == dli.screenLineToDraw)
-        {
-            const uint32 index = this->Cursor.offset + Layout.startingTextLineOffset;
+        // const uint32 cursorLine = Cursor.lineInView;
+        // if (cursorLine == dli.screenLineToDraw)
+        //{
+        //     const uint32 index = this->Cursor.offset + Layout.startingTextLineOffset;
 
-            if (index < chars.Len())
-                chars.GetBuffer()[index].Color = config.Colors.Selection;
-            else
-                dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
-        }
+        //    if (index < chars.Len())
+        //        chars.GetBuffer()[index].Color = config.Colors.Selection;
+        //    else
+        //        dli.renderer.WriteCharacter(index, cursorLine + 1, codePage[' '], config.Colors.Selection);
+        //}
 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
@@ -450,7 +450,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     //        chars.Add(it->second, config.Colors.AsmComment);
     //    }
 
-    //    HighlightSelectionText(dli, chars.Len());
+    //    HighlightSelectionAndDrawCursorText(dli, chars.Len());
 
     //    const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
     //    if (cursorLine == dli.screenLineToDraw)

@@ -313,7 +313,7 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
-            void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
+            void HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters);
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;
             void UpdateLayoutTotalLines();

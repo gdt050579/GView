@@ -604,17 +604,17 @@ bool Instance::WriteStructureToScreen(
 
     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
 
-    const uint32 cursorLine = Cursor.offset;
-    if (cursorLine == dli.screenLineToDraw)
-    {
-        uint32 index = this->Cursor.offset;
-        if (index < buffer_size - Layout.startingTextLineOffset)
-            dli.chNameAndSize[index].Color = config.Colors.Selection;
-        else
-            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
-    }
+    // const uint32 cursorLine = Cursor.lineInView;
+    // if (cursorLine == dli.screenLineToDraw)
+    //{
+    //     uint32 index = this->Cursor.offset;
+    //     if (index < buffer_size - Layout.startingTextLineOffset)
+    //         dli.chNameAndSize[index].Color = config.Colors.Selection;
+    //     else
+    //         dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
+    // }
 
-    HighlightSelectionText(dli, buffer_size - Layout.startingTextLineOffset);
+    HighlightSelectionAndDrawCursorText(dli, buffer_size - Layout.startingTextLineOffset, buffer_size);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
 
@@ -693,14 +693,14 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                     dli.start++;
                 }
 
-                HighlightSelectionText(dli, buf.GetLength());
+                HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength());
 
-                const uint32 cursorLine = Cursor.lineInView;
-                if (cursorLine == dli.screenLineToDraw)
-                {
-                    const uint32 index             = this->Cursor.offset;
-                    dli.chNameAndSize[index].Color = config.Colors.Selection;
-                }
+                // const uint32 cursorLine = Cursor.lineInView;
+                // if (cursorLine == dli.screenLineToDraw)
+                //{
+                //     const uint32 index             = this->Cursor.offset;
+                //     dli.chNameAndSize[index].Color = config.Colors.Selection;
+                // }
             }
             else
             {
@@ -754,7 +754,7 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
     }
 }
 
-void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
+void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters)
 {
     if (selection.HasAnySelection())
     {
@@ -785,6 +785,16 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
             }
             dli.chText = savedChText;
         }
+    }
+
+    if (Cursor.lineInView == dli.screenLineToDraw)
+    {
+        uint32 index = this->Cursor.offset;
+        if (index < availableCharacters - Layout.startingTextLineOffset)
+            dli.chNameAndSize[index].Color = config.Colors.Selection;
+        else
+            dli.renderer.WriteCharacter(
+                  Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
     }
 }
 
@@ -1113,14 +1123,14 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    HighlightSelectionText(dli, buf.GetLength());
+    HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength());
 
-    const uint32 cursorLine = Cursor.lineInView;
-    if (cursorLine == dli.screenLineToDraw)
-    {
-        const uint32 index             = this->Cursor.offset;
-        dli.chNameAndSize[index].Color = config.Colors.Selection;
-    }
+    // const uint32 cursorLine = Cursor.lineInView;
+    // if (cursorLine == dli.screenLineToDraw)
+    //{
+    //     const uint32 index             = this->Cursor.offset;
+    //     dli.chNameAndSize[index].Color = config.Colors.Selection;
+    // }
 
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, true);
     return true;
