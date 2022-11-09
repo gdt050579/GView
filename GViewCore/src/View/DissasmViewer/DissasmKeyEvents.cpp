@@ -1,4 +1,5 @@
 #include "DissasmViewer.hpp"
+#include <cmath>
 
 constexpr uint32 COMMAND_ADD_NEW_TYPE          = 100;
 constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 101;
@@ -62,20 +63,30 @@ void Instance::MoveTo(int32 offset, int32 lines, bool select)
     auto zoneId = -1;
     if (select)
         zoneId = this->selection.BeginSelection(Cursor.GetOffset(Layout.textSize));
-    if (lines > 0 && static_cast<uint32>(lines) < Layout.textSize)
-    {
-        this->Cursor.offset += offset;
-        this->Cursor.lineInView += lines;
-        if ((select) && (zoneId >= 0))
-        {
-            this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
-            // UpdateCurrentSelection();
-            return; // nothing to do ... already in visual space
-        }
-    }
 
-    if (Cursor.lineInView < Cursor.startViewLine)
-        Cursor.startViewLine = Cursor.lineInView;
+    MoveScrollTo(offset, lines);
+
+    if ((select) && (zoneId >= 0))
+    {
+        this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
+        // UpdateCurrentSelection();
+    }
+    return;
+
+    //if (lines > 0 && static_cast<uint32>(lines) < Layout.visibleRows)
+    //{
+    //    this->Cursor.offset += offset;
+    //    this->Cursor.lineInView += lines;
+    //    if ((select) && (zoneId >= 0))
+    //    {
+    //        this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
+    //        // UpdateCurrentSelection();
+    //        return; // nothing to do ... already in visual space
+    //    }
+    //}
+
+    //if (Cursor.lineInView < Cursor.startViewLine)
+    //    Cursor.startViewLine = Cursor.lineInView;
     // else
     //{
     //     auto dif = this->Cursor.currentPos - this->Cursor.startView;
@@ -85,11 +96,6 @@ void Instance::MoveTo(int32 offset, int32 lines, bool select)
     //         this->Cursor.startView = 0;
     // }
     // this->Cursor.currentPos = offset;
-    if ((select) && (zoneId >= 0))
-    {
-        this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
-        // UpdateCurrentSelection();
-    }
 }
 
 void Instance::MoveScrollTo(int32 offset, int32 lines)
@@ -116,10 +122,10 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
     else
     {
         Cursor.lineInView += lines;
-        if (Cursor.lineInView >= Layout.visibleRows)
+        if (Cursor.lineInView >= Layout.visibleRows - 1)
         {
-            const auto diff = Cursor.lineInView - Layout.visibleRows;
-            Cursor.startViewLine += diff > 0 ? diff : 1;
+            const auto diff = abs(static_cast<int32>(Cursor.lineInView) - static_cast<int32>(Layout.visibleRows - 1));
+            Cursor.startViewLine += diff;
             Cursor.lineInView -= diff;
         }
     }
