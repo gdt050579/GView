@@ -71,31 +71,31 @@ void Instance::MoveTo(int32 offset, int32 lines, bool select)
         this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
         // UpdateCurrentSelection();
     }
-    return;
+    // return;
 
-    //if (lines > 0 && static_cast<uint32>(lines) < Layout.visibleRows)
+    // if (lines > 0 && static_cast<uint32>(lines) < Layout.visibleRows)
     //{
-    //    this->Cursor.offset += offset;
-    //    this->Cursor.lineInView += lines;
-    //    if ((select) && (zoneId >= 0))
-    //    {
-    //        this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
-    //        // UpdateCurrentSelection();
-    //        return; // nothing to do ... already in visual space
-    //    }
-    //}
-
-    //if (Cursor.lineInView < Cursor.startViewLine)
-    //    Cursor.startViewLine = Cursor.lineInView;
-    // else
-    //{
-    //     auto dif = this->Cursor.currentPos - this->Cursor.startView;
-    //     if (offset >= dif)
-    //         this->Cursor.startView = offset - dif;
-    //     else
-    //         this->Cursor.startView = 0;
+    //     this->Cursor.offset += offset;
+    //     this->Cursor.lineInView += lines;
+    //     if ((select) && (zoneId >= 0))
+    //     {
+    //         this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
+    //         // UpdateCurrentSelection();
+    //         return; // nothing to do ... already in visual space
+    //     }
     // }
-    // this->Cursor.currentPos = offset;
+
+    // if (Cursor.lineInView < Cursor.startViewLine)
+    //     Cursor.startViewLine = Cursor.lineInView;
+    //  else
+    //{
+    //      auto dif = this->Cursor.currentPos - this->Cursor.startView;
+    //      if (offset >= dif)
+    //          this->Cursor.startView = offset - dif;
+    //      else
+    //          this->Cursor.startView = 0;
+    //  }
+    //  this->Cursor.currentPos = offset;
 }
 
 void Instance::MoveScrollTo(int32 offset, int32 lines)
@@ -148,9 +148,9 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     // make sure that consecutive click on the same location will not scroll the view to that location
     if (mpInfo.location == MouseLocation::OnView)
     {
-        if (mpInfo.lines != Cursor.offset && mpInfo.offset == Cursor.offset && button == MouseButton::Left)
+        if (button == MouseButton::Left && (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset))
         {
-            const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.startViewLine;
+            const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
             const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
             MoveTo(offsetDiff, linesDiff, false);
         }
@@ -176,10 +176,10 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if (button == MouseButton::Left && (mpInfo.location == MouseLocation::OnView) &&
-        (mpInfo.lines != Cursor.lineInView && mpInfo.offset != Cursor.offset))
+    if (button == MouseButton::Left && mpInfo.location == MouseLocation::OnView &&
+        (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset))
     {
-        const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.startViewLine;
+        const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
         const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
         MoveTo(offsetDiff, linesDiff, true);
         return true;
