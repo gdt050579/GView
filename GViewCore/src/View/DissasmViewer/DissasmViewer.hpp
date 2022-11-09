@@ -192,6 +192,8 @@ namespace View
             uint32 textSize; // charactersPerLine minus the left parts
             uint32 startingTextLineOffset;
             bool structuresInitialCollapsedState;
+
+            uint32 totalLinesSize;
         };
 
         struct AsmData
@@ -312,6 +314,7 @@ namespace View
             void HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength);
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;
+            void UpdateLayoutTotalLines();
 
             // Utils
             inline LinePosition OffsetToLinePosition(uint64 offset) const;

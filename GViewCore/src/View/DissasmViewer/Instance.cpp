@@ -63,6 +63,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.totalCharactersPerLine          = 1;
     this->Layout.startingTextLineOffset          = 5;
     this->Layout.structuresInitialCollapsedState = true;
+    this->Layout.totalLinesSize                  = 0;
 
     this->codePage = CodePageID::DOS_437;
 
@@ -148,15 +149,17 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
     if (addSeparator)
         r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 
-    if (this->obj->GetData().GetSize() > 0)
+    if (Layout.totalLinesSize > 0)
     {
+        const auto val = OffsetToLinePosition(this->Cursor.currentPos + 1);
+
         LocalString<32> tmp;
-        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->GetData().GetSize());
+        tmp.Format("%3u%%", val.line * 100ULL / Layout.totalLinesSize);
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
     {
-        r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
+        r.WriteSingleLineText(x, y, "  0%", this->CursorColors.Line);
     }
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 
@@ -888,7 +891,7 @@ void Instance::RecomputeDissasmZones()
                 codeZone->isInit = false;
                 // initial offset is the entry point
                 codeZone->cachedCodeOffsets.push_back({ convertedData->entryPoint, 0 });
-                //codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
+                // codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
 
                 if (!codeZone->isCollapsed)
                     codeZone->endingLineIndex += codeZone->extendedSize;
@@ -924,7 +927,7 @@ void Instance::RecomputeDissasmZones()
     }
 
     if (settings->parseZones.empty())
-        return;
+        return; // TODO: only text -> add zone text
 
     const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset });
     const uint64 totalFileSize      = this->obj->GetData().GetSize();
@@ -950,6 +953,8 @@ void Instance::RecomputeDissasmZones()
     // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
     lastZoneEndingIndex = collapsibleZone->endingLineIndex;
     settings->parseZones.push_back(std::move(collapsibleZone));
+
+    UpdateLayoutTotalLines();
 
     // vector<CollapsibleAndTextData> textData;
     // const uint32 textLinesCount = obj->GetData().GetSize() / Layout.textSize;
@@ -989,6 +994,12 @@ uint64 Instance::GetZonesMaxSize() const
     for (const auto& zone : settings->parseZones)
         linesOccupiedByZones += zone->endingLineIndex - zone->startLineIndex;
     return linesOccupiedByZones * Layout.textSize;
+}
+
+void Instance::UpdateLayoutTotalLines()
+{
+    // TODO: check if +1 or not
+    Layout.totalLinesSize = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
 }
 
 Instance::LinePosition Instance::OffsetToLinePosition(uint64 offset) const
@@ -1063,6 +1074,7 @@ void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zon
             foundZone = true;
     }
     zone->extendedSize = newExtendedSize;
+    UpdateLayoutTotalLines();
     assert(foundZone);
 }
 
@@ -1208,7 +1220,7 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
         if (zoneToChange->zoneID == zone->zoneID)
             foundZone = true;
     }
-
+    UpdateLayoutTotalLines();
     // TODO: search for following zones and update their size
 }
 

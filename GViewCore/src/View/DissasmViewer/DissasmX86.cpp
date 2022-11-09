@@ -480,7 +480,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     {
         populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture);
         zone->lastDrawnLine   = 0;
-        auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
+        const auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
         zone->lastClosestLine = closestData.line;
         switch (zone->zoneDetails.architecture)
         {
@@ -512,7 +512,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     uint32 lineDifferences = 1;
     if (currentLine < zone->lastDrawnLine || currentLine - zone->lastDrawnLine > 1)
     {
-        auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, currentLine);
+        // TODO: can be inlined as function
+        const auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, currentLine);
         zone->lastClosestLine = closestData.line;
         zone->asmAddress      = closestData.offset - zone->cachedCodeOffsets[0].offset;
         zone->asmSize         = zone->zoneDetails.size - zone->asmAddress;

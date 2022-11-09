@@ -51,7 +51,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
 
 void Instance::MoveTo(uint64 offset, bool select)
 {
-    const uint64 dataSize = config.ShowFileContent ? obj->GetData().GetSize() : GetZonesMaxSize();
+    const uint64 dataSize = static_cast<uint64>(Layout.totalLinesSize) * Layout.totalCharactersPerLine;
     if (dataSize == 0)
         return;
     if (offset > (dataSize - 1))
