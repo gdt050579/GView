@@ -631,6 +631,9 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     // cs_close(&handle);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
+
+    HighlightSelectionAndDrawCursorText(dli, bufferToDraw.length(), bufferToDraw.length());
+
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
     return true;
 }

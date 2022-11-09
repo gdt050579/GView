@@ -331,6 +331,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                 }
             }
         }
+        // return true;
         assert(false);
     }
     else
@@ -693,7 +694,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                     dli.start++;
                 }
 
-                HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength());
+                HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength() + Layout.startingTextLineOffset);
 
                 // const uint32 cursorLine = Cursor.lineInView;
                 // if (cursorLine == dli.screenLineToDraw)
@@ -1011,7 +1012,7 @@ uint64 Instance::GetZonesMaxSize() const
 void Instance::UpdateLayoutTotalLines()
 {
     // TODO: check if +1 or not
-    Layout.totalLinesSize = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
+    Layout.totalLinesSize = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex - 1;
 }
 
 LinePosition Instance::OffsetToLinePosition(uint64 offset) const

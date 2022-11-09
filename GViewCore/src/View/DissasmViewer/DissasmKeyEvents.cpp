@@ -213,7 +213,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     switch (keyCode)
     {
     case Key::Down:
-        if (Cursor.startViewLine + Cursor.lineInView + 1 < Layout.totalLinesSize)
+        if (Cursor.startViewLine + Cursor.lineInView + 1 <= Layout.totalLinesSize)
             MoveTo(0, 1, select);
         return true;
     case Key::Up:
@@ -234,7 +234,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         if (Cursor.startViewLine + Cursor.lineInView + this->Layout.visibleRows <= Layout.totalLinesSize)
             MoveTo(0, this->Layout.visibleRows, select);
         else
-            MoveTo(0, Layout.totalLinesSize - (Cursor.startViewLine + Cursor.lineInView + this->Layout.visibleRows), select);
+            MoveTo(0, Layout.totalLinesSize - Cursor.startViewLine - Cursor.lineInView, select);
         return true;
     case Key::PageUp:
         if (Cursor.startViewLine + Cursor.lineInView >= this->Layout.visibleRows)
