@@ -151,7 +151,7 @@ namespace View
             // uint32 startingCacheLineIndex;
             // uint64 lastInstrOffsetInCachedLines;
             // std::vector<CharacterBuffer> cachedLines;
-            uint32 lastDrawnLine; //optimization not to recompute buffer every time
+            uint32 lastDrawnLine; // optimization not to recompute buffer every time
             uint32 lastClosestLine;
             BufferView lastData;
 
@@ -201,6 +201,12 @@ namespace View
             std::map<uint32, ColorPair> instructionToColor;
         };
 
+        struct LinePosition
+        {
+            uint32 line;
+            uint32 offset;
+        };
+
         class Instance : public View::ViewControl
         {
             struct DrawLineInfo
@@ -230,13 +236,15 @@ namespace View
             struct MousePositionInfo
             {
                 MouseLocation location;
-                uint64 bufferOffset;
+                uint32 lines;
+                uint32 offset;
             };
 
             struct CursorDissasm
             {
-                uint64 startView, currentPos;
-                uint32 base;
+                uint32 startViewLine, lineInView, offset;
+                [[nodiscard]] LinePosition ToLinePosition() const;
+                uint64 GetOffset(uint32 textSize) const;
             } Cursor;
 
             struct
@@ -275,12 +283,6 @@ namespace View
                 uint32 zoneLine;
             };
 
-            struct LinePosition
-            {
-                uint32 line;
-                uint32 offset;
-            };
-
             FixSizeString<16> name;
 
             Reference<GView::Object> obj;
@@ -290,7 +292,7 @@ namespace View
             Utils::Selection selection;
             CodePage codePage;
             Menu rightClickMenu;
-            uint64 rightClickOffset;
+            //uint64 rightClickOffset;
 
             AsmData asmData;
 
@@ -318,7 +320,7 @@ namespace View
 
             // Utils
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
-            inline uint64 LinePositionToOffset(LinePosition linePosition) const;
+            // inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
             void WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const;
 
@@ -326,8 +328,8 @@ namespace View
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
-            void MoveTo(uint64 offset, bool select);
-            void MoveScrollTo(uint64 offset);
+            void MoveTo(int32 offset = 0, int32 lines = 0, bool select = false);
+            void MoveScrollTo(int32 offset, int32 lines);
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);

@@ -412,10 +412,10 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         // TODO: maybe extract this as methods?
         HighlightSelectionText(dli, zoneName.size());
 
-        const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+        const uint32 cursorLine = Cursor.lineInView;
         if (cursorLine == dli.screenLineToDraw)
         {
-            const uint32 index = this->Cursor.currentPos % Layout.textSize + Layout.startingTextLineOffset;
+            const uint32 index = this->Cursor.offset + Layout.startingTextLineOffset;
 
             if (index < chars.Len())
                 chars.GetBuffer()[index].Color = config.Colors.Selection;
@@ -434,10 +434,10 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     const uint32 currentLine = dli.textLineToDraw - 1u;
     // TODO: reenable caching
     /*
-    //if (zone->isInit && currentLine >= zone->startingCacheLineIndex &&
-    //    currentLine - zone->startingCacheLineIndex < DISSASM_MAX_CACHED_LINES)
+    //if (zone->isInit && lineInView >= zone->startingCacheLineIndex &&
+    //    lineInView - zone->startingCacheLineIndex < DISSASM_MAX_CACHED_LINES)
     //{
-    //    const uint32 lineAsmToDraw = currentLine - zone->startingCacheLineIndex;
+    //    const uint32 lineAsmToDraw = lineInView - zone->startingCacheLineIndex;
 
     //    chars.Set(zone->cachedLines[lineAsmToDraw]);
 
@@ -479,9 +479,9 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (!zone->isInit)
     {
         populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture);
-        zone->lastDrawnLine   = 0;
-        const auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
-        zone->lastClosestLine = closestData.line;
+        zone->lastDrawnLine    = 0;
+        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
+        zone->lastClosestLine  = closestData.line;
         switch (zone->zoneDetails.architecture)
         {
         case DissasmArchitecture::x86:
@@ -513,10 +513,10 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (currentLine < zone->lastDrawnLine || currentLine - zone->lastDrawnLine > 1)
     {
         // TODO: can be inlined as function
-        const auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, currentLine);
-        zone->lastClosestLine = closestData.line;
-        zone->asmAddress      = closestData.offset - zone->cachedCodeOffsets[0].offset;
-        zone->asmSize         = zone->zoneDetails.size - zone->asmAddress;
+        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, currentLine);
+        zone->lastClosestLine  = closestData.line;
+        zone->asmAddress       = closestData.offset - zone->cachedCodeOffsets[0].offset;
+        zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
         if (closestData.line != zone->lastClosestLine)
         {
             const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, zone->asmSize, false);
@@ -528,8 +528,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
             }
         }
         zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
-        // if (currentLine > zone->lastDrawnLine)
-        //     lineDifferences = currentLine - zone->lastDrawnLine + 1;
+        // if (lineInView > zone->lastDrawnLine)
+        //     lineDifferences = lineInView - zone->lastDrawnLine + 1;
         if (currentLine < zone->lastDrawnLine)
         {
             lineDifferences = currentLine - closestData.line + 1;
@@ -563,7 +563,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     zone->lastDrawnLine = currentLine;
 
-    // const uint32 lineAsmToDraw = zone->startingCacheLineIndex - currentLine;
+    // const uint32 lineAsmToDraw = zone->startingCacheLineIndex - lineInView;
 
     // assert(zone->zoneDetails.size > zone->zoneDetails.entryPoint);
 

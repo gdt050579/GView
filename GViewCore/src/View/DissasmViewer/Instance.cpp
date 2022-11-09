@@ -50,9 +50,9 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (config.Loaded == false)
         config.Initialize();
 
-    this->Cursor.currentPos = 0;
-    this->Cursor.startView  = 0;
-    this->Cursor.base       = 10;
+    this->Cursor.lineInView    = 0;
+    this->Cursor.startViewLine = 0;
+    this->Cursor.offset        = 0;
 
     this->CursorColors.Normal      = config.Colors.Normal;
     this->CursorColors.Highlighted = config.Colors.Highlight;
@@ -71,7 +71,7 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     {
         menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
     }
-    rightClickOffset = 0;
+    // rightClickOffset = 0;
 
     // TODO: to be moved inside plugin for some sort of API for token<->color
     asmData.instructionToColor = {
@@ -85,6 +85,11 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
         { *((uint32*) "qwor"), config.Colors.AsmLocationInstruction },
         { *((uint32*) "ptr"), config.Colors.AsmLocationInstruction },
     };
+}
+
+inline uint64 LinePositionToOffset(LinePosition&& linePosition, uint32 textSize)
+{
+    return static_cast<uint64>(linePosition.line) * textSize + linePosition.offset;
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -142,8 +147,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(
-          x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos % Layout.textSize, this->Cursor.base), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.offset, 10), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -151,10 +155,8 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 
     if (Layout.totalLinesSize > 0)
     {
-        const auto val = OffsetToLinePosition(this->Cursor.currentPos + 1);
-
         LocalString<32> tmp;
-        tmp.Format("%3u%%", val.line * 100ULL / Layout.totalLinesSize);
+        tmp.Format("%3u%%", (Cursor.startViewLine + Cursor.lineInView) * 100ULL / Layout.totalLinesSize);
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
@@ -171,7 +173,7 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
     r.WriteSingleLineText(
-          x + 5, y, width - 4, n.ToString(this->Cursor.currentPos / Layout.textSize, NumericFormatFlags::None), this->CursorColors.Normal);
+          x + 5, y, width - 4, n.ToString(Cursor.lineInView + Cursor.startViewLine, NumericFormatFlags::None), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -221,7 +223,7 @@ void Instance::AddNewCollapsibleZone()
 
 void Instance::AddComment()
 {
-    const uint64 offsetStart = Cursor.currentPos;
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
     const uint64 offsetEnd   = offsetStart + 1;
 
     const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
@@ -261,7 +263,7 @@ void Instance::AddComment()
 void Instance::RemoveComment()
 {
     // TODO: duplicate code -> maybe extract this?
-    const uint64 offsetStart = Cursor.currentPos;
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
     const uint64 offsetEnd   = offsetStart + 1;
 
     const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
@@ -294,7 +296,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     {
         this->chars.Resize(Layout.totalCharactersPerLine);
         dli.recomputeOffsets      = false;
-        dli.currentLineFromOffset = (uint32) (this->Cursor.startView / this->Layout.textSize);
+        dli.currentLineFromOffset = this->Cursor.startViewLine;
     }
 
     // TODO: send multiple lines to be drawn with each other instead of searching line by line
@@ -602,10 +604,10 @@ bool Instance::WriteStructureToScreen(
 
     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
 
-    const uint32 cursorLine = static_cast<uint32>(this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
+    const uint32 cursorLine = Cursor.offset;
     if (cursorLine == dli.screenLineToDraw)
     {
-        uint32 index = this->Cursor.currentPos % Layout.textSize;
+        uint32 index = this->Cursor.offset;
         if (index < buffer_size - Layout.startingTextLineOffset)
             dli.chNameAndSize[index].Color = config.Colors.Selection;
         else
@@ -693,10 +695,10 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
                 HighlightSelectionText(dli, buf.GetLength());
 
-                const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+                const uint32 cursorLine = Cursor.lineInView;
                 if (cursorLine == dli.screenLineToDraw)
                 {
-                    const uint32 index             = this->Cursor.currentPos % Layout.textSize;
+                    const uint32 index             = this->Cursor.offset;
                     dli.chNameAndSize[index].Color = config.Colors.Selection;
                 }
             }
@@ -761,7 +763,7 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
 
         const uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
         const uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        const uint32 lineToDrawTo     = dli.screenLineToDraw + static_cast<uint32>(Cursor.startView / Layout.textSize);
+        const uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startViewLine;
 
         if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
         {
@@ -823,9 +825,9 @@ void Instance::RecomputeDissasmZones()
                 zoneStartingLine = lastZoneEndingIndex;
             if (zoneStartingLine > lastZoneEndingIndex)
             {
-                const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset });
+                const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
                 textLinesOffset += zoneStartingLine - lastZoneEndingIndex;
-                const uint64 endTextOffset = LinePositionToOffset({ textLinesOffset });
+                const uint64 endTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
 
                 auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
 
@@ -883,7 +885,7 @@ void Instance::RecomputeDissasmZones()
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
                 codeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
-                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
+                codeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
                 codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
@@ -929,7 +931,7 @@ void Instance::RecomputeDissasmZones()
     if (settings->parseZones.empty())
         return; // TODO: only text -> add zone text
 
-    const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset });
+    const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
     const uint64 totalFileSize      = this->obj->GetData().GetSize();
     if (startingTextOffset >= totalFileSize)
         return;
@@ -1002,14 +1004,14 @@ void Instance::UpdateLayoutTotalLines()
     Layout.totalLinesSize = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
 }
 
-Instance::LinePosition Instance::OffsetToLinePosition(uint64 offset) const
+LinePosition Instance::OffsetToLinePosition(uint64 offset) const
 {
     return { static_cast<uint32>(offset / Layout.textSize), static_cast<uint32>(offset % Layout.textSize) };
 }
 
-uint64 Instance::LinePositionToOffset(LinePosition linePosition) const
+uint64 Instance::CursorDissasm::GetOffset(uint32 textSize) const
 {
-    return static_cast<uint64>(linePosition.line) * Layout.textSize + linePosition.offset;
+    return LinePositionToOffset(ToLinePosition(), textSize);
 }
 
 vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset) const
@@ -1113,10 +1115,10 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 
     HighlightSelectionText(dli, buf.GetLength());
 
-    const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
+    const uint32 cursorLine = Cursor.lineInView;
     if (cursorLine == dli.screenLineToDraw)
     {
-        const uint32 index             = this->Cursor.currentPos % Layout.textSize;
+        const uint32 index             = this->Cursor.offset;
         dli.chNameAndSize[index].Color = config.Colors.Selection;
     }
 
@@ -1146,7 +1148,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // uint64 val2 = ((uint64) tr - 1) * Layout.charactersPerLine;
         // if (dli.viewOffset <= Cursor.currentPos && Cursor.currentPos < nextOffset)
         //{
-        //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.lineOffset;
+        //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.offset;
         //    chars.GetBuffer()[val].Color = config.Colors.Cursor;
         //}
         // auto asdasdasd = CharacterView{ chars.GetBuffer(), 10 };
