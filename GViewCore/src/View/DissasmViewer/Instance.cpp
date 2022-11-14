@@ -896,7 +896,7 @@ void Instance::RecomputeDissasmZones()
                 codeZone->startLineIndex  = zoneStartingLine;
                 codeZone->endingLineIndex = codeZone->startLineIndex + 1;
                 codeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
-                codeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
                 // codeZone->textLinesOffset = textLinesOffset;
                 codeZone->zoneID   = currentIndex++;
                 codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
@@ -1057,11 +1057,6 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
     return result;
 }
 
-void Instance::WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const
-{
-    dli.renderer.WriteSingleLineText(Layout.startingTextLineOffset, dli.screenLineToDraw + 1, error, Cfg.Editor.Normal);
-}
-
 void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize)
 {
     if (zone->isCollapsed)
@@ -1149,7 +1144,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     if (Layout.textSize == 0)
         return;
 
-    DrawLineInfo dli(renderer);
+    DrawLineInfo dli(renderer, Layout.startingTextLineOffset, config.Colors.Normal);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.screenLineToDraw = tr;
@@ -1272,4 +1267,43 @@ void GView::View::DissasmViewer::DissasmCodeZone::RemoveComment(uint32 line)
         return;
     }
     Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
+}
+
+void Instance::ProcessSpaceKey()
+{
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].zoneLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].zoneLine);
+}
+
+void DrawLineInfo::WriteErrorToScreen(std::string_view error) const
+{
+    renderer.WriteSingleLineText(lineOffset, screenLineToDraw + 1, error, errorColor);
+}
+
+LinePosition Instance::CursorDissasm::ToLinePosition() const
+{
+    return LinePosition(startViewLine + lineInView, offset);
 }

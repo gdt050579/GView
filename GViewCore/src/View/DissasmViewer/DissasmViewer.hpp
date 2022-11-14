@@ -156,7 +156,7 @@ namespace View
             BufferView lastData;
 
             const uint8* asmData;
-            int64 asmSize, asmAddress;
+            uint64 asmSize, asmAddress;
 
             std::vector<AsmOffsetLine> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
@@ -207,26 +207,33 @@ namespace View
             uint32 offset;
         };
 
+        struct DrawLineInfo
+        {
+            const uint8* start;
+            const uint8* end;
+            Character* chNameAndSize;
+            Character* chText;
+            bool recomputeOffsets;
+
+            uint32 currentLineFromOffset;
+            uint32 screenLineToDraw;
+            uint32 textLineToDraw;
+
+            Renderer& renderer;
+
+            uint32 lineOffset;
+            ColorPair errorColor;
+            DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
+                : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), lineOffset(lineOffset),
+                  errorColor(errorColor)
+            {
+            }
+
+            void WriteErrorToScreen(std::string_view error) const;
+        };
+
         class Instance : public View::ViewControl
         {
-            struct DrawLineInfo
-            {
-                const uint8* start;
-                const uint8* end;
-                Character* chNameAndSize;
-                Character* chText;
-                bool recomputeOffsets;
-
-                uint32 currentLineFromOffset;
-                uint32 screenLineToDraw;
-                uint32 textLineToDraw;
-
-                Renderer& renderer;
-                DrawLineInfo(Renderer& renderer) : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer)
-                {
-                }
-            };
-
             enum class MouseLocation : uint8
             {
                 OnView,
@@ -292,7 +299,7 @@ namespace View
             Utils::Selection selection;
             CodePage codePage;
             Menu rightClickMenu;
-            //uint64 rightClickOffset;
+            // uint64 rightClickOffset;
 
             AsmData asmData;
 
@@ -321,8 +328,7 @@ namespace View
             // Utils
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             // inline uint64 LinePositionToOffset(LinePosition linePosition) const;
-            vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
-            void WriteErrorToScreen(DrawLineInfo& dli, std::string_view error) const;
+            [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
 
             void AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize);
 
@@ -339,6 +345,8 @@ namespace View
             void AddComment();
             void RemoveComment();
             void CommandExportAsmFile();
+            void ProcessSpaceKey();
+            void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line);
 
           public:
             Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);

@@ -269,6 +269,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Delete:
         RemoveComment();
         return true;
+    case Key::Space:
+        ProcessSpaceKey();
+        return true;
     }
     if (charCode == ';')
     {

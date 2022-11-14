@@ -72,8 +72,3 @@ SettingsData::SettingsData()
     defaultLanguage = DisassemblyLanguage::Default;
     availableID     = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
 }
-
-LinePosition Instance::CursorDissasm::ToLinePosition() const
-{
-    return LinePosition(startViewLine + lineInView, offset);
-}
