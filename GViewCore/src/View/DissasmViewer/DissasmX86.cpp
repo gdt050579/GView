@@ -552,6 +552,14 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     zone->lastDrawnLine = currentLine;
 
+    const auto it = zone->comments.find(currentLine);
+    if (it != zone->comments.end())
+    {
+        constexpr char tmp[] = "    //";
+        chars.Add(tmp, config.Colors.AsmComment);
+        chars.Add(it->second, config.Colors.AsmComment);
+    }
+
     // const uint32 lineAsmToDraw = zone->startingCacheLineIndex - lineInView;
 
     // assert(zone->zoneDetails.size > zone->zoneDetails.entryPoint);
@@ -733,7 +741,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
     if (computedValue == 0)
         return;
 
-    //computedValue = 1064;
+    // computedValue = 1064;
 
     diffLines = 0;
     insn      = GetCurrentInstructionByOffset(computedValue, zone, obj, diffLines);
@@ -746,4 +754,41 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
 
     Cursor.lineInView    = 0;
     Cursor.startViewLine = diffLines + zone->startLineIndex;
+}
+
+void Instance::CommandDissasmAddZone()
+{
+    uint64 offsetStart = 0;
+    uint64 offsetEnd   = 0;
+    if (!selection.HasAnySelection() || !selection.GetSelection(0, offsetStart, offsetEnd))
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].startingLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+}
+
+void Instance::CommandDissasmRemoveZone()
+{
 }

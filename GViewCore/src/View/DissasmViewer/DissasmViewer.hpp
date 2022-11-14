@@ -287,7 +287,8 @@ namespace View
             struct ZoneLocation
             {
                 uint32 zoneIndex;
-                uint32 zoneLine;
+                uint32 startingLine;
+                uint32 endingLine;
             };
 
             FixSizeString<16> name;
@@ -346,6 +347,8 @@ namespace View
             void RemoveComment();
             void CommandExportAsmFile();
             void ProcessSpaceKey();
+            void CommandDissasmAddZone();
+            void CommandDissasmRemoveZone();
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line);
 
           public:

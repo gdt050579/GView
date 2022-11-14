@@ -10,12 +10,14 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
-constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
-constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
-constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
-constexpr int32 RIGHT_CLICK_ADD_COMMENT       = 4;
-constexpr int32 RIGHT_CLICK_REMOVE_COMMENT    = 5;
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
+constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
+constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
+constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE   = 3;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
+constexpr int32 RIGHT_CLICK_DISSASM_ADD_ZONE    = 6;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_ZONE = 7;
 
 struct
 {
@@ -28,7 +30,9 @@ struct
                                   { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
                                   { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },*/
                                   { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
-                                  { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" }
+                                  { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
+                                  { RIGHT_CLICK_DISSASM_ADD_ZONE, "Collapse dissasm zone" },
+                                  { RIGHT_CLICK_DISSASM_REMOVE_ZONE, "Remove dissasm zone" }
 };
 
 Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
@@ -240,7 +244,7 @@ void Instance::AddComment()
         return;
     }
 
-    if (zonesFound[0].zoneLine == 0)
+    if (zonesFound[0].startingLine == 0)
     {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
@@ -250,13 +254,13 @@ void Instance::AddComment()
 
     std::string foundComment;
     // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
-    convertedZone->HasComment(zonesFound[0].zoneLine, foundComment);
+    convertedZone->HasComment(zonesFound[0].startingLine, foundComment);
 
     selection.Clear();
     CommentDataWindow dlg(foundComment);
     if (dlg.Show() == Dialogs::Result::Ok)
     {
-        convertedZone->AddOrUpdateComment(zonesFound[0].zoneLine, dlg.GetResult());
+        convertedZone->AddOrUpdateComment(zonesFound[0].startingLine, dlg.GetResult());
     }
 }
 
@@ -280,14 +284,14 @@ void Instance::RemoveComment()
         return;
     }
 
-    if (zonesFound[0].zoneLine == 0)
+    if (zonesFound[0].startingLine == 0)
     {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    convertedZone->RemoveComment(zonesFound[0].zoneLine);
+    convertedZone->RemoveComment(zonesFound[0].startingLine);
 }
 
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
@@ -1045,13 +1049,22 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
     while (zoneIndex < zonesCount && lineStart >= zones[zoneIndex]->endingLineIndex)
         zoneIndex++;
 
+    uint32* value = nullptr;
     for (uint32 line = lineStart; line <= lineEnd && zoneIndex < zonesCount; line++)
     {
         if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
             (result.empty() || result.back().zoneIndex != zoneIndex))
-            result.push_back({ zoneIndex, line - zones[zoneIndex]->startLineIndex });
+        {
+            result.push_back({ zoneIndex, line - zones[zoneIndex]->startLineIndex, line - zones[zoneIndex]->startLineIndex });
+            value = &result[result.size() - 1].endingLine;
+        }
         else if (line >= zones[zoneIndex]->endingLineIndex)
             zoneIndex++;
+        else if (value)
+        {
+            (*value)++;
+        }
+
     }
 
     return result;
@@ -1288,14 +1301,14 @@ void Instance::ProcessSpaceKey()
         return;
     }
 
-    if (zonesFound[0].zoneLine == 0)
+    if (zonesFound[0].startingLine == 0)
     {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].zoneLine);
+    DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine);
 }
 
 void DrawLineInfo::WriteErrorToScreen(std::string_view error) const
