@@ -28,7 +28,6 @@ bool MachOFile::Update()
         SetSourceVersion();
         SetUUID();
         SetLinkEditData();
-        SetCodeSignature();
         SetVersionMin();
 
         panelsMask |= (1ULL << (uint8) Panels::IDs::LoadCommands);
@@ -52,11 +51,6 @@ bool MachOFile::Update()
         if (dySymTab.has_value())
         {
             panelsMask |= (1ULL << (uint8) Panels::IDs::DySymTab);
-        }
-
-        if (codeSignature.has_value())
-        {
-            panelsMask |= (1ULL << (uint8) Panels::IDs::CodeSign);
         }
 
         if (ParseGoData())
@@ -638,202 +632,308 @@ bool MachOFile::SetLinkEditData()
 
 bool MachOFile::SetCodeSignature()
 {
+    std::optional<LoadCommand> codeSignatureCommand{};
+
     for (const auto& lc : loadCommands)
     {
         if (lc.value.cmd == MAC::LoadCommandType::CODE_SIGNATURE)
         {
-            codeSignature.emplace(CodeSignature{});
-            codeSignature->signature.humanReadable.Set("");
+            codeSignatureCommand.emplace(lc);
+            break;
+        }
+    }
 
-            CHECK(obj->GetData().Copy<MAC::linkedit_data_command>(lc.offset, codeSignature->ledc), false, "");
-            if (shouldSwapEndianess)
+    CHECK(codeSignatureCommand.has_value(), false, "");
+
+    LocalString<128> ls;
+
+    codeSignature.emplace(CodeSignature{});
+    codeSignature->signature.humanReadable.Set("");
+
+    CHECK(obj->GetData().Copy<MAC::linkedit_data_command>(codeSignatureCommand->offset, codeSignature->ledc), false, "");
+    if (shouldSwapEndianess)
+    {
+        Swap(codeSignature->ledc);
+    }
+
+    CHECK(obj->GetData().Copy<MAC::CS_SuperBlob>(codeSignature->ledc.dataoff, codeSignature->superBlob), false, "");
+
+    // All fields are big endian (in case PPC ever makes a comeback)
+    Swap(codeSignature->superBlob);
+
+    const auto startBlobOffset = codeSignature->ledc.dataoff + sizeof(MAC::CS_SuperBlob);
+    auto currentBlobOffset     = startBlobOffset;
+    for (auto i = 0U; i < codeSignature->superBlob.count; i++)
+    {
+        MAC::CS_BlobIndex blob{};
+
+        CHECK(obj->GetData().Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
+        Swap(blob);
+
+        codeSignature->blobs.emplace_back(blob);
+
+        currentBlobOffset += sizeof(MAC::CS_BlobIndex);
+    }
+
+    for (const auto& blob : codeSignature->blobs)
+    {
+        const auto csOffset = static_cast<uint64>(codeSignature->ledc.dataoff) + blob.offset;
+        switch (blob.type)
+        {
+        case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
+        {
+            CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
+            Swap(codeSignature->codeDirectory);
+
+            const auto blobBuffer                  = obj->GetData().CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
+            codeSignature->codeDirectoryIdentifier = (char*) blobBuffer.GetData() + codeSignature->codeDirectory.identOffset;
+
+            const auto hashType = codeSignature->codeDirectory.hashType;
             {
-                Swap(codeSignature->ledc);
+                if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
+                {
+                    throw std::runtime_error("Unable to validate!");
+                }
             }
 
-            CHECK(obj->GetData().Copy<MAC::CS_SuperBlob>(codeSignature->ledc.dataoff, codeSignature->superBlob), false, "");
+            ProgressStatus::Init(
+                  "Computing code directory slots hashes...",
+                  codeSignature->codeDirectory.nCodeSlots,
+                  ProgressStatus::Flags::DisableDelayedActivation);
 
-            // All fields are big endian (in case PPC ever makes a comeback)
-            Swap(codeSignature->superBlob);
+            codeSignature->cdSlotsHashes.reserve(codeSignature->codeDirectory.nCodeSlots);
 
-            const auto startBlobOffset = codeSignature->ledc.dataoff + sizeof(MAC::CS_SuperBlob);
-            auto currentBlobOffset     = startBlobOffset;
-            for (auto i = 0U; i < codeSignature->superBlob.count; i++)
+            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
+            auto remaining      = codeSignature->codeDirectory.codeLimit;
+            auto processed      = 0ULL;
+            for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
             {
-                MAC::CS_BlobIndex blob{};
+                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, codeSignature->codeDirectory.nCodeSlots)) == false,
+                      false,
+                      "");
 
-                CHECK(obj->GetData().Copy<MAC::CS_BlobIndex>(currentBlobOffset, blob), false, "");
-                Swap(blob);
+                const auto size             = std::min<>(remaining, pageSize);
+                const auto hashOffset       = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
+                const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
 
-                codeSignature->blobs.emplace_back(blob);
+                std::string hashComputed;
+                if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
+                {
+                    throw std::runtime_error("Unable to validate!");
+                }
 
-                currentBlobOffset += sizeof(MAC::CS_BlobIndex);
+                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                LocalString<128> ls;
+                for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++)
+                {
+                    ls.AddFormat("%.2X", hash[i]);
+                }
+                std::string hashFound{ ls };
+
+                codeSignature->cdSlotsHashes.emplace_back(HashPair{ .found{ hashFound }, .computed{ hashComputed } });
+
+                processed += size;
+                remaining -= size;
             }
 
-            for (const auto& blob : codeSignature->blobs)
+            for (auto slot = 1U; slot <= codeSignature->codeDirectory.nSpecialSlots; slot++)
             {
-                const auto csOffset = static_cast<uint64>(codeSignature->ledc.dataoff) + blob.offset;
-                switch (blob.type)
+                const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * -slot;
+
+                const auto& [it, ok] = codeSignature->specialSlotsHashes.insert(
+                      { static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
+                CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
+                auto& [k, v] = *it;
+
+                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                LocalString<128> ls;
+                for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++)
                 {
-                case MAC::CodeSignMagic::CSSLOT_CODEDIRECTORY:
-                {
-                    CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, codeSignature->codeDirectory), false, "");
-                    Swap(codeSignature->codeDirectory);
-
-                    const auto blobBuffer                  = obj->GetData().CopyToBuffer(csOffset, codeSignature->codeDirectory.length);
-                    codeSignature->codeDirectoryIdentifier = (char*) blobBuffer.GetData() + codeSignature->codeDirectory.identOffset;
-
-                    const auto hashType = codeSignature->codeDirectory.hashType;
-                    {
-                        if (ComputeHash(blobBuffer, hashType, codeSignature->cdHash) == false)
-                        {
-                            throw "Unable to validate!";
-                        }
-                    }
-
-                    auto pageSize  = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
-                    auto remaining = codeSignature->codeDirectory.codeLimit;
-                    auto processed = 0ULL;
-                    for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
-                    {
-                        const auto size       = std::min<>(remaining, pageSize);
-                        const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
-                        const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
-
-                        std::string hashComputed;
-                        if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
-                        {
-                            throw "Unable to validate!";
-                        }
-
-                        const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
-                        LocalString<128> ls;
-                        for (auto i = 0U; i < codeSignature->codeDirectory.hashSize; i++)
-                        {
-                            ls.AddFormat("%.2X", hash[i]);
-                        }
-                        std::string hashFound{ ls };
-
-                        codeSignature->cdSlotsHashes.emplace_back(std::pair<std::string, std::string>{ hashFound, hashComputed });
-
-                        processed += size;
-                        remaining -= size;
-                    }
+                    ls.AddFormat("%.2X", hash[i]);
                 }
-                break;
-                case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
-                    break;
-                case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
-                {
-                    CHECK(obj->GetData().Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature->requirements.blob), false, "");
-                    Swap(codeSignature->requirements.blob);
-
-                    codeSignature->requirements.data = obj->GetData().CopyToBuffer(
-                          csOffset + sizeof(MAC::CS_RequirementsBlob),
-                          codeSignature->requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
-
-                    // TODO: needs to parse requirements and translate them to human readable text...
-                    // MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature.requirements.data.GetData();
-                    // r->type                = Utils::SwapEndian(r->type);
-                    // r->offset              = Utils::SwapEndian(r->offset);
-                    // const auto c           = codeSignature.requirements.data.GetData() + sizeof(MAC::CS_Requirement) + r->offset + 4;
-                }
-                break;
-                case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:
-                    break;
-                case MAC::CodeSignMagic::CSSLOT_APPLICATION:
-                    break;
-                case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
-                {
-                    CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
-                    Swap(codeSignature->entitlements.blob);
-                    codeSignature->entitlements.data =
-                          obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
-                }
-                break;
-                case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
-                    break;
-                case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
-                {
-                    MAC::CS_GenericBlob gblob{};
-                    CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, gblob), false, "");
-                    Swap(gblob);
-
-                    codeSignature->signature.offset = csOffset + sizeof(gblob);
-                    codeSignature->signature.size   = gblob.length - sizeof(gblob);
-
-                    CHECKBK(codeSignature->signature.size > 0, "");
-
-                    const auto blobBuffer = obj->GetData().CopyToBuffer(
-                          codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
-                    codeSignature->signature.errorHumanReadable =
-                          !blobBuffer.IsValid() ||
-                          !GView::DigitalSignature::CMSToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
-                    codeSignature->signature.errorPEMs =
-                          !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToPEMCerts(
-                                                         blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
-                    codeSignature->signature.errorSig =
-                          !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
-                }
-                break;
-                case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
-                {
-                    MAC::CS_CodeDirectory cd{};
-                    CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
-                    Swap(cd);
-                    codeSignature->alternateDirectories.emplace_back(cd);
-
-                    const auto blobBuffer = obj->GetData().CopyToBuffer(csOffset, cd.length);
-                    codeSignature->alternateDirectoriesIdentifiers.emplace_back((char*) blobBuffer.GetData() + cd.identOffset);
-
-                    const auto hashType = cd.hashType;
-                    {
-                        std::string cdHash;
-                        if (ComputeHash(blobBuffer, hashType, cdHash) == false)
-                        {
-                            throw "Unable to validate!";
-                        }
-                        codeSignature->acdHashes.emplace_back(cdHash);
-                    }
-
-                    std::vector<std::pair<std::string, std::string>> cdSlotsHashes;
-
-                    auto pageSize  = cd.pageSize ? (1U << cd.pageSize) : 0U;
-                    auto remaining = cd.codeLimit;
-                    auto processed = 0ULL;
-                    for (auto slot = 0U; slot < cd.nCodeSlots; slot++)
-                    {
-                        const auto size             = std::min<>(remaining, pageSize);
-                        const auto hashOffset       = cd.hashOffset + cd.hashSize * slot;
-                        const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
-
-                        std::string hashComputed;
-                        if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
-                        {
-                            throw "Unable to validate!";
-                        }
-
-                        const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
-                        LocalString<128> ls;
-                        for (auto i = 0U; i < cd.hashSize; i++)
-                        {
-                            ls.AddFormat("%.2X", hash[i]);
-                        }
-                        std::string hashFound{ ls };
-
-                        cdSlotsHashes.emplace_back(std::pair<std::string, std::string>{ hashFound, hashComputed });
-
-                        processed += size;
-                        remaining -= size;
-                    }
-
-                    codeSignature->acdSlotsHashes.emplace_back(cdSlotsHashes);
-                }
-                break;
-                default:
-                    throw "Slot type not supported!";
-                }
+                v.found = ls.GetText();
             }
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
+            break;
+        case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
+        {
+            CHECK(obj->GetData().Copy<MAC::CS_RequirementsBlob>(csOffset, codeSignature->requirements.blob), false, "");
+            Swap(codeSignature->requirements.blob);
+
+            codeSignature->requirements.data = obj->GetData().CopyToBuffer(
+                  csOffset + sizeof(MAC::CS_RequirementsBlob), codeSignature->requirements.blob.length - sizeof(MAC::CS_RequirementsBlob));
+
+            // TODO: needs to parse requirements and translate them to human readable text...
+            // MAC::CS_Requirement* r = (MAC::CS_Requirement*) codeSignature->requirements.data.GetData();
+            // r->type                = (MAC::CS_RequirementType) AppCUI::Endian::Swap((uint32) r->type);
+            // r->offset              = AppCUI::Endian::Swap(r->offset);
+            // const auto c           = codeSignature->requirements.data.GetData() + sizeof(MAC::CS_Requirement) + r->offset + 4;
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:
+            break;
+        case MAC::CodeSignMagic::CSSLOT_APPLICATION:
+            break;
+        case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
+        {
+            CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
+            Swap(codeSignature->entitlements.blob);
+            codeSignature->entitlements.data =
+                  obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
+        }
+        break;
+        case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
+            break;
+        case MAC::CodeSignMagic::CSSLOT_SIGNATURESLOT:
+        {
+            MAC::CS_GenericBlob gblob{};
+            CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, gblob), false, "");
+            Swap(gblob);
+
+            codeSignature->signature.offset = csOffset + sizeof(gblob);
+            codeSignature->signature.size   = gblob.length - sizeof(gblob);
+
+            CHECKBK(codeSignature->signature.size > 0, "");
+
+            const auto blobBuffer =
+                  obj->GetData().CopyToBuffer(codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
+            codeSignature->signature.errorHumanReadable =
+                  !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
+            codeSignature->signature.errorPEMs =
+                  !blobBuffer.IsValid() ||
+                  !GView::DigitalSignature::CMSToPEMCerts(blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
+            codeSignature->signature.errorSig =
+                  !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
+        }
+        break;
+        case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
+        {
+            auto& cd = codeSignature->alternateDirectories.emplace_back();
+            CHECK(obj->GetData().Copy<MAC::CS_CodeDirectory>(csOffset, cd), false, "")
+            Swap(cd);
+
+            const auto blobBuffer = obj->GetData().CopyToBuffer(csOffset, cd.length);
+            codeSignature->alternateDirectoriesIdentifiers.emplace_back((char*) blobBuffer.GetData() + cd.identOffset);
+
+            const auto hashType = cd.hashType;
+            {
+                std::string cdHash;
+                if (ComputeHash(blobBuffer, hashType, cdHash) == false)
+                {
+                    throw std::runtime_error("Unable to validate!");
+                }
+                codeSignature->acdHashes.emplace_back(cdHash);
+            }
+
+            ProgressStatus::Init(
+                  "Computing alternate code directory slots hashes...", cd.nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
+
+            auto& cdSlotsHashes = codeSignature->acdSlotsHashes.emplace_back();
+            cdSlotsHashes.reserve(cd.nCodeSlots);
+
+            auto& cdSpecialSlotsHashes = codeSignature->alternateSpecialSlotsHashes.emplace_back();
+
+            const auto pageSize = cd.pageSize ? (1U << cd.pageSize) : 0U;
+            auto remaining      = cd.codeLimit;
+            auto processed      = 0ULL;
+            for (auto slot = 0U; slot < cd.nCodeSlots; slot++)
+            {
+                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, cd.nCodeSlots)) == false, false, "");
+
+                const auto size             = std::min<>(remaining, pageSize);
+                const auto hashOffset       = cd.hashOffset + cd.hashSize * slot;
+                const auto bufferToValidate = obj->GetData().CopyToBuffer(processed, size);
+
+                std::string hashComputed;
+                if (ComputeHash(bufferToValidate, hashType, hashComputed) == false)
+                {
+                    throw std::runtime_error("Unable to validate!");
+                }
+
+                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                LocalString<128> ls;
+                for (auto i = 0U; i < cd.hashSize; i++)
+                {
+                    ls.AddFormat("%.2X", hash[i]);
+                }
+                std::string hashFound{ ls };
+
+                cdSlotsHashes.emplace_back(HashPair{ .found{ hashFound }, .computed{ hashComputed } });
+
+                processed += size;
+                remaining -= size;
+            }
+
+            for (auto slot = 1U; slot <= cd.nSpecialSlots; slot++)
+            {
+                const auto hashOffset = cd.hashOffset + cd.hashSize * -slot;
+
+                const auto& [it, ok] =
+                      cdSpecialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
+                CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
+                auto& [k, v] = *it;
+
+                const auto hash = ((unsigned char*) blobBuffer.GetData() + hashOffset);
+                LocalString<128> ls;
+                for (auto i = 0U; i < cd.hashSize; i++)
+                {
+                    ls.AddFormat("%.2X", hash[i]);
+                }
+                v.found = ls.GetText();
+            }
+        }
+        break;
+        default:
+            throw std::runtime_error("Slot type not supported!");
+        }
+    }
+
+    const auto Compute =
+          [&](uint8 hashType, MAC::CodeSignMagic blobType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map)
+    {
+        auto buffer = obj->GetData().CopyToBuffer(csOffset, blobLength);
+        if (ComputeHash(buffer, hashType, map.at(blobType).computed) == false)
+        {
+            throw std::runtime_error("Unable to validate!");
+        }
+    };
+
+    const auto Process =
+          [&](MAC::CodeSignMagic blobType, uint8 hashType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map)
+    {
+        switch (blobType)
+        {
+        case MAC::CodeSignMagic::CSSLOT_INFOSLOT:
+        case MAC::CodeSignMagic::CSSLOT_REQUIREMENTS:
+        case MAC::CodeSignMagic::CSSLOT_RESOURCEDIR:
+        case MAC::CodeSignMagic::CSSLOT_APPLICATION:
+        case MAC::CodeSignMagic::CSSLOT_ENTITLEMENTS:
+            Compute(hashType, blobType, csOffset, blobLength, map);
+            break;
+        default:
+            break;
+            {
+            }
+        }
+    };
+
+    for (const auto& blob : codeSignature->blobs)
+    {
+        const auto csOffset = static_cast<uint64>(codeSignature->ledc.dataoff) + blob.offset;
+
+        MAC::CS_GenericBlob gBlob{};
+        CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, gBlob), false, "");
+        Swap(gBlob);
+
+        Process(blob.type, codeSignature->codeDirectory.hashType, csOffset, gBlob.length, codeSignature->specialSlotsHashes);
+
+        auto i = 0ULL;
+        for (const auto& cd : codeSignature->alternateDirectories)
+        {
+            Process(blob.type, cd.hashType, csOffset, gBlob.length, codeSignature->alternateSpecialSlotsHashes.at(i));
+            i++;
         }
     }
 
@@ -1235,7 +1335,7 @@ void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewI
     const auto length = (uint32) data->size;
 
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    GView::App::OpenBuffer(buffer, data->info.name);
+    GView::App::OpenBuffer(buffer, data->info.name, GView::App::OpenMethod::BestMatch);
 }
 
 bool MachOFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
@@ -1402,5 +1502,32 @@ bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Bu
     }
 
     return false;
+}
+
+void MachOFile::RunCommand(std::string_view commandName)
+{
+    if (commandName == "DigitalSignature")
+    {
+        if (isFat)
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "This is a FAT binary! Each item should have its own signature!");
+            return;
+        }
+
+        if (!signatureChecked) // no guarantee that we open the same file bundled into a FAT binary
+        {
+            codeSignature.reset();
+            signatureChecked = SetCodeSignature();
+        }
+
+        if (codeSignature.has_value())
+        {
+            MachO::Commands::CodeSignMagic(this).Show();
+        }
+        else
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Code signature not found!");
+        }
+    }
 }
 } // namespace GView::Type::MachO

@@ -79,8 +79,8 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect["Pattern"] = {
-            "hex:'00 00 01 00'",
-            "hex:'00 00 02 00'",
+            "magic:00 00 01 00",
+            "magic:00 00 02 00",
         };
         sect["Priority"] = 1;
         sect["Description"] = "Icon/Cursor image file (*.ico, *.cur)";

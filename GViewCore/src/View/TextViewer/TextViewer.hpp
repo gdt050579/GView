@@ -122,6 +122,8 @@ namespace View
 
             static Config config;
 
+            void OpenCurrentSelection();
+
             void RecomputeLineIndexes();
             void CommputeViewPort_NoWrap(uint32 lineNo, Direction dir);
             void CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir);

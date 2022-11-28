@@ -94,7 +94,7 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = { "hex:'78 01'", "hex:'78 9C'", "hex:'78 DA'" };
+        sect["Pattern"]     = { "magic:78 01", "magic:78 9C", "magic:78 DA" };
         sect["Priority"]    = 1;
         sect["Description"] = "PyExtractor file format";
     }

@@ -91,11 +91,11 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         static const std::initializer_list<std::string> patterns = {
-            "hex:'" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_XP_2003, sizeof(Prefetch::Magic::WIN_XP_2003)) + "'",
-            "hex:'" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_VISTA_7, sizeof(Prefetch::Magic::WIN_VISTA_7)) + "'",
-            "hex:'" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_8, sizeof(Prefetch::Magic::WIN_8)) + "'",
-            "hex:'" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_10, sizeof(Prefetch::Magic::WIN_10)) + "'",
-            "hex:'" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_10, sizeof(Prefetch::Magic::WIN_10)) + "'",
+            "magic:" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_XP_2003, sizeof(Prefetch::Magic::WIN_XP_2003)),
+            "magic:" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_VISTA_7, sizeof(Prefetch::Magic::WIN_VISTA_7)),
+            "magic:" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_8, sizeof(Prefetch::Magic::WIN_8)),
+            "magic:" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_10, sizeof(Prefetch::Magic::WIN_10)),
+            "magic:" + Prefetch::BinaryToHexString(Prefetch::Magic::WIN_10, sizeof(Prefetch::Magic::WIN_10)),
         };
 
         sect["Pattern"]     = patterns;

@@ -221,11 +221,6 @@ extern "C"
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::SymTab(machO, win)), false);
             }
 
-            if (machO->HasPanel(MachO::Panels::IDs::CodeSign))
-            {
-                win->AddPanel(Pointer<TabPage>(new MachO::Panels::CodeSignMagic(machO, win)), true);
-            }
-
             if (machO->HasPanel(MachO::Panels::IDs::GoInformation))
             {
                 win->AddPanel(Pointer<TabPage>(new MachO::Panels::GoInformation(win->GetObject(), machO)), true);
@@ -245,20 +240,21 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         static const std::initializer_list<std::string> patterns = {
-            "hex:'" + BinaryToHexString(MAC::MH_MAGIC, sizeof(MAC::MH_MAGIC)) + "'",
-            "hex:'" + BinaryToHexString(MAC::MH_CIGAM, sizeof(MAC::MH_CIGAM)) + "'",
-            "hex:'" + BinaryToHexString(MAC::MH_MAGIC_64, sizeof(MAC::MH_MAGIC_64)) + "'",
-            "hex:'" + BinaryToHexString(MAC::MH_CIGAM_64, sizeof(MAC::MH_CIGAM_64)) + "'",
+            "magic:" + BinaryToHexString(MAC::MH_MAGIC, sizeof(MAC::MH_MAGIC)),
+            "magic:" + BinaryToHexString(MAC::MH_CIGAM, sizeof(MAC::MH_CIGAM)),
+            "magic:" + BinaryToHexString(MAC::MH_MAGIC_64, sizeof(MAC::MH_MAGIC_64)),
+            "magic:" + BinaryToHexString(MAC::MH_CIGAM_64, sizeof(MAC::MH_CIGAM_64)),
             /* Universal/Fat */
-            "hex:'" + BinaryToHexString(FAT_MAGIC, sizeof(FAT_MAGIC)) + "'",
-            "hex:'" + BinaryToHexString(FAT_CIGAM, sizeof(FAT_CIGAM)) + "'",
-            "hex:'" + BinaryToHexString(FAT_MAGIC_64, sizeof(FAT_MAGIC_64)) + "'",
-            "hex:'" + BinaryToHexString(FAT_CIGAM_64, sizeof(FAT_CIGAM_64)) + "'"
+            "magic:" + BinaryToHexString(FAT_MAGIC, sizeof(FAT_MAGIC)),
+            "magic:" + BinaryToHexString(FAT_CIGAM, sizeof(FAT_CIGAM)),
+            "magic:" + BinaryToHexString(FAT_MAGIC_64, sizeof(FAT_MAGIC_64)),
+            "magic:" + BinaryToHexString(FAT_CIGAM_64, sizeof(FAT_CIGAM_64))
         };
 
-        sect["Pattern"]      = patterns;
-        sect["Priority"]     = 1;
-        sect["Description"]  = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
-        sect["OpCodes.Mask"] = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Pattern"]                  = patterns;
+        sect["Priority"]                 = 1;
+        sect["Description"]              = "Mach file executable object (Mach-O) for OSX based systems (including MachO Fat)";
+        sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.DigitalSignature"] = AppCUI::Input::Key::Alt | AppCUI::Input::Key::F8;
     }
 }

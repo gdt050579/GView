@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.232.0"
+#define GVIEW_VERSION "0.258.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -33,7 +33,7 @@ struct CORE_EXPORT TypeInterface
 {
     Object* obj;
 
-    virtual std::string_view GetTypeName() = 0;
+    virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
@@ -544,7 +544,7 @@ namespace Dissasembly
       public:
         bool Init(bool isx64, bool isLittleEndian);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
-        bool IsCallInstruction(const Instruction& instruction) const ;
+        bool IsCallInstruction(const Instruction& instruction) const;
         bool IsLCallInstruction(const Instruction& instruction) const;
         bool IsJmpInstruction(const Instruction& instruction) const;
         bool IsLJmpInstruction(const Instruction& instruction) const;
@@ -1159,7 +1159,7 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DissasemblyLanguage : uint32
+        enum class DisassemblyLanguage : uint32
         {
             Default,
             x86,
@@ -1190,10 +1190,16 @@ namespace View
         {
             void* data;
 
-            void SetDefaultDisassemblyLanguage(DissasemblyLanguage lang);
-            void AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang = DissasemblyLanguage::Default);
+            /**
+             * \brief Sets the default disassembly language that will be used when an assembly zone will be used with the default option.
+             * \param lang The DissasemblyLanguage to use when the Default option will be met.
+             */
+            void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
+            void AddDisassemblyZone(
+                  uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
              * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
@@ -1250,15 +1256,19 @@ namespace App
 {
     enum class OpenMethod
     {
-        Auto,
-        SelectType,
-        SelectTypeIfUnknown
+        FirstMatch,
+        BestMatch,
+        Select,
+        ForceType
     };
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
+    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT
+    OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

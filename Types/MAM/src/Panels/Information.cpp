@@ -5,8 +5,6 @@ using namespace GView::Type::MAM::Panels;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Controls;
 
-constexpr auto CMD_ID_DECOMPRESS = 1U;
-
 Information::Information(Reference<Object> _object, Reference<GView::Type::MAM::MAMFile> _mam) : TabPage("Informa&tion")
 {
     mam     = _mam;
@@ -53,20 +51,11 @@ void Information::UpdateIssues()
 void Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
-
     general->Resize(GetWidth(), general->GetItemsCount() + 3);
-
-    // CHECKRET(general.IsValid() & issues.IsValid(), "");
-    // issues->SetVisible(issues->GetItemsCount() > 0);
-    // if (issues->IsVisible())
-    //{
-    //    general->Resize(GetWidth(), general->GetItemsCount() + issues->GetItemsCount() + 3);
-    //}
 }
 
 bool Information::OnUpdateCommandBar(Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10, "Decompress", CMD_ID_DECOMPRESS);
     return true;
 }
 
@@ -76,32 +65,8 @@ bool Information::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
     {
         switch (controlID)
         {
-        case CMD_ID_DECOMPRESS:
-        {
-            Buffer uncompressed;
-            uncompressed.Resize(mam->uncompressedSize);
-
-            const auto chunk = mam->obj->GetData().GetCacheSize();
-            uint64 pos       = 8ULL;
-            const auto size  = mam->obj->GetData().GetSize() - 8;
-
-            Buffer compressed;
-            compressed.Resize(size);
-
-            while (pos < mam->obj->GetData().GetSize())
-            {
-                auto toRead    = std::min<uint64>((uint64) chunk, mam->obj->GetData().GetSize() - pos);
-                const Buffer b = mam->obj->GetData().CopyToBuffer(pos, chunk, false);
-                memcpy(compressed.GetData() + pos - 8ULL, b.GetData(), toRead);
-                pos += toRead;
-            }
-
-            CHECK(GView::Compression::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
-
-            GView::App::OpenBuffer(uncompressed, mam->obj->GetName());
-
-            return true;
-        }
+        default:
+            break;
         }
     }
 

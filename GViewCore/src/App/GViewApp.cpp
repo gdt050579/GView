@@ -101,12 +101,17 @@ bool GView::App::ResetConfiguration()
     ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
     ini["GView"]["Key.GoTo"]         = Key::F5;
     ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
+    ini["GView"]["Key.ChoseType"]    = Key::Alt | Key::F1;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path)
+void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName)
+{
+    OpenFile(path, OpenMethod::ForceType, typeName);
+}
+void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName)
 {
     if (gviewAppInstance)
     {
@@ -114,24 +119,29 @@ void GView::App::OpenFile(const std::filesystem::path& path)
         {
             if (path.is_absolute())
             {
-                gviewAppInstance->AddFileWindow(path);
+                gviewAppInstance->AddFileWindow(path, method, typeName);
             }
             else
             {
                 const auto absPath = std::filesystem::canonical(path);
-                gviewAppInstance->AddFileWindow(absPath);
+                gviewAppInstance->AddFileWindow(absPath, method, typeName);
             }
         }
         catch (std::filesystem::filesystem_error /* e */)
         {
-            gviewAppInstance->AddFileWindow(path);
+            gviewAppInstance->AddFileWindow(path, method, typeName);
         }
     }
 }
-void GView::App::OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension)
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddBufferWindow(buf, name, typeExtension);
+        gviewAppInstance->AddBufferWindow(buf, name, "", method, typeName);
+}
+void GView::App::OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName)
+{
+    if (gviewAppInstance)
+        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName);
 }
 
 Reference<GView::Object> GView::App::GetObject(uint32 index)

@@ -5,7 +5,6 @@
 
 namespace GView::Type::MachO
 {
-
 static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
 static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
 
@@ -30,9 +29,8 @@ namespace Panels
         DyldInfo      = 0x4,
         Dylib         = 0x5,
         DySymTab      = 0x6,
-        CodeSign      = 0x7,
-        GoInformation = 0x8,
-        OpCodes       = 0x9,
+        GoInformation = 0x7,
+        OpCodes       = 0x8,
     };
 };
 
@@ -117,6 +115,12 @@ class MachOFile : public TypeInterface,
         std::vector<MyNList> objects;
     };
 
+    struct HashPair
+    {
+        std::string found;
+        std::string computed;
+    };
+
     struct CodeSignature
     {
         MAC::linkedit_data_command ledc;
@@ -125,11 +129,11 @@ class MachOFile : public TypeInterface,
         MAC::CS_CodeDirectory codeDirectory;
         std::string codeDirectoryIdentifier;
         std::string cdHash;
-        std::vector<std::pair<std::string, std::string>> cdSlotsHashes; // per normal slots
+        std::vector<HashPair> cdSlotsHashes; // per normal slots
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
         std::vector<std::string> alternateDirectoriesIdentifiers;
         std::vector<std::string> acdHashes;
-        std::vector<std::vector<std::pair<std::string, std::string>>> acdSlotsHashes; // per normal slots
+        std::vector<std::vector<HashPair>> acdSlotsHashes; // per normal slots
 
         struct
         {
@@ -158,6 +162,9 @@ class MachOFile : public TypeInterface,
             bool errorSig = false;
             DigitalSignature::Signature sig;
         } signature;
+
+        std::map<MAC::CodeSignMagic, HashPair> specialSlotsHashes{};
+        std::vector<std::map<MAC::CodeSignMagic, HashPair>> alternateSpecialSlotsHashes{};
     };
 
   public:
@@ -182,6 +189,7 @@ class MachOFile : public TypeInterface,
     bool isFat;
     bool shouldSwapEndianess;
     bool is64;
+    bool signatureChecked{ false };
 
     uint64 panelsMask;
     uint32 currentItemIndex;
@@ -207,9 +215,8 @@ class MachOFile : public TypeInterface,
     {
         return "Mach-O";
     }
-    void RunCommand(std::string_view) override
-    {
-    }
+
+    void RunCommand(std::string_view) override;
 
   public:
     MachOFile(Reference<GView::Utils::DataCache> file);
@@ -392,49 +399,6 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 
-    class CodeSignMagic : public AppCUI::Controls::TabPage
-    {
-      private:
-        Reference<MachOFile> machO;
-        Reference<GView::View::WindowInterface> win;
-        Reference<AppCUI::Controls::ListView> general;
-
-        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
-        ListViewItem cmsSize;       // MAC CMS signature/digital signature
-        ListViewItem humanReadable; // MAC CMS signature/digital signature
-        ListViewItem PEMs;          // MAC CMS signature/digital signature
-
-        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
-        void UpdateLinkeditDataCommand();
-        void UpdateSuperBlob();
-        void UpdateSlots();
-        void UpdateBlobs();
-        void UpdateCodeDirectory(
-              const MAC::CS_CodeDirectory& code,
-              const std::string& identifier,
-              const std::string& cdHash,
-              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
-
-        void RecomputePanelsPositions();
-
-        void GoToSelectedOffset();
-        void SelectArea();
-        void MoreInfo();
-
-      public:
-        CodeSignMagic(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
-
-        void Update();
-        virtual void OnAfterResize(int newWidth, int newHeight) override
-        {
-            RecomputePanelsPositions();
-        }
-        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
-    };
-
     class GoInformation : public TabPage
     {
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
@@ -562,4 +526,43 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
+
+namespace Commands
+{
+    class CodeSignMagic : public AppCUI::Controls::Window
+    {
+      private:
+        Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> general;
+
+        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
+        ListViewItem cmsSize;       // MAC CMS signature/digital signature
+        ListViewItem humanReadable; // MAC CMS signature/digital signature
+        ListViewItem PEMs;          // MAC CMS signature/digital signature
+
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        void UpdateLinkeditDataCommand();
+        void UpdateSuperBlob();
+        void UpdateSlots();
+        void UpdateBlobs();
+        void UpdateCodeDirectory(
+              const MAC::CS_CodeDirectory& code,
+              const std::string& identifier,
+              const std::string& cdHash,
+              const std::vector<MachO::MachOFile::HashPair>& slotsHashes,
+              const std::map<MAC::CodeSignMagic, MachO::MachOFile::HashPair>& specialSlotsHashes);
+
+        void MoreInfo();
+
+      public:
+        CodeSignMagic(Reference<MachOFile> machO);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+} // namespace Commands
 } // namespace GView::Type::MachO
