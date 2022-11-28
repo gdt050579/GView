@@ -269,10 +269,20 @@ namespace Type
                 virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
                 virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
+
+			class ReplaceConstants : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
         } // namespace Plugins
 
         class JSFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
         {
+		  private:
             uint32 TokenizeWord(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             int32 ParseRegEx(
@@ -308,6 +318,7 @@ namespace Type
             {
                 Plugins::AddStrings addStrings;
                 Plugins::ReverseStrings reverseStrings;
+                Plugins::ReplaceConstants replaceConstants;
             } plugins;
             JSFile();
             virtual ~JSFile()
