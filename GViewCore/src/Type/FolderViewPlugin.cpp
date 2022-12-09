@@ -109,7 +109,7 @@ void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::
 {
     std::filesystem::path path = root;
     path /= relativePath;
-    GView::App::OpenFile(path);
+    GView::App::OpenFile(path,GView::App::OpenMethod::BestMatch);
 }
 TypeInterface* CreateInstance(const std::filesystem::path& path)
 {

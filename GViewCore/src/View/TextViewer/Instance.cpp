@@ -301,6 +301,23 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->MoveTo(0, 0, false);
 }
 
+void Instance::OpenCurrentSelection()
+{
+    uint64 start, end;
+    auto res = this->selection.OffsetToSelection(this->Cursor.pos, start, end);
+    if (res >= 0)
+    {
+        LocalString<128> temp;
+        temp.Format("Buffer_%llx_%llx", start, end);
+        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
+        if (buf.IsValid() == false)
+        {
+            Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
+            return;
+        }
+        GView::App::OpenBuffer(buf, temp, GView::App::OpenMethod::Select);
+    }
+}
 void Instance::RecomputeLineIndexes()
 {
     // first --> simple estimation
@@ -1353,6 +1370,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::End | Key::Ctrl | Key::Shift:
         MoveToEndOfFile(true);
+        return true;
+    case Key::Enter:
+        OpenCurrentSelection();
         return true;
     }
 

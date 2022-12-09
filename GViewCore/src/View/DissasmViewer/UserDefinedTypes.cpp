@@ -144,7 +144,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
     for (auto entry_buffer : localBuffersToDelete)
         INTERNAL_SETTINGS->buffersToDelete.push_back(entry_buffer);
 
-    INTERNAL_SETTINGS->userDeginedTypes[availableValue] = userType;
+    INTERNAL_SETTINGS->userDesignedTypes[availableValue] = userType;
     return availableValue++;
 }
 

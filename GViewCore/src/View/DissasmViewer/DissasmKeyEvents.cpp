@@ -1,5 +1,14 @@
 #include "DissasmViewer.hpp"
 
+constexpr uint32 COMMAND_ADD_NEW_TYPE          = 100;
+constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 101;
+
+// TODO: fix remove duplicate with Instance.cpp
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW      = 0;
+constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT     = 1;
+constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE   = 2;
+constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE = 3;
+
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -39,10 +48,11 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
 
 void Instance::MoveTo(uint64 offset, bool select)
 {
-    if (this->obj->GetData().GetSize() == 0)
+    const uint64 dataSize = config.ShowFileContent ? obj->GetData().GetSize() : GetZonesMaxSize();
+    if (dataSize == 0)
         return;
-    if (offset > (obj->GetData().GetSize() - 1))
-        offset = obj->GetData().GetSize() - 1;
+    if (offset > (dataSize - 1))
+        offset = dataSize - 1;
 
     // if (offset == this->Cursor.currentPos)
     //{
@@ -61,7 +71,7 @@ void Instance::MoveTo(uint64 offset, bool select)
         if ((select) && (sidx >= 0))
         {
             this->selection.UpdateSelection(sidx, offset);
-            //UpdateCurrentSelection();
+            // UpdateCurrentSelection();
             return; // nothing to do ... already in visual space
         }
     }
@@ -80,7 +90,7 @@ void Instance::MoveTo(uint64 offset, bool select)
     if ((select) && (sidx >= 0))
     {
         this->selection.UpdateSelection(sidx, offset);
-        //UpdateCurrentSelection();
+        // UpdateCurrentSelection();
     }
 }
 
@@ -111,8 +121,13 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     // make sure that consecutive click on the same location will not scroll the view to that location
     if (mpInfo.location == MouseLocation::OnView)
     {
-        if (mpInfo.bufferOffset != Cursor.currentPos)
+        if (mpInfo.bufferOffset != Cursor.currentPos && button == MouseButton::Left)
             MoveTo(mpInfo.bufferOffset, false);
+        else if (button == MouseButton::Right)
+        {
+            rightClickOffset = mpInfo.bufferOffset;
+            rightClickMenu.Show(this, x, y);
+        }
     }
     else if (mpInfo.location == MouseLocation::Outside && !MyLine.buttons.empty())
     {
@@ -130,7 +145,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    if (button == MouseButton::Left && (mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
     {
         MoveTo(mpInfo.bufferOffset, true);
         return true;
@@ -219,7 +234,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", 12345);
+    const AppCUI::Utils::ConstString ShowFileContentText = config.ShowFileContent ? "ShowFileContent" : "HideFileContent";
+    commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", COMMAND_ADD_NEW_TYPE);
+    commandBar.SetCommand(config.Keys.ShowFileContentKey, ShowFileContentText, COMMAND_ADD_SHOW_FILE_CONTENT);
 
     return false;
 }
@@ -228,10 +245,20 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::Command)
     {
-        if (ID == 12345)
+        switch (ID)
         {
+        case COMMAND_ADD_NEW_TYPE:
             Dialogs::MessageBox::ShowNotification("Info", "OK!");
             return true;
+        case COMMAND_ADD_SHOW_FILE_CONTENT:
+            config.ShowFileContent = !config.ShowFileContent;
+            this->RecomputeDissasmZones();
+            return true;
+        case RIGHT_CLICK_MENU_CMD_COLLAPSE:
+            AddNewCollapsibleZone();
+            return true;
+        default:
+            return false;
         }
     }
 
