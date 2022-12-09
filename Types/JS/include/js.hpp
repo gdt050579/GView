@@ -327,6 +327,7 @@ namespace Type
             {
                 Plugins::AddStrings addStrings;
                 Plugins::ReverseStrings reverseStrings;
+                Plugins::ReplaceConstants replaceConstants;
             } plugins;
             JSFile();
             virtual ~JSFile()
