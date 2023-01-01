@@ -826,7 +826,7 @@ void Instance::BakupTokensPositions()
     backupedTokenPositionList.clear();
     for (const auto& tok : this->tokens)
     {
-        backupedTokenPositionList.push_back({ 0, 0, 1, 1, TokenStatus::None });
+        backupedTokenPositionList.push_back(tok.pos);
     }
 }
 void Instance::RestoreTokensPositionsFromBackup()
@@ -836,8 +836,7 @@ void Instance::RestoreTokensPositionsFromBackup()
     auto index = static_cast<size_t>(0);
     for (auto& tok : this->tokens)
     {
-        const auto& bakPos = this->backupedTokenPositionList[index];
-        // copy from bakPos to tok
+        tok.pos = this->backupedTokenPositionList[index];
         index++;
     }
     backupedTokenPositionList.clear();
@@ -1409,7 +1408,7 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         // Buffer build --> open
         LocalString<128> tmpName;
 
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start));
+        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start), GView::App::OpenMethod::Select);
     }
     else
     {
@@ -1626,6 +1625,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     case Key::F:
         FoldAll();
+        return true;
+    case Key::A:
+        ShowFindAllDialog();
         return true;
     case Key::N:
     case Key::Ctrl | Key::PageDown:
@@ -1955,7 +1957,25 @@ void Instance::ShowSaveAsDialog()
     AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
     if (dlg.ShouldOpenANewWindow())
     {
-        GView::App::OpenFile(tmpPath);
+        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch);
+    }
+}
+void Instance::ShowFindAllDialog()
+{
+    if (noItemsVisible)
+        return;
+    const auto& tok = this->tokens[this->currentTokenIndex];
+    if (tok.hash == 0)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This type of token has similarity search disabled !");
+        return;
+    }
+
+    FindAllDialog dlg(tok, this->tokens, this->text.text);
+
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        MoveToToken(dlg.GetSelectedTokenIndex(), false, true);
     }
 }
 std::string_view Instance::GetName()

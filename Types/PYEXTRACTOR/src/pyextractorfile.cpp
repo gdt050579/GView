@@ -188,14 +188,8 @@ void PYEXTRACTORFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::Tre
     const auto offset = (uint64) data->entryPos;
     const auto length = (uint32) data->cmprsdDataSize;
     const auto name   = std::string_view{ reinterpret_cast<char*>(data->name.GetData()), data->name.GetLength() };
-
-    std::string_view extension{ "" };
-    if (const auto pos = name.find_last_of('.'); pos != std::string::npos)
-    {
-        extension = std::string_view{ reinterpret_cast<char*>(data->name.GetData()) + pos, data->name.GetLength() - pos };
-    }
-
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    GView::App::OpenBuffer(buffer, name, extension);
+
+    GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
 }
 } // namespace GView::Type::PYEXTRACTOR

@@ -138,7 +138,7 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = "hex:'4C 00 00 00'";
+        sect["Pattern"]     = "magic:4C 00 00 00";
         sect["Extension"]   = "lnk";
         sect["Priority"]    = 1;
         sect["Description"] = "Link / binary format file shortcuat for Windows OS (*.lnk)";

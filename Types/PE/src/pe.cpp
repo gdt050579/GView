@@ -156,7 +156,10 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData);
+                    const uint32 entryPoint =
+                          pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
                     break;
                 }
             }
@@ -204,8 +207,11 @@ UInt16 e_res[4];)");
 
 #ifndef DISSASM_DEV
         CreateBufferView(win, pe);
-#endif
         CreateDissasmView(win, pe);
+#else
+        CreateDissasmView(win, pe);
+        CreateBufferView(win, pe);
+#endif
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(win->GetObject(), pe)), true);

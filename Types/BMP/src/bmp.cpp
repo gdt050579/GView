@@ -57,7 +57,7 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = "BM";
+        sect["Pattern"]     = "magic:42 4D";
         sect["Priority"]    = 1;
         sect["Description"] = "Bitmap image file (*.bmp)";
     }

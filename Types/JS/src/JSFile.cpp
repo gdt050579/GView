@@ -550,6 +550,29 @@ uint32 JSFile::TokenizeWord(const GView::View::LexicalViewer::TextParser& text, 
     tokenList.Add(tokType, pos, next, tokColor, TokenDataType::None, align, flags | TokenFlags::Sizeable);
     return next;
 }
+
+int32 JSFile::ParseRegEx(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
+{
+    if (pos <= 0)
+        return -1;
+    auto lastTokenType = tokenList.GetLastToken().GetTypeID(TokenType::None);
+    if (lastTokenType != TokenType::Operator_TWO_POINTS && lastTokenType != TokenType::Operator_Assignment &&
+        lastTokenType != TokenType::ArrayOpen)
+        return -1;
+    if (text[pos - 1] == '\\')
+        return -1;
+    while (pos < text.Len())
+    {
+        pos++;
+        auto ch = text[pos];
+        auto previewCh = text[pos - 1];
+        if (ch == '/' && previewCh != '\\')
+        {
+            return pos + 1;
+		}   
+	}
+    return -1;
+}
 uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& text, TokensList& tokenList, uint32 pos)
 {
     auto next = text.ParseSameGroupID(pos, CharType::GetCharType);
@@ -587,7 +610,17 @@ uint32 JSFile::TokenizeOperator(const GView::View::LexicalViewer::TextParser& te
                 }
             }
             break;
-
+        case TokenType::Operator_Division:
+        {
+            auto next2 = ParseRegEx(text, tokenList, pos);
+            if (next2 != -1)
+            {
+                align = align | TokenAlignament::WrapToNextLine;
+                tokenList.Add(TokenType::RegEx, pos, next2, TokenColor::String, TokenDataType::None, align, TokenFlags::DisableSimilaritySearch);
+				return next2;
+			}
+            break;
+        }
             /*
             case TokenType::Assign:
             case TokenType::PlusEQ:
@@ -1137,6 +1170,9 @@ void JSFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& st
         break;
     case TokenType::Word:
         str.Set("Word");
+        break;
+    case TokenType::RegEx:
+        str.Set("Regular Expression");
         break;
     }
     if (TokenType::IsKeyword(id))

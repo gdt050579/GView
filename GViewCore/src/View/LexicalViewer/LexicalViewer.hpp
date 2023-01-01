@@ -344,6 +344,7 @@ namespace View
             void DeleteTokens();
             void ShowPlugins();
             void ShowSaveAsDialog();
+            void ShowFindAllDialog();
             void ShowRefactorDialog(TokenObject& tok);
             void ShowStringOpDialog(TokenObject& tok);
 
@@ -531,6 +532,21 @@ namespace View
             inline uint32 GetSelectedLineNo() const
             {
                 return selectedLineNo;
+            }
+        };
+        class FindAllDialog : public Window
+        {
+            Reference<ListView> lst;
+            uint32 selectedTokenIndex;
+            void Validate();
+
+          public:
+            FindAllDialog(const TokenObject& currentToken,const std::vector<TokenObject>& tokens, const char16* txt);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint32 GetSelectedTokenIndex() const
+            {
+                return selectedTokenIndex;
             }
         };
         class SaveAsDialog : public Window
