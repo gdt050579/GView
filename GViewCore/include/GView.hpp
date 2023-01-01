@@ -33,7 +33,7 @@ struct CORE_EXPORT TypeInterface
 {
     Object* obj;
 
-    virtual std::string_view GetTypeName() = 0;
+    virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
@@ -383,6 +383,48 @@ namespace DigitalSignature
     CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
     CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
     CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
+    CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, Signature& output);
+    CORE_EXPORT bool PKCS7VerifySignature(const Buffer& buffer, String& output);
+    CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, String& output);
+
+    enum class TimeValidity : int32
+    {
+        BeforeNotBefore = -1,
+        Valid           = 0,
+        AfterNotAfter   = 1
+    };
+
+    struct CORE_EXPORT VerifySignatureData
+    {
+        struct
+        {
+            bool callSuccessful{ false };
+            uint32 errorCode{ 0 };
+            String errorMessage;
+        } winTrust;
+
+        struct CertificateInfo
+        {
+            bool callSuccessfull{ false };
+            uint32 errorCode{ 0 };
+            String errorMessage;
+
+            String programName;
+            String publishLink;
+            String moreInfoLink;
+
+            struct Signer
+            {
+                String issuer;
+                String subject;
+                String date;
+                String serialNumber;
+                TimeValidity timevalidity;
+            } signer, counterSigner;
+        } certificateInfo;
+    };
+
+    CORE_EXPORT VerifySignatureData VerifyEmbeddedSignature(ConstString source);
 } // namespace DigitalSignature
 
 namespace Golang
@@ -544,7 +586,7 @@ namespace Dissasembly
       public:
         bool Init(bool isx64, bool isLittleEndian);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
-        bool IsCallInstruction(const Instruction& instruction) const ;
+        bool IsCallInstruction(const Instruction& instruction) const;
         bool IsLCallInstruction(const Instruction& instruction) const;
         bool IsJmpInstruction(const Instruction& instruction) const;
         bool IsLJmpInstruction(const Instruction& instruction) const;

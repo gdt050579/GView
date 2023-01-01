@@ -19,7 +19,11 @@ OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::MachO::MachOF
 {
     value = Factory::Label::Create(this, "Mask", "x:1,y:1,w:60");
 
-    list = Factory::ListView::Create(this, "x:1,y:2,h:20,w:60", { "n:Enabled,a:l,w:60" }, AppCUI::Controls::ListViewFlags::CheckBoxes);
+    list = Factory::ListView::Create(
+          this,
+          "x:1,y:2,h:20,w:60",
+          { "n:Enabled,a:l,w:60" },
+          AppCUI::Controls::ListViewFlags::CheckBoxes | AppCUI::Controls::ListViewFlags::HideSearchBar);
 
     all = list->AddItem("All");
     all.SetData(ID_CHECKBOX_ALL);

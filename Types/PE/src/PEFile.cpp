@@ -251,7 +251,7 @@ PEFile::PEFile()
     peCols.colDir[1] = ColorPair{ Color::Red, Color::Transparent };
     for (tr = 2; tr < 15; tr++)
         peCols.colDir[tr] = ColorPair{ Color::Green, Color::Transparent };
-    peCols.colDir[(uint8_t) DirectoryType::Security] = ColorPair{ Color::DarkGreen, Color::Transparent };
+    peCols.colDir[(uint8_t) DirectoryType::Security] = ColorPair{ Color::Teal, Color::Transparent };
 
     asmShow    = 0xFF;
     panelsMask = 0;
@@ -2229,8 +2229,44 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
 
 void PEFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "CheckSignature")
+    if (commandName == "DigitalSignature")
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", "This need to be implemented !");
+        signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath());
+        if (!signatureChecked && signatureData->winTrust.callSuccessful)
+        {
+            const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
+            WinCertificate cert{};
+            CHECKRET(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
+            CHECKRET(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
+
+            Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8, cert.dwLength - 8);
+
+            String b;
+            GView::DigitalSignature::PKCS7ToHumanReadable(blob, b);
+
+			String a;
+			GView::DigitalSignature::PKCS7VerifySignature(blob, a);
+
+			GView::DigitalSignature::Signature s{};
+            GView::DigitalSignature::PKCS7ToStructure(blob, s);
+
+			String output[32];
+            uint32 count{ 0 };
+            GView::DigitalSignature::CMSToPEMCerts(blob, output, count);
+
+            String humanReadable;
+            GView::DigitalSignature::CMSToHumanReadable(blob, humanReadable);
+
+            signatureChecked = true;
+        }
+
+        if (signatureData.has_value())
+        {
+            PE::Commands::DigitalSignature(this).Show();
+        }
+        else
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Code signature not found!");
+        }
     }
 }
