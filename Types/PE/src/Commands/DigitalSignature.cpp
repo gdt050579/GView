@@ -36,25 +36,26 @@ void DigitalSignature::Update()
           .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
 
     general->AddItem({ "Certificate Information", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Call Successful", pe->signatureData->certificateInfo.callSuccessfull ? "True" : "False" })
-          .SetType(pe->signatureData->certificateInfo.callSuccessfull ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
-    general->AddItem({ "Error code", ls.Format("0x%X", pe->signatureData->certificateInfo.errorCode) })
-          .SetType(pe->signatureData->certificateInfo.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
-    general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->certificateInfo.errorMessage.GetText()) })
-          .SetType(pe->signatureData->certificateInfo.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
+    general->AddItem({ "Call Successful", pe->signatureData->information.callSuccessfull ? "True" : "False" })
+          .SetType(pe->signatureData->information.callSuccessfull ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
+    general->AddItem({ "Error code", ls.Format("0x%X", pe->signatureData->information.errorCode) })
+          .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
+    general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->information.errorMessage.GetText()) })
+          .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
 
-    general->AddItem({ "Program Name", ls.Format("%s", pe->signatureData->certificateInfo.programName.GetText()) });
-    general->AddItem({ "Publish Link", ls.Format("%s", pe->signatureData->certificateInfo.publishLink.GetText()) });
-    general->AddItem({ "More Info Link", ls.Format("%s", pe->signatureData->certificateInfo.moreInfoLink.GetText()) });
+    general->AddItem({ "Program Name", ls.Format("%s", pe->signatureData->information.programName.GetText()) });
+    general->AddItem({ "Publish Link", ls.Format("%s", pe->signatureData->information.publishLink.GetText()) });
+    general->AddItem({ "More Info Link", ls.Format("%s", pe->signatureData->information.moreInfoLink.GetText()) });
 
     general->AddItem({ "Signer", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Issuer", ls.Format("%s", pe->signatureData->certificateInfo.signer.issuer.GetText()) });
-    general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->certificateInfo.signer.subject.GetText()) });
-    general->AddItem({ "Date", ls.Format("%s", pe->signatureData->certificateInfo.signer.date.GetText()) });
-    general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->certificateInfo.signer.serialNumber.GetText()) });
+    general->AddItem({ "Issuer", ls.Format("%s", pe->signatureData->information.signer.issuer.GetText()) });
+    general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->information.signer.subject.GetText()) });
+    general->AddItem({ "Date", ls.Format("%s", pe->signatureData->information.signer.date.GetText()) });
+    general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->information.signer.serialNumber.GetText()) });
+    general->AddItem({ "Signature Algorithm", ls.Format("%s", pe->signatureData->information.signer.signatureAlgorithm.GetText()) });
 
     std::string validSigner;
-    switch (pe->signatureData->certificateInfo.signer.timevalidity)
+    switch (pe->signatureData->information.signer.timevalidity)
     {
     case GView::DigitalSignature::TimeValidity::AfterNotAfter:
         validSigner = "AfterNotAfter";
@@ -71,16 +72,17 @@ void DigitalSignature::Update()
     }
     general->AddItem({ "Time Validity", validSigner.c_str() })
           .SetColor(
-                pe->signatureData->certificateInfo.signer.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS
-                                                                                                                       : COLOR_FAILURE);
+                pe->signatureData->information.signer.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS
+                                                                                                                   : COLOR_FAILURE);
 
     general->AddItem({ "Counter Signer", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Issuer", ls.Format("%s", pe->signatureData->certificateInfo.counterSigner.issuer.GetText()) });
-    general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->certificateInfo.counterSigner.subject.GetText()) });
-    general->AddItem({ "Date", ls.Format("%s", pe->signatureData->certificateInfo.counterSigner.date.GetText()) });
-    general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->certificateInfo.counterSigner.serialNumber.GetText()) });
+    general->AddItem({ "Issuer", ls.Format("%s", pe->signatureData->information.counterSigner.issuer.GetText()) });
+    general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->information.counterSigner.subject.GetText()) });
+    general->AddItem({ "Date", ls.Format("%s", pe->signatureData->information.counterSigner.date.GetText()) });
+    general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->information.counterSigner.serialNumber.GetText()) });
+    general->AddItem({ "Signature Algorithm", ls.Format("%s", pe->signatureData->information.counterSigner.signatureAlgorithm.GetText()) });
 
-    switch (pe->signatureData->certificateInfo.counterSigner.timevalidity)
+    switch (pe->signatureData->information.counterSigner.timevalidity)
     {
     case GView::DigitalSignature::TimeValidity::AfterNotAfter:
         validSigner = "AfterNotAfter";
@@ -97,9 +99,8 @@ void DigitalSignature::Update()
     }
     general->AddItem({ "Time Validity", validSigner.c_str() })
           .SetColor(
-                pe->signatureData->certificateInfo.counterSigner.timevalidity == GView::DigitalSignature::TimeValidity::Valid
-                      ? COLOR_SUCCESS
-                      : COLOR_FAILURE);
+                pe->signatureData->information.counterSigner.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS
+                                                                                                                          : COLOR_FAILURE);
 
     general->AddItem({ "Formats", "" }).SetType(ListViewItem::Type::Category);
 }

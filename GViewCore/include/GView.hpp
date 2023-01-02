@@ -394,7 +394,7 @@ namespace DigitalSignature
         AfterNotAfter   = 1
     };
 
-    struct CORE_EXPORT VerifySignatureData
+    struct CORE_EXPORT SignatureData
     {
         struct
         {
@@ -403,7 +403,7 @@ namespace DigitalSignature
             String errorMessage;
         } winTrust;
 
-        struct CertificateInfo
+        struct Information
         {
             bool callSuccessfull{ false };
             uint32 errorCode{ 0 };
@@ -413,18 +413,19 @@ namespace DigitalSignature
             String publishLink;
             String moreInfoLink;
 
-            struct Signer
+            struct Certificate
             {
                 String issuer;
                 String subject;
                 String date;
                 String serialNumber;
                 TimeValidity timevalidity;
-            } signer, counterSigner;
-        } certificateInfo;
+                String signatureAlgorithm;
+            } signer, counterSigner, dualSigner, counterDualSigner;
+        } information;
     };
 
-    CORE_EXPORT VerifySignatureData VerifyEmbeddedSignature(ConstString source);
+    CORE_EXPORT SignatureData VerifyEmbeddedSignature(ConstString source);
 } // namespace DigitalSignature
 
 namespace Golang
