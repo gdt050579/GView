@@ -420,7 +420,7 @@ namespace DigitalSignature
                 String date;
                 String serialNumber;
                 TimeValidity timevalidity;
-                String signatureAlgorithm;
+                String digestAlgorithm;
             } signer, counterSigner, dualSigner, counterDualSigner;
         } information;
     };

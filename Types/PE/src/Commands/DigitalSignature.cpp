@@ -52,7 +52,7 @@ void DigitalSignature::Update()
     general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->information.signer.subject.GetText()) });
     general->AddItem({ "Date", ls.Format("%s", pe->signatureData->information.signer.date.GetText()) });
     general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->information.signer.serialNumber.GetText()) });
-    general->AddItem({ "Signature Algorithm", ls.Format("%s", pe->signatureData->information.signer.signatureAlgorithm.GetText()) });
+    general->AddItem({ "Digest Algorithm", ls.Format("%s", pe->signatureData->information.signer.digestAlgorithm.GetText()) });
 
     std::string validSigner;
     switch (pe->signatureData->information.signer.timevalidity)
@@ -80,7 +80,7 @@ void DigitalSignature::Update()
     general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->information.counterSigner.subject.GetText()) });
     general->AddItem({ "Date", ls.Format("%s", pe->signatureData->information.counterSigner.date.GetText()) });
     general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->information.counterSigner.serialNumber.GetText()) });
-    general->AddItem({ "Signature Algorithm", ls.Format("%s", pe->signatureData->information.counterSigner.signatureAlgorithm.GetText()) });
+    general->AddItem({ "Digest Algorithm", ls.Format("%s", pe->signatureData->information.counterSigner.digestAlgorithm.GetText()) });
 
     switch (pe->signatureData->information.counterSigner.timevalidity)
     {

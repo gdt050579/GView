@@ -1249,7 +1249,7 @@ struct WrapperHMsg
 
 BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureData::Information& Info);
 BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureData::Information& info, bool isSigner);
-BOOL GetCertificateInfo(const WrapperCertContext& certContext, SignatureData& data, bool isSigner);
+BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData& data, bool isSigner);
 BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner);
 
 bool GetCertificateInformation(ConstString source, SignatureData& data)
@@ -1347,7 +1347,7 @@ bool GetCertificateInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetCertificateInfo(certContext, data, true);
+    data.information.callSuccessfull = GetCertificateInfo(signerInfo, certContext, data, true);
     if (!data.information.callSuccessfull)
     {
         data.information.errorCode    = GetLastError();
@@ -1383,7 +1383,7 @@ bool GetCertificateInformation(ConstString source, SignatureData& data)
                 RETURNERROR(false, "");
             }
 
-            GetCertificateInfo(certContext, data, false);
+            GetCertificateInfo(counterSignerInfo, certContext, data, false);
             GetCertDate(counterSignerInfo, data.information, false);
 
             data.information.counterSigner.timevalidity = (TimeValidity) CertVerifyTimeValidity(&now, &certInfo);
@@ -1393,7 +1393,7 @@ bool GetCertificateInformation(ConstString source, SignatureData& data)
     return 0;
 }
 
-BOOL GetCertificateInfo(const WrapperCertContext& certContext, SignatureData& data, bool isSigner)
+BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData& data, bool isSigner)
 {
     auto& signer = isSigner ? data.information.signer : data.information.counterSigner;
 
@@ -1433,22 +1433,22 @@ BOOL GetCertificateInfo(const WrapperCertContext& certContext, SignatureData& da
           false,
           "");
 
-    const auto& signatureAlgorithm = certContext.address->pCertInfo->SignatureAlgorithm;
-    if (signatureAlgorithm.pszObjId)
+    const auto& digestAlgorithm = signerInfo.address->HashAlgorithm;
+    if (digestAlgorithm.pszObjId)
     {
-        PCCRYPT_OID_INFO pCOI = CryptFindOIDInfo(CRYPT_OID_INFO_OID_KEY, signatureAlgorithm.pszObjId, 0);
+        PCCRYPT_OID_INFO pCOI = CryptFindOIDInfo(CRYPT_OID_INFO_OID_KEY, digestAlgorithm.pszObjId, 0);
         if (pCOI)
         {
             if (pCOI->pwszName)
             {
-                signer.signatureAlgorithm.Set(u16string_view{ reinterpret_cast<char16_t*>(const_cast<LPWSTR>(pCOI->pwszName)) });
+                signer.digestAlgorithm.Set(u16string_view{ reinterpret_cast<char16_t*>(const_cast<LPWSTR>(pCOI->pwszName)) });
             }
             else
             {
                 const auto algorithmName = CertAlgIdToOID(pCOI->Algid);
                 if (algorithmName)
                 {
-                    signer.signatureAlgorithm.Set(reinterpret_cast<char*>(const_cast<LPSTR>(algorithmName)));
+                    signer.digestAlgorithm.Set(reinterpret_cast<char*>(const_cast<LPSTR>(algorithmName)));
                 }
             }
         }
