@@ -405,7 +405,7 @@ namespace DigitalSignature
 
         struct Information
         {
-            bool callSuccessfull{ false };
+            bool callSuccessful{ false };
             uint32 errorCode{ 0 };
             String errorMessage;
 

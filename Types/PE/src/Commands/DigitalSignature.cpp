@@ -81,8 +81,8 @@ void DigitalSignature::Update()
     CHECKRET(pe->signatureData->winTrust.errorCode != SIGNATURE_NOT_FOUND, "");
 
     general->AddItem({ "Certificate Information", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Call Successful", pe->signatureData->information.callSuccessfull ? "True" : "False" })
-          .SetType(pe->signatureData->information.callSuccessfull ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
+    general->AddItem({ "Call Successful", pe->signatureData->information.callSuccessful ? "True" : "False" })
+          .SetType(pe->signatureData->information.callSuccessful ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
     general->AddItem({ "Error code", ls.Format("0x%X", pe->signatureData->information.errorCode) })
           .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
     general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->information.errorMessage.GetText()) })

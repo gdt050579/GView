@@ -1262,7 +1262,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
 
     WrapperHStore hStore{};
     WrapperHMsg hMsg{};
-    data.information.callSuccessfull = CryptQueryObject(
+    data.information.callSuccessful = CryptQueryObject(
           CERT_QUERY_OBJECT_FILE,
           sv.data(),
           CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
@@ -1275,7 +1275,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
           &hMsg.handle,
           NULL);
 
-    if (!data.information.callSuccessfull)
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
         SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
@@ -1284,8 +1284,8 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
 
     DWORD dwCountSigners             = 0;
     DWORD dwcbSz                     = sizeof(dwCountSigners);
-    data.information.callSuccessfull = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &dwCountSigners, &dwcbSz);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &dwCountSigners, &dwcbSz);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
         SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
@@ -1294,8 +1294,8 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
     CHECK(dwCountSigners > 0, false, "");
 
     DWORD dwSignerInfo{ 0 };
-    data.information.callSuccessfull = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
         SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
@@ -1303,32 +1303,32 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
     }
 
     WrapperSignerInfo signerInfo{ .info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo) };
-    data.information.callSuccessfull = (signerInfo.info != nullptr);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = (signerInfo.info != nullptr);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
         SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
         SetErrorMessage(data.information.errorCode, data.information.errorMessage);
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetProgAndPublisherInfo(signerInfo.info, data.information.signer);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = GetProgAndPublisherInfo(signerInfo.info, data.information.signer);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode    = GetLastError();
         data.information.errorMessage = "GetProgAndPublisherInfo call failed!";
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetCertDate(signerInfo, data.information.signer);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = GetCertDate(signerInfo, data.information.signer);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode    = GetLastError();
         data.information.errorMessage = "GetCertDate call failed!";
@@ -1339,16 +1339,16 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
 
     WrapperCertContext certContext{ .address = CertFindCertificateInStore(
                                           hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-    data.information.callSuccessfull = (certContext.address != nullptr);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = (certContext.address != nullptr);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
         SetErrorMessage(data.information.errorCode, data.information.errorMessage);
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetCertificateInfo(signerInfo, certContext, data.information.signer);
-    if (!data.information.callSuccessfull)
+    data.information.callSuccessful = GetCertificateInfo(signerInfo, certContext, data.information.signer);
+    if (!data.information.callSuccessful)
     {
         data.information.errorCode    = GetLastError();
         data.information.errorMessage = "GetCertificateInfo call failed!";
@@ -1370,8 +1370,8 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
             WrapperCertContext certContext{ .address = CertFindCertificateInStore(
                                                   scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
 
-            data.information.callSuccessfull = (certContext.address != nullptr);
-            if (!data.information.callSuccessfull)
+            data.information.callSuccessful = (certContext.address != nullptr);
+            if (!data.information.callSuccessful)
             {
                 data.information.errorCode = GetLastError();
                 SetErrorMessage(data.information.errorCode, data.information.errorMessage);
