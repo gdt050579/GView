@@ -1252,7 +1252,7 @@ BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureData::Information
 BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData& data, bool isSigner);
 BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner);
 
-bool GetCertificateInformation(ConstString source, SignatureData& data)
+bool GetSignatureInformation(ConstString source, SignatureData& data)
 {
     LocalUnicodeStringBuilder<1024> ub;
     ub.Set(source);
@@ -1355,11 +1355,6 @@ bool GetCertificateInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    FILETIME now;
-    GetSystemTimeAsFileTime(&now);
-
-    data.information.signer.timevalidity = (TimeValidity) CertVerifyTimeValidity(&now, &certInfo);
-
     WrapperSignerInfo counterSignerInfo{};
     WrapperHStore storeCounterSigner{};
     WrapperCertContext counterSignerCertContext{};
@@ -1385,8 +1380,6 @@ bool GetCertificateInformation(ConstString source, SignatureData& data)
 
             GetCertificateInfo(counterSignerInfo, certContext, data, false);
             GetCertDate(counterSignerInfo, data.information, false);
-
-            data.information.counterSigner.timevalidity = (TimeValidity) CertVerifyTimeValidity(&now, &certInfo);
         }
     }
 
@@ -1452,6 +1445,31 @@ BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertCo
                 }
             }
         }
+    }
+
+    FILETIME now;
+    GetSystemTimeAsFileTime(&now);
+
+    SYSTEMTIME st{ 0 };
+
+    const auto& dateNotAfter = certContext.address->pCertInfo->NotAfter;
+    FileTimeToSystemTime(&dateNotAfter, &st);
+    signer.dateNotAfter.Format(
+          "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+
+    const auto& dateNotBefore = certContext.address->pCertInfo->NotBefore;
+    FileTimeToSystemTime(&dateNotBefore, &st);
+    signer.dateNotBefore.Format(
+          "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+
+    if (CompareFileTime(&now, &dateNotBefore) == -1)
+    {
+        data.information.signer.timevalidity = TimeValidity::Earlier;
+    }
+
+    if (CompareFileTime(&now, &dateNotAfter) == 1)
+    {
+        data.information.signer.timevalidity = TimeValidity::Expired;
     }
 
     return true;
@@ -1660,7 +1678,7 @@ SignatureData VerifyEmbeddedSignature(ConstString source)
     SignatureData data{};
 #ifdef BUILD_FOR_WINDOWS
     data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, data);
-    GetCertificateInformation(source, data);
+    GetSignatureInformation(source, data);
     return data;
 #endif
 

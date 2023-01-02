@@ -389,9 +389,9 @@ namespace DigitalSignature
 
     enum class TimeValidity : int32
     {
-        BeforeNotBefore = -1,
-        Valid           = 0,
-        AfterNotAfter   = 1
+        Earlier = -1,
+        Valid   = 0,
+        Expired = 1
     };
 
     struct CORE_EXPORT SignatureData
@@ -421,6 +421,8 @@ namespace DigitalSignature
                 String serialNumber;
                 TimeValidity timevalidity;
                 String digestAlgorithm;
+                String dateNotAfter;
+                String dateNotBefore;
             } signer, counterSigner, dualSigner, counterDualSigner;
         } information;
     };

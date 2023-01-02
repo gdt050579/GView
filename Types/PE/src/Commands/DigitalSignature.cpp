@@ -9,6 +9,9 @@ enum class Action : int32
     Dummy = 1
 };
 
+constexpr auto COLOR_SUCCESS = ColorPair{ Color::Green, Color::Transparent };
+constexpr auto COLOR_FAILURE = ColorPair{ Color::Red, Color::Transparent };
+
 DigitalSignature::DigitalSignature(Reference<PEFile> pe)
     : Window("Digital Signature", "x:25%,y:25%,w:50%,h:50%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), pe(pe)
 {
@@ -18,14 +21,47 @@ DigitalSignature::DigitalSignature(Reference<PEFile> pe)
     Update();
 }
 
+void PopulateSignerInfo(
+      Reference<AppCUI::Controls::ListView>& list,
+      std::string_view name,
+      const GView::DigitalSignature::SignatureData::Information::Certificate& certificate)
+{
+    LocalString<1024> ls;
+
+    list->AddItem({ name.data(), "" }).SetType(ListViewItem::Type::Category);
+    list->AddItem({ "Issuer", ls.Format("%s", certificate.issuer.GetText()) });
+    list->AddItem({ "Subject", ls.Format("%s", certificate.subject.GetText()) });
+    list->AddItem({ "Date", ls.Format("%s", certificate.date.GetText()) });
+    list->AddItem({ "Serial Number", ls.Format("%s", certificate.serialNumber.GetText()) });
+    list->AddItem({ "Digest Algorithm", ls.Format("%s", certificate.digestAlgorithm.GetText()) });
+    list->AddItem({ "Not Before", ls.Format("%s", certificate.dateNotBefore.GetText()) });
+    list->AddItem({ "Not After", ls.Format("%s", certificate.dateNotAfter.GetText()) });
+
+    std::string validSigner;
+    switch (certificate.timevalidity)
+    {
+    case GView::DigitalSignature::TimeValidity::Expired:
+        validSigner = "Expired";
+        break;
+    case GView::DigitalSignature::TimeValidity::Valid:
+        validSigner = "Valid";
+        break;
+    case GView::DigitalSignature::TimeValidity::Earlier:
+        validSigner = "Earlier";
+        break;
+    default:
+        validSigner = "Unknown";
+        break;
+    }
+    list->AddItem({ "Time Validity", validSigner.c_str() })
+          .SetColor(certificate.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS : COLOR_FAILURE);
+}
+
 void DigitalSignature::Update()
 {
     general->DeleteAllItems();
 
     LocalString<1024> ls;
-
-    constexpr auto COLOR_SUCCESS = ColorPair{ Color::Green, Color::Transparent };
-    constexpr auto COLOR_FAILURE = ColorPair{ Color::Red, Color::Transparent };
 
     general->AddItem({ "WinTrust", "" }).SetType(ListViewItem::Type::Category);
     general->AddItem({ "Call Successful", pe->signatureData->winTrust.callSuccessful ? "True" : "False" })
@@ -47,62 +83,10 @@ void DigitalSignature::Update()
     general->AddItem({ "Publish Link", ls.Format("%s", pe->signatureData->information.publishLink.GetText()) });
     general->AddItem({ "More Info Link", ls.Format("%s", pe->signatureData->information.moreInfoLink.GetText()) });
 
-    general->AddItem({ "Signer", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Issuer", ls.Format("%s", pe->signatureData->information.signer.issuer.GetText()) });
-    general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->information.signer.subject.GetText()) });
-    general->AddItem({ "Date", ls.Format("%s", pe->signatureData->information.signer.date.GetText()) });
-    general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->information.signer.serialNumber.GetText()) });
-    general->AddItem({ "Digest Algorithm", ls.Format("%s", pe->signatureData->information.signer.digestAlgorithm.GetText()) });
-
-    std::string validSigner;
-    switch (pe->signatureData->information.signer.timevalidity)
-    {
-    case GView::DigitalSignature::TimeValidity::AfterNotAfter:
-        validSigner = "AfterNotAfter";
-        break;
-    case GView::DigitalSignature::TimeValidity::Valid:
-        validSigner = "Valid";
-        break;
-    case GView::DigitalSignature::TimeValidity::BeforeNotBefore:
-        validSigner = "BeforeNotBefore";
-        break;
-    default:
-        validSigner = "Unknown";
-        break;
-    }
-    general->AddItem({ "Time Validity", validSigner.c_str() })
-          .SetColor(
-                pe->signatureData->information.signer.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS
-                                                                                                                   : COLOR_FAILURE);
-
-    general->AddItem({ "Counter Signer", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Issuer", ls.Format("%s", pe->signatureData->information.counterSigner.issuer.GetText()) });
-    general->AddItem({ "Subject", ls.Format("%s", pe->signatureData->information.counterSigner.subject.GetText()) });
-    general->AddItem({ "Date", ls.Format("%s", pe->signatureData->information.counterSigner.date.GetText()) });
-    general->AddItem({ "Serial Number", ls.Format("%s", pe->signatureData->information.counterSigner.serialNumber.GetText()) });
-    general->AddItem({ "Digest Algorithm", ls.Format("%s", pe->signatureData->information.counterSigner.digestAlgorithm.GetText()) });
-
-    switch (pe->signatureData->information.counterSigner.timevalidity)
-    {
-    case GView::DigitalSignature::TimeValidity::AfterNotAfter:
-        validSigner = "AfterNotAfter";
-        break;
-    case GView::DigitalSignature::TimeValidity::Valid:
-        validSigner = "Valid";
-        break;
-    case GView::DigitalSignature::TimeValidity::BeforeNotBefore:
-        validSigner = "BeforeNotBefore";
-        break;
-    default:
-        validSigner = "Unknown";
-        break;
-    }
-    general->AddItem({ "Time Validity", validSigner.c_str() })
-          .SetColor(
-                pe->signatureData->information.counterSigner.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS
-                                                                                                                          : COLOR_FAILURE);
-
-    general->AddItem({ "Formats", "" }).SetType(ListViewItem::Type::Category);
+    PopulateSignerInfo(general, "Signer", pe->signatureData->information.signer);
+    PopulateSignerInfo(general, "Counter Signer", pe->signatureData->information.counterSigner);
+    PopulateSignerInfo(general, "Dual Signer", pe->signatureData->information.dualSigner);
+    PopulateSignerInfo(general, "Counter Dual Signer", pe->signatureData->information.counterDualSigner);
 }
 
 bool DigitalSignature::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
