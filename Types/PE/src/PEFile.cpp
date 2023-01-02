@@ -2232,25 +2232,25 @@ void PEFile::RunCommand(std::string_view commandName)
     if (commandName == "DigitalSignature")
     {
         signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath());
-        if (!signatureChecked && signatureData->winTrust.callSuccessful)
+        while (!signatureChecked && signatureData.has_value() && signatureData->winTrust.callSuccessful)
         {
             const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
             WinCertificate cert{};
-            CHECKRET(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
-            CHECKRET(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
+            CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
+            CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
 
-            Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8, cert.dwLength - 8);
+            Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
 
             String b;
             GView::DigitalSignature::PKCS7ToHumanReadable(blob, b);
 
-			String a;
-			GView::DigitalSignature::PKCS7VerifySignature(blob, a);
+            String a;
+            GView::DigitalSignature::PKCS7VerifySignature(blob, a);
 
-			GView::DigitalSignature::Signature s{};
+            GView::DigitalSignature::Signature s{};
             GView::DigitalSignature::PKCS7ToStructure(blob, s);
 
-			String output[32];
+            String output[32];
             uint32 count{ 0 };
             GView::DigitalSignature::CMSToPEMCerts(blob, output, count);
 
@@ -2258,6 +2258,8 @@ void PEFile::RunCommand(std::string_view commandName)
             GView::DigitalSignature::CMSToHumanReadable(blob, humanReadable);
 
             signatureChecked = true;
+
+            break;
         }
 
         if (signatureData.has_value())
@@ -2266,7 +2268,7 @@ void PEFile::RunCommand(std::string_view commandName)
         }
         else
         {
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "Code signature not found!");
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Digital signature not found!");
         }
     }
 }

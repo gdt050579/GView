@@ -409,12 +409,13 @@ namespace DigitalSignature
             uint32 errorCode{ 0 };
             String errorMessage;
 
-            String programName;
-            String publishLink;
-            String moreInfoLink;
-
             struct Certificate
             {
+                String programName;
+                String publishLink;
+                String moreInfoLink;
+                String email;
+
                 String issuer;
                 String subject;
                 String date;
@@ -427,7 +428,7 @@ namespace DigitalSignature
         } information;
     };
 
-    CORE_EXPORT SignatureData VerifyEmbeddedSignature(ConstString source);
+    CORE_EXPORT std::optional<SignatureData> VerifyEmbeddedSignature(ConstString source);
 } // namespace DigitalSignature
 
 namespace Golang

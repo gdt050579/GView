@@ -13,7 +13,7 @@ constexpr auto COLOR_SUCCESS = ColorPair{ Color::Green, Color::Transparent };
 constexpr auto COLOR_FAILURE = ColorPair{ Color::Red, Color::Transparent };
 
 DigitalSignature::DigitalSignature(Reference<PEFile> pe)
-    : Window("Digital Signature", "x:25%,y:25%,w:50%,h:50%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), pe(pe)
+    : Window("Digital Signature", "x:25%,y:5%,w:50%,h:90%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), pe(pe)
 {
     general = Factory::ListView::Create(
           this, "x:0,y:0,w:100%,h:100%", { "n:Key,w:30%", "n:Value,w:70%" }, ListViewFlags::AllowMultipleItemsSelection);
@@ -29,6 +29,12 @@ void PopulateSignerInfo(
     LocalString<1024> ls;
 
     list->AddItem({ name.data(), "" }).SetType(ListViewItem::Type::Category);
+
+    list->AddItem({ "Program Name", ls.Format("%s", certificate.programName.GetText()) });
+    list->AddItem({ "Publish Link", ls.Format("%s", certificate.publishLink.GetText()) });
+    list->AddItem({ "More Info Link", ls.Format("%s", certificate.moreInfoLink.GetText()) });
+    list->AddItem({ "Email", ls.Format("%s", certificate.email.GetText()) });
+
     list->AddItem({ "Issuer", ls.Format("%s", certificate.issuer.GetText()) });
     list->AddItem({ "Subject", ls.Format("%s", certificate.subject.GetText()) });
     list->AddItem({ "Date", ls.Format("%s", certificate.date.GetText()) });
@@ -71,6 +77,9 @@ void DigitalSignature::Update()
     general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->winTrust.errorMessage.GetText()) })
           .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
 
+    constexpr auto SIGNATURE_NOT_FOUND = 0x800B0100;
+    CHECKRET(pe->signatureData->winTrust.errorCode != SIGNATURE_NOT_FOUND, "");
+
     general->AddItem({ "Certificate Information", "" }).SetType(ListViewItem::Type::Category);
     general->AddItem({ "Call Successful", pe->signatureData->information.callSuccessfull ? "True" : "False" })
           .SetType(pe->signatureData->information.callSuccessfull ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
@@ -78,10 +87,6 @@ void DigitalSignature::Update()
           .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
     general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->information.errorMessage.GetText()) })
           .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
-
-    general->AddItem({ "Program Name", ls.Format("%s", pe->signatureData->information.programName.GetText()) });
-    general->AddItem({ "Publish Link", ls.Format("%s", pe->signatureData->information.publishLink.GetText()) });
-    general->AddItem({ "More Info Link", ls.Format("%s", pe->signatureData->information.moreInfoLink.GetText()) });
 
     PopulateSignerInfo(general, "Signer", pe->signatureData->information.signer);
     PopulateSignerInfo(general, "Counter Signer", pe->signatureData->information.counterSigner);

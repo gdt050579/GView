@@ -1146,7 +1146,7 @@ inline void SetErrorMessage(uint32 errorCode, String& message)
           errorCode,
           MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
           (LPSTR) m.data(),
-          m.size(),
+          (DWORD) m.size(),
           NULL);
     m.resize(length);
 
@@ -1213,12 +1213,12 @@ struct WrapperCertContext
 
 struct WrapperSignerInfo
 {
-    PCMSG_SIGNER_INFO address = NULL;
+    PCMSG_SIGNER_INFO info = NULL;
     ~WrapperSignerInfo()
     {
-        if (address != NULL)
+        if (info != NULL)
         {
-            LocalFree(address);
+            LocalFree(info);
         }
     }
 };
@@ -1247,10 +1247,12 @@ struct WrapperHMsg
     }
 };
 
-BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureData::Information& Info);
-BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureData::Information& info, bool isSigner);
-BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData& data, bool isSigner);
+BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureData::Information::Certificate& certificate);
+BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureData::Information::Certificate& certificate);
+BOOL GetCertificateInfo(
+      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData::Information::Certificate& certificate);
 BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner);
+BOOL GetDualSignature(const WrapperSignerInfo& signer, SignatureData::Information& info);
 
 bool GetSignatureInformation(ConstString source, SignatureData& data)
 {
@@ -1260,8 +1262,6 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
 
     WrapperHStore hStore{};
     WrapperHMsg hMsg{};
-    WrapperSignerInfo signerInfo{};
-
     data.information.callSuccessfull = CryptQueryObject(
           CERT_QUERY_OBJECT_FILE,
           sv.data(),
@@ -1293,7 +1293,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
     }
     CHECK(dwCountSigners > 0, false, "");
 
-    DWORD dwSignerInfo;
+    DWORD dwSignerInfo{ 0 };
     data.information.callSuccessfull = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo);
     if (!data.information.callSuccessfull)
     {
@@ -1302,8 +1302,8 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    signerInfo.address               = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo);
-    data.information.callSuccessfull = (signerInfo.address != nullptr);
+    WrapperSignerInfo signerInfo{ .info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo) };
+    data.information.callSuccessfull = (signerInfo.info != nullptr);
     if (!data.information.callSuccessfull)
     {
         data.information.errorCode = GetLastError();
@@ -1311,7 +1311,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.address, &dwSignerInfo);
+    data.information.callSuccessfull = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo);
     if (!data.information.callSuccessfull)
     {
         data.information.errorCode = GetLastError();
@@ -1319,7 +1319,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetProgAndPublisherInfo(signerInfo.address, data.information);
+    data.information.callSuccessfull = GetProgAndPublisherInfo(signerInfo.info, data.information.signer);
     if (!data.information.callSuccessfull)
     {
         data.information.errorCode    = GetLastError();
@@ -1327,7 +1327,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetCertDate(signerInfo, data.information, true);
+    data.information.callSuccessfull = GetCertDate(signerInfo, data.information.signer);
     if (!data.information.callSuccessfull)
     {
         data.information.errorCode    = GetLastError();
@@ -1335,7 +1335,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    CERT_INFO certInfo{ .SerialNumber = signerInfo.address->SerialNumber, .Issuer = signerInfo.address->Issuer };
+    CERT_INFO certInfo{ .SerialNumber = signerInfo.info->SerialNumber, .Issuer = signerInfo.info->Issuer };
 
     WrapperCertContext certContext{ .address = CertFindCertificateInStore(
                                           hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
@@ -1347,7 +1347,7 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessfull = GetCertificateInfo(signerInfo, certContext, data, true);
+    data.information.callSuccessfull = GetCertificateInfo(signerInfo, certContext, data.information.signer);
     if (!data.information.callSuccessfull)
     {
         data.information.errorCode    = GetLastError();
@@ -1360,10 +1360,10 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
     WrapperCertContext counterSignerCertContext{};
     if (GetCounterSigner(signerInfo, counterSignerInfo, storeCounterSigner))
     {
-        if (counterSignerInfo.address != nullptr)
+        if (counterSignerInfo.info != nullptr)
         {
-            certInfo.Issuer       = counterSignerInfo.address->Issuer;
-            certInfo.SerialNumber = counterSignerInfo.address->SerialNumber;
+            certInfo.Issuer       = counterSignerInfo.info->Issuer;
+            certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
 
             const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : hStore.handle;
 
@@ -1378,55 +1378,42 @@ bool GetSignatureInformation(ConstString source, SignatureData& data)
                 RETURNERROR(false, "");
             }
 
-            GetCertificateInfo(counterSignerInfo, certContext, data, false);
-            GetCertDate(counterSignerInfo, data.information, false);
+            GetCertificateInfo(counterSignerInfo, certContext, data.information.counterSigner);
+            GetCertDate(counterSignerInfo, data.information.counterSigner);
+            GetProgAndPublisherInfo(signerInfo.info, data.information.counterSigner);
         }
     }
+
+    GetDualSignature(signerInfo, data.information);
 
     return 0;
 }
 
-BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData& data, bool isSigner)
+BOOL GetNameString(const WrapperCertContext& certContext, String& out, DWORD type, DWORD flag)
 {
-    auto& signer = isSigner ? data.information.signer : data.information.counterSigner;
+    const auto size = CertGetNameStringA(certContext.address, type, flag, NULL, NULL, 0);
+    out.Realloc(size);
+    CHECK(CertGetNameStringA(certContext.address, type, flag, NULL, (LPSTR) out.GetText(), size) == size, false, "");
 
+    return true;
+}
+
+BOOL GetCertificateInfo(
+      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData::Information::Certificate& certificate)
+{
     LocalString<1024> ls;
     const auto serialNumberSize = certContext.address->pCertInfo->SerialNumber.cbData;
     for (DWORD n = 0; n < serialNumberSize; n++)
     {
         ls.AddFormat("%02x", certContext.address->pCertInfo->SerialNumber.pbData[serialNumberSize - (n + 1)]);
     }
-    if (isSigner)
-    {
-        data.information.signer.serialNumber.Set(ls);
-    }
-    else
-    {
-        data.information.counterSigner.serialNumber.Set(ls);
-    }
+    certificate.serialNumber.Set(ls);
 
-    const auto issuerNameSize =
-          CertGetNameStringA(certContext.address, CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_NAME_ISSUER_FLAG, NULL, NULL, 0);
-    signer.issuer.Realloc(issuerNameSize);
-    CHECK(CertGetNameStringA(
-                certContext.address,
-                CERT_NAME_SIMPLE_DISPLAY_TYPE,
-                CERT_NAME_ISSUER_FLAG,
-                NULL,
-                (LPSTR) signer.issuer.GetText(),
-                issuerNameSize) == issuerNameSize,
-          false,
-          "");
+    CHECK(GetNameString(certContext, certificate.issuer, CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_NAME_ISSUER_FLAG), false, "");
+    CHECK(GetNameString(certContext, certificate.subject, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0), false, "");
+    CHECK(GetNameString(certContext, certificate.email, CERT_NAME_EMAIL_TYPE, 0), false, "");
 
-    const auto subjectNameSize = CertGetNameStringA(certContext.address, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, NULL, 0);
-    signer.subject.Realloc(subjectNameSize);
-    CHECK(CertGetNameStringA(
-                certContext.address, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, (LPSTR) signer.subject.GetText(), subjectNameSize) ==
-                subjectNameSize,
-          false,
-          "");
-
-    const auto& digestAlgorithm = signerInfo.address->HashAlgorithm;
+    const auto& digestAlgorithm = signerInfo.info->HashAlgorithm;
     if (digestAlgorithm.pszObjId)
     {
         PCCRYPT_OID_INFO pCOI = CryptFindOIDInfo(CRYPT_OID_INFO_OID_KEY, digestAlgorithm.pszObjId, 0);
@@ -1434,14 +1421,14 @@ BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertCo
         {
             if (pCOI->pwszName)
             {
-                signer.digestAlgorithm.Set(u16string_view{ reinterpret_cast<char16_t*>(const_cast<LPWSTR>(pCOI->pwszName)) });
+                certificate.digestAlgorithm.Set(u16string_view{ reinterpret_cast<char16_t*>(const_cast<LPWSTR>(pCOI->pwszName)) });
             }
             else
             {
                 const auto algorithmName = CertAlgIdToOID(pCOI->Algid);
                 if (algorithmName)
                 {
-                    signer.digestAlgorithm.Set(reinterpret_cast<char*>(const_cast<LPSTR>(algorithmName)));
+                    certificate.digestAlgorithm.Set(reinterpret_cast<char*>(const_cast<LPSTR>(algorithmName)));
                 }
             }
         }
@@ -1454,28 +1441,28 @@ BOOL GetCertificateInfo(const WrapperSignerInfo& signerInfo, const WrapperCertCo
 
     const auto& dateNotAfter = certContext.address->pCertInfo->NotAfter;
     FileTimeToSystemTime(&dateNotAfter, &st);
-    signer.dateNotAfter.Format(
+    certificate.dateNotAfter.Format(
           "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 
     const auto& dateNotBefore = certContext.address->pCertInfo->NotBefore;
     FileTimeToSystemTime(&dateNotBefore, &st);
-    signer.dateNotBefore.Format(
+    certificate.dateNotBefore.Format(
           "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 
     if (CompareFileTime(&now, &dateNotBefore) == -1)
     {
-        data.information.signer.timevalidity = TimeValidity::Earlier;
+        certificate.timevalidity = TimeValidity::Earlier;
     }
 
     if (CompareFileTime(&now, &dateNotAfter) == 1)
     {
-        data.information.signer.timevalidity = TimeValidity::Expired;
+        certificate.timevalidity = TimeValidity::Expired;
     }
 
     return true;
 }
 
-BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Information& Info)
+BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Information::Certificate& certificate)
 {
     for (auto n = 0U; n < signerInfo->AuthAttrs.cAttr; n++)
     {
@@ -1513,7 +1500,7 @@ BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Inform
 
         if (opusInfoRaw->pwszProgramName)
         {
-            Info.programName.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pwszProgramName });
+            certificate.programName.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pwszProgramName });
         }
 
         if (opusInfoRaw->pPublisherInfo)
@@ -1521,11 +1508,11 @@ BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Inform
             switch (opusInfoRaw->pPublisherInfo->dwLinkChoice)
             {
             case SPC_URL_LINK_CHOICE:
-                Info.publishLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pPublisherInfo->pwszUrl });
+                certificate.publishLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pPublisherInfo->pwszUrl });
                 break;
 
             case SPC_FILE_LINK_CHOICE:
-                Info.publishLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pPublisherInfo->pwszFile });
+                certificate.publishLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pPublisherInfo->pwszFile });
                 break;
 
             default:
@@ -1538,11 +1525,11 @@ BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Inform
             switch (opusInfoRaw->pMoreInfo->dwLinkChoice)
             {
             case SPC_URL_LINK_CHOICE:
-                Info.moreInfoLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pMoreInfo->pwszUrl });
+                certificate.moreInfoLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pMoreInfo->pwszUrl });
                 break;
 
             case SPC_FILE_LINK_CHOICE:
-                Info.moreInfoLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pMoreInfo->pwszFile });
+                certificate.moreInfoLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pMoreInfo->pwszFile });
                 break;
             default:
                 break;
@@ -1555,11 +1542,11 @@ BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Inform
     return true;
 }
 
-BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information& info, bool isSigner)
+BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information::Certificate& certificate)
 {
-    for (DWORD n = 0; n < signer.address->AuthAttrs.cAttr; n++)
+    for (DWORD n = 0; n < signer.info->AuthAttrs.cAttr; n++)
     {
-        if (lstrcmpA(szOID_RSA_signingTime, signer.address->AuthAttrs.rgAttr[n].pszObjId) != 0)
+        if (lstrcmpA(szOID_RSA_signingTime, signer.info->AuthAttrs.rgAttr[n].pszObjId) != 0)
         {
             continue;
         }
@@ -1569,8 +1556,8 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information& in
         CHECK(CryptDecodeObject(
                     ENCODING,
                     szOID_RSA_signingTime,
-                    signer.address->AuthAttrs.rgAttr[n].rgValue[0].pbData,
-                    signer.address->AuthAttrs.rgAttr[n].rgValue[0].cbData,
+                    signer.info->AuthAttrs.rgAttr[n].rgValue[0].pbData,
+                    signer.info->AuthAttrs.rgAttr[n].rgValue[0].cbData,
                     0,
                     (PVOID) &ft,
                     &size),
@@ -1583,16 +1570,8 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information& in
         SYSTEMTIME st{ 0 };
         FileTimeToSystemTime(&lft, &st);
 
-        if (isSigner)
-        {
-            info.signer.date.Format(
-                  "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-        }
-        else
-        {
-            info.counterSigner.date.Format(
-                  "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-        }
+        certificate.date.Format(
+              "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 
         break;
     }
@@ -1602,33 +1581,33 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information& in
 
 BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner)
 {
-    for (DWORD n = 0; n < signer.address->UnauthAttrs.cAttr; n++)
+    for (DWORD n = 0; n < signer.info->UnauthAttrs.cAttr; n++)
     {
         // single signature
-        if (lstrcmpA(signer.address->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
+        if (lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
         {
             DWORD dwSize{ 0 };
             CHECK(CryptDecodeObject(
                         ENCODING,
                         PKCS7_SIGNER_INFO,
-                        signer.address->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
-                        signer.address->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
+                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
+                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
                         0,
                         NULL,
                         &dwSize),
                   false,
                   "");
 
-            counterSigner.address = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
-            CHECK(counterSigner.address != nullptr, false, "");
+            counterSigner.info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
+            CHECK(counterSigner.info != nullptr, false, "");
 
             CHECK(CryptDecodeObject(
                         ENCODING,
                         PKCS7_SIGNER_INFO,
-                        signer.address->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
-                        signer.address->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
+                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
+                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
                         0,
-                        (PVOID) counterSigner.address,
+                        (PVOID) counterSigner.info,
                         &dwSize),
                   false,
                   "");
@@ -1637,15 +1616,15 @@ BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counte
         }
 
         // dual signature
-        if (lstrcmpA(signer.address->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
+        if (lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
         {
             WrapperHMsg hMsg{ .handle = CryptMsgOpenToDecode(ENCODING, 0, 0, NULL, NULL, NULL) };
             CHECK(hMsg.handle != NULL, false, "");
 
             CHECK(CryptMsgUpdate(
                         hMsg.handle,
-                        signer.address->UnauthAttrs.rgAttr[n].rgValue->pbData,
-                        signer.address->UnauthAttrs.rgAttr[n].rgValue->cbData,
+                        signer.info->UnauthAttrs.rgAttr[n].rgValue->pbData,
+                        signer.info->UnauthAttrs.rgAttr[n].rgValue->cbData,
                         TRUE),
                   false,
                   "");
@@ -1654,13 +1633,13 @@ BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counte
             CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSize), false, "");
             CHECK(dwSize != 0, false, "");
 
-            counterSigner.address = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
+            counterSigner.info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
 
-            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, counterSigner.address, &dwSize), false, "");
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, counterSigner.info, &dwSize), false, "");
 
             CRYPT_DATA_BLOB c7Data{ 0 };
-            c7Data.pbData = signer.address->UnauthAttrs.rgAttr[n].rgValue->pbData;
-            c7Data.cbData = signer.address->UnauthAttrs.rgAttr[n].rgValue->cbData;
+            c7Data.pbData = signer.info->UnauthAttrs.rgAttr[n].rgValue->pbData;
+            c7Data.cbData = signer.info->UnauthAttrs.rgAttr[n].rgValue->cbData;
 
             storeCounterSigner.handle = CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &c7Data);
 
@@ -1671,18 +1650,96 @@ BOOL GetCounterSigner(const WrapperSignerInfo& signer, WrapperSignerInfo& counte
     return false;
 }
 
+BOOL GetDualSignature(const WrapperSignerInfo& signer, SignatureData::Information& info)
+{
+    for (DWORD i = 0; i < signer.info->UnauthAttrs.cAttr; i++)
+    {
+        if (signer.info->UnauthAttrs.rgAttr[i].pszObjId &&
+            lstrcmpA(signer.info->UnauthAttrs.rgAttr[i].pszObjId, szOID_NESTED_SIGNATURE) == 0)
+        {
+            WrapperHMsg hMsg{ .handle = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, 0, NULL, NULL, NULL) };
+            CHECK(hMsg.handle != 0, false, "");
+
+            CHECK(CryptMsgUpdate(
+                        hMsg.handle,
+                        signer.info->UnauthAttrs.rgAttr[i].rgValue->pbData,
+                        signer.info->UnauthAttrs.rgAttr[i].rgValue->cbData,
+                        TRUE),
+                  false,
+                  "");
+
+            DWORD dwSignerInfo = 0;
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo), false, "");
+            CHECK(dwSignerInfo != 0, false, "");
+
+            WrapperSignerInfo dualSignerInfo{ .info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo) };
+            CHECK(dualSignerInfo.info != nullptr, false, "");
+
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) dualSignerInfo.info, &dwSignerInfo), false, "");
+
+            GetCertDate(dualSignerInfo, info.dualSigner);
+            GetProgAndPublisherInfo(dualSignerInfo.info, info.dualSigner);
+
+            CRYPT_DATA_BLOB data{ 0 };
+            data.pbData = signer.info->UnauthAttrs.rgAttr[i].rgValue->pbData;
+            data.cbData = signer.info->UnauthAttrs.rgAttr[i].rgValue->cbData;
+
+            WrapperHStore store{ .handle = CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &data) };
+
+            CERT_INFO certInfo{ .SerialNumber = dualSignerInfo.info->SerialNumber, .Issuer = dualSignerInfo.info->Issuer };
+
+            WrapperCertContext certContext{ .address = CertFindCertificateInStore(
+                                                  store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
+
+            GetCertificateInfo(dualSignerInfo, certContext, info.dualSigner);
+
+            WrapperSignerInfo counterSignerInfo{};
+            WrapperHStore storeCounterSigner{};
+            WrapperCertContext counterSignerCertContext{};
+            if (GetCounterSigner(dualSignerInfo, counterSignerInfo, storeCounterSigner))
+            {
+                if (counterSignerInfo.info != nullptr)
+                {
+                    certInfo.Issuer       = counterSignerInfo.info->Issuer;
+                    certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
+
+                    const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : store.handle;
+
+                    WrapperCertContext certContext{ .address = CertFindCertificateInStore(
+                                                          scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
+
+                    CHECK(certContext.address != nullptr, false, "");
+
+                    GetCertificateInfo(counterSignerInfo, certContext, info.counterDualSigner);
+                    GetCertDate(counterSignerInfo, info.counterDualSigner);
+                    GetProgAndPublisherInfo(dualSignerInfo.info, info.counterDualSigner);
+                }
+            }
+
+            break;
+        }
+    }
+
+    return TRUE;
+}
+
 #endif
 
-SignatureData VerifyEmbeddedSignature(ConstString source)
+std::optional<SignatureData> VerifyEmbeddedSignature(ConstString source)
 {
     SignatureData data{};
 #ifdef BUILD_FOR_WINDOWS
     data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, data);
+
+    constexpr auto SIGNATURE_NOT_FOUND = 0x800B0100;
+    CHECK(data.winTrust.errorCode != SIGNATURE_NOT_FOUND, std::nullopt, "");
+
     GetSignatureInformation(source, data);
+
     return data;
 #endif
 
-    RETURNERROR(data, "Not implemented");
+    RETURNERROR(std::nullopt, "Not implemented");
 }
 
 } // namespace GView::DigitalSignature
