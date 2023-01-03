@@ -61,6 +61,20 @@ void PopulateSignerInfo(
     }
     list->AddItem({ "Time Validity", validSigner.c_str() })
           .SetColor(certificate.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS : COLOR_FAILURE);
+
+    switch (certificate.type)
+    {
+    case GView::DigitalSignature::CounterSignatureType::None:
+        break;
+    case GView::DigitalSignature::CounterSignatureType::Authenticode:
+        list->AddItem({ "Timestamp Type", "Authenticode" });
+        break;
+    case GView::DigitalSignature::CounterSignatureType::RFC3161:
+        list->AddItem({ "Timestamp Type", "RFC3161" });
+        break;
+    default:
+        break;
+    }
 }
 
 void DigitalSignature::Update()
@@ -70,28 +84,25 @@ void DigitalSignature::Update()
     LocalString<1024> ls;
 
     general->AddItem({ "WinTrust", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Call Successful", pe->signatureData->winTrust.callSuccessful ? "True" : "False" })
-          .SetColor(pe->signatureData->winTrust.callSuccessful ? COLOR_SUCCESS : COLOR_FAILURE);
-    general->AddItem({ "Error code", ls.Format("0x%X", pe->signatureData->winTrust.errorCode) })
-          .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
-    general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->winTrust.errorMessage.GetText()) })
+    general
+          ->AddItem({ "Validation",
+                      ls.Format("%s (0x%x)", pe->signatureData->winTrust.errorMessage.GetText(), pe->signatureData->winTrust.errorCode) })
           .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
 
     constexpr auto SIGNATURE_NOT_FOUND = 0x800B0100;
     CHECKRET(pe->signatureData->winTrust.errorCode != SIGNATURE_NOT_FOUND, "");
 
     general->AddItem({ "Certificate Information", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Call Successful", pe->signatureData->information.callSuccessful ? "True" : "False" })
-          .SetType(pe->signatureData->information.callSuccessful ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
-    general->AddItem({ "Error code", ls.Format("0x%X", pe->signatureData->information.errorCode) })
-          .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
-    general->AddItem({ "Error message", ls.Format("%s", pe->signatureData->information.errorMessage.GetText()) })
-          .SetType(pe->signatureData->information.errorCode == 0 ? ListViewItem::Type::Normal : ListViewItem::Type::ErrorInformation);
+    general
+          ->AddItem(
+                { "Validation",
+                  ls.Format("%s (0x%x)", pe->signatureData->information.errorMessage.GetText(), pe->signatureData->information.errorCode) })
+          .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
 
-    PopulateSignerInfo(general, "Signer", pe->signatureData->information.signer);
-    PopulateSignerInfo(general, "Counter Signer", pe->signatureData->information.counterSigner);
-    PopulateSignerInfo(general, "Dual Signer", pe->signatureData->information.dualSigner);
-    PopulateSignerInfo(general, "Counter Dual Signer", pe->signatureData->information.counterDualSigner);
+    PopulateSignerInfo(general, "Signature #0", pe->signatureData->information.signature0);
+    PopulateSignerInfo(general, "Counter Signature #0", pe->signatureData->information.counterSignature0);
+    PopulateSignerInfo(general, "Signature #1", pe->signatureData->information.signature1);
+    PopulateSignerInfo(general, "Counter Signature #1", pe->signatureData->information.counterSignature1);
 }
 
 bool DigitalSignature::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

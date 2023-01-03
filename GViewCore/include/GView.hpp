@@ -394,6 +394,13 @@ namespace DigitalSignature
         Expired = 1
     };
 
+    enum class CounterSignatureType
+    {
+        None         = 0,
+        Authenticode = 1,
+        RFC3161      = 2
+    };
+
     struct CORE_EXPORT SignatureData
     {
         struct
@@ -424,7 +431,9 @@ namespace DigitalSignature
                 String digestAlgorithm;
                 String dateNotAfter;
                 String dateNotBefore;
-            } signer, counterSigner, dualSigner, counterDualSigner;
+
+                CounterSignatureType type{ CounterSignatureType::None };
+            } signature0, counterSignature0, signature1, counterSignature1;
         } information;
     };
 
