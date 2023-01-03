@@ -1201,12 +1201,12 @@ bool __VerifyEmbeddedSignature__(ConstString source, SignatureData& data)
 
 struct WrapperCertContext
 {
-    PCCERT_CONTEXT address = NULL;
+    PCCERT_CONTEXT context = NULL;
     ~WrapperCertContext()
     {
-        if (address != NULL)
+        if (context != NULL)
         {
-            CertFreeCertificateContext(address);
+            CertFreeCertificateContext(context);
         }
     }
 };
@@ -1247,7 +1247,7 @@ struct WrapperHMsg
     }
 };
 
-BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureData::Information::Certificate& certificate);
+BOOL GetOpusInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureData::Information::Certificate& certificate);
 BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureData::Information::Certificate& certificate);
 BOOL GetCertificateInfo(
       const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData::Information::Certificate& certificate);
@@ -1320,7 +1320,9 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessful = GetProgAndPublisherInfo(signerInfo.info, data.information.signature0);
+    auto& signature0 = data.information.signatures.emplace_back();
+
+    data.information.callSuccessful = GetOpusInfo(signerInfo.info, signature0);
     if (!data.information.callSuccessful)
     {
         data.information.errorCode    = GetLastError();
@@ -1328,7 +1330,7 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessful = GetCertDate(signerInfo, data.information.signature0);
+    data.information.callSuccessful = GetCertDate(signerInfo, signature0);
     if (!data.information.callSuccessful)
     {
         data.information.errorCode    = GetLastError();
@@ -1338,9 +1340,9 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
 
     CERT_INFO certInfo{ .SerialNumber = signerInfo.info->SerialNumber, .Issuer = signerInfo.info->Issuer };
 
-    WrapperCertContext certContext{ .address = CertFindCertificateInStore(
+    WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                           hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-    data.information.callSuccessful = (certContext.address != nullptr);
+    data.information.callSuccessful = (certContext.context != nullptr);
     if (!data.information.callSuccessful)
     {
         data.information.errorCode = GetLastError();
@@ -1348,7 +1350,8 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
         RETURNERROR(false, "");
     }
 
-    data.information.callSuccessful = GetCertificateInfo(signerInfo, certContext, data.information.signature0);
+    signature0.signatureType        = SignatureType::Signature;
+    data.information.callSuccessful = GetCertificateInfo(signerInfo, certContext, signature0);
     if (!data.information.callSuccessful)
     {
         data.information.errorCode    = GetLastError();
@@ -1359,19 +1362,23 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
     WrapperSignerInfo counterSignerInfo{};
     WrapperHStore storeCounterSigner{};
     WrapperCertContext counterSignerCertContext{};
-    if (GetCounterSigner(signerInfo, counterSignerInfo, storeCounterSigner, data.information.counterSignature0.type))
+    CounterSignatureType counterSignatureType{ CounterSignatureType::None };
+    if (GetCounterSigner(signerInfo, counterSignerInfo, storeCounterSigner, counterSignatureType))
     {
         if (counterSignerInfo.info != nullptr)
         {
+            auto& counterSignature0                = data.information.signatures.emplace_back();
+            counterSignature0.counterSignatureType = counterSignatureType;
+
             certInfo.Issuer       = counterSignerInfo.info->Issuer;
             certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
 
             const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : hStore.handle;
 
-            WrapperCertContext certContext{ .address = CertFindCertificateInStore(
+            WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                                   scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
 
-            data.information.callSuccessful = (certContext.address != nullptr);
+            data.information.callSuccessful = (certContext.context != nullptr);
             if (!data.information.callSuccessful)
             {
                 data.information.errorCode = GetLastError();
@@ -1379,9 +1386,10 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
                 RETURNERROR(false, "");
             }
 
-            GetCertificateInfo(counterSignerInfo, certContext, data.information.counterSignature0);
-            GetCertDate(counterSignerInfo, data.information.counterSignature0);
-            GetProgAndPublisherInfo(signerInfo.info, data.information.counterSignature0);
+            GetCertificateInfo(counterSignerInfo, certContext, counterSignature0);
+            GetCertDate(counterSignerInfo, counterSignature0);
+            GetOpusInfo(counterSignerInfo.info, counterSignature0);
+            counterSignature0.signatureType = SignatureType::CounterSignature;
         }
     }
 
@@ -1392,9 +1400,10 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
 
 BOOL GetNameString(const WrapperCertContext& certContext, String& out, DWORD type, DWORD flag)
 {
-    const auto size = CertGetNameStringA(certContext.address, type, flag, NULL, NULL, 0);
-    out.Realloc(size);
-    CHECK(CertGetNameStringA(certContext.address, type, flag, NULL, (LPSTR) out.GetText(), size) == size, false, "");
+    const auto size = CertGetNameStringA(certContext.context, type, flag, NULL, NULL, 0);
+    std::unique_ptr<char> name(new char[size]);
+    CHECK(CertGetNameStringA(certContext.context, type, flag, NULL, (LPSTR) name.get(), size) == size, false, "");
+    CHECK(out.Set(name.get()), false, "");
 
     return true;
 }
@@ -1403,10 +1412,10 @@ BOOL GetCertificateInfo(
       const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData::Information::Certificate& certificate)
 {
     LocalString<1024> ls;
-    const auto serialNumberSize = certContext.address->pCertInfo->SerialNumber.cbData;
+    const auto serialNumberSize = certContext.context->pCertInfo->SerialNumber.cbData;
     for (DWORD n = 0; n < serialNumberSize; n++)
     {
-        ls.AddFormat("%02x", certContext.address->pCertInfo->SerialNumber.pbData[serialNumberSize - (n + 1)]);
+        ls.AddFormat("%02x", certContext.context->pCertInfo->SerialNumber.pbData[serialNumberSize - (n + 1)]);
     }
     certificate.serialNumber.Set(ls);
 
@@ -1422,14 +1431,14 @@ BOOL GetCertificateInfo(
         {
             if (pCOI->pwszName)
             {
-                certificate.digestAlgorithm.Set(u16string_view{ reinterpret_cast<char16_t*>(const_cast<LPWSTR>(pCOI->pwszName)) });
+                certificate.digestAlgorithm.Set(u16string_view{ reinterpret_cast<const char16_t*>(pCOI->pwszName) });
             }
             else
             {
                 const auto algorithmName = CertAlgIdToOID(pCOI->Algid);
                 if (algorithmName)
                 {
-                    certificate.digestAlgorithm.Set(reinterpret_cast<char*>(const_cast<LPSTR>(algorithmName)));
+                    certificate.digestAlgorithm.Set(reinterpret_cast<const char*>(algorithmName));
                 }
             }
         }
@@ -1440,30 +1449,18 @@ BOOL GetCertificateInfo(
 
     SYSTEMTIME st{ 0 };
 
-    const auto& dateNotAfter = certContext.address->pCertInfo->NotAfter;
+    const auto& dateNotAfter = certContext.context->pCertInfo->NotAfter;
     FileTimeToSystemTime(&dateNotAfter, &st);
-    certificate.dateNotAfter.Format(
-          "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+    certificate.dateNotAfter.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
-    const auto& dateNotBefore = certContext.address->pCertInfo->NotBefore;
+    const auto& dateNotBefore = certContext.context->pCertInfo->NotBefore;
     FileTimeToSystemTime(&dateNotBefore, &st);
-    certificate.dateNotBefore.Format(
-          "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-
-    if (CompareFileTime(&now, &dateNotBefore) == -1)
-    {
-        certificate.timevalidity = TimeValidity::Earlier;
-    }
-
-    if (CompareFileTime(&now, &dateNotAfter) == 1)
-    {
-        certificate.timevalidity = TimeValidity::Expired;
-    }
+    certificate.dateNotBefore.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
     return true;
 }
 
-BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Information::Certificate& certificate)
+BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Information::Certificate& certificate)
 {
     for (auto n = 0U; n < signerInfo->AuthAttrs.cAttr; n++)
     {
@@ -1501,41 +1498,29 @@ BOOL GetProgAndPublisherInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Inform
 
         if (opusInfoRaw->pwszProgramName)
         {
-            certificate.programName.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pwszProgramName });
+            certificate.programName.Set(std::u16string_view{ reinterpret_cast<const char16_t*>(opusInfoRaw->pwszProgramName) });
         }
 
-        if (opusInfoRaw->pPublisherInfo)
+        constexpr auto populate = [](const SPC_LINK_* link, String& out)
         {
-            switch (opusInfoRaw->pPublisherInfo->dwLinkChoice)
+            CHECKRET(link != nullptr, "");
+            switch (link->dwLinkChoice)
             {
             case SPC_URL_LINK_CHOICE:
-                certificate.publishLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pPublisherInfo->pwszUrl });
+                out.Set(std::u16string_view{ reinterpret_cast<char16_t*>(link->pwszUrl) });
                 break;
 
             case SPC_FILE_LINK_CHOICE:
-                certificate.publishLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pPublisherInfo->pwszFile });
+                out.Set(std::u16string_view{ reinterpret_cast<char16_t*>(link->pwszFile) });
                 break;
 
             default:
                 break;
             }
-        }
+        };
 
-        if (opusInfoRaw->pMoreInfo)
-        {
-            switch (opusInfoRaw->pMoreInfo->dwLinkChoice)
-            {
-            case SPC_URL_LINK_CHOICE:
-                certificate.moreInfoLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pMoreInfo->pwszUrl });
-                break;
-
-            case SPC_FILE_LINK_CHOICE:
-                certificate.moreInfoLink.Set(std::u16string_view{ (char16_t*) opusInfoRaw->pMoreInfo->pwszFile });
-                break;
-            default:
-                break;
-            }
-        }
+        populate(opusInfoRaw->pPublisherInfo, certificate.publishLink);
+        populate(opusInfoRaw->pMoreInfo, certificate.moreInfoLink);
 
         break;
     }
@@ -1547,6 +1532,8 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information::Ce
 {
     for (DWORD n = 0; n < signer.info->AuthAttrs.cAttr; n++)
     {
+        PCCRYPT_OID_INFO pCOI = CryptFindOIDInfo(CRYPT_OID_INFO_OID_KEY, signer.info->AuthAttrs.rgAttr[n].pszObjId, 0);
+
         if (lstrcmpA(szOID_RSA_signingTime, signer.info->AuthAttrs.rgAttr[n].pszObjId) != 0)
         {
             continue;
@@ -1571,8 +1558,7 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information::Ce
         SYSTEMTIME st{ 0 };
         FileTimeToSystemTime(&lft, &st);
 
-        certificate.date.Format(
-              "%02d/%02d/%04d %02d:%02d:%02d:%03d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+        certificate.date.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
         break;
     }
@@ -1683,8 +1669,10 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureData::Information
 
             CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo1.info, &dwSignerInfo), false, "");
 
-            GetCertDate(signerInfo1, info.signature1);
-            GetProgAndPublisherInfo(signerInfo1.info, info.signature1);
+            auto& signature1 = info.signatures.emplace_back();
+
+            GetCertDate(signerInfo1, signature1);
+            GetOpusInfo(signerInfo1.info, signature1);
 
             CRYPT_DATA_BLOB data{ 0 };
             data.pbData = signer.info->UnauthAttrs.rgAttr[i].rgValue->pbData;
@@ -1694,15 +1682,17 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureData::Information
 
             CERT_INFO certInfo{ .SerialNumber = signerInfo1.info->SerialNumber, .Issuer = signerInfo1.info->Issuer };
 
-            WrapperCertContext certContext{ .address = CertFindCertificateInStore(
+            WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                                   store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
 
-            GetCertificateInfo(signerInfo1, certContext, info.signature1);
+            GetCertificateInfo(signerInfo1, certContext, signature1);
+            signature1.signatureType = SignatureType::Signature;
 
             WrapperSignerInfo counterSignerInfo{};
             WrapperHStore storeCounterSigner{};
             WrapperCertContext counterSignerCertContext{};
-            if (GetCounterSigner(signerInfo1, counterSignerInfo, storeCounterSigner, info.counterSignature1.type))
+            auto& counterSignature1 = info.signatures.emplace_back();
+            if (GetCounterSigner(signerInfo1, counterSignerInfo, storeCounterSigner, counterSignature1.counterSignatureType))
             {
                 if (counterSignerInfo.info != nullptr)
                 {
@@ -1711,14 +1701,15 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureData::Information
 
                     const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : store.handle;
 
-                    WrapperCertContext certContext{ .address = CertFindCertificateInStore(
+                    WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                                           scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
 
-                    CHECK(certContext.address != nullptr, false, "");
+                    CHECK(certContext.context != nullptr, false, "");
 
-                    GetCertificateInfo(counterSignerInfo, certContext, info.counterSignature1);
-                    GetCertDate(counterSignerInfo, info.counterSignature1);
-                    GetProgAndPublisherInfo(signerInfo1.info, info.counterSignature1);
+                    GetCertificateInfo(counterSignerInfo, certContext, counterSignature1);
+                    GetCertDate(counterSignerInfo, counterSignature1);
+                    GetOpusInfo(counterSignerInfo.info, counterSignature1);
+                    counterSignature1.signatureType = SignatureType::CounterSignature;
                 }
             }
 
