@@ -6,6 +6,8 @@
 #include <openssl/crypto.h>
 #include <openssl/asn1t.h>
 
+#include "authenticode.hpp"
+
 namespace GView::DigitalSignature
 {
 struct WrapperBIO
@@ -997,6 +999,10 @@ bool PKCS7VerifySignature(
       uint32 sVA,
       uint32 sSize)
 {
+    Buffer b = cache.CopyEntireFile(true);
+    Authenticode::AuthenticodeParser parser;
+    parser.AuthenticodeParse(b.GetData(), b.GetLength());
+
     STACK_OF(X509)* certs = nullptr;
     switch (OBJ_obj2nid(pkcs7.data->type))
     {
