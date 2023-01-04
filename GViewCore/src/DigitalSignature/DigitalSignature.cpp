@@ -4,6 +4,7 @@
 #include <openssl/cms.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/asn1t.h>
 
 namespace GView::DigitalSignature
 {
@@ -33,7 +34,11 @@ struct WrapperPKCS7
 
     ~WrapperPKCS7()
     {
-        PKCS7_free(data);
+        if (data != nullptr)
+        {
+            // PKCS7_free(data);
+            data = nullptr;
+        }
     }
 };
 
@@ -87,6 +92,33 @@ struct WrapperBUF_MEM
     }
 };
 
+/* OpenSSL defines OPENSSL_free as a macro, which we can't use with decltype.
+ * So we wrap it here for use with unique_ptr.
+ */
+void OpenSSL_free(void* ptr)
+{
+    OPENSSL_free(ptr);
+}
+
+void SK_X509_free(stack_st_X509* ptr)
+{
+    sk_X509_free(ptr);
+}
+
+/* Convenient self-releasing aliases for libcrypto and custom ASN.1 types. */
+using BIO_ptr           = std::unique_ptr<BIO, decltype(&BIO_free)>;
+using ASN1_OBJECT_ptr   = std::unique_ptr<ASN1_OBJECT, decltype(&ASN1_OBJECT_free)>;
+using ASN1_TYPE_ptr     = std::unique_ptr<ASN1_TYPE, decltype(&ASN1_TYPE_free)>;
+using OpenSSL_ptr       = std::unique_ptr<char, decltype(&OpenSSL_free)>;
+using BN_ptr            = std::unique_ptr<BIGNUM, decltype(&BN_free)>;
+using STACK_OF_X509_ptr = std::unique_ptr<STACK_OF(X509), decltype(&SK_X509_free)>;
+
+/**
+ * A convenience union for representing the kind of checksum returned, as
+ * well as its actual digest data.
+ */
+using Checksum = std::tuple<uint32, std::string>;
+
 inline static bool ASN1TIMEtoString(const ASN1_TIME* time, String& output)
 {
     WrapperBIO out{ BIO_new(BIO_s_mem()) };
@@ -105,481 +137,6 @@ inline static void GetError(uint32& errorCode, String& output)
 {
     errorCode = ERR_get_error();
     output.Set(ERR_error_string(errorCode, nullptr));
-}
-
-bool PKCS7ToStructure(const Buffer& buffer, Signature& output)
-{
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
-    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
-
-    ERR_clear_error();
-    WrapperBIO in{ BIO_new(BIO_s_mem()) };
-    uint32 error = 0;
-    GetError(error, output.errorMessage);
-
-    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(),
-          false,
-          output.errorMessage.GetText());
-
-    ERR_clear_error();
-    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
-    GetError(error, output.errorMessage);
-    CHECK(pkcs7.data != nullptr, false, output.errorMessage.GetText());
-
-    output.isDetached = PKCS7_is_detached(pkcs7.data);
-
-    ERR_clear_error();
-    // ASN1_OCTET_STRING** pos = &pkcs7.data->d.data; // no need to free (pointer from CMS structure)
-    // GetError(error, output.errorMessage);
-    // if (pos && (*pos))
-    //{
-    //     output.snContent.Resize((*pos)->length);
-    //     memcpy(output.snContent.GetData(), (*pos)->data, (*pos)->length);
-    // }
-
-    PKCS7_ISSUER_AND_SERIAL* issuerAndSerial = PKCS7_get_issuer_and_serial(pkcs7.data, 0);
-    if (issuerAndSerial != nullptr)
-    {
-        WrapperBIGNUM bnser{ .data = ASN1_INTEGER_to_BN(issuerAndSerial->serial, nullptr) };
-        output.sn = BN_bn2hex(bnser.data);
-    }
-
-    ERR_clear_error();
-    STACK_OF(X509) * certs{ nullptr };
-    switch (OBJ_obj2nid(pkcs7.data->type))
-    {
-    case NID_pkcs7_signed:
-        certs = pkcs7.data->d.sign->cert;
-        break;
-    case NID_pkcs7_signedAndEnveloped:
-        certs = pkcs7.data->d.signed_and_enveloped->cert;
-        break;
-    }
-    CHECK(certs != nullptr, false, "");
-
-    output.certificatesCount = sk_X509_num(certs);
-    if (output.certificatesCount >= MAX_SIZE_IN_CONTAINER)
-    {
-        throw std::runtime_error("Unable to parse this number of certificates!");
-    }
-    for (auto i = 0U; i < output.certificatesCount; i++)
-    {
-        ERR_clear_error();
-        const auto cert = sk_X509_value(certs, i);
-        GetError(error, output.errorMessage);
-        CHECK(cert != nullptr, false, "");
-
-        auto& sigCert = output.certificates[i];
-
-        sigCert.version = X509_get_version(cert);
-
-        const auto serialNumber = X509_get_serialNumber(cert);
-        if (serialNumber)
-        {
-            WrapperBIGNUM num{ ASN1_INTEGER_to_BN(serialNumber, nullptr) };
-            if (num.data != nullptr)
-            {
-                const auto hex = BN_bn2hex(num.data);
-                if (hex != nullptr)
-                {
-                    sigCert.serialNumber.Set(hex);
-                    OPENSSL_free(hex);
-                }
-            }
-        }
-
-        sigCert.signatureAlgorithm = OBJ_nid2ln(X509_get_signature_nid(cert));
-
-        WrapperEVP_PKEY pubkey{ X509_get_pubkey(cert) };
-        sigCert.publicKeyAlgorithm = OBJ_nid2ln(EVP_PKEY_id(pubkey.data));
-
-        ASN1TIMEtoString(X509_get0_notBefore(cert), sigCert.validityNotBefore);
-        ASN1TIMEtoString(X509_get0_notAfter(cert), sigCert.validityNotAfter);
-
-        char* issues = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
-        if (issues != nullptr)
-        {
-            sigCert.issuer = issues;
-            OPENSSL_free(issues);
-            issues = nullptr;
-        }
-
-        char* subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
-        if (subject)
-        {
-            sigCert.subject = subject;
-            OPENSSL_free(subject);
-            subject = nullptr;
-        }
-
-        ERR_clear_error();
-        WrapperEVP_PKEY pkey{ X509_get_pubkey(cert) };
-        GetError(error, output.errorMessage);
-        CHECK(pkey.data != nullptr, false, "");
-
-        ERR_clear_error();
-        sigCert.verify = X509_verify(cert, pkey.data);
-        if (sigCert.verify != 1)
-        {
-            GetError(error, sigCert.errorVerify);
-        }
-
-        STACK_OF(PKCS7_SIGNER_INFO)* siStack = PKCS7_get_signer_info(pkcs7.data); // no need to free (pointer from CMS structure)
-        for (int32 i = 0; i < sk_PKCS7_SIGNER_INFO_num(siStack); i++)
-        {
-            PKCS7_SIGNER_INFO* si = sk_PKCS7_SIGNER_INFO_value(siStack, i);
-            ERR_clear_error();
-
-            auto spcIndirectDataOid = OBJ_get0_data(pkcs7.data->d.sign->contents->type);
-
-            //
-            // OID ASN.1 Value for SPC_INDIRECT_DATA_OBJID
-            //
-            uint8 mSpcIndirectOidValue[] = { 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x01, 0x04 };
-
-            if (OBJ_length(pkcs7.data->d.sign->contents->type) != sizeof(mSpcIndirectOidValue))
-            {
-                CHECK(memcmp(spcIndirectDataOid, mSpcIndirectOidValue, sizeof(mSpcIndirectOidValue)) == 0, false, "");
-            }
-
-            auto spcIndirectDataContent = (uint8*) (pkcs7.data->d.sign->contents->d.other->value.asn1_string->data);
-
-            //
-            // Retrieve the SEQUENCE data size from ASN.1-encoded SpcIndirectDataContent.
-            //
-            auto asn1Byte = *(spcIndirectDataContent + 1);
-            uint32 contentSize{ 0 };
-            if ((asn1Byte & 0x80) == 0)
-            {
-                //
-                // Short Form of Length Encoding (Length < 128)
-                //
-                contentSize = (uint32) (asn1Byte & 0x7F);
-                //
-                // Skip the SEQUENCE Tag;
-                //
-                spcIndirectDataContent += 2;
-            }
-            else if ((asn1Byte & 0x81) == 0x81)
-            {
-                //
-                // Long Form of Length Encoding (128 <= Length < 255, Single Octet)
-                //
-                contentSize = (uint32) (*(uint8*) (spcIndirectDataContent + 2));
-                //
-                // Skip the SEQUENCE Tag;
-                //
-                spcIndirectDataContent += 3;
-            }
-            else if ((asn1Byte & 0x82) == 0x82)
-            {
-                //
-                // Long Form of Length Encoding (Length > 255, Two Octet)
-                //
-                contentSize = (uint32) (*(uint8*) (spcIndirectDataContent + 2));
-                contentSize = (contentSize << 8) + (uint32) (*(uint8*) (spcIndirectDataContent + 3));
-                //
-                // Skip the SEQUENCE Tag;
-                //
-                spcIndirectDataContent += 4;
-            }
-            else
-            {
-                RETURNERROR(false, "");
-            }
-
-            WrapperBIO bbio{ BIO_new(BIO_s_mem()) };
-            CHECK((size_t) BIO_write(bbio.memory, spcIndirectDataContent, contentSize) == contentSize,
-                  false,
-                  output.errorMessage.GetText());
-
-            sigCert.signerVerify = PKCS7_verify(pkcs7.data, certs, nullptr, bbio.memory, nullptr, PKCS7_NOVERIFY);
-
-            // PKCS7_dataVerify(cert_store, &cert_ctx, mybio, p7, si);
-            // if (PKCS7_signatureVerify(pkcs7bio, s->reply_p7, si, cert_cacert) <= 0)
-            /*
-
-                rc = PKCS7_dataVerify(cert_store, &vctx.x509_ctx, p7bio,p7, si);
-        if (rc <= 0 || vctx.err != X509_V_OK)
-        {
-            char tbuf[120];
-
-            if (rc <= 0)
-            {
-                fz_strlcpy(ebuf, ERR_error_string(ERR_get_error(), tbuf), ebufsize);
-            }
-            else
-            {
-                // / Error while checking the certificate chain /
-            snprintf(ebuf, ebufsize, "%s(%d): %s", X509_verify_cert_error_string(vctx.err), vctx.err, vctx.certdesc);
-            }
-
-            res = 0;
-            goto exit;
-        }
-            */
-
-            if (sigCert.signerVerify != 0)
-            {
-                GetError(error, sigCert.errorSignerVerify);
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
-
-    STACK_OF(PKCS7_SIGNER_INFO)* sis = PKCS7_get_signer_info(pkcs7.data);
-    output.signersCount              = sk_PKCS7_SIGNER_INFO_num(sis);
-    if (output.signersCount >= MAX_SIZE_IN_CONTAINER)
-    {
-        throw std::runtime_error("Unable to parse this number of signers!");
-    }
-    for (int32 i = 0; i < sk_PKCS7_SIGNER_INFO_num(sis); i++)
-    {
-        auto si      = sk_PKCS7_SIGNER_INFO_value(sis, i);
-        auto& signer = output.signers[i];
-
-        auto signedAttributes = PKCS7_get_signed_attributes(si);
-        signer.count          = sk_X509_ATTRIBUTE_num(signedAttributes);
-        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER && signer.count != ERR_SIGNER)
-        {
-            throw std::runtime_error("Unable to parse this number of signers!");
-        }
-        if (signer.count == ERR_SIGNER)
-        {
-            continue;
-        }
-
-        for (int32 j = 0; j < signer.count; j++)
-        {
-            X509_ATTRIBUTE* attr = sk_X509_ATTRIBUTE_value(signedAttributes, j); // no need to free (pointer from CMS structure)
-            if (!attr)
-            {
-                continue;
-            }
-
-            auto& attribute = signer.attributes[j];
-
-            attribute.count = X509_ATTRIBUTE_count(attr);
-            if (attribute.count <= 0)
-            {
-                continue;
-            }
-
-            if ((uint32) attribute.count >= MAX_SIZE_IN_CONTAINER)
-            {
-                throw std::runtime_error("Unable to parse this number of attributes!");
-            }
-
-            ASN1_OBJECT* obj = X509_ATTRIBUTE_get0_object(attr); // no need to free (pointer from CMS structure)
-            if (!obj)
-            {
-                continue;
-            }
-
-            attribute.name = OBJ_nid2ln(OBJ_obj2nid(obj));
-
-            auto objLen = OBJ_obj2txt(nullptr, -1, obj, 1) + 1;
-            attribute.contentType.Realloc(objLen);
-            OBJ_obj2txt(const_cast<char*>(attribute.contentType.GetText()), objLen, obj, 1);
-            attribute.contentType.Realloc(objLen - 1);
-
-            ASN1_TYPE* av = X509_ATTRIBUTE_get0_type(attr, 0);
-            if (av == nullptr)
-            {
-                continue;
-            }
-
-            auto& asnType = attribute.types[j] = (ASN1TYPE) av->type;
-
-            if (asnType == ASN1TYPE::OBJECT)
-            {
-                attribute.contentTypeData = OBJ_nid2ln(OBJ_obj2nid(av->value.object));
-            }
-            else if (asnType == ASN1TYPE::OCTET_STRING)
-            {
-                LocalString<64> ls;
-                for (int m = 0; m < av->value.octet_string->length; m++)
-                {
-                    ls.AddFormat("%02X", (uint8_t) av->value.octet_string->data[m]);
-                }
-
-                attribute.contentTypeData.Set(ls.GetText());
-                attribute.CDHashes[j].Set(ls.GetText());
-            }
-            else if (asnType == ASN1TYPE::UTCTIME)
-            {
-                ERR_clear_error();
-                WrapperBIO bio{ BIO_new(BIO_s_mem()) };
-                GetError(error, output.errorMessage);
-                CHECK(bio.memory != nullptr, false, "");
-
-                ASN1_UTCTIME_print(bio.memory, av->value.utctime);
-                BUF_MEM* bptr = nullptr; // no need to free (pointer from BIO structure)
-                BIO_get_mem_ptr(bio.memory, &bptr);
-                BIO_set_close(bio.memory, BIO_NOCLOSE);
-
-                attribute.contentTypeData.Set(bptr->data, (uint32) bptr->length);
-            }
-            else if (asnType == ASN1TYPE::SEQUENCE)
-            {
-                for (int32 m = 0; m < attribute.count; m++)
-                {
-                    av = X509_ATTRIBUTE_get0_type(attr, m);
-                    if (av != nullptr)
-                    {
-                        ERR_clear_error();
-                        WrapperBIO in{ BIO_new(BIO_s_mem()) };
-                        GetError(error, output.errorMessage);
-                        CHECK(in.memory != nullptr, false, "");
-
-                        ASN1_STRING* sequence = av->value.sequence;
-                        attribute.types[m]    = (ASN1TYPE) av->type;
-                        ASN1_parse_dump(in.memory, sequence->data, sequence->length, 2, 0);
-                        BUF_MEM* buf = nullptr;
-                        BIO_get_mem_ptr(in.memory, &buf);
-                        BIO_set_close(in.memory, BIO_NOCLOSE);
-                        attribute.contentTypeData.Set(buf->data, (uint32) buf->length);
-
-                        auto& hash                             = attribute.CDHashes[m];
-                        constexpr std::string_view startMarker = "[HEX DUMP]:";
-                        if (attribute.contentTypeData.Contains(startMarker.data()))
-                        {
-                            if (attribute.contentTypeData.Contains("\n"))
-                            {
-                                std::string_view subString{ attribute.contentTypeData.GetText(), attribute.contentTypeData.Len() };
-
-                                const auto indexStartMarker = subString.find(startMarker);
-                                const auto indexNewLine     = subString.find('\n', indexStartMarker);
-                                const auto newLength        = indexNewLine - indexStartMarker - startMarker.length();
-                                subString                   = { subString.data() + indexStartMarker + startMarker.length(), newLength };
-
-                                hash.Set(subString.data(), (uint32) subString.length());
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                throw std::runtime_error("Unknown hash!");
-            }
-        }
-    }
-
-    output.error = false;
-
-    return true;
-}
-
-bool PKCS7VerifySignature(const Buffer& buffer, String& output)
-{
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
-    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
-
-    ERR_clear_error();
-    WrapperBIO in{ BIO_new(BIO_s_mem()) };
-    uint32 error = 0;
-    GetError(error, output);
-    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
-
-    ERR_clear_error();
-    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
-    GetError(error, output);
-    CHECK(pkcs7.data != nullptr, false, output.GetText());
-
-    STACK_OF(X509)* certs = nullptr;
-    switch (OBJ_obj2nid(pkcs7.data->type))
-    {
-    case NID_pkcs7_signed:
-        certs = pkcs7.data->d.sign->cert;
-        break;
-    case NID_pkcs7_signedAndEnveloped:
-        certs = pkcs7.data->d.signed_and_enveloped->cert;
-        break;
-    }
-
-    CHECK(certs != nullptr, false, "");
-
-    auto spcIndirectDataOid = OBJ_get0_data(pkcs7.data->d.sign->contents->type);
-
-    //
-    // OID ASN.1 Value for SPC_INDIRECT_DATA_OBJID
-    //
-    uint8 mSpcIndirectOidValue[] = { 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x01, 0x04 };
-
-    if (OBJ_length(pkcs7.data->d.sign->contents->type) != sizeof(mSpcIndirectOidValue))
-    {
-        CHECK(memcmp(spcIndirectDataOid, mSpcIndirectOidValue, sizeof(mSpcIndirectOidValue)) == 0, false, "");
-    }
-
-    auto spcIndirectDataContent = (uint8*) (pkcs7.data->d.sign->contents->d.other->value.asn1_string->data);
-
-    //
-    // Retrieve the SEQUENCE data size from ASN.1-encoded SpcIndirectDataContent.
-    //
-    auto asn1Byte = *(spcIndirectDataContent + 1);
-    uint32 ContentSize{ 0 };
-    if ((asn1Byte & 0x80) == 0)
-    {
-        //
-        // Short Form of Length Encoding (Length < 128)
-        //
-        ContentSize = (uint32) (asn1Byte & 0x7F);
-        //
-        // Skip the SEQUENCE Tag;
-        //
-        spcIndirectDataContent += 2;
-    }
-    else if ((asn1Byte & 0x81) == 0x81)
-    {
-        //
-        // Long Form of Length Encoding (128 <= Length < 255, Single Octet)
-        //
-        ContentSize = (uint32) (*(uint8*) (spcIndirectDataContent + 2));
-        //
-        // Skip the SEQUENCE Tag;
-        //
-        spcIndirectDataContent += 3;
-    }
-    else if ((asn1Byte & 0x82) == 0x82)
-    {
-        //
-        // Long Form of Length Encoding (Length > 255, Two Octet)
-        //
-        ContentSize = (uint32) (*(uint8*) (spcIndirectDataContent + 2));
-        ContentSize = (ContentSize << 8) + (uint32) (*(uint8*) (spcIndirectDataContent + 3));
-        //
-        // Skip the SEQUENCE Tag;
-        //
-        spcIndirectDataContent += 4;
-    }
-    else
-    {
-        RETURNERROR(false, "");
-    }
-
-    //
-    // Compare the original file hash value to the digest retrieve from SpcIndirectDataContent
-    // defined in Authenticode
-    // NOTE: Need to double-check HashLength here!
-    //
-    // if (memcmp(spcIndirectDataContent + ContentSize - HashSize, ImageHash, HashSize) != 0)
-    // {
-    //     //
-    //     // Un-matched PE/COFF Hash Value
-    //     //
-    //     goto _Exit;
-    // }
-
-    //
-    // Verifies the PKCS#7 Signed Data in PE/COFF Authenticode Signature
-    //
-    // Status = (BOOLEAN) Pkcs7Verify(OrigAuthData, DataSize, TrustedCert, CertSize, SpcIndirectDataContent, ContentSize);
-
-    return true;
 }
 
 bool CMSToHumanReadable(const Buffer& buffer, String& output)
@@ -623,180 +180,6 @@ bool CMSToHumanReadable(const Buffer& buffer, String& output)
     BIO_get_mem_ptr(out.memory, &buf);
     GetError(error, output);
     CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
-
-    return true;
-}
-
-bool PKCS7ToHumanReadable(const Buffer& buffer, String& output)
-{
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
-    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
-
-    ERR_clear_error();
-    WrapperBIO in{ BIO_new(BIO_s_mem()) };
-    uint32 error = 0;
-    GetError(error, output);
-    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
-
-    ERR_clear_error();
-    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
-    GetError(error, output);
-    CHECK(pkcs7.data != nullptr, false, output.GetText());
-
-    ERR_clear_error();
-    WrapperBIO out{ BIO_new(BIO_s_mem()) };
-    GetError(error, output);
-    CHECK(out.memory != nullptr, false, output.GetText());
-
-    ERR_clear_error();
-    WrapperASN1_PCTX pctx{ ASN1_PCTX_new() };
-    GetError(error, output);
-    CHECK(pctx.data != nullptr, false, output.GetText());
-
-    ASN1_PCTX_set_flags(pctx.data, ASN1_PCTX_FLAGS_SHOW_ABSENT);
-    ASN1_PCTX_set_str_flags(pctx.data, ASN1_STRFLGS_RFC2253 | ASN1_STRFLGS_DUMP_ALL);
-    ASN1_PCTX_set_oid_flags(pctx.data, 0);
-    ASN1_PCTX_set_cert_flags(pctx.data, 0);
-
-    ERR_clear_error();
-    const auto ctxCode = PKCS7_print_ctx(out.memory, pkcs7.data, 4, pctx.data);
-    GetError(error, output);
-    CHECK(ctxCode == 1, false, output.GetText());
-
-    BUF_MEM* buf{};
-    ERR_clear_error();
-    BIO_get_mem_ptr(out.memory, &buf);
-    GetError(error, output);
-    CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
-
-    ERR_clear_error();
-    const auto type = OBJ_obj2nid(pkcs7.data->type);
-    STACK_OF(X509) * certs{ nullptr };
-    STACK_OF(X509_CRL) * crls{ nullptr };
-    switch (type)
-    {
-    case NID_pkcs7_signed:
-        certs = pkcs7.data->d.sign->cert;
-        crls  = pkcs7.data->d.sign->crl;
-        break;
-    case NID_pkcs7_signedAndEnveloped:
-        certs = pkcs7.data->d.signed_and_enveloped->cert;
-        crls  = pkcs7.data->d.signed_and_enveloped->crl;
-        break;
-    }
-    CHECK(certs != nullptr, false, "");
-
-    // STACK_OF(X509) * cert;          /* [ 0 ] */
-    auto certificatesCount = sk_X509_num(certs);
-    if (certificatesCount >= MAX_SIZE_IN_CONTAINER)
-    {
-        throw std::runtime_error("Unable to parse this number of certificates!");
-    }
-    for (int32 i = 0; i < certificatesCount; i++)
-    {
-        ERR_clear_error();
-        const auto cert = sk_X509_value(certs, i);
-        GetError(error, output);
-        CHECK(cert != nullptr, false, "");
-
-        WrapperBIO out{ BIO_new(BIO_s_mem()) };
-        GetError(error, output);
-        CHECK(out.memory != nullptr, false, output.GetText());
-        X509_print_ex(out.memory, cert, XN_FLAG_COMPAT, X509_FLAG_COMPAT);
-
-        BUF_MEM* buf{};
-        ERR_clear_error();
-        BIO_get_mem_ptr(out.memory, &buf);
-        GetError(error, output);
-        CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
-    }
-
-    auto crlsCount = sk_X509_CRL_num(crls);
-    if (crlsCount == 0xFFFFFFFF || crls == nullptr)
-    {
-        crlsCount = 0;
-    }
-    if (crlsCount >= MAX_SIZE_IN_CONTAINER)
-    {
-        throw std::runtime_error("Unable to parse this number of certificates!");
-    }
-    for (int32 i = 0; i < crlsCount; i++)
-    {
-        ERR_clear_error();
-        const auto cert = sk_X509_CRL_value(crls, i);
-        GetError(error, output);
-        CHECK(cert != nullptr, false, "");
-
-        WrapperBIO out{ BIO_new(BIO_s_mem()) };
-        GetError(error, output);
-        CHECK(out.memory != nullptr, false, output.GetText());
-        X509_CRL_print_ex(out.memory, cert, XN_FLAG_COMPAT);
-
-        BUF_MEM* buf{};
-        ERR_clear_error();
-        BIO_get_mem_ptr(out.memory, &buf);
-        GetError(error, output);
-        CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
-    }
-
-    STACK_OF(PKCS7_SIGNER_INFO)* sis = PKCS7_get_signer_info(pkcs7.data);
-    const auto signersCount          = sk_PKCS7_SIGNER_INFO_num(sis);
-    if (signersCount >= MAX_SIZE_IN_CONTAINER)
-    {
-        throw std::runtime_error("Unable to parse this number of signers!");
-    }
-    for (int32 i = 0; i < signersCount; i++)
-    {
-        PKCS7_SIGNER_INFO* si = sk_PKCS7_SIGNER_INFO_value(sis, i);
-
-        ASN1_INTEGER* version                      = si->version;
-        PKCS7_ISSUER_AND_SERIAL* issuer_and_serial = si->issuer_and_serial;
-        X509_ALGOR* digest_alg                     = si->digest_alg;
-        STACK_OF(X509_ATTRIBUTE)* auth_attr        = si->auth_attr;
-        X509_ALGOR* digest_enc_alg                 = si->digest_alg;
-        ASN1_OCTET_STRING* enc_digest              = si->enc_digest;
-        STACK_OF(X509_ATTRIBUTE)* unauth_attr      = si->unauth_attr;
-
-        BIGNUM* versionBigNum = ASN1_INTEGER_to_BN(version, NULL);
-        char* versionHex      = BN_bn2hex(versionBigNum);
-
-        BIGNUM* serialBigNum = ASN1_INTEGER_to_BN(issuer_and_serial->serial, NULL);
-        char* serialHex      = BN_bn2hex(serialBigNum);
-
-        const auto issuer = X509_NAME_oneline(issuer_and_serial->issuer, 0, 0);
-
-        char algorithm[20]{ 0 };
-        int res = OBJ_obj2txt(algorithm, sizeof algorithm, digest_alg->algorithm, 0);
-
-        std::string algorithmValue;
-        switch (digest_alg->parameter->type)
-        {
-        case V_ASN1_NULL:
-            break;
-        default:
-            throw std::runtime_error("Unsupported value type!");
-        }
-
-        std::vector<std::string> authAttrs;
-        const auto authAttributesCount = X509at_get_attr_count(auth_attr);
-        for (int32 i = 0; i < authAttributesCount; i++)
-        {
-            auto attribute      = X509at_get_attr(auth_attr, i);
-            auto attributeCount = X509_ATTRIBUTE_count(attribute);
-            if (attributeCount != 1)
-            {
-                throw std::runtime_error("Unsupported number of attributes!");
-            }
-
-            const auto attributeObject = X509_ATTRIBUTE_get0_object(attribute);
-
-            const auto count = OBJ_obj2txt(nullptr, 0, attributeObject, 0);
-            auto& s          = authAttrs.emplace_back();
-            s.resize(count + 1ULL);
-            OBJ_obj2txt(s.data(), count + 1, attributeObject, 0);
-        }
-        std::vector<std::string> authAttrs2;
-    }
 
     return true;
 }
@@ -858,7 +241,7 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
     return true;
 }
 
-bool CMSToStructure(const Buffer& buffer, Signature& output)
+bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
 {
     CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
     auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
@@ -1123,6 +506,883 @@ bool CMSToStructure(const Buffer& buffer, Signature& output)
     return true;
 }
 
+typedef struct
+{
+    ASN1_OBJECT* type;
+    ASN1_TYPE* value;
+} Authenticode_SpcAttributeTypeAndOptionalValue;
+
+typedef struct
+{
+    X509_ALGOR* digestAlgorithm;
+    ASN1_OCTET_STRING* digest;
+} Authenticode_DigestInfo;
+
+typedef struct
+{
+    Authenticode_SpcAttributeTypeAndOptionalValue* data;
+    Authenticode_DigestInfo* messageDigest;
+} Authenticode_SpcIndirectDataContent;
+
+/* Custom ASN.1 insanity is quarantined to the impl namespace.
+ */
+
+// clang-format off
+ASN1_SEQUENCE(Authenticode_SpcAttributeTypeAndOptionalValue) = {
+  ASN1_SIMPLE(Authenticode_SpcAttributeTypeAndOptionalValue, type, ASN1_OBJECT),
+  ASN1_OPT(Authenticode_SpcAttributeTypeAndOptionalValue, value, ASN1_ANY)
+} ASN1_SEQUENCE_END(Authenticode_SpcAttributeTypeAndOptionalValue)
+IMPLEMENT_ASN1_FUNCTIONS(Authenticode_SpcAttributeTypeAndOptionalValue)
+
+ASN1_SEQUENCE(Authenticode_DigestInfo) = {
+  ASN1_SIMPLE(Authenticode_DigestInfo, digestAlgorithm, X509_ALGOR),
+  ASN1_SIMPLE(Authenticode_DigestInfo, digest, ASN1_OCTET_STRING)
+} ASN1_SEQUENCE_END(Authenticode_DigestInfo)
+IMPLEMENT_ASN1_FUNCTIONS(Authenticode_DigestInfo)
+
+ASN1_SEQUENCE(Authenticode_SpcIndirectDataContent) = {
+  ASN1_SIMPLE(Authenticode_SpcIndirectDataContent, data, Authenticode_SpcAttributeTypeAndOptionalValue),
+  ASN1_SIMPLE(Authenticode_SpcIndirectDataContent, messageDigest, Authenticode_DigestInfo)
+} ASN1_SEQUENCE_END(Authenticode_SpcIndirectDataContent)
+IMPLEMENT_ASN1_FUNCTIONS(Authenticode_SpcIndirectDataContent)
+
+; // clang-format on
+
+constexpr auto SPC_INDIRECT_DATA_OID    = "1.3.6.1.4.1.311.2.1.4";
+constexpr auto SPC_NESTED_SIGNATURE_OID = "1.3.6.1.4.1.311.2.4.1";
+
+bool PKCS7ToStructure(const Buffer& buffer, SignatureMachO& output)
+{
+    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
+    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
+
+    ERR_clear_error();
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
+    uint32 error = 0;
+    GetError(error, output.errorMessage);
+
+    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(),
+          false,
+          output.errorMessage.GetText());
+
+    ERR_clear_error();
+    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
+    GetError(error, output.errorMessage);
+    CHECK(pkcs7.data != nullptr, false, output.errorMessage.GetText());
+
+    output.isDetached = PKCS7_is_detached(pkcs7.data);
+
+    ERR_clear_error();
+    STACK_OF(X509) * certs{ nullptr };
+    switch (OBJ_obj2nid(pkcs7.data->type))
+    {
+    case NID_pkcs7_signed:
+        certs = pkcs7.data->d.sign->cert;
+        break;
+    case NID_pkcs7_signedAndEnveloped:
+        certs = pkcs7.data->d.signed_and_enveloped->cert;
+        break;
+    }
+    CHECK(certs != nullptr, false, "");
+
+    output.certificatesCount = sk_X509_num(certs);
+    if (output.certificatesCount >= MAX_SIZE_IN_CONTAINER)
+    {
+        throw std::runtime_error("Unable to parse this number of certificates!");
+    }
+    for (auto i = 0U; i < output.certificatesCount; i++)
+    {
+        ERR_clear_error();
+        const auto cert = sk_X509_value(certs, i);
+        GetError(error, output.errorMessage);
+        CHECK(cert != nullptr, false, "");
+
+        auto& sigCert = output.certificates[i];
+
+        sigCert.version = X509_get_version(cert);
+
+        const auto serialNumber = X509_get_serialNumber(cert);
+        if (serialNumber)
+        {
+            WrapperBIGNUM num{ ASN1_INTEGER_to_BN(serialNumber, nullptr) };
+            if (num.data != nullptr)
+            {
+                const auto hex = BN_bn2hex(num.data);
+                if (hex != nullptr)
+                {
+                    sigCert.serialNumber.Set(hex);
+                    OPENSSL_free(hex);
+                }
+            }
+        }
+
+        sigCert.signatureAlgorithm = OBJ_nid2ln(X509_get_signature_nid(cert));
+
+        WrapperEVP_PKEY pubkey{ X509_get_pubkey(cert) };
+        sigCert.publicKeyAlgorithm = OBJ_nid2ln(EVP_PKEY_id(pubkey.data));
+
+        ASN1TIMEtoString(X509_get0_notBefore(cert), sigCert.validityNotBefore);
+        ASN1TIMEtoString(X509_get0_notAfter(cert), sigCert.validityNotAfter);
+
+        char* issues = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+        if (issues != nullptr)
+        {
+            sigCert.issuer = issues;
+            OPENSSL_free(issues);
+            issues = nullptr;
+        }
+
+        char* subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+        if (subject)
+        {
+            sigCert.subject = subject;
+            OPENSSL_free(subject);
+            subject = nullptr;
+        }
+
+        ERR_clear_error();
+        WrapperEVP_PKEY pkey{ X509_get_pubkey(cert) };
+        GetError(error, output.errorMessage);
+        CHECK(pkey.data != nullptr, false, "");
+
+        ERR_clear_error();
+        sigCert.verify = X509_verify(cert, pkey.data);
+        if (sigCert.verify != 1)
+        {
+            GetError(error, sigCert.errorVerify);
+        }
+
+        STACK_OF(PKCS7_SIGNER_INFO)* siStack = PKCS7_get_signer_info(pkcs7.data); // no need to free (pointer from CMS structure)
+        for (int32 i = 0; i < sk_PKCS7_SIGNER_INFO_num(siStack); i++)
+        {
+            PKCS7_SIGNER_INFO* si = sk_PKCS7_SIGNER_INFO_value(siStack, i);
+            ERR_clear_error();
+
+            auto spcIndirectDataOid = OBJ_get0_data(pkcs7.data->d.sign->contents->type);
+
+            //
+            // OID ASN.1 Value for SPC_INDIRECT_DATA_OBJID
+            //
+            uint8 mSpcIndirectOidValue[] = { 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x01, 0x04 };
+
+            if (OBJ_length(pkcs7.data->d.sign->contents->type) != sizeof(mSpcIndirectOidValue))
+            {
+                CHECK(memcmp(spcIndirectDataOid, mSpcIndirectOidValue, sizeof(mSpcIndirectOidValue)) == 0, false, "");
+            }
+
+            auto spcIndirectDataContent = (uint8*) (pkcs7.data->d.sign->contents->d.other->value.asn1_string->data);
+
+            //
+            // Retrieve the SEQUENCE data size from ASN.1-encoded SpcIndirectDataContent.
+            //
+            auto asn1Byte = *(spcIndirectDataContent + 1);
+            uint32 contentSize{ 0 };
+            if ((asn1Byte & 0x80) == 0)
+            {
+                //
+                // Short Form of Length Encoding (Length < 128)
+                //
+                contentSize = (uint32) (asn1Byte & 0x7F);
+                //
+                // Skip the SEQUENCE Tag;
+                //
+                spcIndirectDataContent += 2;
+            }
+            else if ((asn1Byte & 0x81) == 0x81)
+            {
+                //
+                // Long Form of Length Encoding (128 <= Length < 255, Single Octet)
+                //
+                contentSize = (uint32) (*(uint8*) (spcIndirectDataContent + 2));
+                //
+                // Skip the SEQUENCE Tag;
+                //
+                spcIndirectDataContent += 3;
+            }
+            else if ((asn1Byte & 0x82) == 0x82)
+            {
+                //
+                // Long Form of Length Encoding (Length > 255, Two Octet)
+                //
+                contentSize = (uint32) (*(uint8*) (spcIndirectDataContent + 2));
+                contentSize = (contentSize << 8) + (uint32) (*(uint8*) (spcIndirectDataContent + 3));
+                //
+                // Skip the SEQUENCE Tag;
+                //
+                spcIndirectDataContent += 4;
+            }
+            else
+            {
+                RETURNERROR(false, "");
+            }
+
+            WrapperBIO bbio{ BIO_new(BIO_s_mem()) };
+            CHECK((size_t) BIO_write(bbio.memory, spcIndirectDataContent, contentSize) == contentSize,
+                  false,
+                  output.errorMessage.GetText());
+
+            sigCert.signerVerify = PKCS7_verify(pkcs7.data, certs, nullptr, bbio.memory, nullptr, PKCS7_NOVERIFY);
+
+            if (sigCert.signerVerify != 1)
+            {
+                GetError(error, sigCert.errorSignerVerify);
+            }
+        }
+    }
+
+    STACK_OF(PKCS7_SIGNER_INFO)* sis = PKCS7_get_signer_info(pkcs7.data);
+    output.signersCount              = sk_PKCS7_SIGNER_INFO_num(sis);
+    if (output.signersCount >= MAX_SIZE_IN_CONTAINER)
+    {
+        throw std::runtime_error("Unable to parse this number of signers!");
+    }
+    for (int32 i = 0; i < sk_PKCS7_SIGNER_INFO_num(sis); i++)
+    {
+        auto si      = sk_PKCS7_SIGNER_INFO_value(sis, i);
+        auto& signer = output.signers[i];
+
+        auto signedAttributes = PKCS7_get_signed_attributes(si);
+        signer.count          = sk_X509_ATTRIBUTE_num(signedAttributes);
+        if ((uint32) signer.count >= MAX_SIZE_IN_CONTAINER && signer.count != ERR_SIGNER)
+        {
+            throw std::runtime_error("Unable to parse this number of signers!");
+        }
+        if (signer.count == ERR_SIGNER)
+        {
+            continue;
+        }
+
+        for (int32 j = 0; j < signer.count; j++)
+        {
+            X509_ATTRIBUTE* attr = sk_X509_ATTRIBUTE_value(signedAttributes, j); // no need to free (pointer from CMS structure)
+            if (!attr)
+            {
+                continue;
+            }
+
+            auto& attribute = signer.attributes[j];
+
+            attribute.count = X509_ATTRIBUTE_count(attr);
+            if (attribute.count <= 0)
+            {
+                continue;
+            }
+
+            if ((uint32) attribute.count >= MAX_SIZE_IN_CONTAINER)
+            {
+                throw std::runtime_error("Unable to parse this number of attributes!");
+            }
+
+            ASN1_OBJECT* obj = X509_ATTRIBUTE_get0_object(attr); // no need to free (pointer from CMS structure)
+            if (!obj)
+            {
+                continue;
+            }
+
+            attribute.name = OBJ_nid2ln(OBJ_obj2nid(obj));
+
+            auto objLen = OBJ_obj2txt(nullptr, -1, obj, 1) + 1;
+            attribute.contentType.Realloc(objLen);
+            OBJ_obj2txt(const_cast<char*>(attribute.contentType.GetText()), objLen, obj, 1);
+            attribute.contentType.Realloc(objLen - 1);
+
+            ASN1_TYPE* av = X509_ATTRIBUTE_get0_type(attr, 0);
+            if (av == nullptr)
+            {
+                continue;
+            }
+
+            auto& asnType = attribute.types[j] = (ASN1TYPE) av->type;
+
+            if (asnType == ASN1TYPE::OBJECT)
+            {
+                attribute.contentTypeData = OBJ_nid2ln(OBJ_obj2nid(av->value.object));
+            }
+            else if (asnType == ASN1TYPE::OCTET_STRING)
+            {
+                LocalString<64> ls;
+                for (int m = 0; m < av->value.octet_string->length; m++)
+                {
+                    ls.AddFormat("%02X", (uint8_t) av->value.octet_string->data[m]);
+                }
+
+                attribute.contentTypeData.Set(ls.GetText());
+                attribute.CDHashes[j].Set(ls.GetText());
+            }
+            else if (asnType == ASN1TYPE::UTCTIME)
+            {
+                ERR_clear_error();
+                WrapperBIO bio{ BIO_new(BIO_s_mem()) };
+                GetError(error, output.errorMessage);
+                CHECK(bio.memory != nullptr, false, "");
+
+                ASN1_UTCTIME_print(bio.memory, av->value.utctime);
+                BUF_MEM* bptr = nullptr; // no need to free (pointer from BIO structure)
+                BIO_get_mem_ptr(bio.memory, &bptr);
+                BIO_set_close(bio.memory, BIO_NOCLOSE);
+
+                attribute.contentTypeData.Set(bptr->data, (uint32) bptr->length);
+            }
+            else if (asnType == ASN1TYPE::SEQUENCE)
+            {
+                for (int32 m = 0; m < attribute.count; m++)
+                {
+                    av = X509_ATTRIBUTE_get0_type(attr, m);
+                    if (av != nullptr)
+                    {
+                        ERR_clear_error();
+                        WrapperBIO in{ BIO_new(BIO_s_mem()) };
+                        GetError(error, output.errorMessage);
+                        CHECK(in.memory != nullptr, false, "");
+
+                        ASN1_STRING* sequence = av->value.sequence;
+                        attribute.types[m]    = (ASN1TYPE) av->type;
+                        ASN1_parse_dump(in.memory, sequence->data, sequence->length, 2, 0);
+                        BUF_MEM* buf = nullptr;
+                        BIO_get_mem_ptr(in.memory, &buf);
+                        BIO_set_close(in.memory, BIO_NOCLOSE);
+                        attribute.contentTypeData.Set(buf->data, (uint32) buf->length);
+
+                        auto& hash                             = attribute.CDHashes[m];
+                        constexpr std::string_view startMarker = "[HEX DUMP]:";
+                        if (attribute.contentTypeData.Contains(startMarker.data()))
+                        {
+                            if (attribute.contentTypeData.Contains("\n"))
+                            {
+                                std::string_view subString{ attribute.contentTypeData.GetText(), attribute.contentTypeData.Len() };
+
+                                const auto indexStartMarker = subString.find(startMarker);
+                                const auto indexNewLine     = subString.find('\n', indexStartMarker);
+                                const auto newLength        = indexNewLine - indexStartMarker - startMarker.length();
+                                subString                   = { subString.data() + indexStartMarker + startMarker.length(), newLength };
+
+                                hash.Set(subString.data(), (uint32) subString.length());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    output.error = false;
+
+    return true;
+}
+
+Authenticode_SpcIndirectDataContent* GetIndirectDataContent(const WrapperPKCS7& p7)
+{
+    auto* contents = p7.data->d.sign->contents;
+    CHECK(contents != nullptr, nullptr, "");
+
+    OBJ_create(SPC_INDIRECT_DATA_OID, NULL, NULL);
+    auto* indirectDataASN1Raw = OBJ_txt2obj(SPC_INDIRECT_DATA_OID, 1);
+    CHECK(indirectDataASN1Raw != nullptr, nullptr, "");
+
+    ASN1_OBJECT_ptr indirectDataASN1(indirectDataASN1Raw, ASN1_OBJECT_free);
+    CHECK(ASN1_TYPE_get(contents->d.other) == V_ASN1_SEQUENCE, nullptr, "");
+    CHECK(OBJ_cmp(contents->type, indirectDataASN1.get()) == 0, nullptr, "");
+
+    const auto* data          = contents->d.other->value.sequence->data;
+    auto* indirectDataContent = d2i_Authenticode_SpcIndirectDataContent(nullptr, &data, contents->d.other->value.sequence->length);
+    CHECK(indirectDataContent != nullptr, nullptr, "");
+    CHECK(indirectDataContent->messageDigest->digest->data != nullptr, nullptr, "");
+    CHECK(indirectDataContent->messageDigest->digest->length < contents->d.other->value.sequence->length, nullptr, "");
+
+    return indirectDataContent;
+}
+
+bool GetNestedSignedData(WrapperPKCS7& p7, Buffer& buffer)
+{
+    PKCS7_SIGNER_INFO* signer_info = sk_PKCS7_SIGNER_INFO_value(p7.data->d.sign->signer_info, 0);
+
+    /* NOTE(ww): OpenSSL stupidity: you actually need to call OBJ_create before
+     * OBJ_txt2obj; the latter won't do it for you. Luckily (?) OpenSSL 1.1.0+
+     * auto-frees these, so they're not totally impossible to use in leakless C++.
+     */
+    OBJ_create(SPC_NESTED_SIGNATURE_OID, NULL, NULL);
+    auto* spc_nested_sig_oid_ptr = OBJ_txt2obj(SPC_NESTED_SIGNATURE_OID, 1);
+    CHECK(spc_nested_sig_oid_ptr != nullptr, false, "");
+
+    ASN1_OBJECT_ptr spc_nested_sig_oid(spc_nested_sig_oid_ptr, ASN1_OBJECT_free);
+    auto* nested_signed_data = PKCS7_get_attribute(signer_info, OBJ_obj2nid(spc_nested_sig_oid.get()));
+    CHECK(nested_signed_data != nullptr, false, "");
+    CHECK(ASN1_TYPE_get(nested_signed_data) == V_ASN1_SEQUENCE, false, "");
+
+    auto* nested_signed_data_seq = nested_signed_data->value.sequence;
+    CHECK(buffer.Add(BufferView{ nested_signed_data_seq->data, (size_t) nested_signed_data_seq->length }), false, "");
+
+    return true;
+}
+
+static inline std::string ToHex(std::uint8_t* buf, std::size_t len)
+{
+    CHECK(buf != nullptr, std::string{}, "");
+    CHECK(len > 0, std::string{}, "");
+
+    constexpr static char lookup_table[] = "0123456789ABCDEF";
+
+    std::string hexstr;
+    hexstr.reserve(len * 2); // each byte creates two hex digits
+
+    for (auto i = 0; i < len; i++)
+    {
+        hexstr += lookup_table[buf[i] >> 4];
+        hexstr += lookup_table[buf[i] & 0xF];
+    }
+
+    return hexstr;
+}
+
+Checksum GetChecksum(Authenticode_SpcIndirectDataContent& indirectData)
+{
+    auto nid    = OBJ_obj2nid(indirectData.messageDigest->digestAlgorithm->algorithm);
+    auto digest = ToHex(indirectData.messageDigest->digest->data, indirectData.messageDigest->digest->length);
+    return std::make_tuple(nid, digest);
+}
+
+std::string ComputeChecksum(
+      uint32 algorithmNID,
+      Utils::DataCache& cache,
+      uint32 checksumOffset,
+      uint32 certificateTableOffset,
+      uint32 sizeOfHeaders,
+      uint32 sVA,
+      uint32 sSize)
+{
+    // https://security.stackexchange.com/questions/199599/are-all-fields-of-the-pe-certificate-directory-hashed-during-authenticode-signin
+    // https://download.microsoft.com/download/9/c/5/9c5b2167-8017-4bae-9fde-d599bac8184a/authenticode_pe.docx
+
+    const auto* md = EVP_get_digestbynid(algorithmNID);
+    auto* md_ctx   = EVP_MD_CTX_new();
+    EVP_DigestInit(md_ctx, md);
+
+    Buffer _1st = cache.CopyToBuffer(0, checksumOffset);
+    EVP_DigestUpdate(md_ctx, _1st.GetData(), _1st.GetLength());
+
+    Buffer _2nd = cache.CopyToBuffer(checksumOffset + 4, certificateTableOffset - (checksumOffset + 4));
+    EVP_DigestUpdate(md_ctx, _2nd.GetData(), _2nd.GetLength());
+
+    Buffer _3rd = cache.CopyToBuffer(certificateTableOffset + 8, sizeOfHeaders - (certificateTableOffset + 8));
+    EVP_DigestUpdate(md_ctx, _3rd.GetData(), _3rd.GetLength());
+
+    if (sVA > 0)
+    {
+        Buffer _4th = cache.CopyToBuffer(sizeOfHeaders, sVA - sizeOfHeaders);
+        EVP_DigestUpdate(md_ctx, _4th.GetData(), _4th.GetLength());
+
+        Buffer _5th = cache.CopyToBuffer(sVA + sSize, static_cast<uint32>(cache.GetSize()) - (sVA + sSize));
+        EVP_DigestUpdate(md_ctx, _5th.GetData(), _5th.GetLength());
+    }
+    else
+    {
+        Buffer _4th = cache.CopyToBuffer(sizeOfHeaders, static_cast<uint32>(cache.GetSize()) - sizeOfHeaders);
+        EVP_DigestUpdate(md_ctx, _4th.GetData(), _4th.GetLength());
+    }
+
+    std::vector<uint8> md_buf;
+    md_buf.resize(EVP_MAX_MD_SIZE);
+    EVP_DigestFinal(md_ctx, md_buf.data(), nullptr);
+    EVP_MD_CTX_free(md_ctx);
+
+    return ToHex(md_buf.data(), EVP_MD_size(md));
+}
+
+bool PKCS7VerifySignature(
+      const WrapperPKCS7& pkcs7,
+      Utils::DataCache& cache,
+      uint32 checksumOffset,
+      uint32 certificateTableOffset,
+      uint32 sizeOfHeaders,
+      uint32 sVA,
+      uint32 sSize)
+{
+    STACK_OF(X509)* certs = nullptr;
+    switch (OBJ_obj2nid(pkcs7.data->type))
+    {
+    case NID_pkcs7_signed:
+        certs = pkcs7.data->d.sign->cert;
+        break;
+    case NID_pkcs7_signedAndEnveloped:
+        certs = pkcs7.data->d.signed_and_enveloped->cert;
+        break;
+    }
+
+    CHECK(certs != nullptr, false, "");
+
+    auto indirectData      = GetIndirectDataContent(pkcs7);
+    uint8* indirectDataRaw = nullptr;
+    auto indirectDataSize  = i2d_Authenticode_SpcIndirectDataContent(indirectData, &indirectDataRaw);
+
+    CHECK(indirectDataSize >= 0, false, "");
+    CHECK(indirectDataRaw != nullptr, false, "");
+
+    auto indirectDataPtr = OpenSSL_ptr(reinterpret_cast<char*>(indirectDataRaw), OpenSSL_free);
+
+    const auto* signedDataSeq = reinterpret_cast<std::uint8_t*>(indirectDataPtr.get());
+    long length               = 0;
+    int tag                   = 0;
+    int tagClass              = 0;
+    ASN1_get_object(&signedDataSeq, &length, &tag, &tagClass, indirectDataSize);
+    CHECK(tag == V_ASN1_SEQUENCE, false, "");
+
+    BIO_ptr signedData(BIO_new_mem_buf(signedDataSeq, length), BIO_free);
+    CHECK(signedData != nullptr, false, "");
+
+    auto status = PKCS7_verify(pkcs7.data, certs, nullptr, signedData.get(), nullptr, PKCS7_NOVERIFY);
+    CHECK(status == 1, false, "");
+
+    // authenticode hash verification (embedded vs computed)
+    const auto embeddedChecksum = GetChecksum(*indirectData);
+    const auto computedChecksum =
+          ComputeChecksum(std::get<0>(embeddedChecksum), cache, checksumOffset, certificateTableOffset, sizeOfHeaders, sVA, sSize);
+    CHECK(std::get<1>(embeddedChecksum) == computedChecksum, false, "");
+
+    // timestamp / counter signature
+    STACK_OF(PKCS7_SIGNER_INFO)* sis = PKCS7_get_signer_info(pkcs7.data);
+    const auto signersCount          = sk_PKCS7_SIGNER_INFO_num(sis);
+    if (signersCount >= MAX_SIZE_IN_CONTAINER)
+    {
+        throw std::runtime_error("Unable to parse this number of signers!");
+    }
+
+    for (int32 i = 0; i < signersCount; i++)
+    {
+        PKCS7_SIGNER_INFO* si = sk_PKCS7_SIGNER_INFO_value(sis, i);
+
+        const ASN1_OBJECT_ptr RFC3161_counterSign(OBJ_txt2obj("1.3.6.1.4.1.311.3.3.1", 1), ASN1_OBJECT_free);
+        const ASN1_OBJECT_ptr RSA_counterSign(OBJ_txt2obj("1.2.840.113549.1.9.6", 1), ASN1_OBJECT_free);
+        const ASN1_OBJECT_ptr NestedSignature(OBJ_txt2obj("1.3.6.1.4.1.311.2.4.1", 1), ASN1_OBJECT_free);
+
+        STACK_OF(X509_ATTRIBUTE)* unauth_attr = si->unauth_attr;
+        const auto unauthAttributesCount      = X509at_get_attr_count(unauth_attr);
+        for (int32 i = 0; i < unauthAttributesCount; i++)
+        {
+            auto attribute = X509at_get_attr(unauth_attr, i);
+            auto count     = X509_ATTRIBUTE_count(attribute);
+            auto asn1Type  = X509_ATTRIBUTE_get0_type(attribute, i);
+            if (count != 1)
+            {
+                throw std::runtime_error("Unsupported number of attributes!");
+            }
+
+            ASN1_OBJECT_ptr attributeObject(X509_ATTRIBUTE_get0_object(attribute), ASN1_OBJECT_free);
+
+            // https://mta.openssl.org/pipermail/openssl-users/2015-September/002054.html
+            if (OBJ_cmp(attributeObject.get(), RSA_counterSign.get()) == 0)
+            {
+                if (V_ASN1_SEQUENCE == asn1Type->type)
+                {
+                    ERR_clear_error();
+                    WrapperBIO in{ BIO_new(BIO_s_mem()) };
+                    CHECK(in.memory != nullptr, false, "");
+
+                    const auto* data      = asn1Type->value.octet_string->data;
+                    const auto length     = asn1Type->value.octet_string->length;
+                    PKCS7_SIGNER_INFO* cs = d2i_PKCS7_SIGNER_INFO(NULL, &data, length);
+
+                    auto aaa = OBJ_obj2nid(attributeObject.get());
+
+                    STACK_OF(X509_ATTRIBUTE)* auth2 = cs->auth_attr;
+                    const auto auth2Count           = X509at_get_attr_count(auth2);
+                    for (int32 aa = 0; aa < auth2Count; aa++)
+                    {
+                        auto attribute = X509at_get_attr(auth2, aa);
+                        auto count     = X509_ATTRIBUTE_count(attribute);
+                        auto asn1Type  = X509_ATTRIBUTE_get0_type(attribute, aa);
+
+                        ASN1_OBJECT_ptr attributeObject2(X509_ATTRIBUTE_get0_object(attribute), ASN1_OBJECT_free);
+                        if (asn1Type == nullptr)
+                        {
+                            continue;
+                        }
+                        if (V_ASN1_OBJECT == asn1Type->type)
+                        {
+                            auto obj   = asn1Type->value.object;
+                            auto name3 = OBJ_nid2sn(OBJ_obj2nid(obj));
+
+                            ASN1_OBJECT* attrData = (ASN1_OBJECT*) X509_ATTRIBUTE_get0_data(attribute, aa, asn1Type->type, NULL);
+
+                            int len     = i2t_ASN1_OBJECT(NULL, 0, attrData);
+                            char* value = (char*) calloc(len, sizeof(char));
+                            i2t_ASN1_OBJECT(value, len, attrData);
+
+                            X509* cert = PKCS7_cert_from_signer_info(pkcs7.data, cs);
+
+                            // TODO: and now what?
+                        }
+                    }
+                }
+            }
+
+            if (OBJ_cmp(attributeObject.get(), RFC3161_counterSign.get()) == 0)
+            {
+                if (V_ASN1_SEQUENCE == asn1Type->type)
+                {
+                    const auto* data  = asn1Type->value.octet_string->data;
+                    const auto length = asn1Type->value.octet_string->length;
+
+                    String output;
+
+                    WrapperBIO in{ BIO_new(BIO_s_mem()) };
+                    CHECK((size_t) BIO_write(in.memory, data, (int32) length) == length, false, "");
+
+                    WrapperCMS_ContentInfo cms{ d2i_CMS_bio(in.memory, nullptr) };
+                    CHECK(cms.data != nullptr, false, "");
+
+                    constexpr uint32 flags = CMS_BINARY | CMS_NOCRL | CMS_NO_SIGNER_CERT_VERIFY;
+                    CHECK(CMS_verify(cms.data, certs, NULL, NULL, NULL, flags) == 1, false, "");
+                }
+            }
+
+            if (OBJ_cmp(attributeObject.get(), NestedSignature.get()) == 0)
+            {
+                // TODO: anything?
+            }
+        }
+    }
+
+    return true;
+}
+
+bool PKCS7VerifySignature(
+      Utils::DataCache& cache,
+      const Buffer& buffer,
+      String& output,
+      uint32 checksumOffset,
+      uint32 certificateTableOffset,
+      uint32 sizeOfHeaders,
+      uint32 sVA,
+      uint32 sSize)
+{
+    /*
+     * with help from:
+     * https://stackoverflow.com/questions/50976612/amended-code-to-retrieve-dual-signature-information-from-pe-executable-in-window
+     * https://github.com/trailofbits/uthenticode/blob/master/src/uthenticode.cpp
+     * https://blog.trailofbits.com/2020/05/27/verifying-windows-binaries-without-windows
+     */
+
+    CHECK(buffer.GetData() != nullptr, false, "Nullptr data provided!");
+    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
+
+    CHECK(sVA + sSize <= cache.GetSize(), false, "");
+    CHECK(certificateTableOffset + 8 <= sizeOfHeaders, false, "");
+
+    ERR_clear_error();
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
+    uint32 error = 0;
+    GetError(error, output);
+    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
+
+    ERR_clear_error();
+    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
+    GetError(error, output);
+    CHECK(pkcs7.data != nullptr, false, output.GetText());
+
+    CHECK(PKCS7VerifySignature(pkcs7, cache, checksumOffset, certificateTableOffset, sizeOfHeaders, sVA, sSize), false, "");
+
+    Buffer bufferNested;
+    auto nested_data = GetNestedSignedData(pkcs7, bufferNested);
+    if (bufferNested.IsValid())
+    {
+        return PKCS7VerifySignature(cache, bufferNested, output, checksumOffset, certificateTableOffset, sizeOfHeaders, sVA, sSize);
+    }
+
+    return true;
+}
+
+bool PKCS7ToHumanReadable(const Buffer& buffer, String& output)
+{
+    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
+    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
+
+    ERR_clear_error();
+    WrapperBIO in{ BIO_new(BIO_s_mem()) };
+    uint32 error = 0;
+    GetError(error, output);
+    CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
+
+    ERR_clear_error();
+    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
+    GetError(error, output);
+    CHECK(pkcs7.data != nullptr, false, output.GetText());
+
+    ERR_clear_error();
+    WrapperBIO out{ BIO_new(BIO_s_mem()) };
+    GetError(error, output);
+    CHECK(out.memory != nullptr, false, output.GetText());
+
+    ERR_clear_error();
+    WrapperASN1_PCTX pctx{ ASN1_PCTX_new() };
+    GetError(error, output);
+    CHECK(pctx.data != nullptr, false, output.GetText());
+
+    ASN1_PCTX_set_flags(pctx.data, ASN1_PCTX_FLAGS_SHOW_ABSENT);
+    ASN1_PCTX_set_str_flags(pctx.data, ASN1_STRFLGS_RFC2253 | ASN1_STRFLGS_DUMP_ALL);
+    ASN1_PCTX_set_oid_flags(pctx.data, 0);
+    ASN1_PCTX_set_cert_flags(pctx.data, 0);
+
+    ERR_clear_error();
+    const auto ctxCode = PKCS7_print_ctx(out.memory, pkcs7.data, 4, pctx.data);
+    GetError(error, output);
+    CHECK(ctxCode == 1, false, output.GetText());
+
+    BUF_MEM* buf{};
+    ERR_clear_error();
+    BIO_get_mem_ptr(out.memory, &buf);
+    GetError(error, output);
+    CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
+
+    ERR_clear_error();
+    const auto type = OBJ_obj2nid(pkcs7.data->type);
+    STACK_OF(X509) * certs{ nullptr };
+    STACK_OF(X509_CRL) * crls{ nullptr };
+    switch (type)
+    {
+    case NID_pkcs7_signed:
+        certs = pkcs7.data->d.sign->cert;
+        crls  = pkcs7.data->d.sign->crl;
+        break;
+    case NID_pkcs7_signedAndEnveloped:
+        certs = pkcs7.data->d.signed_and_enveloped->cert;
+        crls  = pkcs7.data->d.signed_and_enveloped->crl;
+        break;
+    }
+    CHECK(certs != nullptr, false, "");
+
+    // STACK_OF(X509) * cert;          /* [ 0 ] */
+    auto certificatesCount = sk_X509_num(certs);
+    if (certificatesCount >= MAX_SIZE_IN_CONTAINER)
+    {
+        throw std::runtime_error("Unable to parse this number of certificates!");
+    }
+    for (int32 i = 0; i < certificatesCount; i++)
+    {
+        ERR_clear_error();
+        const auto cert = sk_X509_value(certs, i);
+        GetError(error, output);
+        CHECK(cert != nullptr, false, "");
+
+        WrapperBIO out{ BIO_new(BIO_s_mem()) };
+        GetError(error, output);
+        CHECK(out.memory != nullptr, false, output.GetText());
+        X509_print_ex(out.memory, cert, XN_FLAG_COMPAT, X509_FLAG_COMPAT);
+
+        BUF_MEM* buf{};
+        ERR_clear_error();
+        BIO_get_mem_ptr(out.memory, &buf);
+        GetError(error, output);
+        CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
+    }
+
+    auto crlsCount = sk_X509_CRL_num(crls);
+    if (crlsCount == 0xFFFFFFFF || crls == nullptr)
+    {
+        crlsCount = 0;
+    }
+    if (crlsCount >= MAX_SIZE_IN_CONTAINER)
+    {
+        throw std::runtime_error("Unable to parse this number of certificates!");
+    }
+    for (int32 i = 0; i < crlsCount; i++)
+    {
+        ERR_clear_error();
+        const auto cert = sk_X509_CRL_value(crls, i);
+        GetError(error, output);
+        CHECK(cert != nullptr, false, "");
+
+        WrapperBIO out{ BIO_new(BIO_s_mem()) };
+        GetError(error, output);
+        CHECK(out.memory != nullptr, false, output.GetText());
+        X509_CRL_print_ex(out.memory, cert, XN_FLAG_COMPAT);
+
+        BUF_MEM* buf{};
+        ERR_clear_error();
+        BIO_get_mem_ptr(out.memory, &buf);
+        GetError(error, output);
+        CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
+    }
+
+    STACK_OF(PKCS7_SIGNER_INFO)* sis = PKCS7_get_signer_info(pkcs7.data);
+    const auto signersCount          = sk_PKCS7_SIGNER_INFO_num(sis);
+    if (signersCount >= MAX_SIZE_IN_CONTAINER)
+    {
+        throw std::runtime_error("Unable to parse this number of signers!");
+    }
+    for (int32 i = 0; i < signersCount; i++)
+    {
+        PKCS7_SIGNER_INFO* si = sk_PKCS7_SIGNER_INFO_value(sis, i);
+
+        ASN1_INTEGER* version                      = si->version;
+        PKCS7_ISSUER_AND_SERIAL* issuer_and_serial = si->issuer_and_serial;
+        X509_ALGOR* digest_alg                     = si->digest_alg;
+        STACK_OF(X509_ATTRIBUTE)* auth_attr        = si->auth_attr;
+        X509_ALGOR* digest_enc_alg                 = si->digest_alg;
+        ASN1_OCTET_STRING* enc_digest              = si->enc_digest;
+        STACK_OF(X509_ATTRIBUTE)* unauth_attr      = si->unauth_attr;
+
+        BIGNUM* versionBigNum = ASN1_INTEGER_to_BN(version, NULL);
+        char* versionHex      = BN_bn2hex(versionBigNum);
+
+        BIGNUM* serialBigNum = ASN1_INTEGER_to_BN(issuer_and_serial->serial, NULL);
+        char* serialHex      = BN_bn2hex(serialBigNum);
+
+        const auto issuer = X509_NAME_oneline(issuer_and_serial->issuer, 0, 0);
+
+        char algorithm[20]{ 0 };
+        int res = OBJ_obj2txt(algorithm, sizeof algorithm, digest_alg->algorithm, 0);
+
+        std::string algorithmValue;
+        switch (digest_alg->parameter->type)
+        {
+        case V_ASN1_NULL:
+            break;
+        default:
+            throw std::runtime_error("Unsupported value type!");
+        }
+
+        std::vector<std::string> authAttrs;
+        const auto authAttributesCount = X509at_get_attr_count(auth_attr);
+        for (int32 i = 0; i < authAttributesCount; i++)
+        {
+            auto attribute      = X509at_get_attr(auth_attr, i);
+            auto attributeCount = X509_ATTRIBUTE_count(attribute);
+            if (attributeCount != 1)
+            {
+                throw std::runtime_error("Unsupported number of attributes!");
+            }
+
+            const auto attributeObject = X509_ATTRIBUTE_get0_object(attribute);
+
+            const auto count = OBJ_obj2txt(nullptr, 0, attributeObject, 0);
+            auto& s          = authAttrs.emplace_back();
+            s.resize(count + 1ULL);
+            OBJ_obj2txt(s.data(), count + 1, attributeObject, 0);
+        }
+
+        std::vector<std::string> unauthAttrs;
+        const auto unauthAttributesCount = X509at_get_attr_count(unauth_attr);
+        for (int32 i = 0; i < unauthAttributesCount; i++)
+        {
+            auto attribute      = X509at_get_attr(unauth_attr, i);
+            auto attributeCount = X509_ATTRIBUTE_count(attribute);
+            if (attributeCount != 1)
+            {
+                throw std::runtime_error("Unsupported number of attributes!");
+            }
+
+            const auto attributeObject = X509_ATTRIBUTE_get0_object(attribute);
+
+            const auto count = OBJ_obj2txt(nullptr, 0, attributeObject, 0);
+            auto& s          = unauthAttrs.emplace_back();
+            s.resize(count + 1ULL);
+            OBJ_obj2txt(s.data(), count + 1, attributeObject, 0);
+        }
+    }
+
+    return true;
+}
+
 #ifdef BUILD_FOR_WINDOWS
 
 #    include <Windows.h>
@@ -1165,7 +1425,7 @@ inline void SetErrorMessage(uint32 errorCode, String& message)
     message.Set(m.c_str());
 }
 
-bool __VerifyEmbeddedSignature__(ConstString source, SignatureData& data)
+bool __VerifyEmbeddedSignature__(ConstString source, SignatureMZPE& data)
 {
     LocalUnicodeStringBuilder<1024> ub;
     ub.Set(source);
@@ -1247,15 +1507,15 @@ struct WrapperHMsg
     }
 };
 
-BOOL GetOpusInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureData::Information::Certificate& certificate);
-BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureData::Information::Certificate& certificate);
+BOOL GetOpusInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureMZPE::Information::Certificate& certificate);
+BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureMZPE::Information::Certificate& certificate);
 BOOL GetCertificateInfo(
-      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData::Information::Certificate& certificate);
+      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureMZPE::Information::Certificate& certificate);
 BOOL GetCounterSigner(
       const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner, CounterSignatureType& type);
-BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureData::Information& info);
+BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information& info);
 
-bool GetSignaturesInformation(ConstString source, SignatureData& data)
+bool GetSignaturesInformation(ConstString source, SignatureMZPE& data)
 {
     LocalUnicodeStringBuilder<1024> ub;
     ub.Set(source);
@@ -1263,101 +1523,47 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
 
     WrapperHStore hStore{};
     WrapperHMsg hMsg{};
-    data.information.callSuccessful = CryptQueryObject(
-          CERT_QUERY_OBJECT_FILE,
-          sv.data(),
-          CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-          CERT_QUERY_FORMAT_FLAG_BINARY,
-          0,
-          NULL,
-          NULL,
-          NULL,
-          &hStore.handle,
-          &hMsg.handle,
-          NULL);
+    CHECK(CryptQueryObject(
+                CERT_QUERY_OBJECT_FILE,
+                sv.data(),
+                CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+                CERT_QUERY_FORMAT_FLAG_BINARY,
+                0,
+                NULL,
+                NULL,
+                NULL,
+                &hStore.handle,
+                &hMsg.handle,
+                NULL),
+          false,
+          "");
 
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode = GetLastError();
-        SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
-        RETURNERROR(false, "");
-    }
-
-    DWORD dwCountSigners            = 0;
-    DWORD dwcbSz                    = sizeof(dwCountSigners);
-    data.information.callSuccessful = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &dwCountSigners, &dwcbSz);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode = GetLastError();
-        SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
-        RETURNERROR(false, "");
-    }
+    DWORD dwCountSigners = 0;
+    DWORD dwcbSz         = sizeof(dwCountSigners);
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &dwCountSigners, &dwcbSz), false, "");
     CHECK(dwCountSigners > 0, false, "");
 
     DWORD dwSignerInfo{ 0 };
-    data.information.callSuccessful = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode = GetLastError();
-        SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
-        RETURNERROR(false, "");
-    }
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo), false, "");
 
     WrapperSignerInfo signerInfo{ .info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo) };
-    data.information.callSuccessful = (signerInfo.info != nullptr);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode = GetLastError();
-        SetErrorMessage(data.information.errorCode, data.winTrust.errorMessage);
-        RETURNERROR(false, "");
-    }
+    CHECK(signerInfo.info != nullptr, false, "");
 
-    data.information.callSuccessful = CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode = GetLastError();
-        SetErrorMessage(data.information.errorCode, data.information.errorMessage);
-        RETURNERROR(false, "");
-    }
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo), false, "");
 
-    auto& signature0 = data.information.signatures.emplace_back();
+    auto& signature0 = data.info.signatures.emplace_back();
 
-    data.information.callSuccessful = GetOpusInfo(signerInfo.info, signature0);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode    = GetLastError();
-        data.information.errorMessage = "GetProgAndPublisherInfo call failed!";
-        RETURNERROR(false, "");
-    }
-
-    data.information.callSuccessful = GetCertDate(signerInfo, signature0);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode    = GetLastError();
-        data.information.errorMessage = "GetCertDate call failed!";
-        RETURNERROR(false, "");
-    }
+    CHECK(GetOpusInfo(signerInfo.info, signature0), false, "");
+    CHECK(GetCertDate(signerInfo, signature0), false, "");
 
     CERT_INFO certInfo{ .SerialNumber = signerInfo.info->SerialNumber, .Issuer = signerInfo.info->Issuer };
 
     WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                           hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-    data.information.callSuccessful = (certContext.context != nullptr);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode = GetLastError();
-        SetErrorMessage(data.information.errorCode, data.information.errorMessage);
-        RETURNERROR(false, "");
-    }
+    CHECK(certContext.context != nullptr, false, "");
 
-    signature0.signatureType        = SignatureType::Signature;
-    data.information.callSuccessful = GetCertificateInfo(signerInfo, certContext, signature0);
-    if (!data.information.callSuccessful)
-    {
-        data.information.errorCode    = GetLastError();
-        data.information.errorMessage = "GetCertificateInfo call failed!";
-        RETURNERROR(false, "");
-    }
+    signature0.signatureType = SignatureType::Signature;
+    CHECK(GetCertificateInfo(signerInfo, certContext, signature0), false, "");
 
     WrapperSignerInfo counterSignerInfo{};
     WrapperHStore storeCounterSigner{};
@@ -1367,7 +1573,7 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
     {
         if (counterSignerInfo.info != nullptr)
         {
-            auto& counterSignature0                = data.information.signatures.emplace_back();
+            auto& counterSignature0                = data.info.signatures.emplace_back();
             counterSignature0.counterSignatureType = counterSignatureType;
 
             certInfo.Issuer       = counterSignerInfo.info->Issuer;
@@ -1378,13 +1584,7 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
             WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                                   scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
 
-            data.information.callSuccessful = (certContext.context != nullptr);
-            if (!data.information.callSuccessful)
-            {
-                data.information.errorCode = GetLastError();
-                SetErrorMessage(data.information.errorCode, data.information.errorMessage);
-                RETURNERROR(false, "");
-            }
+            CHECK(certContext.context != nullptr, false, "");
 
             GetCertificateInfo(counterSignerInfo, certContext, counterSignature0);
             GetCertDate(counterSignerInfo, counterSignature0);
@@ -1393,7 +1593,7 @@ bool GetSignaturesInformation(ConstString source, SignatureData& data)
         }
     }
 
-    Get2ndSignature(signerInfo, data.information);
+    Get2ndSignature(signerInfo, data.info);
 
     return 0;
 }
@@ -1409,7 +1609,7 @@ BOOL GetNameString(const WrapperCertContext& certContext, String& out, DWORD typ
 }
 
 BOOL GetCertificateInfo(
-      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureData::Information::Certificate& certificate)
+      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureMZPE::Information::Certificate& certificate)
 {
     LocalString<1024> ls;
     const auto serialNumberSize = certContext.context->pCertInfo->SerialNumber.cbData;
@@ -1460,7 +1660,7 @@ BOOL GetCertificateInfo(
     return true;
 }
 
-BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Information::Certificate& certificate)
+BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureMZPE::Information::Certificate& certificate)
 {
     for (auto n = 0U; n < signerInfo->AuthAttrs.cAttr; n++)
     {
@@ -1528,7 +1728,7 @@ BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureData::Information::Certi
     return true;
 }
 
-BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureData::Information::Certificate& certificate)
+BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureMZPE::Information::Certificate& certificate)
 {
     for (DWORD n = 0; n < signer.info->AuthAttrs.cAttr; n++)
     {
@@ -1642,7 +1842,7 @@ BOOL GetCounterSigner(
     return false;
 }
 
-BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureData::Information& info)
+BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information& info)
 {
     for (DWORD i = 0; i < signer.info->UnauthAttrs.cAttr; i++)
     {
@@ -1722,9 +1922,9 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureData::Information
 
 #endif
 
-std::optional<SignatureData> VerifyEmbeddedSignature(ConstString source)
+std::optional<SignatureMZPE> VerifyEmbeddedSignature(ConstString source)
 {
-    SignatureData data{};
+    SignatureMZPE data{};
 #ifdef BUILD_FOR_WINDOWS
     data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, data);
 

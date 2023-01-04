@@ -160,7 +160,7 @@ class MachOFile : public TypeInterface,
             uint32 PEMsCount = 0;
 
             bool errorSig = false;
-            DigitalSignature::Signature sig;
+            DigitalSignature::SignatureMachO sig;
         } signature;
 
         std::map<MAC::CodeSignMagic, HashPair> specialSlotsHashes{};

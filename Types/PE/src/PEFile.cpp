@@ -2235,20 +2235,34 @@ void PEFile::RunCommand(std::string_view commandName)
         while (!signatureChecked && signatureData.has_value() && signatureData->winTrust.callSuccessful)
         {
             const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
+
             WinCertificate cert{};
             CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
             CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
 
             Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
 
+            const uint32 checksumOffset         = dos.e_lfanew + 24 + 64;
+            const uint32 certificateTableOffset = dos.e_lfanew + 24 + (hdr64 ? 144 : 128);
+            const uint32 sizeOfHeaders          = hdr64 ? nth64.OptionalHeader.SizeOfHeaders : nth32.OptionalHeader.SizeOfHeaders;
+            const uint32 sVA                    = securityDirectory.VirtualAddress;
+            const uint32 sSize                  = securityDirectory.Size;
+
+            signatureData->openssl.verified = GView::DigitalSignature::PKCS7VerifySignature(
+                  obj->GetData(),
+                  blob,
+                  signatureData->openssl.errorMessage,
+                  checksumOffset,
+                  certificateTableOffset,
+                  sizeOfHeaders,
+                  sVA,
+                  sSize);
+
+            GView::DigitalSignature::SignatureMachO s{};
+            GView::DigitalSignature::PKCS7ToStructure(blob, s);
+
             String b;
             GView::DigitalSignature::PKCS7ToHumanReadable(blob, b);
-
-            String a;
-            GView::DigitalSignature::PKCS7VerifySignature(blob, a);
-
-            GView::DigitalSignature::Signature s{};
-            GView::DigitalSignature::PKCS7ToStructure(blob, s);
 
             String output[32];
             uint32 count{ 0 };

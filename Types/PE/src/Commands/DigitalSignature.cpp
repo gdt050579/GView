@@ -24,7 +24,7 @@ DigitalSignature::DigitalSignature(Reference<PEFile> pe)
 void PopulateSignerInfo(
       Reference<AppCUI::Controls::ListView>& list,
       std::string_view name,
-      const GView::DigitalSignature::SignatureData::Information::Certificate& certificate)
+      const GView::DigitalSignature::SignatureMZPE::Information::Certificate& certificate)
 {
     LocalString<1024> ls;
 
@@ -37,43 +37,44 @@ void PopulateSignerInfo(
 
     list->AddItem({ "Issuer", ls.Format("%s", certificate.issuer.GetText()) });
     list->AddItem({ "Subject", ls.Format("%s", certificate.subject.GetText()) });
-    list->AddItem({ "Date", ls.Format("%s", certificate.date.GetText()) });
+    if (certificate.signatureType == GView::DigitalSignature::SignatureType::CounterSignature)
+    {
+        list->AddItem({ "Date", ls.Format("%s", certificate.date.GetText()) });
+    }
     list->AddItem({ "Serial Number", ls.Format("%s", certificate.serialNumber.GetText()) });
     list->AddItem({ "Digest Algorithm", ls.Format("%s", certificate.digestAlgorithm.GetText()) });
     list->AddItem({ "Not Before", ls.Format("%s", certificate.dateNotBefore.GetText()) });
     list->AddItem({ "Not After", ls.Format("%s", certificate.dateNotAfter.GetText()) });
 
-    std::string validSigner;
-    switch (certificate.timevalidity)
+    switch (certificate.signatureType)
     {
-    case GView::DigitalSignature::TimeValidity::Expired:
-        validSigner = "Expired";
+    case GView::DigitalSignature::SignatureType::Signature:
+        list->AddItem({ "Signature Type", "Signature" });
         break;
-    case GView::DigitalSignature::TimeValidity::Valid:
-        validSigner = "Valid";
+    case GView::DigitalSignature::SignatureType::CounterSignature:
+        list->AddItem({ "Signature Type", "Counter Signature" });
         break;
-    case GView::DigitalSignature::TimeValidity::Earlier:
-        validSigner = "Earlier";
-        break;
+    case GView::DigitalSignature::SignatureType::Unknown:
     default:
-        validSigner = "Unknown";
+        list->AddItem({ "Signature Type", "Unknown" });
         break;
     }
-    list->AddItem({ "Time Validity", validSigner.c_str() })
-          .SetColor(certificate.timevalidity == GView::DigitalSignature::TimeValidity::Valid ? COLOR_SUCCESS : COLOR_FAILURE);
 
-    switch (certificate.type)
+    if (certificate.signatureType == GView::DigitalSignature::SignatureType::CounterSignature)
     {
-    case GView::DigitalSignature::CounterSignatureType::None:
-        break;
-    case GView::DigitalSignature::CounterSignatureType::Authenticode:
-        list->AddItem({ "Timestamp Type", "Authenticode" });
-        break;
-    case GView::DigitalSignature::CounterSignatureType::RFC3161:
-        list->AddItem({ "Timestamp Type", "RFC3161" });
-        break;
-    default:
-        break;
+        switch (certificate.counterSignatureType)
+        {
+        case GView::DigitalSignature::CounterSignatureType::None:
+            break;
+        case GView::DigitalSignature::CounterSignatureType::Authenticode:
+            list->AddItem({ "Timestamp Type", "Authenticode" });
+            break;
+        case GView::DigitalSignature::CounterSignatureType::RFC3161:
+            list->AddItem({ "Timestamp Type", "RFC3161" });
+            break;
+        default:
+            break;
+        }
     }
 }
 
@@ -83,26 +84,31 @@ void DigitalSignature::Update()
 
     LocalString<1024> ls;
 
+#ifdef BUILD_FOR_WINDOWS
     general->AddItem({ "WinTrust", "" }).SetType(ListViewItem::Type::Category);
     general
           ->AddItem({ "Validation",
                       ls.Format("%s (0x%x)", pe->signatureData->winTrust.errorMessage.GetText(), pe->signatureData->winTrust.errorCode) })
           .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
+#endif
 
-    constexpr auto SIGNATURE_NOT_FOUND = 0x800B0100;
-    CHECKRET(pe->signatureData->winTrust.errorCode != SIGNATURE_NOT_FOUND, "");
+    general->AddItem({ "OpenSSL", "" }).SetType(ListViewItem::Type::Category);
+    general->AddItem({ "Validation", ls.Format("%s", pe->signatureData->openssl.errorMessage.GetText()) })
+          .SetColor(pe->signatureData->openssl.errorMessage.Contains("error:00000000:lib(0)::reason(0)") ? COLOR_SUCCESS : COLOR_FAILURE);
 
-    general->AddItem({ "Certificate Information", "" }).SetType(ListViewItem::Type::Category);
-    general
-          ->AddItem(
-                { "Validation",
-                  ls.Format("%s (0x%x)", pe->signatureData->information.errorMessage.GetText(), pe->signatureData->information.errorCode) })
-          .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
-
-    PopulateSignerInfo(general, "Signature #0", pe->signatureData->information.signature0);
-    PopulateSignerInfo(general, "Counter Signature #0", pe->signatureData->information.counterSignature0);
-    PopulateSignerInfo(general, "Signature #1", pe->signatureData->information.signature1);
-    PopulateSignerInfo(general, "Counter Signature #1", pe->signatureData->information.counterSignature1);
+    uint8 signatureIndex = -1;
+    for (const auto& signature : pe->signatureData->info.signatures)
+    {
+        if (signature.signatureType == GView::DigitalSignature::SignatureType::Signature)
+        {
+            ls.Format("Signature #%d", ++signatureIndex);
+        }
+        else
+        {
+            ls.Format("Counter Signature #%d", signatureIndex);
+        }
+        PopulateSignerInfo(general, ls.GetText(), signature);
+    }
 }
 
 bool DigitalSignature::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
