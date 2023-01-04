@@ -365,7 +365,7 @@ namespace DigitalSignature
         uint32 attributesCount;
     };
 
-    struct CORE_EXPORT Signature
+    struct CORE_EXPORT SignatureMachO
     {
         int32 isDetached;
         String sn;
@@ -382,17 +382,7 @@ namespace DigitalSignature
 
     CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
     CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
-    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
-    CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, Signature& output);
-    CORE_EXPORT bool PKCS7VerifySignature(const Buffer& buffer, String& output);
-    CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, String& output);
-
-    enum class TimeValidity : int32
-    {
-        Earlier = -1,
-        Valid   = 0,
-        Expired = 1
-    };
+    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, SignatureMachO& output);
 
     enum class CounterSignatureType
     {
@@ -408,7 +398,7 @@ namespace DigitalSignature
         CounterSignature = 2
     };
 
-    struct CORE_EXPORT SignatureData
+    struct CORE_EXPORT SignatureMZPE
     {
         struct
         {
@@ -417,12 +407,14 @@ namespace DigitalSignature
             String errorMessage;
         } winTrust;
 
+        struct
+        {
+            bool verified{ false };
+            String errorMessage;
+        } openssl;
+
         struct Information
         {
-            bool callSuccessful{ false };
-            uint32 errorCode{ 0 };
-            String errorMessage;
-
             struct Certificate
             {
                 String programName;
@@ -442,10 +434,22 @@ namespace DigitalSignature
                 SignatureType signatureType{ SignatureType::Unknown };
             };
             std::vector<Certificate> signatures;
-        } information;
+        } info;
     };
 
-    CORE_EXPORT std::optional<SignatureData> VerifyEmbeddedSignature(ConstString source);
+    CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, SignatureMachO& output);
+    CORE_EXPORT bool PKCS7VerifySignature(
+          Utils::DataCache& cache,
+          const Buffer& buffer,
+          String& output,
+          uint32 checksumOffset,
+          uint32 certificateTableOffset,
+          uint32 sizeOfHeaders,
+          uint32 sVA,
+          uint32 sSize);
+    CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, String& output);
+
+    CORE_EXPORT std::optional<SignatureMZPE> VerifyEmbeddedSignature(ConstString source);
 } // namespace DigitalSignature
 
 namespace Golang
