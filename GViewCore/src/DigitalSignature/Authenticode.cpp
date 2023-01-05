@@ -58,6 +58,86 @@ IMPLEMENT_ASN1_FUNCTIONS(AlgorithmIdentifier)
 IMPLEMENT_ASN1_FUNCTIONS(DigestInfo)
 IMPLEMENT_ASN1_FUNCTIONS(SpcIndirectDataContent)
 IMPLEMENT_ASN1_FUNCTIONS(SpcSpOpusInfo)
+
+
+struct SIGNATURE
+{
+    PKCS7* p7;
+    int md_nid;
+    ASN1_STRING* digest;
+    time_t signtime;
+    char* url;
+    char* desc;
+    const unsigned char* purpose;
+    const unsigned char* level;
+    CMS_ContentInfo* timestamp;
+    time_t time;
+    ASN1_STRING* blob;
+} ;
+
+DEFINE_STACK_OF(SIGNATURE)
+DECLARE_ASN1_FUNCTIONS(SIGNATURE)
+
+/*
+ * ASN.1 definitions (more or less from official MS Authenticode docs)
+ */
+typedef struct
+{
+    AlgorithmIdentifier* digestAlgorithm;
+    ASN1_OCTET_STRING* digest;
+} MessageImprint;
+
+DECLARE_ASN1_FUNCTIONS(MessageImprint)
+
+ASN1_SEQUENCE(MessageImprint) = { ASN1_SIMPLE(MessageImprint, digestAlgorithm, AlgorithmIdentifier),
+                                  ASN1_SIMPLE(MessageImprint, digest, ASN1_OCTET_STRING) } ASN1_SEQUENCE_END(MessageImprint)
+
+      IMPLEMENT_ASN1_FUNCTIONS(MessageImprint)
+
+            typedef struct
+{
+    ASN1_INTEGER* seconds;
+    ASN1_INTEGER* millis;
+    ASN1_INTEGER* micros;
+} TimeStampAccuracy;
+
+DECLARE_ASN1_FUNCTIONS(TimeStampAccuracy)
+
+ASN1_SEQUENCE(TimeStampAccuracy) = { ASN1_OPT(TimeStampAccuracy, seconds, ASN1_INTEGER),
+                                     ASN1_IMP_OPT(TimeStampAccuracy, millis, ASN1_INTEGER, 0),
+                                     ASN1_IMP_OPT(TimeStampAccuracy, micros, ASN1_INTEGER, 1) } ASN1_SEQUENCE_END(TimeStampAccuracy)
+
+IMPLEMENT_ASN1_FUNCTIONS(TimeStampAccuracy)
+
+struct TimeStampToken
+{
+    ASN1_INTEGER* version;
+    ASN1_OBJECT* policy_id;
+    MessageImprint* messageImprint;
+    ASN1_INTEGER* serial;
+    ASN1_GENERALIZEDTIME* time;
+    TimeStampAccuracy* accuracy;
+    ASN1_BOOLEAN ordering;
+    ASN1_INTEGER* nonce;
+    GENERAL_NAME* tsa;
+    STACK_OF(X509_EXTENSION) * extensions;
+} ;
+
+DECLARE_ASN1_FUNCTIONS(TimeStampToken)
+
+ASN1_SEQUENCE(
+      TimeStampToken) = { ASN1_SIMPLE(TimeStampToken, version, ASN1_INTEGER),
+                          ASN1_SIMPLE(TimeStampToken, policy_id, ASN1_OBJECT),
+                          ASN1_SIMPLE(TimeStampToken, messageImprint, MessageImprint),
+                          ASN1_SIMPLE(TimeStampToken, serial, ASN1_INTEGER),
+                          ASN1_SIMPLE(TimeStampToken, time, ASN1_GENERALIZEDTIME),
+                          ASN1_OPT(TimeStampToken, accuracy, TimeStampAccuracy),
+                          ASN1_OPT(TimeStampToken, ordering, ASN1_FBOOLEAN),
+                          ASN1_OPT(TimeStampToken, nonce, ASN1_INTEGER),
+                          ASN1_EXP_OPT(TimeStampToken, tsa, GENERAL_NAME, 0),
+                          ASN1_IMP_SEQUENCE_OF_OPT(TimeStampToken, extensions, X509_EXTENSION, 1) } ASN1_SEQUENCE_END(TimeStampToken)
+
+IMPLEMENT_ASN1_FUNCTIONS(TimeStampToken)
 ;
 /* clang-format on */
 
@@ -831,103 +911,7 @@ bool Certificate::Parse(X509* x509)
     return true;
 }
 
-#include <openssl/rand.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
-#include <openssl/evp.h>
-#include <openssl/blowfish.h>
-#include <openssl/sha.h>
-#include <openssl/err.h>
-#include <openssl/pem.h>
-#include <openssl/sha.h>
-#include <openssl/pkcs12.h>
-#include <openssl/rsa.h>
-#include <openssl/bn.h>
-#include <openssl/cms.h>
-#include <openssl/asn1t.h>
-
-#define INVALID_TIME ((time_t) -1)
-
-typedef struct SIGNATURE_st
-{
-    PKCS7* p7;
-    int md_nid;
-    ASN1_STRING* digest;
-    time_t signtime;
-    char* url;
-    char* desc;
-    const unsigned char* purpose;
-    const unsigned char* level;
-    CMS_ContentInfo* timestamp;
-    time_t time;
-    ASN1_STRING* blob;
-} SIGNATURE;
-
-DEFINE_STACK_OF(SIGNATURE)
-DECLARE_ASN1_FUNCTIONS(SIGNATURE)
-
-/*
- * ASN.1 definitions (more or less from official MS Authenticode docs)
- */
-typedef struct
-{
-    AlgorithmIdentifier* digestAlgorithm;
-    ASN1_OCTET_STRING* digest;
-} MessageImprint;
-
-DECLARE_ASN1_FUNCTIONS(MessageImprint)
-
-ASN1_SEQUENCE(MessageImprint) = { ASN1_SIMPLE(MessageImprint, digestAlgorithm, AlgorithmIdentifier),
-                                  ASN1_SIMPLE(MessageImprint, digest, ASN1_OCTET_STRING) } ASN1_SEQUENCE_END(MessageImprint)
-
-      IMPLEMENT_ASN1_FUNCTIONS(MessageImprint)
-
-            typedef struct
-{
-    ASN1_INTEGER* seconds;
-    ASN1_INTEGER* millis;
-    ASN1_INTEGER* micros;
-} TimeStampAccuracy;
-
-DECLARE_ASN1_FUNCTIONS(TimeStampAccuracy)
-
-ASN1_SEQUENCE(TimeStampAccuracy) = { ASN1_OPT(TimeStampAccuracy, seconds, ASN1_INTEGER),
-                                     ASN1_IMP_OPT(TimeStampAccuracy, millis, ASN1_INTEGER, 0),
-                                     ASN1_IMP_OPT(TimeStampAccuracy, micros, ASN1_INTEGER, 1) } ASN1_SEQUENCE_END(TimeStampAccuracy)
-
-      IMPLEMENT_ASN1_FUNCTIONS(TimeStampAccuracy)
-
-            typedef struct
-{
-    ASN1_INTEGER* version;
-    ASN1_OBJECT* policy_id;
-    MessageImprint* messageImprint;
-    ASN1_INTEGER* serial;
-    ASN1_GENERALIZEDTIME* time;
-    TimeStampAccuracy* accuracy;
-    ASN1_BOOLEAN ordering;
-    ASN1_INTEGER* nonce;
-    GENERAL_NAME* tsa;
-    STACK_OF(X509_EXTENSION) * extensions;
-} TimeStampToken;
-
-DECLARE_ASN1_FUNCTIONS(TimeStampToken)
-
-ASN1_SEQUENCE(
-      TimeStampToken) = { ASN1_SIMPLE(TimeStampToken, version, ASN1_INTEGER),
-                          ASN1_SIMPLE(TimeStampToken, policy_id, ASN1_OBJECT),
-                          ASN1_SIMPLE(TimeStampToken, messageImprint, MessageImprint),
-                          ASN1_SIMPLE(TimeStampToken, serial, ASN1_INTEGER),
-                          ASN1_SIMPLE(TimeStampToken, time, ASN1_GENERALIZEDTIME),
-                          ASN1_OPT(TimeStampToken, accuracy, TimeStampAccuracy),
-                          ASN1_OPT(TimeStampToken, ordering, ASN1_FBOOLEAN),
-                          ASN1_OPT(TimeStampToken, nonce, ASN1_INTEGER),
-                          ASN1_EXP_OPT(TimeStampToken, tsa, GENERAL_NAME, 0),
-                          ASN1_IMP_SEQUENCE_OF_OPT(TimeStampToken, extensions, X509_EXTENSION, 1) } ASN1_SEQUENCE_END(TimeStampToken)
-
-      IMPLEMENT_ASN1_FUNCTIONS(TimeStampToken)
-
-            static void tohex(const unsigned char* v, char* b, int len)
+static void tohex(const unsigned char* v, char* b, int len)
 {
     int i, j = 0;
     for (i = 0; i < len; i++)
@@ -952,24 +936,6 @@ static void print_hash(const char* descript1, const char* descript2, const unsig
     }
     tohex(hashbuf, hexbuf, length);
     printf("%s: %s %s\n", descript1, hexbuf, descript2);
-}
-
-static time_t asn1_get_time_t(const ASN1_TIME* s)
-{
-    struct tm tm;
-
-    if ((s == NULL) || (!ASN1_TIME_check(s)))
-    {
-        return INVALID_TIME;
-    }
-    if (ASN1_TIME_to_tm(s, &tm))
-    {
-        return mktime(&tm);
-    }
-    else
-    {
-        return INVALID_TIME;
-    }
 }
 
 static bool GetTimeFromCMS(CMS_ContentInfo* cms, time_t& time)

@@ -437,17 +437,9 @@ namespace DigitalSignature
         } info;
     };
 
-    CORE_EXPORT bool PKCS7ToStructure(const Buffer& buffer, SignatureMachO& output);
-    CORE_EXPORT bool PKCS7VerifySignature(
-          Utils::DataCache& cache,
-          const Buffer& buffer,
-          String& output,
-          uint32 checksumOffset,
-          uint32 certificateTableOffset,
-          uint32 sizeOfHeaders,
-          uint32 sVA,
-          uint32 sSize);
-    CORE_EXPORT bool PKCS7ToHumanReadable(const Buffer& buffer, String& output);
+    CORE_EXPORT bool AuthenticodeToStructure(const Buffer& buffer, SignatureMZPE& output);
+    CORE_EXPORT bool AuthenticodeVerifySignature(Utils::DataCache& cache, String& output);
+    CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
 
     CORE_EXPORT std::optional<SignatureMZPE> VerifyEmbeddedSignature(ConstString source);
 } // namespace DigitalSignature
