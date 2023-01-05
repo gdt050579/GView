@@ -6,7 +6,7 @@
 #include <openssl/crypto.h>
 #include <openssl/asn1t.h>
 
-#include "authenticode.hpp"
+#include "Authenticode.hpp"
 
 namespace GView::DigitalSignature
 {
