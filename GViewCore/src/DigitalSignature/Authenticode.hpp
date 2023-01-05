@@ -180,40 +180,40 @@ using ASN1_PCTX_ptr         = std::unique_ptr<ASN1_PCTX, decltype(&ASN1_PCTX_fre
 class Attributes /* Various X509 attributes parsed out in raw bytes*/
 {
   public:
-    std::vector<char> country;
-    std::vector<char> organization;
-    std::vector<char> organizationalUnit;
-    std::vector<char> nameQualifier;
-    std::vector<char> state;
-    std::vector<char> commonName;
-    std::vector<char> serialNumber;
-    std::vector<char> locality;
-    std::vector<char> title;
-    std::vector<char> surname;
-    std::vector<char> givenName;
-    std::vector<char> initials;
-    std::vector<char> pseudonym;
-    std::vector<char> generationQualifier;
-    std::vector<char> emailAddress;
+    std::string country;
+    std::string organization;
+    std::string organizationalUnit;
+    std::string nameQualifier;
+    std::string state;
+    std::string commonName;
+    std::string serialNumber;
+    std::string locality;
+    std::string title;
+    std::string surname;
+    std::string givenName;
+    std::string initials;
+    std::string pseudonym;
+    std::string generationQualifier;
+    std::string emailAddress;
 };
 
 class Certificate
 {
   public:
-    long version;                                 /* Raw version of X509 */
-    std::unique_ptr<char> issuer{ nullptr };      /* Oneline name of Issuer */
-    std::unique_ptr<char> subject{ nullptr };     /* Oneline name of Subject */
-    std::unique_ptr<char> serial{ nullptr };      /* Serial number in format 00:01:02:03:04... */
-    std::vector<unsigned char> sha1;              /* SHA1 of the DER representation of the cert */
-    std::vector<unsigned char> sha256;            /* SHA256 of the DER representation of the cert */
-    std::unique_ptr<char> key_alg{ nullptr };     /* Name of the key algorithm */
-    std::unique_ptr<char> sig_alg{ nullptr };     /* Name of the signature algorithm */
-    std::unique_ptr<char> sig_alg_oid{ nullptr }; /* OID of the signature algorithm */
-    time_t not_before;                            /* NotBefore validity */
-    time_t not_after;                             /* NotAfter validity */
-    std::unique_ptr<char> key{ nullptr };         /* PEM encoded public key */
-    Attributes issuer_attrs;                      /* Parsed X509 Attributes of Issuer */
-    Attributes subject_attrs;                     /* Parsed X509 Attributes of Subject */
+    int64_t version;              /* Raw version of X509 */
+    std::string issuer;           /* Oneline name of Issuer */
+    std::string subject;          /* Oneline name of Subject */
+    std::string serial;           /* Serial number in format 00:01:02:03:04... */
+    std::vector<uint8_t> sha1;    /* SHA1 of the DER representation of the cert */
+    std::vector<uint8_t> sha256;  /* SHA256 of the DER representation of the cert */
+    std::string keyAlg;           /* Name of the key algorithm */
+    std::string sigAlg;           /* Name of the signature algorithm */
+    std::string sidAlgOID;        /* OID of the signature algorithm */
+    time_t notBefore;             /* NotBefore validity */
+    time_t notAfter;              /* NotAfter validity */
+    std::string key;              /* PEM encoded public key */
+    Attributes issuerAttributes;  /* Parsed X509 Attributes of Issuer */
+    Attributes subjectAttributes; /* Parsed X509 Attributes of Subject */
 
     bool Parse(X509* x509);
 };
@@ -221,11 +221,11 @@ class Certificate
 class Countersignature
 {
   public:
-    int verifyFlags;                    /* COUNTERISGNATURE_VFY_ flag */
-    time_t signTime;                    /* Signing time of the timestamp countersignature */
-    std::unique_ptr<char> digest_alg{}; /* Name of the digest algorithm used */
-    std::vector<unsigned char> digest;  /* Stored message digest */
-    std::vector<Certificate> chain;     /* Certificate chain of the signer */
+    int32_t verifyFlags;               /* COUNTERISGNATURE_VFY_ flag */
+    time_t signTime;                   /* Signing time of the timestamp countersignature */
+    std::string digestAlg;             /* Name of the digest algorithm used */
+    std::vector<unsigned char> digest; /* Stored message digest */
+    std::vector<Certificate> chain;    /* Certificate chain of the signer */
 
     bool ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest, PKCS7_SIGNER_INFO* counter);
     bool ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_digest);
@@ -234,10 +234,10 @@ class Countersignature
 class Signer /* Represents SignerInfo structure */
 {
   public:
-    std::vector<unsigned char> digest;    /* Message Digest of the SignerInfo */
-    std::unique_ptr<char> digest_alg{};   /* name of the digest algorithm */
-    std::unique_ptr<char> program_name{}; /* Program name stored in SpcOpusInfo structure of Authenticode */
-    std::vector<Certificate> chain;       /* Certificate chain of the signer */
+    std::vector<uint8_t> digest;    /* Message Digest of the SignerInfo */
+    std::string digest_alg;         /* name of the digest algorithm */
+    std::string program_name;       /* Program name stored in SpcOpusInfo structure of Authenticode */
+    std::vector<Certificate> chain; /* Certificate chain of the signer */
 };
 
 class Authenticode
@@ -245,9 +245,9 @@ class Authenticode
   public:
     uint32_t verify_flags;                     /* AUTHENTICODE_VFY_ flag */
     uint64_t version;                          /* Raw PKCS7 version */
-    std::unique_ptr<char> digest_alg{};        /* name of the digest algorithm */
-    std::vector<unsigned char> digest;         /* File Digest stored in the Signature */
-    std::vector<unsigned char> file_digest;    /* Actual calculated file digest */
+    std::string digest_alg;                    /* name of the digest algorithm */
+    std::vector<uint8_t> digest;               /* File Digest stored in the Signature */
+    std::vector<uint8_t> file_digest;          /* Actual calculated file digest */
     Signer signer;                             /* SignerInfo information of the Authenticode */
     std::vector<Certificate> certs;            /* All certificates in the Signature including the ones in timestamp
                                                   countersignatures */
@@ -256,16 +256,20 @@ class Authenticode
 
 class AuthenticodeParser
 {
+    friend class Countersignature;
+
   private:
     std::vector<Authenticode> authenticodeData;
 
   public:
     AuthenticodeParser();
     bool AuthenticodeParse(const uint8_t* bufferPE, uint64_t len);
-    bool AuthenticodeNew(const uint8_t* data, long len, std::vector<Authenticode>& result);
+    bool Dump(std::string& output) const;
+
+  private:
+    bool AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<Authenticode>& result);
     void ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<Authenticode>& result);
     static std::vector<Certificate> ParseSignerChain(X509* signerCert, STACK_OF(X509) * certs);
-    bool Dump(std::string& output) const;
 };
 
 /* Calculates digest md of data, return bytes written to digest or 0 on error

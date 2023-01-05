@@ -163,7 +163,7 @@ static SpcIndirectDataContent* GetContent(PKCS7* content)
     return spcContent;
 }
 
-bool ParseProgramName(ASN1_TYPE* spcAttr, std::unique_ptr<char>& result)
+bool ParseProgramName(ASN1_TYPE* spcAttr, std::string& result)
 {
     const auto* data       = spcAttr->value.sequence->data;
     SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(NULL, &data, spcAttr->value.sequence->length);
@@ -177,12 +177,9 @@ bool ParseProgramName(ASN1_TYPE* spcAttr, std::unique_ptr<char>& result)
         int nameLen = ASN1_STRING_to_UTF8(&data, spcInfo->programName->value.unicode);
         if (nameLen >= 0 && nameLen < spcAttr->value.sequence->length)
         {
-            result.reset((char*) malloc(nameLen + 1));
-            if (result)
-            {
-                memcpy(result.get(), data, nameLen);
-                result.get()[nameLen] = 0;
-            }
+            result.resize(nameLen + 1);
+            memcpy(result.data(), data, nameLen);
+            result.data()[nameLen] = 0;
             OPENSSL_free(data);
         }
     }
@@ -219,7 +216,7 @@ void AuthenticodeParser::ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vec
             break;
         int len             = nested->value.sequence->length;
         const uint8_t* data = nested->value.sequence->data;
-        AuthenticodeNew(data, len, auth);
+        AuthenticodeParseSignature(data, len, auth);
     }
 }
 
@@ -337,7 +334,7 @@ AuthenticodeParser::AuthenticodeParser() : authenticodeData()
     OBJ_create(NID_spc_indirect_data, "spcIndirectData", "SPC_INDIRECT_DATA");
 }
 
-bool AuthenticodeParser::AuthenticodeNew(const uint8_t* data, long len, std::vector<Authenticode>& result)
+bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<Authenticode>& result)
 {
     if (!data || len == 0)
         return false;
@@ -379,7 +376,7 @@ bool AuthenticodeParser::AuthenticodeNew(const uint8_t* data, long len, std::vec
     DigestInfo* messageDigest = dataContent->messageDigest;
 
     int digestnid = OBJ_obj2nid(messageDigest->digestAlgorithm->algorithm);
-    auth.digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
+    auth.digest_alg.assign(OBJ_nid2ln(digestnid));
 
     int digestLen             = messageDigest->digest->length;
     const uint8_t* digestData = messageDigest->digest->data;
@@ -427,7 +424,7 @@ bool AuthenticodeParser::AuthenticodeNew(const uint8_t* data, long len, std::vec
     }
 
     digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
-    auth.signer.digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
+    auth.signer.digest_alg.assign(OBJ_nid2ln(digestnid));
 
     digestLen  = digest->value.asn1_string->length;
     digestData = digest->value.asn1_string->data;
@@ -555,7 +552,7 @@ static bool AuthenticodeDigest(
     return status;
 }
 
-bool AuthenticodeParser::AuthenticodeParse(const uint8_t* pe_data, uint64_t pe_len)
+bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_len)
 {
     const uint64_t dos_hdr_size = 0x40;
     if (pe_len < dos_hdr_size)
@@ -563,50 +560,50 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* pe_data, uint64_t pe_l
 
     /* Check if it has DOS signature, so we don't parse random gibberish */
     unsigned char dos_prefix[] = { 0x4d, 0x5a };
-    if (memcmp(pe_data, dos_prefix, sizeof(dos_prefix)) != 0)
+    if (memcmp(peData, dos_prefix, sizeof(dos_prefix)) != 0)
         return false;
 
     /* offset to pointer in DOS header, that points to PE header */
     const int pe_hdr_ptr_offset = 0x3c;
     /* Read the PE offset */
-    uint32_t pe_offset = letoh32(*(uint32_t*) (pe_data + pe_hdr_ptr_offset));
+    uint32_t peOffset = letoh32(*(uint32_t*) (peData + pe_hdr_ptr_offset));
     /* Offset to Magic, to know the PE class (32/64bit) */
-    uint32_t magic_addr = pe_offset + 0x18;
+    uint32_t magic_addr = peOffset + 0x18;
 
     if (pe_len < magic_addr + sizeof(uint16_t))
         return false;
 
     /* Read the magic and check if we have 64bit PE */
-    uint16_t magic = letoh16(*(uint16_t*) (pe_data + magic_addr));
-    bool is_64bit  = magic == 0x20b;
+    uint16_t magic = letoh16(*(uint16_t*) (peData + magic_addr));
+    bool is64      = magic == 0x20b;
     /* If PE is 64bit, header is 16 bytes larger */
-    uint8_t pe64_extra = is_64bit ? 16 : 0;
+    uint8_t pe64_extra = is64 ? 16 : 0;
 
     /* Calculate offset to certificate table directory */
-    uint32_t pe_cert_table_addr = pe_offset + pe64_extra + 0x98;
+    uint32_t pe_cert_table_addr = peOffset + pe64_extra + 0x98;
 
     if (pe_len < pe_cert_table_addr + 2 * sizeof(uint32_t))
         return false;
 
     /* Use 64bit type due to the potential overflow in crafted binaries */
-    uint64_t cert_addr = letoh32(*(uint32_t*) (pe_data + pe_cert_table_addr));
-    uint64_t cert_len  = letoh32(*(uint32_t*) (pe_data + pe_cert_table_addr + 4));
+    uint64_t certAddress = letoh32(*(uint32_t*) (peData + pe_cert_table_addr));
+    uint64_t certLength  = letoh32(*(uint32_t*) (peData + pe_cert_table_addr + 4));
 
     /* we need atleast 8 bytes to read dwLength, revision and certType */
-    if (cert_len < 8 || pe_len < cert_addr + 8)
+    if (certLength < 8 || pe_len < certAddress + 8)
         return false;
 
-    uint32_t dwLength = letoh32(*(uint32_t*) (pe_data + cert_addr));
-    if (pe_len < cert_addr + dwLength)
+    uint32_t dwLength = letoh32(*(uint32_t*) (peData + certAddress));
+    if (pe_len < certAddress + dwLength)
         return false;
     /* dwLength = offsetof(WIN_CERTIFICATE, bCertificate) + (size of the variable-length binary array contained within bCertificate) */
-    AuthenticodeNew(pe_data + cert_addr + 0x8, dwLength - 0x8, authenticodeData);
+    AuthenticodeParseSignature(peData + certAddress + 0x8, dwLength - 0x8, authenticodeData);
 
     /* Compare valid signatures file digests to actual file digest, to complete verification */
     for (auto& sig : authenticodeData)
     {
-        const EVP_MD* md = EVP_get_digestbyname(sig.digest_alg.get());
-        if (!md || sig.digest.empty() || sig.digest.empty())
+        const EVP_MD* md = EVP_get_digestbyname(sig.digest_alg.data());
+        if (!md || sig.digest.empty())
         {
             /* If there is an verification error, keep the first error */
             if (sig.verify_flags == (int) AuthenticodeVFY::Valid)
@@ -622,7 +619,9 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* pe_data, uint64_t pe_l
 #endif
         sig.file_digest.resize(mdlen);
 
-        if (AuthenticodeDigest(md, pe_data, pe_offset, is_64bit, cert_addr, (uint8_t*) sig.file_digest.data()) == false)
+        if (AuthenticodeDigest(
+                  md, peData, peOffset, is64, static_cast<uint32_t>(certAddress), reinterpret_cast<uint8_t*>(sig.file_digest.data())) ==
+            false)
         {
             /* If there is an verification error, keep the first error */
             if (sig.verify_flags == (int) AuthenticodeVFY::Valid)
@@ -638,33 +637,8 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* pe_data, uint64_t pe_l
     return true;
 }
 
-#if OPENSSL_VERSION_NUMBER >= 0x3000000fL
-/* Removes any escaping \/ -> / that is happening with oneline() functions
-    from OpenSSL 3.0 */
-static void ParseOneLineString(std::unique_ptr<char>& string)
+static void ParseNameAttributes(X509_NAME* raw, Attributes& attr)
 {
-    size_t len = strlen(string.get());
-    char* tmp  = string.get();
-    while (true)
-    {
-        char* ptr = strstr(tmp, "\\/");
-        if (!ptr)
-            break;
-
-        memmove(ptr, ptr + 1, strlen(ptr + 1));
-        tmp = ptr + 1;
-        len--;
-    }
-
-    string.get()[len] = 0;
-}
-#endif
-
-static void ParseNameAttributes(X509_NAME* raw, Attributes* attr)
-{
-    if (!raw || !attr)
-        return;
-
     int entryCount = X509_NAME_entry_count(raw);
     for (int i = entryCount - 1; i >= 0; --i)
     {
@@ -672,40 +646,38 @@ static void ParseNameAttributes(X509_NAME* raw, Attributes* attr)
         ASN1_STRING* asn1String    = X509_NAME_ENTRY_get_data(entryName);
 
         const char* key = OBJ_nid2sn(OBJ_obj2nid(X509_NAME_ENTRY_get_object(entryName)));
+        std::string_view array{ reinterpret_cast<char*>(asn1String->data), static_cast<size_t>(asn1String->length) };
 
-        std::vector<char> array;
-        array.insert(array.end(), asn1String->data, asn1String->data + asn1String->length);
-
-        if (strcmp(key, "C") == 0 && attr->country.empty())
-            attr->country = std::move(array);
-        else if (strcmp(key, "O") == 0 && attr->organization.empty())
-            attr->organization = std::move(array);
-        else if (strcmp(key, "OU") == 0 && attr->organizationalUnit.empty())
-            attr->organizationalUnit = std::move(array);
-        else if (strcmp(key, "dnQualifier") == 0 && attr->nameQualifier.empty())
-            attr->nameQualifier = std::move(array);
-        else if (strcmp(key, "ST") == 0 && attr->state.empty())
-            attr->state = std::move(array);
-        else if (strcmp(key, "CN") == 0 && attr->commonName.empty())
-            attr->commonName = std::move(array);
-        else if (strcmp(key, "serialNumber") == 0 && attr->serialNumber.empty())
-            attr->serialNumber = std::move(array);
-        else if (strcmp(key, "L") == 0 && attr->locality.empty())
-            attr->locality = std::move(array);
-        else if (strcmp(key, "title") == 0 && attr->title.empty())
-            attr->title = std::move(array);
-        else if (strcmp(key, "SN") == 0 && attr->surname.empty())
-            attr->surname = std::move(array);
-        else if (strcmp(key, "GN") == 0 && attr->givenName.empty())
-            attr->givenName = std::move(array);
-        else if (strcmp(key, "initials") == 0 && attr->initials.empty())
-            attr->initials = std::move(array);
-        else if (strcmp(key, "pseudonym") == 0 && attr->pseudonym.empty())
-            attr->pseudonym = std::move(array);
-        else if (strcmp(key, "generationQualifier") == 0 && attr->generationQualifier.empty())
-            attr->generationQualifier = std::move(array);
-        else if (strcmp(key, "emailAddress") == 0 && attr->emailAddress.empty())
-            attr->emailAddress = std::move(array);
+        if (strcmp(key, "C") == 0 && attr.country.empty())
+            attr.country.assign(array);
+        else if (strcmp(key, "O") == 0 && attr.organization.empty())
+            attr.organization.assign(array);
+        else if (strcmp(key, "OU") == 0 && attr.organizationalUnit.empty())
+            attr.organizationalUnit.assign(array);
+        else if (strcmp(key, "dnQualifier") == 0 && attr.nameQualifier.empty())
+            attr.nameQualifier.assign(array);
+        else if (strcmp(key, "ST") == 0 && attr.state.empty())
+            attr.state.assign(array);
+        else if (strcmp(key, "CN") == 0 && attr.commonName.empty())
+            attr.commonName.assign(array);
+        else if (strcmp(key, "serialNumber") == 0 && attr.serialNumber.empty())
+            attr.serialNumber.assign(array);
+        else if (strcmp(key, "L") == 0 && attr.locality.empty())
+            attr.locality.assign(array);
+        else if (strcmp(key, "title") == 0 && attr.title.empty())
+            attr.title.assign(array);
+        else if (strcmp(key, "SN") == 0 && attr.surname.empty())
+            attr.surname.assign(array);
+        else if (strcmp(key, "GN") == 0 && attr.givenName.empty())
+            attr.givenName.assign(array);
+        else if (strcmp(key, "initials") == 0 && attr.initials.empty())
+            attr.initials.assign(array);
+        else if (strcmp(key, "pseudonym") == 0 && attr.pseudonym.empty())
+            attr.pseudonym.assign(array);
+        else if (strcmp(key, "generationQualifier") == 0 && attr.generationQualifier.empty())
+            attr.generationQualifier.assign(array);
+        else if (strcmp(key, "emailAddress") == 0 && attr.emailAddress.empty())
+            attr.emailAddress.assign(array);
     }
 }
 
@@ -863,48 +835,43 @@ bool Certificate::Parse(X509* x509)
     sha256.resize(SHA256_DIGEST_LENGTH);
     X509_digest(x509, EVP_sha256(), sha256.data(), NULL);
 
-    /* 256 bytes should be enough for any name */
-    char buffer[256];
-
-    /* X509_NAME_online is deprecated and shouldn't be used per OpenSSL docs
-     * but we want to comply with existing YARA code */
-    X509_NAME* issuerName = X509_get_issuer_name(x509);
-    X509_NAME_oneline(issuerName, buffer, sizeof(buffer));
-
-    issuer.reset(strdup(buffer));
-    /* This is a little ugly hack for 3.0 compatibility */
-#if OPENSSL_VERSION_NUMBER >= 0x3000000fL
-    ParseOneLineString(issuer);
-#endif
-
+    X509_NAME* issuerName  = X509_get_issuer_name(x509);
     X509_NAME* subjectName = X509_get_subject_name(x509);
-    X509_NAME_oneline(subjectName, buffer, sizeof(buffer));
-    subject.reset(strdup(buffer));
-#if OPENSSL_VERSION_NUMBER >= 0x3000000fL
-    ParseOneLineString(subject);
-#endif
 
-    ParseNameAttributes(issuerName, &issuer_attrs);
-    ParseNameAttributes(subjectName, &subject_attrs);
+    BIO_ptr out(BIO_new(BIO_s_mem()), BIO_free);
+    BUF_MEM* buf{ nullptr };
+
+    X509_NAME_print_ex(out.get(), issuerName, 0, XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
+    BIO_get_mem_ptr(out.get(), &buf);
+    issuer.assign(std::string_view{ buf->data, buf->length });
+
+    out.reset(BIO_new(BIO_s_mem()));
+    X509_NAME_print_ex(out.get(), subjectName, 0, XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
+    BIO_get_mem_ptr(out.get(), &buf);
+    subject.assign(std::string_view{ buf->data, buf->length });
+
+    ParseNameAttributes(issuerName, issuerAttributes);
+    ParseNameAttributes(subjectName, subjectAttributes);
 
     version = X509_get_version(x509);
-    serial.reset(IntegerToSerial(X509_get_serialNumber(x509)));
-    not_after   = ASN1_TIME_to_time_t(X509_get0_notAfter(x509));
-    not_before  = ASN1_TIME_to_time_t(X509_get0_notBefore(x509));
+    serial.assign(IntegerToSerial(X509_get_serialNumber(x509)));
+    notAfter    = ASN1_TIME_to_time_t(X509_get0_notAfter(x509));
+    notBefore   = ASN1_TIME_to_time_t(X509_get0_notBefore(x509));
     int sig_nid = X509_get_signature_nid(x509);
-    sig_alg.reset(strdup(OBJ_nid2ln(sig_nid)));
+    sigAlg.assign(OBJ_nid2ln(sig_nid));
 
+    char buffer[256];
     OBJ_obj2txt(buffer, sizeof(buffer), OBJ_nid2obj(sig_nid), 1);
-    sig_alg_oid.reset(strdup(buffer));
+    sidAlgOID.assign(buffer);
 
     EVP_PKEY* pkey = X509_get0_pubkey(x509);
     if (pkey)
     {
-        key.reset(PubkeyToPEM(pkey));
+        key.assign(PubkeyToPEM(pkey));
 #if OPENSSL_VERSION_NUMBER >= 0x3000000fL
-        key_alg.reset(strdup(OBJ_nid2sn(EVP_PKEY_get_base_id(pkey))));
+        keyAlg.assign(OBJ_nid2sn(EVP_PKEY_get_base_id(pkey)));
 #else
-        key_alg.reset(strdup(OBJ_nid2sn(EVP_PKEY_base_id(pkey))));
+        keyAlg.assign(OBJ_nid2sn(EVP_PKEY_base_id(pkey)));
 #endif
     }
 
@@ -1047,7 +1014,7 @@ bool Countersignature::ParsePKCS9(
 
         /* compute a hash from the encrypted message digest value of the file */
         int digestnid = OBJ_obj2nid(token->messageImprint->digestAlgorithm->algorithm);
-        digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
+        digestAlg.assign(OBJ_nid2ln(digestnid));
 
         const EVP_MD* md  = EVP_get_digestbynid(digestnid);
         EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
@@ -1084,7 +1051,7 @@ bool Countersignature::ParsePKCS9(
     }
 
     int digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
-    digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
+    digestAlg.assign(OBJ_nid2ln(digestnid));
 
     const ASN1_TYPE* signTime = PKCS7_get_signed_attribute(si, NID_pkcs9_signingTime);
     if (!signTime)
@@ -1183,12 +1150,12 @@ bool Countersignature::ParsePKCS9(
     }
     else
     {
-        const uint8_t* data_ptr = decData.get();
-        DigestInfo* digest_info = d2i_DigestInfo(NULL, &data_ptr, decLen);
-        if (digest_info)
+        const uint8_t* data = decData.get();
+        DigestInfo* info    = d2i_DigestInfo(NULL, &data, static_cast<uint32_t>(decLen));
+        if (info)
         {
-            isValid = !memcmp(digest_info->digest->data, calc_digest, mdLen);
-            DigestInfo_free(digest_info);
+            isValid = !memcmp(info->digest->data, calc_digest, mdLen);
+            DigestInfo_free(info);
         }
         else
         {
@@ -1261,7 +1228,7 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
 
     X509_ALGOR* digestAlg = TS_MSG_IMPRINT_get_algo(imprint);
     int digestnid         = OBJ_obj2nid(digestAlg->algorithm);
-    digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
+    this->digestAlg.assign(OBJ_nid2ln(digestnid));
 
     ASN1_STRING* rawDigest = TS_MSG_IMPRINT_get_msg(imprint);
 
@@ -1384,6 +1351,29 @@ time_t ASN1_TIME_to_time_t(const ASN1_TIME* time)
     return timegm(&t);
 }
 
+const std::string TimeToHumanReadable(time_t input)
+{
+    struct tm t;
+    try
+    {
+#if BUILD_FOR_WINDOWS
+        localtime_s(&t, &input);
+#elif BUILD_FOR_OSX
+        localtime_r(&input, &t);
+#elif BUILD_FOR_UNIX
+        localtime_r(&input, &t);
+#endif
+    }
+    catch (...)
+    {
+        return "";
+    }
+
+    char buffer[32];
+    std::strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", &t);
+    return buffer;
+}
+
 void DumpBytes(const std::vector<unsigned char>& bytes, std::stringstream& dump)
 {
     for (const auto& b : bytes)
@@ -1399,17 +1389,17 @@ void DumpCertificate(const Certificate& cert, std::stringstream& dump)
 
     dump << indent << "Version             : " << cert.version << "\n";
     dump << indent << "Subject             : " << cert.subject << "\n";
-    dump << indent << "Issuer              : " << cert.issuer.get() << "\n";
-    dump << indent << "Serial              : " << cert.serial.get() << "\n";
-    dump << indent << "Not After           : " << cert.not_after << "\n";
-    dump << indent << "Not Before          : " << cert.not_before << "\n";
+    dump << indent << "Issuer              : " << cert.issuer.c_str() << "\n";
+    dump << indent << "Serial              : " << cert.serial.c_str() << "\n";
+    dump << indent << "Not After           : " << TimeToHumanReadable(cert.notAfter).c_str() << "\n";
+    dump << indent << "Not Before          : " << TimeToHumanReadable(cert.notBefore).c_str() << "\n";
     dump << indent << "SHA1                : ";
     DumpBytes(cert.sha1, dump);
     dump << indent << "SHA256              : ";
     DumpBytes(cert.sha256, dump);
-    dump << indent << "Key Algorithm       : " << cert.key_alg.get() << "\n";
-    dump << indent << "Signature Algorithm : " << cert.sig_alg.get() << "\n";
-    dump << indent << "Public key          : " << cert.key.get() << "\n";
+    dump << indent << "Key Algorithm       : " << cert.keyAlg.c_str() << "\n";
+    dump << indent << "Signature Algorithm : " << cert.sigAlg.c_str() << "\n";
+    // dump << indent << "Public key          : " << cert.key.get() << "\n";
 }
 
 void DumpSignature(const Authenticode& auth, std::stringstream& dump)
@@ -1423,9 +1413,9 @@ void DumpSignature(const Authenticode& auth, std::stringstream& dump)
     dump << indent << "Digest            : ";
 
     DumpBytes(auth.digest, dump);
-    printf("%sFile Digest       : ", indent);
-    DumpBytes(auth.file_digest, dump);
-    dump << indent << "Digest Algorithm  : " << auth.digest_alg.get() << "\n";
+    // printf("%sFile Digest       : ", indent);
+    // DumpBytes(auth.file_digest, dump);
+    dump << indent << "Digest Algorithm  : " << auth.digest_alg.c_str() << "\n";
     dump << indent << "Verify flags      : " << auth.verify_flags << "\n";
     dump << indent << "Certificate count : " << auth.certs.size() << "\n";
     dump << indent << "Certificates:\n\n";
@@ -1439,17 +1429,14 @@ void DumpSignature(const Authenticode& auth, std::stringstream& dump)
         DumpCertificate(cert, dump);
     }
 
-    std::string output(dump.str());
-
-    dump << indent << "Signer Info:"
-         << ":\n";
+    dump << indent << "Signer Info:\n";
 
     char* indent2 = (char*) "        ";
 
-    dump << indent2 << "Digest       : ";
-    DumpBytes(auth.signer.digest, dump);
-    dump << indent2 << "Digest Algo  : " << auth.signer.digest_alg.get() << "\n";
-    dump << indent2 << "Program name : " << (auth.signer.program_name.get() != nullptr ? auth.signer.program_name.get() : "") << "\n";
+    // dump << indent2 << "Digest       : ";
+    // DumpBytes(auth.signer.digest, dump);
+    dump << indent2 << "Digest Algo  : " << auth.signer.digest_alg.c_str() << "\n";
+    dump << indent2 << "Program name : " << auth.signer.program_name.c_str() << "\n";
 
     dump << indent2 << "Chain size   : " << auth.signer.chain.size() << "\n";
     dump << indent2 << "Chain:"
@@ -1471,19 +1458,14 @@ void DumpSignature(const Authenticode& auth, std::stringstream& dump)
         dump << indent << "Countersignature:\n";
         char* indent = (char*) "        ";
 
-        dump << indent << "Digest           :";
-        DumpBytes(counter.digest, dump);
-        dump << indent << "Digest Algorithm : " << (counter.digest_alg.get() != nullptr ? counter.digest_alg.get() : "") << "\n";
-
-        std::tm* ptm = std::localtime(&counter.signTime);
-        char buffer[32];
-        std::strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", ptm);
-        dump << indent << "Signing Time     : " << buffer << "\n";
+        // dump << indent << "Digest           :";
+        // DumpBytes(counter.digest, dump);
+        dump << indent << "Digest Algorithm : " << counter.digestAlg.c_str() << "\n";
+        dump << indent << "Signing Time     : " << TimeToHumanReadable(counter.signTime).c_str() << "\n";
         dump << indent << "Verify flags     : " << counter.verifyFlags << "\n";
 
         dump << indent << "Chain size       : " << counter.chain.size() << "\n";
-        dump << indent << "Chain:"
-             << "\n";
+        dump << indent << "Chain:\n";
 
         i = 0;
         for (const auto& cert : counter.chain)
@@ -1499,7 +1481,8 @@ bool AuthenticodeParser::Dump(std::string& output) const
 {
     std::stringstream dump;
     dump << "Signature count: " << authenticodeData.size() << "\n";
-    dump << "Signatures: " << authenticodeData.size() << "\n";
+    dump << "Signatures: "
+         << "\n";
 
     for (const auto& signature : authenticodeData)
     {
