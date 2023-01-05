@@ -143,21 +143,24 @@ void AuthenticodeParser::ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vec
     }
 }
 
-static void CounterSigParsePKCS9(PKCS7_ptr& p7, Authenticode& auth)
+static void ParsePKCS9Countersignature(PKCS7_ptr& p7, Authenticode& auth)
 {
-    // PKCS7_SIGNER_INFO_ptr si(sk_PKCS7_SIGNER_INFO_value(PKCS7_get_signer_info(p7.get()), 0), PKCS7_SIGNER_INFO_free);
     PKCS7_SIGNER_INFO* si(sk_PKCS7_SIGNER_INFO_value(PKCS7_get_signer_info(p7.get()), 0));
 
     STACK_OF(X509_ATTRIBUTE)* attrs = PKCS7_get_attributes(si);
 
-    int idx              = X509at_get_attr_by_NID(attrs, NID_pkcs9_countersignature, -1);
+    int idx = X509at_get_attr_by_NID(attrs, NID_pkcs9_countersignature, -1);
+    if (idx == -1) // failure, try by object
+    {
+        const ASN1_OBJECT_ptr RFC3161_counterSign(OBJ_txt2obj("1.3.6.1.4.1.311.3.3.1", 1), ASN1_OBJECT_free);
+        idx = X509at_get_attr_by_OBJ(attrs, RFC3161_counterSign.get(), -1);
+    }
     X509_ATTRIBUTE* attr = X509at_get_attr(attrs, idx);
 
     int attrCount = X509_ATTRIBUTE_count(attr);
     if (!attrCount)
         return;
 
-    /* Limit the maximum amount of nested attributes to be safe from malformed samples */
     attrCount = attrCount > MAX_NESTED_COUNT ? MAX_NESTED_COUNT : attrCount;
 
     for (int i = 0; i < attrCount; ++i)
@@ -168,11 +171,11 @@ static void CounterSigParsePKCS9(PKCS7_ptr& p7, Authenticode& auth)
         int len             = nested->value.sequence->length;
         const uint8_t* data = nested->value.sequence->data;
 
-        auth.countersigs.emplace_back().ParsePKCS9(data, len, p7->d.sign->cert, si->enc_digest);
+        auth.countersigs.emplace_back().ParsePKCS9(data, len, p7->d.sign->cert, si->enc_digest, si);
     }
 }
 
-static void ExtractCertificatesFromMicrosoftCountersignature(const uint8_t* data, int len, std::vector<Certificate>& result)
+static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int len, std::vector<Certificate>& result)
 {
     PKCS7_ptr p7(d2i_PKCS7(NULL, &data, len), PKCS7_free);
     if (!p7)
@@ -187,14 +190,17 @@ static void ParseMSCountersignature(PKCS7_ptr& p7, Authenticode& auth)
     PKCS7_SIGNER_INFO* si           = sk_PKCS7_SIGNER_INFO_value(PKCS7_get_signer_info(p7.get()), 0);
     STACK_OF(X509_ATTRIBUTE)* attrs = PKCS7_get_attributes(si);
 
-    int idx              = X509at_get_attr_by_NID(attrs, OBJ_txt2nid(NID_spc_ms_countersignature), -1);
+    int idx = X509at_get_attr_by_NID(attrs, OBJ_txt2nid(NID_spc_ms_countersignature), -1);
+
+    const ASN1_OBJECT_ptr RSA_counterSign(OBJ_txt2obj("1.2.840.113549.1.9.6", 1), ASN1_OBJECT_free);
+    const ASN1_OBJECT_ptr NestedSignature(OBJ_txt2obj("1.3.6.1.4.1.311.2.4.1", 1), ASN1_OBJECT_free);
+
     X509_ATTRIBUTE* attr = X509at_get_attr(attrs, idx);
 
     int attrCount = X509_ATTRIBUTE_count(attr);
     if (!attrCount)
         return;
 
-    /* Limit the maximum amount of nested attributes to be safe from malformed samples */
     attrCount = attrCount > MAX_NESTED_COUNT ? MAX_NESTED_COUNT : attrCount;
 
     for (int i = 0; i < attrCount; ++i)
@@ -208,7 +214,7 @@ static void ParseMSCountersignature(PKCS7_ptr& p7, Authenticode& auth)
         /* Because MS TimeStamp countersignature has it's own SET of certificates
          * extract it back into parent signature for consistency with PKCS9 */
         auth.countersigs.emplace_back().ParseMS(data, len, si->enc_digest);
-        ExtractCertificatesFromMicrosoftCountersignature(data, len, auth.certs);
+        ExtractCertificatesFromMSCountersignature(data, len, auth.certs);
     }
 }
 
@@ -245,10 +251,10 @@ static bool AuthenticodeVerify(PKCS7_ptr& p7, PKCS7_SIGNER_INFO* si, X509* signC
 
 AuthenticodeParser::AuthenticodeParser() : authenticodeData()
 {
-    OBJ_create("1.3.6.1.4.1.311.2.1.12", "spcSpOpusInfo", "SPC_SP_OPUS_INFO_OBJID");
-    OBJ_create("1.3.6.1.4.1.311.3.3.1", "spcMsCountersignature", "SPC_MICROSOFT_COUNTERSIGNATURE");
-    OBJ_create("1.3.6.1.4.1.311.2.4.1", "spcNestedSignature", "SPC_NESTED_SIGNATUREs");
-    OBJ_create("1.3.6.1.4.1.311.2.1.4", "spcIndirectData", "SPC_INDIRECT_DATA");
+    OBJ_create(NID_spc_info, "spcSpOpusInfo", "SPC_SP_OPUS_INFO_OBJID");
+    OBJ_create(NID_spc_ms_countersignature, "spcMsCountersignature", "SPC_MICROSOFT_COUNTERSIGNATURE");
+    OBJ_create(NID_spc_nested_signature, "spcNestedSignature", "SPC_NESTED_SIGNATUREs");
+    OBJ_create(NID_spc_indirect_data, "spcIndirectData", "SPC_INDIRECT_DATA");
 }
 
 bool AuthenticodeParser::AuthenticodeNew(const uint8_t* data, long len, std::vector<Authenticode>& result)
@@ -314,8 +320,8 @@ bool AuthenticodeParser::AuthenticodeNew(const uint8_t* data, long len, std::vec
     /* Authenticode can contain SET of nested Authenticode signatures
      * and countersignatures in unauthenticated attributes */
     ParseNestedAuthenticode(si, result);
-    CounterSigParsePKCS9(p7, auth);
-    ParseMSCountersignature(p7, auth);
+    ParsePKCS9Countersignature(p7, auth);
+    // ParseMSCountersignature(p7, auth);
 
     /* Get the signing certificate for the first SignerInfo */
     STACK_OF(X509)* signCertStack = PKCS7_get0_signers(p7.get(), certs, 0);
@@ -362,7 +368,7 @@ bool AuthenticodeParser::AuthenticodeNew(const uint8_t* data, long len, std::vec
     return true;
 }
 
-static int AuthenticodeDigest(
+static bool AuthenticodeDigest(
       const EVP_MD* md, const uint8_t* pe_data, uint32_t pe_hdr_offset, bool is_64bit, uint32_t cert_table_addr, uint8_t* digest)
 {
     uint32_t buffer_size = 0xFFFF;
@@ -374,12 +380,12 @@ static int AuthenticodeDigest(
     EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
     if (!buffer || !bio || !mdctx)
     {
-        return 0;
+        return false;
     }
 
     if (!EVP_DigestInit(mdctx, md))
     {
-        return 0;
+        return false;
     }
 
     /* Calculate size of the space between file start and PE header */
@@ -396,12 +402,12 @@ static int AuthenticodeDigest(
         int rlen = BIO_read(bio, buffer, len_to_read);
         if (rlen <= 0)
         {
-            return 0;
+            return false;
         }
 
         if (!EVP_DigestUpdate(mdctx, buffer, rlen))
         {
-            return 0;
+            return false;
         };
 
         fpos += rlen;
@@ -410,7 +416,7 @@ static int AuthenticodeDigest(
     /* Skip the checksum */
     if (BIO_read(bio, buffer, 4) <= 0)
     {
-        return 0;
+        return false;
     }
 
     /* 64bit PE file is larger than 32bit */
@@ -421,18 +427,18 @@ static int AuthenticodeDigest(
 
     if (BIO_read(bio, buffer, cert_table_offset) <= 0)
     {
-        return 0;
+        return false;
     }
 
     if (!EVP_DigestUpdate(mdctx, buffer, cert_table_offset))
     {
-        return 0;
+        return false;
     };
 
     /* Skip certificate table */
     if (BIO_read(bio, buffer, 8) <= 0)
     {
-        return 0;
+        return false;
     }
 
     /* PE header with check sum + checksum + cert table offset + cert table len */
@@ -450,26 +456,23 @@ static int AuthenticodeDigest(
         int rlen = BIO_read(bio, buffer, len_to_read);
         if (rlen <= 0)
         {
-            return 0;
+            return false;
         }
 
         if (!EVP_DigestUpdate(mdctx, buffer, rlen))
         {
-            return 0;
+            return false;
         }
         fpos += rlen;
     }
 
-    /* Calculate the digest, write it into digest */
-    if (!EVP_DigestFinal(mdctx, digest, NULL))
-    {
-        return 0;
-    }
+    bool status = EVP_DigestFinal(mdctx, digest, NULL);
 
     EVP_MD_CTX_free(mdctx);
     BIO_free_all(bio);
     free(buffer);
-    return 1;
+
+    return status;
 }
 
 bool AuthenticodeParser::AuthenticodeParse(const uint8_t* pe_data, uint64_t pe_len)
@@ -539,7 +542,7 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* pe_data, uint64_t pe_l
 #endif
         sig.file_digest.resize(mdlen);
 
-        if (AuthenticodeDigest(md, pe_data, pe_offset, is_64bit, cert_addr, (uint8_t*) sig.file_digest.data()))
+        if (AuthenticodeDigest(md, pe_data, pe_offset, is_64bit, cert_addr, (uint8_t*) sig.file_digest.data()) == false)
         {
             /* If there is an verification error, keep the first error */
             if (sig.verify_flags == (int) AuthenticodeVFY::Valid)
@@ -828,30 +831,309 @@ bool Certificate::Parse(X509* x509)
     return true;
 }
 
-bool Countersignature::ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest)
+#include <openssl/rand.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/evp.h>
+#include <openssl/blowfish.h>
+#include <openssl/sha.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/sha.h>
+#include <openssl/pkcs12.h>
+#include <openssl/rsa.h>
+#include <openssl/bn.h>
+#include <openssl/cms.h>
+#include <openssl/asn1t.h>
+
+#define INVALID_TIME ((time_t) -1)
+
+typedef struct SIGNATURE_st
+{
+    PKCS7* p7;
+    int md_nid;
+    ASN1_STRING* digest;
+    time_t signtime;
+    char* url;
+    char* desc;
+    const unsigned char* purpose;
+    const unsigned char* level;
+    CMS_ContentInfo* timestamp;
+    time_t time;
+    ASN1_STRING* blob;
+} SIGNATURE;
+
+DEFINE_STACK_OF(SIGNATURE)
+DECLARE_ASN1_FUNCTIONS(SIGNATURE)
+
+/*
+ * ASN.1 definitions (more or less from official MS Authenticode docs)
+ */
+typedef struct
+{
+    AlgorithmIdentifier* digestAlgorithm;
+    ASN1_OCTET_STRING* digest;
+} MessageImprint;
+
+DECLARE_ASN1_FUNCTIONS(MessageImprint)
+
+ASN1_SEQUENCE(MessageImprint) = { ASN1_SIMPLE(MessageImprint, digestAlgorithm, AlgorithmIdentifier),
+                                  ASN1_SIMPLE(MessageImprint, digest, ASN1_OCTET_STRING) } ASN1_SEQUENCE_END(MessageImprint)
+
+      IMPLEMENT_ASN1_FUNCTIONS(MessageImprint)
+
+            typedef struct
+{
+    ASN1_INTEGER* seconds;
+    ASN1_INTEGER* millis;
+    ASN1_INTEGER* micros;
+} TimeStampAccuracy;
+
+DECLARE_ASN1_FUNCTIONS(TimeStampAccuracy)
+
+ASN1_SEQUENCE(TimeStampAccuracy) = { ASN1_OPT(TimeStampAccuracy, seconds, ASN1_INTEGER),
+                                     ASN1_IMP_OPT(TimeStampAccuracy, millis, ASN1_INTEGER, 0),
+                                     ASN1_IMP_OPT(TimeStampAccuracy, micros, ASN1_INTEGER, 1) } ASN1_SEQUENCE_END(TimeStampAccuracy)
+
+      IMPLEMENT_ASN1_FUNCTIONS(TimeStampAccuracy)
+
+            typedef struct
+{
+    ASN1_INTEGER* version;
+    ASN1_OBJECT* policy_id;
+    MessageImprint* messageImprint;
+    ASN1_INTEGER* serial;
+    ASN1_GENERALIZEDTIME* time;
+    TimeStampAccuracy* accuracy;
+    ASN1_BOOLEAN ordering;
+    ASN1_INTEGER* nonce;
+    GENERAL_NAME* tsa;
+    STACK_OF(X509_EXTENSION) * extensions;
+} TimeStampToken;
+
+DECLARE_ASN1_FUNCTIONS(TimeStampToken)
+
+ASN1_SEQUENCE(
+      TimeStampToken) = { ASN1_SIMPLE(TimeStampToken, version, ASN1_INTEGER),
+                          ASN1_SIMPLE(TimeStampToken, policy_id, ASN1_OBJECT),
+                          ASN1_SIMPLE(TimeStampToken, messageImprint, MessageImprint),
+                          ASN1_SIMPLE(TimeStampToken, serial, ASN1_INTEGER),
+                          ASN1_SIMPLE(TimeStampToken, time, ASN1_GENERALIZEDTIME),
+                          ASN1_OPT(TimeStampToken, accuracy, TimeStampAccuracy),
+                          ASN1_OPT(TimeStampToken, ordering, ASN1_FBOOLEAN),
+                          ASN1_OPT(TimeStampToken, nonce, ASN1_INTEGER),
+                          ASN1_EXP_OPT(TimeStampToken, tsa, GENERAL_NAME, 0),
+                          ASN1_IMP_SEQUENCE_OF_OPT(TimeStampToken, extensions, X509_EXTENSION, 1) } ASN1_SEQUENCE_END(TimeStampToken)
+
+      IMPLEMENT_ASN1_FUNCTIONS(TimeStampToken)
+
+            static void tohex(const unsigned char* v, char* b, int len)
+{
+    int i, j = 0;
+    for (i = 0; i < len; i++)
+    {
+#ifdef WIN32
+        int size = EVP_MAX_MD_SIZE * 2 + 1;
+        j += sprintf_s(b + j, size - j, "%02X", v[i]);
+#else
+        j += sprintf(b + j, "%02X", v[i]);
+#endif /* WIN32 */
+    }
+}
+
+static void print_hash(const char* descript1, const char* descript2, const unsigned char* hashbuf, int length)
+{
+    char hexbuf[EVP_MAX_MD_SIZE * 2 + 1];
+
+    if (length > EVP_MAX_MD_SIZE)
+    {
+        printf("Invalid message digest size\n");
+        return;
+    }
+    tohex(hashbuf, hexbuf, length);
+    printf("%s: %s %s\n", descript1, hexbuf, descript2);
+}
+
+static time_t asn1_get_time_t(const ASN1_TIME* s)
+{
+    struct tm tm;
+
+    if ((s == NULL) || (!ASN1_TIME_check(s)))
+    {
+        return INVALID_TIME;
+    }
+    if (ASN1_TIME_to_tm(s, &tm))
+    {
+        return mktime(&tm);
+    }
+    else
+    {
+        return INVALID_TIME;
+    }
+}
+
+static bool GetTimeFromCMS(CMS_ContentInfo* cms, time_t& time)
+{
+    ASN1_OCTET_STRING** pos = CMS_get0_content(cms);
+    if (pos == nullptr || *pos == nullptr)
+    {
+        return false;
+    }
+
+    const unsigned char* p = (*pos)->data;
+    TimeStampToken* token  = d2i_TimeStampToken(NULL, &p, (*pos)->length);
+    if (token == nullptr)
+    {
+        return false;
+    }
+
+    ASN1_GENERALIZEDTIME* asn1 = token->time;
+    time                       = ASN1_TIME_to_time_t(asn1);
+    TimeStampToken_free(token);
+
+    return true;
+}
+
+bool Countersignature::ParsePKCS9(
+      const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest, PKCS7_SIGNER_INFO* counter)
 {
     PKCS7_SIGNER_INFO* si = d2i_PKCS7_SIGNER_INFO(NULL, &data, size);
     if (!si)
     {
-        verify_flags = (int) CountersignatureVFY::CantParse;
-        return false;
+        BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
+        BIO_write(in.get(), data, size);
+
+        CMS_ContentInfo_ptr cms(d2i_CMS_bio(in.get(), nullptr), CMS_ContentInfo_free);
+        if (cms.get() == nullptr)
+        {
+            verifyFlags = (int32_t) CountersignatureVFY::CantParse;
+            return false;
+        }
+
+        constexpr uint32_t flags = CMS_BINARY | CMS_NOCRL | CMS_NO_SIGNER_CERT_VERIFY;
+        if (CMS_verify(cms.get(), certs, NULL, NULL, NULL, flags) != 1)
+        {
+            verifyFlags = (int) CountersignatureVFY::DoesntMatchSignature;
+            return false;
+        }
+
+        STACK_OF(CMS_SignerInfo)* cmsSigners = CMS_get0_SignerInfos(cms.get());
+        int32_t cmsSignersCount              = sk_CMS_SignerInfo_num(cmsSigners);
+
+        CMS_SignerInfo* siCMS = sk_CMS_SignerInfo_value(cmsSigners, 0);
+
+        int32_t idx                  = CMS_signed_get_attr_by_NID(siCMS, NID_pkcs9_signingTime, -1);
+        X509_ATTRIBUTE* signTimeAttr = CMS_signed_get_attr(siCMS, idx);
+        if (!signTimeAttr)
+        {
+            if (GetTimeFromCMS(cms.get(), this->signTime) == false)
+            {
+                verifyFlags = (int) CountersignatureVFY::TimeMissing;
+                return false;
+            }
+        }
+        else
+        {
+            ASN1_TYPE* signTime = X509_ATTRIBUTE_get0_type(signTimeAttr, 0);
+            if (!signTime)
+            {
+                verifyFlags = (int) CountersignatureVFY::TimeMissing;
+                return false;
+            }
+
+            this->signTime = ASN1_TIME_to_time_t(signTime->value.utctime);
+        }
+
+        STACK_OF(X509)* allCerts = CMS_get1_certs(cms.get());
+        auto certsCount          = sk_X509_num(allCerts);
+        if (!allCerts)
+        {
+            verifyFlags = (int) CountersignatureVFY::NoSignerCert;
+            return false;
+        }
+
+        STACK_OF(X509)* signCerts = CMS_get0_signers(cms.get());
+        auto certsCounts          = sk_X509_num(signCerts);
+        if (!certsCounts)
+        {
+            verifyFlags = (int) CountersignatureVFY::NoSignerCert;
+            return false;
+        }
+        const auto signCert = sk_X509_value(signCerts, 0);
+
+        /* PKCS9 stores certificates in the corresponding PKCS7 it countersigns */
+        chain = AuthenticodeParser::ParseSignerChain(signCert, allCerts);
+
+        ASN1_OCTET_STRING** pos = CMS_get0_content(cms.get());
+        if (pos == nullptr || *pos == nullptr)
+        {
+            verifyFlags = (int) CountersignatureVFY::DigestMissing;
+            return false;
+        }
+
+        const unsigned char* p = (*pos)->data;
+        TimeStampToken* token  = d2i_TimeStampToken(NULL, &p, (*pos)->length);
+        if (token == nullptr)
+        {
+            verifyFlags = (int) CountersignatureVFY::DigestMissing;
+            return false;
+        }
+
+        /* compute a hash from the encrypted message digest value of the file */
+        int digestnid = OBJ_obj2nid(token->messageImprint->digestAlgorithm->algorithm);
+        digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
+
+        const EVP_MD* md  = EVP_get_digestbynid(digestnid);
+        EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
+        if (!EVP_DigestInit(mdctx, md))
+        {
+            EVP_MD_CTX_free(mdctx);
+            verifyFlags = (int) CountersignatureVFY::DigestMissing;
+            return false;
+        }
+
+        EVP_DigestUpdate(mdctx, counter->enc_digest->data, (size_t) counter->enc_digest->length);
+        unsigned char mdbuf[EVP_MAX_MD_SIZE];
+        EVP_DigestFinal(mdctx, mdbuf, NULL);
+        EVP_MD_CTX_free(mdctx);
+
+        /* compare the provided hash against the computed hash */
+        ASN1_OCTET_STRING* hash = token->messageImprint->digest;
+        /* hash->length == EVP_MD_size(md) */
+
+        bool result = (memcmp(mdbuf, hash->data, (size_t) hash->length) == 0);
+
+        TimeStampToken_free(token);
+
+        const uint8_t* digestData = counter->enc_digest->data;
+        digest.insert(digest.end(), digestData, digestData + counter->enc_digest->length);
+
+        if (result == false)
+        {
+            verifyFlags = (int) CountersignatureVFY::DoesntMatchSignature;
+            return false;
+        }
+
+        return true;
     }
 
     int digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
     digest_alg.reset(strdup(OBJ_nid2ln(digestnid)));
 
-    const ASN1_TYPE* sign_time = PKCS7_get_signed_attribute(si, NID_pkcs9_signingTime);
-    if (!sign_time)
+    const ASN1_TYPE* signTime = PKCS7_get_signed_attribute(si, NID_pkcs9_signingTime);
+    if (!signTime)
     {
-        verify_flags = (int) CountersignatureVFY::TimeMissing;
+        verifyFlags = (int) CountersignatureVFY::TimeMissing;
+        return false;
     }
 
-    this->sign_time = ASN1_TIME_to_time_t(sign_time->value.utctime);
+    this->signTime = ASN1_TIME_to_time_t(signTime->value.utctime);
 
     X509* signCert = X509_find_by_issuer_and_serial(certs, si->issuer_and_serial->issuer, si->issuer_and_serial->serial);
     if (!signCert)
     {
-        verify_flags = (int) CountersignatureVFY::NoSignerCert;
+        verifyFlags = (int) CountersignatureVFY::NoSignerCert;
+        return false;
     }
 
     /* PKCS9 stores certificates in the corresponding PKCS7 it countersigns */
@@ -861,20 +1143,20 @@ bool Countersignature::ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509)
     ASN1_TYPE* messageDigest = PKCS7_get_signed_attribute(si, NID_pkcs9_messageDigest);
     if (!messageDigest)
     {
-        verify_flags = (int) CountersignatureVFY::DigestMissing;
+        verifyFlags = (int) CountersignatureVFY::DigestMissing;
     }
 
     size_t digestLen = messageDigest->value.octet_string->length;
 
     if (!digestLen)
     {
-        verify_flags = (int) CountersignatureVFY::DigestMissing;
+        verifyFlags = (int) CountersignatureVFY::DigestMissing;
     }
 
     const EVP_MD* md = EVP_get_digestbynid(digestnid);
     if (!md)
     {
-        verify_flags = (int) CountersignatureVFY::UnknownAlgorithm;
+        verifyFlags = (int) CountersignatureVFY::UnknownAlgorithm;
     }
 
     const uint8_t* digestData = messageDigest->value.octet_string->data;
@@ -900,7 +1182,7 @@ bool Countersignature::ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509)
     if (!decData)
     {
         EVP_PKEY_CTX_free(ctx);
-        verify_flags = (int) CountersignatureVFY::InternalError;
+        verifyFlags = (int) CountersignatureVFY::InternalError;
     }
 
     uint8_t* encData = si->enc_digest->data;
@@ -913,7 +1195,7 @@ bool Countersignature::ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509)
 
     if (!isDecrypted)
     {
-        verify_flags = (int) CountersignatureVFY::CantDecryptDigest;
+        verifyFlags = (int) CountersignatureVFY::CantDecryptDigest;
     }
 
     /* compare the encrypted digest and calculated digest */
@@ -950,7 +1232,7 @@ bool Countersignature::ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509)
 
     if (!isValid)
     {
-        verify_flags = (int) CountersignatureVFY::Invalid;
+        verifyFlags = (int) CountersignatureVFY::Invalid;
     }
 
     /* Now check the countersignature message-digest that should correspond
@@ -960,7 +1242,7 @@ bool Countersignature::ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509)
     /* Check if calculated one matches the stored one */
     if (digestLen != mdLen || memcmp(calc_digest, digestData, mdLen) != 0)
     {
-        verify_flags = (int) CountersignatureVFY::DoesntMatchSignature;
+        verifyFlags = (int) CountersignatureVFY::DoesntMatchSignature;
     }
 
     PKCS7_SIGNER_INFO_free(si);
@@ -972,14 +1254,14 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
     PKCS7* p7 = d2i_PKCS7(NULL, &data, size);
     if (!p7)
     {
-        verify_flags = (int) CountersignatureVFY::CantParse;
+        verifyFlags = (int) CountersignatureVFY::CantParse;
         return false;
     }
 
     TS_TST_INFO* ts = PKCS7_to_TS_TST_INFO(p7);
     if (!ts)
     {
-        verify_flags = (int) CountersignatureVFY::CantParse;
+        verifyFlags = (int) CountersignatureVFY::CantParse;
         PKCS7_free(p7);
         return false;
     }
@@ -987,19 +1269,19 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
     const ASN1_TIME* rawTime = TS_TST_INFO_get_time(ts);
     if (!rawTime)
     {
-        verify_flags = (int) CountersignatureVFY::TimeMissing;
+        verifyFlags = (int) CountersignatureVFY::TimeMissing;
         TS_TST_INFO_free(ts);
         PKCS7_free(p7);
         return false;
     }
 
-    sign_time = ASN1_TIME_to_time_t(rawTime);
+    signTime = ASN1_TIME_to_time_t(rawTime);
 
     STACK_OF(X509)* sigs = PKCS7_get0_signers(p7, p7->d.sign->cert, 0);
     X509* signCert       = sk_X509_value(sigs, 0);
     if (!signCert)
     {
-        verify_flags = (int) CountersignatureVFY::NoSignerCert;
+        verifyFlags = (int) CountersignatureVFY::NoSignerCert;
     }
 
     chain = AuthenticodeParser::ParseSignerChain(signCert, p7->d.sign->cert);
@@ -1008,7 +1290,7 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
     TS_MSG_IMPRINT* imprint = TS_TST_INFO_get_msg_imprint(ts);
     if (!imprint)
     {
-        verify_flags = (int) CountersignatureVFY::DigestMissing;
+        verifyFlags = (int) CountersignatureVFY::DigestMissing;
     }
 
     X509_ALGOR* digestAlg = TS_MSG_IMPRINT_get_algo(imprint);
@@ -1024,13 +1306,13 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
 
     if (!digestLen)
     {
-        verify_flags = (int) CountersignatureVFY::DigestMissing;
+        verifyFlags = (int) CountersignatureVFY::DigestMissing;
     }
 
     const EVP_MD* md = EVP_get_digestbynid(digestnid);
     if (!md)
     {
-        verify_flags = (int) CountersignatureVFY::UnknownAlgorithm;
+        verifyFlags = (int) CountersignatureVFY::UnknownAlgorithm;
     }
 
     uint8_t calc_digest[EVP_MAX_MD_SIZE];
@@ -1044,7 +1326,7 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
 
     if (digestLen != mdLen || memcmp(calc_digest, digestData, mdLen) != 0)
     {
-        verify_flags = (int) CountersignatureVFY::DoesntMatchSignature;
+        verifyFlags = (int) CountersignatureVFY::DoesntMatchSignature;
     }
 
     TS_VERIFY_CTX* ctx = TS_VERIFY_CTX_new();
@@ -1067,7 +1349,7 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
 
     if (!isValid)
     {
-        verify_flags = (int) CountersignatureVFY::Invalid;
+        verifyFlags = (int) CountersignatureVFY::Invalid;
     }
 
     /* Verify signature with PKCS7_signatureVerify
@@ -1087,7 +1369,7 @@ bool Countersignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
     BIO_free_all(p7bio);
 
     if (!isValid)
-        verify_flags = (int) CountersignatureVFY::Invalid;
+        verifyFlags = (int) CountersignatureVFY::Invalid;
 
     sk_X509_free(sigs);
     PKCS7_free(p7);
@@ -1134,5 +1416,132 @@ time_t ASN1_TIME_to_time_t(const ASN1_TIME* time)
 
     ASN1_TIME_to_tm(time, &t);
     return timegm(&t);
+}
+
+void DumpBytes(const std::vector<unsigned char>& bytes, std::stringstream& dump)
+{
+    for (const auto& b : bytes)
+    {
+        dump << std::uppercase << std::setfill('0') << std::setw(2) << std::hex << (uint32_t) b;
+    }
+    dump << "\n";
+}
+
+void DumpCertificate(const Certificate& cert, std::stringstream& dump)
+{
+    auto indent = (char*) "              ";
+
+    dump << indent << "Version             : " << cert.version << "\n";
+    dump << indent << "Subject             : " << cert.subject << "\n";
+    dump << indent << "Issuer              : " << cert.issuer.get() << "\n";
+    dump << indent << "Serial              : " << cert.serial.get() << "\n";
+    dump << indent << "Not After           : " << cert.not_after << "\n";
+    dump << indent << "Not Before          : " << cert.not_before << "\n";
+    dump << indent << "SHA1                : ";
+    DumpBytes(cert.sha1, dump);
+    dump << indent << "SHA256              : ";
+    DumpBytes(cert.sha256, dump);
+    dump << indent << "Key Algorithm       : " << cert.key_alg.get() << "\n";
+    dump << indent << "Signature Algorithm : " << cert.sig_alg.get() << "\n";
+    dump << indent << "Public key          : " << cert.key.get() << "\n";
+}
+
+void DumpSignature(const Authenticode& auth, std::stringstream& dump)
+{
+    dump << "    "
+         << "PKCS7 Signature:\n";
+
+    char* indent = (char*) "      ";
+
+    dump << indent << "Version           : " << auth.version << "\n";
+    dump << indent << "Digest            : ";
+
+    DumpBytes(auth.digest, dump);
+    printf("%sFile Digest       : ", indent);
+    DumpBytes(auth.file_digest, dump);
+    dump << indent << "Digest Algorithm  : " << auth.digest_alg.get() << "\n";
+    dump << indent << "Verify flags      : " << auth.verify_flags << "\n";
+    dump << indent << "Certificate count : " << auth.certs.size() << "\n";
+    dump << indent << "Certificates:\n\n";
+
+    auto i = 0;
+    for (const auto& cert : auth.certs)
+    {
+        auto indent = "        ";
+        dump << indent << "Certificate " << i++ << ":\n";
+
+        DumpCertificate(cert, dump);
+    }
+
+    std::string output(dump.str());
+
+    dump << indent << "Signer Info:"
+         << ":\n";
+
+    char* indent2 = (char*) "        ";
+
+    dump << indent2 << "Digest       : ";
+    DumpBytes(auth.signer.digest, dump);
+    dump << indent2 << "Digest Algo  : " << auth.signer.digest_alg.get() << "\n";
+    dump << indent2 << "Program name : " << (auth.signer.program_name.get() != nullptr ? auth.signer.program_name.get() : "") << "\n";
+
+    dump << indent2 << "Chain size   : " << auth.signer.chain.size() << "\n";
+    dump << indent2 << "Chain:"
+         << "\n";
+
+    i = 0;
+    for (const auto& cert : auth.signer.chain)
+    {
+        char* indent = (char*) "            ";
+
+        dump << indent << "Certificate " << i++ << "\n";
+        DumpCertificate(cert, dump);
+    }
+
+    dump << "\n";
+
+    for (const auto& counter : auth.countersigs)
+    {
+        dump << indent << "Countersignature:\n";
+        char* indent = (char*) "        ";
+
+        dump << indent << "Digest           :";
+        DumpBytes(counter.digest, dump);
+        dump << indent << "Digest Algorithm : " << (counter.digest_alg.get() != nullptr ? counter.digest_alg.get() : "") << "\n";
+
+        std::tm* ptm = std::localtime(&counter.signTime);
+        char buffer[32];
+        std::strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", ptm);
+        dump << indent << "Signing Time     : " << buffer << "\n";
+        dump << indent << "Verify flags     : " << counter.verifyFlags << "\n";
+
+        dump << indent << "Chain size       : " << counter.chain.size() << "\n";
+        dump << indent << "Chain:"
+             << "\n";
+
+        i = 0;
+        for (const auto& cert : counter.chain)
+        {
+            char* indent = (char*) "            ";
+            dump << indent << "Certificate " << i++ << ":\n";
+            DumpCertificate(cert, dump);
+        }
+    }
+}
+
+bool AuthenticodeParser::Dump(std::string& output) const
+{
+    std::stringstream dump;
+    dump << "Signature count: " << authenticodeData.size() << "\n";
+    dump << "Signatures: " << authenticodeData.size() << "\n";
+
+    for (const auto& signature : authenticodeData)
+    {
+        DumpSignature(signature, dump);
+    }
+
+    output.assign(dump.str());
+
+    return true;
 }
 } // namespace Authenticode

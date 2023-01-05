@@ -12,6 +12,7 @@
 #include <openssl/x509_vfy.h>
 #include <openssl/x509v3.h>
 #include <openssl/ts.h>
+#include <openssl/cms.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -21,6 +22,9 @@
 
 #include <memory>
 #include <vector>
+#include <string>
+#include <sstream>
+#include <iomanip>
 
 namespace Authenticode
 {
@@ -170,6 +174,8 @@ using OpenSSL_ptr           = std::unique_ptr<char, decltype(&My_OpenSSL_free)>;
 using BN_ptr                = std::unique_ptr<BIGNUM, decltype(&BN_free)>;
 using PKCS7_SIGNER_INFO_ptr = std::unique_ptr<PKCS7_SIGNER_INFO, decltype(&PKCS7_SIGNER_INFO_free)>;
 using PKCS7_ptr             = std::unique_ptr<PKCS7, decltype(&PKCS7_free)>;
+using CMS_ContentInfo_ptr   = std::unique_ptr<CMS_ContentInfo, decltype(&CMS_ContentInfo_free)>;
+using ASN1_PCTX_ptr         = std::unique_ptr<ASN1_PCTX, decltype(&ASN1_PCTX_free)>;
 
 class Attributes /* Various X509 attributes parsed out in raw bytes*/
 {
@@ -215,20 +221,20 @@ class Certificate
 class Countersignature
 {
   public:
-    int verify_flags;                   /* COUNTERISGNATURE_VFY_ flag */
-    time_t sign_time;                   /* Signing time of the timestamp countersignature */
+    int verifyFlags;                    /* COUNTERISGNATURE_VFY_ flag */
+    time_t signTime;                    /* Signing time of the timestamp countersignature */
     std::unique_ptr<char> digest_alg{}; /* Name of the digest algorithm used */
-    std::vector<char> digest;           /* Stored message digest */
+    std::vector<unsigned char> digest;  /* Stored message digest */
     std::vector<Certificate> chain;     /* Certificate chain of the signer */
 
-    bool ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest);
+    bool ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest, PKCS7_SIGNER_INFO* counter);
     bool ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_digest);
 };
 
 class Signer /* Represents SignerInfo structure */
 {
   public:
-    std::vector<char> digest;             /* Message Digest of the SignerInfo */
+    std::vector<unsigned char> digest;    /* Message Digest of the SignerInfo */
     std::unique_ptr<char> digest_alg{};   /* name of the digest algorithm */
     std::unique_ptr<char> program_name{}; /* Program name stored in SpcOpusInfo structure of Authenticode */
     std::vector<Certificate> chain;       /* Certificate chain of the signer */
@@ -240,8 +246,8 @@ class Authenticode
     uint32_t verify_flags;                     /* AUTHENTICODE_VFY_ flag */
     uint64_t version;                          /* Raw PKCS7 version */
     std::unique_ptr<char> digest_alg{};        /* name of the digest algorithm */
-    std::vector<char> digest;                  /* File Digest stored in the Signature */
-    std::vector<char> file_digest;             /* Actual calculated file digest */
+    std::vector<unsigned char> digest;         /* File Digest stored in the Signature */
+    std::vector<unsigned char> file_digest;    /* Actual calculated file digest */
     Signer signer;                             /* SignerInfo information of the Authenticode */
     std::vector<Certificate> certs;            /* All certificates in the Signature including the ones in timestamp
                                                   countersignatures */
@@ -259,6 +265,7 @@ class AuthenticodeParser
     bool AuthenticodeNew(const uint8_t* data, long len, std::vector<Authenticode>& result);
     void ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<Authenticode>& result);
     static std::vector<Certificate> ParseSignerChain(X509* signerCert, STACK_OF(X509) * certs);
+    bool Dump(std::string& output) const;
 };
 
 /* Calculates digest md of data, return bytes written to digest or 0 on error

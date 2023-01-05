@@ -1002,6 +1002,8 @@ bool PKCS7VerifySignature(
     Buffer b = cache.CopyEntireFile(true);
     Authenticode::AuthenticodeParser parser;
     parser.AuthenticodeParse(b.GetData(), b.GetLength());
+    std::string output;
+    parser.Dump(output);
 
     STACK_OF(X509)* certs = nullptr;
     switch (OBJ_obj2nid(pkcs7.data->type))
@@ -1128,8 +1130,6 @@ bool PKCS7VerifySignature(
                     const auto* data  = asn1Type->value.octet_string->data;
                     const auto length = asn1Type->value.octet_string->length;
 
-                    String output;
-
                     WrapperBIO in{ BIO_new(BIO_s_mem()) };
                     CHECK((size_t) BIO_write(in.memory, data, (int32) length) == length, false, "");
 
@@ -1138,6 +1138,34 @@ bool PKCS7VerifySignature(
 
                     constexpr uint32 flags = CMS_BINARY | CMS_NOCRL | CMS_NO_SIGNER_CERT_VERIFY;
                     CHECK(CMS_verify(cms.data, certs, NULL, NULL, NULL, flags) == 1, false, "");
+
+                    uint32 error = 0;
+                    String output;
+                    ERR_clear_error();
+                    WrapperBIO out{ BIO_new(BIO_s_mem()) };
+                    GetError(error, output);
+                    CHECK(out.memory != nullptr, false, output.GetText());
+
+                    ERR_clear_error();
+                    WrapperASN1_PCTX pctx{ ASN1_PCTX_new() };
+                    GetError(error, output);
+                    CHECK(pctx.data != nullptr, false, output.GetText());
+
+                    ASN1_PCTX_set_flags(pctx.data, ASN1_PCTX_FLAGS_SHOW_ABSENT);
+                    ASN1_PCTX_set_str_flags(pctx.data, ASN1_STRFLGS_RFC2253 | ASN1_STRFLGS_DUMP_ALL);
+                    ASN1_PCTX_set_oid_flags(pctx.data, 0);
+                    ASN1_PCTX_set_cert_flags(pctx.data, 0);
+
+                    ERR_clear_error();
+                    const auto ctxCode = CMS_ContentInfo_print_ctx(out.memory, cms.data, 4, pctx.data);
+                    GetError(error, output);
+                    CHECK(ctxCode == 1, false, output.GetText());
+
+                    BUF_MEM* buf{};
+                    ERR_clear_error();
+                    BIO_get_mem_ptr(out.memory, &buf);
+                    GetError(error, output);
+                    CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
                 }
             }
 
