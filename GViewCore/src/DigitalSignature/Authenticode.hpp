@@ -143,19 +143,19 @@ enum class CountersignatureVFY
 };
 
 /* Endianity related functions for PE reading */
-uint16_t bswap16(uint16_t d);
-uint32_t bswap32(uint32_t d);
+uint16_t BSwap16(uint16_t d);
+uint32_t BSwap32(uint32_t d);
 
 #if defined(WORDS_BIGENDIAN)
-#    define letoh16(x) bswap16(x)
-#    define letoh32(x) bswap32(x)
+#    define letoh16(x) BSwap16(x)
+#    define letoh32(x) BSwap32(x)
 #    define betoh16(x) (x)
 #    define betoh32(x) (x)
 #else
 #    define letoh16(x) (x)
 #    define letoh32(x) (x)
-#    define betoh16(x) bswap16(x)
-#    define betoh32(x) bswap32(x)
+#    define betoh16(x) BSwap16(x)
+#    define betoh32(x) BSwap32(x)
 #endif
 
 /* OpenSSL defines OPENSSL_free as a macro, which we can't use with decltype.
@@ -221,11 +221,11 @@ class Certificate
 class Countersignature
 {
   public:
-    int32_t verifyFlags;               /* COUNTERISGNATURE_VFY_ flag */
-    time_t signTime;                   /* Signing time of the timestamp countersignature */
-    std::string digestAlg;             /* Name of the digest algorithm used */
-    std::vector<unsigned char> digest; /* Stored message digest */
-    std::vector<Certificate> chain;    /* Certificate chain of the signer */
+    int32_t verifyFlags;            /* COUNTERISGNATURE_VFY_ flag */
+    time_t signTime;                /* Signing time of the timestamp countersignature */
+    std::string digestAlg;          /* Name of the digest algorithm used */
+    std::vector<uint8_t> digest;    /* Stored message digest */
+    std::vector<Certificate> chain; /* Certificate chain of the signer */
 
     bool ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest, PKCS7_SIGNER_INFO* counter);
     bool ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_digest);

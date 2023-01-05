@@ -2244,7 +2244,7 @@ void PEFile::RunCommand(std::string_view commandName)
             signatureData->openssl.verified =
                   GView::DigitalSignature::AuthenticodeVerifySignature(obj->GetData(), signatureData->openssl.errorMessage);
 
-            GView::DigitalSignature::SignatureMZPE s{};
+            GView::DigitalSignature::AuthenticodeMS s{};
             GView::DigitalSignature::AuthenticodeToStructure(blob, s);
 
             String b;

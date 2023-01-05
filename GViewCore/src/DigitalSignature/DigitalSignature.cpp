@@ -571,7 +571,7 @@ bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
     return true;
 }
 
-bool AuthenticodeToStructure(const Buffer& buffer, SignatureMZPE& output)
+bool AuthenticodeToStructure(const Buffer& buffer, AuthenticodeMS& output)
 {
     return true;
 }
@@ -618,7 +618,7 @@ inline void SetErrorMessage(uint32 errorCode, String& message)
     message.Set(m.c_str());
 }
 
-bool __VerifyEmbeddedSignature__(ConstString source, SignatureMZPE& data)
+bool __VerifyEmbeddedSignature__(ConstString source, AuthenticodeMS& data)
 {
     LocalUnicodeStringBuilder<1024> ub;
     ub.Set(source);
@@ -671,7 +671,7 @@ struct WrapperSignerInfo
     {
         if (info != NULL)
         {
-            LocalFree(info);
+            // LocalFree(info); // TODO: change this in unique_ptr
         }
     }
 };
@@ -700,19 +700,189 @@ struct WrapperHMsg
     }
 };
 
-BOOL GetOpusInfo(PCMSG_SIGNER_INFO pSignerInfo, SignatureMZPE::Information::Certificate& certificate);
+BOOL GetOpusInfo(PCMSG_SIGNER_INFO pSignerInfo, AuthenticodeMS::Data::Signature::Signer& signer);
 
-BOOL GetCertDate(const WrapperSignerInfo& signerInfo, SignatureMZPE::Information::Certificate& certificate);
+BOOL GetCertDate(const WrapperSignerInfo& signerInfo, AuthenticodeMS::Data::Signature& signature);
 
 BOOL GetCertificateInfo(
-      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureMZPE::Information::Certificate& certificate);
+      const WrapperSignerInfo& signerInfo,
+      const WrapperCertContext& certContext,
+      AuthenticodeMS::Data::Signature::Certificate& certificate);
 
 BOOL GetCounterSigner(
       const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner, CounterSignatureType& type);
 
-BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information& info);
+BOOL Get2ndSignature(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signature& info);
 
-bool GetSignaturesInformation(ConstString source, SignatureMZPE& data)
+BOOL Get_szOID_RSA_counterSign_Signer(const WrapperSignerInfo& signer, uint32 attributeIndex, WrapperSignerInfo& counterSigner)
+{
+    DWORD dwSize{ 0 };
+    CHECK(CryptDecodeObject(
+                ENCODING,
+                PKCS7_SIGNER_INFO,
+                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].pbData,
+                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].cbData,
+                0,
+                NULL,
+                &dwSize),
+          false,
+          "");
+
+    counterSigner.info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
+    CHECK(counterSigner.info != nullptr, false, "");
+
+    CHECK(CryptDecodeObject(
+                ENCODING,
+                PKCS7_SIGNER_INFO,
+                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].pbData,
+                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].cbData,
+                0,
+                (PVOID) counterSigner.info,
+                &dwSize),
+          false,
+          "");
+
+    return TRUE;
+}
+
+BOOL GetInfoThroughSigner(
+      AuthenticodeMS& container,
+      const WrapperSignerInfo& signer,
+      const WrapperHStore& store,
+      SignatureType signatureType,
+      CounterSignatureType counterSignatureType)
+{
+    auto& signature                = container.data.signatures.emplace_back();
+    signature.signatureType        = signatureType;
+    signature.counterSignatureType = counterSignatureType;
+    CHECK(GetOpusInfo(signer.info, signature.signer), false, "");
+
+    CERT_INFO signerCertInfo{ .SerialNumber = signer.info->SerialNumber, .Issuer = signer.info->Issuer };
+    WrapperCertContext certContext{ .context = CertFindCertificateInStore(
+                                          store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signerCertInfo, NULL) };
+    CHECK(certContext.context != nullptr, false, "");
+
+    auto& certificate = signature.certificates.emplace_back();
+    CHECK(GetCertificateInfo(signer, certContext, certificate), false, "");
+    CHECK(GetCertDate(signer, signature), false, "");
+
+    return TRUE;
+}
+
+BOOL Get_szOID_NESTED_SIGNATURE_Signer(
+      const WrapperSignerInfo& signer, uint32 attributeIndex, std::vector<WrapperSignerInfo>& nestedSigners)
+{
+    uint32 offset = 0;
+    for (uint32 j = 0; j < signer.info->UnauthAttrs.rgAttr[attributeIndex].cValue; j++)
+    {
+        WrapperHMsg hMsg{ .handle = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, 0, NULL, NULL, NULL) };
+        CHECK(hMsg.handle != 0, false, "");
+
+        CHECK(CryptMsgUpdate(
+                    hMsg.handle,
+                    signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[j].pbData,
+                    signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[j].cbData,
+                    TRUE),
+              false,
+              "");
+
+        DWORD dwSignerCount = 0;
+        CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, NULL, &dwSignerCount), false, "");
+        CHECK(dwSignerCount == sizeof(DWORD), false, "");
+
+        DWORD signersCount = 0;
+        CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &signersCount, &dwSignerCount), false, "");
+        CHECK(dwSignerCount == sizeof(DWORD), false, "");
+
+        for (uint32 i = 0; i < signersCount; i++)
+        {
+            DWORD dwSignerInfo = 0;
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, i, NULL, &dwSignerInfo), false, "");
+            CHECK(dwSignerInfo != 0, false, "");
+
+            auto& nestedSigner = nestedSigners.emplace_back();
+            nestedSigner.info  = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo);
+            CHECK(nestedSigner.info != nullptr, false, "");
+
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, i, (PVOID) nestedSigner.info, &dwSignerInfo), false, "");
+            CHECK(dwSignerInfo != 0, false, "");
+        }
+    }
+
+    return TRUE;
+}
+
+BOOL ParseSigner(const WrapperSignerInfo& signer, AuthenticodeMS& container, const WrapperHStore& initialStore)
+{
+    CHECK(signer.info != nullptr, false, "");
+
+    for (DWORD n = 0; n < signer.info->UnauthAttrs.cAttr; n++)
+    {
+        if (signer.info->UnauthAttrs.rgAttr[n].pszObjId &&
+            lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_NESTED_SIGNATURE) == 0)
+        {
+            std::vector<WrapperSignerInfo> nestedSigners{};
+            CHECK(Get_szOID_NESTED_SIGNATURE_Signer(signer, n, nestedSigners), false, "");
+
+            auto i = 0;
+            for (const auto& nestedSigner : nestedSigners)
+            {
+                CRYPT_DATA_BLOB data{ 0 };
+                data.pbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i].pbData;
+                data.cbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i++].cbData;
+
+                WrapperHStore store{ .handle =
+                                           CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &data) };
+
+                CHECK(GetInfoThroughSigner(container, nestedSigner, store, SignatureType::Signature, CounterSignatureType::Unknown),
+                      false,
+                      "");
+                CHECK(ParseSigner(nestedSigner, container, initialStore), false, "");
+            }
+        }
+
+        // Authenticode
+        if (signer.info->UnauthAttrs.rgAttr[n].pszObjId &&
+            lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
+        {
+            WrapperSignerInfo counterSigner{};
+            CHECK(Get_szOID_RSA_counterSign_Signer(signer, n, counterSigner), false, "");
+            CHECK(GetInfoThroughSigner(
+                        container, counterSigner, initialStore, SignatureType::CounterSignature, CounterSignatureType::Authenticode),
+                  false,
+                  "");
+            CHECK(ParseSigner(counterSigner, container, initialStore), false, "");
+        }
+
+        // RFC3161
+        if (signer.info->UnauthAttrs.rgAttr[n].pszObjId &&
+            lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
+        {
+            std::vector<WrapperSignerInfo> counterSigners{};
+            CHECK(Get_szOID_NESTED_SIGNATURE_Signer(signer, n, counterSigners), false, "");
+
+            auto i = 0;
+            for (const auto& counterSigner : counterSigners)
+            {
+                CRYPT_DATA_BLOB data{ 0 };
+                data.pbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i].pbData;
+                data.cbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i++].cbData;
+
+                WrapperHStore store{ .handle =
+                                           CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &data) };
+
+                CHECK(GetInfoThroughSigner(container, counterSigner, store, SignatureType::CounterSignature, CounterSignatureType::RFC3161),
+                      false,
+                      "");
+                CHECK(ParseSigner(counterSigner, container, initialStore), false, "");
+            }
+        }
+    }
+
+    return TRUE;
+}
+
+bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
 {
     LocalUnicodeStringBuilder<1024> ub;
     ub.Set(source);
@@ -748,49 +918,21 @@ bool GetSignaturesInformation(ConstString source, SignatureMZPE& data)
 
     CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo), false, "");
 
-    auto& signature0 = data.info.signatures.emplace_back();
+    auto& pkSignature = container.data.signatures.emplace_back();
+    auto& pkSigner    = pkSignature.signer;
+    CHECK(GetOpusInfo(signerInfo.info, pkSigner), false, "");
 
-    CHECK(GetOpusInfo(signerInfo.info, signature0), false, "");
-    CHECK(GetCertDate(signerInfo, signature0), false, "");
-
-    CERT_INFO certInfo{ .SerialNumber = signerInfo.info->SerialNumber, .Issuer = signerInfo.info->Issuer };
-
+    CERT_INFO signerCertInfo{ .SerialNumber = signerInfo.info->SerialNumber, .Issuer = signerInfo.info->Issuer };
     WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-                                          hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
+                                          hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signerCertInfo, NULL) };
     CHECK(certContext.context != nullptr, false, "");
 
-    signature0.signatureType = SignatureType::Signature;
-    CHECK(GetCertificateInfo(signerInfo, certContext, signature0), false, "");
+    auto& ceritficate = pkSignature.certificates.emplace_back();
+    CHECK(GetCertificateInfo(signerInfo, certContext, ceritficate), false, "");
+    CHECK(GetCertDate(signerInfo, pkSignature), false, "");
+    pkSignature.signatureType = SignatureType::Signature;
 
-    WrapperSignerInfo counterSignerInfo{};
-    WrapperHStore storeCounterSigner{};
-    WrapperCertContext counterSignerCertContext{};
-    CounterSignatureType counterSignatureType{ CounterSignatureType::None };
-    if (GetCounterSigner(signerInfo, counterSignerInfo, storeCounterSigner, counterSignatureType))
-    {
-        if (counterSignerInfo.info != nullptr)
-        {
-            auto& counterSignature0                = data.info.signatures.emplace_back();
-            counterSignature0.counterSignatureType = counterSignatureType;
-
-            certInfo.Issuer       = counterSignerInfo.info->Issuer;
-            certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
-
-            const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : hStore.handle;
-
-            WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-                                                  scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-
-            CHECK(certContext.context != nullptr, false, "");
-
-            GetCertificateInfo(counterSignerInfo, certContext, counterSignature0);
-            GetCertDate(counterSignerInfo, counterSignature0);
-            GetOpusInfo(counterSignerInfo.info, counterSignature0);
-            counterSignature0.signatureType = SignatureType::CounterSignature;
-        }
-    }
-
-    Get2ndSignature(signerInfo, data.info);
+    CHECK(ParseSigner(signerInfo, container, hStore), false, "");
 
     return 0;
 }
@@ -806,7 +948,7 @@ BOOL GetNameString(const WrapperCertContext& certContext, String& out, DWORD typ
 }
 
 BOOL GetCertificateInfo(
-      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, SignatureMZPE::Information::Certificate& certificate)
+      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, AuthenticodeMS::Data::Signature::Certificate& certificate)
 {
     LocalString<1024> ls;
     const auto serialNumberSize = certContext.context->pCertInfo->SerialNumber.cbData;
@@ -857,11 +999,12 @@ BOOL GetCertificateInfo(
     return true;
 }
 
-BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureMZPE::Information::Certificate& certificate)
+BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, AuthenticodeMS::Data::Signature::Signer& signer)
 {
     for (auto n = 0U; n < signerInfo->AuthAttrs.cAttr; n++)
     {
-        if (lstrcmpA(SPC_SP_OPUS_INFO_OBJID, signerInfo->AuthAttrs.rgAttr[n].pszObjId) != 0)
+        const auto& objID = signerInfo->AuthAttrs.rgAttr[n].pszObjId;
+        if (lstrcmpA(SPC_SP_OPUS_INFO_OBJID, objID) != 0)
         {
             continue;
         }
@@ -895,7 +1038,7 @@ BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureMZPE::Information::Certi
 
         if (opusInfoRaw->pwszProgramName)
         {
-            certificate.programName.Set(std::u16string_view{ reinterpret_cast<const char16_t*>(opusInfoRaw->pwszProgramName) });
+            signer.programName.Set(std::u16string_view{ reinterpret_cast<const char16_t*>(opusInfoRaw->pwszProgramName) });
         }
 
         constexpr auto populate = [](const SPC_LINK_* link, String& out)
@@ -916,8 +1059,8 @@ BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureMZPE::Information::Certi
             }
         };
 
-        populate(opusInfoRaw->pPublisherInfo, certificate.publishLink);
-        populate(opusInfoRaw->pMoreInfo, certificate.moreInfoLink);
+        populate(opusInfoRaw->pPublisherInfo, signer.publishLink);
+        populate(opusInfoRaw->pMoreInfo, signer.moreInfoLink);
 
         break;
     }
@@ -925,12 +1068,10 @@ BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, SignatureMZPE::Information::Certi
     return true;
 }
 
-BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureMZPE::Information::Certificate& certificate)
+BOOL GetCertDate(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signature& signature)
 {
     for (DWORD n = 0; n < signer.info->AuthAttrs.cAttr; n++)
     {
-        PCCRYPT_OID_INFO pCOI = CryptFindOIDInfo(CRYPT_OID_INFO_OID_KEY, signer.info->AuthAttrs.rgAttr[n].pszObjId, 0);
-
         if (lstrcmpA(szOID_RSA_signingTime, signer.info->AuthAttrs.rgAttr[n].pszObjId) != 0)
         {
             continue;
@@ -955,7 +1096,7 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, SignatureMZPE::Information::Ce
         SYSTEMTIME st{ 0 };
         FileTimeToSystemTime(&lft, &st);
 
-        certificate.date.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
+        signature.signingTime.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
         break;
     }
@@ -1039,7 +1180,7 @@ BOOL GetCounterSigner(
     return false;
 }
 
-BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information& info)
+BOOL Get2ndSignature(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signature& info)
 {
     for (DWORD i = 0; i < signer.info->UnauthAttrs.cAttr; i++)
     {
@@ -1066,10 +1207,8 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information
 
             CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo1.info, &dwSignerInfo), false, "");
 
-            auto& signature1 = info.signatures.emplace_back();
-
-            GetCertDate(signerInfo1, signature1);
-            GetOpusInfo(signerInfo1.info, signature1);
+            // GetCertDate(signerInfo1, info.certificate);
+            GetOpusInfo(signerInfo1.info, info.signer);
 
             CRYPT_DATA_BLOB data{ 0 };
             data.pbData = signer.info->UnauthAttrs.rgAttr[i].rgValue->pbData;
@@ -1082,33 +1221,32 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information
             WrapperCertContext certContext{ .context = CertFindCertificateInStore(
                                                   store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
 
-            GetCertificateInfo(signerInfo1, certContext, signature1);
-            signature1.signatureType = SignatureType::Signature;
-
-            WrapperSignerInfo counterSignerInfo{};
-            WrapperHStore storeCounterSigner{};
-            WrapperCertContext counterSignerCertContext{};
-            auto& counterSignature1 = info.signatures.emplace_back();
-            if (GetCounterSigner(signerInfo1, counterSignerInfo, storeCounterSigner, counterSignature1.counterSignatureType))
-            {
-                if (counterSignerInfo.info != nullptr)
-                {
-                    certInfo.Issuer       = counterSignerInfo.info->Issuer;
-                    certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
-
-                    const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : store.handle;
-
-                    WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-                                                          scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-
-                    CHECK(certContext.context != nullptr, false, "");
-
-                    GetCertificateInfo(counterSignerInfo, certContext, counterSignature1);
-                    GetCertDate(counterSignerInfo, counterSignature1);
-                    GetOpusInfo(counterSignerInfo.info, counterSignature1);
-                    counterSignature1.signatureType = SignatureType::CounterSignature;
-                }
-            }
+            // GetCertificateInfo(signerInfo1, certContext, info.certificate);
+            //
+            // WrapperSignerInfo counterSignerInfo{};
+            // WrapperHStore storeCounterSigner{};
+            // WrapperCertContext counterSignerCertContext{};
+            // auto& counterSignature1 = info.counterSignatures.emplace_back();
+            // if (GetCounterSigner(signerInfo1, counterSignerInfo, storeCounterSigner, counterSignature1.counterSignatureType))
+            // {
+            //     if (counterSignerInfo.info != nullptr)
+            //     {
+            //         certInfo.Issuer       = counterSignerInfo.info->Issuer;
+            //         certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
+            //
+            //         const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : store.handle;
+            //
+            //         WrapperCertContext certContext{ .context = CertFindCertificateInStore(
+            //                                               scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
+            //
+            //         CHECK(certContext.context != nullptr, false, "");
+            //
+            //         auto& certificate = counterSignature1.certificates.emplace_back();
+            //         GetCertificateInfo(counterSignerInfo, certContext, certificate);
+            //         GetCertDate(counterSignerInfo, counterSignature1);
+            //         GetOpusInfo(counterSignerInfo.info, info.signer);
+            //     }
+            // }
 
             break;
         }
@@ -1119,9 +1257,9 @@ BOOL Get2ndSignature(const WrapperSignerInfo& signer, SignatureMZPE::Information
 
 #endif
 
-std::optional<SignatureMZPE> VerifyEmbeddedSignature(ConstString source)
+std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source)
 {
-    SignatureMZPE data{};
+    AuthenticodeMS data{};
 #ifdef BUILD_FOR_WINDOWS
     data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, data);
 
