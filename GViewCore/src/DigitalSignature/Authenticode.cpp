@@ -1,4 +1,4 @@
-#include "authenticode.hpp"
+#include "Authenticode.hpp"
 
 namespace Authenticode
 {
