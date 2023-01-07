@@ -65,7 +65,7 @@ inline static void GetError(uint32& errorCode, String& output)
 
 bool CMSToHumanReadable(const Buffer& buffer, String& output)
 {
-    CHECK(buffer.GetData() != nullptr, false, "Nullptr data provided!");
+    CHECK(buffer.GetData() != nullptr, false, "");
 
     ERR_clear_error();
     BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
@@ -109,7 +109,7 @@ bool CMSToHumanReadable(const Buffer& buffer, String& output)
 
 bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
 {
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
+    CHECK(buffer.GetData() != nullptr, false, "");
     count         = 1;
     auto& current = output[0];
 
@@ -539,7 +539,7 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
 
 bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
 {
-    CHECK(buffer.GetData() != nullptr, false, "Nullptr data provided!");
+    CHECK(buffer.GetData() != nullptr, false, "");
 
     ERR_clear_error();
     BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
