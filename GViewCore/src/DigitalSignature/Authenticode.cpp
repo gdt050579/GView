@@ -509,7 +509,7 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
         return false;
     }
 
-    digestnid = OBJ_obj2nid(si->digestAlg->algorithm);
+    digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
     auth.signer.digestAlg.assign(OBJ_nid2ln(digestnid));
 
     digestLen  = digest->value.asn1_string->length;
@@ -654,16 +654,16 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_le
     /* offset to pointer in DOS header, that points to PE header */
     const int pe_hdr_ptr_offset = 0x3c;
     /* Read the PE offset */
-    uint32_t peOffset = letoh32(*(uint32_t*) (peData + pe_hdr_ptr_offset));
+    uint32_t peOffset = letoh32(*(const uint32_t*) (peData + pe_hdr_ptr_offset));
+
     /* Offset to Magic, to know the PE class (32/64bit) */
     uint32_t magic_addr = peOffset + 0x18;
-
     if (pe_len < magic_addr + sizeof(uint16_t))
         return false;
 
     /* Read the magic and check if we have 64bit PE */
-    uint16_t magic = letoh16(*(uint16_t*) (peData + magic_addr));
-    bool is64      = magic == 0x20b;
+    uint16_t magic = letoh16(*(const uint16_t*) (peData + magic_addr));
+    bool is64      = (magic == 0x20b);
     /* If PE is 64bit, header is 16 bytes larger */
     uint8_t pe64_extra = is64 ? 16 : 0;
 
@@ -674,14 +674,14 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_le
         return false;
 
     /* Use 64bit type due to the potential overflow in crafted binaries */
-    uint64_t certAddress = letoh32(*(uint32_t*) (peData + pe_cert_table_addr));
-    uint64_t certLength  = letoh32(*(uint32_t*) (peData + pe_cert_table_addr + 4));
+    uint64_t certAddress = letoh32(*(const uint32_t*) (peData + pe_cert_table_addr));
+    uint64_t certLength  = letoh32(*(const uint32_t*) (peData + pe_cert_table_addr + 4));
 
     /* we need atleast 8 bytes to read dwLength, revision and certType */
     if (certLength < 8 || pe_len < certAddress + 8)
         return false;
 
-    uint32_t dwLength = letoh32(*(uint32_t*) (peData + certAddress));
+    uint32_t dwLength = letoh32(*(const uint32_t*) (peData + certAddress));
     if (pe_len < certAddress + dwLength)
         return false;
     /* dwLength = offsetof(WIN_CERTIFICATE, bCertificate) + (size of the variable-length binary array contained within bCertificate) */
@@ -693,7 +693,6 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_le
         const EVP_MD* md = EVP_get_digestbyname(sig.digestAlg.data());
         if (!md || sig.digest.empty())
         {
-            /* If there is an verification error, keep the first error */
             if (sig.verifyFlags == (int) AuthenticodeVFY::Valid)
                 sig.verifyFlags = (int) AuthenticodeVFY::UnknownAlgorithm;
 
@@ -711,13 +710,11 @@ bool AuthenticodeParser::AuthenticodeParse(const uint8_t* peData, uint64_t pe_le
                   md, peData, peOffset, is64, static_cast<uint32_t>(certAddress), reinterpret_cast<uint8_t*>(sig.fileDigest.data())) ==
             false)
         {
-            /* If there is an verification error, keep the first error */
             if (sig.verifyFlags == (int) AuthenticodeVFY::Valid)
                 sig.verifyFlags = (int) AuthenticodeVFY::InternalError;
             break;
         }
 
-        /* Complete the verification */
         if (memcmp(sig.fileDigest.data(), sig.digest.data(), mdlen) != 0)
             sig.verifyFlags = (int) AuthenticodeVFY::WrongFileDigest;
     }
@@ -978,7 +975,7 @@ bool Certificate::Parse(X509* x509)
     return true;
 }
 
-static void tohex(const unsigned char* v, char* b, int len)
+static void ToHex(const unsigned char* v, char* b, int len)
 {
     int i, j = 0;
     for (i = 0; i < len; i++)
@@ -990,19 +987,6 @@ static void tohex(const unsigned char* v, char* b, int len)
         j += sprintf(b + j, "%02X", v[i]);
 #endif /* WIN32 */
     }
-}
-
-static void print_hash(const char* descript1, const char* descript2, const unsigned char* hashbuf, int length)
-{
-    char hexbuf[EVP_MAX_MD_SIZE * 2 + 1];
-
-    if (length > EVP_MAX_MD_SIZE)
-    {
-        printf("Invalid message digest size\n");
-        return;
-    }
-    tohex(hashbuf, hexbuf, length);
-    printf("%s: %s %s\n", descript1, hexbuf, descript2);
 }
 
 static bool GetTimeFromCMS(CMS_ContentInfo* cms, time_t& time)
@@ -1054,6 +1038,10 @@ bool CounterSignature::ParsePKCS9(
 
         STACK_OF(CMS_SignerInfo)* cmsSigners = CMS_get0_SignerInfos(cms.get());
         int32_t cmsSignersCount              = sk_CMS_SignerInfo_num(cmsSigners);
+        if (cmsSignersCount == 0)
+        {
+            return false;
+        }
 
         CMS_SignerInfo* siCMS = sk_CMS_SignerInfo_value(cmsSigners, 0);
 
@@ -1080,16 +1068,21 @@ bool CounterSignature::ParsePKCS9(
         }
 
         STACK_OF(X509)* allCerts = CMS_get1_certs(cms.get());
-        auto certsCount          = sk_X509_num(allCerts);
         if (!allCerts)
+        {
+            verifyFlags = (int) CountersignatureVFY::NoSignerCert;
+            return false;
+        }
+        auto certsCount = sk_X509_num(allCerts);
+        if (!certsCount)
         {
             verifyFlags = (int) CountersignatureVFY::NoSignerCert;
             return false;
         }
 
         STACK_OF(X509)* signCerts = CMS_get0_signers(cms.get());
-        auto certsCounts          = sk_X509_num(signCerts);
-        if (!certsCounts)
+        auto signCertsCount       = sk_X509_num(signCerts);
+        if (!signCertsCount)
         {
             verifyFlags = (int) CountersignatureVFY::NoSignerCert;
             return false;
@@ -1152,7 +1145,7 @@ bool CounterSignature::ParsePKCS9(
         return true;
     }
 
-    int digestnid = OBJ_obj2nid(si->digestAlg->algorithm);
+    int digestnid = OBJ_obj2nid(si->digest_alg->algorithm);
     digestAlg.assign(OBJ_nid2ln(digestnid));
 
     const ASN1_TYPE* signTime = PKCS7_get_signed_attribute(si, NID_pkcs9_signingTime);
