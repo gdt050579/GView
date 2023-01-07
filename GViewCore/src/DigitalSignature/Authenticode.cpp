@@ -214,34 +214,6 @@ bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
         }
     }
 
-    if (spcInfo->moreInfo)
-    {
-        if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
-        {
-            /* Should be Windows UTF16..., try to convert it to UTF8 */
-            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.url);
-            data.reset(dataRaw);
-            if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.url->length)
-            {
-                signer.moreInfoLink.resize(nameLen + 1ULL);
-                memcpy(signer.moreInfoLink.data(), data.get(), nameLen);
-                signer.moreInfoLink.data()[nameLen] = 0;
-            }
-        }
-        else if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_FILE_LINK_CHOICE)
-        {
-            /* Should be Windows UTF16..., try to convert it to UTF8 */
-            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.file->value.unicode);
-            data.reset(dataRaw);
-            if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.file->value.unicode->length)
-            {
-                signer.moreInfoLink.resize(nameLen + 1ULL);
-                memcpy(signer.moreInfoLink.data(), data.get(), nameLen);
-                signer.moreInfoLink.data()[nameLen] = 0;
-            }
-        }
-    }
-
     if (spcInfo->publisherInfo)
     {
         if (spcInfo->publisherInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
