@@ -1460,7 +1460,7 @@ const std::vector<AuthenticodeSignature>& AuthenticodeParser::GetSignatures() co
     return signatures;
 }
 
-static const std::string_view GetSignatureFlagName(AuthenticodeVFY flag)
+static inline std::string_view GetSignatureFlagName(AuthenticodeVFY flag)
 {
     switch (flag)
     {
@@ -1516,9 +1516,11 @@ std::string AuthenticodeParser::GetSignatureFlags(uint32_t flags)
             output += GetSignatureFlagName(t);
         }
     }
+
+    return output;
 }
 
-static const std::string_view GetCounterSignatureFlagName(CountersignatureVFY flag)
+static inline std::string_view GetCounterSignatureFlagName(CountersignatureVFY flag)
 {
     switch (flag)
     {
@@ -1574,5 +1576,7 @@ std::string AuthenticodeParser::GetCounterSignatureFlags(uint32_t flags)
             output += GetCounterSignatureFlagName(t);
         }
     }
+
+    return output;
 }
 } // namespace Authenticode

@@ -43,14 +43,12 @@ void PopulateCertificateInfo(
     list->AddItem({ ls2.Format("Certificate (#%u) Issuer", index), ls.Format("%s", certificate.issuer.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Subject", index), ls.Format("%s", certificate.subject.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Email", index), ls.Format("%s", certificate.email.GetText()) });
-    list->AddItem({ ls2.Format("Certificate (#%u) Date", index), ls.Format("%s", certificate.date.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Serial Number", index), ls.Format("%s", certificate.serialNumber.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Digest Algorithm", index), ls.Format("%s", certificate.digestAlgorithm.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Not After", index), ls.Format("%s", certificate.notAfter.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Not Before", index), ls.Format("%s", certificate.notBefore.GetText()) });
 
-    list->AddItem({ ls2.Format("Certificate (#u) CRL Point", index), ls.Format("%s", certificate.crlPoint.GetText()) });
-    list->AddItem({ "", ls2.Format("---------- End certificate (#%u) ---------", index) }).SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ ls2.Format("Certificate (#%u) CRL Point", index), ls.Format("%s", certificate.crlPoint.GetText()) });
 }
 
 void DigitalSignature::MoreInfo()
@@ -102,16 +100,15 @@ void DigitalSignature::Update()
     if (pe->signatureData.has_value() && pe->signatureData->data.signatures.empty() == false)
     {
         general->AddItem({ "More Info", "" }).SetType(ListViewItem::Type::Category);
-        humanReadable = general->AddItem(
-              { "Human Readable", "Signature parsed - press CTRL + ENTER for details!", pe->signatureData->data.humanReadable.GetText() });
-        PEMs = general->AddItem(
-              { "PEMs", ls.Format("(%d) PEMs parsed - press CTRL + ENTER for details!", pe->signatureData->data.pemCerts.size()) });
+        humanReadable = general->AddItem({ "Human Readable", "+ (CTRL + ENTER to open)", pe->signatureData->data.humanReadable.GetText() });
+        PEMs          = general->AddItem({ "PEMs", ls.Format("%d PEMs (CTRL + ENTER to open)", pe->signatureData->data.pemCerts.size()) });
     }
 
-    uint16 signatureIndex                       = 0;
-    GView::DigitalSignature::SignatureType type = GView::DigitalSignature::SignatureType::Unknown;
+    int16 signatureIndex = -1;
     for (const auto& signature : pe->signatureData->data.signatures)
     {
+        signatureIndex += (signature.signatureType == GView::DigitalSignature::SignatureType::Signature);
+
         if (signature.signatureType == GView::DigitalSignature::SignatureType::Signature)
         {
             ls.Format("Signature #%u", signatureIndex);
@@ -123,23 +120,6 @@ void DigitalSignature::Update()
 
         general->AddItem({ ls.GetText(), "" }).SetType(ListViewItem::Type::Category);
 
-        signatureIndex += (type == GView::DigitalSignature::SignatureType::Signature);
-        type = signature.signatureType;
-
-        switch (signature.signatureType)
-        {
-        case GView::DigitalSignature::SignatureType::Signature:
-            general->AddItem({ "Signature Type", "Signature" });
-            break;
-        case GView::DigitalSignature::SignatureType::CounterSignature:
-            general->AddItem({ "Signature Type", "Counter Signature" });
-            break;
-        case GView::DigitalSignature::SignatureType::Unknown:
-        default:
-            general->AddItem({ "Signature Type", "Unknown" });
-            break;
-        }
-
         if (signature.signatureType == GView::DigitalSignature::SignatureType::CounterSignature)
         {
             switch (signature.counterSignatureType)
@@ -147,10 +127,10 @@ void DigitalSignature::Update()
             case GView::DigitalSignature::CounterSignatureType::Unknown:
                 break;
             case GView::DigitalSignature::CounterSignatureType::Authenticode:
-                general->AddItem({ "Timestamp Type", "Authenticode" });
+                general->AddItem({ "Timestamp Type", "Authenticode" }).SetType(ListViewItem::Type::Emphasized_2);
                 break;
             case GView::DigitalSignature::CounterSignatureType::RFC3161:
-                general->AddItem({ "Timestamp Type", "RFC3161" });
+                general->AddItem({ "Timestamp Type", "RFC3161" }).SetType(ListViewItem::Type::Emphasized_2);
                 break;
             default:
                 break;

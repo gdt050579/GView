@@ -2231,7 +2231,7 @@ void PEFile::RunCommand(std::string_view commandName)
 {
     if (commandName == "DigitalSignature")
     {
-        do
+        while (!signatureChecked)
         {
             const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
 
@@ -2254,8 +2254,7 @@ void PEFile::RunCommand(std::string_view commandName)
 
                 break;
             }
-            break;
-        } while (true);
+        };
 
         if (signatureData.has_value())
         {

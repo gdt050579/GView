@@ -430,7 +430,6 @@ namespace DigitalSignature
                     String issuer;
                     String subject;
                     String email;
-                    String date;
                     String serialNumber;
                     String digestAlgorithm;
                     String notAfter;
