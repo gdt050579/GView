@@ -30,20 +30,6 @@ struct WrapperCMS_ContentInfo
     }
 };
 
-struct WrapperPKCS7
-{
-    PKCS7* data = nullptr;
-
-    ~WrapperPKCS7()
-    {
-        if (data != nullptr)
-        {
-            // PKCS7_free(data);
-            data = nullptr;
-        }
-    }
-};
-
 struct WrapperASN1_PCTX
 {
     ASN1_PCTX* data = nullptr;
@@ -114,6 +100,7 @@ using ASN1_TYPE_ptr     = std::unique_ptr<ASN1_TYPE, decltype(&ASN1_TYPE_free)>;
 using OpenSSL_ptr       = std::unique_ptr<char, decltype(&OpenSSL_free)>;
 using BN_ptr            = std::unique_ptr<BIGNUM, decltype(&BN_free)>;
 using STACK_OF_X509_ptr = std::unique_ptr<STACK_OF(X509), decltype(&SK_X509_free)>;
+using PKCS7_ptr         = std::unique_ptr<PKCS7, decltype(&PKCS7_free)>;
 
 /**
  * A convenience union for representing the kind of checksum returned, as
@@ -567,7 +554,6 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
     {
         auto& signature = output.data.signatures.emplace_back();
 
-        const auto& oSigner = oSignature.signer;
         signature.signer.programName.Set(oSignature.signer.programName);
         signature.signer.publishLink.Set(oSignature.signer.publishLink);
         signature.signer.moreInfoLink.Set(oSignature.signer.moreInfoLink);
@@ -580,7 +566,6 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
             certificate.issuer.Set(oCertificate.issuer);
             certificate.subject.Set(oCertificate.subject);
             certificate.email.Set(oCertificate.issuerAttributes.emailAddress);
-            certificate.date = "";
             certificate.serialNumber.Set(oCertificate.serial);
             certificate.digestAlgorithm.Set(oCertificate.keyAlg);
             certificate.notAfter.Set(TimeToHumanReadable(oCertificate.notAfter));
@@ -604,7 +589,6 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
                     certificate.issuer.Set(oCsCertificate.issuer);
                     certificate.subject.Set(oCsCertificate.subject);
                     certificate.email.Set(oCsCertificate.issuerAttributes.emailAddress);
-                    certificate.date = "";
                     certificate.serialNumber.Set(oCsCertificate.serial);
                     certificate.digestAlgorithm.Set(oCsCertificate.keyAlg);
                     certificate.notAfter.Set(TimeToHumanReadable(oCsCertificate.notAfter));
@@ -633,9 +617,9 @@ bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
     CHECK((size_t) BIO_write(in.memory, buffer.GetData(), (int32) buffer.GetLength()) == buffer.GetLength(), false, "");
 
     ERR_clear_error();
-    WrapperPKCS7 pkcs7{ d2i_PKCS7_bio(in.memory, nullptr) };
+    PKCS7_ptr pkcs7(d2i_PKCS7_bio(in.memory, nullptr), PKCS7_free);
     GetError(error, output);
-    CHECK(pkcs7.data != nullptr, false, output.GetText());
+    CHECK(pkcs7 != nullptr, false, output.GetText());
 
     ERR_clear_error();
     WrapperBIO out{ BIO_new(BIO_s_mem()) };
@@ -653,7 +637,7 @@ bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
     ASN1_PCTX_set_cert_flags(pctx.data, 0);
 
     ERR_clear_error();
-    const auto ctxCode = PKCS7_print_ctx(out.memory, pkcs7.data, 4, pctx.data);
+    const auto ctxCode = PKCS7_print_ctx(out.memory, pkcs7.get(), 4, pctx.data);
     GetError(error, output);
     CHECK(ctxCode == 1, false, output.GetText());
 
@@ -851,8 +835,14 @@ BOOL GetInfoThroughSigner(
         CHECK(GetCertificateInfo(signer, certContext, certificate), false, "");
     }
 
-    signature.signingTime = signingTime;
-    CHECK(GetSignatureSigningTime(signer, signature), false, "");
+    if (signature.counterSignatureType == CounterSignatureType::RFC3161 && signingTime.Len() > 0)
+    {
+        signature.signingTime = signingTime;
+    }
+    else
+    {
+        CHECK(GetSignatureSigningTime(signer, signature), false, "");
+    }
 
     return TRUE;
 }
