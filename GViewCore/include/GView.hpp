@@ -440,6 +440,8 @@ namespace DigitalSignature
                     String digestAlgorithm;
                     String dateNotAfter;
                     String dateNotBefore;
+
+                    String crlPoint;
                 };
                 std::vector<Certificate> certificates; // if it has bundled certs in counter signature / timestamp
 

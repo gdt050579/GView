@@ -650,31 +650,10 @@ bool __VerifyEmbeddedSignature__(ConstString source, AuthenticodeMS& data)
     return true;
 }
 
-#    define ENCODING (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING)
+constexpr uint32 ENCODING = (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING);
 
-struct WrapperCertContext
-{
-    PCCERT_CONTEXT context = NULL;
-    ~WrapperCertContext()
-    {
-        if (context != NULL)
-        {
-            CertFreeCertificateContext(context);
-        }
-    }
-};
-
-struct WrapperSignerInfo
-{
-    PCMSG_SIGNER_INFO info = NULL;
-    ~WrapperSignerInfo()
-    {
-        if (info != NULL)
-        {
-            // LocalFree(info); // TODO: change this in unique_ptr
-        }
-    }
-};
+using CMSG_SIGNER_INFO_ptr = std::unique_ptr<CMSG_SIGNER_INFO, decltype(&LocalFree)>;
+using CERT_CONTEXT_ptr     = std::unique_ptr<const CERT_CONTEXT, decltype(&CertFreeCertificateContext)>;
 
 struct WrapperHStore
 {
@@ -700,44 +679,43 @@ struct WrapperHMsg
     }
 };
 
-BOOL GetOpusInfo(PCMSG_SIGNER_INFO pSignerInfo, AuthenticodeMS::Data::Signature::Signer& signer);
-
-BOOL GetCertDate(const WrapperSignerInfo& signerInfo, AuthenticodeMS::Data::Signature& signature);
-
+BOOL GetOpusInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature::Signer& signer);
+BOOL GetCertificateSigningTime(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature& signature);
+BOOL GetCertificateCRLPoint(const CERT_CONTEXT_ptr& certContext, AuthenticodeMS::Data::Signature::Certificate& certificate);
 BOOL GetCertificateInfo(
-      const WrapperSignerInfo& signerInfo,
-      const WrapperCertContext& certContext,
+      const CMSG_SIGNER_INFO_ptr& signerInfo,
+      const CERT_CONTEXT_ptr& certContext,
       AuthenticodeMS::Data::Signature::Certificate& certificate);
-
 BOOL GetCounterSigner(
-      const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner, CounterSignatureType& type);
+      const CMSG_SIGNER_INFO_ptr& signer,
+      CMSG_SIGNER_INFO_ptr& counterSigner,
+      WrapperHStore& storeCounterSigner,
+      CounterSignatureType& type);
 
-BOOL Get2ndSignature(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signature& info);
-
-BOOL Get_szOID_RSA_counterSign_Signer(const WrapperSignerInfo& signer, uint32 attributeIndex, WrapperSignerInfo& counterSigner)
+BOOL Get_szOID_RSA_counterSign_Signer(const CMSG_SIGNER_INFO_ptr& signer, uint32 attributeIndex, CMSG_SIGNER_INFO_ptr& counterSigner)
 {
     DWORD dwSize{ 0 };
     CHECK(CryptDecodeObject(
                 ENCODING,
                 PKCS7_SIGNER_INFO,
-                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].pbData,
-                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].cbData,
+                signer.get()->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].pbData,
+                signer.get()->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].cbData,
                 0,
                 NULL,
                 &dwSize),
           false,
           "");
 
-    counterSigner.info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
-    CHECK(counterSigner.info != nullptr, false, "");
+    counterSigner.reset((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize));
+    CHECK(counterSigner.get() != nullptr, false, "");
 
     CHECK(CryptDecodeObject(
                 ENCODING,
                 PKCS7_SIGNER_INFO,
-                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].pbData,
-                signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].cbData,
+                signer->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].pbData,
+                signer->UnauthAttrs.rgAttr[attributeIndex].rgValue[0].cbData,
                 0,
-                (PVOID) counterSigner.info,
+                (PVOID) counterSigner.get(),
                 &dwSize),
           false,
           "");
@@ -747,7 +725,7 @@ BOOL Get_szOID_RSA_counterSign_Signer(const WrapperSignerInfo& signer, uint32 at
 
 BOOL GetInfoThroughSigner(
       AuthenticodeMS& container,
-      const WrapperSignerInfo& signer,
+      const CMSG_SIGNER_INFO_ptr& signer,
       const WrapperHStore& store,
       SignatureType signatureType,
       CounterSignatureType counterSignatureType)
@@ -755,33 +733,34 @@ BOOL GetInfoThroughSigner(
     auto& signature                = container.data.signatures.emplace_back();
     signature.signatureType        = signatureType;
     signature.counterSignatureType = counterSignatureType;
-    CHECK(GetOpusInfo(signer.info, signature.signer), false, "");
+    CHECK(GetOpusInfo(signer, signature.signer), false, "");
 
-    CERT_INFO signerCertInfo{ .SerialNumber = signer.info->SerialNumber, .Issuer = signer.info->Issuer };
-    WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-                                          store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signerCertInfo, NULL) };
-    CHECK(certContext.context != nullptr, false, "");
+    CERT_INFO signerCertInfo{ .SerialNumber = signer->SerialNumber, .Issuer = signer->Issuer };
+    CERT_CONTEXT_ptr certContext(
+          CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signerCertInfo, NULL),
+          CertFreeCertificateContext);
+    CHECK(certContext != nullptr, false, "");
 
     auto& certificate = signature.certificates.emplace_back();
     CHECK(GetCertificateInfo(signer, certContext, certificate), false, "");
-    CHECK(GetCertDate(signer, signature), false, "");
+    CHECK(GetCertificateSigningTime(signer, signature), false, "");
 
     return TRUE;
 }
 
 BOOL Get_szOID_NESTED_SIGNATURE_Signer(
-      const WrapperSignerInfo& signer, uint32 attributeIndex, std::vector<WrapperSignerInfo>& nestedSigners)
+      const CMSG_SIGNER_INFO_ptr& signer, uint32 attributeIndex, std::vector<CMSG_SIGNER_INFO_ptr>& nestedSigners)
 {
     uint32 offset = 0;
-    for (uint32 j = 0; j < signer.info->UnauthAttrs.rgAttr[attributeIndex].cValue; j++)
+    for (uint32 j = 0; j < signer->UnauthAttrs.rgAttr[attributeIndex].cValue; j++)
     {
         WrapperHMsg hMsg{ .handle = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, 0, NULL, NULL, NULL) };
         CHECK(hMsg.handle != 0, false, "");
 
         CHECK(CryptMsgUpdate(
                     hMsg.handle,
-                    signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[j].pbData,
-                    signer.info->UnauthAttrs.rgAttr[attributeIndex].rgValue[j].cbData,
+                    signer->UnauthAttrs.rgAttr[attributeIndex].rgValue[j].pbData,
+                    signer->UnauthAttrs.rgAttr[attributeIndex].rgValue[j].cbData,
                     TRUE),
               false,
               "");
@@ -800,11 +779,11 @@ BOOL Get_szOID_NESTED_SIGNATURE_Signer(
             CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, i, NULL, &dwSignerInfo), false, "");
             CHECK(dwSignerInfo != 0, false, "");
 
-            auto& nestedSigner = nestedSigners.emplace_back();
-            nestedSigner.info  = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo);
-            CHECK(nestedSigner.info != nullptr, false, "");
+            auto& nestedSigner = nestedSigners.emplace_back(
+                  std::move(CMSG_SIGNER_INFO_ptr((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo), LocalFree)));
+            CHECK(nestedSigner.get() != nullptr, false, "");
 
-            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, i, (PVOID) nestedSigner.info, &dwSignerInfo), false, "");
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, i, (PVOID) nestedSigner.get(), &dwSignerInfo), false, "");
             CHECK(dwSignerInfo != 0, false, "");
         }
     }
@@ -812,27 +791,25 @@ BOOL Get_szOID_NESTED_SIGNATURE_Signer(
     return TRUE;
 }
 
-BOOL ParseSigner(const WrapperSignerInfo& signer, AuthenticodeMS& container, const WrapperHStore& initialStore)
+BOOL ParseSigner(const CMSG_SIGNER_INFO_ptr& signer, AuthenticodeMS& container, const WrapperHStore& initialStore)
 {
-    CHECK(signer.info != nullptr, false, "");
+    CHECK(signer != nullptr, false, "");
 
-    for (DWORD n = 0; n < signer.info->UnauthAttrs.cAttr; n++)
+    for (DWORD n = 0; n < signer->UnauthAttrs.cAttr; n++)
     {
-        if (signer.info->UnauthAttrs.rgAttr[n].pszObjId &&
-            lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_NESTED_SIGNATURE) == 0)
+        if (signer->UnauthAttrs.rgAttr[n].pszObjId && lstrcmpA(signer->UnauthAttrs.rgAttr[n].pszObjId, szOID_NESTED_SIGNATURE) == 0)
         {
-            std::vector<WrapperSignerInfo> nestedSigners{};
+            std::vector<CMSG_SIGNER_INFO_ptr> nestedSigners;
             CHECK(Get_szOID_NESTED_SIGNATURE_Signer(signer, n, nestedSigners), false, "");
 
             auto i = 0;
             for (const auto& nestedSigner : nestedSigners)
             {
                 CRYPT_DATA_BLOB data{ 0 };
-                data.pbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i].pbData;
-                data.cbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i++].cbData;
+                data.pbData = signer->UnauthAttrs.rgAttr[n].rgValue[i].pbData;
+                data.cbData = signer->UnauthAttrs.rgAttr[n].rgValue[i++].cbData;
 
-                WrapperHStore store{ .handle =
-                                           CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &data) };
+                WrapperHStore store{ .handle = CertOpenStore(CERT_STORE_PROV_PKCS7, ENCODING, NULL, 0, &data) };
 
                 CHECK(GetInfoThroughSigner(container, nestedSigner, store, SignatureType::Signature, CounterSignatureType::Unknown),
                       false,
@@ -842,10 +819,9 @@ BOOL ParseSigner(const WrapperSignerInfo& signer, AuthenticodeMS& container, con
         }
 
         // Authenticode
-        if (signer.info->UnauthAttrs.rgAttr[n].pszObjId &&
-            lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
+        if (signer->UnauthAttrs.rgAttr[n].pszObjId && lstrcmpA(signer->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
         {
-            WrapperSignerInfo counterSigner{};
+            CMSG_SIGNER_INFO_ptr counterSigner(nullptr, LocalFree);
             CHECK(Get_szOID_RSA_counterSign_Signer(signer, n, counterSigner), false, "");
             CHECK(GetInfoThroughSigner(
                         container, counterSigner, initialStore, SignatureType::CounterSignature, CounterSignatureType::Authenticode),
@@ -855,21 +831,19 @@ BOOL ParseSigner(const WrapperSignerInfo& signer, AuthenticodeMS& container, con
         }
 
         // RFC3161
-        if (signer.info->UnauthAttrs.rgAttr[n].pszObjId &&
-            lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
+        if (signer->UnauthAttrs.rgAttr[n].pszObjId && lstrcmpA(signer->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
         {
-            std::vector<WrapperSignerInfo> counterSigners{};
+            std::vector<CMSG_SIGNER_INFO_ptr> counterSigners;
             CHECK(Get_szOID_NESTED_SIGNATURE_Signer(signer, n, counterSigners), false, "");
 
             auto i = 0;
             for (const auto& counterSigner : counterSigners)
             {
                 CRYPT_DATA_BLOB data{ 0 };
-                data.pbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i].pbData;
-                data.cbData = signer.info->UnauthAttrs.rgAttr[n].rgValue[i++].cbData;
+                data.pbData = signer->UnauthAttrs.rgAttr[n].rgValue[i].pbData;
+                data.cbData = signer->UnauthAttrs.rgAttr[n].rgValue[i++].cbData;
 
-                WrapperHStore store{ .handle =
-                                           CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &data) };
+                WrapperHStore store{ .handle = CertOpenStore(CERT_STORE_PROV_PKCS7, ENCODING, NULL, 0, &data) };
 
                 CHECK(GetInfoThroughSigner(container, counterSigner, store, SignatureType::CounterSignature, CounterSignatureType::RFC3161),
                       false,
@@ -913,48 +887,51 @@ bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
     DWORD dwSignerInfo{ 0 };
     CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo), false, "");
 
-    WrapperSignerInfo signerInfo{ .info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo) };
-    CHECK(signerInfo.info != nullptr, false, "");
+    CMSG_SIGNER_INFO_ptr signerInfo((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo), LocalFree);
+    CHECK(signerInfo != nullptr, false, "");
 
-    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.info, &dwSignerInfo), false, "");
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.get(), &dwSignerInfo), false, "");
 
     auto& pkSignature = container.data.signatures.emplace_back();
     auto& pkSigner    = pkSignature.signer;
-    CHECK(GetOpusInfo(signerInfo.info, pkSigner), false, "");
+    CHECK(GetOpusInfo(signerInfo, pkSigner), false, "");
 
-    CERT_INFO signerCertInfo{ .SerialNumber = signerInfo.info->SerialNumber, .Issuer = signerInfo.info->Issuer };
-    WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-                                          hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signerCertInfo, NULL) };
-    CHECK(certContext.context != nullptr, false, "");
+    CERT_INFO signerCertInfo{ .SerialNumber = signerInfo->SerialNumber, .Issuer = signerInfo->Issuer };
+    CERT_CONTEXT_ptr certContext(
+          CertFindCertificateInStore(hStore.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signerCertInfo, NULL),
+          CertFreeCertificateContext);
+    CHECK(certContext != nullptr, false, "");
 
     auto& ceritficate = pkSignature.certificates.emplace_back();
     CHECK(GetCertificateInfo(signerInfo, certContext, ceritficate), false, "");
-    CHECK(GetCertDate(signerInfo, pkSignature), false, "");
+    CHECK(GetCertificateSigningTime(signerInfo, pkSignature), false, "");
     pkSignature.signatureType = SignatureType::Signature;
 
     CHECK(ParseSigner(signerInfo, container, hStore), false, "");
 
-    return 0;
+    return true;
 }
 
-BOOL GetNameString(const WrapperCertContext& certContext, String& out, DWORD type, DWORD flag)
+BOOL GetNameString(const CERT_CONTEXT_ptr& certContext, String& out, DWORD type, DWORD flag)
 {
-    const auto size = CertGetNameStringA(certContext.context, type, flag, NULL, NULL, 0);
+    const auto size = CertGetNameStringA(certContext.get(), type, flag, NULL, NULL, 0);
     std::unique_ptr<char> name(new char[size]);
-    CHECK(CertGetNameStringA(certContext.context, type, flag, NULL, (LPSTR) name.get(), size) == size, false, "");
+    CHECK(CertGetNameStringA(certContext.get(), type, flag, NULL, (LPSTR) name.get(), size) == size, false, "");
     CHECK(out.Set(name.get()), false, "");
 
     return true;
 }
 
 BOOL GetCertificateInfo(
-      const WrapperSignerInfo& signerInfo, const WrapperCertContext& certContext, AuthenticodeMS::Data::Signature::Certificate& certificate)
+      const CMSG_SIGNER_INFO_ptr& signerInfo,
+      const CERT_CONTEXT_ptr& certContext,
+      AuthenticodeMS::Data::Signature::Certificate& certificate)
 {
     LocalString<1024> ls;
-    const auto serialNumberSize = certContext.context->pCertInfo->SerialNumber.cbData;
+    const auto serialNumberSize = certContext->pCertInfo->SerialNumber.cbData;
     for (DWORD n = 0; n < serialNumberSize; n++)
     {
-        ls.AddFormat("%02x", certContext.context->pCertInfo->SerialNumber.pbData[serialNumberSize - (n + 1)]);
+        ls.AddFormat("%02x", certContext->pCertInfo->SerialNumber.pbData[serialNumberSize - (n + 1)]);
     }
     certificate.serialNumber.Set(ls);
 
@@ -962,7 +939,7 @@ BOOL GetCertificateInfo(
     CHECK(GetNameString(certContext, certificate.subject, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0), false, "");
     CHECK(GetNameString(certContext, certificate.email, CERT_NAME_EMAIL_TYPE, 0), false, "");
 
-    const auto& digestAlgorithm = signerInfo.info->HashAlgorithm;
+    const auto& digestAlgorithm = signerInfo->HashAlgorithm;
     if (digestAlgorithm.pszObjId)
     {
         PCCRYPT_OID_INFO pCOI = CryptFindOIDInfo(CRYPT_OID_INFO_OID_KEY, digestAlgorithm.pszObjId, 0);
@@ -988,18 +965,20 @@ BOOL GetCertificateInfo(
 
     SYSTEMTIME st{ 0 };
 
-    const auto& dateNotAfter = certContext.context->pCertInfo->NotAfter;
+    const auto& dateNotAfter = certContext->pCertInfo->NotAfter;
     FileTimeToSystemTime(&dateNotAfter, &st);
     certificate.dateNotAfter.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
-    const auto& dateNotBefore = certContext.context->pCertInfo->NotBefore;
+    const auto& dateNotBefore = certContext->pCertInfo->NotBefore;
     FileTimeToSystemTime(&dateNotBefore, &st);
     certificate.dateNotBefore.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
+
+    CHECK(GetCertificateCRLPoint(certContext, certificate), false, "");
 
     return true;
 }
 
-BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, AuthenticodeMS::Data::Signature::Signer& signer)
+BOOL GetOpusInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature::Signer& signer)
 {
     for (auto n = 0U; n < signerInfo->AuthAttrs.cAttr; n++)
     {
@@ -1068,11 +1047,49 @@ BOOL GetOpusInfo(PCMSG_SIGNER_INFO signerInfo, AuthenticodeMS::Data::Signature::
     return true;
 }
 
-BOOL GetCertDate(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signature& signature)
+BOOL GetCertificateCRLPoint(const CERT_CONTEXT_ptr& certContext, AuthenticodeMS::Data::Signature::Certificate& certificate)
 {
-    for (DWORD n = 0; n < signer.info->AuthAttrs.cAttr; n++)
+    PCERT_EXTENSION pe = CertFindExtension(szOID_CRL_DIST_POINTS, certContext->pCertInfo->cExtension, certContext->pCertInfo->rgExtension);
+    CHECK(pe, FALSE, "");
+
+    BYTE btData[512]   = { 0 };
+    auto pCRLDistPoint = (PCRL_DIST_POINTS_INFO) btData;
+    ULONG dataLength   = 512;
+    CHECK(CryptDecodeObject(
+                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                szOID_CRL_DIST_POINTS,
+                pe->Value.pbData,
+                pe->Value.cbData,
+                CRYPT_DECODE_NOCOPY_FLAG,
+                pCRLDistPoint,
+                &dataLength),
+          FALSE,
+          "");
+
+    WCHAR url[512] = { 0 };
+    for (ULONG idx = 0; idx < pCRLDistPoint->cDistPoint; idx++)
     {
-        if (lstrcmpA(szOID_RSA_signingTime, signer.info->AuthAttrs.rgAttr[n].pszObjId) != 0)
+        PCRL_DIST_POINT_NAME dpn = &pCRLDistPoint->rgDistPoint[idx].DistPointName;
+        for (ULONG ulAltEntry = 0; ulAltEntry < dpn->FullName.cAltEntry; ulAltEntry++)
+        {
+            if (wcslen(url) > 0)
+            {
+                wcscat_s(url, 512, L";");
+            }
+            wcscat_s(url, 512, dpn->FullName.rgAltEntry[ulAltEntry].pwszURL);
+        }
+    }
+
+    certificate.crlPoint.Set(std::u16string_view{ reinterpret_cast<char16_t*>(url) });
+
+    return TRUE;
+}
+
+BOOL GetCertificateSigningTime(const CMSG_SIGNER_INFO_ptr& signer, AuthenticodeMS::Data::Signature& signature)
+{
+    for (DWORD n = 0; n < signer->AuthAttrs.cAttr; n++)
+    {
+        if (lstrcmpA(szOID_RSA_signingTime, signer->AuthAttrs.rgAttr[n].pszObjId) != 0)
         {
             continue;
         }
@@ -1082,8 +1099,8 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signatur
         CHECK(CryptDecodeObject(
                     ENCODING,
                     szOID_RSA_signingTime,
-                    signer.info->AuthAttrs.rgAttr[n].rgValue[0].pbData,
-                    signer.info->AuthAttrs.rgAttr[n].rgValue[0].cbData,
+                    signer->AuthAttrs.rgAttr[n].rgValue[0].pbData,
+                    signer->AuthAttrs.rgAttr[n].rgValue[0].cbData,
                     0,
                     (PVOID) &ft,
                     &size),
@@ -1105,35 +1122,38 @@ BOOL GetCertDate(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signatur
 }
 
 BOOL GetCounterSigner(
-      const WrapperSignerInfo& signer, WrapperSignerInfo& counterSigner, WrapperHStore& storeCounterSigner, CounterSignatureType& type)
+      const CMSG_SIGNER_INFO_ptr& signer,
+      CMSG_SIGNER_INFO_ptr& counterSigner,
+      WrapperHStore& storeCounterSigner,
+      CounterSignatureType& type)
 {
-    for (DWORD n = 0; n < signer.info->UnauthAttrs.cAttr; n++)
+    for (DWORD n = 0; n < signer->UnauthAttrs.cAttr; n++)
     {
         // Authenticode
-        if (lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
+        if (lstrcmpA(signer->UnauthAttrs.rgAttr[n].pszObjId, szOID_RSA_counterSign) == 0)
         {
             DWORD dwSize{ 0 };
             CHECK(CryptDecodeObject(
                         ENCODING,
                         PKCS7_SIGNER_INFO,
-                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
-                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
+                        signer->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
+                        signer->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
                         0,
                         NULL,
                         &dwSize),
                   false,
                   "");
 
-            counterSigner.info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
-            CHECK(counterSigner.info != nullptr, false, "");
+            counterSigner.reset((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize));
+            CHECK(counterSigner != nullptr, false, "");
 
             CHECK(CryptDecodeObject(
                         ENCODING,
                         PKCS7_SIGNER_INFO,
-                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
-                        signer.info->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
+                        signer->UnauthAttrs.rgAttr[n].rgValue[0].pbData,
+                        signer->UnauthAttrs.rgAttr[n].rgValue[0].cbData,
                         0,
-                        (PVOID) counterSigner.info,
+                        (PVOID) counterSigner.get(),
                         &dwSize),
                   false,
                   "");
@@ -1144,16 +1164,13 @@ BOOL GetCounterSigner(
         }
 
         // RFC3161
-        if (lstrcmpA(signer.info->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
+        if (lstrcmpA(signer->UnauthAttrs.rgAttr[n].pszObjId, szOID_RFC3161_counterSign) == 0)
         {
             WrapperHMsg hMsg{ .handle = CryptMsgOpenToDecode(ENCODING, 0, 0, NULL, NULL, NULL) };
             CHECK(hMsg.handle != NULL, false, "");
 
             CHECK(CryptMsgUpdate(
-                        hMsg.handle,
-                        signer.info->UnauthAttrs.rgAttr[n].rgValue->pbData,
-                        signer.info->UnauthAttrs.rgAttr[n].rgValue->cbData,
-                        TRUE),
+                        hMsg.handle, signer->UnauthAttrs.rgAttr[n].rgValue->pbData, signer->UnauthAttrs.rgAttr[n].rgValue->cbData, TRUE),
                   false,
                   "");
 
@@ -1161,15 +1178,15 @@ BOOL GetCounterSigner(
             CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSize), false, "");
             CHECK(dwSize != 0, false, "");
 
-            counterSigner.info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize);
+            counterSigner.reset((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSize));
 
-            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, counterSigner.info, &dwSize), false, "");
+            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, counterSigner.get(), &dwSize), false, "");
 
             CRYPT_DATA_BLOB c7Data{ 0 };
-            c7Data.pbData = signer.info->UnauthAttrs.rgAttr[n].rgValue->pbData;
-            c7Data.cbData = signer.info->UnauthAttrs.rgAttr[n].rgValue->cbData;
+            c7Data.pbData = signer->UnauthAttrs.rgAttr[n].rgValue->pbData;
+            c7Data.cbData = signer->UnauthAttrs.rgAttr[n].rgValue->cbData;
 
-            storeCounterSigner.handle = CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &c7Data);
+            storeCounterSigner.handle = CertOpenStore(CERT_STORE_PROV_PKCS7, ENCODING, NULL, 0, &c7Data);
 
             type = CounterSignatureType::RFC3161;
 
@@ -1178,81 +1195,6 @@ BOOL GetCounterSigner(
     }
 
     return false;
-}
-
-BOOL Get2ndSignature(const WrapperSignerInfo& signer, AuthenticodeMS::Data::Signature& info)
-{
-    for (DWORD i = 0; i < signer.info->UnauthAttrs.cAttr; i++)
-    {
-        if (signer.info->UnauthAttrs.rgAttr[i].pszObjId &&
-            lstrcmpA(signer.info->UnauthAttrs.rgAttr[i].pszObjId, szOID_NESTED_SIGNATURE) == 0)
-        {
-            WrapperHMsg hMsg{ .handle = CryptMsgOpenToDecode(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0, 0, NULL, NULL, NULL) };
-            CHECK(hMsg.handle != 0, false, "");
-
-            CHECK(CryptMsgUpdate(
-                        hMsg.handle,
-                        signer.info->UnauthAttrs.rgAttr[i].rgValue->pbData,
-                        signer.info->UnauthAttrs.rgAttr[i].rgValue->cbData,
-                        TRUE),
-                  false,
-                  "");
-
-            DWORD dwSignerInfo = 0;
-            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo), false, "");
-            CHECK(dwSignerInfo != 0, false, "");
-
-            WrapperSignerInfo signerInfo1{ .info = (PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo) };
-            CHECK(signerInfo1.info != nullptr, false, "");
-
-            CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo1.info, &dwSignerInfo), false, "");
-
-            // GetCertDate(signerInfo1, info.certificate);
-            GetOpusInfo(signerInfo1.info, info.signer);
-
-            CRYPT_DATA_BLOB data{ 0 };
-            data.pbData = signer.info->UnauthAttrs.rgAttr[i].rgValue->pbData;
-            data.cbData = signer.info->UnauthAttrs.rgAttr[i].rgValue->cbData;
-
-            WrapperHStore store{ .handle = CertOpenStore(CERT_STORE_PROV_PKCS7, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, NULL, 0, &data) };
-
-            CERT_INFO certInfo{ .SerialNumber = signerInfo1.info->SerialNumber, .Issuer = signerInfo1.info->Issuer };
-
-            WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-                                                  store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-
-            // GetCertificateInfo(signerInfo1, certContext, info.certificate);
-            //
-            // WrapperSignerInfo counterSignerInfo{};
-            // WrapperHStore storeCounterSigner{};
-            // WrapperCertContext counterSignerCertContext{};
-            // auto& counterSignature1 = info.counterSignatures.emplace_back();
-            // if (GetCounterSigner(signerInfo1, counterSignerInfo, storeCounterSigner, counterSignature1.counterSignatureType))
-            // {
-            //     if (counterSignerInfo.info != nullptr)
-            //     {
-            //         certInfo.Issuer       = counterSignerInfo.info->Issuer;
-            //         certInfo.SerialNumber = counterSignerInfo.info->SerialNumber;
-            //
-            //         const auto& scHandle = storeCounterSigner.handle != 0 ? storeCounterSigner.handle : store.handle;
-            //
-            //         WrapperCertContext certContext{ .context = CertFindCertificateInStore(
-            //                                               scHandle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &certInfo, NULL) };
-            //
-            //         CHECK(certContext.context != nullptr, false, "");
-            //
-            //         auto& certificate = counterSignature1.certificates.emplace_back();
-            //         GetCertificateInfo(counterSignerInfo, certContext, certificate);
-            //         GetCertDate(counterSignerInfo, counterSignature1);
-            //         GetOpusInfo(counterSignerInfo.info, info.signer);
-            //     }
-            // }
-
-            break;
-        }
-    }
-
-    return TRUE;
 }
 
 #endif
