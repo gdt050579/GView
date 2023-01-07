@@ -438,8 +438,8 @@ namespace DigitalSignature
                     String date;
                     String serialNumber;
                     String digestAlgorithm;
-                    String dateNotAfter;
-                    String dateNotBefore;
+                    String notAfter;
+                    String notBefore;
 
                     String crlPoint;
                 };
@@ -452,14 +452,15 @@ namespace DigitalSignature
                 CounterSignatureType counterSignatureType{ CounterSignatureType::Unknown };
             };
             std::vector<Signature> signatures;
+
+            String humanReadable;
         } data;
     };
 
     CORE_EXPORT bool AuthenticodeToStructure(const Buffer& buffer, AuthenticodeMS& output);
-    CORE_EXPORT bool AuthenticodeVerifySignature(Utils::DataCache& cache, String& output);
     CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
 
-    CORE_EXPORT std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source);
+    CORE_EXPORT std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache);
 } // namespace DigitalSignature
 
 namespace Golang

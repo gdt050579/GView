@@ -218,7 +218,7 @@ class Certificate
     bool Parse(X509* x509);
 };
 
-class Countersignature
+class CounterSignature
 {
   public:
     int32_t verifyFlags;            /* COUNTERISGNATURE_VFY_ flag */
@@ -235,40 +235,42 @@ class Signer /* Represents SignerInfo structure */
 {
   public:
     std::vector<uint8_t> digest;    /* Message Digest of the SignerInfo */
-    std::string digest_alg;         /* name of the digest algorithm */
-    std::string program_name;       /* Program name stored in SpcOpusInfo structure of Authenticode */
+    std::string digestAlg;          /* name of the digest algorithm */
+    std::string programName;        /* Program name stored in SpcOpusInfo structure of Authenticode */
     std::vector<Certificate> chain; /* Certificate chain of the signer */
 };
 
-class Authenticode
+class AuthenticodeSignature
 {
   public:
-    uint32_t verify_flags;                     /* AUTHENTICODE_VFY_ flag */
-    uint64_t version;                          /* Raw PKCS7 version */
-    std::string digest_alg;                    /* name of the digest algorithm */
-    std::vector<uint8_t> digest;               /* File Digest stored in the Signature */
-    std::vector<uint8_t> file_digest;          /* Actual calculated file digest */
-    Signer signer;                             /* SignerInfo information of the Authenticode */
-    std::vector<Certificate> certs;            /* All certificates in the Signature including the ones in timestamp
-                                                  countersignatures */
-    std::vector<Countersignature> countersigs; /* Array of timestamp countersignatures */
+    uint32_t verifyFlags;                            /* AUTHENTICODE_VFY_ flag */
+    uint64_t version;                                /* Raw PKCS7 version */
+    std::string digestAlg;                           /* name of the digest algorithm */
+    std::vector<uint8_t> digest;                     /* File Digest stored in the Signature */
+    std::vector<uint8_t> fileDigest;                 /* Actual calculated file digest */
+    Signer signer;                                   /* SignerInfo information of the Authenticode */
+    std::vector<Certificate> certs;                  /* All certificates in the Signature including the ones in timestamp
+                                                        countersignatures */
+    std::vector<CounterSignature> counterSignatures; /* Array of timestamp countersignatures */
 };
 
 class AuthenticodeParser
 {
-    friend class Countersignature;
+    friend class CounterSignature;
 
   private:
-    std::vector<Authenticode> authenticodeData;
+    std::vector<AuthenticodeSignature> signatures;
 
   public:
     AuthenticodeParser();
     bool AuthenticodeParse(const uint8_t* bufferPE, uint64_t len);
-    bool Dump(std::string& output) const;
+    const std::vector<AuthenticodeSignature>& GetSignatures() const;
+    static std::string GetSignatureFlags(uint32_t flags);
+    static std::string GetCounterSignatureFlags(uint32_t flags);
 
   private:
-    bool AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<Authenticode>& result);
-    void ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<Authenticode>& result);
+    bool AuthenticodeParseSignature(const uint8_t* data, long len, std::vector<AuthenticodeSignature>& result);
+    void ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vector<AuthenticodeSignature>& result);
     static std::vector<Certificate> ParseSignerChain(X509* signerCert, STACK_OF(X509) * certs);
 };
 

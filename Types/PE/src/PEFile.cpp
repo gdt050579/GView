@@ -2231,8 +2231,7 @@ void PEFile::RunCommand(std::string_view commandName)
 {
     if (commandName == "DigitalSignature")
     {
-        signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath());
-        while (!signatureChecked && signatureData.has_value() && signatureData->winTrust.callSuccessful)
+        do
         {
             const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
 
@@ -2240,27 +2239,26 @@ void PEFile::RunCommand(std::string_view commandName)
             CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
             CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
 
-            Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
-            signatureData->openssl.verified =
-                  GView::DigitalSignature::AuthenticodeVerifySignature(obj->GetData(), signatureData->openssl.errorMessage);
+            signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath(), obj->GetData());
 
-            GView::DigitalSignature::AuthenticodeMS s{};
-            GView::DigitalSignature::AuthenticodeToStructure(blob, s);
+            while (!signatureChecked && signatureData.has_value() && signatureData->winTrust.callSuccessful)
+            {
+                Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
+                GView::DigitalSignature::AuthenticodeToHumanReadable(blob, signatureData.value().data.humanReadable);
 
-            String b;
-            GView::DigitalSignature::AuthenticodeToHumanReadable(blob, b);
+                GView::DigitalSignature::AuthenticodeMS s{};
+                GView::DigitalSignature::AuthenticodeToStructure(blob, s);
 
-            String output[32];
-            uint32 count{ 0 };
-            GView::DigitalSignature::CMSToPEMCerts(blob, output, count);
+                String output[32];
+                uint32 count{ 0 };
+                GView::DigitalSignature::CMSToPEMCerts(blob, output, count);
 
-            String humanReadable;
-            GView::DigitalSignature::CMSToHumanReadable(blob, humanReadable);
+                signatureChecked = true;
 
-            signatureChecked = true;
-
+                break;
+            }
             break;
-        }
+        } while (true);
 
         if (signatureData.has_value())
         {

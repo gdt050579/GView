@@ -508,7 +508,7 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
     return true;
 }
 
-bool AuthenticodeVerifySignature(Utils::DataCache& cache, String& output)
+bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output)
 {
     /*
      * with help from:
@@ -519,11 +519,27 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, String& output)
 
     Buffer b = cache.CopyEntireFile(true);
     Authenticode::AuthenticodeParser parser;
-    parser.AuthenticodeParse(b.GetData(), b.GetLength());
-    std::string output2;
-    parser.Dump(output2);
+    bool result = parser.AuthenticodeParse(b.GetData(), b.GetLength());
 
-    return true;
+    for (const auto& signature : parser.GetSignatures())
+    {
+        if (signature.verifyFlags != 0)
+        {
+            output.openssl.errorMessage.Add(parser.GetSignatureFlags(signature.verifyFlags).c_str());
+            result = false;
+        }
+
+        for (const auto& counter : signature.counterSignatures)
+        {
+            if (counter.verifyFlags != 0)
+            {
+                output.openssl.errorMessage.Add(parser.GetSignatureFlags(signature.verifyFlags).c_str());
+                result = false;
+            }
+        }
+    }
+
+    return result;
 }
 
 bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
@@ -902,8 +918,8 @@ bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
           CertFreeCertificateContext);
     CHECK(certContext != nullptr, false, "");
 
-    auto& ceritficate = pkSignature.certificates.emplace_back();
-    CHECK(GetCertificateInfo(signerInfo, certContext, ceritficate), false, "");
+    auto& certificate = pkSignature.certificates.emplace_back();
+    CHECK(GetCertificateInfo(signerInfo, certContext, certificate), false, "");
     CHECK(GetCertificateSigningTime(signerInfo, pkSignature), false, "");
     pkSignature.signatureType = SignatureType::Signature;
 
@@ -967,11 +983,11 @@ BOOL GetCertificateInfo(
 
     const auto& dateNotAfter = certContext->pCertInfo->NotAfter;
     FileTimeToSystemTime(&dateNotAfter, &st);
-    certificate.dateNotAfter.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
+    certificate.notAfter.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
     const auto& dateNotBefore = certContext->pCertInfo->NotBefore;
     FileTimeToSystemTime(&dateNotBefore, &st);
-    certificate.dateNotBefore.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
+    certificate.notBefore.Format("%02d/%02d/%04d %02d:%02d:%02d", st.wMonth, st.wDay, st.wYear, st.wHour, st.wMinute, st.wSecond);
 
     CHECK(GetCertificateCRLPoint(certContext, certificate), false, "");
 
@@ -1049,24 +1065,26 @@ BOOL GetOpusInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::S
 
 BOOL GetCertificateCRLPoint(const CERT_CONTEXT_ptr& certContext, AuthenticodeMS::Data::Signature::Certificate& certificate)
 {
-    PCERT_EXTENSION pe = CertFindExtension(szOID_CRL_DIST_POINTS, certContext->pCertInfo->cExtension, certContext->pCertInfo->rgExtension);
-    CHECK(pe, FALSE, "");
+    PCERT_EXTENSION extension =
+          CertFindExtension(szOID_CRL_DIST_POINTS, certContext->pCertInfo->cExtension, certContext->pCertInfo->rgExtension);
+    CHECK(extension, TRUE, "");
 
-    BYTE btData[512]   = { 0 };
-    auto pCRLDistPoint = (PCRL_DIST_POINTS_INFO) btData;
-    ULONG dataLength   = 512;
+    constexpr uint32 DATA_SIZE = 512;
+    BYTE btData[DATA_SIZE]     = { 0 };
+    auto pCRLDistPoint         = (PCRL_DIST_POINTS_INFO) btData;
+    ULONG dataLength           = DATA_SIZE;
     CHECK(CryptDecodeObject(
-                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                ENCODING,
                 szOID_CRL_DIST_POINTS,
-                pe->Value.pbData,
-                pe->Value.cbData,
+                extension->Value.pbData,
+                extension->Value.cbData,
                 CRYPT_DECODE_NOCOPY_FLAG,
                 pCRLDistPoint,
                 &dataLength),
           FALSE,
           "");
 
-    WCHAR url[512] = { 0 };
+    WCHAR url[DATA_SIZE] = { 0 };
     for (ULONG idx = 0; idx < pCRLDistPoint->cDistPoint; idx++)
     {
         PCRL_DIST_POINT_NAME dpn = &pCRLDistPoint->rgDistPoint[idx].DistPointName;
@@ -1074,9 +1092,9 @@ BOOL GetCertificateCRLPoint(const CERT_CONTEXT_ptr& certContext, AuthenticodeMS:
         {
             if (wcslen(url) > 0)
             {
-                wcscat_s(url, 512, L";");
+                wcscat_s(url, DATA_SIZE, L";");
             }
-            wcscat_s(url, 512, dpn->FullName.rgAltEntry[ulAltEntry].pwszURL);
+            wcscat_s(url, DATA_SIZE, dpn->FullName.rgAltEntry[ulAltEntry].pwszURL);
         }
     }
 
@@ -1199,9 +1217,10 @@ BOOL GetCounterSigner(
 
 #endif
 
-std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source)
+std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache)
 {
     AuthenticodeMS data{};
+
 #ifdef BUILD_FOR_WINDOWS
     data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, data);
 
@@ -1209,11 +1228,11 @@ std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source)
     CHECK(data.winTrust.errorCode != SIGNATURE_NOT_FOUND, std::nullopt, "");
 
     GetSignaturesInformation(source, data);
-
-    return data;
 #endif
 
-    RETURNERROR(std::nullopt, "Not implemented");
+    data.openssl.verified = AuthenticodeVerifySignature(cache, data);
+
+    return data;
 }
 
 } // namespace GView::DigitalSignature

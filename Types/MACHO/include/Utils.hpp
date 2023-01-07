@@ -50,7 +50,6 @@ void SwapEndianInplace(T& var)
 template <typename T>
 static const std::string BinaryToHexString(const T number, const size_t length)
 {
-
     std::string output;
     output.reserve(length * 3);
 
@@ -168,15 +167,11 @@ static const std::string GetVMProtectionNamesFromFlags(uint32_t flags)
                 }
             }
 
-            if (output.empty())
-            {
-                output += VMProtectionNames.at(t);
-            }
-            else
+            if (!output.empty())
             {
                 output += " | ";
-                output += VMProtectionNames.at(t);
             }
+            output += VMProtectionNames.at(t);
         }
     }
 
@@ -201,15 +196,11 @@ static const std::string GetSegmentCommandNamesFromFlags(uint32_t flags)
     {
         if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
         {
-            if (output.empty())
-            {
-                output += SegmentCommandFlagsNames.at(t);
-            }
-            else
+            if (!output.empty())
             {
                 output += " | ";
-                output += SegmentCommandFlagsNames.at(t);
             }
+            output += SegmentCommandFlagsNames.at(t);
         }
     }
 
@@ -238,15 +229,11 @@ static const std::string GetSectionTypeAndAttributesFromFlags(uint32_t flags)
     {
         if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
         {
-            if (sectionAttributes.empty())
-            {
-                sectionAttributes += SectionAttributtesNames.at(t);
-            }
-            else
+            if (!sectionAttributes.empty())
             {
                 sectionAttributes += " | ";
-                sectionAttributes += SectionAttributtesNames.at(t);
             }
+            sectionAttributes += SectionAttributtesNames.at(t);
         }
     }
 
