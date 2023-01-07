@@ -1149,8 +1149,13 @@ namespace Type
                 Reference<GView::View::WindowInterface> win;
                 Reference<AppCUI::Controls::ListView> general;
 
+                ListViewItem humanReadable;
+                ListViewItem PEMs;         
+
                 inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
                 inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+                void MoreInfo();
 
               public:
                 DigitalSignature(Reference<PEFile> pe);

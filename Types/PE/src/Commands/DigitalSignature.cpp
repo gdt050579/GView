@@ -6,7 +6,7 @@ using namespace AppCUI::Controls;
 
 enum class Action : int32
 {
-    Dummy = 1
+    MoreInfo = 1
 };
 
 constexpr auto COLOR_SUCCESS = ColorPair{ Color::Green, Color::Transparent };
@@ -39,6 +39,7 @@ void PopulateCertificateInfo(
     LocalString<1024> ls;
     LocalString<1024> ls2;
 
+    list->AddItem({ "", ls2.Format("------------- Certificate (#%u) -----------", index) }).SetType(ListViewItem::Type::Emphasized_1);
     list->AddItem({ ls2.Format("Certificate (#%u) Issuer", index), ls.Format("%s", certificate.issuer.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Subject", index), ls.Format("%s", certificate.subject.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Email", index), ls.Format("%s", certificate.email.GetText()) });
@@ -49,6 +50,33 @@ void PopulateCertificateInfo(
     list->AddItem({ ls2.Format("Certificate (#%u) Not Before", index), ls.Format("%s", certificate.notBefore.GetText()) });
 
     list->AddItem({ ls2.Format("Certificate (#u) CRL Point", index), ls.Format("%s", certificate.crlPoint.GetText()) });
+    list->AddItem({ "", ls2.Format("---------- End certificate (#%u) ---------", index) }).SetType(ListViewItem::Type::Emphasized_1);
+}
+
+void DigitalSignature::MoreInfo()
+{
+    if (humanReadable.IsValid() && humanReadable.IsCurrent())
+    {
+        GView::App::OpenBuffer(
+              BufferView{ pe->signatureData->data.humanReadable.GetText(), pe->signatureData->data.humanReadable.Len() },
+              "Digital Signature - PKCS#7 Human Readable",
+              GView::App::OpenMethod::BestMatch);
+    }
+
+    if (PEMs.IsValid() && PEMs.IsCurrent())
+    {
+        std::string input;
+
+        for (uint32 i = 0U; i < pe->signatureData->data.pemCerts.size(); i++)
+        {
+            const auto& pem = pe->signatureData->data.pemCerts.at(i);
+            input += pem;
+            input += "\n";
+        }
+
+        GView::App::OpenBuffer(
+              BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates", GView::App::OpenMethod::BestMatch);
+    }
 }
 
 void DigitalSignature::Update()
@@ -71,6 +99,15 @@ void DigitalSignature::Update()
                       (pe->signatureData->openssl.verified ? "OK" : ls.Format("%s", pe->signatureData->openssl.errorMessage.GetText())) })
           .SetColor(pe->signatureData->openssl.verified ? COLOR_SUCCESS : COLOR_FAILURE);
 
+    if (pe->signatureData.has_value() && pe->signatureData->data.signatures.empty() == false)
+    {
+        general->AddItem({ "More Info", "" }).SetType(ListViewItem::Type::Category);
+        humanReadable = general->AddItem(
+              { "Human Readable", "Signature parsed - press CTRL + ENTER for details!", pe->signatureData->data.humanReadable.GetText() });
+        PEMs = general->AddItem(
+              { "PEMs", ls.Format("(%d) PEMs parsed - press CTRL + ENTER for details!", pe->signatureData->data.pemCerts.size()) });
+    }
+
     uint16 signatureIndex                       = 0;
     GView::DigitalSignature::SignatureType type = GView::DigitalSignature::SignatureType::Unknown;
     for (const auto& signature : pe->signatureData->data.signatures)
@@ -88,14 +125,6 @@ void DigitalSignature::Update()
 
         signatureIndex += (type == GView::DigitalSignature::SignatureType::Signature);
         type = signature.signatureType;
-
-        PopulateSignerInfo(general, signature.signer);
-
-        auto j = 0;
-        for (const auto& certificate : signature.certificates)
-        {
-            PopulateCertificateInfo(general, certificate, j++);
-        }
 
         switch (signature.signatureType)
         {
@@ -126,13 +155,24 @@ void DigitalSignature::Update()
             default:
                 break;
             }
+
+            general->AddItem({ "Signing time", ls.Format("%s", signature.signingTime.GetText()) })
+                  .SetType(ListViewItem::Type::Emphasized_3);
+        }
+
+        PopulateSignerInfo(general, signature.signer);
+
+        auto j = 0;
+        for (const auto& certificate : signature.certificates)
+        {
+            PopulateCertificateInfo(general, certificate, j++);
         }
     }
 }
 
 bool DigitalSignature::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(AppCUI::Input::Key::Ctrl | AppCUI::Input::Key::Enter, "Dummy", static_cast<int32_t>(Action::Dummy));
+    commandBar.SetCommand(AppCUI::Input::Key::Ctrl | AppCUI::Input::Key::Enter, "More Info", static_cast<int32_t>(Action::MoreInfo));
 
     return true;
 }
@@ -148,7 +188,8 @@ bool DigitalSignature::OnEvent(Reference<Control> ctrl, Event evnt, int controlI
     case Event::Command:
         switch (static_cast<Action>(controlID))
         {
-        case Action::Dummy:
+        case Action::MoreInfo:
+            MoreInfo();
             return Exit();
         default:
             break;
