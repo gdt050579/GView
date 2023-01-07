@@ -508,6 +508,29 @@ bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
     return true;
 }
 
+const std::string TimeToHumanReadable(time_t input)
+{
+    struct tm t;
+    try
+    {
+#if BUILD_FOR_WINDOWS
+        localtime_s(&t, &input);
+#elif BUILD_FOR_OSX
+        localtime_r(&input, &t);
+#elif BUILD_FOR_UNIX
+        localtime_r(&input, &t);
+#endif
+    }
+    catch (...)
+    {
+        return "";
+    }
+
+    char buffer[32];
+    std::strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", &t);
+    return buffer;
+}
+
 bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output)
 {
     /*
@@ -538,6 +561,66 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
             }
         }
     }
+
+#ifndef BUILD_FOR_WINDOWS
+    for (const auto& oSignature : parser.GetSignatures())
+    {
+        auto& signature = output.data.signatures.emplace_back();
+
+        const auto& oSigner                 = oSignature.signer;
+        signature.signer.version            = (uint32_t) oSignature.version;
+        signature.signer.issuer             = "";
+        signature.signer.serialNumber       = "";
+        signature.signer.hashAlgorithm      = "";
+        signature.signer.signatureAlgorithm = "";
+        signature.signer.programName.Set(oSignature.signer.programName);
+        signature.signer.publishLink  = "";
+        signature.signer.moreInfoLink = "";
+
+        for (const auto& oCertificate : oSignature.certs)
+        {
+            auto& certificate = signature.certificates.emplace_back();
+
+            certificate.issuer.Set(oCertificate.issuer);
+            certificate.subject.Set(oCertificate.subject);
+            certificate.email.Set(oCertificate.issuerAttributes.emailAddress);
+            certificate.date = "";
+            certificate.serialNumber.Set(oCertificate.serial);
+            certificate.digestAlgorithm.Set(oCertificate.keyAlg);
+            certificate.notAfter.Set(TimeToHumanReadable(oCertificate.notAfter));
+            certificate.notBefore.Set(TimeToHumanReadable(oCertificate.notBefore));
+            certificate.crlPoint = "";
+            output.data.pemCerts.emplace_back().Set(oCertificate.pem);
+
+            if (oSignature.counterSignatures.empty())
+            {
+                signature.signatureType = SignatureType::Signature;
+            }
+            else
+            {
+                signature.signatureType = SignatureType::CounterSignature;
+
+                const auto& cs                 = oSignature.counterSignatures.at(0);
+                signature.counterSignatureType = (CounterSignatureType) cs.type;
+                signature.signingTime.Set(TimeToHumanReadable(cs.signTime));
+                for (const auto& oCsCertificate : cs.chain)
+                {
+                    certificate.issuer.Set(oCsCertificate.issuer);
+                    certificate.subject.Set(oCsCertificate.subject);
+                    certificate.email.Set(oCsCertificate.issuerAttributes.emailAddress);
+                    certificate.date = "";
+                    certificate.serialNumber.Set(oCsCertificate.serial);
+                    certificate.digestAlgorithm.Set(oCsCertificate.keyAlg);
+                    certificate.notAfter.Set(TimeToHumanReadable(oCsCertificate.notAfter));
+                    certificate.notBefore.Set(TimeToHumanReadable(oCsCertificate.notBefore));
+                    certificate.crlPoint = "";
+                    output.data.pemCerts.emplace_back().Set(oCsCertificate.pem);
+                }
+            }
+        }
+    }
+
+#endif
 
     return result;
 }
@@ -584,11 +667,6 @@ bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
     GetError(error, output);
     CHECK(output.Set(buf->data, (uint32) buf->length), false, "");
 
-    return true;
-}
-
-bool AuthenticodeToStructure(const Buffer& buffer, AuthenticodeMS& output)
-{
     return true;
 }
 
@@ -895,18 +973,18 @@ bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
           false,
           "");
 
-    DWORD dwCountSigners = 0;
-    DWORD dwcbSz         = sizeof(dwCountSigners);
-    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &dwCountSigners, &dwcbSz), false, "");
-    CHECK(dwCountSigners > 0, false, "");
+    DWORD signersNo   = 0;
+    DWORD signersSize = sizeof(signersNo);
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &signersNo, &signersSize), false, "");
+    CHECK(signersNo > 0, false, "");
 
-    DWORD dwSignerInfo{ 0 };
-    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo), false, "");
+    DWORD signerInfoSize{ 0 };
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &signerInfoSize), false, "");
 
-    CMSG_SIGNER_INFO_ptr signerInfo((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, dwSignerInfo), LocalFree);
+    CMSG_SIGNER_INFO_ptr signerInfo((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, signerInfoSize), LocalFree);
     CHECK(signerInfo != nullptr, false, "");
 
-    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.get(), &dwSignerInfo), false, "");
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.get(), &signerInfoSize), false, "");
 
     auto& pkSignature = container.data.signatures.emplace_back();
     auto& pkSigner    = pkSignature.signer;

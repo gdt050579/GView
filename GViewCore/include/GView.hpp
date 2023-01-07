@@ -454,10 +454,10 @@ namespace DigitalSignature
             std::vector<Signature> signatures;
 
             String humanReadable;
+            std::vector<String> pemCerts;
         } data;
     };
 
-    CORE_EXPORT bool AuthenticodeToStructure(const Buffer& buffer, AuthenticodeMS& output);
     CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
 
     CORE_EXPORT std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache);

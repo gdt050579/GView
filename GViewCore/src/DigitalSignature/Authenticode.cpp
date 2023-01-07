@@ -875,6 +875,18 @@ bool Certificate::Parse(X509* x509)
 #endif
     }
 
+    out.reset(BIO_new(BIO_s_mem()));
+
+    const auto bioWrite = PEM_write_bio_X509(out.get(), x509);
+    if (bioWrite == 1)
+    {
+        BIO_get_mem_ptr(out.get(), &buf);
+        if (buf != nullptr)
+        {
+            this->pem.assign(buf->data, (uint32_t) buf->length);
+        }
+    }
+
     return true;
 }
 
@@ -930,6 +942,8 @@ static bool GetTimeFromCMS(CMS_ContentInfo* cms, time_t& time)
 bool CounterSignature::ParsePKCS9(
       const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest, PKCS7_SIGNER_INFO* counter)
 {
+    this->type = CounterSignatureType::RFC3161;
+
     PKCS7_SIGNER_INFO* si = d2i_PKCS7_SIGNER_INFO(NULL, &data, size);
     if (!si)
     {
@@ -1184,6 +1198,8 @@ bool CounterSignature::ParsePKCS9(
 
 bool CounterSignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_digest)
 {
+    this->type = CounterSignatureType::Authenticode;
+
     PKCS7* p7 = d2i_PKCS7(NULL, &data, size);
     if (!p7)
     {
@@ -1349,29 +1365,6 @@ time_t ASN1_TIME_to_time_t(const ASN1_TIME* time)
 
     ASN1_TIME_to_tm(time, &t);
     return timegm(&t);
-}
-
-const std::string TimeToHumanReadable(time_t input)
-{
-    struct tm t;
-    try
-    {
-#if BUILD_FOR_WINDOWS
-        localtime_s(&t, &input);
-#elif BUILD_FOR_OSX
-        localtime_r(&input, &t);
-#elif BUILD_FOR_UNIX
-        localtime_r(&input, &t);
-#endif
-    }
-    catch (...)
-    {
-        return "";
-    }
-
-    char buffer[32];
-    std::strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", &t);
-    return buffer;
 }
 
 const std::vector<AuthenticodeSignature>& AuthenticodeParser::GetSignatures() const

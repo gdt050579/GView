@@ -13,6 +13,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/ts.h>
 #include <openssl/cms.h>
+#include <openssl/pem.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -142,6 +143,13 @@ enum class CountersignatureVFY
     TimeMissing          = 9, /* Time is missing in the timestamp signature */
 };
 
+enum class CounterSignatureType
+{
+    Unknown      = 0,
+    Authenticode = 1,
+    RFC3161      = 2
+};
+
 /* Endianity related functions for PE reading */
 uint16_t BSwap16(uint16_t d);
 uint32_t BSwap32(uint32_t d);
@@ -214,6 +222,7 @@ class Certificate
     std::string key;              /* PEM encoded public key */
     Attributes issuerAttributes;  /* Parsed X509 Attributes of Issuer */
     Attributes subjectAttributes; /* Parsed X509 Attributes of Subject */
+    std::string pem;
 
     bool Parse(X509* x509);
 };
@@ -226,6 +235,7 @@ class CounterSignature
     std::string digestAlg;          /* Name of the digest algorithm used */
     std::vector<uint8_t> digest;    /* Stored message digest */
     std::vector<Certificate> chain; /* Certificate chain of the signer */
+    CounterSignatureType type{ CounterSignatureType::Unknown };
 
     bool ParsePKCS9(const uint8_t* data, long size, STACK_OF(X509) * certs, ASN1_STRING* enc_digest, PKCS7_SIGNER_INFO* counter);
     bool ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_digest);
