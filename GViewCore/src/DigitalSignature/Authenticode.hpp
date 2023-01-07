@@ -50,6 +50,13 @@ typedef struct
     ASN1_OCTET_STRING* serializedData;
 } SpcSerializedObject;
 
+enum class SPCLinkChoice
+{
+    SPC_URL_LINK_CHOICE     = 1,
+    SPC_MONIKER_LINK_CHOICE = 2,
+    SPC_FILE_LINK_CHOICE    = 3
+};
+
 typedef struct
 {
     int type;
@@ -101,6 +108,7 @@ typedef struct
 {
     SpcString* programName;
     SpcLink* moreInfo;
+    SpcLink* publisherInfo;
 } SpcSpOpusInfo;
 
 DECLARE_ASN1_FUNCTIONS(SpcString)
@@ -178,7 +186,7 @@ static void My_OpenSSL_free(void* ptr)
 using BIO_ptr               = std::unique_ptr<BIO, decltype(&BIO_free)>;
 using ASN1_OBJECT_ptr       = std::unique_ptr<ASN1_OBJECT, decltype(&ASN1_OBJECT_free)>;
 using ASN1_TYPE_ptr         = std::unique_ptr<ASN1_TYPE, decltype(&ASN1_TYPE_free)>;
-using OpenSSL_ptr           = std::unique_ptr<char, decltype(&My_OpenSSL_free)>;
+using OpenSSL_ptr           = std::unique_ptr<uint8_t, decltype(&My_OpenSSL_free)>;
 using BN_ptr                = std::unique_ptr<BIGNUM, decltype(&BN_free)>;
 using PKCS7_SIGNER_INFO_ptr = std::unique_ptr<PKCS7_SIGNER_INFO, decltype(&PKCS7_SIGNER_INFO_free)>;
 using PKCS7_ptr             = std::unique_ptr<PKCS7, decltype(&PKCS7_free)>;
@@ -247,6 +255,8 @@ class Signer /* Represents SignerInfo structure */
     std::vector<uint8_t> digest;    /* Message Digest of the SignerInfo */
     std::string digestAlg;          /* name of the digest algorithm */
     std::string programName;        /* Program name stored in SpcOpusInfo structure of Authenticode */
+    std::string publishLink;        /* Publish link stored in SpcOpusInfo structure of Authenticode */
+    std::string moreInfoLink;       /* More info link stored in SpcOpusInfo structure of Authenticode */
     std::vector<Certificate> chain; /* Certificate chain of the signer */
 };
 

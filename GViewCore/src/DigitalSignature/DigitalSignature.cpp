@@ -562,25 +562,21 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
         }
     }
 
-#ifndef BUILD_FOR_WINDOWS
+#ifdef BUILD_FOR_WINDOWS
     for (const auto& oSignature : parser.GetSignatures())
     {
         auto& signature = output.data.signatures.emplace_back();
 
-        const auto& oSigner                 = oSignature.signer;
-        signature.signer.version            = (uint32_t) oSignature.version;
-        signature.signer.issuer             = "";
-        signature.signer.serialNumber       = "";
-        signature.signer.hashAlgorithm      = "";
-        signature.signer.signatureAlgorithm = "";
+        const auto& oSigner = oSignature.signer;
         signature.signer.programName.Set(oSignature.signer.programName);
-        signature.signer.publishLink  = "";
-        signature.signer.moreInfoLink = "";
+        signature.signer.publishLink.Set(oSignature.signer.publishLink);
+        signature.signer.moreInfoLink.Set(oSignature.signer.moreInfoLink);
 
         for (const auto& oCertificate : oSignature.certs)
         {
             auto& certificate = signature.certificates.emplace_back();
 
+            certificate.version = (uint32_t) oCertificate.version;
             certificate.issuer.Set(oCertificate.issuer);
             certificate.subject.Set(oCertificate.subject);
             certificate.email.Set(oCertificate.issuerAttributes.emailAddress);
@@ -773,7 +769,7 @@ struct WrapperHMsg
     }
 };
 
-BOOL GetOpusInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature::Signer& signer);
+BOOL GetSignerInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature::Signer& signer);
 BOOL GetCertificateSigningTime(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature& signature);
 BOOL GetCertificateCRLPoint(const CERT_CONTEXT_ptr& certContext, AuthenticodeMS::Data::Signature::Certificate& certificate);
 BOOL GetCertificateInfo(
@@ -827,7 +823,7 @@ BOOL GetInfoThroughSigner(
     auto& signature                = container.data.signatures.emplace_back();
     signature.signatureType        = signatureType;
     signature.counterSignatureType = counterSignatureType;
-    CHECK(GetOpusInfo(signer, signature.signer), false, "");
+    CHECK(GetSignerInfo(signer, signature.signer), false, "");
 
     CERT_INFO signerCertInfo{ .SerialNumber = signer->SerialNumber, .Issuer = signer->Issuer };
     CERT_CONTEXT_ptr certContext(
@@ -988,7 +984,7 @@ bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
 
     auto& pkSignature = container.data.signatures.emplace_back();
     auto& pkSigner    = pkSignature.signer;
-    CHECK(GetOpusInfo(signerInfo, pkSigner), false, "");
+    CHECK(GetSignerInfo(signerInfo, pkSigner), false, "");
 
     CERT_INFO signerCertInfo{ .SerialNumber = signerInfo->SerialNumber, .Issuer = signerInfo->Issuer };
     CERT_CONTEXT_ptr certContext(
@@ -1072,7 +1068,7 @@ BOOL GetCertificateInfo(
     return true;
 }
 
-BOOL GetOpusInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature::Signer& signer)
+BOOL GetSignerInfo(const CMSG_SIGNER_INFO_ptr& signerInfo, AuthenticodeMS::Data::Signature::Signer& signer)
 {
     for (auto n = 0U; n < signerInfo->AuthAttrs.cAttr; n++)
     {

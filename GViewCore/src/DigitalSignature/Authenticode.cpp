@@ -163,24 +163,110 @@ static SpcIndirectDataContent* GetContent(PKCS7* content)
     return spcContent;
 }
 
-bool ParseProgramName(ASN1_TYPE* spcAttr, std::string& result)
+bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
 {
-    const auto* data       = spcAttr->value.sequence->data;
-    SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(NULL, &data, spcAttr->value.sequence->length);
+    const auto* sdata      = spcAttr->value.sequence->data;
+    SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(NULL, &sdata, spcAttr->value.sequence->length);
     if (!spcInfo)
         return false;
 
+    uint8_t* dataRaw = NULL;
+    OpenSSL_ptr data(dataRaw, My_OpenSSL_free);
+
     if (spcInfo->programName)
     {
-        uint8_t* data = NULL;
         /* Should be Windows UTF16..., try to convert it to UTF8 */
-        int nameLen = ASN1_STRING_to_UTF8(&data, spcInfo->programName->value.unicode);
+        int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->programName->value.unicode);
+        data.reset(dataRaw);
         if (nameLen >= 0 && nameLen < spcAttr->value.sequence->length)
         {
-            result.resize(nameLen + 1);
-            memcpy(result.data(), data, nameLen);
-            result.data()[nameLen] = 0;
-            OPENSSL_free(data);
+            signer.programName.resize(nameLen + 1);
+            memcpy(signer.programName.data(), data.get(), nameLen);
+            signer.programName.data()[nameLen] = 0;
+        }
+    }
+
+    if (spcInfo->moreInfo)
+    {
+        if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
+        {
+            /* Should be Windows UTF16..., try to convert it to UTF8 */
+            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.url);
+            data.reset(dataRaw);
+            if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.url->length)
+            {
+                signer.moreInfoLink.resize(nameLen + 1ULL);
+                memcpy(signer.moreInfoLink.data(), data.get(), nameLen);
+                signer.moreInfoLink.data()[nameLen] = 0;
+            }
+        }
+        else if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_FILE_LINK_CHOICE)
+        {
+            /* Should be Windows UTF16..., try to convert it to UTF8 */
+            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.file->value.unicode);
+            data.reset(dataRaw);
+            if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.file->value.unicode->length)
+            {
+                signer.moreInfoLink.resize(nameLen + 1ULL);
+                memcpy(signer.moreInfoLink.data(), data.get(), nameLen);
+                signer.moreInfoLink.data()[nameLen] = 0;
+            }
+        }
+    }
+
+    if (spcInfo->moreInfo)
+    {
+        if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
+        {
+            /* Should be Windows UTF16..., try to convert it to UTF8 */
+            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.url);
+            data.reset(dataRaw);
+            if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.url->length)
+            {
+                signer.moreInfoLink.resize(nameLen + 1ULL);
+                memcpy(signer.moreInfoLink.data(), data.get(), nameLen);
+                signer.moreInfoLink.data()[nameLen] = 0;
+            }
+        }
+        else if (spcInfo->moreInfo->type == (uint32_t) SPCLinkChoice::SPC_FILE_LINK_CHOICE)
+        {
+            /* Should be Windows UTF16..., try to convert it to UTF8 */
+            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->moreInfo->value.file->value.unicode);
+            data.reset(dataRaw);
+            if (nameLen >= 0 && nameLen < spcInfo->moreInfo->value.file->value.unicode->length)
+            {
+                signer.moreInfoLink.resize(nameLen + 1ULL);
+                memcpy(signer.moreInfoLink.data(), data.get(), nameLen);
+                signer.moreInfoLink.data()[nameLen] = 0;
+            }
+        }
+    }
+
+    if (spcInfo->publisherInfo)
+    {
+        if (spcInfo->publisherInfo->type == (uint32_t) SPCLinkChoice::SPC_URL_LINK_CHOICE)
+        {
+            /* Should be Windows UTF16..., try to convert it to UTF8 */
+            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->publisherInfo->value.url);
+            data.reset(dataRaw);
+            if (nameLen >= 0 && nameLen < spcInfo->publisherInfo->value.url->length)
+            {
+                signer.publishLink.resize(nameLen + 1ULL);
+                memcpy(signer.publishLink.data(), data.get(), nameLen);
+                signer.publishLink.data()[nameLen] = 0;
+            }
+        }
+        else if (spcInfo->publisherInfo->type == (uint32_t) SPCLinkChoice::SPC_FILE_LINK_CHOICE)
+        {
+            /* Should be Windows UTF16..., try to convert it to UTF8 */
+            int nameLen = ASN1_STRING_to_UTF8(&dataRaw, spcInfo->publisherInfo->value.file->value.unicode);
+            data.reset(dataRaw);
+            if (nameLen >= 0 && nameLen < spcInfo->publisherInfo->value.file->value.unicode->length)
+            {
+                signer.publishLink.resize(nameLen + 1ULL);
+                memcpy(signer.publishLink.data(), data.get(), nameLen);
+                signer.publishLink.data()[nameLen] = 0;
+            }
         }
     }
 
@@ -433,7 +519,9 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
     /* Authenticode stores optional programName in non-optional SpcSpOpusInfo attribute */
     ASN1_TYPE* spcInfo = PKCS7_get_signed_attribute(si, OBJ_txt2nid(NID_spc_info));
     if (spcInfo)
-        ParseProgramName(spcInfo, auth.signer.programName);
+    {
+        ParseOpusInfo(spcInfo, auth.signer);
+    }
 
     /* If we got to this point, we got all we need to start verifying */
     bool isValid = AuthenticodeVerify(p7, si, signCert);

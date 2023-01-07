@@ -419,12 +419,6 @@ namespace DigitalSignature
             {
                 struct Signer
                 {
-                    uint32 version;
-                    String issuer;
-                    String serialNumber;
-                    String hashAlgorithm;
-                    String signatureAlgorithm;
-
                     String programName;
                     String publishLink;
                     String moreInfoLink;
@@ -432,6 +426,7 @@ namespace DigitalSignature
 
                 struct Certificate
                 {
+                    uint32 version;
                     String issuer;
                     String subject;
                     String email;

@@ -26,57 +26,9 @@ void PopulateSignerInfo(
 {
     LocalString<1024> ls;
 
-    list->AddItem({ "(Signer) Version", ls.Format("%u", signer.version) });
-    list->AddItem({ "(Signer) Issuer", ls.Format("%s", signer.issuer.GetText()) });
-    list->AddItem({ "(Signer) Serial Number", ls.Format("%s", signer.serialNumber.GetText()) });
-    list->AddItem({ "(Signer) Hash Algorithm", ls.Format("%s", signer.hashAlgorithm.GetText()) });
-    list->AddItem({ "(Signer) Signature Algorithm", ls.Format("%s", signer.signatureAlgorithm.GetText()) });
-
     list->AddItem({ "(Signer) Program Name", ls.Format("%s", signer.programName.GetText()) });
     list->AddItem({ "(Signer) Publish Link", ls.Format("%s", signer.publishLink.GetText()) });
     list->AddItem({ "(Signer) More Info Link", ls.Format("%s", signer.moreInfoLink.GetText()) });
-
-    // list->AddItem({ "Issuer", ls.Format("%s", certificate.issuer.GetText()) });
-    // list->AddItem({ "Subject", ls.Format("%s", certificate.subject.GetText()) });
-    // if (certificate.signatureType == GView::DigitalSignature::SignatureType::CounterSignature)
-    // {
-    //     list->AddItem({ "Date", ls.Format("%s", certificate.date.GetText()) });
-    // }
-    // list->AddItem({ "Serial Number", ls.Format("%s", certificate.serialNumber.GetText()) });
-    // list->AddItem({ "Digest Algorithm", ls.Format("%s", certificate.digestAlgorithm.GetText()) });
-    // list->AddItem({ "Not Before", ls.Format("%s", certificate.dateNotBefore.GetText()) });
-    // list->AddItem({ "Not After", ls.Format("%s", certificate.dateNotAfter.GetText()) });
-    //
-    // switch (certificate.signatureType)
-    // {
-    // case GView::DigitalSignature::SignatureType::Signature:
-    //     list->AddItem({ "Signature Type", "Signature" });
-    //     break;
-    // case GView::DigitalSignature::SignatureType::CounterSignature:
-    //     list->AddItem({ "Signature Type", "Counter Signature" });
-    //     break;
-    // case GView::DigitalSignature::SignatureType::Unknown:
-    // default:
-    //     list->AddItem({ "Signature Type", "Unknown" });
-    //     break;
-    // }
-    //
-    // if (certificate.signatureType == GView::DigitalSignature::SignatureType::CounterSignature)
-    // {
-    //     switch (certificate.counterSignatureType)
-    //     {
-    //     case GView::DigitalSignature::CounterSignatureType::None:
-    //         break;
-    //     case GView::DigitalSignature::CounterSignatureType::Authenticode:
-    //         list->AddItem({ "Timestamp Type", "Authenticode" });
-    //         break;
-    //     case GView::DigitalSignature::CounterSignatureType::RFC3161:
-    //         list->AddItem({ "Timestamp Type", "RFC3161" });
-    //         break;
-    //     default:
-    //         break;
-    //     }
-    // }
 }
 
 void PopulateCertificateInfo(
