@@ -65,8 +65,7 @@ inline static void GetError(uint32& errorCode, String& output)
 
 bool CMSToHumanReadable(const Buffer& buffer, String& output)
 {
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
-    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
+    CHECK(buffer.GetData() != nullptr, false, "Nullptr data provided!");
 
     ERR_clear_error();
     BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
@@ -167,8 +166,7 @@ bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count)
 
 bool CMSToStructure(const Buffer& buffer, SignatureMachO& output)
 {
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
-    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
+    CHECK(buffer.GetData() != nullptr, false, "");
 
     ERR_clear_error();
     BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
@@ -541,8 +539,7 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
 
 bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
 {
-    CHECK(buffer.GetData() != nullptr, "Nullptr data provided!", "");
-    auto data = reinterpret_cast<const unsigned char*>(buffer.GetData());
+    CHECK(buffer.GetData() != nullptr, false, "Nullptr data provided!");
 
     ERR_clear_error();
     BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
@@ -1210,7 +1207,13 @@ BOOL GetSignatureSigningTime(const CMSG_SIGNER_INFO_ptr& signer, AuthenticodeMS:
 
 #endif
 
-std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache)
+std::optional<AuthenticodeMS> VerifyEmbeddedSignature(
+      ConstString
+#ifdef BUILD_FOR_WINDOWS
+            source
+#endif
+      ,
+      Utils::DataCache& cache)
 {
     AuthenticodeMS data{};
 
