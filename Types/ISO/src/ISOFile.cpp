@@ -190,8 +190,16 @@ void ISOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     auto data         = item.GetData<ECMA_119_DirectoryRecord>();
     const auto offset = (uint64) data->locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
     const auto length = (uint32) data->dataLength.LSB;
-    const auto name   = std::string_view{ data->fileIdentifier, data->lengthOfFileIdentifier };
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
 
-    GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+    LocalString<64> ls;
+    ls.Format("0x%x_0x%x", offset, length);
+    auto name = std::string{ data->fileIdentifier, data->lengthOfFileIdentifier };
+    name.append("_").append(ls.GetText());
+
+    LocalUnicodeStringBuilder<64> lus{ ls };
+    auto fullPath = std::u16string{ path.data(), path.size() };
+    fullPath.append(lus.GetString());
+
+    GView::App::OpenBuffer(buffer, name, fullPath, GView::App::OpenMethod::BestMatch);
 }

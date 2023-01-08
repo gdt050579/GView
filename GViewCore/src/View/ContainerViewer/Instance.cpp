@@ -123,7 +123,10 @@ void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
     if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
     {
         UpdatePathForItem(item);
-        this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
+
+        std::u16string newPath(this->obj->GetPath());
+        newPath.append(u".").append(this->currentPath);
+        this->settings->openItemInterface->OnOpenItem(newPath, item);
     }
 }
 void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& item)

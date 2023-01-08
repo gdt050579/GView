@@ -8,6 +8,8 @@
 
 #include "Authenticode.hpp"
 
+#include <fstream>
+
 namespace GView::DigitalSignature
 {
 void OpenSSL_free(void* ptr)
@@ -623,11 +625,21 @@ inline void SetErrorMessage(uint32 errorCode, String& message)
     message.Set(m.c_str());
 }
 
-bool __VerifyEmbeddedSignature__(ConstString source, AuthenticodeMS& data)
+bool __VerifyEmbeddedSignature__(ConstString source, Utils::DataCache& cache, AuthenticodeMS& data)
 {
     LocalUnicodeStringBuilder<1024> ub;
     ub.Set(source);
     std::u16string sv{ ub.GetString(), ub.Len() };
+
+    if (!std::filesystem::exists(sv)) // must be a memory file from a container => drop it on disk
+    {
+        std::filesystem::path path{ sv };
+        std::ofstream ofs(path, std::ios::binary);
+
+        const auto buffer = cache.GetEntireFile();
+        ofs.write((const char*) buffer.GetData(), buffer.GetLength());
+        ofs.close();
+    }
 
     WINTRUST_FILE_INFO fileData{ .cbStruct       = sizeof(WINTRUST_FILE_INFO),
                                  .pcwszFilePath  = reinterpret_cast<LPCWSTR>(sv.data()),
@@ -1218,7 +1230,7 @@ std::optional<AuthenticodeMS> VerifyEmbeddedSignature(
     AuthenticodeMS data{};
 
 #ifdef BUILD_FOR_WINDOWS
-    data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, data);
+    data.winTrust.callSuccessful = __VerifyEmbeddedSignature__(source, cache, data);
 
     constexpr auto SIGNATURE_NOT_FOUND = 0x800B0100;
     CHECK(data.winTrust.errorCode != SIGNATURE_NOT_FOUND, std::nullopt, "");
