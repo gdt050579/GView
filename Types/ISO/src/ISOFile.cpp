@@ -193,13 +193,13 @@ void ISOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
 
     LocalString<64> ls;
-    ls.Format("0x%x_0x%x", offset, length);
+    ls.Format("_0x%x_0x%x.bin", offset, length);
     auto name = std::string{ data->fileIdentifier, data->lengthOfFileIdentifier };
-    name.append("_").append(ls.GetText());
+    name.append("_").append(ls.ToStringView());
 
     LocalUnicodeStringBuilder<64> lus{ ls };
     auto fullPath = std::u16string{ path.data(), path.size() };
-    fullPath.append(lus.GetString());
+    fullPath.append(lus.ToStringView());
 
     GView::App::OpenBuffer(buffer, name, fullPath, GView::App::OpenMethod::BestMatch);
 }

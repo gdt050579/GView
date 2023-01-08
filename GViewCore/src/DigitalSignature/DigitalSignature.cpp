@@ -635,10 +635,18 @@ bool __VerifyEmbeddedSignature__(ConstString source, Utils::DataCache& cache, Au
     {
         std::filesystem::path path{ sv };
         std::ofstream ofs(path, std::ios::binary);
-
-        const auto buffer = cache.GetEntireFile();
-        ofs.write((const char*) buffer.GetData(), buffer.GetLength());
-        ofs.close();
+        if (ofs.is_open())
+        {
+            const auto buffer = cache.GetEntireFile();
+            ofs.write((const char*) buffer.GetData(), buffer.GetLength());
+            ofs.close();
+        }
+        else
+        {
+            data.winTrust.errorCode = -1;
+            data.winTrust.errorMessage.Set("Unable to drop extracted file from container!");
+            return false;
+        }
     }
 
     WINTRUST_FILE_INFO fileData{ .cbStruct       = sizeof(WINTRUST_FILE_INFO),
