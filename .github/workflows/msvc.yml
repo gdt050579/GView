@@ -13,6 +13,13 @@ on:
     branches: [ release, main, dev ]
   pull_request:
     branches: [ release, main, dev ]
+  workflow_dispatch:
+    inputs:
+      Dummy:
+        description: 'Dummy description'     
+        required: false
+        default: true 
+        type: boolean
     
 env:
   # Path to the CMake build directory.
