@@ -24,6 +24,12 @@ on:
   schedule:
     - cron: '42 20 * * 0'
   workflow_dispatch:
+    inputs:
+      Dummy:
+        description: 'Dummy description'     
+        required: false
+        default: true 
+        type: boolean
 
 jobs:
   analyze:
