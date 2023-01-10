@@ -1472,7 +1472,7 @@ std::string AuthenticodeParser::GetSignatureFlags(uint32_t flags)
     std::string output;
     for (const auto& t : types)
     {
-        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
+        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t) && t != AuthenticodeVFY::Valid)
         {
             if (!output.empty())
             {
@@ -1532,7 +1532,7 @@ std::string AuthenticodeParser::GetCounterSignatureFlags(uint32_t flags)
     std::string output;
     for (const auto& t : types)
     {
-        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t))
+        if ((flags & static_cast<uint32_t>(t)) == static_cast<uint32_t>(t) && t != CountersignatureVFY::Valid)
         {
             if (!output.empty())
             {
