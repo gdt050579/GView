@@ -481,6 +481,11 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
                 result = false;
             }
         }
+
+        for (const auto& certificate : signature.certs)
+        {
+            output.data.pemCerts.emplace_back().Set(certificate.pem);
+        }
     }
 
 #ifndef BUILD_FOR_WINDOWS
@@ -596,7 +601,38 @@ bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output)
 // Link with the Crypt32.lib file.
 #    pragma comment(lib, "Crypt32")
 
-inline void SetErrorMessage(uint32 errorCode, String& message)
+struct WrapperHStore
+{
+    HCERTSTORE handle = NULL;
+    ~WrapperHStore()
+    {
+        if (handle != NULL)
+        {
+            CertCloseStore(handle, 0);
+        }
+    }
+};
+
+struct WrapperHMsg
+{
+    HCRYPTMSG handle = NULL;
+    ~WrapperHMsg()
+    {
+        if (handle != NULL)
+        {
+            CryptMsgClose(handle);
+        }
+    }
+};
+
+constexpr uint32 ENCODING = (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING);
+
+using Buffer_ptr             = std::unique_ptr<uint8, decltype(&LocalFree)>;
+using CMSG_SIGNER_INFO_ptr   = std::unique_ptr<CMSG_SIGNER_INFO, decltype(&LocalFree)>;
+using CERT_CONTEXT_ptr       = std::unique_ptr<const CERT_CONTEXT, decltype(&CertFreeCertificateContext)>;
+using CERT_CHAIN_CONTEXT_ptr = std::unique_ptr<const CERT_CHAIN_CONTEXT, decltype(&CertFreeCertificateChain)>;
+
+inline void SetErrorMessage(uint32 errorCode, String& message, bool append = false)
 {
     std::string m;
     m.resize(1024);
@@ -622,7 +658,80 @@ inline void SetErrorMessage(uint32 errorCode, String& message)
         }
     }
 
-    message.Set(m.c_str());
+    if (append)
+    {
+        if (message.Len() > 0)
+        {
+            message.Add(" | ");
+            message.Add(m.c_str());
+        }
+    }
+    else
+    {
+        message.Set(m.c_str());
+    }
+    message.AddFormat(" (0x%x)", errorCode);
+}
+
+void ChainErrorStatusToMessage(uint32 status, String& message)
+{
+    if (status == CERT_TRUST_NO_ERROR)
+    {
+        message.Add("OK");
+        return;
+    }
+
+    if ((status & CERT_TRUST_IS_NOT_TIME_VALID) != 0)
+    {
+        message.Add("This certificate or one of the certificates in the certificate chain is not time-valid.\n");
+    }
+    if ((status & CERT_TRUST_IS_REVOKED) != 0)
+    {
+        message.Add("Trust for this certificate or one of the certificates in the certificate chain has been revoked.\n");
+    }
+    if ((status & CERT_TRUST_IS_NOT_SIGNATURE_VALID) != 0)
+    {
+        message.Add("The certificate or one of the certificates in the certificate chain does not have a valid signature.\n");
+    }
+    if ((status & CERT_TRUST_IS_NOT_VALID_FOR_USAGE) != 0)
+    {
+        message.Add("The certificate or certificate chain is not valid in its proposed usage.");
+    }
+    if ((status & CERT_TRUST_IS_UNTRUSTED_ROOT) != 0)
+    {
+        message.Add("The certificate or certificate chain is based on an untrusted root.\n");
+    }
+    if ((status & CERT_TRUST_REVOCATION_STATUS_UNKNOWN) != 0)
+    {
+        message.Add("The revocation status of the certificate or one of the certificates in the certificate chain is unknown.\n");
+    }
+    if ((status & CERT_TRUST_IS_CYCLIC) != 0)
+    {
+        message.Add("One of the certificates in the chain was issued by a certification authority that the original certificate had "
+                    "certified.\n");
+    }
+    if ((status & CERT_TRUST_IS_PARTIAL_CHAIN) != 0)
+    {
+        message.Add("The certificate chain is not complete.\n");
+    }
+    if ((status & CERT_TRUST_CTL_IS_NOT_TIME_VALID) != 0)
+    {
+        message.Add("A CTL used to create this chain was not time-valid.\n");
+    }
+    if ((status & CERT_TRUST_CTL_IS_NOT_SIGNATURE_VALID) != 0)
+    {
+        message.Add("A CTL used to create this chain did not have a valid signature.\n");
+    }
+    if ((status & CERT_TRUST_CTL_IS_NOT_VALID_FOR_USAGE) != 0)
+    {
+        message.Add("A CTL used to create this chain did not have a valid signature.\n");
+    }
+    if ((status & CERT_TRUST_NO_ERROR) != 0)
+    {
+        message.Add("No error found for this certificate or chain.\n");
+    }
+
+    message.Truncate(message.Len() - 1);
 }
 
 bool __VerifyEmbeddedSignature__(ConstString source, Utils::DataCache& cache, AuthenticodeMS& data)
@@ -663,6 +772,7 @@ bool __VerifyEmbeddedSignature__(ConstString source, Utils::DataCache& cache, Au
                                 .dwStateAction       = WTD_STATEACTION_VERIFY,
                                 .hWVTStateData       = nullptr,
                                 .pwszURLReference    = nullptr,
+                                .dwProvFlags         = WTD_REVOCATION_CHECK_CHAIN,
                                 .dwUIContext         = 0 };
 
     GUID WVTPolicyGUID      = WINTRUST_ACTION_GENERIC_VERIFY_V2;
@@ -672,38 +782,71 @@ bool __VerifyEmbeddedSignature__(ConstString source, Utils::DataCache& cache, Au
     WinTrustData.dwStateAction = WTD_STATEACTION_CLOSE;
     WinVerifyTrust(NULL, &WVTPolicyGUID, &WinTrustData);
 
+    WrapperHStore store{};
+    WrapperHMsg hMsg{};
+    CHECK(CryptQueryObject(
+                CERT_QUERY_OBJECT_FILE,
+                sv.data(),
+                CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+                CERT_QUERY_FORMAT_FLAG_BINARY,
+                0,
+                NULL,
+                NULL,
+                NULL,
+                &store.handle,
+                &hMsg.handle,
+                NULL),
+          false,
+          "");
+
+    DWORD signersNo   = 0;
+    DWORD signersSize = sizeof(signersNo);
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_COUNT_PARAM, 0, &signersNo, &signersSize), false, "");
+    CHECK(signersNo > 0, false, "");
+
+    DWORD signerInfoSize{ 0 };
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &signerInfoSize), false, "");
+
+    CMSG_SIGNER_INFO_ptr signerInfo((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, signerInfoSize), LocalFree);
+    CHECK(signerInfo != nullptr, false, "");
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.get(), &signerInfoSize), false, "");
+
+    CERT_INFO signer{ .SerialNumber = signerInfo->SerialNumber, .Issuer = signerInfo->Issuer };
+    CERT_CONTEXT_ptr context(
+          CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &signer, NULL), CertFreeCertificateContext);
+    CHECK(context.get() != nullptr, false, "");
+
+    PCCERT_CHAIN_CONTEXT chainRaw{ nullptr };
+    CERT_CHAIN_PARA chainPara{ .cbSize         = sizeof(CERT_CHAIN_PARA),
+                               .RequestedUsage = CERT_USAGE_MATCH{
+                                     .dwType = USAGE_MATCH_TYPE_AND,
+                                     .Usage  = CERT_ENHKEY_USAGE{ .cUsageIdentifier = 0, .rgpszUsageIdentifier = NULL } } };
+    DWORD certChainFlags = CERT_CHAIN_REVOCATION_CHECK_CHAIN;
+    CHECK(CertGetCertificateChain(NULL, context.get(), NULL, store.handle, &chainPara, certChainFlags, NULL, &chainRaw), false, "");
+    CERT_CHAIN_CONTEXT_ptr chain(chainRaw, CertFreeCertificateChain);
+    CHECK(chain.get() != nullptr, false, "");
+
+    data.winTrust.chainErrorCode = chain->TrustStatus.dwErrorStatus;
+    ChainErrorStatusToMessage(chain->TrustStatus.dwErrorStatus, data.winTrust.chainErrorMessage);
+
+    CERT_CHAIN_POLICY_PARA chainPolicy    = { .cbSize = sizeof(chainPolicy) };
+    CERT_CHAIN_POLICY_STATUS policyStatus = { .cbSize = sizeof(policyStatus) };
+    CHECK(CertVerifyCertificateChainPolicy(
+                CERT_CHAIN_POLICY_BASE, // use the base policy
+                chain.get(),            // pointer to the chain
+                &chainPolicy,
+                &policyStatus), // return a pointer to the policy status
+          false,
+          "");
+
+    if (policyStatus.dwError != S_OK)
+    {
+        data.winTrust.policyErrorCode = policyStatus.dwError;
+        SetErrorMessage(policyStatus.dwError, data.winTrust.policyErrorMessage);
+    }
+
     return true;
 }
-
-constexpr uint32 ENCODING = (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING);
-
-using Buffer_ptr           = std::unique_ptr<uint8, decltype(&LocalFree)>;
-using CMSG_SIGNER_INFO_ptr = std::unique_ptr<CMSG_SIGNER_INFO, decltype(&LocalFree)>;
-using CERT_CONTEXT_ptr     = std::unique_ptr<const CERT_CONTEXT, decltype(&CertFreeCertificateContext)>;
-
-struct WrapperHStore
-{
-    HCERTSTORE handle = NULL;
-    ~WrapperHStore()
-    {
-        if (handle != NULL)
-        {
-            CertCloseStore(handle, 0);
-        }
-    }
-};
-
-struct WrapperHMsg
-{
-    HCRYPTMSG handle = NULL;
-    ~WrapperHMsg()
-    {
-        if (handle != NULL)
-        {
-            CryptMsgClose(handle);
-        }
-    }
-};
 
 #    pragma pack(push, 1)
 struct RFC3161TimestampInfo
@@ -765,25 +908,64 @@ BOOL GetInfoThroughSigner(
     signature.counterSignatureType = counterSignatureType;
     CHECK(GetSignerInfo(signer, signature.signer), false, "");
 
-    std::vector<CERT_CONTEXT_ptr> certContextes;
-    CERT_INFO signerCertInfo{ .SerialNumber = signer->SerialNumber, .Issuer = signer->Issuer };
-    certContextes.emplace_back(std::move(CERT_CONTEXT_ptr(
-          CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_ANY, (PVOID) &signerCertInfo, NULL),
-          CertFreeCertificateContext)));
-    CHECK(certContextes.at(0) != nullptr, false, "");
+    CERT_INFO cert{ .SerialNumber = signer->SerialNumber, .Issuer = signer->Issuer };
+    CERT_CONTEXT_ptr leaf(
+          CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &cert, NULL), CertFreeCertificateContext);
+    CHECK(leaf != nullptr, false, "");
 
-    PCCERT_CONTEXT certContextRaw = certContextes.at(0).get();
-    while (true)
+    PCCERT_CHAIN_CONTEXT chainRaw{ nullptr };
+    CERT_CHAIN_PARA chainPara{ .cbSize         = sizeof(CERT_CHAIN_PARA),
+                               .RequestedUsage = CERT_USAGE_MATCH{
+                                     .dwType = USAGE_MATCH_TYPE_AND,
+                                     .Usage  = CERT_ENHKEY_USAGE{ .cUsageIdentifier = 0, .rgpszUsageIdentifier = NULL } } };
+    DWORD certChainFlags = CERT_CHAIN_REVOCATION_CHECK_CHAIN;
+    CHECK(CertGetCertificateChain(NULL, leaf.get(), NULL, store.handle, &chainPara, certChainFlags, NULL, &chainRaw), false, "");
+    CERT_CHAIN_CONTEXT_ptr chain(chainRaw, CertFreeCertificateChain);
+    CHECK(chain.get() != nullptr, false, "");
+
+    std::vector<CERT_CONTEXT_ptr> certs{};
+    std::vector<uint32> revocations;
+    for (auto i = 0U; i < chain->cChain; i++)
     {
-        certContextRaw = CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_ANY, (PVOID) &signerCertInfo, certContextRaw);
-        CHECKBK(certContextRaw != nullptr, "");
-        certContextes.emplace_back(std::move(CERT_CONTEXT_ptr(certContextRaw, CertFreeCertificateContext)));
+        const auto& simpleChain = chain->rgpChain[i];
+
+        signature.statusCode = simpleChain->TrustStatus.dwErrorStatus;
+        ChainErrorStatusToMessage(simpleChain->TrustStatus.dwErrorStatus, signature.status);
+
+        for (auto j = 0U; j < simpleChain->cElement; j++)
+        {
+            const auto& element = simpleChain->rgpElement[j];
+            certs.emplace_back(CertDuplicateCertificateContext(element->pCertContext), CertFreeCertificateContext);
+
+            if (element->pRevocationInfo)
+            {
+                revocations.push_back(element->pRevocationInfo->dwRevocationResult);
+            }
+            else
+            {
+                revocations.push_back(CERT_TRUST_REVOCATION_STATUS_UNKNOWN);
+            }
+        }
     }
 
-    for (const auto& certContext : certContextes)
+    auto i = 0;
+    for (const auto& cert : certs)
     {
         auto& certificate = signature.certificates.emplace_back();
-        CHECK(GetCertificateInfo(signer, certContext, certificate), false, "");
+        CHECK(GetCertificateInfo(signer, cert, certificate), false, "");
+
+        const auto& rev = revocations.at(i++);
+        if (rev == CERT_TRUST_REVOCATION_STATUS_UNKNOWN || rev == CERT_TRUST_IS_REVOKED || rev == CERT_TRUST_NO_ERROR)
+        {
+            certificate.revocationResult.Set(
+                  rev != CERT_TRUST_REVOCATION_STATUS_UNKNOWN
+                        ? rev != CERT_TRUST_IS_REVOKED ? "CERT_TRUST_NO_ERROR" : "CERT_TRUST_IS_REVOKED"
+                        : "CERT_TRUST_REVOCATION_STATUS_UNKNOWN");
+        }
+        else
+        {
+            SetErrorMessage(rev, certificate.revocationResult);
+        }
     }
 
     if (signature.counterSignatureType == CounterSignatureType::RFC3161 && signingTime.Len() > 0)
@@ -983,40 +1165,79 @@ bool GetSignaturesInformation(ConstString source, AuthenticodeMS& container)
     DWORD signerInfoSize{ 0 };
     CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, NULL, &signerInfoSize), false, "");
 
-    CMSG_SIGNER_INFO_ptr signerInfo((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, signerInfoSize), LocalFree);
-    CHECK(signerInfo != nullptr, false, "");
+    CMSG_SIGNER_INFO_ptr signer((PCMSG_SIGNER_INFO) LocalAlloc(LPTR, signerInfoSize), LocalFree);
+    CHECK(signer != nullptr, false, "");
 
-    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signerInfo.get(), &signerInfoSize), false, "");
+    CHECK(CryptMsgGetParam(hMsg.handle, CMSG_SIGNER_INFO_PARAM, 0, (PVOID) signer.get(), &signerInfoSize), false, "");
 
     auto& pkSignature = container.data.signatures.emplace_back();
     auto& pkSigner    = pkSignature.signer;
-    CHECK(GetSignerInfo(signerInfo, pkSigner), false, "");
+    CHECK(GetSignerInfo(signer, pkSigner), false, "");
 
-    CERT_INFO signerCertInfo{ .SerialNumber = signerInfo->SerialNumber, .Issuer = signerInfo->Issuer };
-    std::vector<CERT_CONTEXT_ptr> certContextes;
-    certContextes.emplace_back(std::move(CERT_CONTEXT_ptr(
-          CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_ANY, (PVOID) &signerCertInfo, NULL),
-          CertFreeCertificateContext)));
-    CHECK(certContextes.at(0) != nullptr, false, "");
+    CERT_INFO cert{ .SerialNumber = signer->SerialNumber, .Issuer = signer->Issuer };
+    const CERT_CONTEXT_ptr leaf(
+          CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID) &cert, NULL), CertFreeCertificateContext);
+    CHECK(leaf != nullptr, false, "");
 
-    PCCERT_CONTEXT certContextRaw = certContextes.at(0).get();
-    while (true)
+    PCCERT_CHAIN_CONTEXT chainRaw{ nullptr };
+    CERT_CHAIN_PARA chainPara{ .cbSize         = sizeof(CERT_CHAIN_PARA),
+                               .RequestedUsage = CERT_USAGE_MATCH{
+                                     .dwType = USAGE_MATCH_TYPE_AND,
+                                     .Usage  = CERT_ENHKEY_USAGE{ .cUsageIdentifier = 0, .rgpszUsageIdentifier = NULL } } };
+    DWORD certChainFlags = CERT_CHAIN_REVOCATION_CHECK_CHAIN;
+    CHECK(CertGetCertificateChain(NULL, leaf.get(), NULL, store.handle, &chainPara, certChainFlags, NULL, &chainRaw), false, "");
+    CERT_CHAIN_CONTEXT_ptr chain(chainRaw, CertFreeCertificateChain);
+    CHECK(chain.get() != nullptr, false, "");
+
+    std::vector<CERT_CONTEXT_ptr> certs{};
+    std::vector<uint32> revocations;
+    for (auto i = 0U; i < chain->cChain; i++)
     {
-        certContextRaw = CertFindCertificateInStore(store.handle, ENCODING, 0, CERT_FIND_ANY, (PVOID) &signerCertInfo, certContextRaw);
-        CHECKBK(certContextRaw != nullptr, "");
-        certContextes.emplace_back(std::move(CERT_CONTEXT_ptr(certContextRaw, CertFreeCertificateContext)));
+        const auto& simpleChain = chain->rgpChain[i];
+
+        pkSignature.statusCode = simpleChain->TrustStatus.dwErrorStatus;
+        ChainErrorStatusToMessage(simpleChain->TrustStatus.dwErrorStatus, pkSignature.status);
+
+        for (auto j = 0U; j < simpleChain->cElement; j++)
+        {
+            const auto& element = simpleChain->rgpElement[j];
+            certs.emplace_back(CertDuplicateCertificateContext(element->pCertContext), CertFreeCertificateContext);
+
+            if (element->pRevocationInfo)
+            {
+                revocations.push_back(element->pRevocationInfo->dwRevocationResult);
+            }
+            else
+            {
+                revocations.push_back(CERT_TRUST_REVOCATION_STATUS_UNKNOWN);
+            }
+        }
     }
 
-    for (const auto& certContext : certContextes)
+    auto i = 0;
+    for (const auto& cert : certs)
     {
         auto& certificate = pkSignature.certificates.emplace_back();
-        CHECK(GetCertificateInfo(signerInfo, certContext, certificate), false, "");
+        CHECK(GetCertificateInfo(signer, cert, certificate), false, "");
+
+        const auto& rev = revocations.at(i++);
+        if (rev == CERT_TRUST_REVOCATION_STATUS_UNKNOWN || rev == CERT_TRUST_IS_REVOKED || rev == CERT_TRUST_NO_ERROR)
+        {
+            certificate.revocationResult.Set(
+                  rev != CERT_TRUST_REVOCATION_STATUS_UNKNOWN
+                        ? rev != CERT_TRUST_IS_REVOKED ? "CERT_TRUST_NO_ERROR" : "CERT_TRUST_IS_REVOKED"
+                        : "CERT_TRUST_REVOCATION_STATUS_UNKNOWN");
+        }
+        else
+        {
+            SetErrorMessage(rev, certificate.revocationResult);
+        }
     }
 
-    CHECK(GetSignatureSigningTime(signerInfo, pkSignature), false, "");
+    CHECK(GetSignatureSigningTime(signer, pkSignature), false, "");
     pkSignature.signatureType = SignatureType::Signature;
 
-    CHECK(ParseSigner(signerInfo, container, store), false, "");
+    CHECK(ParseSigner(signer, container, store), false, "");
 
     return true;
 }
@@ -1042,7 +1263,7 @@ BOOL GetCertificateInfo(
     {
         ls.AddFormat("%02x", certContext->pCertInfo->SerialNumber.pbData[serialNumberSize - (n + 1)]);
     }
-    certificate.serialNumber.Set(ls);
+    certificate.serialNumber.Set(ls.GetText(), ls.Len());
 
     CHECK(GetNameString(certContext, certificate.issuer, CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_NAME_ISSUER_FLAG), false, "");
     CHECK(GetNameString(certContext, certificate.subject, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0), false, "");

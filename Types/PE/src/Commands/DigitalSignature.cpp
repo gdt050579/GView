@@ -10,6 +10,7 @@ enum class Action : int32
 };
 
 constexpr auto COLOR_SUCCESS = ColorPair{ Color::Green, Color::Transparent };
+constexpr auto COLOR_WARNING = ColorPair{ Color::Gray, Color::Transparent };
 constexpr auto COLOR_FAILURE = ColorPair{ Color::Red, Color::Transparent };
 
 DigitalSignature::DigitalSignature(Reference<PEFile> pe)
@@ -40,6 +41,8 @@ void PopulateCertificateInfo(
     LocalString<1024> ls2;
 
     list->AddItem({ "", ls2.Format("------------- Certificate (#%u) -----------", index) }).SetType(ListViewItem::Type::Emphasized_1);
+    list->AddItem({ ls2.Format("Certificate (#%u) Revocation", index), ls.Format("%s", certificate.revocationResult.GetText()) })
+          .SetColor(certificate.revocationResult.Equals("CERT_TRUST_NO_ERROR") ? COLOR_SUCCESS : COLOR_FAILURE);
     list->AddItem({ ls2.Format("Certificate (#%u) Issuer", index), ls.Format("%s", certificate.issuer.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Subject", index), ls.Format("%s", certificate.subject.GetText()) });
     list->AddItem({ ls2.Format("Certificate (#%u) Email", index), ls.Format("%s", certificate.email.GetText()) });
@@ -85,10 +88,22 @@ void DigitalSignature::Update()
 
 #ifdef BUILD_FOR_WINDOWS
     general->AddItem({ "WinTrust", "" }).SetType(ListViewItem::Type::Category);
-    general
-          ->AddItem({ "Validation",
-                      ls.Format("%s (0x%x)", pe->signatureData->winTrust.errorMessage.GetText(), pe->signatureData->winTrust.errorCode) })
+    general->AddItem({ "Validation", ls.Format("%s", pe->signatureData->winTrust.errorMessage.GetText()) })
           .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
+
+    LocalUnicodeStringBuilder<4096> lusb;
+    lusb.Set(pe->signatureData->winTrust.chainErrorMessage);
+    const auto u16sv    = lusb.ToStringView();
+    size_t newLineCount = std::count(u16sv.begin(), u16sv.end(), u'\n');
+
+    auto v = general->AddItem(
+          { "Chain",
+            ls.Format("%s", pe->signatureData->winTrust.chainErrorMessage.GetText(), pe->signatureData->winTrust.chainErrorCode) });
+    v.SetColor(pe->signatureData->winTrust.chainErrorCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
+    v.SetHeight((uint32) (newLineCount > 0 ? newLineCount + 1 : 0));
+
+    general->AddItem({ "Policy", ls.Format("%s", pe->signatureData->winTrust.policyErrorMessage.GetText()) })
+          .SetColor(pe->signatureData->winTrust.policyErrorCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
 #endif
 
     general->AddItem({ "OpenSSL", "" }).SetType(ListViewItem::Type::Category);
@@ -119,6 +134,15 @@ void DigitalSignature::Update()
         }
 
         general->AddItem({ ls.GetText(), "" }).SetType(ListViewItem::Type::Category);
+
+        LocalUnicodeStringBuilder<4096> lusb;
+        lusb.Set(signature.status);
+        const auto u16sv    = lusb.ToStringView();
+        size_t newLineCount = std::count(u16sv.begin(), u16sv.end(), u'\n');
+
+        auto v = general->AddItem({ "Chain Status", ls.Format("%s", signature.status.GetText(), signature.statusCode) });
+        v.SetColor(signature.statusCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
+        v.SetHeight((uint32) (newLineCount > 0 ? newLineCount + 1 : 0));
 
         if (signature.signatureType == GView::DigitalSignature::SignatureType::CounterSignature)
         {

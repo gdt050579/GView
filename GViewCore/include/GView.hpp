@@ -405,6 +405,10 @@ namespace DigitalSignature
             bool callSuccessful{ false };
             uint32 errorCode{ 0 };
             String errorMessage;
+            uint32 chainErrorCode{ 0 };
+            String chainErrorMessage;
+            uint32 policyErrorCode{ 0 };
+            String policyErrorMessage;
         } winTrust;
 
         struct
@@ -417,6 +421,9 @@ namespace DigitalSignature
         {
             struct Signature
             {
+                uint32 statusCode;
+                String status;
+
                 struct Signer
                 {
                     String programName;
@@ -436,6 +443,8 @@ namespace DigitalSignature
                     String notBefore;
 
                     String crlPoint;
+
+                    String revocationResult;
                 };
                 std::vector<Certificate> certificates; // if it has bundled certs in counter signature / timestamp
 

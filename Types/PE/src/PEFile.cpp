@@ -2241,11 +2241,7 @@ void PEFile::RunCommand(std::string_view commandName)
 
             signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath(), obj->GetData());
 
-            while (!signatureChecked && signatureData.has_value()
-#ifdef BUILD_FOR_WINDOWS
-                   && signatureData->winTrust.callSuccessful
-#endif
-            )
+            while (!signatureChecked && signatureData.has_value())
             {
                 Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
                 GView::DigitalSignature::AuthenticodeToHumanReadable(blob, signatureData.value().data.humanReadable);
