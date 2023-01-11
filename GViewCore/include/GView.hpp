@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.258.0"
+#define GVIEW_VERSION "0.259.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
