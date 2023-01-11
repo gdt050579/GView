@@ -247,11 +247,11 @@ UInt16 e_res[4];)");
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]                = "magic:4D 5A";
-        sect["Priority"]               = 1;
-        sect["Description"]            = "Portable executable format for Windows OS binaries";
-        sect["OpCodes.Mask"]           = (uint32) GView::Dissasembly::Opcodes::All;
-        sect["Command.CheckSignature"] = Key::F8 | Key::Alt;
+        sect["Pattern"]                  = "magic:4D 5A";
+        sect["Priority"]                 = 1;
+        sect["Description"]              = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
     }
 }
 

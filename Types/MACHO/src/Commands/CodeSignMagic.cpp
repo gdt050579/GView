@@ -12,7 +12,6 @@ enum class Action : int32
 CodeSignMagic::CodeSignMagic(Reference<MachOFile> _machO)
     : Window("CodeSignMagic", "x:25%,y:5%,w:50%,h:92%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), machO(_machO)
 {
-    machO   = _machO;
     general = Factory::ListView::Create(
           this, "x:0,y:0,w:100%,h:100%", { "n:Key,w:30%", "n:Value,w:70%" }, ListViewFlags::AllowMultipleItemsSelection);
 

@@ -788,6 +788,10 @@ namespace Type
             std::string noteName{};
             Golang::PcLnTab pcLnTab{};
 
+            // digital signature
+            bool signatureChecked{ false };
+            std::optional<DigitalSignature::AuthenticodeMS> signatureData{};
+
           public:
             PEFile();
             virtual ~PEFile() = default;
@@ -1135,6 +1139,32 @@ namespace Type
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
         }; // namespace Panels
-    }      // namespace PE
+
+        namespace Commands
+        {
+            class DigitalSignature : public AppCUI::Controls::Window
+            {
+              private:
+                Reference<PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+                Reference<AppCUI::Controls::ListView> general;
+
+                ListViewItem humanReadable;
+                ListViewItem PEMs;         
+
+                inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+                inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+                void MoreInfo();
+
+              public:
+                DigitalSignature(Reference<PEFile> pe);
+
+                void Update();
+                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+        } // namespace Commands
+    }     // namespace PE
 } // namespace Type
 } // namespace GView

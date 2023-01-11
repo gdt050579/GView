@@ -251,7 +251,7 @@ PEFile::PEFile()
     peCols.colDir[1] = ColorPair{ Color::Red, Color::Transparent };
     for (tr = 2; tr < 15; tr++)
         peCols.colDir[tr] = ColorPair{ Color::Green, Color::Transparent };
-    peCols.colDir[(uint8_t) DirectoryType::Security] = ColorPair{ Color::DarkGreen, Color::Transparent };
+    peCols.colDir[(uint8_t) DirectoryType::Security] = ColorPair{ Color::Teal, Color::Transparent };
 
     asmShow    = 0xFF;
     panelsMask = 0;
@@ -2229,8 +2229,36 @@ bool PEFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Buffe
 
 void PEFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "CheckSignature")
+    if (commandName == "DigitalSignature")
     {
-        AppCUI::Dialogs::MessageBox::ShowError("Error", "This need to be implemented !");
+        while (!signatureChecked)
+        {
+            const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
+
+            WinCertificate cert{};
+            CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
+            CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
+
+            signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath(), obj->GetData());
+
+            while (!signatureChecked && signatureData.has_value())
+            {
+                Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
+                GView::DigitalSignature::AuthenticodeToHumanReadable(blob, signatureData.value().data.humanReadable);
+
+                signatureChecked = true;
+
+                break;
+            }
+        };
+
+        if (signatureData.has_value())
+        {
+            PE::Commands::DigitalSignature(this).Show();
+        }
+        else
+        {
+            AppCUI::Dialogs::MessageBox::ShowError("Error", "Digital signature not found!");
+        }
     }
 }

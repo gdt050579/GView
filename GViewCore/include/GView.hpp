@@ -365,7 +365,7 @@ namespace DigitalSignature
         uint32 attributesCount;
     };
 
-    struct CORE_EXPORT Signature
+    struct CORE_EXPORT SignatureMachO
     {
         int32 isDetached;
         String sn;
@@ -382,7 +382,88 @@ namespace DigitalSignature
 
     CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
     CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
-    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
+    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, SignatureMachO& output);
+
+    enum class SignatureType
+    {
+        Unknown          = 0,
+        Signature        = 1,
+        CounterSignature = 2
+    };
+
+    enum class CounterSignatureType
+    {
+        Unknown      = 0,
+        Authenticode = 1,
+        RFC3161      = 2
+    };
+
+    struct CORE_EXPORT AuthenticodeMS
+    {
+        struct
+        {
+            bool callSuccessful{ false };
+            uint32 errorCode{ 0 };
+            String errorMessage;
+            uint32 chainErrorCode{ 0 };
+            String chainErrorMessage;
+            uint32 policyErrorCode{ 0 };
+            String policyErrorMessage;
+        } winTrust;
+
+        struct
+        {
+            bool verified{ false };
+            String errorMessage;
+        } openssl;
+
+        struct Data
+        {
+            struct Signature
+            {
+                uint32 statusCode;
+                String status;
+
+                struct Signer
+                {
+                    String programName;
+                    String publishLink;
+                    String moreInfoLink;
+                } signer;
+
+                struct Certificate
+                {
+                    uint32 version;
+                    String issuer;
+                    String subject;
+                    String email;
+                    String serialNumber;
+                    String digestAlgorithm;
+                    String notAfter;
+                    String notBefore;
+
+                    String crlPoint;
+
+                    String revocationResult;
+                };
+                std::vector<Certificate> certificates; // if it has bundled certs in counter signature / timestamp
+
+                SignatureType signatureType{ SignatureType ::Unknown };
+
+                // if is counter signature / timestamp
+                String signingTime;
+                CounterSignatureType counterSignatureType{ CounterSignatureType::Unknown };
+            };
+            std::vector<Signature> signatures;
+
+            String humanReadable;
+            std::vector<String> pemCerts;
+        } data;
+    };
+
+    CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
+
+    CORE_EXPORT std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache);
 } // namespace DigitalSignature
 
 namespace Golang
