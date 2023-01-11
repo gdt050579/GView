@@ -12,9 +12,22 @@ enum class AddressType : uint8
 
 constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
+static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
+static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
+
+static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
+static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+
+static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue };
+
+static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::White, Color::Teal };
+static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Yellow, Color::Teal };
+
+static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+
 namespace Panels
 {
-    enum class IDs : uint8_t
+    enum class IDs : uint8
     {
         Information    = 0x0,
         Segments       = 0x1,
@@ -22,10 +35,13 @@ namespace Panels
         GoInformation  = 0x3,
         StaticSymbols  = 0x4,
         DynamicSymbols = 0x5,
+        OpCodes        = 0x6,
     };
 };
 
-class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface
+class ELFFile : public TypeInterface,
+                public GView::View::BufferViewer::OffsetTranslateInterface,
+                public GView::View::BufferViewer::PositionToColorInterface
 {
   public:
     uint64 panelsMask{ 0 };
@@ -33,6 +49,7 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     Elf32_Ehdr header32;
     Elf64_Ehdr header64;
     bool is64{ false };
+    bool isLittleEndian{ true };
 
     std::vector<Elf32_Phdr> segments32;
     std::vector<Elf64_Phdr> segments64;
@@ -56,9 +73,12 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     uint32 valSize  = 0;
     uint32 tag      = 0;
     std::string noteName{};
-    std::string buildId;
     std::string gnuString;
-    Golang::GoPclntab112 pclntab112{};
+    Golang::PcLnTab pcLnTab{};
+
+    uint32 showOpcodesMask{ 0 };
+    std::vector<std::pair<uint64, uint64>> executableZonesFAs;
+    GView::Dissasembly::DissasemblerIntel dissasembler{};
 
   public:
     ELFFile();
@@ -71,6 +91,9 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     bool ParseGoData();
     bool ParseSymbols();
 
+    bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
+    bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
+
     uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
     uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
     uint64 ConvertAddress(uint64 address, AddressType fromAddressType, AddressType toAddressType);
@@ -78,9 +101,15 @@ class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTr
     uint64 FileOffsetToVA(uint64 fileOffset);
     uint64 VAToFileOffset(uint64 virtualAddress);
 
+    uint64 GetImageBase() const;
+    uint64 GetVirtualSize() const;
+
     std::string_view GetTypeName() override
     {
         return "ELF";
+    }
+    void RunCommand(std::string_view) override
+    {
     }
 };
 
@@ -297,6 +326,36 @@ namespace Panels
 
       public:
         StaticSymbols(Reference<ELFFile> elf, Reference<GView::View::WindowInterface> win);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+
+    class OpCodes : public AppCUI::Controls::TabPage
+    {
+        Reference<ELFFile> elf;
+        Reference<Object> object;
+
+        Reference<AppCUI::Controls::Label> value;
+        Reference<AppCUI::Controls::ListView> list;
+        AppCUI::Controls::ListViewItem all;
+        AppCUI::Controls::ListViewItem header;
+        AppCUI::Controls::ListViewItem call;
+        AppCUI::Controls::ListViewItem lcall;
+        AppCUI::Controls::ListViewItem jmp;
+        AppCUI::Controls::ListViewItem ljmp;
+        AppCUI::Controls::ListViewItem bp;
+        AppCUI::Controls::ListViewItem fstart;
+        AppCUI::Controls::ListViewItem fend;
+
+        inline bool AllChecked();
+        inline bool AllUnChecked();
+        inline void SetMaskText();
+        inline void SetConfig(bool checked, uint16 position);
+
+      public:
+        OpCodes(Reference<Object> object, Reference<GView::Type::ELF::ELFFile> elf);
 
         void Update();
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

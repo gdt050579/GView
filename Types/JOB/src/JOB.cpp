@@ -119,8 +119,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        // sect["Pattern"]   = "hex:'4C 00 00 00'";
-        sect["Extension"] = "job";
-        sect["Priority"]  = 1;
+        // sect["Pattern"]   = "magic:4C 00 00 00";
+        sect["Extension"]   = "job";
+        sect["Priority"]    = 1;
+        sect["Description"] = "JOB file format (*.job)";
     }
 }

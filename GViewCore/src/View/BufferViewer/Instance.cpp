@@ -17,10 +17,10 @@ bool DefaultAsciiMask[256] = {
     false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false, true,  true,  true,  true,  true,  true,
     true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  true,  false, false, true,  false, false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, true,  false, false,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
     true,  false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true,  true,  false, false, false, false, false, false, false, false, false, false,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
@@ -106,7 +106,7 @@ void Instance::OpenCurrentSelection()
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
             return;
         }
-        GView::App::OpenBuffer(buf, temp);
+        GView::App::OpenBuffer(buf, temp, GView::App::OpenMethod::Select);
     }
 }
 void Instance::UpdateCurrentSelection()
@@ -333,13 +333,17 @@ void Instance::MoveToZone(bool startOfZone, bool select)
 bool Instance::ShowGoToDialog()
 {
     GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
-    if (dlg.Show() == (int) Dialogs::Result::Ok)
+    if (dlg.Show() == Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
     }
     return true;
 }
 bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
@@ -1367,7 +1371,7 @@ bool Instance::Select(uint64 offset, uint64 size)
     if (offset >= this->obj->GetData().GetSize())
         return false;
     auto end = offset + size - 1;
-    if ((end < offset) || (end < size))
+    if ((end < offset) || (end + 1 < size))
         return false;
     if (end > this->obj->GetData().GetSize())
         return false;
@@ -1833,7 +1837,7 @@ enum class PropertyID : uint32
     ChangeAddressMode,
     GoToEntryPoint,
     ChangeSelectionType,
-    ShowHideStrings,
+    ShowHideStrings
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2101,7 +2105,7 @@ const vector<Property> Instance::GetPropertiesList()
         { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
         { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
         { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
-        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
+        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key }
     };
 }
 #undef BT

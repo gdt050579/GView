@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.64.0"
+#define GVIEW_VERSION "0.259.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -33,7 +33,8 @@ struct CORE_EXPORT TypeInterface
 {
     Object* obj;
 
-    virtual std::string_view GetTypeName() = 0;
+    virtual std::string_view GetTypeName()                = 0;
+    virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
     template <typename T>
@@ -135,62 +136,7 @@ namespace Utils
         Rust,
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
-    namespace Tokenizer
-    {
-        enum class SpaceType : uint8
-        {
-            All          = 0,
-            NewLine      = 1,
-            Space        = 2,
-            Tabs         = 3,
-            SpaceAndTabs = 4,
-        };
-        enum class StringFormat : uint32
-        {
-            SingleQuotes         = 0x00000001, // "..."
-            DoubleQuotes         = 0x00000002, // '...'
-            TripleQuotes         = 0x00000004, // '''...''' or """..."""
-            AllowEscapeSequences = 0x00000008, // "...\n..."
-            MultiLine            = 0x00000010, // string accross mulitple lines
-            All                  = 0xFFFFFFFF, // all possible forms of strings
-        };
-        enum class NumberFormat : uint32
-        {
-            DecimalOnly           = 0,
-            HexFormat0x           = 0x00000001,
-            BinFormat0b           = 0x00000002,
-            FloatingPoint         = 0x00000004,
-            AllowSignBeforeNumber = 0x00000008,
-            AllowUnderline        = 0x00000010,
-            All                   = 0xFFFFFFFF, // all possible forms of numbers
-        };
-        class CORE_EXPORT Lexer
-        {
-            const char16* text;
-            uint32 size;
 
-          public:
-            Lexer(const char16* text, uint32 size);
-            Lexer(u16string_view text);
-
-            inline uint32 Len() const
-            {
-                return size;
-            }
-            inline char16 operator[](uint32 index) const
-            {
-                if (index < size)
-                    return text[index];
-                return 0;
-            }
-            uint32 ParseTillNextLine(uint32 index);
-            uint32 Parse(uint32 index, bool (*validate)(char16 character));
-            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character));
-            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs);
-            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All);
-            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All);
-        };
-    } // namespace Tokenizer
 } // namespace Utils
 
 namespace Hashes
@@ -304,38 +250,8 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    class CORE_EXPORT MD2
-    {
-      private:
-        uint8 m[16];
-        uint8 x[48];
-        uint8 c[16];
-        uint32 size;
-
-        bool init;
-
-      private:
-        bool Final();
-
-      public:
-        bool Init();
-        bool Update(const unsigned char* input, uint32 length);
-        bool Update(const Buffer& buffer);
-        bool Update(const BufferView& buffer);
-        bool Final(uint8 hash[16]);
-        static std::string_view GetName();
-        const std::string_view GetHexValue();
-
-      public:
-        inline static const uint32 ResultBytesLength = sizeof(m) / sizeof(m[0]);
-
-      private:
-        char hexDigest[ResultBytesLength * 2];
-    };
-
     enum class OpenSSLHashKind : uint8
     {
-        Md4,
         Md5,
         Blake2s256,
         Blake2b512,
@@ -427,6 +343,7 @@ namespace DigitalSignature
         String errorSignerVerify;
     };
 
+    constexpr auto ERR_SIGNER            = -1;
     constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
 
     struct CORE_EXPORT SignerAttributes
@@ -448,7 +365,7 @@ namespace DigitalSignature
         uint32 attributesCount;
     };
 
-    struct CORE_EXPORT Signature
+    struct CORE_EXPORT SignatureMachO
     {
         int32 isDetached;
         String sn;
@@ -465,7 +382,88 @@ namespace DigitalSignature
 
     CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
     CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
-    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
+    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, SignatureMachO& output);
+
+    enum class SignatureType
+    {
+        Unknown          = 0,
+        Signature        = 1,
+        CounterSignature = 2
+    };
+
+    enum class CounterSignatureType
+    {
+        Unknown      = 0,
+        Authenticode = 1,
+        RFC3161      = 2
+    };
+
+    struct CORE_EXPORT AuthenticodeMS
+    {
+        struct
+        {
+            bool callSuccessful{ false };
+            uint32 errorCode{ 0 };
+            String errorMessage;
+            uint32 chainErrorCode{ 0 };
+            String chainErrorMessage;
+            uint32 policyErrorCode{ 0 };
+            String policyErrorMessage;
+        } winTrust;
+
+        struct
+        {
+            bool verified{ false };
+            String errorMessage;
+        } openssl;
+
+        struct Data
+        {
+            struct Signature
+            {
+                uint32 statusCode;
+                String status;
+
+                struct Signer
+                {
+                    String programName;
+                    String publishLink;
+                    String moreInfoLink;
+                } signer;
+
+                struct Certificate
+                {
+                    uint32 version;
+                    String issuer;
+                    String subject;
+                    String email;
+                    String serialNumber;
+                    String digestAlgorithm;
+                    String notAfter;
+                    String notBefore;
+
+                    String crlPoint;
+
+                    String revocationResult;
+                };
+                std::vector<Certificate> certificates; // if it has bundled certs in counter signature / timestamp
+
+                SignatureType signatureType{ SignatureType ::Unknown };
+
+                // if is counter signature / timestamp
+                String signingTime;
+                CounterSignatureType counterSignatureType{ CounterSignatureType::Unknown };
+            };
+            std::vector<Signature> signatures;
+
+            String humanReadable;
+            std::vector<String> pemCerts;
+        } data;
+    };
+
+    CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
+
+    CORE_EXPORT std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache);
 } // namespace DigitalSignature
 
 namespace Golang
@@ -550,17 +548,22 @@ namespace Golang
     {
         char* name{ nullptr };
         Func64 func;
+        union FstEntry
+        {
+            FstEntry32* _32;
+            FstEntry64* _64;
+        } fstEntry{ nullptr };
     };
 
-    struct CORE_EXPORT GoPclntab112
+    struct CORE_EXPORT PcLnTab
     {
       private:
         void* context{ nullptr };
         void Reset();
 
       public:
-        GoPclntab112();
-        ~GoPclntab112();
+        PcLnTab();
+        ~PcLnTab();
         bool Process(const Buffer& buffer, Architecture arch);
         GoFunctionHeader* GetHeader() const;
         uint64 GetFilesCount() const;
@@ -568,15 +571,70 @@ namespace Golang
         uint64 GetFunctionsCount() const;
         bool GetFunction(uint64 index, Function& func) const;
         uint64 GetEntriesCount() const;
+        void SetBuildId(std::string_view buildId);
+        const std::string& GetBuildId() const;
+        void SetRuntimeBuildVersion(std::string_view runtimeBuildVersion);
+        const std::string& GetRuntimeBuildVersion() const;
+        void SetRuntimeBuildModInfo(std::string_view runtimeBuildModInfo);
+        const std::string& GetRuntimeBuildModInfo() const;
     };
 
     CORE_EXPORT const char* GetNameForGoMagic(GoMagic magic);
 } // namespace Golang
 
-namespace Pyc
+namespace ZLIB
 {
-
+    CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
+
+namespace Dissasembly
+{
+    enum class Opcodes : uint32
+    {
+        Header        = 1,
+        Call          = 2,
+        LCall         = 4,
+        Jmp           = 8,
+        LJmp          = 16,
+        Breakpoint    = 32,
+        FunctionStart = 64,
+        FunctionEnd   = 128,
+        All           = 0xFFFFFFFF
+    };
+
+    constexpr auto BYTES_SIZE    = 24U;
+    constexpr auto MNEMONIC_SIZE = 32U;
+    constexpr auto OP_STR_SIZE   = 160U;
+
+    struct CORE_EXPORT Instruction
+    {
+        uint32 id;
+        uint64 address;
+        uint16 size;
+        uint8 bytes[BYTES_SIZE];
+        char mnemonic[MNEMONIC_SIZE];
+        char opStr[OP_STR_SIZE];
+    };
+
+    class CORE_EXPORT DissasemblerIntel
+    {
+      private:
+        size_t handle{ 0 };
+        bool isX64{ false };
+
+      public:
+        bool Init(bool isx64, bool isLittleEndian);
+        bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool IsCallInstruction(const Instruction& instruction) const;
+        bool IsLCallInstruction(const Instruction& instruction) const;
+        bool IsJmpInstruction(const Instruction& instruction) const;
+        bool IsLJmpInstruction(const Instruction& instruction) const;
+        bool IsBreakpointInstruction(const Instruction& instruction) const;
+        bool AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const;
+        bool IsFunctionEndInstruction(const Instruction& instruction) const;
+        ~DissasemblerIntel();
+    };
+} // namespace Dissasembly
 
 namespace Compression
 {
@@ -667,10 +725,12 @@ namespace View
         virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
         virtual bool ShowGoToDialog()                                                                          = 0;
         virtual bool ShowFindDialog()                                                                          = 0;
+        virtual bool ShowCopyDialog()                                                                          = 0;
         virtual std::string_view GetName()                                                                     = 0;
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
+        int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
         ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
@@ -784,12 +844,383 @@ namespace View
 
     namespace LexicalViewer
     {
+        enum class SpaceType : uint8
+        {
+            All          = 0,
+            NewLine      = 1,
+            Space        = 2,
+            Tabs         = 3,
+            SpaceAndTabs = 4,
+        };
+        enum class StringFormat : uint32
+        {
+            SingleQuotes                = 0x00000001, // '...'
+            DoubleQuotes                = 0x00000002, // "..."
+            Apostrophe                  = 0x00000004, // `...`
+            TripleQuotes                = 0x00000008, // '''...''' or """...""" or ```...``` (pending on the SingleQuotes..Apostrophe flag)
+            AllowEscapeSequences        = 0x00000010, // "...\n..."
+            MultiLine                   = 0x00000020, // string accross mulitple lines
+            LineContinuityWithBackslash = 0x00000040, // "   \<newline>   "
+            All                         = 0xFFFFFFFF, // all possible forms of strings
+        };
+        enum class NumberFormat : uint32
+        {
+            DecimalOnly           = 0,
+            HexFormat0x           = 0x00000001,
+            BinFormat0b           = 0x00000002,
+            OctFormatOo           = 0x00000004,
+            FloatingPoint         = 0x00000008,
+            AllowSignBeforeNumber = 0x00000010,
+            AllowUnderline        = 0x00000020,
+            AllowSingleQuote      = 0x00000040,
+            ExponentFormat        = 0x00000080,
+            All                   = 0xFFFFFFFF, // all possible forms of numbers
+        };
+        class CORE_EXPORT TextParser
+        {
+            const char16* text;
+            uint32 size;
+
+          public:
+            TextParser(const char16* text, uint32 size);
+            TextParser(u16string_view text);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline char16 operator[](uint32 index) const
+            {
+                if (index < size)
+                    return text[index];
+                return 0;
+            }
+            inline u16string_view GetSubString(uint32 start, uint32 end) const
+            {
+                if ((start < end) && (end <= size))
+                    return u16string_view{ text + start, (size_t) (end - start) };
+                return u16string_view();
+            }
+            uint32 ParseUntillEndOfLine(uint32 index) const;
+            uint32 ParseUntillStartOfNextLine(uint32 index) const;
+            uint32 Parse(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseBackwards(uint32 index, bool (*validate)(char16 character)) const;
+            uint32 ParseSameGroupID(uint32 index, uint32 (*charToID)(char16 character)) const;
+            uint32 ParseSpace(uint32 index, SpaceType type = SpaceType::SpaceAndTabs) const;
+            uint32 ParseString(uint32 index, StringFormat format = StringFormat::All) const;
+            uint32 ParseNumber(uint32 index, NumberFormat format = NumberFormat::All) const;
+            uint32 ParseUntillText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint32 ParseUntilNextCharacterAfterText(uint32 index, string_view textToFind, bool ignoreCase) const;
+            uint64 ComputeHash64(uint32 start, uint32 end, bool ignoreCase) const;
+            uint32 ComputeHash32(uint32 start, uint32 end, bool ignoreCase) const;
+            static uint32 ComputeHash32(u16string_view txt, bool ignoreCase);
+            static uint64 ComputeHash64(u16string_view txt, bool ignoreCase);
+            static bool ExtractContentFromString(u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result, StringFormat format);
+        };
+        class CORE_EXPORT TextEditor
+        {
+          protected:
+            bool Grow(size_t size);
+
+          protected:
+            char16* text;
+            uint32 size;
+            uint32 allocated;
+
+            TextEditor();
+
+          public:
+            bool Insert(uint32 offset, std::string_view text);
+            bool Insert(uint32 offset, std::u16string_view text);
+            bool InsertChar(uint32 offset, char16 ch);
+            std::optional<uint32> Find(uint32 startOffset, std::string_view textToSearch, bool ignoreCase = false);
+            bool Replace(uint32 offset, uint32 size, std::string_view text);
+            bool Replace(uint32 offset, uint32 size, std::u16string_view text);
+            bool ReplaceAll(std::string_view textToSearch, std::string_view textToReplaceWith, bool ignoreCase = false);
+            bool DeleteChar(uint32 offset);
+            bool Delete(uint32 offset, uint32 charactersCount);
+            bool Add(std::string_view text);
+            bool Add(std::u16string_view text);
+            bool Set(std::string_view text);
+            bool Set(std::u16string_view text);
+            bool Resize(uint32 charactersCount, char16 fillChar = ' ');
+            void Clear();
+            bool Reserve(uint32 charactersCount);
+
+            char16& operator[](uint32 index);
+
+            inline uint32 Len() const
+            {
+                return size;
+            }
+            inline operator u16string_view() const
+            {
+                return { text, (size_t) size };
+            }
+        };
+        enum class TokenDataType : uint8
+        {
+            None,
+            String,
+            Number,
+            MetaInformation,
+            Boolean
+        };
+        enum class TokenAlignament : uint32
+        {
+            None            = 0,
+            AddSpaceBefore  = 0x00000001,    // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x00000002,    // adds a space on right of the current token
+            NewLineAfter    = 0x00000004,    // adds a new line after the current token
+            NewLineBefore   = 0x00000008,    // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x00000010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                             // otherwise adds a new line.
+            AfterPreviousToken = 0x00000020, // make sure that there any space or new line (within the block) between current token
+                                             // and previous token is removed. Both tokens are at on the same line.
+            IncrementIndentBeforePaint = 0x00000040, // increments the indent of the current line (before painting the token)
+            DecrementIndentBeforePaint = 0x00000080, // decrement the indent of the current line (before painting the token)
+            ClearIndentBeforePaint     = 0x00000100, // resets current indent to 0 (before painting the token)
+            IncrementIndentAfterPaint  = 0x00000200, // increments the indent of the current line (after painting the token)
+            DecrementIndentAfterPaint  = 0x00000400, // decrement the indent of the current line (after painting the token)
+            ClearIndentAfterPaint      = 0x00000800, // resets current indent to 0 (after painting the token)
+
+            SameColumn     = 0x00001000, // make sure that first token with this flag from each line from a block has the same X-offste
+            WrapToNextLine = 0x00002000, // if the "X" coordonate of a token is after a specific with, move to the next
+                                         // line and reset the "X" coordonate acording to the block rules.
+
+        };
+        enum class TokenColor : uint8
+        {
+            Comment,
+            Number,
+            String,
+            Operator,
+            Keyword,
+            Keyword2,
+            Constant,
+            Word,
+            Preprocesor,
+            Datatype,
+            Error,
+        };
+        enum class TokenFlags : uint8
+        {
+            None                    = 0,
+            DisableSimilaritySearch = 0x01,
+            Sizeable                = 0x02,
+        };
+        enum class BlockAlignament : uint8
+        {
+            ParentBlock,
+            ParentBlockWithIndent,
+            CurrentToken,
+            CurrentTokenWithIndent,
+        };
+        enum class BlockFlags : uint16
+        {
+            None           = 0,
+            EndMarker      = 0x0001,
+            ManualCollapse = 0x0002,
+        };
+        class CORE_EXPORT Token;
+        class CORE_EXPORT Block
+        {
+            void* data;
+            uint32 index;
+
+          public:
+            Block(void* _data, uint32 _idx) : data(_data), index(_idx)
+            {
+            }
+            Block() : data(nullptr), index(INVALID_INDEX)
+            {
+            }
+            inline bool IsValid() const
+            {
+                return data != nullptr;
+            }
+            inline uint32 GetIndex() const
+            {
+                return index;
+            }
+            Token GetStartToken() const;
+            Token GetEndToken() const;
+
+            bool SetFoldMessage(std::string_view message);
+
+            constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
+        };
+        class CORE_EXPORT Token
+        {
+            void* data;
+            uint32 index;
+
+          public:
+            Token(void* _data, uint32 _idx) : data(_data), index(_idx)
+            {
+            }
+            Token() : data(nullptr), index(INVALID_INDEX)
+            {
+            }
+            inline bool IsValid() const
+            {
+                return data != nullptr;
+            }
+            inline uint32 GetIndex() const
+            {
+                return index;
+            }
+
+            uint32 GetTypeID(uint32 errorValue) const;
+            TokenAlignament GetAlignament() const;
+            TokenDataType GetDataType() const;
+            bool SetAlignament(TokenAlignament align);
+            bool UpdateAlignament(TokenAlignament flagsToAdd, TokenAlignament flagsToRemove = TokenAlignament::None);
+            bool SetTokenColor(TokenColor col);
+            bool SetBlock(Block block);
+            bool SetBlock(uint32 blockIndex);
+            bool DisableSimilartyHighlight();
+            bool SetText(const ConstString& text);
+            bool SetError(const ConstString& error);
+            bool Delete();
+
+            std::optional<uint32> GetTokenStartOffset() const;
+            std::optional<uint32> GetTokenEndOffset() const;
+
+            Token Next() const;
+            Token Precedent() const;
+
+            Token& operator++();
+            Token& operator--();
+            Token operator+(uint32 offset) const;
+            Token operator-(uint32 offset) const;
+
+            u16string_view GetText() const;
+            Block GetBlock() const;
+
+            constexpr static uint32 INVALID_INDEX = 0xFFFFFFFF;
+        };
+        class CORE_EXPORT TokensList
+        {
+          protected:
+            void* data;
+            uint32 lastTokenID;
+
+            TokensList() : data(nullptr), lastTokenID(0xFFFFFFFF)
+            {
+            }
+
+          public:
+            void ResetLastTokenID(uint32 value)
+            {
+                lastTokenID = value;
+            }
+            Token operator[](uint32 index) const;
+            Token GetLastToken() const;
+            uint32 GetLastTokenID() const
+            {
+                return lastTokenID;
+            }
+            uint32 Len() const;
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
+            Token Add(
+                  uint32 typeID,
+                  uint32 start,
+                  uint32 end,
+                  TokenColor color,
+                  TokenDataType dataType,
+                  TokenAlignament align,
+                  TokenFlags flags);
+            // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
+        };
+        class CORE_EXPORT BlocksList
+        {
+          protected:
+            void* data;
+
+            BlocksList() : data(nullptr)
+            {
+            }
+
+          public:
+            uint32 Len() const;
+            Block operator[](uint32 index) const;
+            Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+            Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
+        };
+        struct SyntaxManager
+        {
+            const TextParser& text;
+            TokensList& tokens;
+            BlocksList& blocks;
+            SyntaxManager(const TextParser& _text, TokensList& _tokens, BlocksList& _blocks) : text(_text), tokens(_tokens), blocks(_blocks)
+            {
+            }
+        };
+        class CORE_EXPORT TokenIndexStack
+        {
+            constexpr static uint32 LOCAL_SIZE = 8;
+            uint32 count, allocated;
+            uint32* stack;
+            uint32 local[LOCAL_SIZE];
+
+          public:
+            TokenIndexStack();
+            ~TokenIndexStack();
+            bool Push(uint32 index);
+            uint32 Pop(uint32 errorValue = Token::INVALID_INDEX);
+            inline bool Empty() const
+            {
+                return count == 0;
+            }
+        };
+        struct CORE_EXPORT ParseInterface
+        {
+            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)                         = 0;
+            virtual void PreprocessText(TextEditor& editor)                                                            = 0;
+            virtual void AnalyzeText(SyntaxManager& syntax)                                                            = 0;
+            virtual bool StringToContent(std::u16string_view stringValue, AppCUI::Utils::UnicodeStringBuilder& result) = 0;
+            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)     = 0;
+        };
+        struct PluginData
+        {
+            TextEditor& editor;
+            TokensList& tokens;
+            BlocksList& blocks;
+            uint32 currentTokenIndex;
+            uint32 startIndex;
+            uint32 endIndex;
+            PluginData(TextEditor& _editor, TokensList& _tokens, BlocksList& _blocks)
+                : editor(_editor), tokens(_tokens), blocks(_blocks), currentTokenIndex(0), startIndex(0), endIndex(0)
+            {
+            }
+        };
+        enum class PluginAfterActionRequest
+        {
+            None,
+            Refresh,
+            Rescan,
+        };
+        struct CORE_EXPORT Plugin
+        {
+            virtual std::string_view GetName()                         = 0;
+            virtual std::string_view GetDescription()                  = 0;
+            virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
+            virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
+        };
         struct CORE_EXPORT Settings
         {
             void* data;
 
             Settings();
-            void SetParserCallback();
+            void SetParser(Reference<ParseInterface> parser);
+            void AddPlugin(Reference<Plugin> plugin);
+            void SetCaseSensitivity(bool ignoreCase);
+            void SetMaxWidth(uint32 width);
+            void SetMaxTokenSize(Size sz);
         };
     }; // namespace LexicalViewer
 
@@ -809,7 +1240,7 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DissamblyLanguage : uint32
+        enum class DisassemblyLanguage : uint32
         {
             Default,
             x86,
@@ -834,15 +1265,22 @@ namespace View
             Utf32Z
         };
 
+        constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
+
         struct CORE_EXPORT Settings
         {
             void* data;
 
-            void SetDefaultDissasemblyLanguage(DissamblyLanguage lang);
-            void ReserverZonesCapacity(uint32 reserved_size);
-            void AddDissasemblyZone(uint64 start, uint64 size, DissamblyLanguage lang = DissamblyLanguage::Default);
+            /**
+             * \brief Sets the default disassembly language that will be used when an assembly zone will be used with the default option.
+             * \param lang The DissasemblyLanguage to use when the Default option will be met.
+             */
+            void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
+            void AddDisassemblyZone(
+                  uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
-            void AddMemmoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
              * Add a new data type with its definition. Default data types: UInt8-64,Int8-64, float,double, asciiZ, Unicode16Z,Unicode32Z
@@ -851,18 +1289,18 @@ namespace View
              * @param[in] name Name of the new type
              * @param[in] definition Multiple statements in the form DataType variableName followed by semicolon. Example: name="Point",
              * definition="UInt32 x;UInt32 y;"
-             * @returns The id of the new data type generated.
+             * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
 
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);
             void AddArray(uint64 offset, std::string_view name, VariableType type, uint32 count);
-            void AddBiDiminesionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height);
+            void AddBidimensionalArray(uint64 offset, std::string_view name, VariableType type, uint32 width, uint32 height);
 
             void AddVariable(uint64 offset, std::string_view name, TypeID type);
             void AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count);
-            void AddBiDiminesionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height);
+            void AddBidimensionalArray(uint64 offset, std::string_view name, TypeID type, uint32 width, uint32 height);
 
             /*
              * types: uin8-64,int8-64, float,double, char* (asciiZ), Unicode16Z,Unicode32Z
@@ -897,15 +1335,32 @@ namespace View
 }; // namespace View
 namespace App
 {
+    enum class OpenMethod
+    {
+        FirstMatch,
+        BestMatch,
+        Select,
+        ForceType
+    };
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, string_view typeExtension = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
+    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT
+    OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
+    std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
+    std::string_view CORE_EXPORT GetTypePluginDescription(uint32 index);
+    uint32 CORE_EXPORT GetTypePluginsCount();
+
 }; // namespace App
 }; // namespace GView
 
-ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::StringFormat, AppCUI::uint32);
-ADD_FLAG_OPERATORS(GView::Utils::Tokenizer::NumberFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::NumberFormat, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenAlignament, AppCUI::uint32);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::BlockFlags, AppCUI::uint16);
+ADD_FLAG_OPERATORS(GView::View::LexicalViewer::TokenFlags, AppCUI::uint8);

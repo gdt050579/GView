@@ -10,6 +10,9 @@ class DefaultType : public TypeInterface
     {
         return "GENERIC";
     }
+    void RunCommand(std::string_view commandName) override
+    {
+    }
     ~DefaultType()
     {
     }
@@ -45,15 +48,11 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     auto buf       = win->GetObject()->GetData().Get(0, 4096, false);
     auto bomLength = 0U;
     auto enc       = CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLength);
-    
-    if (enc != CharacterEncoding::Encoding::Binary) 
-    {
-        View::TextViewer::Settings settings;
-        win->CreateViewer("Text view", settings);
-    }
+
+    if (enc != CharacterEncoding::Encoding::Binary)
+        win->CreateViewer<View::TextViewer::Settings>("Text view");
     // add a buffer view as a default view
-    View::BufferViewer::Settings settings;
-    win->CreateViewer("Buffer view", settings);
+    win->CreateViewer<View::BufferViewer::Settings>("Buffer view");
     return true;
 }
 } // namespace GView::Type::DefaultTypePlugin

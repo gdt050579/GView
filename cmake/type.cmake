@@ -1,9 +1,27 @@
+macro(make_filters _source_list)
+    foreach(_source IN ITEMS ${_source_list})
+        get_filename_component(_source_path "${_source}" PATH)
+        string(REPLACE "${CMAKE_SOURCE_DIR}" "" _group_path "${_source_path}")
+        string(REPLACE "/" "\\" _group_path "${_group_path}")
+        source_group("${_group_path}" FILES "${_source}")
+    endforeach()
+endmacro()
+
+
 function (create_type type_name)
 
 	set(PROJECT_NAME ${type_name})	
 	
 	include_directories(../../GViewCore/include)
-	
+		
+	file(GLOB_RECURSE SRC_ALL "src/*.cpp" "src/*.h")
+        SOURCE_GROUP(TREE "${PROJECT_SOURCE_DIR}/Types/${type_name}/src" FILES ${SRC_ALL})
+	message(STATUS "${PROJECT_SOURCE_DIR}/Types/${type_name}/src => SRC = ${SRC_ALL}")
+
+	make_filters("${PROJECT_SOURCE_DIR}/Types/${type_name}/src")
+
+	set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 	add_library(${PROJECT_NAME} SHARED)
 	
 	if (MSVC)
@@ -23,10 +41,9 @@ function (create_type type_name)
 	    endif()
 	endif()
 	
-	include_directories(include)
-	
+	include_directories(include)	
 	add_subdirectory(src)
-
+                  
 	file(GLOB_RECURSE PROJECT_HEADERS include/*.hpp)
 	target_sources(${PROJECT_NAME} PRIVATE ${PROJECT_HEADERS})
 

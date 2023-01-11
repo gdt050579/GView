@@ -122,6 +122,8 @@ namespace View
 
             static Config config;
 
+            void OpenCurrentSelection();
+
             void RecomputeLineIndexes();
             void CommputeViewPort_NoWrap(uint32 lineNo, Direction dir);
             void CommputeViewPort_Wrap(uint32 lineNo, uint32 subLineNo, Direction dir);
@@ -177,6 +179,7 @@ namespace View
             virtual bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
+            virtual bool ShowCopyDialog() override;
             virtual std::string_view GetName() override;
 
             // mouse events

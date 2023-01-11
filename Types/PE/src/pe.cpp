@@ -1,6 +1,7 @@
 #include "pe.hpp"
 
 using namespace AppCUI;
+using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
@@ -80,7 +81,7 @@ extern "C"
         }
 
         // translation
-        settings.SetOffsetTranslationList({ "RVA", "VirtAddress" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         // set specific color for opcodes
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
@@ -88,10 +89,10 @@ extern "C"
         case PE::MachineType::I386:
         case PE::MachineType::IA64:
         case PE::MachineType::AMD64:
-            pe->x86x64ColorBuffer.memStartOffset = pe->imageBase;
-            pe->x86x64ColorBuffer.memEndOffset   = pe->imageBase + pe->virtualComputedSize;
-            settings.SetPositionToColorCallback(&pe->x86x64ColorBuffer);
-            break;
+        {
+            settings.SetPositionToColorCallback(pe.ToBase<GView::View::BufferViewer::PositionToColorInterface>());
+        }
+        break;
         };
 
         // set entry point
@@ -146,7 +147,57 @@ extern "C"
     {
         DissasmViewer::Settings settings;
 
-        win->CreateViewer("BufferView", settings);
+        if (pe->HasPanel(PE::Panels::IDs::Sections))
+        {
+            LocalString<128> temp;
+
+            for (auto tr = 0U; tr < pe->nrSections; tr++)
+            {
+                pe->CopySectionName(tr, temp);
+                if (temp.CompareWith(".text") == 0)
+                {
+                    const uint32 entryPoint =
+                          pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
+                    break;
+                }
+            }
+        }
+
+        uint32 typeImageDOSHeader = settings.AddType(
+              "ImageDOSHeader",
+              R"(UInt16 e_magic;
+UInt16 e_cblp;
+UInt16 e_cp;
+UInt16 e_crlc;
+UInt16 e_res[4];)");
+
+        //                uint32 typeImageDOSHeader = settings.AddType(
+        //              "ImageDOSHeader",
+        //              R"(UInt16 e_magic;
+        // UInt16 e_cblp;
+        // UInt16 e_cp;
+        // UInt16 e_crlc;
+        // UInt16 e_cparhdr;
+        // UInt16 e_minalloc;
+        // UInt16 e_maxalloc;
+        // UInt16 e_ss;
+        // UInt16 e_sp;
+        // UInt16 e_csum;
+        // UInt16 e_ip;
+        // UInt16 e_cs;
+        // UInt16 e_lfarlc;
+        // UInt16 e_ovno;
+        // UInt16 e_res[4];
+        // UInt16 e_oemid;
+        // UInt16 e_oeminfo;
+        // UInt16 e_res2[10];
+        // UInt32 e_lfanew;)");
+
+        settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
+
+        win->CreateViewer("DissasmView", settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
@@ -154,8 +205,13 @@ extern "C"
         auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
+#ifndef DISSASM_DEV
         CreateBufferView(win, pe);
         CreateDissasmView(win, pe);
+#else
+        CreateDissasmView(win, pe);
+        CreateBufferView(win, pe);
+#endif
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(win->GetObject(), pe)), true);
@@ -175,13 +231,27 @@ extern "C"
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Icons(pe, win)), true);
         if (pe->HasPanel(PE::Panels::IDs::Symbols))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Symbols(pe, win)), false);
+        if (pe->HasPanel(PE::Panels::IDs::GoInformation))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoInformation(win->GetObject(), pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFiles(win->GetObject(), pe)), true);
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::GoFunctions(pe, win)), false);
+        }
+        if (pe->HasPanel(PE::Panels::IDs::OpCodes))
+        {
+            win->AddPanel(Pointer<TabPage>(new PE::Panels::OpCodes(win->GetObject(), pe)), true);
+        }
+
         return true;
     }
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect.UpdateValue("Pattern", "MZ", false);
-        sect.UpdateValue("Priority", 1, false);
+        sect["Pattern"]                  = "magic:4D 5A";
+        sect["Priority"]                 = 1;
+        sect["Description"]              = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
     }
 }
 

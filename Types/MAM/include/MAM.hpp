@@ -11,17 +11,20 @@ class MAMFile : public TypeInterface
     uint32 uncompressedSize;
     uint32 compressedSize;
 
-    MAMFile();
+    MAMFile() = default;
     virtual ~MAMFile()
     {
     }
 
     bool Update();
+    bool Decompress();
 
     std::string_view GetTypeName() override
     {
         return "MAM";
     }
+
+    void RunCommand(std::string_view) override;
 };
 
 namespace Panels

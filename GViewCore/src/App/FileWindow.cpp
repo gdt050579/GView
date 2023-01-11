@@ -9,6 +9,7 @@
 
 using namespace GView::App;
 using namespace GView::View;
+using namespace AppCUI::Input;
 
 constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
@@ -16,6 +17,8 @@ constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
 constexpr int CMD_GOTO                   = 30012346;
 constexpr int CMD_FIND                   = 30012347;
+constexpr int CMD_CHOSE_NEW_TYPE         = 30012348;
+constexpr int CMD_FOR_TYPE_PLUGIN_START  = 50000000;
 
 class CursorInformation : public UserControl
 {
@@ -33,8 +36,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp)
-    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj))
+FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp, Reference<Type::Plugin> _typePlugin)
+    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj)), typePlugin(_typePlugin)
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -77,6 +80,34 @@ Reference<GView::Object> FileWindow::GetObject()
 {
     return Reference<GView::Object>(this->obj.get());
 }
+
+void FileWindow::ShowFilePropertiesDialog()
+{
+    FileWindowProperties dlg(view);
+    dlg.Show();
+}
+void FileWindow::ShowGoToDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
+    }
+}
+void FileWindow::ShowFindDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
+    }
+}
+void FileWindow::ShowCopyDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowCopyDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Copy command !");
+    }
+}
+
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
     if (verticalPosition)
@@ -151,6 +182,20 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
             view->SetFocus();
         return true;
     }
+    // finally --> check some hardcoded commands
+    switch (keyCode)
+    {
+    case Key::Ctrl | Key::G:
+        ShowGoToDialog();
+        return true;
+    case Key::Ctrl | Key::F:
+        ShowFindDialog();
+        return true;
+    case Key::Ctrl | Key::C:
+    case Key::Ctrl | Key::Insert:
+        ShowCopyDialog();
+        return true;
+    }
     return false;
 }
 bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
@@ -160,30 +205,28 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     switch (eventType)
     {
     case Event::Command:
-        if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
+        switch (ID)
         {
-            FileWindowProperties dlg(view);
-            dlg.Show();
+        case CMD_SHOW_VIEW_CONFIG_PANEL:
+            ShowFilePropertiesDialog();
             return true;
-        }
-        if (ID == CMD_NEXT_VIEW)
-        {
+        case CMD_NEXT_VIEW:
             this->view->GoToNextTabPage();
             return true;
-        }
-        if (ID == CMD_GOTO)
-        {
-            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog()==false)
-            {
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
-            }
+        case CMD_GOTO:
+            ShowGoToDialog();
             return true;
-        }
-        if (ID == CMD_FIND)
-        {
-            if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
+        case CMD_FIND:
+            ShowFindDialog();
+            return true;
+        case CMD_CHOSE_NEW_TYPE:
+            if (this->obj->GetObjectType() == Object::Type::File)
             {
-                AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
+                GView::App::OpenFile(this->obj->GetPath(), OpenMethod::Select);
+            }
+            else
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet for this type of object (buffer/PID/Folder)");
             }
             return true;
         }
@@ -191,6 +234,11 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         {
             horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
             horizontalPanels->SetFocus();
+            return true;
+        }
+        if (((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START + 1000)) && (this->typePlugin.IsValid()))
+        {
+            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[ID - CMD_FOR_TYPE_PLUGIN_START].name);
             return true;
         }
         break;
@@ -212,6 +260,17 @@ bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
           this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
     commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
+    commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);
+    // add commands from type plugin
+    if (this->typePlugin.IsValid())
+    {
+        auto idx = 0;
+        for (auto& cmd : typePlugin->GetCommands())
+        {
+            commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
+            idx++;
+        }
+    }
     // add all generic plugins
     this->gviewApp->UpdateCommandBar(commandBar);
     return true;

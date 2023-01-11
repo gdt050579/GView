@@ -3,6 +3,7 @@
 #include "GView.hpp"
 
 #include <set>
+#include <span>
 
 using namespace AppCUI::Controls;
 using namespace AppCUI::Graphics;
@@ -26,11 +27,36 @@ namespace Utils
         Selection();
         void Clear();
         bool Clear(int index);
+        inline constexpr bool HasSelection(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start != INVALID_OFFSET;
+            return false;
+        }
+        inline constexpr bool HasAnySelection() const
+        {
+            for (uint32 index = 0; index < MAX_SELECTION_ZONES; index++)
+                if (zones[index].start != INVALID_OFFSET)
+                    return true;
+            return false;
+        }
         inline constexpr uint32 GetCount() const
         {
             return Selection::MAX_SELECTION_ZONES;
         }
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
+        inline uint64 GetSelectionStart(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].start;
+            return INVALID_OFFSET;
+        }
+        inline uint64 GetSelectionEnd(uint32 index) const
+        {
+            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+                return zones[index].end;
+            return INVALID_OFFSET;
+        }
         void EnableMultiSelection(bool enable);
         inline void InvertMultiSelectionMode()
         {
@@ -91,6 +117,36 @@ namespace Utils
         bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
         bool Reserve(unsigned int count);
         const Zone* OffsetToZone(uint64 offset);
+    };
+
+    struct UnicodeString
+    {
+        char16* text;
+        uint32 size;
+        uint32 allocated;
+
+        UnicodeString() : text(nullptr), size(0), allocated(0)
+        {
+        }
+        UnicodeString(char16* txt, uint32 sz, uint32 alloc) : text(txt), size(sz), allocated(alloc)
+        {
+        }
+        inline UnicodeString Clone()
+        {
+            if (text == nullptr)
+                return UnicodeString();
+            auto* tmp = new char16[size];
+            memcpy(tmp, text, this->size * sizeof(char16));
+            return UnicodeString(tmp, size, size);
+        }
+        inline void Destroy()
+        {
+            if (text != nullptr)
+                delete[] text;
+            text      = nullptr;
+            size      = 0;
+            allocated = 0;
+        }
     };
 
     namespace CharacterEncoding
@@ -180,7 +236,42 @@ namespace Utils
             }
         };
 
+        class EncodedCharacter
+        {
+            uint8 internalBuffer[16];
+
+            BufferView ToUTF8(char16 ch);
+
+          public:
+            inline BufferView Encode(char16 ch, Encoding encoding)
+            {
+                switch (encoding)
+                {
+                case Encoding::UTF8:
+                    if (ch < 256)
+                    {
+                        internalBuffer[0] = static_cast<uint8>(ch);
+                        return BufferView(internalBuffer, 1);
+                    }
+                    return ToUTF8(ch);
+                case Encoding::Ascii:
+                    internalBuffer[0] = ch < 256 ? static_cast<uint8>(ch) : '?';
+                    return BufferView(internalBuffer, 1);
+                case Encoding::Binary:
+                case Encoding::Unicode16LE:
+                    *(char16*) &internalBuffer = ch;
+                    return BufferView(internalBuffer, 2);
+                case Encoding::Unicode16BE:
+                    internalBuffer[0] = ch >> 8;
+                    internalBuffer[1] = ch & 0xFF;
+                    return BufferView(internalBuffer, 2);
+                }
+                return BufferView{};
+            }
+        };
         Encoding AnalyzeBufferForEncoding(BufferView buf, bool checkForBOM, uint32& BOMLength);
+        UnicodeString ConvertToUnicode16(BufferView buf);
+        BufferView GetBOMForEncoding(Encoding encoding);
     }; // namespace CharacterEncoding
 } // namespace Utils
 
@@ -221,33 +312,100 @@ namespace Type
         bool PopulateWindow(Reference<GView::View::WindowInterface> win);
     } // namespace FolderViewPlugin
 
-    constexpr unsigned int MAX_PATTERN_VALUES = 21; // muwt be less than 255
-    class SimplePattern
+    namespace Matcher
     {
-        unsigned char CharactersToMatch[MAX_PATTERN_VALUES];
-        unsigned char Count;
-        unsigned short Offset;
-
-      public:
-        SimplePattern();
-        bool Init(std::string_view text, unsigned int ofs);
-        bool Match(AppCUI::Utils::BufferView buf) const;
-        inline bool Empty() const
+        class TextParser
         {
-            return Count == 0;
-        }
+            struct
+            {
+                const char16* text;
+                uint32 size;
+            } Raw;
+            struct
+            {
+                const char16* text;
+                uint32 size;
+            } Text;
+            struct
+            {
+                uint32 offsets[10];
+                uint32 count;
+                bool computed;
+            } Lines;
+            void ComputeLineOffsets();
+
+          public:
+            TextParser(const char16* text, uint32 size);
+            inline std::u16string_view GetText() const
+            {
+                return { Text.text, static_cast<size_t>(Text.size) };
+            }
+            inline std::span<uint32> GetLines()
+            {
+                if (!Lines.computed)
+                    ComputeLineOffsets();
+                return std::span<uint32>(this->Lines.offsets, static_cast<size_t>(this->Lines.count));
+            }
+        };
+        struct Interface
+        {
+            virtual bool Init(std::string_view text)                            = 0;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) = 0;
+        };
+        class MagicMatcher : public Interface
+        {
+            union
+            {
+                uint8 u8[16];
+                uint16 u16[8];
+                uint32 u32[4];
+                uint64 u64[2];
+            };
+            uint8 count;
+
+          public:
+            MagicMatcher() : count(0)
+            {
+            }
+            virtual bool Init(std::string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
+        };
+        class StartsWithMatcher : public Interface
+        {
+            FixSizeString<61> value;
+
+          public:
+            virtual bool Init(std::string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
+        };
+        class LineStartsWithMatcher : public Interface
+        {
+            FixSizeString<61> value;
+            bool CheckStartsWith(TextParser& text, uint32 offset);
+
+          public:
+            virtual bool Init(std::string_view text) override;
+            virtual bool Match(AppCUI::Utils::BufferView buf, TextParser& text) override;
+        };
+        Interface* CreateFromString(std::string_view stringRepresentation);
+    } // namespace Matcher
+
+    struct PluginCommand
+    {
+        FixSizeString<25> name;
+        Input::Key key;
     };
 
-    constexpr unsigned int PLUGIN_NAME_MAX_SIZE = 31; // must be less than 255 !!!
     class Plugin
     {
-        SimplePattern Pattern;
-        std::vector<SimplePattern> Patterns;
-        unsigned long long Extension;
-        std::set<unsigned long long> Extensions;
-        unsigned char Name[PLUGIN_NAME_MAX_SIZE];
-        unsigned char NameLength;
-        unsigned short Priority;
+        Matcher::Interface* pattern;
+        std::vector<Matcher::Interface*> patterns;
+        std::vector<PluginCommand> commands;
+        uint64 extension;
+        std::set<uint64> extensions;
+        FixSizeString<27> name;
+        FixSizeString<124> description;
+        uint16 priority;
         bool Loaded, Invalid;
 
         bool (*fnValidate)(const AppCUI::Utils::BufferView& buf, const std::string_view& extension);
@@ -260,13 +418,30 @@ namespace Type
         Plugin();
         bool Init(AppCUI::Utils::IniSection section);
         void Init();
-        bool Validate(AppCUI::Utils::BufferView buf, std::string_view extension);
+        bool MatchExtension(uint64 extensionHash);
+        bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
+        bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser);
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance() const;
         inline bool operator<(const Plugin& plugin) const
         {
-            return Priority > plugin.Priority;
+            return priority > plugin.priority;
         }
+        inline std::string_view GetName() const
+        {
+            return name;
+        }
+        inline std::string_view GetDescription() const
+        {
+            return description;
+        }
+        inline const std::vector<PluginCommand>& GetCommands() const
+        {
+            return commands;
+        }
+
+        static uint64 ExtensionToHash(std::string_view ext);
+        static uint64 ExtensionToHash(std::u16string_view ext);
     };
 } // namespace Type
 
@@ -312,26 +487,60 @@ namespace App
             AppCUI::Input::Key switchToView;
             AppCUI::Input::Key goTo;
             AppCUI::Input::Key find;
+            AppCUI::Input::Key choseNewType;
         } Keys;
 
         bool BuildMainMenus();
         bool LoadSettings();
         void OpenFile();
         void ShowErrors();
+
+        Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
+              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+        Reference<Type::Plugin> IdentifyTypePlugin_BestMatch(
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
+        Reference<Type::Plugin> IdentifyTypePlugin_Select(
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
+        Reference<Type::Plugin> IdentifyTypePlugin_WithSelectedType(
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash,
+              std::string_view typeName);
+        Reference<Type::Plugin> IdentifyTypePlugin(
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              GView::Utils::DataCache& cache,
+              uint64 extensionHash,
+              OpenMethod method,
+              std::string_view typeName);
         bool Add(
               GView::Object::Type objType,
               std::unique_ptr<AppCUI::OS::DataObject> data,
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
               uint32 PID,
-              std::string_view ext);
+              OpenMethod method,
+              std::string_view typeName);
         bool AddFolder(const std::filesystem::path& path);
 
       public:
         Instance();
         bool Init();
-        bool AddFileWindow(const std::filesystem::path& path);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension);
+        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
@@ -355,6 +564,10 @@ namespace App
         {
             return this->Keys.find;
         }
+        constexpr inline AppCUI::Input::Key GetChoseNewTypeKey() const
+        {
+            return this->Keys.choseNewType;
+        }
 
         // property interface
         virtual bool GetPropertyValue(uint32 propertyID, PropertyValue& value) override;
@@ -371,6 +584,49 @@ namespace App
         uint32 GetObjectsCount();
         Reference<GView::Object> GetObject(uint32 index);
         Reference<GView::Object> GetCurrentObject();
+        uint32 GetTypePluginsCount();
+        std::string_view GetTypePluginName(uint32 index);
+        std::string_view GetTypePluginDescription(uint32 index);
+    };
+
+    class SelectTypeDialog : public Window
+    {
+        Reference<CanvasViewer> canvas;
+        Reference<ComboBox> cbView, cbType;
+
+        AppCUI::Utils::BufferView buf;
+        GView::Type::Matcher::TextParser& textParser;
+        std::vector<GView::Type::Plugin>& typePlugins;
+
+        GView::Type::Plugin* result;
+
+        void PaintHex();
+        void PaintBuffer();
+        void PaintText(bool wrap);
+
+        void Validate();
+        void UpdateView(uint64 mode);
+        void PopulateViewModes();
+        void PopulateTypes(
+              std::vector<GView::Type::Plugin>& typePlugins,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
+
+      public:
+        SelectTypeDialog(
+              const AppCUI::Utils::ConstString& name,
+              const AppCUI::Utils::ConstString& path,
+              uint64 dataSize,
+              std::vector<GView::Type::Plugin>& typePlugins,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
+        bool OnEvent(Reference<Control>, Event eventType, int) override;
+        inline Reference<GView::Type::Plugin> GetSelectedPlugin(Reference<GView::Type::Plugin> errorValue) const
+        {
+            return result ? result : errorValue;
+        }
     };
 
     class FileWindowProperties : public Window
@@ -385,6 +641,7 @@ namespace App
         Reference<GView::App::Instance> gviewApp;
         Reference<Splitter> vertical, horizontal;
         Reference<Tab> view, verticalPanels, horizontalPanels;
+        Reference<Type::Plugin> typePlugin;
         ItemHandle cursorInfoHandle;
         std::unique_ptr<GView::Object> obj;
         unsigned int defaultCursorViewSize;
@@ -392,8 +649,13 @@ namespace App
         unsigned int defaultHorizontalPanelsSize;
         int32 lastHorizontalPanelID;
 
+        void ShowFilePropertiesDialog();
+        void ShowGoToDialog();
+        void ShowFindDialog();
+        void ShowCopyDialog();
+
       public:
-        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp);
+        FileWindow(std::unique_ptr<GView::Object> obj, Reference<GView::App::Instance> gviewApp, Reference<Type::Plugin> typePlugin);
 
         void Start();
 

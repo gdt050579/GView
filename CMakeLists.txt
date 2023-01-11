@@ -1,4 +1,9 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.15)
+
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
+  CACHE STRING "Vcpkg toolchain file")
+
+message("CMAKE_TOOLCHAIN_FILE => ${CMAKE_TOOLCHAIN_FILE}")
 
 project(GView VERSION 1.0)
 
@@ -33,8 +38,6 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
      set(DEBUG_BUILD 1)
 endif()
 
-find_package(OpenSSL REQUIRED)
-
 if (NOT MSVC)
 	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
 	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
@@ -46,16 +49,35 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_B
 if (MSVC)
     add_definitions(-DBUILD_FOR_WINDOWS)
     add_compile_options(-W3 /MP)
+    
 elseif (APPLE)
     add_definitions(-DBUILD_FOR_OSX)
     if (DEBUG_BUILD)
         add_compile_options(-g)
         add_compile_options(-W)
     endif()
+   
+    SET(CMAKE_INSTALL_NAME_DIR @executable_path)
+    message(STATUS "CMAKE_INSTALL_NAME_DIR => ${CMAKE_INSTALL_NAME_DIR}")
+    SET(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    SET(CMAKE_INSTALL_RPATH @executable_path)
+    message(STATUS "CMAKE_INSTALL_RPATH => ${CMAKE_INSTALL_RPATH}")
+    
+    if(CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED)
+        message(STATUS "${PROJECT_NAME} => CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED")
+    	target_link_libraries(${PROJECT_NAME} PRIVATE "$<LINK_LIBRARY:weak_library,lib,external>")
+    else()
+        message(STATUS "${PROJECT_NAME} => NOT CMAKE_LINK_LIBRARY_USING_weak_library_SUPPORTED")
+    	# target_link_libraries(${PROJECT_NAME} PRIVATE lib external)
+    endif()
+    
+    # install(TARGETS ${CURSES_LIBRARIES} LIBRARY DESTINATION "." NAMELINK_ONLY)    
 elseif (UNIX)
     add_definitions(-DBUILD_FOR_UNIX)
     add_compile_options(-g)
     add_compile_options(-W)
+    
+    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -103,9 +125,9 @@ add_subdirectory(Types/PE)
 add_subdirectory(Types/ICO)
 add_subdirectory(Types/CSV)
 add_subdirectory(Types/BMP)
-add_subdirectory(Types/MachO)
+add_subdirectory(Types/MACHO)
 add_subdirectory(Types/ISO)
-add_subdirectory(Types/Prefetch)
+add_subdirectory(Types/PREFETCH)
 add_subdirectory(Types/MAM)
 add_subdirectory(Types/LNK)
 add_subdirectory(Types/JOB)
@@ -113,9 +135,18 @@ add_subdirectory(Types/PCAP)
 add_subdirectory(Types/ELF)
 add_subdirectory(Types/JT)
 add_subdirectory(Types/INI)
+add_subdirectory(Types/CPP)
+add_subdirectory(Types/JSON)
+add_subdirectory(Types/VBA)
+add_subdirectory(Types/JS)
+add_subdirectory(Types/PYEXTRACTOR)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+                                                                
+if (APPLE)
+    	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
+elseif (UNIX)
+	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
+endif()

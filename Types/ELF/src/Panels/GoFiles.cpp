@@ -16,16 +16,16 @@ GoFiles::GoFiles(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile>
 
 void GoFiles::UpdateGoFiles()
 {
-    CHECKRET(elf->pclntab112.GetHeader() != nullptr, "");
+    CHECKRET(elf->pcLnTab.GetHeader() != nullptr, "");
 
     LocalString<1024> ls;
-    const auto filesCount = elf->pclntab112.GetFilesCount();
+    const auto filesCount = elf->pcLnTab.GetFilesCount();
     list->AddItem(ls.Format("#%u files", filesCount)).SetType(ListViewItem::Type::Category);
 
     for (auto i = 0U; i < filesCount; i++)
     {
         std::string_view file;
-        CHECKRET(elf->pclntab112.GetFile(i, file), "");
+        CHECKRET(elf->pcLnTab.GetFile(i, file), "");
 
         const auto pos        = file.find_last_of('/');
         std::string_view name = file;

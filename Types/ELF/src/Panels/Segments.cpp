@@ -30,7 +30,7 @@ Segments::Segments(Reference<ELFFile> _elf, Reference<GView::View::WindowInterfa
             "n:Size in File,a:r,w:14",
             "n:Size in Memory,a:r,w:16",
             "n:Alignment,a:r,w:14" },
-          ListViewFlags::None);
+          ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }
