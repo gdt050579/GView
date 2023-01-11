@@ -510,7 +510,6 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
             certificate.notAfter.Set(TimeToHumanReadable(oCertificate.notAfter));
             certificate.notBefore.Set(TimeToHumanReadable(oCertificate.notBefore));
             certificate.crlPoint = "";
-            output.data.pemCerts.emplace_back().Set(oCertificate.pem);
 
             if (oSignature.counterSignatures.empty())
             {
@@ -533,7 +532,6 @@ bool AuthenticodeVerifySignature(Utils::DataCache& cache, AuthenticodeMS& output
                     certificate.notAfter.Set(TimeToHumanReadable(oCsCertificate.notAfter));
                     certificate.notBefore.Set(TimeToHumanReadable(oCsCertificate.notBefore));
                     certificate.crlPoint = "";
-                    output.data.pemCerts.emplace_back().Set(oCsCertificate.pem);
                 }
             }
         }
