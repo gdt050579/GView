@@ -24,6 +24,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
 find_package(capstone CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
 
+find_package(minizip-ng CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE MINIZIP::minizip-ng)
+
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)

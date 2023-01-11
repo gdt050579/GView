@@ -46,6 +46,10 @@
             "name": "capstone",
             "features": [ "x86", "arm", "arm64" ],
             "platform": "windows | linux | osx"
+        },
+        {
+            "name": "minizip-ng",
+            "platform": "windows | linux | osx"
         }
     ]
 }
