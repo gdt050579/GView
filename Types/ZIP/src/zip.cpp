@@ -5,7 +5,6 @@ using namespace AppCUI::Utils;
 using namespace AppCUI::Application;
 using namespace AppCUI::Controls;
 using namespace GView::Utils;
-using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
@@ -63,16 +62,16 @@ extern "C"
 
     PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ZIP::ZIPFile();
+        return new GView::Type::ZIP::ZIPFile();
     }
 
-    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ZIP::ZIPFile> zip)
+    void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::ZIP::ZIPFile> zip)
     {
         BufferViewer::Settings settings;
         win->CreateViewer("BufferView", settings);
     }
 
-    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<ZIP::ZIPFile> zip)
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::ZIP::ZIPFile> zip)
     {
         ContainerViewer::Settings settings;
 
@@ -85,15 +84,17 @@ extern "C"
               "n:&Flags,a:r,w:25",
         });
 
-        settings.SetEnumerateCallback(win->GetObject()->GetContentType<ZIP::ZIPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
-        settings.SetOpenItemCallback(win->GetObject()->GetContentType<ZIP::ZIPFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+        settings.SetEnumerateCallback(
+              win->GetObject()->GetContentType<GView::Type::ZIP::ZIPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(
+              win->GetObject()->GetContentType<GView::Type::ZIP::ZIPFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
         win->CreateViewer("ContainerViewer", settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto zip = win->GetObject()->GetContentType<ZIP::ZIPFile>();
+        auto zip = win->GetObject()->GetContentType<GView::Type::ZIP::ZIPFile>();
         zip->Update();
 
         // add views
@@ -101,8 +102,8 @@ extern "C"
         CreateBufferView(win, zip);
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new ZIP::Panels::Information(win->GetObject(), zip)), true);
-        win->AddPanel(Pointer<TabPage>(new ZIP::Panels::Objects(zip, win)), false);
+        win->AddPanel(Pointer<TabPage>(new GView::Type::ZIP::Panels::Information(win->GetObject(), zip)), true);
+        win->AddPanel(Pointer<TabPage>(new GView::Type::ZIP::Panels::Objects(zip, win)), false);
 
         return true;
     }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "GView.hpp"
-#include "minizip-ng/mz.h"
 
 namespace GView::Type::ZIP
 {
@@ -9,6 +8,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
 {
   public:
     uint32 currentItemIndex;
+    GView::ZIP::Info info{};
 
   public:
     ZIPFile();
@@ -22,6 +22,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     {
         return "ZIP";
     }
+
     void RunCommand(std::string_view) override
     {
     }

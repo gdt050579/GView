@@ -587,6 +587,28 @@ namespace ZLIB
     CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
+namespace ZIP
+{
+    struct CORE_EXPORT Entry
+    {
+        void* context{ nullptr };
+
+        std::string_view GetFilename() const;
+    };
+
+    struct CORE_EXPORT Info
+    {
+        void* context{ nullptr };
+
+        uint32 GetCount() const;
+        bool GetEntry(uint32 index, Entry& entry) const;
+
+        Info();
+        ~Info();
+    };
+    CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
+} // namespace ZIP
+
 namespace Dissasembly
 {
     enum class Opcodes : uint32

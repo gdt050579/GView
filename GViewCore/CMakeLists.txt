@@ -24,6 +24,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
 find_package(capstone CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
 
+find_package(minizip-ng CONFIG REQUIRED)
+message(STATUS "minizip-ng_DIR => ${minizip-ng_DIR}")
+
+# vcpkg directory structure
+get_filename_component(MINIZIP_SHARE_INCLUDE_DIR ${minizip-ng_DIR} DIRECTORY)
+get_filename_component(MINIZIP_PARENT_DIR ${MINIZIP_SHARE_INCLUDE_DIR} DIRECTORY)
+set(MINIZIP_INCLUDE_DIR "${MINIZIP_PARENT_DIR}/include/minizip-ng")
+
+message(STATUS "MINIZIP_INCLUDE_DIR => ${MINIZIP_INCLUDE_DIR}")
+target_include_directories(${PROJECT_NAME} PRIVATE ${MINIZIP_INCLUDE_DIR}) # hardcoded project name (ZIP) as it is declared function scope only (create_type from type)
+target_link_libraries(${PROJECT_NAME} PRIVATE MINIZIP::minizip-ng)         # hardcoded project name (ZIP) as it is declared function scope only (create_type from type)
+
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)
