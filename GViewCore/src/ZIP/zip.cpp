@@ -16,12 +16,19 @@ namespace GView::ZIP
 using mz_zip_reader_create_ptr = struct Reader
 {
     void* value{ nullptr };
-    ~Reader()
+
+    void Reset()
     {
         if (value != nullptr)
         {
             mz_zip_reader_delete(&value);
+            value = nullptr;
         }
+    };
+
+    ~Reader()
+    {
+        Reset();
     }
 };
 
@@ -79,15 +86,15 @@ void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
     entry.external_fa        = zipFile->external_fa;
 
     entry.filename.reset(new char[zipFile->filename_size + 1]);
-    memcpy(entry.filename.get(), zipFile->filename, zipFile->filename_size + 1);
+    memcpy(entry.filename.get(), zipFile->filename, zipFile->filename_size + 1ULL);
     entry.filename.get()[zipFile->filename_size] = 0;
 
     entry.extrafield.reset(new uint8_t[zipFile->extrafield_size]);
-    memcpy(entry.extrafield.get(), zipFile->extrafield, zipFile->extrafield_size + 1);
+    memcpy(entry.extrafield.get(), zipFile->extrafield, zipFile->extrafield_size + 1ULL);
     entry.extrafield.get()[zipFile->extrafield_size] = 0;
 
     entry.comment.reset(new char[zipFile->comment_size]);
-    memcpy(entry.comment.get(), zipFile->comment, zipFile->comment_size + 1);
+    memcpy(entry.comment.get(), zipFile->comment, zipFile->comment_size + 1ULL);
     entry.comment.get()[zipFile->comment_size] = 0;
 
     const auto linknameSize = strlen(zipFile->linkname) + 1;
@@ -123,12 +130,14 @@ void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
 
 struct _Info
 {
+    std::string path;
+    mz_zip_reader_create_ptr reader{};
     std::vector<_Entry> entries;
 };
 
 uint32 Info::GetCount() const
 {
-    return reinterpret_cast<_Info*>(context)->entries.size();
+    return (uint32) reinterpret_cast<_Info*>(context)->entries.size();
 }
 
 bool Info::GetEntry(uint32 index, Entry& entry) const
@@ -227,34 +236,59 @@ std::string_view Entry::GetTypeName() const
     }
 }
 
+bool Info::Decompress(Buffer& output, uint32 index) const
+{
+    CHECK(context != nullptr, false, "");
+    auto info = reinterpret_cast<_Info*>(context);
+
+    CHECK(index < info->entries.size(), false, "");
+    auto& entry = info->entries.at(index);
+    CHECK(entry.type == EntryType::File, false, "");
+
+    mz_zip_reader_create_ptr reader{ nullptr };
+    mz_zip_reader_create(&reader.value);
+    mz_zip_reader_set_pattern(reader.value, entry.filename.get(), 0);
+
+    CHECK(mz_zip_reader_open_file(reader.value, info->path.c_str()) == MZ_OK, false, "");
+
+    output.Reserve(entry.uncompressed_size);
+
+    CHECK(mz_zip_reader_entry_save_buffer(reader.value, output.GetData(), entry.uncompressed_size) == MZ_OK, false, "");
+
+    output.Resize(entry.uncompressed_size);
+
+    return true;
+}
+
 bool GetInfo(std::u16string_view path, Info& info)
 {
-    mz_zip_reader_create_ptr reader{};
-    mz_zip_reader_create(&reader.value);
+    auto internalInfo = reinterpret_cast<_Info*>(info.context);
+    CHECK(internalInfo, false, "");
+
+    internalInfo->reader.Reset();
+    mz_zip_reader_create(&internalInfo->reader.value);
 
     // mz_zip_reader_set_password(reader, password.c_str()); // do we want to try a password?
     // mz_zip_reader_set_encoding(reader.get(), 0);
 
     std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
     std::u16string p(path);
-    std::string source = convert.to_bytes(p);
-
-    CHECK(mz_zip_reader_open_file(reader.value, source.c_str()) == MZ_OK, false, "");
-    CHECK(mz_zip_reader_goto_first_entry(reader.value) == MZ_OK, false, "");
-
-    auto internalInfo = reinterpret_cast<_Info*>(info.context);
-    CHECK(internalInfo, false, "");
     internalInfo->entries.clear();
+    internalInfo->path = convert.to_bytes(p);
+
+    CHECK(mz_zip_reader_open_file(internalInfo->reader.value, internalInfo->path.c_str()) == MZ_OK, false, "");
+    CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");
+
     do
     {
         mz_zip_file* zipFile{ nullptr };
-        CHECKBK(mz_zip_reader_entry_get_info(reader.value, &zipFile) == MZ_OK, "");
-        mz_zip_reader_set_pattern(reader.value, nullptr, 1); // do we need a pattern?
+        CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
+        mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
 
         auto& entry = internalInfo->entries.emplace_back();
         ConvertZipFileInfoToEntry(zipFile, entry);
 
-        CHECKBK(mz_zip_reader_goto_next_entry(reader.value) == MZ_OK, "");
+        CHECKBK(mz_zip_reader_goto_next_entry(internalInfo->reader.value) == MZ_OK, "");
     } while (true);
 
     return true;

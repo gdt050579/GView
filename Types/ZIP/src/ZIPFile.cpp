@@ -42,6 +42,8 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     item.SetText(5, tmp.Format("%s", n.ToString(entry.GetDiskNumber(), NUMERIC_FORMAT).data()));
     item.SetText(6, tmp.Format("%s", n.ToString(entry.GetDiskOffset(), NUMERIC_FORMAT).data()));
 
+    item.SetData(currentItemIndex);
+
     currentItemIndex++;
 
     return currentItemIndex != this->info.GetCount();
@@ -51,12 +53,15 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
-    // auto data         = item.GetData<ECMA_119_DirectoryRecord>();
-    // const auto offset = (uint64) data->locationOfExtent.LSB * pvd.vdd.logicalBlockSize.LSB;
-    // const auto length = (uint32) data->dataLength.LSB;
-    // const auto name   = std::string_view{ data->fileIdentifier, data->lengthOfFileIdentifier };
-    // const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    //
-    // GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+    const auto index = item.GetData(-1);
+    CHECKRET(index != -1, "");
+    GView::ZIP::Entry entry{ 0 };
+    CHECKRET(this->info.GetEntry((uint32) index, entry), "");
+
+    const auto name = entry.GetFilename();
+    Buffer buffer{};
+    CHECKRET(this->info.Decompress(buffer, (uint32) index), "");
+
+    GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
 }
 } // namespace GView::Type::ZIP

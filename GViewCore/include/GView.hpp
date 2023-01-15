@@ -618,6 +618,7 @@ namespace ZIP
 
         uint32 GetCount() const;
         bool GetEntry(uint32 index, Entry& entry) const;
+        bool Decompress(Buffer& output, uint32 index) const;
 
         Info();
         ~Info();

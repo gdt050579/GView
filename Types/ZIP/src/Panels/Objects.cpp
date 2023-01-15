@@ -45,19 +45,29 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64 value)
 
 void Panels::Objects::GoToSelectedSection()
 {
-    // auto record       = list->GetCurrentItem().GetData<ECMA_119_DirectoryRecord>();
-    // const auto offset = record->locationOfExtent.LSB * ISO::ECMA_119_SECTOR_SIZE;
-    //
-    // win->GetCurrentView()->GoTo(offset);
+    auto index = list->GetCurrentItem().GetData(-1);
+    CHECKRET(index != -1, "");
+
+    GView::ZIP::Entry entry{ 0 };
+    CHECKRET(zip->info.GetEntry(index, entry), "");
+
+    const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
+
+    win->GetCurrentView()->GoTo(offset);
 }
 
 void Panels::Objects::SelectCurrentSection()
 {
-    // auto record       = list->GetCurrentItem().GetData<ECMA_119_DirectoryRecord>();
-    // const auto offset = record->locationOfExtent.LSB * ISO::ECMA_119_SECTOR_SIZE;
-    // const auto size   = record->dataLength.LSB;
-    //
-    // win->GetCurrentView()->Select(offset, size);
+    auto index = list->GetCurrentItem().GetData(-1);
+    CHECKRET(index != -1, "");
+
+    GView::ZIP::Entry entry{ 0 };
+    CHECKRET(zip->info.GetEntry(index, entry), "");
+
+    const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
+    const auto size   = entry.GetCompressedSize();
+
+    win->GetCurrentView()->Select(offset, size);
 }
 
 void Panels::Objects::Update()
@@ -81,7 +91,7 @@ void Panels::Objects::Update()
         item.SetText(5, tmp.Format("%s", GetValue(n, entry.GetDiskNumber()).data()));
         item.SetText(6, tmp.Format("%s", GetValue(n, entry.GetDiskOffset()).data()));
 
-        //     item.SetData<ECMA_119_DirectoryRecord>(&iso->records[i]);
+        item.SetData(i);
     }
 }
 
