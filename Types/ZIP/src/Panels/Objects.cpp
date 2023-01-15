@@ -21,7 +21,8 @@ Objects::Objects(Reference<ZIPFile> _zip, Reference<GView::View::WindowInterface
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { "n:Filename,a:l,w:100"
+          { "n:Filename,a:l,w:100",
+            "n:&Type,a:l,w:20",
             "n:&Compressed Size,a:r,w:20",
             "n:&Uncompressed Size,a:r,w:20",
             "n:&Compression Method,a:r,w:20",
@@ -73,11 +74,12 @@ void Panels::Objects::Update()
 
         const auto filename = entry.GetFilename();
         auto item           = list->AddItem(filename);
-        item.SetText(1, tmp.Format("%s", GetValue(n, entry.GetCompressedSize()).data()));
-        item.SetText(2, tmp.Format("%s", GetValue(n, entry.GetUncompressedSize()).data()));
-        item.SetText(3, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), GetValue(n, entry.GetCompressionMethod()).data()));
-        item.SetText(4, tmp.Format("%s", GetValue(n, entry.GetDiskNumber()).data()));
-        item.SetText(5, tmp.Format("%s", GetValue(n, entry.GetDiskOffset()).data()));
+        item.SetText(1, tmp.Format("%s (%s)", entry.GetTypeName().data(), GetValue(n, (uint32) entry.GetType()).data()));
+        item.SetText(2, tmp.Format("%s", GetValue(n, entry.GetCompressedSize()).data()));
+        item.SetText(3, tmp.Format("%s", GetValue(n, entry.GetUncompressedSize()).data()));
+        item.SetText(4, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), GetValue(n, entry.GetCompressionMethod()).data()));
+        item.SetText(5, tmp.Format("%s", GetValue(n, entry.GetDiskNumber()).data()));
+        item.SetText(6, tmp.Format("%s", GetValue(n, entry.GetDiskOffset()).data()));
 
         //     item.SetData<ECMA_119_DirectoryRecord>(&iso->records[i]);
     }

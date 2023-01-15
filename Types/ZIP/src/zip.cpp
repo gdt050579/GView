@@ -78,6 +78,7 @@ extern "C"
         settings.SetIcon(ZIP_ICON);
         settings.SetColumns({
               "n:&Filename,a:l,w:100",
+              "n:&Type,a:l,w:20",
               "n:&Compressed Size,a:r,w:20",
               "n:&Uncompressed Size,a:r,w:20",
               "n:&Compression Method,a:r,w:20",

@@ -54,6 +54,8 @@ struct _Entry
     uint16_t aes_version;        /* winzip aes extension if not 0 */
     uint8_t aes_encryption_mode; /* winzip aes encryption mode */
     uint16_t pk_verify;          /* pkware encryption verifier */
+
+    EntryType type;
 };
 
 void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
@@ -97,6 +99,26 @@ void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
     entry.aes_version         = zipFile->aes_version;
     entry.aes_encryption_mode = zipFile->aes_encryption_mode;
     entry.pk_verify           = zipFile->pk_verify;
+
+    entry.type = EntryType::Unknown;
+
+    const bool isDir     = (mz_zip_entry_is_dir((void*) zipFile) == MZ_OK);
+    const bool isSymlink = (mz_zip_entry_is_symlink((void*) zipFile) == MZ_OK);
+    if (isDir)
+    {
+        entry.type = EntryType::Directory;
+    }
+    else
+    {
+        if (isSymlink)
+        {
+            entry.type = EntryType::Symlink;
+        }
+        else
+        {
+            entry.type = EntryType::File;
+        }
+    }
 }
 
 struct _Info
@@ -176,6 +198,33 @@ int64 Entry::GetDiskOffset() const
     CHECK(context != nullptr, 0, "");
     auto entry = reinterpret_cast<_Entry*>(context);
     return entry->disk_offset;
+}
+
+EntryType Entry::GetType() const
+{
+    CHECK(context != nullptr, EntryType::Unknown, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+
+    return entry->type;
+}
+
+std::string_view Entry::GetTypeName() const
+{
+    CHECK(context != nullptr, "Unknown", "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+
+    switch (entry->type)
+    {
+    case EntryType::Directory:
+        return "Directory";
+    case EntryType::Symlink:
+        return "Symlink";
+    case EntryType::File:
+        return "File";
+    case EntryType::Unknown:
+    default:
+        return "Unknown";
+    }
 }
 
 bool GetInfo(std::u16string_view path, Info& info)

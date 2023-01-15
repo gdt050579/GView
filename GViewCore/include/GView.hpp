@@ -589,6 +589,14 @@ namespace ZLIB
 
 namespace ZIP
 {
+    enum class EntryType
+    {
+        Unknown   = 0,
+        Directory = 1,
+        Symlink   = 2,
+        File      = 3
+    };
+
     struct CORE_EXPORT Entry
     {
         void* context{ nullptr };
@@ -600,6 +608,8 @@ namespace ZIP
         std::string GetCompressionMethodName() const;
         uint32 GetDiskNumber() const;
         int64 GetDiskOffset() const;
+        EntryType GetType() const;
+        std::string_view GetTypeName() const;
     };
 
     struct CORE_EXPORT Info
