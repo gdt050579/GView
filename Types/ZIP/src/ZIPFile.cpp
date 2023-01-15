@@ -24,11 +24,22 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
 
 bool ZIPFile::PopulateItem(TreeViewItem item)
 {
+    LocalString<128> tmp;
+    NumericFormatter n;
+
+    const static NumericFormat NUMERIC_FORMAT{ NumericFormatFlags::HexPrefix, 16 };
+
     GView::ZIP::Entry entry{ 0 };
     CHECK(this->info.GetEntry(currentItemIndex, entry), false, "");
 
     const auto filename = entry.GetFilename();
     item.SetText(filename);
+    item.SetText(1, tmp.Format("%s", n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(2, tmp.Format("%s", n.ToString(entry.GetUncompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(
+          3, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(4, tmp.Format("%s", n.ToString(entry.GetDiskNumber(), NUMERIC_FORMAT).data()));
+    item.SetText(5, tmp.Format("%s", n.ToString(entry.GetDiskOffset(), NUMERIC_FORMAT).data()));
 
     currentItemIndex++;
 

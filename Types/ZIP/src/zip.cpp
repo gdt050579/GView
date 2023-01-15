@@ -77,11 +77,12 @@ extern "C"
 
         settings.SetIcon(ZIP_ICON);
         settings.SetColumns({
-              "n:&Name,a:l,w:80",
-              "n:&Size,a:r,w:20",
-              "n:&Created,a:r,w:25",
-              "n:&OffsetInFile,a:r,w:20",
-              "n:&Flags,a:r,w:25",
+              "n:&Filename,a:l,w:100",
+              "n:&Compressed Size,a:r,w:20",
+              "n:&Uncompressed Size,a:r,w:20",
+              "n:&Compression Method,a:r,w:20",
+              "n:&Disk Number,a:r,w:20",
+              "n:&Disk Offset,a:r,w:20",
         });
 
         settings.SetEnumerateCallback(

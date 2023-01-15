@@ -136,6 +136,48 @@ std::string_view Entry::GetFilename() const
     return entry->filename.get();
 }
 
+int64 Entry::GetCompressedSize() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return entry->compressed_size;
+}
+
+int64 Entry::GetUncompressedSize() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return entry->uncompressed_size;
+}
+
+int64 Entry::GetCompressionMethod() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return entry->compression_method;
+}
+
+std::string Entry::GetCompressionMethodName() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return std::string(mz_zip_get_compression_method_string(entry->compression_method));
+}
+
+uint32 Entry::GetDiskNumber() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return entry->disk_number;
+}
+
+int64 Entry::GetDiskOffset() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return entry->disk_offset;
+}
+
 bool GetInfo(std::u16string_view path, Info& info)
 {
     mz_zip_reader_create_ptr reader{};

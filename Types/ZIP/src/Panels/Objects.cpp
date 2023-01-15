@@ -18,7 +18,16 @@ Objects::Objects(Reference<ZIPFile> _zip, Reference<GView::View::WindowInterface
     win  = _win;
     Base = 16;
 
-    list = Factory::ListView::Create(this, "d:c", { "n:Filename,a:l,w:100" }, ListViewFlags::None);
+    list = Factory::ListView::Create(
+          this,
+          "d:c",
+          { "n:Filename,a:l,w:100"
+            "n:&Compressed Size,a:r,w:20",
+            "n:&Uncompressed Size,a:r,w:20",
+            "n:&Compression Method,a:r,w:20",
+            "n:&Disk Number,a:r,w:20",
+            "n:&Disk Offset,a:r,w:20" },
+          ListViewFlags::None);
 
     Update();
 }
@@ -57,26 +66,19 @@ void Panels::Objects::Update()
     LocalString<128> tmp;
     NumericFormatter n;
 
-    for (auto i = 0ULL; i < zip->info.GetCount(); i++)
+    for (auto i = 0U; i < zip->info.GetCount(); i++)
     {
         GView::ZIP::Entry entry{ 0 };
         CHECKBK(zip->info.GetEntry(i, entry), "");
 
         const auto filename = entry.GetFilename();
         auto item           = list->AddItem(filename);
+        item.SetText(1, tmp.Format("%s", GetValue(n, entry.GetCompressedSize()).data()));
+        item.SetText(2, tmp.Format("%s", GetValue(n, entry.GetUncompressedSize()).data()));
+        item.SetText(3, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), GetValue(n, entry.GetCompressionMethod()).data()));
+        item.SetText(4, tmp.Format("%s", GetValue(n, entry.GetDiskNumber()).data()));
+        item.SetText(5, tmp.Format("%s", GetValue(n, entry.GetDiskOffset()).data()));
 
-        //     const auto& record = iso->records[i];
-        //     auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, record.lengthOfDirectoryRecord).data()) });
-        //     item.SetText(1, tmp.Format("%s", GetValue(n, record.extendedAttributeRecordLength).data()));
-        //     item.SetText(2, tmp.Format("%s", GetValue(n, record.locationOfExtent.LSB).data()));
-        //     item.SetText(3, tmp.Format("%s", GetValue(n, record.dataLength.LSB).data()));
-        //     item.SetText(4, RecordingDateAndTimeToString(record.recordingDateAndTime).c_str());
-        //     item.SetText(5, tmp.Format("[%s] %s", GetECMA_119_FileFlags(record.fileFlags).c_str(), GetValue(n,
-        //     record.fileFlags).data())); item.SetText(6, tmp.Format("%s", GetValue(n, record.fileUnitSize).data())); item.SetText(7,
-        //     tmp.Format("%s", GetValue(n, record.interleaveGapSize).data())); item.SetText(8, tmp.Format("%s", GetValue(n,
-        //     record.volumeSequenceNumber).data())); item.SetText(9, tmp.Format("%s", GetValue(n, record.lengthOfFileIdentifier).data()));
-        //     item.SetText(10, tmp.Format("%.*s", record.lengthOfFileIdentifier, record.fileIdentifier));
-        //
         //     item.SetData<ECMA_119_DirectoryRecord>(&iso->records[i]);
     }
 }
