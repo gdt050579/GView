@@ -18,8 +18,70 @@ bool ZIPFile::Update()
 
 bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
+    const auto count = this->info.GetCount();
+    CHECK(count > 0, false, "");
+
     currentItemIndex = 0;
-    return this->info.GetCount() > 0;
+    curentChildIndexes.clear();
+
+    if (path.empty())
+    {
+        for (uint32 i = 0; i < count; i++)
+        {
+            GView::ZIP::Entry entry{ 0 };
+            CHECK(this->info.GetEntry(i, entry), false, "");
+
+            auto filename        = entry.GetFilename();
+            const auto entryType = entry.GetType();
+
+            if (entryType == GView::ZIP::EntryType::Directory)
+            {
+                if (filename.find_first_of('/') == filename.size() - 1)
+                {
+                    curentChildIndexes.push_back(i);
+                }
+            }
+        }
+
+        if (curentChildIndexes.empty())
+        {
+            curentChildIndexes.reserve(count);
+            for (uint32 i = 0; i < count; i++)
+            {
+                curentChildIndexes.push_back(i);
+            }
+        }
+
+        return currentItemIndex != this->curentChildIndexes.size();
+    }
+
+    UnicodeStringBuilder usb;
+    for (uint32 i = 0; i < count; i++)
+    {
+        GView::ZIP::Entry entry{ 0 };
+        CHECK(this->info.GetEntry(i, entry), false, "");
+
+        auto filename        = entry.GetFilename();
+        const auto entryType = entry.GetType();
+
+        if (entryType == GView::ZIP::EntryType::Directory)
+        {
+            if (filename[filename.size() - 1] == '/')
+            {
+                filename = { filename.data(), filename.size() - 1 };
+            }
+        }
+
+        CHECK(usb.Set(filename), false, "");
+
+        const auto sv = usb.ToStringView();
+        if (sv != path && usb.ToStringView().starts_with(path))
+        {
+            curentChildIndexes.push_back(i);
+        }
+    }
+
+    return currentItemIndex != this->curentChildIndexes.size();
 }
 
 bool ZIPFile::PopulateItem(TreeViewItem item)
@@ -29,12 +91,32 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
 
     const static NumericFormat NUMERIC_FORMAT{ NumericFormatFlags::HexPrefix, 16 };
 
+    const auto realIndex = curentChildIndexes.at(currentItemIndex);
     GView::ZIP::Entry entry{ 0 };
-    CHECK(this->info.GetEntry(currentItemIndex, entry), false, "");
+    CHECK(this->info.GetEntry(realIndex, entry), false, "");
 
-    const auto filename = entry.GetFilename();
+    auto filename = entry.GetFilename();
+
+    const auto entryType = entry.GetType();
+    item.SetPriority(entryType == GView::ZIP::EntryType::Directory);
+    item.SetExpandable(entryType == GView::ZIP::EntryType::Directory);
+
+    if (entryType == GView::ZIP::EntryType::Directory)
+    {
+        if (filename[filename.size() - 1] == '/')
+        {
+            filename = { filename.data(), filename.size() - 1 };
+        }
+    }
+
+    const auto f = filename.find_last_of('/');
+    if (f != std::string::npos)
+    {
+        filename = { filename.data() + f + 1, filename.size() - f - 1 };
+    }
+
     item.SetText(filename);
-    item.SetText(1, tmp.Format("%s (%s)", entry.GetTypeName().data(), n.ToString((uint32) entry.GetType(), NUMERIC_FORMAT).data()));
+    item.SetText(1, tmp.Format("%s (%s)", entry.GetTypeName().data(), n.ToString((uint32) entryType, NUMERIC_FORMAT).data()));
     item.SetText(2, tmp.Format("%s", n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
     item.SetText(3, tmp.Format("%s", n.ToString(entry.GetUncompressedSize(), NUMERIC_FORMAT).data()));
     item.SetText(
@@ -42,11 +124,11 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     item.SetText(5, tmp.Format("%s", n.ToString(entry.GetDiskNumber(), NUMERIC_FORMAT).data()));
     item.SetText(6, tmp.Format("%s", n.ToString(entry.GetDiskOffset(), NUMERIC_FORMAT).data()));
 
-    item.SetData(currentItemIndex);
+    item.SetData(realIndex);
 
     currentItemIndex++;
 
-    return currentItemIndex != this->info.GetCount();
+    return currentItemIndex != this->curentChildIndexes.size();
 }
 
 void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)

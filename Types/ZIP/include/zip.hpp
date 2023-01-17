@@ -9,6 +9,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
   public:
     uint32 currentItemIndex;
     GView::ZIP::Info info{};
+    std::vector<uint32> curentChildIndexes{};
 
   public:
     ZIPFile();

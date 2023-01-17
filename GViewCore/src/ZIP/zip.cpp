@@ -85,22 +85,18 @@ void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
     entry.internal_fa        = zipFile->internal_fa;
     entry.external_fa        = zipFile->external_fa;
 
-    entry.filename.resize(zipFile->filename_size + 1ULL);
-    memcpy(entry.filename.data(), zipFile->filename, zipFile->filename_size + 1ULL);
-    entry.filename.data()[zipFile->filename_size] = 0;
+    entry.filename.resize(zipFile->filename_size);
+    memcpy(entry.filename.data(), zipFile->filename, zipFile->filename_size);
 
     entry.extrafield.reset(new uint8_t[zipFile->extrafield_size]);
-    memcpy(entry.extrafield.get(), zipFile->extrafield, zipFile->extrafield_size + 1ULL);
-    entry.extrafield.get()[zipFile->extrafield_size] = 0;
+    memcpy(entry.extrafield.get(), zipFile->extrafield, zipFile->extrafield_size);
 
-    entry.comment.resize(zipFile->comment_size + 1ULL);
-    memcpy(entry.comment.data(), zipFile->comment, zipFile->comment_size + 1ULL);
-    entry.comment.data()[zipFile->comment_size] = 0;
+    entry.comment.resize(zipFile->comment_size);
+    memcpy(entry.comment.data(), zipFile->comment, zipFile->comment_size);
 
-    const auto linknameSize = strlen(zipFile->linkname) + 1;
+    const auto linknameSize = strlen(zipFile->linkname);
     entry.linkname.resize(linknameSize);
     memcpy(entry.linkname.data(), zipFile->linkname, linknameSize);
-    entry.linkname.data()[linknameSize - 1] = 0;
 
     entry.zip64               = zipFile->zip64;
     entry.aes_version         = zipFile->aes_version;
