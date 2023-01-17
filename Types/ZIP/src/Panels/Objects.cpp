@@ -49,7 +49,7 @@ void Panels::Objects::GoToSelectedSection()
     CHECKRET(index != -1, "");
 
     GView::ZIP::Entry entry{ 0 };
-    CHECKRET(zip->info.GetEntry(index, entry), "");
+    CHECKRET(zip->info.GetEntry((uint32) index, entry), "");
 
     const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
 
@@ -62,7 +62,7 @@ void Panels::Objects::SelectCurrentSection()
     CHECKRET(index != -1, "");
 
     GView::ZIP::Entry entry{ 0 };
-    CHECKRET(zip->info.GetEntry(index, entry), "");
+    CHECKRET(zip->info.GetEntry((uint32) index, entry), "");
 
     const auto offset = (entry.GetDiskNumber() + 1ULL) * entry.GetDiskOffset();
     const auto size   = entry.GetCompressedSize();

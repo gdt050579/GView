@@ -601,7 +601,7 @@ namespace ZIP
     {
         void* context{ nullptr };
 
-        std::string_view GetFilename() const;
+        std::u8string_view GetFilename() const;
         int64 GetCompressedSize() const;
         int64 GetUncompressedSize() const;
         int64 GetCompressionMethod() const;

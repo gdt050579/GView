@@ -32,22 +32,11 @@ void Panels::Information::UpdateGeneralInformation()
     general->AddItem({ "Items", ls.Format("%-14s (%s)", count.data(), hexCount.data()) });
 }
 
-void Panels::Information::UpdateIssues()
-{
-}
-
 void Panels::Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
     general->Resize(GetWidth(), std::min<int32>(general->GetHeight(), (int32) general->GetItemsCount() + 3));
-
-    // CHECKRET(general.IsValid() & issues.IsValid(), "");
-    // issues->SetVisible(issues->GetItemsCount() > 0);
-    // if (issues->IsVisible())
-    //{
-    //    general->Resize(GetWidth(), general->GetItemsCount() + issues->GetItemsCount() + 3);
-    //}
 }
 
 void Panels::Information::Update()
@@ -55,6 +44,5 @@ void Panels::Information::Update()
     general->DeleteAllItems();
 
     UpdateGeneralInformation();
-    UpdateIssues();
     RecomputePanelsPositions();
 }

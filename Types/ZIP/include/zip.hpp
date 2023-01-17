@@ -45,7 +45,6 @@ namespace Panels
         inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
         void UpdateGeneralInformation();
-        void UpdateIssues();
         void RecomputePanelsPositions();
 
         template <typename T>

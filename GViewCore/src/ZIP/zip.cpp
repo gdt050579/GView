@@ -52,10 +52,10 @@ struct _Entry
     uint16_t internal_fa;        /* internal file attributes */
     uint32_t external_fa;        /* external file attributes */
 
-    std::unique_ptr<char> filename;      /* filename utf8 null-terminated string */
+    std::u8string filename;              /* filename utf8 null-terminated string */
     std::unique_ptr<uint8_t> extrafield; /* extrafield data */
-    std::unique_ptr<char> comment;       /* comment utf8 null-terminated string */
-    std::unique_ptr<char> linkname;      /* sym-link filename utf8 null-terminated string */
+    std::u8string comment;               /* comment utf8 null-terminated string */
+    std::u8string linkname;              /* sym-link filename utf8 null-terminated string */
 
     uint16_t zip64;              /* zip64 extension mode */
     uint16_t aes_version;        /* winzip aes extension if not 0 */
@@ -85,22 +85,22 @@ void ConvertZipFileInfoToEntry(const mz_zip_file* zipFile, _Entry& entry)
     entry.internal_fa        = zipFile->internal_fa;
     entry.external_fa        = zipFile->external_fa;
 
-    entry.filename.reset(new char[zipFile->filename_size + 1]);
-    memcpy(entry.filename.get(), zipFile->filename, zipFile->filename_size + 1ULL);
-    entry.filename.get()[zipFile->filename_size] = 0;
+    entry.filename.resize(zipFile->filename_size + 1ULL);
+    memcpy(entry.filename.data(), zipFile->filename, zipFile->filename_size + 1ULL);
+    entry.filename.data()[zipFile->filename_size] = 0;
 
     entry.extrafield.reset(new uint8_t[zipFile->extrafield_size]);
     memcpy(entry.extrafield.get(), zipFile->extrafield, zipFile->extrafield_size + 1ULL);
     entry.extrafield.get()[zipFile->extrafield_size] = 0;
 
-    entry.comment.reset(new char[zipFile->comment_size]);
-    memcpy(entry.comment.get(), zipFile->comment, zipFile->comment_size + 1ULL);
-    entry.comment.get()[zipFile->comment_size] = 0;
+    entry.comment.resize(zipFile->comment_size + 1ULL);
+    memcpy(entry.comment.data(), zipFile->comment, zipFile->comment_size + 1ULL);
+    entry.comment.data()[zipFile->comment_size] = 0;
 
     const auto linknameSize = strlen(zipFile->linkname) + 1;
-    entry.linkname.reset(new char[linknameSize]);
-    memcpy(entry.linkname.get(), zipFile->linkname, linknameSize);
-    entry.linkname.get()[linknameSize - 1] = 0;
+    entry.linkname.resize(linknameSize);
+    memcpy(entry.linkname.data(), zipFile->linkname, linknameSize);
+    entry.linkname.data()[linknameSize - 1] = 0;
 
     entry.zip64               = zipFile->zip64;
     entry.aes_version         = zipFile->aes_version;
@@ -160,11 +160,11 @@ Info::~Info()
     delete reinterpret_cast<_Info*>(this->context);
 }
 
-std::string_view Entry::GetFilename() const
+std::u8string_view Entry::GetFilename() const
 {
     CHECK(context != nullptr, 0, "");
     auto entry = reinterpret_cast<_Entry*>(context);
-    return entry->filename.get();
+    return entry->filename;
 }
 
 int64 Entry::GetCompressedSize() const
@@ -247,7 +247,7 @@ bool Info::Decompress(Buffer& output, uint32 index) const
 
     mz_zip_reader_create_ptr reader{ nullptr };
     mz_zip_reader_create(&reader.value);
-    mz_zip_reader_set_pattern(reader.value, entry.filename.get(), 0);
+    mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
     CHECK(mz_zip_reader_open_file(reader.value, info->path.c_str()) == MZ_OK, false, "");
 
