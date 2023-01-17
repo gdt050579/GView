@@ -5,10 +5,10 @@ using namespace AppCUI::Controls;
 
 Panels::Information::Information(Reference<Object> _object, Reference<GView::Type::ZIP::ZIPFile> _zip) : TabPage("Informa&tion")
 {
-    zip    = _zip;
+    zip     = _zip;
     object  = _object;
     general = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:100%", std::initializer_list<ConstString>{ "n:Field,w:24", "n:Value,w:100" }, ListViewFlags::None);
+          "x:0,y:0,w:100%,h:100%", std::initializer_list<ConstString>{ "n:Field,w:10", "n:Value,w:100" }, ListViewFlags::None);
 
     Update();
 }
@@ -26,6 +26,10 @@ void Panels::Information::UpdateGeneralInformation()
     const auto fileSize    = nf.ToString(zip->obj->GetData().GetSize(), dec);
     const auto hexfileSize = nf2.ToString(zip->obj->GetData().GetSize(), hex);
     general->AddItem({ "Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()) });
+
+    const auto count    = nf.ToString(zip->info.GetCount(), dec);
+    const auto hexCount = nf2.ToString(zip->info.GetCount(), hex);
+    general->AddItem({ "Items", ls.Format("%-14s (%s)", count.data(), hexCount.data()) });
 }
 
 void Panels::Information::UpdateIssues()
