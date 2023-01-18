@@ -47,19 +47,10 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
             auto filename        = entry.GetFilename();
             const auto entryType = entry.GetType();
 
-            if (entryType == GView::ZIP::EntryType::Directory)
-            {
-                if (filename.find_first_of('/') == filename.size() - 1)
-                {
-                    curentChildIndexes.push_back(i);
-                }
-            }
-        }
+            const auto f = filename.find_first_of('/');
 
-        if (curentChildIndexes.empty())
-        {
-            curentChildIndexes.reserve(count);
-            for (uint32 i = 0; i < count; i++)
+            if ((entryType == GView::ZIP::EntryType::Directory && f == filename.size() - 1) ||
+                (entryType != GView::ZIP::EntryType::Directory && f == std::string::npos))
             {
                 curentChildIndexes.push_back(i);
             }
