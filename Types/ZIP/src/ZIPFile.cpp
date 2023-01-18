@@ -12,7 +12,20 @@ ZIPFile::ZIPFile()
 
 bool ZIPFile::Update()
 {
-    CHECK(GView::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
+    LocalUnicodeStringBuilder<1024> ub;
+    ub.Set(obj->GetPath());
+    std::u16string sv{ ub.GetString(), ub.Len() };
+
+    isTopContainer = std::filesystem::exists(sv);
+    if (isTopContainer) // top container (exists on disk)
+    {
+        CHECK(GView::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
+    }
+    else // child container (does not exist on disk)
+    {
+        CHECK(GView::ZIP::GetInfo(obj->GetData(), this->info), false, "");
+    }
+
     return true;
 }
 
@@ -140,10 +153,20 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     GView::ZIP::Entry entry{ 0 };
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
-    const auto name = entry.GetFilename();
     Buffer buffer{};
-    CHECKRET(this->info.Decompress(buffer, (uint32) index), "");
 
+    if (isTopContainer)
+    {
+        CHECKRET(this->info.Decompress(buffer, (uint32) index), "");
+    }
+    else
+    {
+        const auto cache = obj->GetData().GetEntireFile();
+        CHECKRET(cache.IsValid(), "");
+        CHECKRET(this->info.Decompress(cache, buffer, (uint32) index), "");
+    }
+
+    const auto name = entry.GetFilename();
     GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
 }
 } // namespace GView::Type::ZIP

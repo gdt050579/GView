@@ -619,11 +619,13 @@ namespace ZIP
         uint32 GetCount() const;
         bool GetEntry(uint32 index, Entry& entry) const;
         bool Decompress(Buffer& output, uint32 index) const;
+        bool Decompress(const BufferView& input, Buffer& output, uint32 index) const;
 
         Info();
         ~Info();
     };
     CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
+    CORE_EXPORT bool GetInfo(Utils::DataCache& cache, Info& info);
 } // namespace ZIP
 
 namespace Dissasembly

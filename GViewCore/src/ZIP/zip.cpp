@@ -256,6 +256,36 @@ bool Info::Decompress(Buffer& output, uint32 index) const
     return true;
 }
 
+bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index) const
+{
+    CHECK(context != nullptr, false, "");
+    auto info = reinterpret_cast<_Info*>(context);
+
+    CHECK(index < info->entries.size(), false, "");
+    auto& entry = info->entries.at(index);
+    CHECK(entry.type == EntryType::File, false, "");
+
+    mz_zip_reader_create_ptr reader{ nullptr };
+    mz_zip_reader_create(&reader.value);
+    mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
+
+    CHECK(mz_zip_reader_open_buffer(
+                reader.value,
+                const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(input.GetData())),
+                input.GetLength(),
+                /* don't copy */ 0) == MZ_OK,
+          false,
+          "");
+
+    output.Reserve(entry.uncompressed_size);
+
+    CHECK(mz_zip_reader_entry_save_buffer(reader.value, output.GetData(), entry.uncompressed_size) == MZ_OK, false, "");
+
+    output.Resize(entry.uncompressed_size);
+
+    return true;
+}
+
 bool GetInfo(std::u16string_view path, Info& info)
 {
     auto internalInfo = reinterpret_cast<_Info*>(info.context);
@@ -289,4 +319,45 @@ bool GetInfo(std::u16string_view path, Info& info)
 
     return true;
 }
+
+bool GetInfo(Utils::DataCache& cache, Info& info)
+{
+    auto internalInfo = reinterpret_cast<_Info*>(info.context);
+    CHECK(internalInfo, false, "");
+
+    internalInfo->reader.Reset();
+    mz_zip_reader_create(&internalInfo->reader.value);
+
+    // mz_zip_reader_set_password(reader, password.c_str()); // do we want to try a password?
+    // mz_zip_reader_set_encoding(reader.get(), 0);
+
+    // not the best option.. you might want to stream this or drop it on the disk as a temp file
+    // every option has its downsides
+    auto buffer = cache.GetEntireFile();
+    CHECK(buffer.IsValid(), false, "");
+
+    CHECK(mz_zip_reader_open_buffer(
+                internalInfo->reader.value,
+                const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(buffer.GetData())),
+                buffer.GetLength(),
+                /* don't copy */ 0) == MZ_OK,
+          false,
+          "");
+    CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");
+
+    do
+    {
+        mz_zip_file* zipFile{ nullptr };
+        CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
+        mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
+
+        auto& entry = internalInfo->entries.emplace_back();
+        ConvertZipFileInfoToEntry(zipFile, entry);
+
+        CHECKBK(mz_zip_reader_goto_next_entry(internalInfo->reader.value) == MZ_OK, "");
+    } while (true);
+
+    return true;
+}
+
 } // namespace GView::ZIP
