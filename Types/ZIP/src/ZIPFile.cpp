@@ -148,13 +148,13 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 
     if (isTopContainer)
     {
-        CHECKRET(this->info.Decompress(buffer, (uint32) index), "");
+        CHECKRET(this->info.Decompress(buffer, (uint32) index, password), "");
     }
     else
     {
         const auto cache = obj->GetData().GetEntireFile();
         CHECKRET(cache.IsValid(), "");
-        CHECKRET(this->info.Decompress(cache, buffer, (uint32) index), "");
+        CHECKRET(this->info.Decompress(cache, buffer, (uint32) index, password), "");
     }
 
     const auto name = entry.GetFilename();

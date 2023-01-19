@@ -618,8 +618,8 @@ namespace ZIP
 
         uint32 GetCount() const;
         bool GetEntry(uint32 index, Entry& entry) const;
-        bool Decompress(Buffer& output, uint32 index) const;
-        bool Decompress(const BufferView& input, Buffer& output, uint32 index) const;
+        bool Decompress(Buffer& output, uint32 index, const std::string& password) const;
+        bool Decompress(const BufferView& input, Buffer& output, uint32 index, const std::string& password) const;
 
         Info();
         ~Info();

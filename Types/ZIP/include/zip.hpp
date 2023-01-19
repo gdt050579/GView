@@ -11,6 +11,7 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     GView::ZIP::Info info{};
     std::vector<uint32> curentChildIndexes{};
     bool isTopContainer{ true };
+    std::string password;
 
   public:
     ZIPFile();

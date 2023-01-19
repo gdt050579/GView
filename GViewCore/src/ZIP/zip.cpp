@@ -232,7 +232,7 @@ std::string_view Entry::GetTypeName() const
     }
 }
 
-bool Info::Decompress(Buffer& output, uint32 index) const
+bool Info::Decompress(Buffer& output, uint32 index, const std::string& password) const
 {
     CHECK(context != nullptr, false, "");
     auto info = reinterpret_cast<_Info*>(context);
@@ -243,6 +243,7 @@ bool Info::Decompress(Buffer& output, uint32 index) const
 
     mz_zip_reader_create_ptr reader{ nullptr };
     mz_zip_reader_create(&reader.value);
+    mz_zip_reader_set_password(reader.value, password.c_str());
     mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
     CHECK(mz_zip_reader_open_file(reader.value, info->path.c_str()) == MZ_OK, false, "");
@@ -256,7 +257,7 @@ bool Info::Decompress(Buffer& output, uint32 index) const
     return true;
 }
 
-bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index) const
+bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index, const std::string& password) const
 {
     CHECK(context != nullptr, false, "");
     auto info = reinterpret_cast<_Info*>(context);
@@ -267,6 +268,7 @@ bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index) con
 
     mz_zip_reader_create_ptr reader{ nullptr };
     mz_zip_reader_create(&reader.value);
+    mz_zip_reader_set_password(reader.value, password.c_str());
     mz_zip_reader_set_pattern(reader.value, (char*) entry.filename.data(), 0);
 
     CHECK(mz_zip_reader_open_buffer(
@@ -293,9 +295,6 @@ bool GetInfo(std::u16string_view path, Info& info)
 
     internalInfo->reader.Reset();
     mz_zip_reader_create(&internalInfo->reader.value);
-
-    // mz_zip_reader_set_password(reader, password.c_str()); // do we want to try a password?
-    // mz_zip_reader_set_encoding(reader.get(), 0);
 
     std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
     std::u16string p(path);
