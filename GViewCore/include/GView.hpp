@@ -612,6 +612,7 @@ namespace ZIP
         int64 GetDiskOffset() const;
         EntryType GetType() const;
         std::string_view GetTypeName() const;
+        bool IsEncrypted() const;
     };
 
     struct CORE_EXPORT Info

@@ -96,7 +96,16 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
             GView::ZIP::Entry entry{ 0 };
             CHECK(this->info.GetEntry(i, entry), false, "");
 
-            auto filename = entry.GetFilename();
+            auto filename        = entry.GetFilename();
+            const auto entryType = entry.GetType();
+
+            if (entryType == GView::ZIP::EntryType::Directory)
+            {
+                if (filename[filename.size() - 1] == '/')
+                {
+                    filename = { filename.data(), filename.size() - 1 };
+                }
+            }
 
             CHECK(usb.Set(filename), false, "");
 
@@ -159,6 +168,88 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     return currentItemIndex != this->curentChildIndexes.size();
 }
 
+constexpr int32 CMD_BUTTON_CLOSE  = 1;
+constexpr int32 CMD_BUTTON_OK     = 2;
+constexpr int32 CMD_BUTTON_CANCEL = 3;
+
+class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
+{
+  private:
+    Reference<Password> input;
+    Reference<CheckBox> savePasswordAsDefault;
+
+    Reference<Button> close;
+    Reference<Button> cancel;
+    Reference<Button> ok;
+
+    std::string password;
+
+  public:
+    PasswordDialog() : Window("Enter Password", "d:c,w:25%,h:15%", WindowFlags::ProcessReturn)
+    {
+        input = Factory::Password::Create(this, "", "x:1,y:1,w:100%,h:1%");
+
+        savePasswordAsDefault = Factory::CheckBox::Create(this, "Save password as default", "x:1,y:3,w:100%,h:1%", 1);
+        savePasswordAsDefault->SetChecked(true);
+
+        ok                              = Factory::Button::Create(this, "&Ok", "x:25%,y:100%,a:b,w:12", CMD_BUTTON_OK);
+        ok->Handlers()->OnButtonPressed = this;
+        ok->SetFocus();
+
+        cancel                              = Factory::Button::Create(this, "&Cancel", "x:75%,y:100%,a:b,w:12", CMD_BUTTON_CANCEL);
+        cancel->Handlers()->OnButtonPressed = this;
+
+        input->SetFocus();
+    }
+
+    void OnButtonPressed(Reference<Button> b) override
+    {
+        if (b->GetControlID() == CMD_BUTTON_CLOSE || b->GetControlID() == CMD_BUTTON_CANCEL)
+        {
+            Exit(Dialogs::Result::Cancel);
+            return;
+        }
+
+        if (b->GetControlID() == CMD_BUTTON_OK)
+        {
+            CHECKRET(input.IsValid(), "");
+            CHECKRET(input->GetText().ToString(password), "");
+
+            Exit(Dialogs::Result::Ok);
+            return;
+        }
+
+        Exit(Dialogs::Result::Cancel);
+    }
+
+    bool OnEvent(Reference<Control> c, Event eventType, int id) override
+    {
+        if (Window::OnEvent(c, eventType, id))
+        {
+            return true;
+        }
+
+        if (eventType == Event::WindowAccept || eventType == Event::PasswordValidate)
+        {
+            OnButtonPressed(ok);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool SavePasswordAsDefault()
+    {
+        CHECK(savePasswordAsDefault.IsValid(), false, "");
+        return savePasswordAsDefault->IsChecked();
+    }
+
+    const std::string& GetPassword() const
+    {
+        return password;
+    }
+};
+
 void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
@@ -169,19 +260,72 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
     Buffer buffer{};
+    bool decompressed{ false };
 
-    if (isTopContainer)
+    if (entry.IsEncrypted() == false || password.empty() == false)
     {
-        CHECKRET(this->info.Decompress(buffer, (uint32) index, password), "");
-    }
-    else
-    {
-        const auto cache = obj->GetData().GetEntireFile();
-        CHECKRET(cache.IsValid(), "");
-        CHECKRET(this->info.Decompress(cache, buffer, (uint32) index, password), "");
+        if (isTopContainer)
+        {
+            decompressed = this->info.Decompress(buffer, (uint32) index, password);
+        }
+        else
+        {
+            const auto cache = obj->GetData().GetEntireFile();
+            if (cache.IsValid())
+            {
+                decompressed == this->info.Decompress(cache, buffer, (uint32) index, password);
+            }
+        }
+
+        if (decompressed)
+        {
+            const auto name = entry.GetFilename();
+            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+            return;
+        }
+
+        if (entry.IsEncrypted())
+        {
+            Dialogs::MessageBox::ShowError("Error!", "Wrong default password!");
+        }
+        else
+        {
+            Dialogs::MessageBox::ShowError("Error!", "Failed to decompress!");
+            return;
+        }
     }
 
-    const auto name = entry.GetFilename();
-    GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+    PasswordDialog pd;
+    while (pd.Show() == Dialogs::Result::Ok)
+    {
+        if (isTopContainer)
+        {
+            decompressed = this->info.Decompress(buffer, (uint32) index, pd.GetPassword());
+        }
+        else
+        {
+            const auto cache = obj->GetData().GetEntireFile();
+            if (cache.IsValid())
+            {
+                decompressed == this->info.Decompress(cache, buffer, (uint32) index, pd.GetPassword());
+            }
+        }
+
+        if (decompressed)
+        {
+            if (pd.SavePasswordAsDefault())
+            {
+                this->password = pd.GetPassword();
+            }
+
+            const auto name = entry.GetFilename();
+            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+            return;
+        }
+
+        Dialogs::MessageBox::ShowError("Error!", "Wrong password!");
+    }
+
+    Dialogs::MessageBox::ShowError("Error!", "Unable to decompress without a password!");
 }
 } // namespace GView::Type::ZIP

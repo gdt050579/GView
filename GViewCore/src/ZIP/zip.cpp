@@ -296,6 +296,14 @@ std::string_view Entry::GetTypeName() const
     }
 }
 
+bool Entry::IsEncrypted() const
+{
+    CHECK(context != nullptr, false, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+
+    return (entry->flag & MZ_ZIP_FLAG_ENCRYPTED);
+}
+
 bool Info::Decompress(Buffer& output, uint32 index, const std::string& password) const
 {
     CHECK(context != nullptr, false, "");
