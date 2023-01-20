@@ -587,6 +587,50 @@ namespace ZLIB
     CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
+namespace ZIP
+{
+    enum class EntryType
+    {
+        Unknown   = 0,
+        Directory = 1,
+        Symlink   = 2,
+        File      = 3
+    };
+
+    struct CORE_EXPORT Entry
+    {
+        void* context{ nullptr };
+
+        std::u8string_view GetFilename() const;
+        uint16 GetFlags() const;
+        std::string GetFlagNames() const;
+        int64 GetCompressedSize() const;
+        int64 GetUncompressedSize() const;
+        int64 GetCompressionMethod() const;
+        std::string GetCompressionMethodName() const;
+        uint32 GetDiskNumber() const;
+        int64 GetDiskOffset() const;
+        EntryType GetType() const;
+        std::string_view GetTypeName() const;
+        bool IsEncrypted() const;
+    };
+
+    struct CORE_EXPORT Info
+    {
+        void* context{ nullptr };
+
+        uint32 GetCount() const;
+        bool GetEntry(uint32 index, Entry& entry) const;
+        bool Decompress(Buffer& output, uint32 index, const std::string& password) const;
+        bool Decompress(const BufferView& input, Buffer& output, uint32 index, const std::string& password) const;
+
+        Info();
+        ~Info();
+    };
+    CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
+    CORE_EXPORT bool GetInfo(Utils::DataCache& cache, Info& info);
+} // namespace ZIP
+
 namespace Dissasembly
 {
     enum class Opcodes : uint32
