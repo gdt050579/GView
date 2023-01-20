@@ -163,6 +163,70 @@ std::u8string_view Entry::GetFilename() const
     return entry->filename;
 }
 
+uint16 Entry::GetFlags() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+    return entry->flag;
+}
+
+static inline std::string_view GetSignatureFlagName(uint32 flag)
+{
+    switch (flag)
+    {
+    case MZ_ZIP_FLAG_ENCRYPTED:
+        return "ENCRYPTED";
+    // case MZ_ZIP_FLAG_LZMA_EOS_MARKER:
+    //     return "LZMA_EOS_MARKER";
+    case MZ_ZIP_FLAG_DEFLATE_MAX:
+        return "DEFLATE_MAX";
+    case MZ_ZIP_FLAG_DEFLATE_NORMAL:
+        return "DEFLATE_NORMAL";
+    case MZ_ZIP_FLAG_DEFLATE_FAST:
+        return "DEFLATE_FAST";
+    case MZ_ZIP_FLAG_DEFLATE_SUPER_FAST:
+        return "DEFLATE_SUPER_FAST";
+    case MZ_ZIP_FLAG_DATA_DESCRIPTOR:
+        return "DATA_DESCRIPTOR";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+std::string Entry::GetFlagNames() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto entry = reinterpret_cast<_Entry*>(context);
+
+    static std::initializer_list<uint32> flags{ MZ_ZIP_FLAG_ENCRYPTED,    MZ_ZIP_FLAG_DEFLATE_MAX,        MZ_ZIP_FLAG_DEFLATE_NORMAL,
+                                                MZ_ZIP_FLAG_DEFLATE_FAST, MZ_ZIP_FLAG_DEFLATE_SUPER_FAST, MZ_ZIP_FLAG_DATA_DESCRIPTOR };
+
+    std::string output;
+
+    for (const auto& iFlag : flags)
+    {
+        const auto flag = static_cast<uint32>(iFlag & entry->flag);
+        if (flag != iFlag)
+        {
+            continue;
+        }
+
+        if ((flag & MZ_ZIP_FLAG_DEFLATE_SUPER_FAST) == MZ_ZIP_FLAG_DEFLATE_SUPER_FAST &&
+            (flag == MZ_ZIP_FLAG_DEFLATE_MAX || flag == MZ_ZIP_FLAG_DEFLATE_FAST))
+        {
+            continue; // write only super fast flag
+        }
+
+        if (!output.empty())
+        {
+            output += " | ";
+        }
+        output += GetSignatureFlagName(iFlag);
+    }
+
+    return output;
+}
+
 int64 Entry::GetCompressedSize() const
 {
     CHECK(context != nullptr, 0, "");

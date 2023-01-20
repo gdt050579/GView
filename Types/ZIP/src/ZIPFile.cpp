@@ -74,14 +74,37 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
             {
                 filename = { filename.data(), filename.size() - 1 };
             }
+
+            CHECK(usb.Set(filename), false, "");
+
+            const auto sv = usb.ToStringView();
+            if (sv.size() != path.size() && sv.starts_with(path))
+            {
+                const auto tmpSV = std::u16string_view{ sv.data() + path.size(), sv.size() - path.size() };
+                if (tmpSV.find_first_of('/') == tmpSV.find_last_of('/'))
+                {
+                    curentChildIndexes.push_back(i);
+                }
+            }
         }
+    }
 
-        CHECK(usb.Set(filename), false, "");
-
-        const auto sv = usb.ToStringView();
-        if (sv != path && usb.ToStringView().starts_with(path))
+    if (curentChildIndexes.empty())
+    {
+        for (uint32 i = 0; i < count; i++)
         {
-            curentChildIndexes.push_back(i);
+            GView::ZIP::Entry entry{ 0 };
+            CHECK(this->info.GetEntry(i, entry), false, "");
+
+            auto filename = entry.GetFilename();
+
+            CHECK(usb.Set(filename), false, "");
+
+            const auto sv = usb.ToStringView();
+            if (sv != path && usb.ToStringView().starts_with(path))
+            {
+                curentChildIndexes.push_back(i);
+            }
         }
     }
 
@@ -121,12 +144,13 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
 
     item.SetText(filename);
     item.SetText(1, tmp.Format("%s (%s)", entry.GetTypeName().data(), n.ToString((uint32) entryType, NUMERIC_FORMAT).data()));
-    item.SetText(2, tmp.Format("%s", n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
-    item.SetText(3, tmp.Format("%s", n.ToString(entry.GetUncompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(2, tmp.Format("%s (%s)", entry.GetFlagNames().c_str(), n.ToString(entry.GetFlags(), NUMERIC_FORMAT).data()));
+    item.SetText(3, tmp.Format("%s", n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(4, tmp.Format("%s", n.ToString(entry.GetUncompressedSize(), NUMERIC_FORMAT).data()));
     item.SetText(
-          4, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
-    item.SetText(5, tmp.Format("%s", n.ToString(entry.GetDiskNumber(), NUMERIC_FORMAT).data()));
-    item.SetText(6, tmp.Format("%s", n.ToString(entry.GetDiskOffset(), NUMERIC_FORMAT).data()));
+          5, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(6, tmp.Format("%s", n.ToString(entry.GetDiskNumber(), NUMERIC_FORMAT).data()));
+    item.SetText(7, tmp.Format("%s", n.ToString(entry.GetDiskOffset(), NUMERIC_FORMAT).data()));
 
     item.SetData(realIndex);
 
