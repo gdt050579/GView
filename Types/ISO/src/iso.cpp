@@ -151,7 +151,7 @@ extern "C"
             break;
         }
 
-        win->CreateViewer("BufferView", settings);
+        iso->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
