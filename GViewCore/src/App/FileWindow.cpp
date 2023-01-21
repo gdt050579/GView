@@ -132,11 +132,11 @@ bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferV
           .IsValid();
 }
 
-Reference<GView::Utils::SelectionZoneInteface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(
+Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(
       const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .ToBase<GView::Utils::SelectionZoneInteface>();
+          .ToBase<GView::Utils::SelectionZoneInterface>();
 }
 
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::TextViewer::Settings& settings)

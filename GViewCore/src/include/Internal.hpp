@@ -669,7 +669,7 @@ namespace App
         bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
 
-        Reference<GView::Utils::SelectionZoneInteface> GetSelectionZoneInterfaceFromViewerCreation(
+        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
               const std::string_view& name, View::BufferViewer::Settings& settings) override;
 
         Reference<View::ViewControl> GetCurrentView() override;

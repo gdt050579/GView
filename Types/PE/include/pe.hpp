@@ -855,7 +855,7 @@ namespace Type
             static std::string_view DirectoryIDToName(uint32 dirID);
 
           public:
-            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
             {

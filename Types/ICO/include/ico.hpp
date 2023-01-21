@@ -79,7 +79,7 @@ namespace Type
             bool LoadImageToObject(Image& img, uint32 index) override;
 
           public:
-            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
             {

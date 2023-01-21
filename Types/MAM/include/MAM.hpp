@@ -27,7 +27,7 @@ class MAMFile : public TypeInterface
     void RunCommand(std::string_view) override;
 
   public:
-    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
     {

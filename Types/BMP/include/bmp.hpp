@@ -43,7 +43,7 @@ namespace Type
             Header header;
             InfoHeader infoHeader;
 
-            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
           public:
             BMPFile();

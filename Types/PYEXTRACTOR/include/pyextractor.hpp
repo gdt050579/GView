@@ -116,7 +116,7 @@ class PYEXTRACTORFile : public TypeInterface,
     bool SetTableOfContentEntries();
 
   public:
-    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
     {

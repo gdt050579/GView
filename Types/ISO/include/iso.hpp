@@ -46,7 +46,7 @@ class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
   public:
-    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
     {

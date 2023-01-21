@@ -60,7 +60,7 @@ namespace Type
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
 
           public:
-            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
             {

@@ -44,7 +44,7 @@ namespace Type
             void UpdateGrid(GView::View::GridViewer::Settings& settings);
 
           public:
-            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
             {

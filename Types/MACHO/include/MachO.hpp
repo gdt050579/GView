@@ -256,7 +256,7 @@ class MachOFile : public TypeInterface,
     bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
 
   public:
-    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
     {

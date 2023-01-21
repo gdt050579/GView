@@ -72,7 +72,7 @@ namespace View
             void Initialize();
         };
 
-        class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInteface
+        class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface
         {
             struct DrawLineInfo
             {

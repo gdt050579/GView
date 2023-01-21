@@ -32,7 +32,7 @@ class JOBFile : public TypeInterface
     }
 
   public:
-    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
     {

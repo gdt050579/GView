@@ -95,7 +95,7 @@ class PrefetchFile : public TypeInterface
     bool SetEntries(uint32 sectionASize, uint32 sectionBSize, uint32 sectionCSize);
 
   public:
-    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
     uint32 GetSelectionZonesCount() override
     {

@@ -150,7 +150,7 @@ namespace Utils
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
-    struct CORE_EXPORT SelectionZoneInteface
+    struct CORE_EXPORT SelectionZoneInterface
     {
         virtual uint32 GetSelectionZonesCount() const                                    = 0;
         virtual GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const = 0;
@@ -1394,7 +1394,7 @@ namespace View
             return CreateViewer(name, settings);
         }
 
-        virtual Reference<GView::Utils::SelectionZoneInteface> GetSelectionZoneInterfaceFromViewerCreation(
+        virtual Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
               const std::string_view& name, View::BufferViewer::Settings& settings) = 0;
     };
 }; // namespace View
