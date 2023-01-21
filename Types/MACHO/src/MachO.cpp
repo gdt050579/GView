@@ -146,7 +146,7 @@ extern "C"
             }
         }
 
-        win->CreateViewer("BufferView", settings);
+        machO->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
