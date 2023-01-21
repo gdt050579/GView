@@ -34,7 +34,7 @@ extern "C"
         settings.AddZone(0, sizeof(BMP::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         settings.AddZone(sizeof(BMP::Header), sizeof(BMP::InfoHeader), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
 
-        bmp->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("BufferView", settings);
+        bmp->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     void CreateImageView(Reference<GView::View::WindowInterface> win, Reference<BMP::BMPFile> bmp)
