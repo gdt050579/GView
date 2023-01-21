@@ -51,9 +51,10 @@ namespace Type
         {
           public:
             bool isIcoFormat;
-            
+
           public:
             std::vector<DirectoryEntry> dirs;
+
           public:
             ICOFile();
             virtual ~ICOFile()
@@ -76,6 +77,24 @@ namespace Type
             }
 
             bool LoadImageToObject(Image& img, uint32 index) override;
+
+          public:
+            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
         namespace Panels
         {
@@ -106,6 +125,7 @@ namespace Type
 
                 void GoToSelectedDirectory();
                 void SelectCurrentDirectory();
+
               public:
                 Directories(Reference<GView::Type::ICO::ICOFile> ico, Reference<GView::View::WindowInterface> win);
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
