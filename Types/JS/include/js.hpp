@@ -277,7 +277,7 @@ namespace Type
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             int32 ParseRegEx(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
-			uint32 TokenizeOperator(
+            uint32 TokenizeOperator(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 pos);
             uint32 TokenizeList(
                   const GView::View::LexicalViewer::TextParser& text, GView::View::LexicalViewer::TokensList& tokenList, uint32 idx);
@@ -328,6 +328,24 @@ namespace Type
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
             virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
+
+          public:
+            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
         namespace Panels
         {
