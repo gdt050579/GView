@@ -44,28 +44,12 @@ enum class Hashes : uint32
     ALL            = 0xFFFFFFFF,
 };
 
-static constexpr std::array<Hashes, 24> hashList{ Hashes::Adler32,
-                                                  Hashes::CRC16,
-                                                  Hashes::CRC32_JAMCRC_0,
-                                                  Hashes::CRC32_JAMCRC,
-                                                  Hashes::CRC64_ECMA_182,
-                                                  Hashes::CRC64_WE,
-                                                  Hashes::MD5,
-                                                  Hashes::BLAKE2S256,
-                                                  Hashes::BLAKE2B512,
-                                                  Hashes::SHA1,
-                                                  Hashes::SHA224,
-                                                  Hashes::SHA256,
-                                                  Hashes::SHA384,
-                                                  Hashes::SHA512,
-                                                  Hashes::SHA512_224,
-                                                  Hashes::SHA512_256,
-                                                  Hashes::SHA3_224,
-                                                  Hashes::SHA3_256,
-                                                  Hashes::SHA3_384,
-                                                  Hashes::SHA3_512,
-                                                  Hashes::SHAKE128,
-                                                  Hashes::SHAKE256 };
+static constexpr std::array<Hashes, 24> hashList{
+    Hashes::Adler32,  Hashes::CRC16,      Hashes::CRC32_JAMCRC_0, Hashes::CRC32_JAMCRC, Hashes::CRC64_ECMA_182, Hashes::CRC64_WE,
+    Hashes::MD5,      Hashes::BLAKE2S256, Hashes::BLAKE2B512,     Hashes::SHA1,         Hashes::SHA224,         Hashes::SHA256,
+    Hashes::SHA384,   Hashes::SHA512,     Hashes::SHA512_224,     Hashes::SHA512_256,   Hashes::SHA3_224,       Hashes::SHA3_256,
+    Hashes::SHA3_384, Hashes::SHA3_512,   Hashes::SHAKE128,       Hashes::SHAKE256
+};
 
 class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
 {
@@ -105,6 +89,8 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     Reference<RadioBox> computeForFile;
     Reference<RadioBox> computeForSelection;
 
+    std::vector<TypeInterface::SelectionZone> selectedZones;
+
   public:
     inline static uint32 flags = static_cast<uint32>(Hashes::None);
 
@@ -120,5 +106,10 @@ class HashesDialog : public Window, public Handlers::OnButtonPressedInterface
     void SetSettingsFromFlags();
 };
 
-static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hashFlags, Reference<GView::Object> object);
+static bool ComputeHash(
+      std::map<std::string, std::string>& outputs,
+      uint32 hashFlags,
+      Reference<GView::Object> object,
+      bool computeForFileOption,
+      const std::vector<TypeInterface::SelectionZone>& selectedZones);
 } // namespace GView::GenericPlugins::Hashes
