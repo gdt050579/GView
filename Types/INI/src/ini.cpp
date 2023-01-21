@@ -33,7 +33,9 @@ extern "C"
         win->CreateViewer("Lexical", settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
-        win->CreateViewer<BufferViewer::Settings>("Buffer View");
+
+        View::BufferViewer::Settings s{};
+        ini->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new INI::Panels::Information(ini)), true);

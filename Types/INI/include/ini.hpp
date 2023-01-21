@@ -42,6 +42,7 @@ namespace Type
             class Casing : public GView::View::LexicalViewer::Plugin
             {
                 void ChangeCaseForToken(GView::View::LexicalViewer::Token& tok, CaseFormat format, bool isSection);
+
               public:
                 virtual std::string_view GetName() override;
                 virtual std::string_view GetDescription() override;
@@ -90,6 +91,24 @@ namespace Type
             virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
             virtual bool StringToContent(std::u16string_view strintValue, AppCUI::Utils::UnicodeStringBuilder& result) override;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
+
+          public:
+            Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
         namespace Panels
         {
