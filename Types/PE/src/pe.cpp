@@ -140,7 +140,7 @@ extern "C"
             }
         }
 
-        win->CreateViewer("BufferView", settings);
+        pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)

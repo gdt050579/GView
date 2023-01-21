@@ -52,7 +52,7 @@ extern "C"
 
         GView::View::BufferViewer::Settings bufferSettings;
         csv->UpdateBufferViewZones(bufferSettings);
-        win->CreateViewer("BufferView", bufferSettings);
+        csv->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", bufferSettings);
 
         // panels
         if (csv->HasPanel(CSV::Panels::IDs::Information))

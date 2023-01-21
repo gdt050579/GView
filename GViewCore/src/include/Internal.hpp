@@ -42,7 +42,7 @@ namespace Utils
         }
         inline constexpr uint32 GetCount() const
         {
-            return Selection::MAX_SELECTION_ZONES;
+            return MAX_SELECTION_ZONES;
         }
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
         inline uint64 GetSelectionStart(uint32 index) const
@@ -668,6 +668,9 @@ namespace App
         bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
         bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
+
+        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
+              const std::string_view& name, View::BufferViewer::Settings& settings) override;
 
         Reference<View::ViewControl> GetCurrentView() override;
 

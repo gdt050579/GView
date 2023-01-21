@@ -72,7 +72,7 @@ namespace View
             void Initialize();
         };
 
-        class Instance : public View::ViewControl
+        class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface
         {
             struct DrawLineInfo
             {
@@ -214,6 +214,26 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+
+            uint32 GetSelectionZonesCount() const override
+            {
+                uint32 count = 0;
+                for (; count < selection.GetCount(); count++)
+                {
+                    CHECKBK(selection.HasSelection(count), "");
+                }
+
+                return count;
+            }
+
+            GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const override
+            {
+                static auto z = GView::TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(index < selection.GetCount(), z, "");
+
+                return GView::TypeInterface::SelectionZone{ .start = selection.GetSelectionStart(index),
+                                                            .end   = selection.GetSelectionEnd(index) };
+            }
         };
         class SelectionEditor : public Window
         {

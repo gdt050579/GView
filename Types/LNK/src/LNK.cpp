@@ -105,7 +105,7 @@ extern "C"
             settings.AddZone(offset, sizeof(uint32), c, "Terminal");
         }
 
-        win->CreateViewer("BufferView", settings);
+        lnk->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

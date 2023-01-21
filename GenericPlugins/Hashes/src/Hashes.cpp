@@ -44,6 +44,11 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
 {
     this->object = object;
 
+    for (auto i = 0U; i < this->object->GetContentType()->GetSelectionZonesCount(); i++)
+    {
+        selectedZones.emplace_back(this->object->GetContentType()->GetSelectionZone(i));
+    }
+
     hashesList = Factory::ListView::Create(this, "l:0,t:0,r:0,b:3", { "n:Type,w:17", "n:Value,w:130" });
 
     hashesList->SetVisible(false);
@@ -52,10 +57,18 @@ HashesDialog::HashesDialog(Reference<GView::Object> object) : Window("Hashes", "
     close->Handlers()->OnButtonPressed = this;
     close->SetVisible(false);
 
-    computeForFile = Factory::RadioBox::Create(this, "Compute for the &entire file", "x:1,y:1,w:31", 1);
-    computeForFile->SetChecked(true);
+    computeForFile      = Factory::RadioBox::Create(this, "Compute for the &entire file", "x:1,y:1,w:31", 1);
     computeForSelection = Factory::RadioBox::Create(this, "Compute for the &selection", "x:1,y:2,w:31", 1);
-    computeForSelection->SetEnabled(false); /* TODO: when selection object will be passed */
+
+    if (selectedZones.empty())
+    {
+        computeForFile->SetChecked(true);
+        computeForSelection->SetEnabled(false);
+    }
+    else
+    {
+        computeForSelection->SetChecked(true);
+    }
 
     options = Factory::ListView::Create(
           this, "l:1,t:3,r:1,b:3", { "w:30" }, Controls::ListViewFlags::CheckBoxes | Controls::ListViewFlags::HideColumns);
@@ -108,7 +121,7 @@ void HashesDialog::OnButtonPressed(Reference<Button> b)
         SetSettingsFromFlags();
 
         std::map<std::string, std::string> outputs;
-        CHECKRET(ComputeHash(outputs, flags, object), "");
+        CHECKRET(ComputeHash(outputs, flags, object, computeForFile->IsChecked(), selectedZones), "");
 
         this->Resize(widthShowing, static_cast<uint32>(outputs.size() + 8ULL));
         this->CenterScreen();
@@ -578,9 +591,28 @@ void HashesDialog::SetSettingsFromFlags()
     allSettings->Save(Application::GetAppSettingsFile());
 }
 
-static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hashFlags, Reference<GView::Object> object)
+static bool ComputeHash(
+      std::map<std::string, std::string>& outputs,
+      uint32 hashFlags,
+      Reference<GView::Object> object,
+      bool computeForFileOption,
+      const std::vector<TypeInterface::SelectionZone>& selectedZones)
 {
-    const auto objectSize = object->GetData().GetSize();
+    const auto computeForFile = computeForFileOption ? true : selectedZones.empty();
+
+    auto objectSize = 0ULL;
+    if (computeForFile)
+    {
+        objectSize = object->GetData().GetSize();
+    }
+    else
+    {
+        for (auto& sz : selectedZones)
+        {
+            objectSize += sz.end - sz.start + 1;
+        }
+    }
+
     ProgressStatus::Init("Computing...", objectSize);
 
     Adler32 adler32{};
@@ -651,27 +683,8 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
         }
     }
 
-    const auto block = object->GetData().GetCacheSize();
-    auto offset      = 0ULL;
-    auto left        = object->GetData().GetSize();
-    LocalString<512> ls;
-
-    const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
-    if (objectSize > 0xFFFFFFFF)
+    const auto UpdateHashOnBuffer = [&](const Buffer& buffer)
     {
-        format = "[0x%.16llX/0x%.16llX] bytes...";
-    }
-
-    do
-    {
-        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
-
-        const auto sizeToRead = (left >= block ? block : left);
-        left -= (left >= block ? block : left);
-
-        const Buffer buffer = object->GetData().CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
-        CHECK(buffer.IsValid(), false, "");
-
         for (const auto& hash : hashList)
         {
             switch (static_cast<Hashes>(hashFlags & static_cast<uint32>(hash)))
@@ -747,8 +760,54 @@ static bool ComputeHash(std::map<std::string, std::string>& outputs, uint32 hash
             }
         }
 
-        offset += sizeToRead;
-    } while (left > 0);
+        return true;
+    };
+
+    LocalString<512> ls;
+
+    const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
+    if (objectSize > 0xFFFFFFFF)
+    {
+        format = "[0x%.16llX/0x%.16llX] bytes...";
+    }
+
+    const auto block = object->GetData().GetCacheSize();
+
+    const auto UpdateHashOnBlock = [&](uint64 offset, uint64 left)
+    {
+        do
+        {
+            CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+            const auto sizeToRead = (left >= block ? block : left);
+            left -= (left >= block ? block : left);
+
+            const Buffer buffer = object->GetData().CopyToBuffer(offset, static_cast<uint32>(sizeToRead), true);
+            CHECK(buffer.IsValid(), false, "");
+
+            CHECK(UpdateHashOnBuffer(buffer), false, "");
+
+            offset += sizeToRead;
+        } while (left > 0);
+
+        return true;
+    };
+
+    if (computeForFile)
+    {
+        const auto offset = 0ULL;
+        const auto left   = object->GetData().GetSize();
+        CHECK(UpdateHashOnBlock(offset, left), false, "");
+    }
+    else
+    {
+        for (auto& sz : selectedZones)
+        {
+            const auto offset = sz.start;
+            const auto left   = sz.end - sz.start + 1;
+            CHECK(UpdateHashOnBlock(offset, left), false, "");
+        }
+    }
 
     NumericFormatter nf;
     for (const auto& hash : hashList)
@@ -857,11 +916,20 @@ extern "C"
             dlg.Show();
             return true;
         }
-        else if (command == GView::GenericPlugins::Hashes::CMD_SHORT_NAME_COMPUTE_MD5)
+
+        std::vector<GView::TypeInterface::SelectionZone> selectedZones;
+        for (auto i = 0U; i < object->GetContentType()->GetSelectionZonesCount(); i++)
+        {
+            selectedZones.emplace_back(object->GetContentType()->GetSelectionZone(i));
+        }
+        const auto computeForFile = selectedZones.empty();
+
+        if (command == GView::GenericPlugins::Hashes::CMD_SHORT_NAME_COMPUTE_MD5)
         {
             std::map<std::string, std::string> outputs;
             if (GView::GenericPlugins::Hashes::ComputeHash(
-                      outputs, static_cast<uint32>(GView::GenericPlugins::Hashes::Hashes::MD5), object) == false)
+                      outputs, static_cast<uint32>(GView::GenericPlugins::Hashes::Hashes::MD5), object, computeForFile, selectedZones) ==
+                false)
             {
                 Dialogs::MessageBox::ShowError("Error!", "Failed computing MD5!");
                 RETURNERROR(false, "Failed computing MD5!");
@@ -884,7 +952,8 @@ extern "C"
         {
             std::map<std::string, std::string> outputs;
             if (GView::GenericPlugins::Hashes::ComputeHash(
-                      outputs, static_cast<uint32>(GView::GenericPlugins::Hashes::Hashes::SHA256), object) == false)
+                      outputs, static_cast<uint32>(GView::GenericPlugins::Hashes::Hashes::SHA256), object, computeForFile, selectedZones) ==
+                false)
             {
                 Dialogs::MessageBox::ShowError("Error!", "Failed computing SHA256!");
                 RETURNERROR(false, "Failed computing SHA256!");

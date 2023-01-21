@@ -853,6 +853,24 @@ namespace Type
             static std::string_view ResourceIDToName(ResourceType resType);
             static std::string_view LanguageIDToName(uint32 langID);
             static std::string_view DirectoryIDToName(uint32 dirID);
+
+          public:
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
 
         namespace Panels
@@ -1150,7 +1168,7 @@ namespace Type
                 Reference<AppCUI::Controls::ListView> general;
 
                 ListViewItem humanReadable;
-                ListViewItem PEMs;         
+                ListViewItem PEMs;
 
                 inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
                 inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };

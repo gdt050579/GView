@@ -33,6 +33,24 @@ class ZIPFile : public TypeInterface, public View::ContainerViewer::EnumerateInt
     virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+
+  public:
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 namespace Panels

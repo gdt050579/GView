@@ -47,7 +47,7 @@ extern "C"
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PYEXTRACTOR::PYEXTRACTORFile> py)
     {
         BufferViewer::Settings settings;
-        win->CreateViewer("BufferView", settings);
+        py->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<PYEXTRACTOR::PYEXTRACTORFile> py)

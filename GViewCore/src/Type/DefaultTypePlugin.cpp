@@ -16,6 +16,23 @@ class DefaultType : public TypeInterface
     ~DefaultType()
     {
     }
+
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 class DefaultInformationPanel : public TabPage
@@ -40,6 +57,8 @@ TypeInterface* CreateInstance()
 
 bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 {
+    auto dt = win->GetObject()->GetContentType<DefaultType>();
+
     // at least one view and one information panel
     // 1. info panel
     win->AddPanel(Pointer<TabPage>(new DefaultInformationPanel(win->GetObject())), true);
@@ -51,8 +70,11 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 
     if (enc != CharacterEncoding::Encoding::Binary)
         win->CreateViewer<View::TextViewer::Settings>("Text view");
+
     // add a buffer view as a default view
-    win->CreateViewer<View::BufferViewer::Settings>("Buffer view");
+    GView::View::BufferViewer::Settings s{};
+    dt->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer view", s);
+
     return true;
 }
 } // namespace GView::Type::DefaultTypePlugin

@@ -23,7 +23,6 @@ extern "C"
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
         auto json = win->GetObject()->GetContentType<JSON::JSONFile>();
-        // ini->Update();
 
         LexicalViewer::Settings settings;
         settings.SetParser(json.ToObjectRef<LexicalViewer::ParseInterface>());
@@ -32,7 +31,9 @@ extern "C"
         win->CreateViewer("Lexical", settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
-        win->CreateViewer<BufferViewer::Settings>("Buffer View");
+
+        GView::View::BufferViewer::Settings s{};
+        json->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new JSON::Panels::Information(json)), true);

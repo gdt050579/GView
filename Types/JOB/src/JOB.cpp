@@ -100,7 +100,7 @@ extern "C"
             offset += sizeof(JOB::JobSignature);
         }
 
-        win->CreateViewer("BufferView", settings);
+        job->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

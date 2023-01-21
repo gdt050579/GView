@@ -322,7 +322,7 @@ bool Info::Decompress(Buffer& output, uint32 index, const std::string& password)
 
     output.Reserve(entry.uncompressed_size);
 
-    CHECK(mz_zip_reader_entry_save_buffer(reader.value, output.GetData(), entry.uncompressed_size) == MZ_OK, false, "");
+    CHECK(mz_zip_reader_entry_save_buffer(reader.value, output.GetData(), (int32_t) entry.uncompressed_size) == MZ_OK, false, "");
 
     output.Resize(entry.uncompressed_size);
 
@@ -346,14 +346,14 @@ bool Info::Decompress(const BufferView& input, Buffer& output, uint32 index, con
     CHECK(mz_zip_reader_open_buffer(
                 reader.value,
                 const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(input.GetData())),
-                input.GetLength(),
+                (int32_t) input.GetLength(),
                 /* don't copy */ 0) == MZ_OK,
           false,
           "");
 
     output.Reserve(entry.uncompressed_size);
 
-    CHECK(mz_zip_reader_entry_save_buffer(reader.value, output.GetData(), entry.uncompressed_size) == MZ_OK, false, "");
+    CHECK(mz_zip_reader_entry_save_buffer(reader.value, output.GetData(), (int32_t) entry.uncompressed_size) == MZ_OK, false, "");
 
     output.Resize(entry.uncompressed_size);
 
