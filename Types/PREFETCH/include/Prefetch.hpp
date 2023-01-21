@@ -93,6 +93,24 @@ class PrefetchFile : public TypeInterface
           uint32 directoryStringsOffset,
           uint32 i);
     bool SetEntries(uint32 sectionASize, uint32 sectionBSize, uint32 sectionCSize);
+
+  public:
+    Reference<GView::Utils::SelectionZoneInteface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 namespace Panels
