@@ -37,6 +37,19 @@ struct CORE_EXPORT TypeInterface
     virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
 
+    struct SelectionZone
+    {
+        uint64 start, end;
+    };
+    virtual uint32 GetSelectionZonesCount()
+    {
+        return 0;
+    }
+    virtual SelectionZone GetSelectionZone(uint32 index)
+    {
+        return { 0, 0 };
+    }
+
     template <typename T>
     Reference<T> To()
     {
@@ -137,6 +150,11 @@ namespace Utils
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
+    struct CORE_EXPORT SelectionZoneInteface
+    {
+        virtual uint32 GetSelectionZonesCount() const                                    = 0;
+        virtual GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const = 0;
+    };
 } // namespace Utils
 
 namespace Hashes
@@ -1375,6 +1393,9 @@ namespace View
             T settings;
             return CreateViewer(name, settings);
         }
+
+        virtual Reference<GView::Utils::SelectionZoneInteface> GetSelectionZoneInterfaceFromViewerCreation(
+              const std::string_view& name, View::BufferViewer::Settings& settings) = 0;
     };
 }; // namespace View
 namespace App
