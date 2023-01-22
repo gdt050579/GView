@@ -341,7 +341,20 @@ bool Instance::ShowGoToDialog()
 }
 bool Instance::ShowFindDialog()
 {
-    NOT_IMPLEMENTED(false);
+    FindDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData());
+    CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
+
+    const auto nextPos = dlg.GetResultedPos();
+    if (nextPos == GView::Utils::INVALID_OFFSET)
+    {
+        Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
+    }
+    else
+    {
+        MoveTo(dlg.GetResultedPos(), false);
+    }
+
+    return true;
 }
 bool Instance::ShowCopyDialog()
 {

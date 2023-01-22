@@ -274,6 +274,23 @@ namespace View
                 return resultedPos;
             }
         };
+        class FindDialog : public Window
+        {
+          private:
+            Utils::DataCache& cache;
+            Reference<SettingsData> settings;
+            uint64 currentPos;
+            uint64 resultedPos;
+
+          public:
+            FindDialog(Reference<SettingsData> settings, uint64 currentPos, Utils::DataCache& cache);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint64 GetResultedPos() const
+            {
+                return resultedPos;
+            }
+        };
     } // namespace BufferViewer
 } // namespace View
 
