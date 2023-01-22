@@ -274,22 +274,36 @@ namespace View
                 return resultedPos;
             }
         };
-        class FindDialog : public Window
+        class FindDialog : public Window, public Handlers::OnCheckInterface
         {
           private:
-            Utils::DataCache& cache;
+            Reference<GView::Object> object;
             Reference<SettingsData> settings;
             uint64 currentPos;
             uint64 resultedPos;
 
+            Reference<CanvasViewer> description;
+            Reference<TextField> input;
+            Reference<CheckBox> textOption;
+            Reference<CheckBox> binaryOption;
+            Reference<CheckBox> textAscii;
+            Reference<CheckBox> textUnicode;
+            Reference<CheckBox> fileSearch;
+            Reference<CheckBox> selectionSearch;
+
           public:
-            FindDialog(Reference<SettingsData> settings, uint64 currentPos, Utils::DataCache& cache);
+            FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
             inline uint64 GetResultedPos() const
             {
                 return resultedPos;
             }
+
+            void OnCheck(Reference<Controls::Control> control, bool value) override;
+
+            bool SetDescription();
         };
     } // namespace BufferViewer
 } // namespace View

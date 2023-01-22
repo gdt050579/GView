@@ -341,7 +341,7 @@ bool Instance::ShowGoToDialog()
 }
 bool Instance::ShowFindDialog()
 {
-    FindDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData());
+    FindDialog dlg(settings.get(), this->Cursor.currentPos, this->obj);
     CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
 
     const auto nextPos = dlg.GetResultedPos();
