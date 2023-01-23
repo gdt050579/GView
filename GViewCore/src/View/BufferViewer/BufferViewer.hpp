@@ -127,6 +127,13 @@ namespace View
                 uint32 size;
                 uint64 start, end;
                 bool highlight;
+                void Clear()
+                {
+                    start     = GView::Utils::INVALID_OFFSET;
+                    end       = GView::Utils::INVALID_OFFSET;
+                    size      = 0;
+                    buffer[0] = 0;
+                }
             } CurrentSelection;
 
             bool showTypeObjects;

@@ -1359,6 +1359,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         }
         return false;
     case BUFFERVIEW_CMD_CHANGESELECTION:
+        if (this->selection.IsMultiSelectionEnabled())
+        {
+            this->CurrentSelection.Clear();
+        }
         this->selection.InvertMultiSelectionMode();
         return true;
     case BUFFERVIEW_CMD_HIDESTRINGS:
