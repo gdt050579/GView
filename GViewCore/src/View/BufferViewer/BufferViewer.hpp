@@ -288,8 +288,12 @@ namespace View
             Reference<CheckBox> binaryOption;
             Reference<CheckBox> textAscii;
             Reference<CheckBox> textUnicode;
-            Reference<CheckBox> fileSearch;
-            Reference<CheckBox> selectionSearch;
+            Reference<CheckBox> searchFile;
+            Reference<CheckBox> searchSelection;
+            Reference<CheckBox> bufferSelect;
+            Reference<CheckBox> bufferMoveCursorTo;
+            Reference<CheckBox> ignoreCase;
+            Reference<CheckBox> alingTextToUpperLeftCorner;
 
           public:
             FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object);
@@ -304,6 +308,7 @@ namespace View
             void OnCheck(Reference<Controls::Control> control, bool value) override;
 
             bool SetDescription();
+            bool Update();
         };
     } // namespace BufferViewer
 } // namespace View
