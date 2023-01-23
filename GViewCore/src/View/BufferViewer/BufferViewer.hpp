@@ -288,6 +288,8 @@ namespace View
             Reference<CheckBox> binaryOption;
             Reference<CheckBox> textAscii;
             Reference<CheckBox> textUnicode;
+            Reference<CheckBox> textHex;
+            Reference<CheckBox> textDec;
             Reference<CheckBox> searchFile;
             Reference<CheckBox> searchSelection;
             Reference<CheckBox> bufferSelect;
