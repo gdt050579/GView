@@ -344,14 +344,30 @@ bool Instance::ShowFindDialog()
     FindDialog dlg(settings.get(), this->Cursor.currentPos, this->obj);
     CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
 
-    const auto nextPos = dlg.GetResultedPos();
-    if (nextPos == GView::Utils::INVALID_OFFSET)
+    const auto found = dlg.GetPatternFound();
+    if (found)
     {
-        Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
+        const auto start = dlg.GetMatchOffset();
+        if (dlg.AlignToUpperRightCorner())
+        {
+            MoveScrollTo(start);
+        }
+        else
+        {
+            MoveTo(start, false);
+        }
+
+        if (dlg.SelectMatch())
+        {
+            this->selection.Clear();
+            this->selection.BeginSelection(start);
+            this->selection.UpdateSelection(0, start + dlg.GetMatchLength() - 1);
+            UpdateCurrentSelection();
+        }
     }
     else
     {
-        MoveTo(dlg.GetResultedPos(), false);
+        Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
     }
 
     return true;

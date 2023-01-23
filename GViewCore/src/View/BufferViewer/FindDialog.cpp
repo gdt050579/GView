@@ -1,6 +1,7 @@
 #include "BufferViewer.hpp"
 
 #include <array>
+#include <regex>
 
 namespace GView::View::BufferViewer
 {
@@ -18,14 +19,15 @@ constexpr int32 CHECKBOX_ID_IGNORE_CASE           = 11;
 constexpr int32 CHECKBOX_ID_ALIGN_TEXT_UPPER_LEFT = 12;
 constexpr int32 CHECKBOX_ID_TEXT_HEX              = 13;
 constexpr int32 CHECKBOX_ID_TEXT_DEC              = 14;
+constexpr int32 CHECKBOX_ID_TEXT_REGEX            = 15;
 
 constexpr uint32 DIALOG_HEIGHT_TEXT_FORMAT      = 18;
 constexpr uint32 DESCRIPTION_HEIGHT_TEXT_FORMAT = 3;
-constexpr std::string_view TEXT_FORMAT_TITLE    = "Text Format";
-constexpr std::string_view TEXT_FORMAT_BODY     = "Enter the plain text to find. Alt+I to focus on input text field.";
+constexpr std::string_view TEXT_FORMAT_TITLE    = "Text Pattern";
+constexpr std::string_view TEXT_FORMAT_BODY     = "Plain text or regex (ECMAScript) to find. Alt+I to focus on input text field.";
 
-constexpr std::string_view BINARY_FORMAT_TITLE = "Binary Format";
-constexpr std::array<std::string_view, 8> BINARY_FORMAT_BODY{ "Enter the pattern to find. Alt+I to focus on input text field.",
+constexpr std::string_view BINARY_FORMAT_TITLE = "Binary Pattern";
+constexpr std::array<std::string_view, 8> BINARY_FORMAT_BODY{ "Binary pattern to find. Alt+I to focus on input text field.",
                                                               "- \'string\' or \"string\"",
                                                               "- ? for anything and numbers",
                                                               "- can have specifier:",
@@ -40,7 +42,7 @@ constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT =
 
 FindDialog::FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object)
     : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), settings(settings), currentPos(currentPos),
-      object(object), resultedPos(GView::Utils::INVALID_OFFSET)
+      object(object), position(GView::Utils::INVALID_OFFSET)
 {
     description = Factory::CanvasViewer::Create(
           this,
@@ -69,9 +71,14 @@ FindDialog::FindDialog(Reference<SettingsData> settings, uint64 currentPos, Refe
     textHex = Factory::CheckBox::Create(this, "&Hex - default base", "x:60%,y:5,w:40%,h:1", CHECKBOX_ID_TEXT_HEX);
     textHex->SetChecked(true);
     textHex->Handlers()->OnCheck = this;
+    textHex->SetVisible(false);
 
     textDec                      = Factory::CheckBox::Create(this, "&Dec - default base", "x:60%,y:6,w:40%,h:1", CHECKBOX_ID_TEXT_DEC);
     textDec->Handlers()->OnCheck = this;
+    textDec->SetVisible(false);
+
+    textRegex                      = Factory::CheckBox::Create(this, "Use &Regex", "x:60%,y:7,w:40%,h:1", CHECKBOX_ID_TEXT_REGEX);
+    textRegex->Handlers()->OnCheck = this;
 
     searchFile = Factory::CheckBox::Create(this, "&File Search", "x:0,y:8,w:40%,h:1", CHECKBOX_ID_SEARCH_FILE);
     searchFile->SetChecked(true);
@@ -120,6 +127,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case BTN_ID_OK:
             Exit(Dialogs::Result::Ok);
+            CHECK(ProcessInput(), false, "");
             return true;
         }
     }
@@ -128,6 +136,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
     {
     case Event::WindowAccept:
         Exit(Dialogs::Result::Ok);
+        CHECK(ProcessInput(), false, "");
         return true;
     case Event::WindowClose:
         Exit(Dialogs::Result::Cancel);
@@ -274,6 +283,7 @@ bool FindDialog::Update()
     {
         textAscii->SetVisible(true);
         textUnicode->SetVisible(true);
+        textRegex->SetVisible(true);
 
         textHex->SetVisible(false);
         textDec->SetVisible(false);
@@ -287,6 +297,7 @@ bool FindDialog::Update()
 
     textAscii->SetVisible(false);
     textUnicode->SetVisible(false);
+    textRegex->SetVisible(false);
 
     textHex->SetVisible(true);
     textDec->SetVisible(true);
@@ -303,4 +314,209 @@ bool FindDialog::Update()
 
     return true;
 }
+
+bool FindDialog::ProcessInput()
+{
+    UnicodeStringBuilder usb{};
+    CHECK(usb.Set(input->GetText()), false, "");
+    CHECK(usb.Len() > 0, false, "");
+
+    std::vector<TypeInterface::SelectionZone> selectedZones;
+    for (auto i = 0U; i < this->object->GetContentType()->GetSelectionZonesCount(); i++)
+    {
+        selectedZones.emplace_back(this->object->GetContentType()->GetSelectionZone(i));
+    }
+
+    const auto computeForFile = !searchSelection->IsChecked();
+
+    auto objectSize = 0ULL;
+    if (computeForFile)
+    {
+        objectSize = object->GetData().GetSize();
+    }
+    else
+    {
+        for (auto& sz : selectedZones)
+        {
+            objectSize += sz.end - sz.start + 1;
+        }
+    }
+    ProgressStatus::Init("Searching...", objectSize);
+
+    LocalString<512> ls;
+
+    const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
+    if (objectSize > 0xFFFFFFFF)
+    {
+        format = "[0x%.16llX/0x%.16llX] bytes...";
+    }
+
+    const auto block = object->GetData().GetCacheSize();
+
+    if (textOption->IsChecked())
+    {
+        if (textAscii->IsChecked())
+        {
+            std::string ascii;
+            usb.ToString(ascii);
+
+            if (textRegex->IsChecked() == false)
+            {
+                const static std::regex specialChars{ R"([-[\]{}()*+?.,\^$|#\s])" };
+                ascii = std::regex_replace(ascii, specialChars, R"(\$&)");
+            }
+
+            const std::regex pattern(
+                  ascii,
+                  (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
+                                           : std::regex_constants::ECMAScript | std::regex_constants::optimize));
+
+            std::string input;
+            if (computeForFile)
+            {
+                auto offset = currentPos;
+                auto left   = object->GetData().GetSize() - currentPos;
+
+                do
+                {
+                    CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+                    const auto sizeToRead = (left >= block ? block : left);
+                    left -= (left >= block ? block : left);
+
+                    const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
+                    CHECK(buffer.IsValid(), false, "");
+
+                    input.assign((char*) buffer.GetData(), buffer.GetLength());
+                    std::smatch m{};
+                    found = std::regex_search(input, m, pattern);
+                    if (found)
+                    {
+                        this->position = offset + m.position();
+                        this->length   = m.length();
+
+                        return true;
+                    }
+
+                    offset += sizeToRead;
+                } while (left > 0);
+            }
+            else
+            {
+                for (const auto& zone : selectedZones)
+                {
+                    auto offset = zone.start;
+                    auto left   = zone.end - zone.start + 1;
+
+                    do
+                    {
+                        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+                        const auto sizeToRead = (left >= block ? block : left);
+                        left -= (left >= block ? block : left);
+
+                        const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
+                        CHECK(buffer.IsValid(), false, "");
+
+                        input.assign((char*) buffer.GetData(), buffer.GetLength());
+                        std::smatch m{};
+                        found = std::regex_search(input, m, pattern);
+                        if (found)
+                        {
+                            this->position = offset + m.position();
+                            this->length   = m.length();
+
+                            return true;
+                        }
+
+                        offset += sizeToRead;
+                    } while (left > 0);
+                }
+            }
+        }
+        else
+        {
+            std::wstring unicode{ (wchar_t*) usb.ToStringView().data(), usb.ToStringView().size() };
+
+            if (textRegex->IsChecked() == false)
+            {
+                const static std::wregex specialChars{ LR"([-[\]{}()*+?.,\^$|#\s])" };
+                unicode = std::regex_replace(unicode, specialChars, LR"(\$&)");
+            }
+
+            const std::wregex pattern(
+                  (wchar_t*) usb.ToStringView().data(),
+                  (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
+                                           : std::regex_constants::ECMAScript | std::regex_constants::optimize));
+
+            if (computeForFile)
+            {
+                auto offset = currentPos;
+                auto left   = object->GetData().GetSize() - currentPos;
+
+                do
+                {
+                    CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+                    const auto sizeToRead = (left >= block ? block : left);
+                    left -= (left >= block ? block : left);
+
+                    const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
+                    CHECK(buffer.IsValid(), false, "");
+
+                    std::wstring input{ (wchar_t*) buffer.GetData(), buffer.GetLength() };
+                    std::wsmatch m{};
+                    found = std::regex_search(input, m, pattern);
+                    if (found)
+                    {
+                        this->position = offset + m.position();
+                        this->length   = m.length();
+
+                        return true;
+                    }
+
+                    offset += sizeToRead;
+                } while (left > 0);
+            }
+            else
+            {
+                for (const auto& zone : selectedZones)
+                {
+                    auto offset = zone.start;
+                    auto left   = zone.end - zone.start + 1;
+
+                    do
+                    {
+                        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+                        const auto sizeToRead = (left >= block ? block : left);
+                        left -= (left >= block ? block : left);
+
+                        const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
+                        CHECK(buffer.IsValid(), false, "");
+
+                        std::wstring input{ (wchar_t*) buffer.GetData(), buffer.GetLength() };
+                        std::wsmatch m{};
+                        found = std::regex_search(input, m, pattern);
+                        if (found)
+                        {
+                            this->position = offset + m.position();
+                            this->length   = m.length();
+
+                            return true;
+                        }
+
+                        offset += sizeToRead;
+                    } while (left > 0);
+                }
+            }
+        }
+    }
+    else
+    {
+    }
+
+    return false;
+}
+
 } // namespace GView::View::BufferViewer

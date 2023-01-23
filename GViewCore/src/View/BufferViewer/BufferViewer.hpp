@@ -287,7 +287,6 @@ namespace View
             Reference<GView::Object> object;
             Reference<SettingsData> settings;
             uint64 currentPos;
-            uint64 resultedPos;
 
             Reference<CanvasViewer> description;
             Reference<TextField> input;
@@ -295,6 +294,7 @@ namespace View
             Reference<CheckBox> binaryOption;
             Reference<CheckBox> textAscii;
             Reference<CheckBox> textUnicode;
+            Reference<CheckBox> textRegex;
             Reference<CheckBox> textHex;
             Reference<CheckBox> textDec;
             Reference<CheckBox> searchFile;
@@ -304,20 +304,44 @@ namespace View
             Reference<CheckBox> ignoreCase;
             Reference<CheckBox> alingTextToUpperLeftCorner;
 
+            bool found{ false };
+            uint64 position{ 0 };
+            uint64 length{ 0 };
+
+            bool ProcessInput();
+
           public:
             FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object);
 
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
-            inline uint64 GetResultedPos() const
-            {
-                return resultedPos;
-            }
 
             void OnCheck(Reference<Controls::Control> control, bool value) override;
 
             bool SetDescription();
             bool Update();
+            bool GetPatternFound() const
+            {
+                return found;
+            }
+            uint64 GetMatchOffset() const
+            {
+                return position;
+            }
+            uint64 GetMatchLength() const
+            {
+                return length;
+            }
+            bool SelectMatch()
+            {
+                CHECK(bufferSelect.IsValid(), false, "");
+                return bufferSelect->IsChecked();
+            }
+            bool AlignToUpperRightCorner()
+            {
+                CHECK(alingTextToUpperLeftCorner.IsValid(), false, "");
+                return alingTextToUpperLeftCorner->IsChecked();
+            }
         };
     } // namespace BufferViewer
 } // namespace View
