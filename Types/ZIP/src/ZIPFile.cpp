@@ -273,7 +273,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             const auto cache = obj->GetData().GetEntireFile();
             if (cache.IsValid())
             {
-                decompressed == this->info.Decompress(cache, buffer, (uint32) index, password);
+                decompressed = this->info.Decompress(cache, buffer, (uint32) index, password);
             }
         }
 
@@ -307,7 +307,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             const auto cache = obj->GetData().GetEntireFile();
             if (cache.IsValid())
             {
-                decompressed == this->info.Decompress(cache, buffer, (uint32) index, pd.GetPassword());
+                decompressed = this->info.Decompress(cache, buffer, (uint32) index, pd.GetPassword());
             }
         }
 
