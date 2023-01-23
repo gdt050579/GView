@@ -33,6 +33,7 @@ extern "C"
         settings.AddPlugin(&js->plugins.addStrings);
         settings.AddPlugin(&js->plugins.reverseStrings);
         settings.AddPlugin(&js->plugins.replaceConstants);
+        settings.AddPlugin(&js->plugins.removeComments);
 
         win->CreateViewer("Lexical", settings);
 
