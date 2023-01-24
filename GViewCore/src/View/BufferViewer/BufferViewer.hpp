@@ -65,11 +65,76 @@ namespace View
                 AppCUI::Input::Key GoToEntryPoint;
                 AppCUI::Input::Key ChangeSelectionType;
                 AppCUI::Input::Key ShowHideStrings;
+                AppCUI::Input::Key FindNext;
+                AppCUI::Input::Key FindPrevious;
             } Keys;
             bool Loaded;
 
             static void Update(IniSection sect);
             void Initialize();
+        };
+
+        class FindDialog : public Window, public Handlers::OnCheckInterface
+        {
+          private:
+            Reference<GView::Object> object;
+            Reference<SettingsData> settings;
+            uint64 currentPos;
+
+            Reference<CanvasViewer> description;
+            Reference<TextField> input;
+            Reference<CheckBox> textOption;
+            Reference<CheckBox> binaryOption;
+            Reference<CheckBox> textAscii;
+            Reference<CheckBox> textUnicode;
+            Reference<CheckBox> textRegex;
+            Reference<CheckBox> textHex;
+            Reference<CheckBox> textDec;
+            Reference<CheckBox> searchFile;
+            Reference<CheckBox> searchSelection;
+            Reference<CheckBox> bufferSelect;
+            Reference<CheckBox> bufferMoveCursorTo;
+            Reference<CheckBox> ignoreCase;
+            Reference<CheckBox> alingTextToUpperLeftCorner;
+
+            uint64 position{ 0 };
+            uint64 length{ 0 };
+
+            UnicodeStringBuilder usb;
+            std::pair<uint64, uint64> match;
+            bool newRequest{ true };
+            bool ProcessInput(uint64 end = GView::Utils::INVALID_OFFSET, bool last = false);
+
+          public:
+            FindDialog();
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
+            virtual void OnCheck(Reference<Controls::Control> control, bool value) override;
+            virtual void OnFocus() override; // but it's triggered only on first show call :(
+
+            bool SetDescription();
+            bool Update();
+            void UpdateData(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object);
+            std::pair<uint64, uint64> GetNextMatch(uint64 currentPos);
+            std::pair<uint64, uint64> GetPreviousMatch(uint64 currentPos);
+
+            bool SelectMatch()
+            {
+                CHECK(bufferSelect.IsValid(), false, "");
+                return bufferSelect->IsChecked();
+            }
+            bool AlignToUpperRightCorner()
+            {
+                CHECK(alingTextToUpperLeftCorner.IsValid(), false, "");
+                return alingTextToUpperLeftCorner->IsChecked();
+            }
+            bool HasResults() const
+            {
+                const auto& [start, length] = match;
+                CHECK(start != GView::Utils::INVALID_OFFSET && length > 0, false, "");
+                return true;
+            }
         };
 
         class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface
@@ -148,6 +213,8 @@ namespace View
             FixSizeString<29> name;
 
             static Config config;
+
+            FindDialog findDialog;
 
             int PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r);
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
@@ -279,68 +346,6 @@ namespace View
             inline uint64 GetResultedPos() const
             {
                 return resultedPos;
-            }
-        };
-        class FindDialog : public Window, public Handlers::OnCheckInterface
-        {
-          private:
-            Reference<GView::Object> object;
-            Reference<SettingsData> settings;
-            uint64 currentPos;
-
-            Reference<CanvasViewer> description;
-            Reference<TextField> input;
-            Reference<CheckBox> textOption;
-            Reference<CheckBox> binaryOption;
-            Reference<CheckBox> textAscii;
-            Reference<CheckBox> textUnicode;
-            Reference<CheckBox> textRegex;
-            Reference<CheckBox> textHex;
-            Reference<CheckBox> textDec;
-            Reference<CheckBox> searchFile;
-            Reference<CheckBox> searchSelection;
-            Reference<CheckBox> bufferSelect;
-            Reference<CheckBox> bufferMoveCursorTo;
-            Reference<CheckBox> ignoreCase;
-            Reference<CheckBox> alingTextToUpperLeftCorner;
-
-            bool found{ false };
-            uint64 position{ 0 };
-            uint64 length{ 0 };
-
-            bool ProcessInput();
-
-          public:
-            FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object);
-
-            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-            virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
-
-            void OnCheck(Reference<Controls::Control> control, bool value) override;
-
-            bool SetDescription();
-            bool Update();
-            bool GetPatternFound() const
-            {
-                return found;
-            }
-            uint64 GetMatchOffset() const
-            {
-                return position;
-            }
-            uint64 GetMatchLength() const
-            {
-                return length;
-            }
-            bool SelectMatch()
-            {
-                CHECK(bufferSelect.IsValid(), false, "");
-                return bufferSelect->IsChecked();
-            }
-            bool AlignToUpperRightCorner()
-            {
-                CHECK(alingTextToUpperLeftCorner.IsValid(), false, "");
-                return alingTextToUpperLeftCorner->IsChecked();
             }
         };
     } // namespace BufferViewer

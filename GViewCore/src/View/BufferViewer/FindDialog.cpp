@@ -39,9 +39,9 @@ constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT =
 
 constexpr std::string_view ANYTHING_PATTERN{ "???" };
 
-FindDialog::FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object)
-    : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), settings(settings), currentPos(currentPos),
-      object(object), position(GView::Utils::INVALID_OFFSET)
+FindDialog::FindDialog()
+    : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
+      position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })
 {
     description = Factory::CanvasViewer::Create(
           this,
@@ -86,12 +86,6 @@ FindDialog::FindDialog(Reference<SettingsData> settings, uint64 currentPos, Refe
     searchSelection = Factory::CheckBox::Create(this, "&Selection Search", "x:0,y:9,w:40%,h:1", CHECKBOX_ID_SEARCH_SELECTION);
     searchSelection->Handlers()->OnCheck = this;
 
-    if (object->GetContentType()->GetSelectionZonesCount() == 0)
-    {
-        searchFile->SetEnabled(false);
-        searchSelection->SetEnabled(false);
-    }
-
     bufferSelect = Factory::CheckBox::Create(this, "&Select buffer", "x:60%,y:8,w:40%,h:1", CHECKBOX_ID_BUFFER_SELECT);
     bufferSelect->SetChecked(true);
     bufferSelect->Handlers()->OnCheck = this;
@@ -126,6 +120,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
             return true;
         case BTN_ID_OK:
             Exit(Dialogs::Result::Ok);
+            newRequest = true;
             CHECK(ProcessInput(), false, "");
             return true;
         }
@@ -135,6 +130,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
     {
     case Event::WindowAccept:
         Exit(Dialogs::Result::Ok);
+        newRequest = true;
         CHECK(ProcessInput(), false, "");
         return true;
     case Event::WindowClose:
@@ -219,6 +215,15 @@ void FindDialog::OnCheck(Reference<Controls::Control> control, bool value)
     }
 }
 
+void FindDialog::OnFocus()
+{
+    if (this->input.IsValid())
+    {
+        this->input->SetFocus();
+    }
+    return Window::OnFocus();
+}
+
 bool FindDialog::SetDescription()
 {
     const auto height = textOption->IsChecked() ? DESCRIPTION_HEIGHT_TEXT_FORMAT : DESCRIPTION_HEIGHT_BINARY_FORMAT;
@@ -263,8 +268,8 @@ bool FindDialog::SetDescription()
 
 bool FindDialog::Update()
 {
-    if (textOption->IsChecked() && this->GetHeight() == DIALOG_HEIGHT_TEXT_FORMAT ||
-        binaryOption->IsChecked() && this->GetHeight() == DIALOG_HEIGHT_BINARY_FORMAT)
+    if ((textOption->IsChecked() && this->GetHeight() == DIALOG_HEIGHT_TEXT_FORMAT) ||
+        (binaryOption->IsChecked() && this->GetHeight() == DIALOG_HEIGHT_BINARY_FORMAT))
     {
         return true;
     }
@@ -312,6 +317,54 @@ bool FindDialog::Update()
     alingTextToUpperLeftCorner->MoveTo(alingTextToUpperLeftCorner->GetX(), alingTextToUpperLeftCorner->GetY() + deltaSigned);
 
     return true;
+}
+
+void FindDialog::UpdateData(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object)
+{
+    this->settings   = settings;
+    this->currentPos = currentPos;
+    this->object     = object;
+
+    if (object->GetContentType()->GetSelectionZonesCount() == 0)
+    {
+        if (searchFile.IsValid())
+        {
+            searchFile->SetEnabled(false);
+        }
+        if (searchSelection.IsValid())
+        {
+            searchSelection->SetEnabled(false);
+        }
+    }
+}
+
+std::pair<uint64, uint64> FindDialog::GetNextMatch(uint64 currentPos)
+{
+    this->currentPos = currentPos;
+    ProcessInput();
+    return match;
+}
+
+std::pair<uint64, uint64> FindDialog::GetPreviousMatch(uint64 currentPos)
+{
+    const auto initialCurrentPos = this->currentPos;
+    while (true)
+    {
+        const auto end   = currentPos - 1;
+        this->currentPos = this->object->GetData().GetCacheSize() > currentPos ? 0 : currentPos - this->object->GetData().GetCacheSize();
+        ProcessInput(end, true);
+        if (HasResults())
+        {
+            this->currentPos = match.first;
+            break;
+        }
+        CHECKBK(this->currentPos, "");
+    };
+    if (HasResults() == false)
+    {
+        this->currentPos = initialCurrentPos;
+    }
+    return match;
 }
 
 bool ValidateDecimal(std::string_view number)
@@ -375,11 +428,20 @@ bool ValidateHexa(std::string_view number)
     return true;
 }
 
-bool FindDialog::ProcessInput()
+bool FindDialog::ProcessInput(uint64 end, bool last)
 {
-    UnicodeStringBuilder usb{};
+    CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
+    CHECK(settings.IsValid(), false, "");
+    CHECK(object.IsValid(), false, "");
+
     CHECK(usb.Set(input->GetText()), false, "");
     CHECK(usb.Len() > 0, false, "");
+
+    if (newRequest)
+    {
+        match      = { GView::Utils::INVALID_OFFSET, 0 };
+        newRequest = false;
+    }
 
     std::vector<TypeInterface::SelectionZone> selectedZones;
     for (auto i = 0U; i < this->object->GetContentType()->GetSelectionZonesCount(); i++)
@@ -392,7 +454,14 @@ bool FindDialog::ProcessInput()
     auto objectSize = 0ULL;
     if (computeForFile)
     {
-        objectSize = object->GetData().GetSize();
+        if (last && end != GView::Utils::INVALID_OFFSET)
+        {
+            objectSize = end - currentPos;
+        }
+        else
+        {
+            objectSize = object->GetData().GetSize();
+        }
     }
     else
     {
@@ -404,14 +473,13 @@ bool FindDialog::ProcessInput()
     ProgressStatus::Init("Searching...", objectSize);
 
     LocalString<512> ls;
-
     const char* format = "Reading [0x%.8llX/0x%.8llX] bytes...";
     if (objectSize > 0xFFFFFFFF)
     {
         format = "[0x%.16llX/0x%.16llX] bytes...";
     }
 
-    const auto block = object->GetData().GetCacheSize();
+    const auto block = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : object->GetData().GetCacheSize();
 
     const auto SearchInAsciiChunk = [&](uint64 offset, uint64 left, const std::regex& pattern)
     {
@@ -425,16 +493,15 @@ bool FindDialog::ProcessInput()
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            auto start = reinterpret_cast<char const* const>(buffer.GetData());
-            auto end   = reinterpret_cast<char const* const>(start + buffer.GetLength());
-            std::cmatch m{};
-            found = std::regex_search(start, end, m, pattern);
-            if (found)
+            const auto initialStart = reinterpret_cast<char const* const>(buffer.GetData());
+            auto start              = reinterpret_cast<char const* const>(buffer.GetData());
+            auto end                = reinterpret_cast<char const* const>(start + buffer.GetLength());
+            std::cmatch matches{};
+            while (std::regex_search(start, end, matches, pattern))
             {
-                this->position = offset + m.position();
-                this->length   = m.length();
-
-                return true;
+                match = std::pair<uint64, uint64>{ offset + (start - initialStart) + matches.position(), matches.length() };
+                start += matches.position() + matches.length();
+                CHECKBK(last, false, "");
             }
 
             offset += sizeToRead;
@@ -455,16 +522,16 @@ bool FindDialog::ProcessInput()
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            auto start = reinterpret_cast<wchar_t const* const>(buffer.GetData());
-            auto end   = reinterpret_cast<wchar_t const* const>(start + buffer.GetLength());
-            std::wcmatch m{};
-            found = std::regex_search(start, end, m, pattern);
-            if (found)
+            auto initialStart = reinterpret_cast<wchar_t const* const>(buffer.GetData());
+            auto start        = reinterpret_cast<wchar_t const* const>(buffer.GetData());
+            auto end          = reinterpret_cast<wchar_t const* const>(start + buffer.GetLength());
+            std::wcmatch matches{};
+            while (std::regex_search(start, end, matches, pattern))
             {
-                this->position = offset + m.position();
-                this->length   = m.length();
-
-                return true;
+                match =
+                      std::pair<uint64, uint64>{ offset + (start - initialStart) * sizeof(wchar_t) + matches.position(), matches.length() };
+                start += matches.position() + matches.length();
+                CHECKBK(last, false, "");
             }
 
             offset += sizeToRead;
@@ -494,10 +561,10 @@ bool FindDialog::ProcessInput()
             if (computeForFile)
             {
                 auto offset = currentPos;
-                auto left   = object->GetData().GetSize() - currentPos;
+                auto left = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
                 CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-                CHECK(found == false, true, "");
+                CHECK(HasResults() == false, true, "");
             }
             else
             {
@@ -507,7 +574,7 @@ bool FindDialog::ProcessInput()
                     auto left   = zone.end - zone.start + 1;
 
                     CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-                    CHECK(found == false, true, "");
+                    CHECK(HasResults() == false, true, "");
                 }
             }
         }
@@ -529,10 +596,10 @@ bool FindDialog::ProcessInput()
             if (computeForFile)
             {
                 auto offset = currentPos;
-                auto left   = object->GetData().GetSize() - currentPos;
+                auto left = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
                 CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
-                CHECK(found == false, true, "");
+                CHECK(HasResults() == false, true, "");
             }
             else
             {
@@ -542,7 +609,7 @@ bool FindDialog::ProcessInput()
                     auto left   = zone.end - zone.start + 1;
 
                     CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
-                    CHECK(found == false, true, "");
+                    CHECK(HasResults() == false, true, "");
                 }
             }
         }
@@ -642,10 +709,10 @@ bool FindDialog::ProcessInput()
         if (computeForFile)
         {
             auto offset = currentPos;
-            auto left   = object->GetData().GetSize() - currentPos;
+            auto left   = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
             CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-            CHECK(found == false, true, "");
+            CHECK(HasResults() == false, true, "");
         }
         else
         {
@@ -655,7 +722,7 @@ bool FindDialog::ProcessInput()
                 auto left   = zone.end - zone.start + 1;
 
                 CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
-                CHECK(found == false, true, "");
+                CHECK(HasResults() == false, true, "");
             }
         }
     }

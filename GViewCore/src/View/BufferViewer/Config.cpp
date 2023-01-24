@@ -11,6 +11,8 @@ void Config::Update(IniSection sect)
     sect.UpdateValue("Key.GoToEntryPoint", Key::F7, true);
     sect.UpdateValue("Key.ChangeSelectionType", Key::F9, true);
     sect.UpdateValue("Key.ShowHideStrings", Key::F4 | Key::Alt, true);
+    sect.UpdateValue("Key.FindNext", Key::Ctrl | Key::F7, true);
+    sect.UpdateValue("Key.FindPrevious", Key::Ctrl | Key::Shift | Key::F7, true);
 }
 
 void Config::Initialize()
@@ -28,6 +30,8 @@ void Config::Initialize()
         this->Keys.GoToEntryPoint        = sect.GetValue("Key.GoToEntryPoint").ToKey(Key::F7);
         this->Keys.ChangeSelectionType   = sect.GetValue("Key.ChangeSelectionType").ToKey(Key::F9);
         this->Keys.ShowHideStrings       = sect.GetValue("Key.ShowHideStrings").ToKey(Key::Alt | Key::F3);
+        this->Keys.FindNext              = sect.GetValue("Key.FindNext").ToKey(Key::Ctrl | Key::F7);
+        this->Keys.FindPrevious          = sect.GetValue("Key.FindPrevious").ToKey(Key::Ctrl | Key::Shift | Key::F7);
     }
     else
     {
@@ -37,6 +41,8 @@ void Config::Initialize()
         this->Keys.GoToEntryPoint        = Key::F7;
         this->Keys.ChangeSelectionType   = Key::F9;
         this->Keys.ShowHideStrings       = Key::Alt | Key::F3;
+        this->Keys.FindNext              = Key::Ctrl | Key::F7;
+        this->Keys.FindPrevious          = Key::Ctrl | Key::Shift | Key::F7;
     }
 
     this->Loaded = true;
