@@ -27,13 +27,16 @@ constexpr std::string_view TEXT_FORMAT_TITLE    = "Text Pattern";
 constexpr std::string_view TEXT_FORMAT_BODY     = "Plain text or regex (ECMAScript) to find. Alt+I to focus on input text field.";
 
 constexpr std::string_view BINARY_FORMAT_TITLE = "Binary Pattern";
-constexpr std::array<std::string_view, 8> BINARY_FORMAT_BODY{ "Binary pattern to find. Alt+I to focus on input text field.",
+constexpr std::array<std::string_view, 4> BINARY_FORMAT_BODY{ "Binary pattern to find. Alt+I to focus on input text field.",
                                                               "- bytes separated through spaces",
-                                                              "- input can be decimal or hexadecimal" };
+                                                              "- input can be decimal or hexadecimal (lowercase or uppercase)",
+                                                              "- ? - meaning any character (eg. 0d 0a ? ? 0d 0a)" };
 
 constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT = DIALOG_HEIGHT_TEXT_FORMAT + (uint32) BINARY_FORMAT_BODY.size() - 1U;
 constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT =
       DESCRIPTION_HEIGHT_TEXT_FORMAT + (DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT);
+
+constexpr std::string_view ANYTHING_PATTERN{ "???" };
 
 FindDialog::FindDialog(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object)
     : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), settings(settings), currentPos(currentPos),
@@ -310,6 +313,67 @@ bool FindDialog::Update()
     return true;
 }
 
+bool ValidateDecimal(std::string_view number)
+{
+    CHECK(number.size() <= 3, false, "");
+
+    if (number.find('?') == std::string::npos)
+    {
+        if (number.size() == 3)
+        {
+            CHECK(number[0] >= '0' && number[0] <= '2', false, "");
+            CHECK(number[1] >= '0' && number[1] <= '5', false, "");
+            if (number[1] == '5')
+            {
+                CHECK(number[2] >= '0' && number[2] <= '5', false, "");
+            }
+            else
+            {
+                CHECK(number[2] >= '0' && number[2] <= '9', false, "");
+            }
+        }
+        else if (number.size() == 2)
+        {
+            CHECK(number[0] >= '0' && number[0] <= '9', false, "");
+            CHECK(number[1] >= '0' && number[1] <= '9', false, "");
+        }
+        else if (number.size() == 1)
+        {
+            CHECK(number[0] >= '0' && number[0] <= '9', false, "");
+        }
+    }
+    else
+    {
+        CHECK(ANYTHING_PATTERN.starts_with(number), false, "");
+    }
+
+    return true;
+}
+
+bool ValidateHexa(std::string_view number)
+{
+    CHECK(number.size() <= 2, false, "");
+
+    if (number.find('?') == std::string::npos)
+    {
+        CHECK(number[0] >= '0' && number[0] <= '9' || number[0] >= 'a' && number[0] <= 'f' || number[0] >= 'A' && number[0] <= 'F',
+              false,
+              "");
+        if (number.size() == 2)
+        {
+            CHECK(number[0] >= '1' && number[1] <= '9' || number[1] >= 'a' && number[1] <= 'f' || number[1] >= 'A' && number[1] <= 'F',
+                  false,
+                  "");
+        }
+    }
+    else
+    {
+        CHECK(ANYTHING_PATTERN.starts_with(number), false, "");
+    }
+
+    return true;
+}
+
 bool FindDialog::ProcessInput()
 {
     UnicodeStringBuilder usb{};
@@ -348,6 +412,66 @@ bool FindDialog::ProcessInput()
 
     const auto block = object->GetData().GetCacheSize();
 
+    const auto SearchInAsciiChunk = [&](uint64 offset, uint64 left, const std::regex& pattern)
+    {
+        do
+        {
+            CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+            const auto sizeToRead = (left >= block ? block : left);
+            left -= (left >= block ? block : left);
+
+            const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
+            CHECK(buffer.IsValid(), false, "");
+
+            auto start = reinterpret_cast<char const* const>(buffer.GetData());
+            auto end   = reinterpret_cast<char const* const>(start + buffer.GetLength());
+            std::cmatch m{};
+            found = std::regex_search(start, end, m, pattern);
+            if (found)
+            {
+                this->position = offset + m.position();
+                this->length   = m.length();
+
+                return true;
+            }
+
+            offset += sizeToRead;
+        } while (left > 0);
+
+        return true;
+    };
+
+    const auto SearchInUnicodeChunk = [&](uint64 offset, uint64 left, const std::wregex& pattern)
+    {
+        do
+        {
+            CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
+
+            const auto sizeToRead = (left >= block ? block : left);
+            left -= (left >= block ? block : left);
+
+            const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
+            CHECK(buffer.IsValid(), false, "");
+
+            auto start = reinterpret_cast<wchar_t const* const>(buffer.GetData());
+            auto end   = reinterpret_cast<wchar_t const* const>(start + buffer.GetLength());
+            std::wcmatch m{};
+            found = std::regex_search(start, end, m, pattern);
+            if (found)
+            {
+                this->position = offset + m.position();
+                this->length   = m.length();
+
+                return true;
+            }
+
+            offset += sizeToRead;
+        } while (left > 0);
+
+        return true;
+    };
+
     if (textOption->IsChecked())
     {
         if (textAscii->IsChecked())
@@ -371,30 +495,8 @@ bool FindDialog::ProcessInput()
                 auto offset = currentPos;
                 auto left   = object->GetData().GetSize() - currentPos;
 
-                do
-                {
-                    CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
-
-                    const auto sizeToRead = (left >= block ? block : left);
-                    left -= (left >= block ? block : left);
-
-                    const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
-                    CHECK(buffer.IsValid(), false, "");
-
-                    auto start = (char const* const) buffer.GetData();
-                    auto end   = (char const* const) (start + buffer.GetLength());
-                    std::cmatch m{};
-                    found = std::regex_search(start, end, m, pattern);
-                    if (found)
-                    {
-                        this->position = offset + m.position();
-                        this->length   = m.length();
-
-                        return true;
-                    }
-
-                    offset += sizeToRead;
-                } while (left > 0);
+                CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
+                CHECK(found == false, true, "");
             }
             else
             {
@@ -403,36 +505,14 @@ bool FindDialog::ProcessInput()
                     auto offset = zone.start;
                     auto left   = zone.end - zone.start + 1;
 
-                    do
-                    {
-                        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
-
-                        const auto sizeToRead = (left >= block ? block : left);
-                        left -= (left >= block ? block : left);
-
-                        const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
-                        CHECK(buffer.IsValid(), false, "");
-
-                        auto start = (char const* const) buffer.GetData();
-                        auto end   = (char const* const) (start + buffer.GetLength());
-                        std::cmatch m{};
-                        found = std::regex_search(start, end, m, pattern);
-                        if (found)
-                        {
-                            this->position = offset + m.position();
-                            this->length   = m.length();
-
-                            return true;
-                        }
-
-                        offset += sizeToRead;
-                    } while (left > 0);
+                    CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
+                    CHECK(found == false, true, "");
                 }
             }
         }
         else
         {
-            std::wstring unicode{ (wchar_t*) usb.ToStringView().data(), usb.ToStringView().size() };
+            std::wstring unicode{ reinterpret_cast<const wchar_t*>(usb.ToStringView().data()), usb.ToStringView().size() };
 
             if (textRegex->IsChecked() == false)
             {
@@ -441,7 +521,7 @@ bool FindDialog::ProcessInput()
             }
 
             const std::wregex pattern(
-                  (wchar_t*) usb.ToStringView().data(),
+                  reinterpret_cast<wchar_t const* const>(usb.ToStringView().data()),
                   (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
                                            : std::regex_constants::ECMAScript | std::regex_constants::optimize));
 
@@ -450,30 +530,8 @@ bool FindDialog::ProcessInput()
                 auto offset = currentPos;
                 auto left   = object->GetData().GetSize() - currentPos;
 
-                do
-                {
-                    CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
-
-                    const auto sizeToRead = (left >= block ? block : left);
-                    left -= (left >= block ? block : left);
-
-                    const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
-                    CHECK(buffer.IsValid(), false, "");
-
-                    auto start = (wchar_t const* const) buffer.GetData();
-                    auto end   = (wchar_t const* const) (start + buffer.GetLength());
-                    std::wcmatch m{};
-                    found = std::regex_search(start, end, m, pattern);
-                    if (found)
-                    {
-                        this->position = offset + m.position();
-                        this->length   = m.length();
-
-                        return true;
-                    }
-
-                    offset += sizeToRead;
-                } while (left > 0);
+                CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
+                CHECK(found == false, true, "");
             }
             else
             {
@@ -482,39 +540,125 @@ bool FindDialog::ProcessInput()
                     auto offset = zone.start;
                     auto left   = zone.end - zone.start + 1;
 
-                    do
-                    {
-                        CHECK(ProgressStatus::Update(offset, ls.Format(format, offset, objectSize)) == false, false, "");
-
-                        const auto sizeToRead = (left >= block ? block : left);
-                        left -= (left >= block ? block : left);
-
-                        const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
-                        CHECK(buffer.IsValid(), false, "");
-
-                        auto start = (wchar_t const* const) buffer.GetData();
-                        auto end   = (wchar_t const* const) (start + buffer.GetLength());
-                        std::wcmatch m{};
-                        found = std::regex_search(start, end, m, pattern);
-                        if (found)
-                        {
-                            this->position = offset + m.position();
-                            this->length   = m.length();
-
-                            return true;
-                        }
-
-                        offset += sizeToRead;
-                    } while (left > 0);
+                    CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
+                    CHECK(found == false, true, "");
                 }
             }
         }
     }
     else
     {
+        std::string input;
+        usb.ToString(input);
+
+        std::string regexPayload;
+        regexPayload.reserve(input.size() * 2);
+
+        uint64 last    = 0;
+        uint64 current = input.find_first_of(' ', last);
+        do
+        {
+            if (current == std::string::npos)
+            {
+                current = input.size();
+            }
+
+            std::string_view number{ input.data() + last, current - last };
+
+            if (textDec->IsChecked())
+            {
+                if (ValidateDecimal(number) == false)
+                {
+                    Dialogs::MessageBox::ShowError("Error!", "Invalid input!");
+                    return false;
+                }
+
+                if (number[0] == '?')
+                {
+                    regexPayload.append("[\\x00-\\xFF]");
+                }
+                else
+                {
+                    uint8 n;
+                    const std::from_chars_result resultFrom = std::from_chars(number.data(), number.data() + number.size(), n);
+                    if (resultFrom.ec == std::errc::invalid_argument || resultFrom.ec == std::errc::result_out_of_range)
+                    {
+                        Dialogs::MessageBox::ShowError("Error!", "Invalid input - conversion failed!");
+                        return false;
+                    }
+
+                    char hex[10]                        = { 0 };
+                    const std::to_chars_result resultTo = std::to_chars(std::begin(hex), std::end(hex), n, 16);
+                    if (resultTo.ec == std::errc::invalid_argument || resultTo.ec == std::errc::result_out_of_range)
+                    {
+                        Dialogs::MessageBox::ShowError("Error!", "Invalid input - conversion failed!");
+                        return false;
+                    }
+                    regexPayload.append("\\x");
+                    if (hex[1] == 0)
+                    {
+                        regexPayload.append("0");
+                    }
+                    regexPayload.append(hex);
+                }
+            }
+            else
+            {
+                if (number.size() > 2)
+                {
+                    Dialogs::MessageBox::ShowError("Error!", "Invalid input!");
+                    return false;
+                }
+
+                if (ValidateHexa(number) == false)
+                {
+                    Dialogs::MessageBox::ShowError("Error!", "Invalid input!");
+                    return false;
+                }
+
+                if (number[0] == '?')
+                {
+                    regexPayload.append("[\\x00-\\xFF]");
+                }
+                else
+                {
+                    regexPayload.append("\\x");
+                    if (number.size() == 1)
+                    {
+                        regexPayload.append("0");
+                    }
+                    regexPayload.append(number);
+                }
+            }
+            last = current + 1;
+        } while ((current = input.find_first_of(' ', last)) && last < input.size());
+
+        const std::regex pattern(
+              regexPayload,
+              (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
+                                       : std::regex_constants::ECMAScript | std::regex_constants::optimize));
+
+        if (computeForFile)
+        {
+            auto offset = currentPos;
+            auto left   = object->GetData().GetSize() - currentPos;
+
+            CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
+            CHECK(found == false, true, "");
+        }
+        else
+        {
+            for (const auto& zone : selectedZones)
+            {
+                auto offset = zone.start;
+                auto left   = zone.end - zone.start + 1;
+
+                CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
+                CHECK(found == false, true, "");
+            }
+        }
     }
 
     return false;
 }
-
 } // namespace GView::View::BufferViewer
