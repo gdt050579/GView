@@ -28,13 +28,8 @@ constexpr std::string_view TEXT_FORMAT_BODY     = "Plain text or regex (ECMAScri
 
 constexpr std::string_view BINARY_FORMAT_TITLE = "Binary Pattern";
 constexpr std::array<std::string_view, 8> BINARY_FORMAT_BODY{ "Binary pattern to find. Alt+I to focus on input text field.",
-                                                              "- \'string\' or \"string\"",
-                                                              "- ? for anything and numbers",
-                                                              "- can have specifier:",
-                                                              " * (b) - byte",
-                                                              " * (w) - word",
-                                                              " * (d) - double",
-                                                              " * (q) - qword" };
+                                                              "- bytes separated through spaces",
+                                                              "- input can be decimal or hexadecimal" };
 
 constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT = DIALOG_HEIGHT_TEXT_FORMAT + (uint32) BINARY_FORMAT_BODY.size() - 1U;
 constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT =
@@ -371,7 +366,6 @@ bool FindDialog::ProcessInput()
                   (ignoreCase->IsChecked() ? std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize
                                            : std::regex_constants::ECMAScript | std::regex_constants::optimize));
 
-            std::string input;
             if (computeForFile)
             {
                 auto offset = currentPos;
@@ -387,9 +381,10 @@ bool FindDialog::ProcessInput()
                     const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
                     CHECK(buffer.IsValid(), false, "");
 
-                    input.assign((char*) buffer.GetData(), buffer.GetLength());
-                    std::smatch m{};
-                    found = std::regex_search(input, m, pattern);
+                    auto start = (char const* const) buffer.GetData();
+                    auto end   = (char const* const) (start + buffer.GetLength());
+                    std::cmatch m{};
+                    found = std::regex_search(start, end, m, pattern);
                     if (found)
                     {
                         this->position = offset + m.position();
@@ -418,9 +413,10 @@ bool FindDialog::ProcessInput()
                         const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
                         CHECK(buffer.IsValid(), false, "");
 
-                        input.assign((char*) buffer.GetData(), buffer.GetLength());
-                        std::smatch m{};
-                        found = std::regex_search(input, m, pattern);
+                        auto start = (char const* const) buffer.GetData();
+                        auto end   = (char const* const) (start + buffer.GetLength());
+                        std::cmatch m{};
+                        found = std::regex_search(start, end, m, pattern);
                         if (found)
                         {
                             this->position = offset + m.position();
@@ -464,9 +460,10 @@ bool FindDialog::ProcessInput()
                     const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
                     CHECK(buffer.IsValid(), false, "");
 
-                    std::wstring input{ (wchar_t*) buffer.GetData(), buffer.GetLength() };
-                    std::wsmatch m{};
-                    found = std::regex_search(input, m, pattern);
+                    auto start = (wchar_t const* const) buffer.GetData();
+                    auto end   = (wchar_t const* const) (start + buffer.GetLength());
+                    std::wcmatch m{};
+                    found = std::regex_search(start, end, m, pattern);
                     if (found)
                     {
                         this->position = offset + m.position();
@@ -495,9 +492,10 @@ bool FindDialog::ProcessInput()
                         const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
                         CHECK(buffer.IsValid(), false, "");
 
-                        std::wstring input{ (wchar_t*) buffer.GetData(), buffer.GetLength() };
-                        std::wsmatch m{};
-                        found = std::regex_search(input, m, pattern);
+                        auto start = (wchar_t const* const) buffer.GetData();
+                        auto end   = (wchar_t const* const) (start + buffer.GetLength());
+                        std::wcmatch m{};
+                        found = std::regex_search(start, end, m, pattern);
                         if (found)
                         {
                             this->position = offset + m.position();
