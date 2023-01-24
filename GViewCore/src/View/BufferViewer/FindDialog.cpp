@@ -2,6 +2,7 @@
 
 #include <array>
 #include <regex>
+#include <charconv>
 
 namespace GView::View::BufferViewer
 {
