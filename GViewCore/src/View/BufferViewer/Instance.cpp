@@ -37,6 +37,8 @@ constexpr int BUFFERVIEW_CMD_GOTOEP            = 0xBF03;
 constexpr int BUFFERVIEW_CMD_CHANGECODEPAGE    = 0xBF04;
 constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
 constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
+constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
+constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
 
 Config Instance::config;
 
@@ -341,7 +343,35 @@ bool Instance::ShowGoToDialog()
 }
 bool Instance::ShowFindDialog()
 {
-    NOT_IMPLEMENTED(false);
+    findDialog.UpdateData(this->settings.get(), this->Cursor.currentPos, this->obj);
+    CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
+
+    const auto [start, length] = findDialog.GetNextMatch(this->Cursor.currentPos);
+    if (start != GView::Utils::INVALID_OFFSET && length != GView::Utils::INVALID_OFFSET)
+    {
+        if (findDialog.AlignToUpperRightCorner())
+        {
+            MoveScrollTo(start);
+        }
+        else
+        {
+            MoveTo(start, false);
+        }
+
+        if (findDialog.SelectMatch())
+        {
+            this->selection.Clear();
+            this->selection.BeginSelection(start);
+            this->selection.UpdateSelection(0, start + length - 1);
+            UpdateCurrentSelection();
+        }
+    }
+    else
+    {
+        Dialogs::MessageBox::ShowError("Error!", "Pattern not found!");
+    }
+
+    return true;
 }
 bool Instance::ShowCopyDialog()
 {
@@ -1132,6 +1162,12 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
             commandBar.SetCommand(config.Keys.ShowHideStrings, "Strings:OFF", BUFFERVIEW_CMD_HIDESTRINGS);
     }
 
+    if (findDialog.HasResults())
+    {
+        commandBar.SetCommand(config.Keys.FindNext, "FindNext", BUFFERVIEW_CMD_FINDNEXT);
+        commandBar.SetCommand(config.Keys.FindPrevious, "FindPrevious", BUFFERVIEW_CMD_FINDPREVIOUS);
+    }
+
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
@@ -1346,6 +1382,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         }
         return false;
     case BUFFERVIEW_CMD_CHANGESELECTION:
+        if (this->selection.IsMultiSelectionEnabled())
+        {
+            this->CurrentSelection.Clear();
+        }
         this->selection.InvertMultiSelectionMode();
         return true;
     case BUFFERVIEW_CMD_HIDESTRINGS:
@@ -1358,6 +1398,88 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             this->StringInfo.showAscii = this->StringInfo.showUnicode = true;
         }
         return true;
+    case BUFFERVIEW_CMD_FINDNEXT:
+    {
+        selection.Clear();
+        CurrentSelection.Clear();
+        const auto [start, length] = findDialog.GetNextMatch(this->Cursor.currentPos + 1);
+        if (start != GView::Utils::INVALID_OFFSET && length > 0)
+        {
+            bool samePosition = this->Cursor.currentPos == start;
+
+            if (findDialog.AlignToUpperRightCorner())
+            {
+                MoveScrollTo(start);
+            }
+            else
+            {
+                MoveTo(start, false);
+            }
+
+            if (findDialog.SelectMatch())
+            {
+                this->selection.Clear();
+                this->selection.BeginSelection(start);
+                this->selection.UpdateSelection(0, start + length - 1);
+                UpdateCurrentSelection();
+            }
+
+            if (samePosition)
+            {
+                Dialogs::MessageBox::ShowError("Error!", "No next match found!");
+            }
+        }
+        else
+        {
+            Dialogs::MessageBox::ShowError("Error!", "No next match found!");
+        }
+
+        return true;
+    }
+    case BUFFERVIEW_CMD_FINDPREVIOUS:
+    {
+        if (this->Cursor.currentPos == 0)
+        {
+            Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
+            return true;
+        }
+
+        selection.Clear();
+        CurrentSelection.Clear();
+        const auto [start, length] = findDialog.GetPreviousMatch(this->Cursor.currentPos - 1);
+        if (start != GView::Utils::INVALID_OFFSET && length > 0)
+        {
+            bool samePosition = this->Cursor.currentPos == start;
+
+            if (findDialog.AlignToUpperRightCorner())
+            {
+                MoveScrollTo(start);
+            }
+            else
+            {
+                MoveTo(start, false);
+            }
+
+            if (findDialog.SelectMatch())
+            {
+                this->selection.Clear();
+                this->selection.BeginSelection(start);
+                this->selection.UpdateSelection(0, start + length - 1);
+                UpdateCurrentSelection();
+            }
+
+            if (samePosition)
+            {
+                Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
+            }
+        }
+        else
+        {
+            Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
+        }
+
+        return true;
+    }
     }
     return false;
 }
