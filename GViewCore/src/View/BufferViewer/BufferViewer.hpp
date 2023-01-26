@@ -64,6 +64,7 @@ struct Config
         AppCUI::Input::Key ShowHideStrings;
         AppCUI::Input::Key FindNext;
         AppCUI::Input::Key FindPrevious;
+        AppCUI::Input::Key Copy;
     } Keys;
     bool Loaded;
 
