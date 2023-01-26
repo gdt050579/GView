@@ -319,9 +319,8 @@ bool FindDialog::Update()
     return true;
 }
 
-void FindDialog::UpdateData(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object)
+void FindDialog::UpdateData(uint64 currentPos, Reference<GView::Object> object)
 {
-    this->settings   = settings;
     this->currentPos = currentPos;
     this->object     = object;
 
@@ -431,7 +430,6 @@ bool ValidateHexa(std::string_view number)
 bool FindDialog::ProcessInput(uint64 end, bool last)
 {
     CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
-    CHECK(settings.IsValid(), false, "");
     CHECK(object.IsValid(), false, "");
 
     CHECK(usb.Set(input->GetText()), false, "");
