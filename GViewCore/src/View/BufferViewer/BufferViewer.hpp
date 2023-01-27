@@ -349,15 +349,26 @@ class GoToDialog : public Window
     }
 };
 
-class CopyDialog : public Window
+class CopyDialog : public Window, public Handlers::OnCheckInterface
 {
   private:
     Reference<GView::Object> object;
     uint64 currentPos;
 
+    Reference<RadioBox> copyAscii;
+    Reference<RadioBox> copyUnicode;
+    Reference<CheckBox> copyUnicodeAsSeen;
+    Reference<RadioBox> copyDump;
+    Reference<RadioBox> copyHex;
+    Reference<RadioBox> copyArray;
+
+    Reference<RadioBox> copyFile;
+    Reference<RadioBox> copySelection;
+
   public:
     CopyDialog(Reference<GView::Object> object, uint64 currentPos);
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+    virtual void OnCheck(Reference<Controls::Control> control, bool value) override;
 };
 } // namespace GView::View::BufferViewer
