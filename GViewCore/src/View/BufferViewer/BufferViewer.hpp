@@ -80,17 +80,21 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
 
     Reference<CanvasViewer> description;
     Reference<TextField> input;
-    Reference<CheckBox> textOption;
-    Reference<CheckBox> binaryOption;
-    Reference<CheckBox> textAscii;
-    Reference<CheckBox> textUnicode;
+
+    Reference<RadioBox> textOption;
+    Reference<RadioBox> binaryOption;
+    Reference<RadioBox> textAscii;
+    Reference<RadioBox> textUnicode;
     Reference<CheckBox> textRegex;
-    Reference<CheckBox> textHex;
-    Reference<CheckBox> textDec;
-    Reference<CheckBox> searchFile;
-    Reference<CheckBox> searchSelection;
-    Reference<CheckBox> bufferSelect;
-    Reference<CheckBox> bufferMoveCursorTo;
+    Reference<RadioBox> textHex;
+    Reference<RadioBox> textDec;
+
+    Reference<RadioBox> searchFile;
+    Reference<RadioBox> searchSelection;
+
+    Reference<RadioBox> bufferSelect;
+    Reference<RadioBox> bufferMoveCursorTo;
+
     Reference<CheckBox> ignoreCase;
     Reference<CheckBox> alingTextToUpperLeftCorner;
 
