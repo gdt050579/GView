@@ -97,7 +97,10 @@ bool CopyDialog::Process()
         if (bf.IsValid() == false)
         {
             LocalString<128> message;
-            message.AddFormat("File size is larger than cache size (%llu bytes vs %llu bytes)!", object->GetData().GetSize(), cacheSize);
+            CHECK(message.AddFormat(
+                        "File size is larger than cache size (%llu bytes vs %llu bytes)!", object->GetData().GetSize(), cacheSize),
+                  false,
+                  "");
             Dialogs::MessageBox::ShowError("Error copying to clipboard", message);
             return false;
         }
@@ -112,7 +115,9 @@ bool CopyDialog::Process()
             if (selectionSize > cacheSize)
             {
                 LocalString<128> message;
-                message.AddFormat("Selection #%u is larger than cache size (%llu bytes vs %llu bytes)!", i, selectionSize, cacheSize);
+                CHECK(message.AddFormat("Selection #%u is larger than cache size (%llu bytes vs %llu bytes)!", i, selectionSize, cacheSize),
+                      false,
+                      "");
                 Dialogs::MessageBox::ShowError("Error copying to clipboard", message);
                 return false;
             }
@@ -138,9 +143,8 @@ bool CopyDialog::Process()
         for (const auto c : bf)
         {
             FixSizeString<1> cc;
-
-            cc.AddChar((cp[c] & 0xFF));
-            usb.Add(cc);
+            CHECK(cc.AddChar((cp[c] & 0xFF)), false, "");
+            CHECK(usb.Add(cc), false, "");
         }
     }
     else if (copyUnicode->IsChecked())
@@ -154,39 +158,50 @@ bool CopyDialog::Process()
             for (const auto c : bf)
             {
                 FixSizeUnicode<1> cc;
-                cc.AddChar(cp[c]);
-                usb.Add(cc);
+                CHECK(cc.AddChar(cp[c]), false, "");
+                CHECK(usb.Add(cc), false, "");
             }
         }
     }
     else if (copyDump->IsChecked())
     {
+        String s;
+        for (auto i = 0u; i < bf.GetLength(); i++)
+        {
+            auto c = reinterpret_cast<const char*>(bf.GetData() + i);
+            if (*c != 0)
+            {
+                CHECK(s.Add(c, 1), false, "");
+            }
+        }
+        CHECK(usb.Add(s), false, "");
     }
     else if (copyHex->IsChecked())
     {
         String s;
         for (const auto c : bf)
         {
-            s.AddFormat("%02X ", c);
+            CHECK(s.AddFormat("%02X ", c), false, "");
         }
-        usb.Add(s);
+        CHECK(usb.Add(s), false, "");
     }
     else if (copyArray->IsChecked())
     {
         String s;
-        s.Add("{");
+        CHECK(s.Add("{"), false, "");
         for (const auto c : bf)
         {
-            s.AddFormat("%02X, ", c);
+            CHECK(s.AddFormat("%02X, ", c), false, "");
         }
-        s[s.Len() - 1] = '}';
-        usb.Add(s);
+        s[s.Len() - 2] = '}';
+        CHECK(s.Truncate(s.Len() - 1), false, "");
+        CHECK(usb.Add(s), false, "");
     }
 
     if (AppCUI::OS::Clipboard::SetText(usb) == false)
     {
         LocalString<128> message;
-        message.AddFormat("File size %llu bytes, cache size %llu bytes!", object->GetData().GetSize(), cacheSize);
+        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", object->GetData().GetSize(), cacheSize), false, "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
         return false;
     }
@@ -201,14 +216,14 @@ void CopyDialog::ShowCopiedDataInformation()
     const auto zonesNo = object->GetContentType()->GetSelectionZonesCount();
     if (zonesNo == 0)
     {
-        message.AddFormat("Copied entire file (%llu bytes) to clipboard.", object->GetData().GetSize());
+        CHECKRET(message.AddFormat("Copied entire file (%llu bytes) to clipboard.", object->GetData().GetSize()), "");
     }
     else
     {
         for (uint32 i = 0; i < zonesNo; i++)
         {
             const auto z = object->GetContentType()->GetSelectionZone(i);
-            message.AddFormat("Copied zone (offset %llu, size %llu bytes) to clipboard.", z.start, (z.end - z.start + 1));
+            CHECKRET(message.AddFormat("Copied zone (offset %llu, size %llu bytes) to clipboard.", z.start, (z.end - z.start + 1)), "");
         }
     }
 
