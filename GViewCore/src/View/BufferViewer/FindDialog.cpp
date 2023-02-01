@@ -403,6 +403,13 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
 {
     CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
     CHECK(object.IsValid(), false, "");
+    CHECK(input.IsValid(), false, "");
+
+    if (input->GetText().Len() == 0)
+    {
+        Dialogs::MessageBox::ShowError("Error!", "Missing input!");
+        return false;
+    }
 
     CHECK(usb.Set(input->GetText()), false, "");
     CHECK(usb.Len() > 0, false, "");
