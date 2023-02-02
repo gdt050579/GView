@@ -308,6 +308,11 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 
         return GView::TypeInterface::SelectionZone{ .start = selection.GetSelectionStart(index), .end = selection.GetSelectionEnd(index) };
     }
+
+    Reference<GView::Object> GetObject() const
+    {
+        return obj;
+    };
 };
 
 class SelectionEditor : public Window
@@ -356,8 +361,7 @@ class GoToDialog : public Window
 class CopyDialog : public Window
 {
   private:
-    Reference<GView::Object> object;
-    uint64 currentPos;
+    Reference<GView::View::BufferViewer::Instance> instance;
 
     Reference<RadioBox> copyAscii;
     Reference<RadioBox> copyUnicode;
@@ -373,7 +377,7 @@ class CopyDialog : public Window
     void ShowCopiedDataInformation();
 
   public:
-    CopyDialog(Reference<GView::Object> object, uint64 currentPos);
+    CopyDialog(Reference<GView::View::BufferViewer::Instance> instance);
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 };

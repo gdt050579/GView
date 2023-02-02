@@ -16,8 +16,8 @@ constexpr int32 RADIOBOX_ID_COPY_SELECTION       = 10;
 constexpr int32 GROUD_ID_COPY_TYPE      = 1;
 constexpr int32 GROUD_ID_SELECTION_TYPE = 2;
 
-CopyDialog::CopyDialog(Reference<GView::Object> object, uint64 currentPos)
-    : Window("Copy to Clipboard", "d:c,w:20%,h:15", WindowFlags::ProcessReturn), object(object), currentPos(currentPos)
+CopyDialog::CopyDialog(Reference<GView::View::BufferViewer::Instance> instance)
+    : Window("Copy to Clipboard", "d:c,w:20%,h:15", WindowFlags::ProcessReturn)
 {
     copyAscii = Factory::RadioBox::Create(this, "Copy as &ascii text", "x:5%,y:1,w:60%,h:1", GROUD_ID_COPY_TYPE, RADIOBOX_ID_COPY_ASCII);
     copyAscii->SetChecked(true);
@@ -35,7 +35,7 @@ CopyDialog::CopyDialog(Reference<GView::Object> object, uint64 currentPos)
 
     copyArray = Factory::RadioBox::Create(this, "Copy as C/C++ a&rray", "x:5%,y:5,w:60%,h:1", GROUD_ID_COPY_TYPE, RADIOBOX_ID_COPY_ARRAY);
 
-    const bool isAtLeastOneZoneSelected = object->GetContentType()->GetSelectionZonesCount() > 0;
+    const bool isAtLeastOneZoneSelected = instance->GetObject()->GetContentType()->GetSelectionZonesCount() > 0;
 
     copyFile = Factory::RadioBox::Create(this, "Copy entire &file", "x:5%,y:7,w:60%,h:1", GROUD_ID_SELECTION_TYPE, RADIOBOX_ID_COPY_FILE);
     copyFile->SetEnabled(isAtLeastOneZoneSelected);
@@ -85,20 +85,22 @@ bool CopyDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 
 bool CopyDialog::Process()
 {
-    const auto cacheSize = object->GetData().GetCacheSize();
-    const auto zonesNo   = object->GetContentType()->GetSelectionZonesCount();
+    const auto cacheSize = instance->GetObject()->GetData().GetCacheSize();
+    const auto zonesNo   = instance->GetObject()->GetContentType()->GetSelectionZonesCount();
 
     Buffer b{};
     BufferView bf{};
 
     if (zonesNo == 0)
     {
-        bf = object->GetData().GetEntireFile();
+        bf = instance->GetObject()->GetData().GetEntireFile();
         if (bf.IsValid() == false)
         {
             LocalString<128> message;
             CHECK(message.AddFormat(
-                        "File size is larger than cache size (%llu bytes vs %llu bytes)!", object->GetData().GetSize(), cacheSize),
+                        "File size is larger than cache size (%llu bytes vs %llu bytes)!",
+                        instance->GetObject()->GetData().GetSize(),
+                        cacheSize),
                   false,
                   "");
             Dialogs::MessageBox::ShowError("Error copying to clipboard", message);
@@ -109,7 +111,7 @@ bool CopyDialog::Process()
     {
         for (uint32 i = 0; i < zonesNo; i++)
         {
-            const auto z             = object->GetContentType()->GetSelectionZone(i);
+            const auto z             = instance->GetObject()->GetContentType()->GetSelectionZone(i);
             const auto selectionSize = (uint32) (z.end - z.start + 1);
 
             if (selectionSize > cacheSize)
@@ -122,7 +124,7 @@ bool CopyDialog::Process()
                 return false;
             }
 
-            b.Add(object->GetData().CopyToBuffer(z.start, selectionSize));
+            b.Add(instance->GetObject()->GetData().CopyToBuffer(z.start, selectionSize));
         }
 
         bf = b;
@@ -131,7 +133,7 @@ bool CopyDialog::Process()
     if (bf.IsValid() == false)
     {
         LocalString<128> message;
-        message.AddFormat("File size %llu bytes, cache size %llu bytes!", object->GetData().GetSize(), cacheSize);
+        message.AddFormat("File size %llu bytes, cache size %llu bytes!", instance->GetObject()->GetData().GetSize(), cacheSize);
         Dialogs::MessageBox::ShowError("Error copying to clipboard (preprocessing)!", message);
         return false;
     }
@@ -201,7 +203,9 @@ bool CopyDialog::Process()
     if (AppCUI::OS::Clipboard::SetText(usb) == false)
     {
         LocalString<128> message;
-        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", object->GetData().GetSize(), cacheSize), false, "");
+        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", instance->GetObject()->GetData().GetSize(), cacheSize),
+              false,
+              "");
         Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
         return false;
     }
@@ -213,16 +217,16 @@ void CopyDialog::ShowCopiedDataInformation()
 {
     LocalString<512> message;
 
-    const auto zonesNo = object->GetContentType()->GetSelectionZonesCount();
+    const auto zonesNo = instance->GetObject()->GetContentType()->GetSelectionZonesCount();
     if (zonesNo == 0)
     {
-        CHECKRET(message.AddFormat("Copied entire file (%llu bytes) to clipboard.", object->GetData().GetSize()), "");
+        CHECKRET(message.AddFormat("Copied entire file (%llu bytes) to clipboard.", instance->GetObject()->GetData().GetSize()), "");
     }
     else
     {
         for (uint32 i = 0; i < zonesNo; i++)
         {
-            const auto z = object->GetContentType()->GetSelectionZone(i);
+            const auto z = instance->GetObject()->GetContentType()->GetSelectionZone(i);
             CHECKRET(message.AddFormat("Copied zone (offset %llu, size %llu bytes) to clipboard.", z.start, (z.end - z.start + 1)), "");
         }
     }

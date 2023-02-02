@@ -375,7 +375,7 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
-    CopyDialog dlg(this->obj, this->Cursor.currentPos);
+    CopyDialog dlg(this);
     CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
 
     return true;
