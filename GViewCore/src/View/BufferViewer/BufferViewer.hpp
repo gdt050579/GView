@@ -313,6 +313,11 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     {
         return obj;
     };
+
+    decltype(Instance::StringInfo) GetStringInfo() const
+    {
+        return StringInfo;
+    };
 };
 
 class SelectionEditor : public Window

@@ -17,7 +17,7 @@ constexpr int32 GROUD_ID_COPY_TYPE      = 1;
 constexpr int32 GROUD_ID_SELECTION_TYPE = 2;
 
 CopyDialog::CopyDialog(Reference<GView::View::BufferViewer::Instance> instance)
-    : Window("Copy to Clipboard", "d:c,w:20%,h:15", WindowFlags::ProcessReturn)
+    : Window("Copy to Clipboard", "d:c,w:20%,h:15", WindowFlags::ProcessReturn), instance(instance)
 {
     copyAscii = Factory::RadioBox::Create(this, "Copy as &ascii text", "x:5%,y:1,w:60%,h:1", GROUD_ID_COPY_TYPE, RADIOBOX_ID_COPY_ASCII);
     copyAscii->SetChecked(true);
@@ -151,18 +151,62 @@ bool CopyDialog::Process()
     }
     else if (copyUnicode->IsChecked())
     {
-        if (copyUnicodeAsSeen->IsChecked())
+        if (copyUnicodeAsSeen->IsChecked() && instance->GetStringInfo().showUnicode)
         {
-        }
-        else
-        {
-            AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::PrintableAscii);
-            for (const auto c : bf)
+            struct Info
             {
-                FixSizeUnicode<1> cc;
-                CHECK(cc.AddChar(cp[c]), false, "");
-                CHECK(usb.Add(cc), false, "");
+                uint64 start;
+                uint64 middle;
+                uint64 end;
+            };
+
+            std::vector<Info> infos;
+
+            auto UpdateStringInfo = [this](uint64 offset, BufferView buf, Info& info) -> bool
+            {
+                auto* s = (char16*) buf.GetData();
+                auto* e = s + buf.GetLength() / 2;
+                if ((s < e) && ((*s) < 256) && (instance->GetStringInfo().AsciiMask[*s]))
+                {
+                    while ((s < e) && ((*s) < 256) && (instance->GetStringInfo().AsciiMask[*s]))
+                    {
+                        s++;
+                    }
+
+                    if (s - (char16*) buf.GetData() >= instance->GetStringInfo().minCount)
+                    {
+                        info.start  = offset;
+                        info.middle = offset + (s - (char16*) buf.GetData());
+                        info.end    = offset + ((const uint8*) s - buf.GetData());
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+
+            for (uint64 i = 0ull; i < bf.GetLength(); i++)
+            {
+                Info info{ GView::Utils::INVALID_OFFSET, GView::Utils::INVALID_OFFSET, GView::Utils::INVALID_OFFSET };
+                if (UpdateStringInfo(i, BufferView{ bf.GetData() + i, bf.GetLength() - i }, info))
+                {
+                    uint32 a;
+                    for (a = 2ull, i += 1ull; i < info.middle; i++, a += 2)
+                    {
+                        ((char*) bf.GetData())[i] = bf[info.start + a];
+                    }
+                    memset(((char*) bf.GetData() + i), 0, info.end - info.middle);
+                    i = info.end;
+                }
             }
+        }
+
+        AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::PrintableAscii);
+        for (const auto c : bf)
+        {
+            FixSizeUnicode<1> cc;
+            CHECK(cc.AddChar(cp[c]), false, "");
+            CHECK(usb.Add(cc), false, "");
         }
     }
     else if (copyDump->IsChecked())
