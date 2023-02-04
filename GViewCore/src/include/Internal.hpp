@@ -29,7 +29,7 @@ namespace Utils
         bool Clear(int index);
         inline constexpr bool HasSelection(uint32 index) const
         {
-            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+            if (index < MAX_SELECTION_ZONES)
                 return zones[index].start != INVALID_OFFSET;
             return false;
         }
@@ -47,13 +47,13 @@ namespace Utils
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
         inline uint64 GetSelectionStart(uint32 index) const
         {
-            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+            if (index < MAX_SELECTION_ZONES)
                 return zones[index].start;
             return INVALID_OFFSET;
         }
         inline uint64 GetSelectionEnd(uint32 index) const
         {
-            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+            if (index < MAX_SELECTION_ZONES)
                 return zones[index].end;
             return INVALID_OFFSET;
         }

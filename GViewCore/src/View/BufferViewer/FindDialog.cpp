@@ -161,7 +161,7 @@ bool FindDialog::OnKeyEvent(Input::Key keyCode, char16 UnicodeChar)
     return Window::OnKeyEvent(keyCode, UnicodeChar);
 }
 
-void FindDialog::OnCheck(Reference<Controls::Control> control, bool value)
+void FindDialog::OnCheck(Reference<Controls::Control> control, bool /* value */)
 {
     const auto id = control->GetControlID();
     switch (id)
@@ -381,12 +381,13 @@ bool ValidateHexa(std::string_view number)
 
     if (number.find('?') == std::string::npos)
     {
-        CHECK(number[0] >= '0' && number[0] <= '9' || number[0] >= 'a' && number[0] <= 'f' || number[0] >= 'A' && number[0] <= 'F',
+        CHECK((number[0] >= '0' && number[0] <= '9') || (number[0] >= 'a' && number[0] <= 'f') || (number[0] >= 'A' && number[0] <= 'F'),
               false,
               "");
         if (number.size() == 2)
         {
-            CHECK(number[0] >= '1' && number[1] <= '9' || number[1] >= 'a' && number[1] <= 'f' || number[1] >= 'A' && number[1] <= 'F',
+            CHECK((number[0] >= '1' && number[1] <= '9') || (number[1] >= 'a' && number[1] <= 'f') ||
+                        (number[1] >= 'A' && number[1] <= 'F'),
                   false,
                   "");
         }
@@ -470,15 +471,15 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            const auto initialStart = reinterpret_cast<char const* const>(buffer.GetData());
-            auto start              = reinterpret_cast<char const* const>(buffer.GetData());
-            auto end                = reinterpret_cast<char const* const>(start + buffer.GetLength());
+            const auto initialStart = reinterpret_cast<char const*>(buffer.GetData());
+            auto start              = reinterpret_cast<char const*>(buffer.GetData());
+            const auto end          = reinterpret_cast<char const*>(start + buffer.GetLength());
             std::cmatch matches{};
             while (std::regex_search(start, end, matches, pattern))
             {
                 match = std::pair<uint64, uint64>{ offset + (start - initialStart) + matches.position(), matches.length() };
                 start += matches.position() + matches.length();
-                CHECKBK(last, false, "");
+                CHECKBK(last, "");
             }
 
             offset += sizeToRead;
@@ -499,16 +500,16 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            auto initialStart = reinterpret_cast<wchar_t const* const>(buffer.GetData());
-            auto start        = reinterpret_cast<wchar_t const* const>(buffer.GetData());
-            auto end          = reinterpret_cast<wchar_t const* const>(start + buffer.GetLength());
+            auto initialStart = reinterpret_cast<wchar_t const*>(buffer.GetData());
+            auto start        = reinterpret_cast<wchar_t const*>(buffer.GetData());
+            const auto end    = reinterpret_cast<wchar_t const*>(start + buffer.GetLength());
             std::wcmatch matches{};
             while (std::regex_search(start, end, matches, pattern))
             {
                 match =
                       std::pair<uint64, uint64>{ offset + (start - initialStart) * sizeof(wchar_t) + matches.position(), matches.length() };
                 start += matches.position() + matches.length();
-                CHECKBK(last, false, "");
+                CHECKBK(last, "");
             }
 
             offset += sizeToRead;
