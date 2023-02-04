@@ -343,7 +343,7 @@ bool Instance::ShowGoToDialog()
 }
 bool Instance::ShowFindDialog()
 {
-    findDialog.UpdateData(this->settings.get(), this->Cursor.currentPos, this->obj);
+    findDialog.UpdateData(this->Cursor.currentPos, this->obj);
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
 
     const auto [start, length] = findDialog.GetNextMatch(this->Cursor.currentPos);
@@ -375,7 +375,10 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
-    NOT_IMPLEMENTED(false);
+    CopyDialog dlg(this);
+    CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
+
+    return true;
 }
 
 void Instance::ResetStringInfo()

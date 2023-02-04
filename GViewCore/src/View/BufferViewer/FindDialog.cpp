@@ -6,21 +6,28 @@
 
 namespace GView::View::BufferViewer
 {
-constexpr int32 BTN_ID_OK                         = 1;
-constexpr int32 BTN_ID_CANCEL                     = 2;
-constexpr int32 CHECKBOX_ID_TEXT                  = 3;
-constexpr int32 CHECKBOX_ID_BINARY                = 4;
-constexpr int32 CHECKBOX_ID_TEXT_ASCII            = 5;
-constexpr int32 CHECKBOX_ID_TEXT_UNICODE          = 6;
-constexpr int32 CHECKBOX_ID_SEARCH_FILE           = 7;
-constexpr int32 CHECKBOX_ID_SEARCH_SELECTION      = 8;
-constexpr int32 CHECKBOX_ID_BUFFER_SELECT         = 9;
-constexpr int32 CHECKBOX_ID_BUFFER_MOVE           = 10;
+constexpr int32 BTN_ID_OK     = 1;
+constexpr int32 BTN_ID_CANCEL = 2;
+
+constexpr int32 RADIOBOX_ID_TEXT                  = 3;
+constexpr int32 RADIOBOX_ID_BINARY                = 4;
+constexpr int32 RADIOBOX_ID_TEXT_ASCII            = 5;
+constexpr int32 RADIOBOX_ID_TEXT_UNICODE          = 6;
+constexpr int32 RADIOBOX_ID_SEARCH_FILE           = 7;
+constexpr int32 RADIOBOX_ID_SEARCH_SELECTION      = 8;
+constexpr int32 RADIOBOX_ID_BUFFER_SELECT         = 9;
+constexpr int32 RADIOBOX_ID_BUFFER_MOVE           = 10;
 constexpr int32 CHECKBOX_ID_IGNORE_CASE           = 11;
 constexpr int32 CHECKBOX_ID_ALIGN_TEXT_UPPER_LEFT = 12;
-constexpr int32 CHECKBOX_ID_TEXT_HEX              = 13;
-constexpr int32 CHECKBOX_ID_TEXT_DEC              = 14;
+constexpr int32 RADIOBOX_ID_TEXT_HEX              = 13;
+constexpr int32 RADIOBOX_ID_TEXT_DEC              = 14;
 constexpr int32 CHECKBOX_ID_TEXT_REGEX            = 15;
+
+constexpr int32 GROUPD_ID_SEARCH_TYPE    = 1;
+constexpr int32 GROUPD_ID_TEXT_TYPE      = 2;
+constexpr int32 GROUPD_ID_BUFFER_TYPE    = 3;
+constexpr int32 GROUPD_ID_SELECTION_TYPE = 4;
+constexpr int32 GROUPD_ID_BUFFER_ACTION  = 5;
 
 constexpr uint32 DIALOG_HEIGHT_TEXT_FORMAT      = 18;
 constexpr uint32 DESCRIPTION_HEIGHT_TEXT_FORMAT = 3;
@@ -53,47 +60,50 @@ FindDialog::FindDialog()
     input = Factory::TextField::Create(this, "", "x:0,y:3,w:100%,h:1");
     input->SetFocus();
 
-    textOption = Factory::CheckBox::Create(this, "&Text Search", "x:0,y:5,w:40%,h:1", CHECKBOX_ID_TEXT);
+    textOption = Factory::RadioBox::Create(this, "&Text Search", "x:0,y:5,w:40%,h:1", GROUPD_ID_SEARCH_TYPE, RADIOBOX_ID_TEXT);
     textOption->SetChecked(true);
     textOption->Handlers()->OnCheck = this;
 
-    binaryOption                      = Factory::CheckBox::Create(this, "&Binary Search", "x:0,y:6,w:40%,h:1", CHECKBOX_ID_BINARY);
+    binaryOption = Factory::RadioBox::Create(this, "&Binary Search", "x:0,y:6,w:40%,h:1", GROUPD_ID_SEARCH_TYPE, RADIOBOX_ID_TEXT);
     binaryOption->Handlers()->OnCheck = this;
 
-    textAscii = Factory::CheckBox::Create(this, "&Ascii Text", "x:60%,y:5,w:40%,h:1", CHECKBOX_ID_TEXT_ASCII);
+    textAscii = Factory::RadioBox::Create(this, "&Ascii Text", "x:60%,y:5,w:40%,h:1", GROUPD_ID_TEXT_TYPE, RADIOBOX_ID_TEXT_ASCII);
     textAscii->SetChecked(true);
     textAscii->Handlers()->OnCheck = this;
 
-    textUnicode                      = Factory::CheckBox::Create(this, "&Unicode Text", "x:60%,y:6,w:40%,h:1", CHECKBOX_ID_TEXT_UNICODE);
+    textUnicode = Factory::RadioBox::Create(this, "&Unicode Text", "x:60%,y:6,w:40%,h:1", GROUPD_ID_TEXT_TYPE, RADIOBOX_ID_TEXT_UNICODE);
     textUnicode->Handlers()->OnCheck = this;
 
-    textHex = Factory::CheckBox::Create(this, "&Hex - default base", "x:60%,y:5,w:40%,h:1", CHECKBOX_ID_TEXT_HEX);
+    textHex = Factory::RadioBox::Create(this, "&Hex - default base", "x:60%,y:5,w:40%,h:1", GROUPD_ID_BUFFER_TYPE, RADIOBOX_ID_TEXT_HEX);
     textHex->SetChecked(true);
     textHex->Handlers()->OnCheck = this;
     textHex->SetVisible(false);
 
-    textDec                      = Factory::CheckBox::Create(this, "&Dec - default base", "x:60%,y:6,w:40%,h:1", CHECKBOX_ID_TEXT_DEC);
+    textDec = Factory::RadioBox::Create(this, "&Dec - default base", "x:60%,y:6,w:40%,h:1", GROUPD_ID_BUFFER_TYPE, RADIOBOX_ID_TEXT_DEC);
     textDec->Handlers()->OnCheck = this;
     textDec->SetVisible(false);
 
     textRegex                      = Factory::CheckBox::Create(this, "Use &Regex", "x:60%,y:7,w:40%,h:1", CHECKBOX_ID_TEXT_REGEX);
     textRegex->Handlers()->OnCheck = this;
 
-    searchFile = Factory::CheckBox::Create(this, "&File Search", "x:0,y:8,w:40%,h:1", CHECKBOX_ID_SEARCH_FILE);
+    searchFile = Factory::RadioBox::Create(this, "&File Search", "x:0,y:8,w:40%,h:1", GROUPD_ID_SELECTION_TYPE, RADIOBOX_ID_SEARCH_FILE);
     searchFile->SetChecked(true);
     searchFile->Handlers()->OnCheck = this;
 
-    searchSelection = Factory::CheckBox::Create(this, "&Selection Search", "x:0,y:9,w:40%,h:1", CHECKBOX_ID_SEARCH_SELECTION);
+    searchSelection =
+          Factory::RadioBox::Create(this, "&Selection Search", "x:0,y:9,w:40%,h:1", GROUPD_ID_SELECTION_TYPE, RADIOBOX_ID_SEARCH_SELECTION);
     searchSelection->Handlers()->OnCheck = this;
 
-    bufferSelect = Factory::CheckBox::Create(this, "&Select buffer", "x:60%,y:8,w:40%,h:1", CHECKBOX_ID_BUFFER_SELECT);
+    bufferSelect =
+          Factory::RadioBox::Create(this, "&Select buffer", "x:60%,y:8,w:40%,h:1", GROUPD_ID_BUFFER_ACTION, RADIOBOX_ID_BUFFER_SELECT);
     bufferSelect->SetChecked(true);
     bufferSelect->Handlers()->OnCheck = this;
 
-    bufferMoveCursorTo = Factory::CheckBox::Create(this, "&Move cursor to buffer", "x:60%,y:9,w:40%,h:1", CHECKBOX_ID_BUFFER_MOVE);
+    bufferMoveCursorTo = Factory::RadioBox::Create(
+          this, "&Move cursor to buffer", "x:60%,y:9,w:40%,h:1", GROUPD_ID_BUFFER_ACTION, RADIOBOX_ID_BUFFER_MOVE);
     bufferMoveCursorTo->Handlers()->OnCheck = this;
 
-    ignoreCase = Factory::CheckBox::Create(this, "&Ignore Case", "x:0,y:11,w:40%,h:1", CHECKBOX_ID_IGNORE_CASE);
+    ignoreCase = Factory::CheckBox::Create(this, "I&gnore Case", "x:0,y:11,w:40%,h:1", CHECKBOX_ID_IGNORE_CASE);
     ignoreCase->SetChecked(true);
     ignoreCase->Handlers()->OnCheck = this;
 
@@ -151,66 +161,30 @@ bool FindDialog::OnKeyEvent(Input::Key keyCode, char16 UnicodeChar)
     return Window::OnKeyEvent(keyCode, UnicodeChar);
 }
 
-void FindDialog::OnCheck(Reference<Controls::Control> control, bool value)
+void FindDialog::OnCheck(Reference<Controls::Control> control, bool /* value */)
 {
     const auto id = control->GetControlID();
     switch (id)
     {
-    case CHECKBOX_ID_TEXT:
-        binaryOption->SetChecked(!value);
-        if (!value)
-            binaryOption->SetFocus();
-        CHECKRET(Update(), "");
-        break;
-    case CHECKBOX_ID_BINARY:
-        textOption->SetChecked(!value);
-        if (!value)
-            textOption->SetFocus();
+    case RADIOBOX_ID_TEXT:
+    case RADIOBOX_ID_BINARY:
         CHECKRET(Update(), "");
         break;
 
-    case CHECKBOX_ID_TEXT_ASCII:
-        textUnicode->SetChecked(!value);
-        if (!value)
-            textUnicode->SetFocus();
-        break;
-    case CHECKBOX_ID_TEXT_UNICODE:
-        textAscii->SetChecked(!value);
-        if (!value)
-            textAscii->SetFocus();
+    case RADIOBOX_ID_TEXT_ASCII:
+    case RADIOBOX_ID_TEXT_UNICODE:
         break;
 
-    case CHECKBOX_ID_SEARCH_FILE:
-        searchSelection->SetChecked(!value);
-        if (!value)
-            searchSelection->SetFocus();
-        break;
-    case CHECKBOX_ID_SEARCH_SELECTION:
-        searchFile->SetChecked(!value);
-        if (!value)
-            searchFile->SetFocus();
+    case RADIOBOX_ID_SEARCH_FILE:
+    case RADIOBOX_ID_SEARCH_SELECTION:
         break;
 
-    case CHECKBOX_ID_BUFFER_SELECT:
-        bufferMoveCursorTo->SetChecked(!value);
-        if (!value)
-            bufferMoveCursorTo->SetFocus();
-        break;
-    case CHECKBOX_ID_BUFFER_MOVE:
-        bufferSelect->SetChecked(!value);
-        if (!value)
-            bufferSelect->SetFocus();
+    case RADIOBOX_ID_BUFFER_SELECT:
+    case RADIOBOX_ID_BUFFER_MOVE:
         break;
 
-    case CHECKBOX_ID_TEXT_HEX:
-        textDec->SetChecked(!value);
-        if (!value)
-            textDec->SetFocus();
-        break;
-    case CHECKBOX_ID_TEXT_DEC:
-        textHex->SetChecked(!value);
-        if (!value)
-            textHex->SetFocus();
+    case RADIOBOX_ID_TEXT_HEX:
+    case RADIOBOX_ID_TEXT_DEC:
         break;
     }
 }
@@ -235,7 +209,7 @@ bool FindDialog::SetDescription()
     CHECK(description->SetText(title), false, "");
 
     const uint32 canvasHeight = textOption->IsChecked() ? DESCRIPTION_HEIGHT_TEXT_FORMAT : DESCRIPTION_HEIGHT_BINARY_FORMAT;
-    CHECK(description->GetCanvas()->Resize(description->GetCanvas()->GetWidth(), canvasHeight), false, "");
+    CHECK(description->GetCanvas()->Resize(description->GetWidth(), canvasHeight), false, "");
 
     const auto color     = this->GetConfig()->Window.Background.Normal;
     const auto colorPair = ColorPair{ color, color };
@@ -319,22 +293,19 @@ bool FindDialog::Update()
     return true;
 }
 
-void FindDialog::UpdateData(Reference<SettingsData> settings, uint64 currentPos, Reference<GView::Object> object)
+void FindDialog::UpdateData(uint64 currentPos, Reference<GView::Object> object)
 {
-    this->settings   = settings;
     this->currentPos = currentPos;
     this->object     = object;
 
-    if (object->GetContentType()->GetSelectionZonesCount() == 0)
+    const bool isAtLeastOneZoneSelected = object->GetContentType()->GetSelectionZonesCount() > 0;
+    if (searchFile.IsValid())
     {
-        if (searchFile.IsValid())
-        {
-            searchFile->SetEnabled(false);
-        }
-        if (searchSelection.IsValid())
-        {
-            searchSelection->SetEnabled(false);
-        }
+        searchFile->SetEnabled(isAtLeastOneZoneSelected);
+    }
+    if (searchSelection.IsValid())
+    {
+        searchSelection->SetEnabled(isAtLeastOneZoneSelected);
     }
 }
 
@@ -410,12 +381,13 @@ bool ValidateHexa(std::string_view number)
 
     if (number.find('?') == std::string::npos)
     {
-        CHECK(number[0] >= '0' && number[0] <= '9' || number[0] >= 'a' && number[0] <= 'f' || number[0] >= 'A' && number[0] <= 'F',
+        CHECK((number[0] >= '0' && number[0] <= '9') || (number[0] >= 'a' && number[0] <= 'f') || (number[0] >= 'A' && number[0] <= 'F'),
               false,
               "");
         if (number.size() == 2)
         {
-            CHECK(number[0] >= '1' && number[1] <= '9' || number[1] >= 'a' && number[1] <= 'f' || number[1] >= 'A' && number[1] <= 'F',
+            CHECK((number[0] >= '1' && number[1] <= '9') || (number[1] >= 'a' && number[1] <= 'f') ||
+                        (number[1] >= 'A' && number[1] <= 'F'),
                   false,
                   "");
         }
@@ -431,8 +403,14 @@ bool ValidateHexa(std::string_view number)
 bool FindDialog::ProcessInput(uint64 end, bool last)
 {
     CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
-    CHECK(settings.IsValid(), false, "");
     CHECK(object.IsValid(), false, "");
+    CHECK(input.IsValid(), false, "");
+
+    if (input->GetText().Len() == 0)
+    {
+        Dialogs::MessageBox::ShowError("Error!", "Missing input!");
+        return false;
+    }
 
     CHECK(usb.Set(input->GetText()), false, "");
     CHECK(usb.Len() > 0, false, "");
@@ -493,15 +471,15 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            const auto initialStart = reinterpret_cast<char const* const>(buffer.GetData());
-            auto start              = reinterpret_cast<char const* const>(buffer.GetData());
-            auto end                = reinterpret_cast<char const* const>(start + buffer.GetLength());
+            const auto initialStart = reinterpret_cast<char const*>(buffer.GetData());
+            auto start              = reinterpret_cast<char const*>(buffer.GetData());
+            const auto end          = reinterpret_cast<char const*>(start + buffer.GetLength());
             std::cmatch matches{};
             while (std::regex_search(start, end, matches, pattern))
             {
                 match = std::pair<uint64, uint64>{ offset + (start - initialStart) + matches.position(), matches.length() };
                 start += matches.position() + matches.length();
-                CHECKBK(last, false, "");
+                CHECKBK(last, "");
             }
 
             offset += sizeToRead;
@@ -522,16 +500,16 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             const auto buffer = object->GetData().Get(offset, static_cast<uint32>(sizeToRead), true);
             CHECK(buffer.IsValid(), false, "");
 
-            auto initialStart = reinterpret_cast<wchar_t const* const>(buffer.GetData());
-            auto start        = reinterpret_cast<wchar_t const* const>(buffer.GetData());
-            auto end          = reinterpret_cast<wchar_t const* const>(start + buffer.GetLength());
+            auto initialStart = reinterpret_cast<wchar_t const*>(buffer.GetData());
+            auto start        = reinterpret_cast<wchar_t const*>(buffer.GetData());
+            const auto end    = reinterpret_cast<wchar_t const*>(start + buffer.GetLength());
             std::wcmatch matches{};
             while (std::regex_search(start, end, matches, pattern))
             {
                 match =
                       std::pair<uint64, uint64>{ offset + (start - initialStart) * sizeof(wchar_t) + matches.position(), matches.length() };
                 start += matches.position() + matches.length();
-                CHECKBK(last, false, "");
+                CHECKBK(last, "");
             }
 
             offset += sizeToRead;
