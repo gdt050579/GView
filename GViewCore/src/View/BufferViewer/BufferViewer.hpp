@@ -142,19 +142,17 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 {
     struct DrawLineInfo
     {
-        uint64 offset;
-        uint32 offsetAndNameSize;
-        uint32 numbersSize;
-        uint32 textSize;
-        const uint8* start;
-        const uint8* end;
-        Character* chNameAndSize;
-        Character* chNumbers;
-        Character* chText;
-        bool recomputeOffsets;
-        DrawLineInfo() : recomputeOffsets(true)
-        {
-        }
+        uint64 offset{ 0 };
+        uint32 offsetAndNameSize{ 0 };
+        uint32 numbersSize{ 0 };
+        uint32 textSize{ 0 };
+        const uint8* start{ nullptr };
+        const uint8* end{ nullptr };
+        Character* chNameAndSize{ nullptr };
+        Character* chNumbers{ nullptr };
+        Character* chText{ nullptr };
+        bool recomputeOffsets{ true };
+        DrawLineInfo() = default;
     };
     struct
     {
