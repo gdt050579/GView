@@ -481,7 +481,7 @@ namespace DigitalSignature
 
     CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
 
-    CORE_EXPORT std::optional<AuthenticodeMS> VerifyEmbeddedSignature(ConstString source, Utils::DataCache& cache);
+    CORE_EXPORT bool VerifyEmbeddedSignature(AuthenticodeMS& data, Utils::DataCache& cache);
 } // namespace DigitalSignature
 
 namespace Golang

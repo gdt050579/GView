@@ -1,4 +1,5 @@
 #include "pe.hpp"
+#include "DigitalSignature.hpp"
 
 using namespace GView::Type::PE;
 
@@ -2239,12 +2240,21 @@ void PEFile::RunCommand(std::string_view commandName)
             CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
             CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
 
-            signatureData = GView::DigitalSignature::VerifyEmbeddedSignature(obj->GetPath(), obj->GetData());
+            GView::DigitalSignature::AuthenticodeMS data{};
+            CHECKBK(GView::DigitalSignature::VerifyEmbeddedSignature(data, obj->GetData()), "");
+#ifdef BUILD_FOR_WINDOWS
+            data.winTrust.callSuccessful = GView::DigitalSignature::__VerifyEmbeddedSignature__(obj->GetPath(), obj->GetData(), data);
 
-            while (!signatureChecked && signatureData.has_value())
+            constexpr auto SIGNATURE_NOT_FOUND = 0x800B0100;
+            CHECKBK(data.winTrust.errorCode != SIGNATURE_NOT_FOUND, "");
+
+            GView::DigitalSignature::GetSignaturesInformation(obj->GetPath(), data);
+#endif
+
+            while (!signatureChecked)
             {
                 Buffer blob = obj->GetData().CopyToBuffer(securityDirectory.VirtualAddress + 8ULL, cert.dwLength - 8);
-                GView::DigitalSignature::AuthenticodeToHumanReadable(blob, signatureData.value().data.humanReadable);
+                GView::DigitalSignature::AuthenticodeToHumanReadable(blob, data.data.humanReadable);
 
                 signatureChecked = true;
 
