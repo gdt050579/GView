@@ -2218,7 +2218,6 @@ void PEFile::RunCommand(std::string_view commandName)
             CHECKBK(obj->GetData().Copy<WinCertificate>(securityDirectory.VirtualAddress, cert), "");
             CHECKBK(cert.wCertificateType == __WIN_CERT_TYPE_PKCS_SIGNED_DATA, "");
 
-            GView::DigitalSignature::AuthenticodeMS data{};
             CHECKBK(GView::DigitalSignature::VerifyEmbeddedSignature(data, obj->GetData()), "");
 #ifdef BUILD_FOR_WINDOWS
             data.winTrust.callSuccessful = GView::DigitalSignature::VerifySignatureForPE(obj->GetPath(), obj->GetData(), data);
@@ -2238,7 +2237,7 @@ void PEFile::RunCommand(std::string_view commandName)
             }
         };
 
-        if (signatureData.has_value())
+        if (signatureChecked)
         {
             PE::Commands::DigitalSignature(this).Show();
         }

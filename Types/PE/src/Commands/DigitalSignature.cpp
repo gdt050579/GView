@@ -16,14 +16,12 @@ constexpr auto COLOR_FAILURE = ColorPair{ Color::Red, Color::Transparent };
 DigitalSignature::DigitalSignature(Reference<PEFile> pe)
     : Window("Digital Signature", "x:25%,y:5%,w:50%,h:90%", WindowFlags::Sizeable | WindowFlags::ProcessReturn), pe(pe)
 {
-    general = Factory::ListView::Create(
-          this, "x:0,y:0,w:100%,h:100%", { "n:Key,w:30%", "n:Value,w:70%" }, ListViewFlags::AllowMultipleItemsSelection);
+    general = Factory::ListView::Create(this, "x:0,y:0,w:100%,h:100%", { "n:Key,w:30%", "n:Value,w:70%" }, ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }
 
-void PopulateSignerInfo(
-      Reference<AppCUI::Controls::ListView>& list, const GView::DigitalSignature::AuthenticodeMS::Data::Signature::Signer& signer)
+void PopulateSignerInfo(Reference<AppCUI::Controls::ListView>& list, const GView::DigitalSignature::AuthenticodeMS::Data::Signature::Signer& signer)
 {
     LocalString<1024> ls;
 
@@ -33,9 +31,7 @@ void PopulateSignerInfo(
 }
 
 void PopulateCertificateInfo(
-      Reference<AppCUI::Controls::ListView>& list,
-      const GView::DigitalSignature::AuthenticodeMS::Data::Signature::Certificate& certificate,
-      uint32 index)
+      Reference<AppCUI::Controls::ListView>& list, const GView::DigitalSignature::AuthenticodeMS::Data::Signature::Certificate& certificate, uint32 index)
 {
     LocalString<1024> ls;
     LocalString<1024> ls2;
@@ -59,7 +55,7 @@ void DigitalSignature::MoreInfo()
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
     {
         GView::App::OpenBuffer(
-              BufferView{ pe->signatureData->data.humanReadable.GetText(), pe->signatureData->data.humanReadable.Len() },
+              BufferView{ pe->data.data.humanReadable.GetText(), pe->data.data.humanReadable.Len() },
               "Digital Signature - PKCS#7 Human Readable",
               GView::App::OpenMethod::BestMatch);
     }
@@ -68,15 +64,14 @@ void DigitalSignature::MoreInfo()
     {
         std::string input;
 
-        for (uint32 i = 0U; i < pe->signatureData->data.pemCerts.size(); i++)
+        for (uint32 i = 0U; i < pe->data.data.pemCerts.size(); i++)
         {
-            const auto& pem = pe->signatureData->data.pemCerts.at(i);
+            const auto& pem = pe->data.data.pemCerts.at(i);
             input += pem;
             input += "\n";
         }
 
-        GView::App::OpenBuffer(
-              BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates", GView::App::OpenMethod::BestMatch);
+        GView::App::OpenBuffer(BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates", GView::App::OpenMethod::BestMatch);
     }
 }
 
@@ -88,39 +83,35 @@ void DigitalSignature::Update()
 
 #ifdef BUILD_FOR_WINDOWS
     general->AddItem({ "WinTrust", "" }).SetType(ListViewItem::Type::Category);
-    general->AddItem({ "Validation", ls.Format("%s", pe->signatureData->winTrust.errorMessage.GetText()) })
-          .SetColor(pe->signatureData->winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
+    general->AddItem({ "Validation", ls.Format("%s", pe->data.winTrust.errorMessage.GetText()) })
+          .SetColor(pe->data.winTrust.errorCode == 0 ? COLOR_SUCCESS : COLOR_FAILURE);
 
     LocalUnicodeStringBuilder<4096> lusb;
-    lusb.Set(pe->signatureData->winTrust.chainErrorMessage);
+    lusb.Set(pe->data.winTrust.chainErrorMessage);
     const auto u16sv    = lusb.ToStringView();
     size_t newLineCount = std::count(u16sv.begin(), u16sv.end(), u'\n');
 
-    auto v = general->AddItem(
-          { "Chain",
-            ls.Format("%s", pe->signatureData->winTrust.chainErrorMessage.GetText(), pe->signatureData->winTrust.chainErrorCode) });
-    v.SetColor(pe->signatureData->winTrust.chainErrorCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
+    auto v = general->AddItem({ "Chain", ls.Format("%s", pe->data.winTrust.chainErrorMessage.GetText(), pe->data.winTrust.chainErrorCode) });
+    v.SetColor(pe->data.winTrust.chainErrorCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
     v.SetHeight((uint32) (newLineCount > 0 ? newLineCount + 1 : 0));
 
-    general->AddItem({ "Policy", ls.Format("%s", pe->signatureData->winTrust.policyErrorMessage.GetText()) })
-          .SetColor(pe->signatureData->winTrust.policyErrorCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
+    general->AddItem({ "Policy", ls.Format("%s", pe->data.winTrust.policyErrorMessage.GetText()) })
+          .SetColor(pe->data.winTrust.policyErrorCode == 0 ? COLOR_SUCCESS : COLOR_WARNING);
 #endif
 
     general->AddItem({ "OpenSSL", "" }).SetType(ListViewItem::Type::Category);
-    general
-          ->AddItem({ "Validation",
-                      (pe->signatureData->openssl.verified ? "OK" : ls.Format("%s", pe->signatureData->openssl.errorMessage.GetText())) })
-          .SetColor(pe->signatureData->openssl.verified ? COLOR_SUCCESS : COLOR_FAILURE);
+    general->AddItem({ "Validation", (pe->data.openssl.verified ? "OK" : ls.Format("%s", pe->data.openssl.errorMessage.GetText())) })
+          .SetColor(pe->data.openssl.verified ? COLOR_SUCCESS : COLOR_FAILURE);
 
-    if (pe->signatureData.has_value() && pe->signatureData->data.signatures.empty() == false)
+    if (pe->data.data.signatures.empty() == false)
     {
         general->AddItem({ "More Info", "" }).SetType(ListViewItem::Type::Category);
-        humanReadable = general->AddItem({ "Human Readable", "+ (CTRL + ENTER to open)", pe->signatureData->data.humanReadable.GetText() });
-        PEMs          = general->AddItem({ "PEMs", ls.Format("%d PEMs (CTRL + ENTER to open)", pe->signatureData->data.pemCerts.size()) });
+        humanReadable = general->AddItem({ "Human Readable", "+ (CTRL + ENTER to open)", pe->data.data.humanReadable.GetText() });
+        PEMs          = general->AddItem({ "PEMs", ls.Format("%d PEMs (CTRL + ENTER to open)", pe->data.data.pemCerts.size()) });
     }
 
     int16 signatureIndex = -1;
-    for (const auto& signature : pe->signatureData->data.signatures)
+    for (const auto& signature : pe->data.data.signatures)
     {
         signatureIndex += (signature.signatureType == GView::DigitalSignature::SignatureType::Signature);
 
@@ -160,8 +151,7 @@ void DigitalSignature::Update()
                 break;
             }
 
-            general->AddItem({ "Signing time", ls.Format("%s", signature.signingTime.GetText()) })
-                  .SetType(ListViewItem::Type::Emphasized_3);
+            general->AddItem({ "Signing time", ls.Format("%s", signature.signingTime.GetText()) }).SetType(ListViewItem::Type::Emphasized_3);
         }
 
         PopulateSignerInfo(general, signature.signer);
