@@ -25,16 +25,15 @@
 
 ## Building
 ### Tools used
-CMake is used to build the entire project regardless of the platform.
+CMake is used to build the entire project regardless of the platform.README.md
+Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can be seen [here](/.github/workflows/ci.yml).
 ### Supported platforms
 #### Windows
-Requires a manual installation of `OpenSSL 1.x`. You can get an already built .msi or .exe or you can install it via package manager [vcpkg](https://github.com/microsoft/vcpkg).
-You can grab an `OpenSSL 1.x` binary from [here](https://slproweb.com/products/Win32OpenSSL.html).
-Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can be seen [here](/.github/workflows/ci.yml).
+Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg).                                                  
 #### OSX
-Works out of the box as long as you have an installation of `OpenSSL 1.x`.
+Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg) and curl (for vcpkg).
 #### Linux
-Works out of the box as long as you have an installation of `OpenSSL 1.x`.
+Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg) and curl (for vcpkg).
 
 ## CI/CD
 At the moment we are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artefacts, storing them and eventually building a release flow.
