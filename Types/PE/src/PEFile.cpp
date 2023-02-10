@@ -546,7 +546,7 @@ bool PEFile::BuildExport()
 
     exp.clear();
 
-    RVA = dirs[0].VirtualAddress; // export directory
+    RVA = dirs[(uint8) DirectoryType::Export].VirtualAddress; // export directory
     CHECK(RVA != 0, false, "")
 
     if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
