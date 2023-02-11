@@ -37,6 +37,7 @@ constexpr int BUFFERVIEW_CMD_CHANGESELECTION   = 0xBF05;
 constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
 constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
+constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
 
 Config Instance::config;
 
@@ -372,6 +373,14 @@ bool Instance::ShowCopyDialog()
     CopyDialog dlg(this);
     CHECK(dlg.Show() == Dialogs::Result::Ok, true, "");
 
+    return true;
+}
+
+bool Instance::ShowDissasmDialog()
+{
+    const auto buffer = obj->GetData().CopyToBuffer(this->Cursor.currentPos, 0x1000);
+    DissasmDialog dlg(buffer, this->Cursor.currentPos, 0x1000);
+    CHECK(dlg.Show() == Dialogs::Result::Ok, false, "");
     return true;
 }
 
@@ -1162,6 +1171,8 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
         commandBar.SetCommand(config.Keys.FindPrevious, "FindPrevious", BUFFERVIEW_CMD_FINDPREVIOUS);
     }
 
+    commandBar.SetCommand(config.Keys.DissasmDialog, "Dissasm", BUFFERVIEW_CMD_DISSASM_DIALOG);
+
     return false;
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
@@ -1473,6 +1484,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 
         return true;
     }
+    case BUFFERVIEW_CMD_DISSASM_DIALOG:
+        this->ShowDissasmDialog();
+        return true;
     }
     return false;
 }
@@ -1950,7 +1964,8 @@ enum class PropertyID : uint32
     ChangeAddressMode,
     GoToEntryPoint,
     ChangeSelectionType,
-    ShowHideStrings
+    ShowHideStrings,
+    Dissasm,
 };
 #define BT(t) static_cast<uint32>(t)
 
@@ -2035,6 +2050,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::AddressType:
         value = this->currentAdrressMode;
+        return true;
+    case PropertyID::Dissasm:
+        value = config.Keys.DissasmDialog;
         return true;
     }
     return false;
@@ -2134,6 +2152,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
     case PropertyID::ShowHideStrings:
         config.Keys.ShowHideStrings = std::get<AppCUI::Input::Key>(value);
         return true;
+    case PropertyID::Dissasm:
+        config.Keys.DissasmDialog = std::get<AppCUI::Input::Key>(value);
+        return true;
     case PropertyID::AddressType:
         this->currentAdrressMode = (uint32) std::get<uint64>(value);
         return true;
@@ -2183,41 +2204,45 @@ const vector<Property> Instance::GetPropertiesList()
         }
     }
 
-    return { // Display
-             { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
-             { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
-             { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
-             { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
-             { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage::GetPropertyListValues() },
+    return {
+        // Display
+        { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+        { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
+        { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
+        { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
+        { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage::GetPropertyListValues() },
 
-             // Address
-             { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
-             { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
-             { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
-             { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
-             { BT(PropertyID::ZoneNameWidth), "Address", "Zone name Width", PropertyType::UInt32 },
+        // Address
+        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
+        { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
+        { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
+        { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
+        { BT(PropertyID::ZoneNameWidth), "Address", "Zone name Width", PropertyType::UInt32 },
 
-             // Selection
-             { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
-             { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=1" },
-             { BT(PropertyID::Selection_1), "Selection", "Selection 1", PropertyType::Custom },
-             { BT(PropertyID::Selection_2), "Selection", "Selection 2", PropertyType::Custom },
-             { BT(PropertyID::Selection_3), "Selection", "Selection 3", PropertyType::Custom },
-             { BT(PropertyID::Selection_4), "Selection", "Selection 4", PropertyType::Custom },
+        // Selection
+        { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
+        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=1" },
+        { BT(PropertyID::Selection_1), "Selection", "Selection 1", PropertyType::Custom },
+        { BT(PropertyID::Selection_2), "Selection", "Selection 2", PropertyType::Custom },
+        { BT(PropertyID::Selection_3), "Selection", "Selection 3", PropertyType::Custom },
+        { BT(PropertyID::Selection_4), "Selection", "Selection 4", PropertyType::Custom },
 
-             // String
-             { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
-             { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
-             { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
-             { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
+        // String
+        { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
+        { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
+        { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
+        { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
 
-             // shortcuts
-             { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
-             { BT(PropertyID::ChangeValueFormatOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
-             { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
-             { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
-             { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
-             { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key }
+        // shortcuts
+        { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
+        { BT(PropertyID::ChangeValueFormatOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
+        { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
+        { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
+        { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
+        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key },
+
+        // dissasm
+        { BT(PropertyID::Dissasm), "Shortcuts", "Dissasm", PropertyType::Key },
     };
 }
 #undef BT

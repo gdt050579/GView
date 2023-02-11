@@ -65,6 +65,7 @@ struct Config
         AppCUI::Input::Key FindNext;
         AppCUI::Input::Key FindPrevious;
         AppCUI::Input::Key Copy;
+        AppCUI::Input::Key DissasmDialog;
     } Keys;
     bool Loaded;
 
@@ -265,6 +266,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool ShowGoToDialog() override;
     virtual bool ShowFindDialog() override;
     virtual bool ShowCopyDialog() override;
+    bool ShowDissasmDialog();
     virtual std::string_view GetName() override;
 
     virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
@@ -384,4 +386,22 @@ class CopyDialog : public Window
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 };
+
+class DissasmDialog : public Window
+{
+    BufferView buffer;
+    Reference<ListView> list;
+    uint64 fa;
+    uint64 size;
+
+    GView::Dissasembly::DissasemblerIntel dissasembler{};
+
+    void Validate();
+
+  public:
+    DissasmDialog(BufferView buffer, uint64 fa, uint64 size);
+
+    virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+};
+
 } // namespace GView::View::BufferViewer
