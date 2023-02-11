@@ -790,7 +790,7 @@ namespace Type
 
             // digital signature
             bool signatureChecked{ false };
-            std::optional<DigitalSignature::AuthenticodeMS> signatureData{};
+            DigitalSignature::AuthenticodeMS data{};
 
           public:
             PEFile();

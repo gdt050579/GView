@@ -71,10 +71,10 @@ extern "C"
                 }
                 else
                 {
-                    const auto filePoz = pe->RVAtoFilePointer(dr->VirtualAddress);
-                    if (filePoz != PE_INVALID_ADDRESS)
+                    const auto FA = pe->RVAtoFilePointer(dr->VirtualAddress);
+                    if (FA != PE_INVALID_ADDRESS)
                     {
-                        settings.AddZone(filePoz, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
+                        settings.AddZone(FA, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
                     }
                 }
             }
@@ -111,8 +111,7 @@ extern "C"
                       pe->peCols.colSectDef,
                       "SymbolTable");
 
-                const auto strTableOffset =
-                      pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+                const auto strTableOffset = pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
 
                 uint32 strTableSize = 0;
                 pe->obj->GetData().Copy(strTableOffset, strTableSize);
@@ -130,8 +129,7 @@ extern "C"
                       pe->peCols.colSectDef,
                       "SymbolTable");
 
-                const auto strTableOffset =
-                      pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+                const auto strTableOffset = pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
 
                 uint32 strTableSize = 0;
                 pe->obj->GetData().Copy(strTableOffset, strTableSize);
@@ -156,8 +154,7 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    const uint32 entryPoint =
-                          pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    const uint32 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
 
                     settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
                     break;

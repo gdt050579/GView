@@ -12,19 +12,6 @@ bool ELFFile::Update()
     panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
 
-    switch (is64 ? header64.e_machine : header32.e_machine)
-    {
-    case EM_386:
-    case EM_486:
-    case EM_860:
-    case EM_960:
-    case EM_8051:
-    case EM_X86_64:
-        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
-    default:
-        break;
-    }
-
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");
     if (header32.e_ident[EI_CLASS] != ELFCLASS32)
@@ -37,6 +24,19 @@ bool ELFFile::Update()
     else
     {
         offset += sizeof(Elf32_Ehdr);
+    }
+
+    switch (is64 ? header64.e_machine : header32.e_machine)
+    {
+    case EM_386:
+    case EM_486:
+    case EM_860:
+    case EM_960:
+    case EM_8051:
+    case EM_X86_64:
+        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+    default:
+        break;
     }
 
     isLittleEndian = (header32.e_ident[EI_DATA] == ELFDATA2LSB);
@@ -85,8 +85,7 @@ bool ELFFile::Update()
             for (auto i = 0; i < segments64.size(); i++)
             {
                 const auto& segment = segments64.at(i);
-                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr &&
-                    entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
                 {
                     segmentIdx = i;
                     break;
@@ -127,8 +126,7 @@ bool ELFFile::Update()
             for (auto i = 0; i < segments32.size(); i++)
             {
                 const auto& segment = segments32.at(i);
-                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr &&
-                    entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
                 {
                     segmentIdx = i;
                     break;
@@ -200,14 +198,12 @@ bool ELFFile::ParseGoData()
         noteName = std::string((char*) noteBuffer.GetData() + 12, 4);
 
         std::string_view noteNameView{ (char*) noteBuffer.GetData() + 12, 4 };
-        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
-            noteNameView == Golang::ELF_GO_NOTE)
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG && noteNameView == Golang::ELF_GO_NOTE)
         {
             pcLnTab.SetBuildId({ (char*) noteBuffer.GetData() + 16, valSize });
         }
 
-        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&
-            noteNameView == Golang::ELF_GNU_NOTE)
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG && noteNameView == Golang::ELF_GNU_NOTE)
         {
             gnuString = std::string((char*) noteBuffer.GetData() + 16, valSize);
         }
