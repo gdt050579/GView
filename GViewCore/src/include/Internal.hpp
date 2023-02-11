@@ -94,29 +94,35 @@ namespace Utils
         void CopySetTo(bool ascii[256]);
     };
 
+    // Structure to represent an interval
     struct Zone
     {
-        unsigned long long start, end;
-        AppCUI::Graphics::ColorPair color;
-        AppCUI::Utils::FixSizeString<25> name;
+        struct Interval
+        {
+            uint64 low{ INVALID_OFFSET }, high{ INVALID_OFFSET };
+        } interval{};
 
-        Zone();
-        void Set(uint64 s, uint64 e, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        AppCUI::Graphics::ColorPair color{ NoColorPair };
+        AppCUI::Utils::FixSizeString<25> name{};
+
+        Zone(uint64 low, uint64 high) : interval{ low, high }
+        {
+        }
+        Zone(uint64 low, uint64 high, ColorPair cp, std::string_view name) : interval{ low, high }, color(cp), name(name)
+        {
+        }
+        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name(){};
     };
 
     class ZonesList
     {
-        Zone* list;
-        Zone* lastZone;
-        unsigned int count, allocated;
-        unsigned long long cacheStart, cacheEnd;
+        std::vector<Zone> zones{};
+        std::vector<Zone> cache{};
 
       public:
-        ZonesList();
-        ~ZonesList();
-        bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
-        bool Reserve(unsigned int count);
-        const Zone* OffsetToZone(uint64 offset);
+        void Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        const std::optional<Zone> OffsetToZone(uint64 offset) const;
+        void SetCache(const Zone::Interval& interval);
     };
 
     struct UnicodeString
@@ -608,10 +614,7 @@ namespace App
         void UpdateView(uint64 mode);
         void PopulateViewModes();
         void PopulateTypes(
-              std::vector<GView::Type::Plugin>& typePlugins,
-              AppCUI::Utils::BufferView buf,
-              GView::Type::Matcher::TextParser& textParser,
-              uint64 extensionHash);
+              std::vector<GView::Type::Plugin>& typePlugins, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
 
       public:
         SelectTypeDialog(

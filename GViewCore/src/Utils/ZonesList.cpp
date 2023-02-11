@@ -3,114 +3,46 @@
 using namespace GView::Utils;
 using namespace AppCUI::Graphics;
 
-constexpr uint32 MAX_ZONES = 0x100000U;
-
-ZonesList::ZonesList()
+void ZonesList::Add(uint64 s, uint64 e, ColorPair c, std::string_view txt)
 {
-    list       = nullptr;
-    count      = 0;
-    allocated  = 0;
-    lastZone   = nullptr;
-    cacheEnd   = INVALID_OFFSET;
-    cacheStart = INVALID_OFFSET;
+    zones.emplace_back(s, e, c, txt);
 }
-ZonesList::~ZonesList()
-{
-    if (list)
-        delete[] list;
-    list       = nullptr;
-    lastZone   = nullptr;
-    cacheEnd   = INVALID_OFFSET;
-    cacheStart = INVALID_OFFSET;
-    count      = 0;
-    allocated  = 0;
-}
-bool ZonesList::Reserve(uint32 newAllocatedSize)
-{
-    if (newAllocatedSize <= allocated)
-        return true;
 
-    uint32 newSize = allocated << 1;
-    if (newSize == 0)
-        newSize = 8;
-
-    while ((newSize < newAllocatedSize) && (newSize < MAX_ZONES))
-        newSize = newSize << 1;
-    CHECK(newSize < MAX_ZONES, false, "A maximum of %u zones can be create !", MAX_ZONES);
-    Zone* tmp = new Zone[newSize];
-    if (count > 0)
+const std::optional<Zone> ZonesList::OffsetToZone(uint64 position) const
+{
+    for (const auto& zone : cache)
     {
-        memcpy(tmp, list, ((size_t) count) * sizeof(Zone));
-    }
-    if (list)
-        delete[] list;
-    list      = tmp;
-    allocated = newSize;
-    return true;
-}
-
-bool ZonesList::Add(uint64 s, uint64 e, ColorPair c, std::string_view txt)
-{
-    if (count >= allocated)
-    {
-        CHECK(Reserve(count + 1), false, "");
-    }
-    list[count].Set(s, e, c, txt);
-    count++;
-    return true;
-}
-const Zone* ZonesList::OffsetToZone(uint64 position)
-{
-    if ((position >= cacheStart) && (position <= cacheEnd) && (position != INVALID_OFFSET))
-        return lastZone;
-
-    if ((lastZone) && (position >= lastZone->start) && (position < lastZone->end))
-        return lastZone;
-
-    auto z     = list;
-    auto e     = z + count;
-    Zone* last = nullptr;
-    uint64 closestEnd, closestStart;
-    closestStart = 0;
-    closestEnd   = INVALID_OFFSET;
-    if (z)
-    {
-        for (; z != e; z++)
+        if (zone.interval.low <= position && position <= zone.interval.high)
         {
-            if ((position >= z->start) && (position <= z->end))
-            {
-                last = z;
-                continue;
-            }
-            if ((z->end < position) && (z->end > closestStart))
-                closestStart = z->end;
-            if ((z->start > position) && (z->start < closestEnd))
-                closestEnd = z->start;
+            return zone;
         }
     }
-    if (last != nullptr)
+
+    return std::nullopt;
+}
+
+void ZonesList::SetCache(const Zone::Interval& interval)
+{
+    cache.clear();
+
+    for (const auto& zone : zones)
     {
-        if (closestStart > last->start)
-            cacheStart = closestStart;
-        else
-            cacheStart = last->start;
-        if (closestEnd < last->end)
-            cacheEnd = closestEnd;
-        else
-            cacheEnd = last->end;
-    }
-    else
-    {
-        if ((closestEnd > 0) && (closestEnd != INVALID_OFFSET))
+        if ((zone.interval.low >= interval.low && zone.interval.low <= interval.high) ||
+            interval.low >= zone.interval.low && interval.low <= zone.interval.high)
         {
-            cacheStart = closestStart;
-            cacheEnd   = closestEnd - 1;
-        }
-        else
-        {
-            cacheStart = cacheEnd = INVALID_OFFSET;
+            cache.push_back(zone);
         }
     }
-    lastZone = last;
-    return last;
+
+    std::sort(
+          cache.begin(),
+          cache.end(),
+          [](const Zone& a, const Zone& b)
+          {
+              if (a.interval.low == b.interval.low)
+              {
+                  return a.interval.high < b.interval.high;
+              }
+              return a.interval.low > b.interval.low;
+          });
 }

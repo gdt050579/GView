@@ -14,20 +14,18 @@ const std::string_view unsigned_dec_header =
       " +0  +1  +2  +3  +4  +5  +6  +7  +8  +9 +10 +11 +12 +13 +14 +15 +16 +17 +18 +19 +20 +21 +22 +23 +24 +25 +26 +27 +28 +29 +30 +31 ";
 
 bool DefaultAsciiMask[256] = {
-    false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, true,  true,  true,  true,  true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
-    false, false, false, false, false, false, false, false, false
+    false, false, false, false, false, false, false, false, false, true,  false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  false, true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+    true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false, false
 };
 
 constexpr int BUFFERVIEW_CMD_CHANGECOL         = 0xBF00;
@@ -322,13 +320,9 @@ void Instance::MoveTillEndBlock(bool selected)
 }
 void Instance::MoveToZone(bool startOfZone, bool select)
 {
-    const auto* z = settings->zList.OffsetToZone(this->Cursor.currentPos);
-    if (z)
+    if (auto z = settings->zList.OffsetToZone(this->Cursor.currentPos))
     {
-        if (startOfZone)
-            MoveTo(z->start, select);
-        else
-            MoveTo(z->end, select);
+        MoveTo(startOfZone ? z->interval.low : z->interval.high, select);
     }
 }
 
@@ -514,11 +508,10 @@ bool Instance::SetStringAsciiMask(string_view stringRepresentation)
 
 ColorPair Instance::OffsetToColorZone(uint64 offset)
 {
-    auto* z = this->settings->zList.OffsetToZone(offset);
-    if (z == nullptr)
-        return Cfg.Text.Inactive;
-    else
+    if (auto z = this->settings->zList.OffsetToZone(offset))
         return z->color;
+
+    return Cfg.Text.Inactive;
 }
 ColorPair Instance::OffsetToColor(uint64 offset)
 {
@@ -719,16 +712,14 @@ void Instance::WriteHeaders(Renderer& renderer)
 }
 void Instance::WriteLineAddress(DrawLineInfo& dli)
 {
-    uint64 ofs                  = dli.offset;
-    auto c                      = Cfg.Text.Inactive;
-    auto n                      = dli.chNameAndSize;
-    const GView::Utils::Zone* z = nullptr;
+    uint64 ofs = dli.offset;
+    auto c     = Cfg.Text.Inactive;
+    auto n     = dli.chNameAndSize;
 
     if (HasFocus())
     {
         c = OffsetToColorZone(dli.offset);
     }
-    z = this->settings->zList.OffsetToZone(dli.offset);
 
     if (this->Layout.lineNameSize > 0)
     {
@@ -736,7 +727,7 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
         const char* nm     = nullptr;
         const char* nm_end = nullptr;
 
-        if (z)
+        if (auto z = this->settings->zList.OffsetToZone(dli.offset))
         {
             nm     = z->name.GetText();
             nm_end = nm + z->name.Len();
@@ -1063,6 +1054,10 @@ void Instance::Paint(Renderer& renderer)
     renderer.Clear();
     DrawLineInfo dli;
     WriteHeaders(renderer);
+
+    settings->zList.SetCache(
+          { this->Cursor.startView, ((uint64) this->Layout.charactersPerLine) * (this->Layout.visibleRows - 1ull) + this->Cursor.startView });
+
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
@@ -1108,9 +1103,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     {
         LocalString<64> tmp;
         commandBar.SetCommand(
-              config.Keys.ChangeValueFormatOrCP,
-              tmp.Format("CP:%s", CodePage::GetCodePageName(this->codePage).data()),
-              BUFFERVIEW_CMD_CHANGECODEPAGE);
+              config.Keys.ChangeValueFormatOrCP, tmp.Format("CP:%s", CodePage::GetCodePageName(this->codePage).data()), BUFFERVIEW_CMD_CHANGECODEPAGE);
     }
     else
     {
@@ -1135,9 +1128,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     if ((this->settings) && (this->settings->translationMethodsCount > 0))
     {
         commandBar.SetCommand(
-              config.Keys.ChangeAddressMode,
-              this->settings->translationMethods[this->currentAdrressMode].name,
-              BUFFERVIEW_CMD_CHANGEADDRESSMODE);
+              config.Keys.ChangeAddressMode, this->settings->translationMethods[this->currentAdrressMode].name, BUFFERVIEW_CMD_CHANGEADDRESSMODE);
     }
 
     // Entry point
@@ -1236,8 +1227,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         return true;
     case Key::End:
         MoveTo(
-              this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLine +
-                    this->Layout.charactersPerLine - 1,
+              this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLine + this->Layout.charactersPerLine -
+                    1,
               select);
         return true;
 
@@ -1362,8 +1353,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         }
         else
         {
-            this->Layout.charFormatMode =
-                  static_cast<CharacterFormatMode>((((uint8) this->Layout.charFormatMode) + 1) % ((uint8) CharacterFormatMode::Count));
+            this->Layout.charFormatMode = static_cast<CharacterFormatMode>((((uint8) this->Layout.charFormatMode) + 1) % ((uint8) CharacterFormatMode::Count));
             UpdateViewSizes();
         }
         return true;
@@ -1553,10 +1543,9 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 }
 int Instance::PrintCursorZone(int x, int y, uint32 width, Renderer& r)
 {
-    auto zone = this->settings->zList.OffsetToZone(this->Cursor.currentPos);
-    if (zone)
+    if (auto z = this->settings->zList.OffsetToZone(this->Cursor.currentPos))
     {
-        r.WriteSingleLineText(x, y, width, zone->name, this->CursorColors.Highlighted);
+        r.WriteSingleLineText(x, y, width, z->name, this->CursorColors.Highlighted);
     }
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
@@ -1712,8 +1701,7 @@ int Instance::Print32bitBEValue(int x, int height, AppCUI::Utils::BufferView buf
 {
     if (buffer.GetLength() < 4)
         return x;
-    const uint32 v_u32 =
-          (((uint32_t) buffer[0]) << 24) | (((uint32_t) buffer[1]) << 16) | (((uint32_t) buffer[2]) << 8) | (((uint32_t) buffer[3]));
+    const uint32 v_u32 = (((uint32_t) buffer[0]) << 24) | (((uint32_t) buffer[1]) << 16) | (((uint32_t) buffer[2]) << 8) | (((uint32_t) buffer[3]));
     NumericFormatter n;
     NumericFormat fmt    = { NumericFormatFlags::HexSuffix, 16, 0, 0, 8 };
     NumericFormat fmtDec = { NumericFormatFlags::None, 10, 3, ',' };
@@ -2195,42 +2183,41 @@ const vector<Property> Instance::GetPropertiesList()
         }
     }
 
-    return {
-        // Display
-        { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
-        { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
-        { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
-        { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
-        { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage::GetPropertyListValues() },
+    return { // Display
+             { BT(PropertyID::Columns), "Display", "Columns", PropertyType::List, "8 columns=8,16 columns=16,32 columns=32,FullScreen=0" },
+             { BT(PropertyID::CursorOffset), "Display", "Cursor offset", PropertyType::Boolean, "Dec,Hex" },
+             { BT(PropertyID::DataFormat), "Display", "Data format", PropertyType::List, "Hex=0,Oct=1,Signed decimal=2,Unsigned decimal=3" },
+             { BT(PropertyID::ShowTypeObject), "Display", "Show Type specific patterns", PropertyType::Boolean },
+             { BT(PropertyID::CodePage), "Display", "CodePage", PropertyType::List, CodePage::GetPropertyListValues() },
 
-        // Address
-        { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
-        { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
-        { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
-        { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
-        { BT(PropertyID::ZoneNameWidth), "Address", "Zone name Width", PropertyType::UInt32 },
+             // Address
+             { BT(PropertyID::AddressType), "Address", "Type", PropertyType::List, addressModesList.ToStringView() },
+             { BT(PropertyID::ShowAddress), "Address", "Show Address", PropertyType::Boolean },
+             { BT(PropertyID::ShowZoneName), "Address", "Show Zone Name", PropertyType::Boolean },
+             { BT(PropertyID::AddressBarWidth), "Address", "Address Bar Width", PropertyType::UInt32 },
+             { BT(PropertyID::ZoneNameWidth), "Address", "Zone name Width", PropertyType::UInt32 },
 
-        // Selection
-        { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
-        { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=1" },
-        { BT(PropertyID::Selection_1), "Selection", "Selection 1", PropertyType::Custom },
-        { BT(PropertyID::Selection_2), "Selection", "Selection 2", PropertyType::Custom },
-        { BT(PropertyID::Selection_3), "Selection", "Selection 3", PropertyType::Custom },
-        { BT(PropertyID::Selection_4), "Selection", "Selection 4", PropertyType::Custom },
+             // Selection
+             { BT(PropertyID::HighlightSelection), "Selection", "Highlight current selection", PropertyType::Boolean },
+             { BT(PropertyID::SelectionType), "Selection", "Type", PropertyType::List, "Single=0,Multiple=1" },
+             { BT(PropertyID::Selection_1), "Selection", "Selection 1", PropertyType::Custom },
+             { BT(PropertyID::Selection_2), "Selection", "Selection 2", PropertyType::Custom },
+             { BT(PropertyID::Selection_3), "Selection", "Selection 3", PropertyType::Custom },
+             { BT(PropertyID::Selection_4), "Selection", "Selection 4", PropertyType::Custom },
 
-        // String
-        { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
-        { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
-        { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
-        { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
+             // String
+             { BT(PropertyID::ShowAscii), "Strings", "Ascii", PropertyType::Boolean },
+             { BT(PropertyID::ShowUnicode), "Strings", "Unicode", PropertyType::Boolean },
+             { BT(PropertyID::StringCharacterSet), "Strings", "Character set", PropertyType::Ascii },
+             { BT(PropertyID::MinimCharsInString), "Strings", "Minim consecutives chars", PropertyType::UInt32 },
 
-        // shortcuts
-        { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
-        { BT(PropertyID::ChangeValueFormatOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
-        { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
-        { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
-        { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
-        { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key }
+             // shortcuts
+             { BT(PropertyID::ChangeAddressMode), "Shortcuts", "Change address mode/type", PropertyType::Key },
+             { BT(PropertyID::ChangeValueFormatOrCP), "Shortcuts", "Change value format/code page", PropertyType::Key },
+             { BT(PropertyID::ChangeColumnsView), "Shortcuts", "Change nr. of columns", PropertyType::Key },
+             { BT(PropertyID::GoToEntryPoint), "Shortcuts", "Go To Entry Point", PropertyType::Key },
+             { BT(PropertyID::ChangeSelectionType), "Shortcuts", "Change selection type", PropertyType::Key },
+             { BT(PropertyID::ShowHideStrings), "Shortcuts", "Show/Hide strings", PropertyType::Key }
     };
 }
 #undef BT
