@@ -522,7 +522,7 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
         {
             if (p[1] == 0x15) // possible call to API
             {
-                const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
+                // const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
                 // if (addr >= imageBase && addr <= imageBase + vcSize)
                 {
                     result.start = offset;
@@ -533,7 +533,7 @@ bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View:
             }
             else if (p[1] == 0x25) // possible jump to API
             {
-                const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
+                // const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
                 // if (addr >= imageBase && addr <= imageBase + vcSize)
                 {
                     result.start = offset;
