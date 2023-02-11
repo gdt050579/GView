@@ -671,7 +671,7 @@ namespace Type
 
         static constexpr auto INS_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
         static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
-        static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Green, Color::Magenta };
+        static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Green, Color::DarkBlue };
         static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
         static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
         static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
