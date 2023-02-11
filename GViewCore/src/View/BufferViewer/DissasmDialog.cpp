@@ -3,17 +3,32 @@
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
 
-constexpr int32 BTN_ID_OK     = 1;
-constexpr int32 BTN_ID_CANCEL = 2;
+constexpr int32 BTN_ID_OK                    = 1;
+constexpr int32 BTN_ID_CANCEL                = 2;
+constexpr int32 RADIOBOX_ID_ARCHITECTURE_X86 = 3;
+constexpr int32 RADIOBOX_ID_ARCHITECTURE_X64 = 4;
+constexpr int32 RADIOBOX_ID_DEISGN_INTEL     = 5;
+constexpr int32 RADIOBOX_ID_DEISGN_ARM       = 6;
+
+constexpr int32 GROUPD_ID_ARCHITECTURE_TYPE = 1;
+constexpr int32 GROUPD_ID_DESIGN_TYPE       = 2;
 
 DissasmDialog::DissasmDialog(BufferView _buffer, uint64 _fa, uint64 _size)
     : Window("Dissasm", "d:c,w:60%,h:60%", WindowFlags::ProcessReturn), buffer(_buffer), fa(_fa), size(_size)
 {
     list = Factory::ListView::Create(
-          this, "x:0,y:0,w:100%,h:90%", { "n:FA,w:10%", "n:Bytes,w:20%", "n:Instructions,w:70%" }, ListViewFlags::None);
+          this, "x:0,y:0,w:100%,h:90%", { "n:FA,w:10%", "n:Bytes,w:20%", "n:Instructions,w:50%", "n:Options,w:20%" }, ListViewFlags::None);
     list->SetFocus();
 
-    CHECKRET(dissasembler.Init(true, true), "");
+    architecture = Factory::Label::Create(this, "Architecture", "x:82%,y:2,w:18%,h:1");
+    x86          = Factory::RadioBox::Create(this, "x&64", "x:82%,y:3,w:18%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X86, true);
+    x64          = Factory::RadioBox::Create(this, "x&86", "x:82%,y:4,w:18%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X64);
+
+    design = Factory::Label::Create(this, "Design", "x:82%,y:6,w:100%,h:1");
+    intel  = Factory::RadioBox::Create(this, "&Intel", "x:82%,y:7,w:18%,h:1", GROUPD_ID_DESIGN_TYPE, RADIOBOX_ID_DEISGN_INTEL, true);
+    arm    = Factory::RadioBox::Create(this, "&ARM", "x:82%,y:8,w:18%,h:1", GROUPD_ID_DESIGN_TYPE, RADIOBOX_ID_DEISGN_ARM);
+
+    CHECKRET(dissasembler.Init(true, true, true), "");
 
     LocalString<128> tmp;
     LocalString<128> tmp3;

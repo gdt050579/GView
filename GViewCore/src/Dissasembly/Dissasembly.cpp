@@ -3,19 +3,25 @@
 
 namespace GView::Dissasembly
 {
-bool DissasemblerIntel::Init(bool isx64, bool isLittleEndian)
+bool DissasemblerIntel::Init(bool isARM, bool isx64, bool isLittleEndian)
 {
-    if (handle == 0)
+    this->isARM          = isARM;
+    this->isX64          = isx64;
+    this->isLittleEndian = isLittleEndian;
+
+    if (handle != 0)
     {
-        this->isX64 = isx64;
-
-        cs_arch arch = CS_ARCH_X86;
-        cs_mode mode = isx64 ? CS_MODE_64 : CS_MODE_32;
-        mode         = (cs_mode) ((uint32) mode | (isLittleEndian ? CS_MODE_LITTLE_ENDIAN : CS_MODE_BIG_ENDIAN));
-
-        const auto result = cs_open(arch, mode, &handle);
-        CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
+        CHECK(cs_close(&handle), false, "");
+        handle = 0;
     }
+
+    cs_arch arch = isARM ? (isx64 ? CS_ARCH_ARM64 : CS_ARCH_ARM) : CS_ARCH_X86;
+    cs_mode mode =
+          (cs_mode) ((uint32) (isARM ? CS_MODE_ARM : (isx64 ? CS_MODE_64 : CS_MODE_32)) | (isLittleEndian ? CS_MODE_LITTLE_ENDIAN : CS_MODE_BIG_ENDIAN));
+
+    const auto result = cs_open(arch, mode, &handle);
+    CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
+
     return true;
 }
 

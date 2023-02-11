@@ -396,6 +396,14 @@ class DissasmDialog : public Window
 
     GView::Dissasembly::DissasemblerIntel dissasembler{};
 
+    Reference<Label> architecture;
+    Reference<RadioBox> x86;
+    Reference<RadioBox> x64;
+
+    Reference<Label> design;
+    Reference<RadioBox> intel;
+    Reference<RadioBox> arm;
+
     void Validate();
 
   public:
