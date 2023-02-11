@@ -1418,8 +1418,8 @@ bool PEFile::Update()
     fileAlign     = nth32.OptionalHeader.FileAlignment;       // same,  BaseOfData missing on PE32+
     nrSections    = nth32.FileHeader.NumberOfSections;        // same
 
-    poz          = dos.e_lfanew + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
-    sectStart    = (uint32) poz;
+    poz = static_cast<uint64>(dos.e_lfanew) + nth32.FileHeader.SizeOfOptionalHeader + sizeof(((ImageNTHeaders32*) 0)->Signature) + sizeof(ImageFileHeader);
+    sectStart    = static_cast<uint32>(poz);
     peStart      = dos.e_lfanew;
     computedSize = virtualComputedSize = 0;
 
