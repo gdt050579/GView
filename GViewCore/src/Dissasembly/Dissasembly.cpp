@@ -3,6 +3,21 @@
 
 namespace GView::Dissasembly
 {
+void InstructionToInstruction(const cs_insn& insn, Instruction& instruction)
+{
+    instruction.id      = insn.id;
+    instruction.address = insn.address;
+    instruction.size    = insn.size;
+    memcpy(instruction.bytes, insn.bytes, BYTES_SIZE);
+    memcpy(instruction.mnemonic, insn.mnemonic, MNEMONIC_SIZE);
+    memcpy(instruction.opStr, insn.op_str, OP_STR_SIZE);
+    if (insn.detail != nullptr)
+    {
+        memcpy(instruction.groups, insn.detail->groups, 8);
+        instruction.groupsCount = insn.detail->groups_count;
+    }
+}
+
 bool DissasemblerIntel::Init(bool isARM, bool isx64, bool isLittleEndian)
 {
     this->isARM          = isARM;
@@ -11,7 +26,7 @@ bool DissasemblerIntel::Init(bool isARM, bool isx64, bool isLittleEndian)
 
     if (handle != 0)
     {
-        CHECK(cs_close(&handle), false, "");
+        CHECK(cs_close(&handle) == CS_ERR_OK, false, "");
         handle = 0;
     }
 
@@ -21,6 +36,8 @@ bool DissasemblerIntel::Init(bool isARM, bool isx64, bool isLittleEndian)
 
     const auto result = cs_open(arch, mode, &handle);
     CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
+    const auto resultOption = cs_option(handle, cs_opt_type::CS_OPT_DETAIL, CS_OPT_ON);
+    CHECK(resultOption == CS_ERR_OK, false, "Error: %u!", result);
 
     return true;
 }
@@ -29,17 +46,42 @@ bool DissasemblerIntel::DissasembleInstruction(BufferView buf, uint64 va, Instru
 {
     CHECK(handle != 0, false, "");
 
-    cs_insn insn{};
+    cs_detail detail{};
+    cs_insn insn{ .detail = &detail };
 
     auto data   = buf.GetData();
     auto length = buf.GetLength();
 
     uint64 address = va;
     CHECK(cs_disasm_iter(handle, &data, &length, &address, &insn), false, "");
-
-    memcpy(&instruction, &insn, sizeof(instruction));
+    InstructionToInstruction(insn, instruction);
 
     return true;
+}
+
+bool DissasemblerIntel::DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instructions)
+{
+    CHECK(handle != 0, false, "");
+
+    cs_detail detail{};
+    cs_insn insn{ .detail = &detail };
+
+    auto data    = buf.GetData();
+    auto length  = buf.GetLength();
+    auto address = va;
+
+    while (cs_disasm_iter(handle, &data, &length, &address, &insn))
+    {
+        auto& instruction = instructions.emplace_back();
+        InstructionToInstruction(insn, instruction);
+    }
+
+    return true;
+}
+
+std::string_view DissasemblerIntel::GetInstructionGroupName(uint8 groupID) const
+{
+    return cs_group_name(handle, groupID);
 }
 
 bool DissasemblerIntel::IsCallInstruction(const Instruction& instruction) const
@@ -205,7 +247,7 @@ bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction)
 
 DissasemblerIntel::~DissasemblerIntel()
 {
-    CHECKRET(cs_close(&handle), "");
+    CHECKRET(cs_close(&handle) == CS_ERR_OK, "");
     handle = 0;
 }
 } // namespace GView::Dissasembly

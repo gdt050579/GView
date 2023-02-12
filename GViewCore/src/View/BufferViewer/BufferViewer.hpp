@@ -387,7 +387,7 @@ class CopyDialog : public Window
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 };
 
-class DissasmDialog : public Window
+class DissasmDialog : public Window, public Handlers::OnCheckInterface
 {
     BufferView buffer;
     Reference<ListView> list;
@@ -404,12 +404,18 @@ class DissasmDialog : public Window
     Reference<RadioBox> intel;
     Reference<RadioBox> arm;
 
+    Reference<Label> endianess;
+    Reference<RadioBox> little;
+    Reference<RadioBox> big;
+
     void Validate();
+    bool Update();
 
   public:
     DissasmDialog(BufferView buffer, uint64 fa, uint64 size);
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+    virtual void OnCheck(Reference<Controls::Control> control, bool value) override;
 };
 
 } // namespace GView::View::BufferViewer

@@ -655,20 +655,30 @@ namespace Dissasembly
     {
         Header        = 1,
         Call          = 2,
-        LCall         = 4,
         Jmp           = 8,
-        LJmp          = 16,
         Breakpoint    = 32,
         FunctionStart = 64,
         FunctionEnd   = 128,
         All           = 0xFFFFFFFF
     };
 
+    enum class GroupType : uint8 // this is "inspired" from capstone cs_group_type
+    {
+        Invalid        = 0,
+        Jump           = 1,
+        Call           = 2,
+        Ret            = 3,
+        Int            = 4,
+        Iret           = 5,
+        Pivilege       = 6,
+        BranchRelative = 7,
+    };
+
     constexpr auto BYTES_SIZE    = 24U;
     constexpr auto MNEMONIC_SIZE = 32U;
     constexpr auto OP_STR_SIZE   = 160U;
 
-    struct CORE_EXPORT Instruction
+    struct CORE_EXPORT Instruction // this is "inspired" from capstone cs_insn & cs_detail
     {
         uint32 id;
         uint64 address;
@@ -676,6 +686,8 @@ namespace Dissasembly
         uint8 bytes[BYTES_SIZE];
         char mnemonic[MNEMONIC_SIZE];
         char opStr[OP_STR_SIZE];
+        GroupType groups[8];
+        uint8 groupsCount;
     };
 
     class CORE_EXPORT DissasemblerIntel
@@ -689,6 +701,8 @@ namespace Dissasembly
       public:
         bool Init(bool isARM, bool isx64, bool isLittleEndian);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instruction);
+        std::string_view GetInstructionGroupName(uint8 groupID) const;
         bool IsCallInstruction(const Instruction& instruction) const;
         bool IsLCallInstruction(const Instruction& instruction) const;
         bool IsJmpInstruction(const Instruction& instruction) const;
