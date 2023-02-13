@@ -328,6 +328,16 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     {
         return settings.ToReference();
     }
+
+    uint32 GetCurrentAddressMode() const
+    {
+        return currentAdrressMode;
+    };
+
+    uint64 GetCursorCurrentPosition() const
+    {
+        return Cursor.currentPos;
+    };
 };
 
 class SelectionEditor : public Window
@@ -399,10 +409,7 @@ class CopyDialog : public Window
 
 class DissasmDialog : public Window, public Handlers::OnCheckInterface
 {
-    BufferView buffer;
     Reference<ListView> list;
-    uint64 fa;
-    uint64 size;
 
     Reference<Instance> instance{};
     GView::Dissasembly::DissasemblerIntel dissasembler{};
@@ -423,7 +430,7 @@ class DissasmDialog : public Window, public Handlers::OnCheckInterface
     bool Update();
 
   public:
-    DissasmDialog(Reference<Instance> instance, BufferView buffer, uint64 fa, uint64 size);
+    DissasmDialog(Reference<Instance> instance);
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
     virtual void OnCheck(Reference<Controls::Control> control, bool value) override;

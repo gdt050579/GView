@@ -16,8 +16,7 @@ constexpr int32 GROUPD_ID_ARCHITECTURE_TYPE = 1;
 constexpr int32 GROUPD_ID_DESIGN_TYPE       = 2;
 constexpr int32 GROUPD_ID_ENDIANESS_TYPE    = 3;
 
-DissasmDialog::DissasmDialog(Reference<Instance> instance, BufferView _buffer, uint64 _fa, uint64 _size)
-    : Window("Dissasm", "d:c,w:60%,h:60%", WindowFlags::ProcessReturn), instance(instance), buffer(_buffer), fa(_fa), size(_size)
+DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "d:c,w:60%,h:60%", WindowFlags::ProcessReturn), instance(instance)
 {
     list = Factory::ListView::Create(
           this, "x:0,y:0,w:85%,h:90%", { "n:FA,w:10%", "n:Bytes,w:30%", "n:Instructions,w:35%", "n:Groups,w:35%" }, ListViewFlags::None);
@@ -177,10 +176,18 @@ bool DissasmDialog::Update()
     CHECK(instance.IsValid(), false, "");
     list->DeleteAllItems();
 
+    const auto addressColumnName = instance->GetSettings()->translationMethods[instance->GetCurrentAddressMode()].name.GetText();
+    CHECK(list->GetColumn(0).SetText(addressColumnName), false, "");
+
     CHECK(dissasembler.Init(instance->GetSettings()->design, instance->GetSettings()->architecture, instance->GetSettings()->endianess), false, "");
 
     std::vector<GView::Dissasembly::Instruction> instructions{};
-    CHECK(dissasembler.DissasembleInstructions(buffer, 0, instructions), false, "");
+
+    const auto address =
+          instance->GetSettings()->offsetTranslateCallback->TranslateFromFileOffset(instance->GetCursorCurrentPosition(), instance->GetCurrentAddressMode());
+    const auto buffer = instance->GetObject()->GetData().Get(instance->GetCursorCurrentPosition(), 0x2000, false);
+
+    CHECK(dissasembler.DissasembleInstructions(buffer, address, instructions), false, "");
 
     LocalString<128> tmp;
     LocalString<128> tmp3;
@@ -207,7 +214,7 @@ bool DissasmDialog::Update()
             first = false;
         }
 
-        list->AddItem({ tmp3.Format("0x%llx", fa + offset), tmp2, tmp.Format("%s %s", instruction.mnemonic, instruction.opStr), tmp4 });
+        list->AddItem({ tmp3.Format("0x%llX", address + offset), tmp2, tmp.Format("%s %s", instruction.mnemonic, instruction.opStr), tmp4 });
         offset += instruction.size;
     }
 
