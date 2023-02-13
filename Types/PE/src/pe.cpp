@@ -138,6 +138,32 @@ extern "C"
             }
         }
 
+        switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
+        {
+        case PE::MachineType::I386:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x86);
+            settings.SetDesign(GView::Dissasembly::Design::Intel);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
+        case PE::MachineType::IA64:
+        case PE::MachineType::AMD64:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x64);
+            settings.SetDesign(GView::Dissasembly::Design::Intel);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
+        case PE::MachineType::ARM:
+        case PE::MachineType::ARMNT:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x86);
+            settings.SetDesign(GView::Dissasembly::Design::ARM);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+        case PE::MachineType::ARM64:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x64);
+            settings.SetDesign(GView::Dissasembly::Design::ARM);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+        default:
+            break;
+        }
+
         pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
     }
 

@@ -35,6 +35,11 @@ struct SettingsData
     Reference<OffsetTranslateInterface> offsetTranslateCallback;
     Reference<PositionToColorInterface> positionToColorCallback;
     SettingsData();
+
+    // dissasm related settings
+    GView::Dissasembly::Architecture architecture;
+    GView::Dissasembly::Design design;
+    GView::Dissasembly::Endianess endianess;
 };
 enum class MouseLocation : uint8
 {
@@ -318,6 +323,11 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     {
         return StringInfo;
     };
+
+    auto GetSettings() const
+    {
+        return settings.ToReference();
+    }
 };
 
 class SelectionEditor : public Window
@@ -394,6 +404,7 @@ class DissasmDialog : public Window, public Handlers::OnCheckInterface
     uint64 fa;
     uint64 size;
 
+    Reference<Instance> instance{};
     GView::Dissasembly::DissasemblerIntel dissasembler{};
 
     Reference<Label> architecture;
@@ -412,7 +423,7 @@ class DissasmDialog : public Window, public Handlers::OnCheckInterface
     bool Update();
 
   public:
-    DissasmDialog(BufferView buffer, uint64 fa, uint64 size);
+    DissasmDialog(Reference<Instance> instance, BufferView buffer, uint64 fa, uint64 size);
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
     virtual void OnCheck(Reference<Controls::Control> control, bool value) override;

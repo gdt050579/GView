@@ -674,6 +674,27 @@ namespace Dissasembly
         BranchRelative = 7,
     };
 
+    enum class Architecture : uint8
+    {
+        Invalid = 0,
+        x86     = 1,
+        x64     = 2,
+    };
+
+    enum class Design : uint8
+    {
+        Invalid = 0,
+        Intel   = 1,
+        ARM     = 2,
+    };
+
+    enum class Endianess : uint8
+    {
+        Invalid = 0,
+        Little  = 1,
+        Big     = 2,
+    };
+
     constexpr auto BYTES_SIZE    = 24U;
     constexpr auto MNEMONIC_SIZE = 32U;
     constexpr auto OP_STR_SIZE   = 160U;
@@ -694,12 +715,12 @@ namespace Dissasembly
     {
       private:
         size_t handle{ 0 };
-        bool isX64{ false };
-        bool isARM{ false };
-        bool isLittleEndian{ false };
+        Design design{ Design::Invalid };
+        Architecture architecture{ Architecture ::Invalid };
+        Endianess endianess{ Endianess::Invalid };
 
       public:
-        bool Init(bool isARM, bool isx64, bool isLittleEndian);
+        bool Init(Design design, Architecture architecture, Endianess endianess);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
         bool DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instruction);
         std::string_view GetInstructionGroupName(uint8 groupID) const;
@@ -850,11 +871,17 @@ namespace View
             void* data;
 
             Settings();
+            ~Settings();
             void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
             void AddBookmark(uint8 bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
-            void SetEntryPointOffset(uint64_t offset);
+            void SetEntryPointOffset(uint64 offset);
+
+            // dissasm related settings
+            void SetArchitecture(GView::Dissasembly::Architecture architecture);
+            void SetDesign(GView::Dissasembly::Design design);
+            void SetEndianess(GView::Dissasembly::Endianess endianess);
         };
     }; // namespace BufferViewer
 

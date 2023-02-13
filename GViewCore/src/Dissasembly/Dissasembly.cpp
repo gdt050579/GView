@@ -18,11 +18,11 @@ void InstructionToInstruction(const cs_insn& insn, Instruction& instruction)
     }
 }
 
-bool DissasemblerIntel::Init(bool isARM, bool isx64, bool isLittleEndian)
+bool DissasemblerIntel::Init(Design design, Architecture architecture, Endianess endianess)
 {
-    this->isARM          = isARM;
-    this->isX64          = isx64;
-    this->isLittleEndian = isLittleEndian;
+    this->design       = design;
+    this->architecture = architecture;
+    this->endianess    = endianess;
 
     if (handle != 0)
     {
@@ -30,9 +30,68 @@ bool DissasemblerIntel::Init(bool isARM, bool isx64, bool isLittleEndian)
         handle = 0;
     }
 
-    cs_arch arch = isARM ? (isx64 ? CS_ARCH_ARM64 : CS_ARCH_ARM) : CS_ARCH_X86;
-    cs_mode mode =
-          (cs_mode) ((uint32) (isARM ? CS_MODE_ARM : (isx64 ? CS_MODE_64 : CS_MODE_32)) | (isLittleEndian ? CS_MODE_LITTLE_ENDIAN : CS_MODE_BIG_ENDIAN));
+    cs_arch arch = (cs_arch) 0;
+    cs_mode mode = (cs_mode) 0;
+    switch (design)
+    {
+    case GView::Dissasembly::Design::Intel:
+        arch = CS_ARCH_X86;
+        switch (architecture)
+        {
+        case GView::Dissasembly::Architecture::x86:
+            mode = CS_MODE_32;
+            break;
+        case GView::Dissasembly::Architecture::x64:
+            mode = CS_MODE_64;
+            break;
+        case GView::Dissasembly::Architecture::Invalid:
+        default:
+            break;
+        }
+        switch (endianess)
+        {
+        case GView::Dissasembly::Endianess::Little:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_LITTLE_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Big:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_BIG_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Invalid:
+        default:
+            break;
+        }
+        break;
+    case GView::Dissasembly::Design::ARM:
+        mode = CS_MODE_ARM;
+        switch (architecture)
+        {
+        case GView::Dissasembly::Architecture::x86:
+            arch = CS_ARCH_ARM;
+            break;
+        case GView::Dissasembly::Architecture::x64:
+            arch = CS_ARCH_ARM64;
+            break;
+        case GView::Dissasembly::Architecture::Invalid:
+        default:
+            break;
+        }
+        switch (endianess)
+        {
+        case GView::Dissasembly::Endianess::Little:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_LITTLE_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Big:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_BIG_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Invalid:
+        default:
+            break;
+        }
+        break;
+    case GView::Dissasembly::Design::Invalid:
+    default:
+        break;
+    }
 
     const auto result = cs_open(arch, mode, &handle);
     CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
@@ -134,7 +193,7 @@ bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruct
     case X86_INS_PUSHFQ:
     {
         const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
-        if (this->isX64)
+        if (architecture == Architecture::x64)
         {
             CHECK(opStr.starts_with("rsp"), false, "");
         }
@@ -202,7 +261,7 @@ bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruct
     case X86_INS_FSUBP:
     {
         const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
-        if (this->isX64)
+        if (architecture == Architecture::x64)
         {
             CHECK(opStr.starts_with("rsp"), false, "");
         }
