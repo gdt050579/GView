@@ -19,7 +19,10 @@ constexpr int32 GROUPD_ID_ENDIANESS_TYPE    = 3;
 DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "d:c,w:60%,h:60%", WindowFlags::ProcessReturn), instance(instance)
 {
     list = Factory::ListView::Create(
-          this, "x:0,y:0,w:85%,h:90%", { "n:FA,w:10%", "n:Bytes,w:30%", "n:Instructions,w:35%", "n:Groups,w:35%" }, ListViewFlags::None);
+          this,
+          "x:5,y:1,w:85%,h:90%",
+          { "n:FA,w:10%", "n:Bytes,w:30%", "n:Instructions,w:35%", "n:Groups,w:35%" },
+          ListViewFlags::AllowMultipleItemsSelection | ListViewFlags::PopupSearchBar);
     list->SetFocus();
 
     architecture             = Factory::Label::Create(this, "Architecture", "x:90%,y:2,w:10%,h:1");
@@ -203,9 +206,16 @@ bool DissasmDialog::Update()
 
         LocalString<128> tmp4;
         bool first{ true };
+        bool branchRelative{ false };
         for (auto i = 0U; i < instruction.groupsCount; i++)
         {
-            const auto name = dissasembler.GetInstructionGroupName((uint8) instruction.groups[i]);
+            const auto t = instruction.groups[i];
+            if (t == GView::Dissasembly::GroupType::Jump || t == GView::Dissasembly::GroupType::Call || t == GView::Dissasembly::GroupType::BranchRelative)
+            {
+                branchRelative = true;
+            }
+
+            const auto name = dissasembler.GetInstructionGroupName((uint8) t);
             if (first == false)
             {
                 tmp4.Add(" | ");
@@ -214,7 +224,28 @@ bool DissasmDialog::Update()
             first = false;
         }
 
-        list->AddItem({ tmp3.Format("0x%llX", address + offset), tmp2, tmp.Format("%s %s", instruction.mnemonic, instruction.opStr), tmp4 });
+        auto item = list->AddItem({ tmp3.Format("0x%llX", address + offset), tmp2, tmp.Format("%s %s", instruction.mnemonic, instruction.opStr), tmp4 });
+        if (branchRelative)
+        {
+            item.SetType(ListViewItem::Type::Colored);             // this is bad..
+            // item.SetColor(0, list->GetConfig()->Text.Normal);      // this is bad..
+            // item.SetColor(1, list->GetConfig()->Text.Normal);      // this is bad..
+            // item.SetColor(2, { Color::Pink, Color::Transparent }); // this is bad..
+            // item.SetColor(3, list->GetConfig()->Text.Normal);      // this is bad..
+            item.SetColor({ Color::Pink, Color::Transparent });
+        }
+
+        item.SetData((uint8) GView::Dissasembly::GroupType::Invalid);
+        for (auto i = 0U; i < instruction.groupsCount; i++)
+        {
+            const auto t = instruction.groups[i];
+            if (t == GView::Dissasembly::GroupType::Jump || t == GView::Dissasembly::GroupType::Call || t == GView::Dissasembly::GroupType::BranchRelative)
+            {
+                item.SetData((uint8) t);
+                break;
+            }
+        }
+
         offset += instruction.size;
     }
 
