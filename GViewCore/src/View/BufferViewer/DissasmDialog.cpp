@@ -227,12 +227,8 @@ bool DissasmDialog::Update()
         auto item = list->AddItem({ tmp3.Format("0x%llX", address + offset), tmp2, tmp.Format("%s %s", instruction.mnemonic, instruction.opStr), tmp4 });
         if (branchRelative)
         {
-            item.SetType(ListViewItem::Type::Colored);             // this is bad..
-            // item.SetColor(0, list->GetConfig()->Text.Normal);      // this is bad..
-            // item.SetColor(1, list->GetConfig()->Text.Normal);      // this is bad..
-            // item.SetColor(2, { Color::Pink, Color::Transparent }); // this is bad..
-            // item.SetColor(3, list->GetConfig()->Text.Normal);      // this is bad..
-            item.SetColor({ Color::Pink, Color::Transparent });
+            item.SetType(ListViewItem::Type::SubItemColored);
+            item.SetColor(2, { Color::Pink, Color::Transparent });
         }
 
         item.SetData((uint8) GView::Dissasembly::GroupType::Invalid);
