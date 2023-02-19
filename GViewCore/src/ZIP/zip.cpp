@@ -211,8 +211,7 @@ std::string Entry::GetFlagNames() const
             continue;
         }
 
-        if ((flag & MZ_ZIP_FLAG_DEFLATE_SUPER_FAST) == MZ_ZIP_FLAG_DEFLATE_SUPER_FAST &&
-            (flag == MZ_ZIP_FLAG_DEFLATE_MAX || flag == MZ_ZIP_FLAG_DEFLATE_FAST))
+        if ((flag & MZ_ZIP_FLAG_DEFLATE_SUPER_FAST) == MZ_ZIP_FLAG_DEFLATE_SUPER_FAST && (flag == MZ_ZIP_FLAG_DEFLATE_MAX || flag == MZ_ZIP_FLAG_DEFLATE_FAST))
         {
             continue; // write only super fast flag
         }
@@ -410,7 +409,7 @@ bool GetInfo(Utils::DataCache& cache, Info& info)
     CHECK(mz_zip_reader_open_buffer(
                 internalInfo->reader.value,
                 const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(buffer.GetData())),
-                buffer.GetLength(),
+                static_cast<uint32>(buffer.GetLength()), // max 4GB
                 /* don't copy */ 0) == MZ_OK,
           false,
           "");

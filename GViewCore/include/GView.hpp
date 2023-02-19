@@ -655,20 +655,51 @@ namespace Dissasembly
     {
         Header        = 1,
         Call          = 2,
-        LCall         = 4,
         Jmp           = 8,
-        LJmp          = 16,
         Breakpoint    = 32,
         FunctionStart = 64,
         FunctionEnd   = 128,
         All           = 0xFFFFFFFF
     };
 
+    enum class GroupType : uint8 // this is "inspired" from capstone cs_group_type
+    {
+        Invalid        = 0,
+        Jump           = 1,
+        Call           = 2,
+        Ret            = 3,
+        Int            = 4,
+        Iret           = 5,
+        Pivilege       = 6,
+        BranchRelative = 7,
+    };
+
+    enum class Architecture : uint8
+    {
+        Invalid = 0,
+        x86     = 1,
+        x64     = 2,
+    };
+
+    enum class Design : uint8
+    {
+        Invalid = 0,
+        Intel   = 1,
+        ARM     = 2,
+    };
+
+    enum class Endianess : uint8
+    {
+        Invalid = 0,
+        Little  = 1,
+        Big     = 2,
+    };
+
     constexpr auto BYTES_SIZE    = 24U;
     constexpr auto MNEMONIC_SIZE = 32U;
     constexpr auto OP_STR_SIZE   = 160U;
 
-    struct CORE_EXPORT Instruction
+    struct CORE_EXPORT Instruction // this is "inspired" from capstone cs_insn & cs_detail
     {
         uint32 id;
         uint64 address;
@@ -676,17 +707,23 @@ namespace Dissasembly
         uint8 bytes[BYTES_SIZE];
         char mnemonic[MNEMONIC_SIZE];
         char opStr[OP_STR_SIZE];
+        GroupType groups[8];
+        uint8 groupsCount;
     };
 
     class CORE_EXPORT DissasemblerIntel
     {
       private:
         size_t handle{ 0 };
-        bool isX64{ false };
+        Design design{ Design::Invalid };
+        Architecture architecture{ Architecture ::Invalid };
+        Endianess endianess{ Endianess::Invalid };
 
       public:
-        bool Init(bool isx64, bool isLittleEndian);
+        bool Init(Design design, Architecture architecture, Endianess endianess);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instruction);
+        std::string_view GetInstructionGroupName(uint8 groupID) const;
         bool IsCallInstruction(const Instruction& instruction) const;
         bool IsLCallInstruction(const Instruction& instruction) const;
         bool IsJmpInstruction(const Instruction& instruction) const;
@@ -834,11 +871,17 @@ namespace View
             void* data;
 
             Settings();
+            ~Settings();
             void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
             void AddBookmark(uint8 bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
-            void SetEntryPointOffset(uint64_t offset);
+            void SetEntryPointOffset(uint64 offset);
+
+            // dissasm related settings
+            void SetArchitecture(GView::Dissasembly::Architecture architecture);
+            void SetDesign(GView::Dissasembly::Design design);
+            void SetEndianess(GView::Dissasembly::Endianess endianess);
         };
     }; // namespace BufferViewer
 
@@ -1031,14 +1074,14 @@ namespace View
         enum class TokenAlignament : uint32
         {
             None            = 0,
-            AddSpaceBefore  = 0x00000001,    // adds a space on left (except when current token is already at left-most position)
-            AddSpaceAfter   = 0x00000002,    // adds a space on right of the current token
-            NewLineAfter    = 0x00000004,    // adds a new line after the current token
-            NewLineBefore   = 0x00000008,    // makes sure that there is a new (empty) line before previous token and current one
-            StartsOnNewLine = 0x00000010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
-                                             // otherwise adds a new line.
-            AfterPreviousToken = 0x00000020, // make sure that there any space or new line (within the block) between current token
-                                             // and previous token is removed. Both tokens are at on the same line.
+            AddSpaceBefore  = 0x00000001,            // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x00000002,            // adds a space on right of the current token
+            NewLineAfter    = 0x00000004,            // adds a new line after the current token
+            NewLineBefore   = 0x00000008,            // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x00000010,            // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                                     // otherwise adds a new line.
+            AfterPreviousToken = 0x00000020,         // make sure that there any space or new line (within the block) between current token
+                                                     // and previous token is removed. Both tokens are at on the same line.
             IncrementIndentBeforePaint = 0x00000040, // increments the indent of the current line (before painting the token)
             DecrementIndentBeforePaint = 0x00000080, // decrement the indent of the current line (before painting the token)
             ClearIndentBeforePaint     = 0x00000100, // resets current indent to 0 (before painting the token)
@@ -1188,14 +1231,7 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
-            Token Add(
-                  uint32 typeID,
-                  uint32 start,
-                  uint32 end,
-                  TokenColor color,
-                  TokenDataType dataType,
-                  TokenAlignament align,
-                  TokenFlags flags);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
@@ -1338,8 +1374,7 @@ namespace View
              * \param lang The DissasemblyLanguage to use when the Default option will be met.
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
-            void AddDisassemblyZone(
-                  uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+            void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
             void AddMemoryMapping(uint64 address, std::string_view name);
             void AddCollapsibleZone(uint64 offset, uint64 size);
@@ -1413,8 +1448,7 @@ namespace App
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
     void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
-    void CORE_EXPORT
-    OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

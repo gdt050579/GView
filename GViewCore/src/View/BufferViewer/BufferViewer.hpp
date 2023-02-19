@@ -35,6 +35,11 @@ struct SettingsData
     Reference<OffsetTranslateInterface> offsetTranslateCallback;
     Reference<PositionToColorInterface> positionToColorCallback;
     SettingsData();
+
+    // dissasm related settings
+    GView::Dissasembly::Architecture architecture;
+    GView::Dissasembly::Design design;
+    GView::Dissasembly::Endianess endianess;
 };
 enum class MouseLocation : uint8
 {
@@ -65,6 +70,7 @@ struct Config
         AppCUI::Input::Key FindNext;
         AppCUI::Input::Key FindPrevious;
         AppCUI::Input::Key Copy;
+        AppCUI::Input::Key DissasmDialog;
     } Keys;
     bool Loaded;
 
@@ -265,6 +271,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool ShowGoToDialog() override;
     virtual bool ShowFindDialog() override;
     virtual bool ShowCopyDialog() override;
+    bool ShowDissasmDialog();
     virtual std::string_view GetName() override;
 
     virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
@@ -315,6 +322,21 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     decltype(Instance::StringInfo) GetStringInfo() const
     {
         return StringInfo;
+    };
+
+    auto GetSettings() const
+    {
+        return settings.ToReference();
+    }
+
+    uint32 GetCurrentAddressMode() const
+    {
+        return currentAdrressMode;
+    };
+
+    uint64 GetCursorCurrentPosition() const
+    {
+        return Cursor.currentPos;
     };
 };
 
@@ -384,4 +406,34 @@ class CopyDialog : public Window
 
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
 };
+
+class DissasmDialog : public Window, public Handlers::OnCheckInterface
+{
+    Reference<ListView> list;
+
+    Reference<Instance> instance{};
+    GView::Dissasembly::DissasemblerIntel dissasembler{};
+
+    Reference<Label> architecture;
+    Reference<RadioBox> x86;
+    Reference<RadioBox> x64;
+
+    Reference<Label> design;
+    Reference<RadioBox> intel;
+    Reference<RadioBox> arm;
+
+    Reference<Label> endianess;
+    Reference<RadioBox> little;
+    Reference<RadioBox> big;
+
+    void Validate();
+    bool Update();
+
+  public:
+    DissasmDialog(Reference<Instance> instance);
+
+    virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+    virtual void OnCheck(Reference<Controls::Control> control, bool value) override;
+};
+
 } // namespace GView::View::BufferViewer

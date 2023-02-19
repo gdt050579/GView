@@ -40,9 +40,8 @@ constexpr std::array<std::string_view, 4> BINARY_FORMAT_BODY{ "Binary pattern to
                                                               "- input can be decimal or hexadecimal (lowercase or uppercase)",
                                                               "- ? - meaning any character (eg. 0d 0a ? ? 0d 0a)" };
 
-constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT = DIALOG_HEIGHT_TEXT_FORMAT + (uint32) BINARY_FORMAT_BODY.size() - 1U;
-constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT =
-      DESCRIPTION_HEIGHT_TEXT_FORMAT + (DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT);
+constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT      = DIALOG_HEIGHT_TEXT_FORMAT + (uint32) BINARY_FORMAT_BODY.size() - 1U;
+constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT = DESCRIPTION_HEIGHT_TEXT_FORMAT + (DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT);
 
 constexpr std::string_view ANYTHING_PATTERN{ "???" };
 
@@ -51,64 +50,51 @@ FindDialog::FindDialog()
       position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })
 {
     description = Factory::CanvasViewer::Create(
-          this,
-          "d:t,h:3",
-          this->GetWidth(),
-          DESCRIPTION_HEIGHT_TEXT_FORMAT,
-          Controls::ViewerFlags::Border | Controls::ViewerFlags::HideScrollBar);
+          this, "d:t,h:3", this->GetWidth(), DESCRIPTION_HEIGHT_TEXT_FORMAT, Controls::ViewerFlags::Border | Controls::ViewerFlags::HideScrollBar);
 
     input = Factory::TextField::Create(this, "", "x:0,y:3,w:100%,h:1");
     input->SetFocus();
 
-    textOption = Factory::RadioBox::Create(this, "&Text Search", "x:0,y:5,w:40%,h:1", GROUPD_ID_SEARCH_TYPE, RADIOBOX_ID_TEXT);
-    textOption->SetChecked(true);
+    textOption                      = Factory::RadioBox::Create(this, "&Text Search", "x:0,y:5,w:40%,h:1", GROUPD_ID_SEARCH_TYPE, RADIOBOX_ID_TEXT, true);
     textOption->Handlers()->OnCheck = this;
 
-    binaryOption = Factory::RadioBox::Create(this, "&Binary Search", "x:0,y:6,w:40%,h:1", GROUPD_ID_SEARCH_TYPE, RADIOBOX_ID_TEXT);
+    binaryOption                      = Factory::RadioBox::Create(this, "&Binary Search", "x:0,y:6,w:40%,h:1", GROUPD_ID_SEARCH_TYPE, RADIOBOX_ID_TEXT);
     binaryOption->Handlers()->OnCheck = this;
 
-    textAscii = Factory::RadioBox::Create(this, "&Ascii Text", "x:60%,y:5,w:40%,h:1", GROUPD_ID_TEXT_TYPE, RADIOBOX_ID_TEXT_ASCII);
-    textAscii->SetChecked(true);
+    textAscii                      = Factory::RadioBox::Create(this, "&Ascii Text", "x:60%,y:5,w:40%,h:1", GROUPD_ID_TEXT_TYPE, RADIOBOX_ID_TEXT_ASCII, true);
     textAscii->Handlers()->OnCheck = this;
 
-    textUnicode = Factory::RadioBox::Create(this, "&Unicode Text", "x:60%,y:6,w:40%,h:1", GROUPD_ID_TEXT_TYPE, RADIOBOX_ID_TEXT_UNICODE);
+    textUnicode                      = Factory::RadioBox::Create(this, "&Unicode Text", "x:60%,y:6,w:40%,h:1", GROUPD_ID_TEXT_TYPE, RADIOBOX_ID_TEXT_UNICODE);
     textUnicode->Handlers()->OnCheck = this;
 
-    textHex = Factory::RadioBox::Create(this, "&Hex - default base", "x:60%,y:5,w:40%,h:1", GROUPD_ID_BUFFER_TYPE, RADIOBOX_ID_TEXT_HEX);
-    textHex->SetChecked(true);
+    textHex = Factory::RadioBox::Create(this, "&Hex - default base", "x:60%,y:5,w:40%,h:1", GROUPD_ID_BUFFER_TYPE, RADIOBOX_ID_TEXT_HEX, true);
     textHex->Handlers()->OnCheck = this;
     textHex->SetVisible(false);
 
-    textDec = Factory::RadioBox::Create(this, "&Dec - default base", "x:60%,y:6,w:40%,h:1", GROUPD_ID_BUFFER_TYPE, RADIOBOX_ID_TEXT_DEC);
+    textDec                      = Factory::RadioBox::Create(this, "&Dec - default base", "x:60%,y:6,w:40%,h:1", GROUPD_ID_BUFFER_TYPE, RADIOBOX_ID_TEXT_DEC);
     textDec->Handlers()->OnCheck = this;
     textDec->SetVisible(false);
 
     textRegex                      = Factory::CheckBox::Create(this, "Use &Regex", "x:60%,y:7,w:40%,h:1", CHECKBOX_ID_TEXT_REGEX);
     textRegex->Handlers()->OnCheck = this;
 
-    searchFile = Factory::RadioBox::Create(this, "&File Search", "x:0,y:8,w:40%,h:1", GROUPD_ID_SELECTION_TYPE, RADIOBOX_ID_SEARCH_FILE);
-    searchFile->SetChecked(true);
+    searchFile = Factory::RadioBox::Create(this, "&File Search", "x:0,y:8,w:40%,h:1", GROUPD_ID_SELECTION_TYPE, RADIOBOX_ID_SEARCH_FILE, true);
     searchFile->Handlers()->OnCheck = this;
 
-    searchSelection =
-          Factory::RadioBox::Create(this, "&Selection Search", "x:0,y:9,w:40%,h:1", GROUPD_ID_SELECTION_TYPE, RADIOBOX_ID_SEARCH_SELECTION);
+    searchSelection = Factory::RadioBox::Create(this, "&Selection Search", "x:0,y:9,w:40%,h:1", GROUPD_ID_SELECTION_TYPE, RADIOBOX_ID_SEARCH_SELECTION);
     searchSelection->Handlers()->OnCheck = this;
 
-    bufferSelect =
-          Factory::RadioBox::Create(this, "&Select buffer", "x:60%,y:8,w:40%,h:1", GROUPD_ID_BUFFER_ACTION, RADIOBOX_ID_BUFFER_SELECT);
-    bufferSelect->SetChecked(true);
+    bufferSelect = Factory::RadioBox::Create(this, "&Select buffer", "x:60%,y:8,w:40%,h:1", GROUPD_ID_BUFFER_ACTION, RADIOBOX_ID_BUFFER_SELECT, true);
     bufferSelect->Handlers()->OnCheck = this;
 
-    bufferMoveCursorTo = Factory::RadioBox::Create(
-          this, "&Move cursor to buffer", "x:60%,y:9,w:40%,h:1", GROUPD_ID_BUFFER_ACTION, RADIOBOX_ID_BUFFER_MOVE);
+    bufferMoveCursorTo = Factory::RadioBox::Create(this, "&Move cursor to buffer", "x:60%,y:9,w:40%,h:1", GROUPD_ID_BUFFER_ACTION, RADIOBOX_ID_BUFFER_MOVE);
     bufferMoveCursorTo->Handlers()->OnCheck = this;
 
     ignoreCase = Factory::CheckBox::Create(this, "I&gnore Case", "x:0,y:11,w:40%,h:1", CHECKBOX_ID_IGNORE_CASE);
     ignoreCase->SetChecked(true);
     ignoreCase->Handlers()->OnCheck = this;
 
-    alingTextToUpperLeftCorner =
-          Factory::CheckBox::Create(this, "&Align text to upper left corner", "x:0,y:12,w:45%,h:1", CHECKBOX_ID_ALIGN_TEXT_UPPER_LEFT);
+    alingTextToUpperLeftCorner = Factory::CheckBox::Create(this, "&Align text to upper left corner", "x:0,y:12,w:45%,h:1", CHECKBOX_ID_ALIGN_TEXT_UPPER_LEFT);
     alingTextToUpperLeftCorner->SetChecked(true);
     alingTextToUpperLeftCorner->Handlers()->OnCheck = this;
 
@@ -215,8 +201,7 @@ bool FindDialog::SetDescription()
     const auto colorPair = ColorPair{ color, color };
     CHECK(description->GetCanvas()->FillRect(0, 0, this->GetWidth(), canvasHeight, ' ', colorPair), false, "");
 
-    const auto flags =
-          WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth | WriteTextFlags::FitTextToWidth | WriteTextFlags::OverwriteColors;
+    const auto flags = WriteTextFlags::SingleLine | WriteTextFlags::ClipToWidth | WriteTextFlags::FitTextToWidth | WriteTextFlags::OverwriteColors;
     WriteTextParams wtp{ flags, TextAlignament::Left };
     wtp.X     = 0;
     wtp.Y     = 0;
@@ -381,15 +366,10 @@ bool ValidateHexa(std::string_view number)
 
     if (number.find('?') == std::string::npos)
     {
-        CHECK((number[0] >= '0' && number[0] <= '9') || (number[0] >= 'a' && number[0] <= 'f') || (number[0] >= 'A' && number[0] <= 'F'),
-              false,
-              "");
+        CHECK((number[0] >= '0' && number[0] <= '9') || (number[0] >= 'a' && number[0] <= 'f') || (number[0] >= 'A' && number[0] <= 'F'), false, "");
         if (number.size() == 2)
         {
-            CHECK((number[0] >= '1' && number[1] <= '9') || (number[1] >= 'a' && number[1] <= 'f') ||
-                        (number[1] >= 'A' && number[1] <= 'F'),
-                  false,
-                  "");
+            CHECK((number[0] >= '1' && number[1] <= '9') || (number[1] >= 'a' && number[1] <= 'f') || (number[1] >= 'A' && number[1] <= 'F'), false, "");
         }
     }
     else
@@ -506,8 +486,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             std::wcmatch matches{};
             while (std::regex_search(start, end, matches, pattern))
             {
-                match =
-                      std::pair<uint64, uint64>{ offset + (start - initialStart) * sizeof(wchar_t) + matches.position(), matches.length() };
+                match = std::pair<uint64, uint64>{ offset + (start - initialStart) * sizeof(wchar_t) + matches.position(), matches.length() };
                 start += matches.position() + matches.length();
                 CHECKBK(last, "");
             }
@@ -539,7 +518,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             if (computeForFile)
             {
                 auto offset = currentPos;
-                auto left = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
+                auto left   = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
                 CHECK(SearchInAsciiChunk(offset, left, pattern), false, "");
                 CHECK(HasResults() == false, true, "");
@@ -574,7 +553,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
             if (computeForFile)
             {
                 auto offset = currentPos;
-                auto left = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
+                auto left   = (last && end != GView::Utils::INVALID_OFFSET) ? (end - currentPos) : (object->GetData().GetSize() - currentPos);
 
                 CHECK(SearchInUnicodeChunk(offset, left, pattern), false, "");
                 CHECK(HasResults() == false, true, "");

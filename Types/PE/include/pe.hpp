@@ -670,10 +670,8 @@ namespace Type
         };
 
         static constexpr auto INS_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
-        static constexpr auto INS_LCALL_COLOR      = ColorPair{ Color::Red, Color::DarkGreen };
-        static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::White, Color::DarkRed };
-        static constexpr auto INS_LJUMP_COLOR      = ColorPair{ Color::Yellow, Color::DarkRed };
-        static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue }; // Gray
+        static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
+        static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Green, Color::DarkBlue };
         static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
         static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
         static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
@@ -771,7 +769,6 @@ namespace Type
 
             uint32 showOpcodesMask{ 0 };
             std::vector<std::pair<uint64, uint64>> executableZonesFAs;
-            GView::Dissasembly::DissasemblerIntel dissasembler{};
 
             bool hdr64;
             bool isMetroApp;
@@ -1046,8 +1043,7 @@ namespace Type
                 GoInformation(Reference<Object> _object, Reference<PEFile> _pe);
 
                 template <typename T>
-                ListViewItem AddDecAndHexElement(
-                      std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+                ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
                 {
                     LocalString<1024> ls;
                     NumericFormatter nf;
@@ -1085,8 +1081,7 @@ namespace Type
                 GoFiles(Reference<Object> _object, Reference<PEFile> _pe);
 
                 template <typename T>
-                ListViewItem AddDecAndHexElement(
-                      std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+                ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
                 {
                     LocalString<1024> ls;
                     NumericFormatter nf;
@@ -1137,9 +1132,7 @@ namespace Type
                 AppCUI::Controls::ListViewItem all;
                 AppCUI::Controls::ListViewItem header;
                 AppCUI::Controls::ListViewItem call;
-                AppCUI::Controls::ListViewItem lcall;
                 AppCUI::Controls::ListViewItem jmp;
-                AppCUI::Controls::ListViewItem ljmp;
                 AppCUI::Controls::ListViewItem bp;
                 AppCUI::Controls::ListViewItem fstart;
                 AppCUI::Controls::ListViewItem fend;
