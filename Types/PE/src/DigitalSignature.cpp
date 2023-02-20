@@ -158,8 +158,20 @@ bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, Authentic
 
     if (!std::filesystem::exists(sv)) // must be a memory file from a container => drop it on disk
     {
-        std::filesystem::path path{ sv };
-        std::ofstream ofs(path, std::ios::binary);
+        std::filesystem::path fullpath{ sv };
+
+        const auto parent = fullpath.parent_path();
+        if (!std::filesystem::exists(sv))
+        {
+            if (!std::filesystem::create_directories(parent))
+            {
+                data.winTrust.errorCode = -1;
+                data.winTrust.errorMessage.Set("Unable to drop extracted file from container!");
+                return false;
+            }
+        }
+
+        std::ofstream ofs(fullpath, std::ios::binary);
         if (ofs.is_open())
         {
             const auto buffer = cache.GetEntireFile();
