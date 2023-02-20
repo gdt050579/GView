@@ -9,7 +9,7 @@ SettingsData::SettingsData()
 {
     this->columnsCount    = 0;
     this->propertiesCount = 0;
-    this->pathSeparator   = '/';
+    this->pathSeparator   = char16_t(std::filesystem::path::preferred_separator);
 }
 Settings::Settings()
 {

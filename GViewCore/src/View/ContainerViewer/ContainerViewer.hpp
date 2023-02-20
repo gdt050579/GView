@@ -29,7 +29,7 @@ namespace View
             AppCUI::Graphics::Image icon;
             Reference<EnumerateInterface> enumInterface;
             Reference<OpenItemInterface> openItemInterface;
-            char16 pathSeparator;
+            char16 pathSeparator{ (char16_t) std::filesystem::path::preferred_separator };
             SettingsData();
         };
 
