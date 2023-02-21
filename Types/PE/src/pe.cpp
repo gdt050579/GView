@@ -96,46 +96,20 @@ extern "C"
         };
 
         // set entry point
-        if (pe->hdr64)
-            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth64.OptionalHeader.AddressOfEntryPoint));
-        else
-            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
+        const uint32 addressOfEntryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+        settings.SetEntryPointOffset(pe->RVAtoFilePointer(addressOfEntryPoint));
 
-        if (pe->hdr64)
+        const uint32 pointerToSymbolTable = pe->hdr64 ? pe->nth64.FileHeader.PointerToSymbolTable : pe->nth32.FileHeader.PointerToSymbolTable;
+        if (pointerToSymbolTable > 0)
         {
-            if (pe->nth64.FileHeader.PointerToSymbolTable > 0)
-            {
-                settings.AddZone(
-                      pe->nth64.FileHeader.PointerToSymbolTable,
-                      (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
-                      pe->peCols.colSectDef,
-                      "SymbolTable");
+            const uint64 numberOfSymbols = (uint64) (pe->hdr64 ? pe->nth64.FileHeader.NumberOfSymbols : pe->nth32.FileHeader.NumberOfSymbols);
+            settings.AddZone(pointerToSymbolTable, numberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL, pe->peCols.colSectDef, "SymbolTable");
 
-                const auto strTableOffset = pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+            const auto stringsTableOffset = pointerToSymbolTable + numberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+            uint32 stringsTableSize       = 0;
+            pe->obj->GetData().Copy(stringsTableOffset, stringsTableSize);
 
-                uint32 strTableSize = 0;
-                pe->obj->GetData().Copy(strTableOffset, strTableSize);
-
-                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
-            }
-        }
-        else
-        {
-            if (pe->nth32.FileHeader.PointerToSymbolTable > 0)
-            {
-                settings.AddZone(
-                      pe->nth32.FileHeader.PointerToSymbolTable,
-                      (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
-                      pe->peCols.colSectDef,
-                      "SymbolTable");
-
-                const auto strTableOffset = pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
-
-                uint32 strTableSize = 0;
-                pe->obj->GetData().Copy(strTableOffset, strTableSize);
-
-                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
-            }
+            settings.AddZone(stringsTableOffset, stringsTableSize, pe->peCols.colPE, "StringsTable");
         }
 
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
