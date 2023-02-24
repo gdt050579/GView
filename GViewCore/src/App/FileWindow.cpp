@@ -128,8 +128,7 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 
 Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(
@@ -141,34 +140,27 @@ Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInte
 
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::TextViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings)
 {
-    return this->view
-          ->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 bool FileWindow::CreateViewer(const std::string_view& name, GView::View::LexicalViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
@@ -265,8 +257,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(
-          this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
     commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
     commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);

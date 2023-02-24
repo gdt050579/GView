@@ -15,7 +15,27 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
   public:
     SyncCompareExample() : Window("SyncCompare", "d:c,w:70,h:20", WindowFlags::Sizeable | WindowFlags::Maximized)
     {
-        Factory::CharacterTable::Create(this, "l:1,t:1,r:1,b:3");
+        auto list = Factory::ListView::Create(
+              this, "x:5,y:1,w:85%,h:80%", { "n:Window,w:30%", "n:View Name,w:30%", "n:Type Name,w:50%" }, ListViewFlags::AllowMultipleItemsSelection);
+        list->SetFocus();
+
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window    = desktop->GetChild(i);
+            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+
+            auto currentView    = interface->GetCurrentView();
+            const auto viewName = currentView->GetName();
+
+            auto object         = interface->GetObject();
+            const auto typeName = object->GetContentType()->GetTypeName();
+
+            LocalString<64> tmp;
+            list->AddItem({ tmp.Format("#%i", i), viewName, typeName });
+        }
+
         Factory::Button::Create(this, "&Close", "d:b,w:20", CMD_BUTTON_CLOSE)->Handlers()->OnButtonPressed = this;
     }
 
