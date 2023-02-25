@@ -854,9 +854,8 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
         if (bottomPos > tok.pos.y)
         {
             // multi-line block
-            bool fillLastLine =
-                  ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].pos.y != tknEnd.pos.y) : true;
-            auto leftPos = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
+            bool fillLastLine = ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].pos.y != tknEnd.pos.y) : true;
+            auto leftPos      = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
             // first draw the first line
             renderer.FillHorizontalLine(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, this->GetWidth(), ' ', col);
             // draw the middle part
@@ -873,8 +872,7 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
         }
         else
         {
-            renderer.FillHorizontalLine(
-                  lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
+            renderer.FillHorizontalLine(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
         }
     }
 }
@@ -1407,8 +1405,14 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         }
         // Buffer build --> open
         LocalString<128> tmpName;
+        tmpName.SetFormat("string_ofs_%08x", tok.start);
 
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start), GView::App::OpenMethod::Select);
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->obj->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(tmpName);
+
+        GView::App::OpenBuffer(buf, tmpName, fullPath, GView::App::OpenMethod::Select);
     }
     else
     {
@@ -1854,8 +1858,8 @@ void Instance::ShowSaveAsDialog()
         }
         catch (...)
         {
-            if (Dialogs::MessageBox::ShowOkCancel(
-                      "Backup", "Unable to backup the original file. Do you want to continue and overwrite it ?") != Dialogs::Result::Ok)
+            if (Dialogs::MessageBox::ShowOkCancel("Backup", "Unable to backup the original file. Do you want to continue and overwrite it ?") !=
+                Dialogs::Result::Ok)
                 return;
         }
     }

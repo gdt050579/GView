@@ -107,7 +107,13 @@ void Instance::OpenCurrentSelection()
             Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
             return;
         }
-        GView::App::OpenBuffer(buf, temp, GView::App::OpenMethod::Select);
+
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->obj->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(temp);
+
+        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select);
     }
 }
 void Instance::UpdateCurrentSelection()

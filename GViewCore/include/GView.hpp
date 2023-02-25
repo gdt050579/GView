@@ -1447,7 +1447,6 @@ namespace App
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
     void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
