@@ -10,8 +10,7 @@ constexpr int ENTRY_SELECT     = 2;
 constexpr int ENTRY_CHANGEBASE = 3;
 constexpr int ENTRY_OPEN       = 4;
 
-TOCEntries::TOCEntries(Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> _py, Reference<GView::View::WindowInterface> _win)
-    : TabPage("T&OCEntries")
+TOCEntries::TOCEntries(Reference<GView::Type::PYEXTRACTOR::PYEXTRACTORFile> _py, Reference<GView::View::WindowInterface> _win) : TabPage("T&OCEntries")
 {
     py   = _py;
     win  = _win;
@@ -71,7 +70,12 @@ void TOCEntries::OpenCurrentEntry()
     Buffer bufferDecompressed{};
     CHECKRET(ZLIB::Decompress(bufferCompressed, bufferCompressed.GetLength(), bufferDecompressed, entry->uncmprsdDataSize), "");
 
-    GView::App::OpenBuffer(BufferView{ bufferDecompressed }, entry->name, GView::App::OpenMethod::BestMatch);
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(py->obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(entry->name);
+
+    GView::App::OpenBuffer(BufferView{ bufferDecompressed }, entry->name, fullPath, GView::App::OpenMethod::BestMatch);
 }
 
 void TOCEntries::Update()
