@@ -43,7 +43,12 @@ bool MAMFile::Decompress()
 
     CHECK(GView::Compression::LZXPRESS::Huffman::Decompress(compressed, uncompressed), false, "");
 
-    GView::App::OpenBuffer(uncompressed, obj->GetName(), GView::App::OpenMethod::BestMatch);
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(obj->GetName());
+
+    GView::App::OpenBuffer(uncompressed, obj->GetName(), fullPath, GView::App::OpenMethod::BestMatch);
 
     return true;
 }
