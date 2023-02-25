@@ -28,12 +28,12 @@ extern "C"
         LexicalViewer::Settings settings;
         settings.SetParser(vba.ToObjectRef<LexicalViewer::ParseInterface>());
 
-        win->CreateViewer("Lexical", settings);
+        win->CreateViewer(settings);
 
-        win->CreateViewer<TextViewer::Settings>("Text View");
+        win->CreateViewer<TextViewer::Settings>();
 
         BufferViewer::Settings s{};
-        vba->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", s);
+        vba->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new VBA::Panels::Information(vba)), true);

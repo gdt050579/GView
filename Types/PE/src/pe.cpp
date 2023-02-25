@@ -138,7 +138,7 @@ extern "C"
             break;
         }
 
-        pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
@@ -194,7 +194,7 @@ UInt16 e_res[4];)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
 
-        win->CreateViewer("DissasmView", settings);
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
