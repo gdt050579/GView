@@ -5,7 +5,6 @@
 namespace GView::DigitalSignature
 {
 #ifdef BUILD_FOR_WINDOWS
-
 #    include <Windows.h>
 #    include <Softpub.h>
 #    include <wincrypt.h>
@@ -156,17 +155,45 @@ bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, Authentic
     ub.Set(source);
     std::u16string sv{ ub.GetString(), ub.Len() };
 
-    if (!std::filesystem::exists(sv)) // must be a memory file from a container => drop it on disk
+    std::filesystem::path fullpath{ sv };
+    if (!std::filesystem::exists(fullpath)) // must be a memory file from a container => drop it on disk
     {
-        std::filesystem::path fullpath{ sv };
+        auto parent = fullpath.parent_path();
+        std::vector<std::filesystem::path> filenames{};
+        bool regularFileFound{ (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false) };
 
-        const auto parent = fullpath.parent_path();
-        if (!std::filesystem::exists(sv))
+        while (parent != parent.parent_path())
         {
-            if (!std::filesystem::create_directories(parent))
+            filenames.emplace(filenames.begin(), parent.filename());
+            parent = parent.parent_path();
+            regularFileFound |= (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false);
+        };
+
+        parent = std::filesystem::path(LR"(\\?\)" + parent.lexically_normal().native());
+
+        if (regularFileFound)
+        {
+            for (const auto& filename : filenames)
+            {
+                parent /= filename;
+                if (std::filesystem::exists(parent) && (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false))
+                {
+                    parent.replace_filename(filename.u8string() + u8".drop");
+                }
+            }
+
+            const auto actualFilename = fullpath.filename();
+            fullpath                  = parent;
+            fullpath /= actualFilename;
+        }
+
+        if (!std::filesystem::exists(parent))
+        {
+            std::error_code ec{};
+            if (!std::filesystem::create_directories(parent, ec))
             {
                 data.winTrust.errorCode = -1;
-                data.winTrust.errorMessage.Set("Unable to drop extracted file from container!");
+                data.winTrust.errorMessage.Set(ec.message());
                 return false;
             }
         }
@@ -186,9 +213,11 @@ bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, Authentic
         }
     }
 
+    const auto path = fullpath.wstring();
     WINTRUST_FILE_INFO fileData{
-        .cbStruct = sizeof(WINTRUST_FILE_INFO), .pcwszFilePath = reinterpret_cast<LPCWSTR>(sv.data()), .hFile = nullptr, .pgKnownSubject = nullptr
+        .cbStruct = sizeof(WINTRUST_FILE_INFO), .pcwszFilePath = reinterpret_cast<LPCWSTR>(path.c_str()), .hFile = nullptr, .pgKnownSubject = nullptr
     };
+
     WINTRUST_DATA WinTrustData{ .cbStruct            = sizeof(WinTrustData),
                                 .pPolicyCallbackData = nullptr,
                                 .pSIPClientData      = nullptr,
