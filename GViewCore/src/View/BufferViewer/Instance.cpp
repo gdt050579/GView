@@ -41,11 +41,10 @@ constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
-    this->obj  = _obj;
-    this->name = _name;
+    this->obj = _obj;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
     this->showTypeObjects            = true;
     this->Layout.nrCols              = 0;
@@ -1511,10 +1510,6 @@ bool Instance::Select(uint64 offset, uint64 size)
         return false;
     this->selection.SetSelection(0, offset, end);
     return true;
-}
-std::string_view Instance::GetName()
-{
-    return this->name;
 }
 //======================================================================[Cursor information]==================
 int Instance::PrintSelectionInfo(uint32 selectionID, int x, int y, uint32 width, Renderer& r)

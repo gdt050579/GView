@@ -34,6 +34,7 @@ struct SettingsData
     uint32 translationMethodsCount;
     Reference<OffsetTranslateInterface> offsetTranslateCallback;
     Reference<PositionToColorInterface> positionToColorCallback;
+    String name;
     SettingsData();
 
     // dissasm related settings
@@ -215,7 +216,6 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     uint32 currentAdrressMode;
     String addressModesList;
     BufferColor bufColor;
-    FixSizeString<29> name;
 
     static Config config;
 
@@ -258,7 +258,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     void OpenCurrentSelection();
 
   public:
-    Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+    Instance(Reference<GView::Object> obj, Settings* settings);
 
     virtual void Paint(Renderer& renderer) override;
     virtual void OnAfterResize(int newWidth, int newHeight) override;
@@ -272,7 +272,6 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool ShowFindDialog() override;
     virtual bool ShowCopyDialog() override;
     bool ShowDissasmDialog();
-    virtual std::string_view GetName() override;
 
     virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

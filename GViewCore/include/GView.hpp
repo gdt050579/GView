@@ -818,21 +818,33 @@ namespace View
     {
       protected:
         const AppCUI::Application::Config& Cfg;
+        String name;
 
       public:
-        virtual bool GoTo(uint64 offset)                                                                       = 0;
-        virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
-        virtual bool ShowGoToDialog()                                                                          = 0;
-        virtual bool ShowFindDialog()                                                                          = 0;
-        virtual bool ShowCopyDialog()                                                                          = 0;
-        virtual std::string_view GetName()                                                                     = 0;
+        virtual bool GoTo(uint64 offset)                = 0;
+        virtual bool Select(uint64 offset, uint64 size) = 0;
+        virtual bool ShowGoToDialog()                   = 0;
+        virtual bool ShowFindDialog()                   = 0;
+        virtual bool ShowCopyDialog()                   = 0;
+
+        inline std::string_view GetName() const
+        {
+            return name.ToStringView();
+        }
+
+        bool SetName(const std::string_view& name)
+        {
+            return this->name.Set(name);
+        }
+
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
-        ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
+        ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
+            : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {
         }
     };
@@ -877,6 +889,7 @@ namespace View
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
             void SetEntryPointOffset(uint64 offset);
+            bool SetName(std::string_view name);
 
             // dissasm related settings
             void SetArchitecture(GView::Dissasembly::Architecture architecture);
@@ -898,6 +911,7 @@ namespace View
             Settings();
             void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
             void AddImage(uint64 offset, uint64 size);
+            bool SetName(std::string_view name);
         };
     }; // namespace ImageViewer
 
@@ -923,6 +937,7 @@ namespace View
             void SetColumns(std::initializer_list<ConstString> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
             void SetOpenItemCallback(Reference<OpenItemInterface> callback);
+            bool SetName(std::string_view name);
         };
     }; // namespace ContainerViewer
 
@@ -944,6 +959,7 @@ namespace View
             void SetTabSize(uint32 tabSize);
             void ShowTabCharacter(bool show);
             void HightlightCurrentLine(bool highlight);
+            bool SetName(std::string_view name);
         };
     }; // namespace TextViewer
 
@@ -1319,6 +1335,7 @@ namespace View
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
             void SetMaxTokenSize(Size sz);
+            bool SetName(std::string_view name);
         };
     }; // namespace LexicalViewer
 
@@ -1331,6 +1348,7 @@ namespace View
             Settings();
 
             void SetSeparator(char separator[2]);
+            bool SetName(std::string_view name);
         };
     }; // namespace GridViewer
 
@@ -1368,6 +1386,8 @@ namespace View
         struct CORE_EXPORT Settings
         {
             void* data;
+
+            bool SetName(std::string_view name);
 
             /**
              * \brief Sets the default disassembly language that will be used when an assembly zone will be used with the default option.
@@ -1411,26 +1431,29 @@ namespace View
 
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                                        = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                  = 0;
-        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings)    = 0;
-        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)     = 0;
-        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings)   = 0;
-        virtual bool CreateViewer(const std::string_view& name, TextViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(const std::string_view& name, ContainerViewer::Settings& settings) = 0;
-        virtual bool CreateViewer(const std::string_view& name, LexicalViewer::Settings& settings)   = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                              = 0;
+        virtual Reference<Object> GetObject()                          = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)    = 0;
+        virtual bool CreateViewer(BufferViewer::Settings& settings)    = 0;
+        virtual bool CreateViewer(ImageViewer::Settings& settings)     = 0;
+        virtual bool CreateViewer(GridViewer::Settings& settings)      = 0;
+        virtual bool CreateViewer(DissasmViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(TextViewer::Settings& settings)      = 0;
+        virtual bool CreateViewer(ContainerViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(LexicalViewer::Settings& settings)   = 0;
+        virtual Reference<ViewControl> GetCurrentView()                = 0;
 
         template <typename T>
-        inline bool CreateViewer(const std::string_view& name)
+        inline bool CreateViewer(const std::optional<std::string_view> name = {})
         {
-            T settings;
-            return CreateViewer(name, settings);
+            T settings{};
+            if (name.has_value())
+            {
+                CHECK(settings.SetName(*name), false, "");
+            }
+            return CreateViewer(settings);
         }
 
-        virtual Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
-              const std::string_view& name, View::BufferViewer::Settings& settings) = 0;
+        virtual Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) = 0;
     };
 }; // namespace View
 namespace App

@@ -10,6 +10,7 @@ namespace View
     {
         struct SettingsData
         {
+            String name;
             std::map<uint64, std::pair<uint64, uint64>> lines;
             std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
             char separator[2]{ "," };
@@ -46,7 +47,6 @@ namespace View
         {
           private:
             Reference<GView::Object> obj;
-            FixSizeString<29> name;
 
             Reference<AppCUI::Controls::Grid> grid;
             Pointer<SettingsData> settings;
@@ -54,14 +54,13 @@ namespace View
             static Config config;
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             bool GoTo(uint64 offset) override;
             bool Select(uint64 offset, uint64 size) override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            std::string_view GetName() override;
             void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height) override;
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

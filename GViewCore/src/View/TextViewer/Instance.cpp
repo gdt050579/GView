@@ -267,11 +267,10 @@ class DataCharacterStream
     }
 };
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl("Text View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
-    this->obj  = _obj;
-    this->name = _name;
+    this->obj = _obj;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -1492,10 +1491,6 @@ bool Instance::ShowFindDialog()
 bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
-}
-std::string_view Instance::GetName()
-{
-    return this->name;
 }
 //======================================================================[Mouse coords]==================
 void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)

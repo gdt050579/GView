@@ -10,10 +10,9 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Container View")
 {
     this->obj                     = _obj;
-    this->name                    = _name;
     this->tempCountRecursiveItems = 0;
 
     // settings
@@ -31,6 +30,11 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
+
+    if (this->settings->name.Len() > 0)
+    {
+        this->name.Set(this->settings->name);
+    }
 
     this->currentPath.Resize(256);
     this->currentPath.Clear();
@@ -169,10 +173,6 @@ bool Instance::ShowFindDialog()
 bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
-}
-std::string_view Instance::GetName()
-{
-    return this->name;
 }
 //======================================================================[Cursor information]==================
 

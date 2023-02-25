@@ -54,4 +54,9 @@ void Settings::SetOpenItemCallback(Reference<OpenItemInterface> callback)
     SD->openItemInterface = callback;
 }
 
+bool Settings::SetName(std::string_view name)
+{
+    return SD->name.Set(name);
+}
+
 #undef SD

@@ -76,11 +76,10 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
     }
 }
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
-    this->obj  = _obj;
-    this->name = _name;
+    this->obj = _obj;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -1981,10 +1980,6 @@ void Instance::ShowFindAllDialog()
     {
         MoveToToken(dlg.GetSelectedTokenIndex(), false, true);
     }
-}
-std::string_view Instance::GetName()
-{
-    return this->name;
 }
 //======================================================================[Mouse coords]========================
 uint32 Instance::MousePositionToTokenID(int x, int y)
