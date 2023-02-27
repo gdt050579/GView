@@ -16,10 +16,13 @@ constexpr std::string_view VIEW_NAME{ "Buffer View" };
 class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface
 {
   public:
-    SyncCompareExample() : Window("SyncCompare", "d:c,w:70,h:20", WindowFlags::Sizeable | WindowFlags::Maximized)
+    SyncCompareExample() : Window("SyncCompare", "d:c,w:140,h:20", WindowFlags::FixedPosition)
     {
         auto list = Factory::ListView::Create(
-              this, "x:5,y:1,w:85%,h:80%", { "n:Window,w:30%", "n:View Name,w:30%", "n:Type Name,w:50%" }, ListViewFlags::AllowMultipleItemsSelection);
+              this,
+              "x:5%,y:1,w:90%,h:80%",
+              { "n:Window,w:45%", "n:View Name,w:15%", "n:View (Buffer) Count,w:20%", "n:Type Name,w:20%" },
+              ListViewFlags::AllowMultipleItemsSelection);
         list->SetFocus();
 
         auto desktop         = AppCUI::Application::GetDesktop();
@@ -29,19 +32,42 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
             auto window    = desktop->GetChild(i);
             auto interface = window.ToObjectRef<GView::View::WindowInterface>();
 
-            auto currentView    = interface->GetCurrentView();
-            const auto viewName = currentView->GetName();
+            auto currentView           = interface->GetCurrentView();
+            const auto currentViewName = currentView->GetName();
 
-            auto object         = interface->GetObject();
-            const auto typeName = object->GetContentType()->GetTypeName();
+            auto object           = interface->GetObject();
+            const auto typeName   = object->GetContentType()->GetTypeName();
+            const auto objectName = object->GetName();
+
+            uint32 bufferViewCount       = 0;
+            const uint32 totalViewsCount = interface->GetViewsCount();
+            for (uint32 j = 0; j < totalViewsCount; j++)
+            {
+                auto view           = interface->GetViewByIndex(j);
+                const auto viewName = view->GetName();
+                if (viewName == VIEW_NAME)
+                {
+                    bufferViewCount++;
+                }
+            }
 
             LocalString<64> tmp;
-            auto item = list->AddItem({ tmp.Format("#%i", i), viewName, typeName });
+            LocalString<64> tmp2;
+            auto item = list->AddItem({ tmp.Format("#%u %.*ls", i, objectName.size(), objectName.data()),
+                                        currentViewName,
+                                        tmp2.Format("%u/%u", bufferViewCount, totalViewsCount),
+                                        typeName });
 
-            if (viewName == VIEW_NAME)
+            if (currentViewName == VIEW_NAME)
             {
                 item.SetType(ListViewItem::Type::SubItemColored);
                 item.SetColor(1, { Color::Pink, Color::Transparent });
+            }
+
+            if (bufferViewCount > 0)
+            {
+                item.SetType(ListViewItem::Type::SubItemColored);
+                item.SetColor(2, { Color::Pink, Color::Transparent });
             }
         }
 
@@ -104,42 +130,51 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
         CHECKRET(filteredWindows.size() > 0, "");
 
         const auto screenSize = desktop->GetClientSize();
-        int32 tempSz          = (int32) sqrt(filteredWindows.size());
-        tempSz                = std::max<>(tempSz, 1);
-        int32 gridX           = tempSz;
-        int32 gridY           = tempSz;
-        if ((gridY * gridX) < (int32) filteredWindows.size())
+
+        int32 gridX = std::max<>(static_cast<int32>(sqrt(filteredWindows.size())), 1);
+        int32 gridY = gridX;
+        if (gridY * gridX < static_cast<int32>(filteredWindows.size()))
+        {
             gridX++; // more boxes on horizontal space
-        if ((gridY * gridX) < (int32) filteredWindows.size())
+        }
+        if (gridY * gridX < static_cast<int32>(filteredWindows.size()))
+        {
             gridY++; // more boxes on vertical space
-        int32 gridWidth  = screenSize.Width / gridX;
-        int32 gridHeight = screenSize.Height / gridY;
+        }
+
+        const int32 gridWidth  = screenSize.Width / gridX;
+        const int32 gridHeight = screenSize.Height / gridY;
+
         int32 gridRow    = 0;
         int32 gridColumn = 0;
         int32 x          = 0;
         int32 y          = 0;
-        tempSz           = x;
 
         for (auto i = 0U; i < filteredWindows.size(); i++)
         {
             auto& window = filteredWindows.at(i);
-
             window->MoveTo(x, y);
-            auto gridWinWidth  = gridWidth;
-            auto gridWinHeight = gridHeight;
-            if (((gridColumn + 1) == gridX) || (i == filteredWindows.size() - 1)) // last column
-                gridWinWidth = std::max<>(1, ((int32) screenSize.Width) - x);
-            if ((gridRow + 1) == gridY) // last row
-                gridWinHeight = std::max<>(1, ((int) screenSize.Height) - y);
 
-            window->Resize(gridWinWidth, gridWinHeight);
+            auto windowWidth = gridWidth;
+            if (gridColumn + 1 == gridX || i == filteredWindows.size() - 1) // last column
+            {
+                windowWidth = std::max<>(1, static_cast<int32>(screenSize.Width) - x);
+            }
+
+            auto windowHeight = gridHeight;
+            if (gridRow + 1 == gridY) // last row
+            {
+                windowHeight = std::max<>(1, static_cast<int32>(screenSize.Height) - y);
+            }
+
+            window->Resize(windowWidth, windowHeight);
             x += window->GetWidth();
             gridColumn++;
 
             if (gridColumn >= gridX)
             {
                 gridColumn = 0;
-                x          = tempSz; // restore original "X" value
+                x          = 0;
                 y += window->GetHeight();
                 gridRow++;
             }
