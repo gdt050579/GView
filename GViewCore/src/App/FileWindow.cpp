@@ -161,10 +161,22 @@ bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
 {
     return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
+
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
     return view->GetCurrentTab().ToObjectRef<ViewControl>();
 }
+
+uint32 FileWindow::GetViewsCount()
+{
+    return view->GetChildrenCount();
+}
+
+Reference<ViewControl> FileWindow::GetViewByIndex(uint32 index)
+{
+    return view->GetChild(index).ToObjectRef<ViewControl>();
+}
+
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
     if (Window::OnKeyEvent(keyCode, unicode))

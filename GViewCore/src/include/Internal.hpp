@@ -675,6 +675,8 @@ namespace App
         Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 
         Reference<View::ViewControl> GetCurrentView() override;
+        uint32 GetViewsCount() override;
+        Reference<View::ViewControl> GetViewByIndex(uint32 index) override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
