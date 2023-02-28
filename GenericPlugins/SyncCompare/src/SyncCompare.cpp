@@ -15,16 +15,46 @@ constexpr std::string_view VIEW_NAME{ "Buffer View" };
 
 class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface
 {
+    Reference<ListView> list;
+
   public:
     SyncCompareExample() : Window("SyncCompare", "d:c,w:140,h:20", WindowFlags::FixedPosition)
     {
-        auto list = Factory::ListView::Create(
+        list = Factory::ListView::Create(
               this,
               "x:5%,y:1,w:90%,h:80%",
               { "n:Window,w:45%", "n:View Name,w:15%", "n:View (Buffer) Count,w:20%", "n:Type Name,w:20%" },
               ListViewFlags::AllowMultipleItemsSelection);
         list->SetFocus();
 
+        auto ok                         = Factory::Button::Create(this, "&Ok", "x:25%,y:100%,a:b,w:12", BTN_ID_OK);
+        ok->Handlers()->OnButtonPressed = this;
+        ok->SetFocus();
+        Factory::Button::Create(this, "&Cancel", "x:75%,y:100%,a:b,w:12", BTN_ID_CANCEL)->Handlers()->OnButtonPressed = this;
+
+        Update();
+    }
+
+    void OnButtonPressed(Reference<Button> button) override
+    {
+        switch (button->GetControlID())
+        {
+        case BTN_ID_CANCEL:
+            ArrangeFilteredWindows("");
+            this->Exit();
+            break;
+        case BTN_ID_OK:
+            SetAllWindowsWithGivenViewName(VIEW_NAME);
+            ArrangeFilteredWindows(VIEW_NAME);
+            this->Exit();
+            break;
+        default:
+            break;
+        }
+    }
+
+    void Update()
+    {
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
         for (uint32 i = 0; i < windowsNo; i++)
@@ -70,27 +100,28 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
                 item.SetColor(2, { Color::Pink, Color::Transparent });
             }
         }
-
-        auto ok                         = Factory::Button::Create(this, "&Ok", "x:25%,y:100%,a:b,w:12", BTN_ID_OK);
-        ok->Handlers()->OnButtonPressed = this;
-        ok->SetFocus();
-        Factory::Button::Create(this, "&Cancel", "x:75%,y:100%,a:b,w:12", BTN_ID_CANCEL)->Handlers()->OnButtonPressed = this;
     }
 
-    void OnButtonPressed(Reference<Button> button) override
+    void SetAllWindowsWithGivenViewName(const std::string_view& viewName)
     {
-        switch (button->GetControlID())
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
         {
-        case BTN_ID_CANCEL:
-            ArrangeFilteredWindows("");
-            this->Exit();
-            break;
-        case BTN_ID_OK:
-            ArrangeFilteredWindows(VIEW_NAME);
-            this->Exit();
-            break;
-        default:
-            break;
+            auto window    = desktop->GetChild(i);
+            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+
+            const uint32 totalViewsCount = interface->GetViewsCount();
+            for (uint32 j = 0; j < totalViewsCount; j++)
+            {
+                auto view           = interface->GetViewByIndex(j);
+                const auto viewName = view->GetName();
+                if (viewName == VIEW_NAME)
+                {
+                    CHECKBK(interface->SetViewByIndex(j), "");
+                    break;
+                }
+            }
         }
     }
 
