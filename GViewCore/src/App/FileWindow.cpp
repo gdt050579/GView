@@ -177,6 +177,12 @@ Reference<ViewControl> FileWindow::GetViewByIndex(uint32 index)
     return view->GetChild(index).ToObjectRef<ViewControl>();
 }
 
+bool FileWindow::SetViewByIndex(uint32 index)
+{
+    CHECK(index < view->GetChildrenCount(), false, "");
+    return view->SetCurrentTabPageByIndex(index, true);
+}
+
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
     if (Window::OnKeyEvent(keyCode, unicode))

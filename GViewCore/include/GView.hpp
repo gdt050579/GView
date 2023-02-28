@@ -1443,6 +1443,7 @@ namespace View
         virtual Reference<ViewControl> GetCurrentView()                = 0;
         virtual uint32 GetViewsCount()                                 = 0;
         virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
+        virtual bool SetViewByIndex(uint32 index)                      = 0;
 
         template <typename T>
         inline bool CreateViewer(const std::optional<std::string_view> name = {})
