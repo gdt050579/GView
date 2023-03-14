@@ -10,7 +10,7 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
 {
     assert(!values.empty());
     uint32 left  = 0;
-    uint32 right = values.size() - 1u;
+    uint32 right = static_cast<uint32>(values.size() - 1u);
     while (left != right)
     {
         const uint32 mid = (left + right) / 2;
