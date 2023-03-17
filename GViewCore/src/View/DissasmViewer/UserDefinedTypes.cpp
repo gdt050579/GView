@@ -102,7 +102,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
             if (newType.primaryType == InternalDissasmType::UnidimnsionalArray)
             {
                 assert(newType.width < 100); // TODO: fix for more numbers
-                char* arrayCellNames = new char[5u * newType.width];
+                char* arrayCellNames = new char[5ull * newType.width];
                 localBuffersToDelete.push_back(arrayCellNames);
                 char* cellOffset = arrayCellNames;
                 *cellOffset      = '\0';
