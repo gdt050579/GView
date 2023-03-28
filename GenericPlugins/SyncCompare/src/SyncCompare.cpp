@@ -139,9 +139,8 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
             auto interface = window.ToObjectRef<GView::View::WindowInterface>();
 
             auto currentView = interface->GetCurrentView();
-            currentView->GoTo(0);
-
             const auto viewName = currentView->GetName();
+
             if (filterName == "") // re-enable
             {
                 window->SetEnabled(true);
@@ -163,7 +162,7 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
 
         const auto screenSize = desktop->GetClientSize();
 
-        int32 gridX = std::max<>(static_cast<int32>(sqrt(filteredWindows.size())), 1);
+        int32 gridX = std::max<>(static_cast<int32>(std::sqrt(filteredWindows.size())), 1);
         int32 gridY = gridX;
         if (gridY * gridX < static_cast<int32>(filteredWindows.size()))
         {
