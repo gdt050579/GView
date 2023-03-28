@@ -138,6 +138,8 @@ namespace View
 
         struct SettingsData
         {
+            String name;
+
             DisassemblyLanguage defaultLanguage;
             std::map<uint64, DisassemblyZone> disassemblyZones;
             std::deque<char*> buffersToDelete;
@@ -239,8 +241,6 @@ namespace View
                 uint32 offset;
             };
 
-            FixSizeString<16> name;
-
             Reference<GView::Object> obj;
             Pointer<SettingsData> settings;
             static Config config;
@@ -254,8 +254,7 @@ namespace View
 
             void RecomputeDissasmLayout();
             bool WriteTextLineToChars(DrawLineInfo& dli);
-            bool WriteStructureToScreen(
-                  DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
+            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
@@ -291,7 +290,7 @@ namespace View
             void AddNewCollapsibleZone();
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
             virtual ~Instance() override;
 
             virtual void Paint(AppCUI::Graphics::Renderer& renderer) override;
@@ -300,7 +299,6 @@ namespace View
 
             virtual bool GoTo(uint64 offset) override;
             virtual bool Select(uint64 offset, uint64 size) override;
-            virtual std::string_view GetName() override;
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;

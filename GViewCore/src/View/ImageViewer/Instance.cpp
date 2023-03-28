@@ -10,14 +10,13 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Image View")
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
     imgView->SetVScrollBarTopMargin(4);
     imgView->SetHScrollBarLeftMarging(4);
 
     this->obj               = _obj;
-    this->name              = _name;
     this->currentImageIndex = 0;
     this->scale             = ImageScaleMethod::NoScale;
     // settings
@@ -195,10 +194,6 @@ bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
-std::string_view Instance::GetName()
-{
-    return this->name;
-}
 //======================================================================[Cursor information]==================
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
@@ -206,9 +201,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     LocalString<128> tmp;
 
     auto poz = this->WriteCursorInfo(r, 0, 0, 16, "Size:", tmp.Format("%u x %u", img.GetWidth(), img.GetHeight()));
-    poz      = this->WriteCursorInfo(
-          r, poz, 0, 16, "Image:", tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()));
-    poz = this->WriteCursorInfo(r, poz, 0, 16, "Zoom:", tmp.Format("%3u%%", 100U / (uint32) scale));
+    poz      = this->WriteCursorInfo(r, poz, 0, 16, "Image:", tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()));
+    poz      = this->WriteCursorInfo(r, poz, 0, 16, "Zoom:", tmp.Format("%3u%%", 100U / (uint32) scale));
 }
 
 //======================================================================[PROPERTY]============================

@@ -145,6 +145,7 @@ add_subdirectory(Types/ZIP)
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
+add_subdirectory(GenericPlugins/SyncCompare)
                                                                 
 if (APPLE)
     	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")

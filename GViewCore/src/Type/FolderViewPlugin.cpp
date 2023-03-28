@@ -130,7 +130,8 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     settings.AddProperty("Path", ft->root.u16string());
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::EnumerateInterface>());
     settings.SetOpenItemCallback(win->GetObject()->GetContentType<FolderType>().ToObjectRef<View::ContainerViewer::OpenItemInterface>());
-    win->CreateViewer("FolderView", settings);
+    settings.SetName("Folder View");
+    win->CreateViewer(settings);
     return true;
 }
 } // namespace GView::Type::FolderViewPlugin

@@ -80,3 +80,8 @@ void Settings::SetEndianess(GView::Dissasembly::Endianess endianess)
 {
     ((SettingsData*) (this->data))->endianess = endianess;
 }
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
+}

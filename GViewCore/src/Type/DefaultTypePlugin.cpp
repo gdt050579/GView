@@ -69,11 +69,11 @@ bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     auto enc       = CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLength);
 
     if (enc != CharacterEncoding::Encoding::Binary)
-        win->CreateViewer<View::TextViewer::Settings>("Text view");
+        win->CreateViewer<View::TextViewer::Settings>();
 
     // add a buffer view as a default view
     GView::View::BufferViewer::Settings s{};
-    dt->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer view", s);
+    dt->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
     return true;
 }

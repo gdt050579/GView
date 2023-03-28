@@ -68,7 +68,7 @@ extern "C"
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::ZIP::ZIPFile> zip)
     {
         BufferViewer::Settings settings{};
-        zip->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        zip->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::ZIP::ZIPFile> zip)
@@ -92,7 +92,7 @@ extern "C"
         settings.SetOpenItemCallback(
               win->GetObject()->GetContentType<GView::Type::ZIP::ZIPFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
-        win->CreateViewer("Container Viewer", settings);
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

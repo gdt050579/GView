@@ -42,3 +42,8 @@ void Settings::SetMaxTokenSize(Size sz)
     ((SettingsData*) (this->data))->maxTokenSize.Width  = std::max<>(1U, sz.Width);
     ((SettingsData*) (this->data))->maxTokenSize.Height = std::max<>(1U, sz.Height);
 }
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
+}

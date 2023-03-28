@@ -1,0 +1,1 @@
+target_sources(SyncCompare PRIVATE SyncCompare.cpp)

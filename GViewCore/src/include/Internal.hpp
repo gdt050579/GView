@@ -664,18 +664,20 @@ namespace App
 
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
-        bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
+        bool CreateViewer(View::BufferViewer::Settings& settings) override;
+        bool CreateViewer(View::ImageViewer::Settings& settings) override;
+        bool CreateViewer(View::GridViewer::Settings& settings) override;
+        bool CreateViewer(View::DissasmViewer::Settings& settings) override;
+        bool CreateViewer(View::TextViewer::Settings& settings) override;
+        bool CreateViewer(View::ContainerViewer::Settings& settings) override;
+        bool CreateViewer(View::LexicalViewer::Settings& settings) override;
 
-        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
-              const std::string_view& name, View::BufferViewer::Settings& settings) override;
+        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 
         Reference<View::ViewControl> GetCurrentView() override;
+        uint32 GetViewsCount() override;
+        Reference<View::ViewControl> GetViewByIndex(uint32 index) override;
+        bool SetViewByIndex(uint32 index) override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
