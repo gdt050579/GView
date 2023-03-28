@@ -86,7 +86,11 @@ void Dylib::Update()
 
         const auto timestamp = (time_t) d.value.dylib.timestamp;
         char time[30]{ 0 };
+#ifdef BUILD_FOR_WINDOWS
         ctime_s(time, sizeof(time), &timestamp);
+#else
+        ctime_r(&timestamp, time);
+#endif
         item.SetText(4, tmp.Format("%s (%s)", time, GetValue(n, d.value.dylib.timestamp).data()));
         item.SetText(
               5,
