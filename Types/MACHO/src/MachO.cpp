@@ -146,7 +146,7 @@ extern "C"
             }
         }
 
-        machO->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        machO->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
@@ -169,7 +169,7 @@ extern "C"
         settings.SetOpenItemCallback(
               win->GetObject()->GetContentType<MachO::MachOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
-        win->CreateViewer("ContainerViewer", settings);
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

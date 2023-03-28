@@ -33,3 +33,8 @@ void Settings::HightlightCurrentLine(bool highlight)
 {
     reinterpret_cast<SettingsData*>(this->data)->highlightCurrentLine = highlight;
 }
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
+}

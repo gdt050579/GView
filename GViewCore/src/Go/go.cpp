@@ -89,25 +89,25 @@ bool PcLnTab::Process(const Buffer& buffer, Architecture arch)
     {
     case GoMagic::_116:
         goCtx->nfunctab    = *reinterpret_cast<uint32*>(data + hSize);
-        goCtx->nfiletab    = *reinterpret_cast<uint32*>(data + hSize + 1 * goCtx->header->sizeOfUintptr);
-        goCtx->funcnametab = data + *reinterpret_cast<uint32*>(data + hSize + 2 * goCtx->header->sizeOfUintptr);
-        goCtx->cutab       = data + *reinterpret_cast<uint32*>(data + hSize + 3 * goCtx->header->sizeOfUintptr);
-        goCtx->filetab     = data + *reinterpret_cast<uint32*>(data + hSize + 4 * goCtx->header->sizeOfUintptr);
-        goCtx->pctab       = data + *reinterpret_cast<uint32*>(data + hSize + 5 * goCtx->header->sizeOfUintptr);
-        goCtx->funcdata    = data + *reinterpret_cast<uint32*>(data + hSize + 6 * goCtx->header->sizeOfUintptr);
-        goCtx->functab     = data + *reinterpret_cast<uint32*>(data + hSize + 6 * goCtx->header->sizeOfUintptr);
-        goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr;
+        goCtx->nfiletab    = *reinterpret_cast<uint32*>(data + hSize + 1ull * goCtx->header->sizeOfUintptr);
+        goCtx->funcnametab = data + *reinterpret_cast<uint32*>(data + hSize + 2ull * goCtx->header->sizeOfUintptr);
+        goCtx->cutab       = data + *reinterpret_cast<uint32*>(data + hSize + 3ull * goCtx->header->sizeOfUintptr);
+        goCtx->filetab     = data + *reinterpret_cast<uint32*>(data + hSize + 4ull * goCtx->header->sizeOfUintptr);
+        goCtx->pctab       = data + *reinterpret_cast<uint32*>(data + hSize + 5ull * goCtx->header->sizeOfUintptr);
+        goCtx->funcdata    = data + *reinterpret_cast<uint32*>(data + hSize + 6ull * goCtx->header->sizeOfUintptr);
+        goCtx->functab     = data + *reinterpret_cast<uint32*>(data + hSize + 6ull * goCtx->header->sizeOfUintptr);
+        goCtx->functabsize = static_cast<int32>((goCtx->nfunctab * 2ull + 1ull) * goCtx->header->sizeOfUintptr);
         break;
     case GoMagic::_118:
         goCtx->nfunctab    = *reinterpret_cast<uint32*>(data + hSize);
-        goCtx->nfiletab    = *reinterpret_cast<uint32*>(data + hSize + 1 * goCtx->header->sizeOfUintptr);
-        goCtx->funcnametab = data + *reinterpret_cast<uint32*>(data + hSize + 3 * goCtx->header->sizeOfUintptr);
-        goCtx->cutab       = data + *reinterpret_cast<uint32*>(data + hSize + 4 * goCtx->header->sizeOfUintptr);
-        goCtx->filetab     = data + *reinterpret_cast<uint32*>(data + hSize + 5 * goCtx->header->sizeOfUintptr);
-        goCtx->pctab       = data + *reinterpret_cast<uint32*>(data + hSize + 6 * goCtx->header->sizeOfUintptr);
-        goCtx->funcdata    = data + *reinterpret_cast<uint32*>(data + hSize + 7 * goCtx->header->sizeOfUintptr);
-        goCtx->functab     = data + *reinterpret_cast<uint32*>(data + hSize + 7 * goCtx->header->sizeOfUintptr);
-        goCtx->functabsize = (goCtx->nfunctab * 2 + 1) * goCtx->header->sizeOfUintptr;
+        goCtx->nfiletab    = *reinterpret_cast<uint32*>(data + hSize + 1ull * goCtx->header->sizeOfUintptr);
+        goCtx->funcnametab = data + *reinterpret_cast<uint32*>(data + hSize + 3ull * goCtx->header->sizeOfUintptr);
+        goCtx->cutab       = data + *reinterpret_cast<uint32*>(data + hSize + 4ull * goCtx->header->sizeOfUintptr);
+        goCtx->filetab     = data + *reinterpret_cast<uint32*>(data + hSize + 5ull * goCtx->header->sizeOfUintptr);
+        goCtx->pctab       = data + *reinterpret_cast<uint32*>(data + hSize + 6ull * goCtx->header->sizeOfUintptr);
+        goCtx->funcdata    = data + *reinterpret_cast<uint32*>(data + hSize + 7ull * goCtx->header->sizeOfUintptr);
+        goCtx->functab     = data + *reinterpret_cast<uint32*>(data + hSize + 7ull * goCtx->header->sizeOfUintptr);
+        goCtx->functabsize = static_cast<int32>((goCtx->nfunctab * 2ull + 1ull) * goCtx->header->sizeOfUintptr);
         break;
     case GoMagic::_12:
         goCtx->header      = reinterpret_cast<Golang::GoFunctionHeader*>(data);

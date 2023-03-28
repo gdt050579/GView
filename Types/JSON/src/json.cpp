@@ -28,12 +28,12 @@ extern "C"
         settings.SetParser(json.ToObjectRef<LexicalViewer::ParseInterface>());
         settings.AddPlugin(&json->upper_case_plugin);
 
-        win->CreateViewer("Lexical", settings);
+        win->CreateViewer(settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
 
         GView::View::BufferViewer::Settings s{};
-        json->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", s);
+        json->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new JSON::Panels::Information(json)), true);

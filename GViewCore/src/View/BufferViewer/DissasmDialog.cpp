@@ -53,6 +53,8 @@ DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "
         break;
     case GView::Dissasembly::Design::Invalid:
     default:
+        instance->GetSettings()->design = GView::Dissasembly::Design::Intel;
+        intel->SetChecked(true);
         break;
     }
 
@@ -66,6 +68,8 @@ DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "
         break;
     case GView::Dissasembly::Architecture::Invalid:
     default:
+        instance->GetSettings()->architecture = GView::Dissasembly::Architecture::x86;
+        x86->SetChecked(true);
         break;
     }
 
@@ -79,6 +83,8 @@ DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "
         break;
     case GView::Dissasembly::Endianess::Invalid:
     default:
+        instance->GetSettings()->endianess = GView::Dissasembly::Endianess::Little;
+        little->SetChecked(true);
         break;
     }
 
@@ -186,8 +192,11 @@ bool DissasmDialog::Update()
 
     std::vector<GView::Dissasembly::Instruction> instructions{};
 
-    const auto address =
-          instance->GetSettings()->offsetTranslateCallback->TranslateFromFileOffset(instance->GetCursorCurrentPosition(), instance->GetCurrentAddressMode());
+    auto address = instance->GetCursorCurrentPosition();
+    if (instance->GetSettings()->offsetTranslateCallback)
+    {
+        address = instance->GetSettings()->offsetTranslateCallback->TranslateFromFileOffset(address, instance->GetCurrentAddressMode());
+    }
     const auto buffer = instance->GetObject()->GetData().Get(instance->GetCursorCurrentPosition(), 0x2000, false);
 
     CHECK(dissasembler.DissasembleInstructions(buffer, address, instructions), false, "");

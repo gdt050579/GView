@@ -48,11 +48,11 @@ extern "C"
 
         GView::View::GridViewer::Settings gridSettings;
         csv->UpdateGrid(gridSettings);
-        win->CreateViewer("Grid View", gridSettings);
+        win->CreateViewer(gridSettings);
 
         GView::View::BufferViewer::Settings bufferSettings;
         csv->UpdateBufferViewZones(bufferSettings);
-        csv->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", bufferSettings);
+        csv->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(bufferSettings);
 
         // panels
         if (csv->HasPanel(CSV::Panels::IDs::Information))

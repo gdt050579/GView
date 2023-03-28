@@ -206,6 +206,7 @@ namespace View
 
         struct SettingsData
         {
+            String name;
             std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
             AppCUI::Graphics::Size maxTokenSize;
@@ -282,7 +283,6 @@ namespace View
         class Instance : public View::ViewControl
         {
             FoldColumn foldColumn;
-            FixSizeString<29> name;
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
@@ -362,7 +362,7 @@ namespace View
             std::vector<BlockObject> blocks;
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             inline uint32 GetUnicodeTextLen() const
             {
@@ -386,7 +386,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual std::string_view GetName() override;
 
             // mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;

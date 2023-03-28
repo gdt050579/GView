@@ -69,7 +69,7 @@ extern "C"
             i++;
         }
 
-        jt->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        jt->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
