@@ -26,8 +26,7 @@ struct
     { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },
 };
 
-Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
-    : name(name), obj(obj), settings(nullptr)
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : obj(obj), settings(nullptr), ViewControl("Dissasm View")
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     // settings
@@ -78,11 +77,6 @@ bool Instance::Select(uint64 offset, uint64 size)
     return true;
 }
 
-std::string_view Instance::GetName()
-{
-    return "DissasmView";
-}
-
 // bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
 //{
 //     NOT_IMPLEMENTED(false);
@@ -123,8 +117,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(
-          x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos % Layout.textSize, this->Cursor.base), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos % Layout.textSize, this->Cursor.base), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -149,8 +142,7 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(
-          x + 5, y, width - 4, n.ToString(this->Cursor.currentPos / Layout.textSize, NumericFormatFlags::None), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 5, y, width - 4, n.ToString(this->Cursor.currentPos / Layout.textSize, NumericFormatFlags::None), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -246,10 +238,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
         if (!config.ShowFileContent)
         {
             dli.renderer.WriteSingleLineText(
-                  Layout.startingTextLineOffset,
-                  1,
-                  "No structures found an File content is hidden. No content to show.",
-                  config.Colors.Normal);
+                  Layout.startingTextLineOffset, 1, "No structures found an File content is hidden. No content to show.", config.Colors.Normal);
             return true;
         }
 
@@ -260,8 +249,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
-inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
-      const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
+inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
     {
@@ -402,8 +390,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     return true;
 }
 
-bool Instance::WriteStructureToScreen(
-      DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
+bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
 {
     ColorPair normalColor = config.Colors.Normal;
 
@@ -481,8 +468,7 @@ bool Instance::WriteStructureToScreen(
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
         AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        RegisterStructureCollapseButton(
-              dli, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
+        RegisterStructureCollapseButton(dli, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
         break;
     default:
         return false;
@@ -569,11 +555,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
                 {
-                    AddStringToChars(
-                          dli,
-                          config.Colors.StructureColor,
-                          "\tInvalid buff at position: %ull",
-                          zone->data.startingOffset + zone->data.size);
+                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -612,8 +594,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             }
             else
             {
-                AddStringToChars(
-                      dli, config.Colors.StructureColor, "\tNot enough data for offset: %ull", zone->data.startingOffset + zone->data.size);
+                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %ull", zone->data.startingOffset + zone->data.size);
             }
         }
     }
@@ -711,8 +692,7 @@ void Instance::RecomputeDissasmZones()
     }
     for (auto& dissasmZone : settings->disassemblyZones)
     {
-        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back(
-              { &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
+        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
     }
     for (auto& zone : settings->collapsibleAndTextZones)
     {
@@ -932,8 +912,7 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
 
     for (uint32 line = lineStart; line <= lineEnd && zoneIndex < zonesCount; line++)
     {
-        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
-            (result.empty() || result.back().zoneIndex != zoneIndex))
+        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex && (result.empty() || result.back().zoneIndex != zoneIndex))
             result.push_back({ zoneIndex, line });
         else if (line >= zones[zoneIndex]->endingLineIndex)
             zoneIndex++;
@@ -1093,8 +1072,7 @@ void Instance::RecomputeDissasmLayout()
     Layout.visibleRows            = this->GetHeight() - 1;
     Layout.totalCharactersPerLine = this->GetWidth() - 1;
 
-    Layout.textSize =
-          std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
+    Layout.textSize = std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
 }
 
 void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)

@@ -136,7 +136,7 @@ extern "C"
             break;
         }
 
-        iso->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        iso->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
@@ -155,7 +155,7 @@ extern "C"
         settings.SetEnumerateCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
         settings.SetOpenItemCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
-        win->CreateViewer("ContainerViewer", settings);
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

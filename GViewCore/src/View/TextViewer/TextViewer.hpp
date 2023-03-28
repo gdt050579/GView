@@ -16,6 +16,7 @@ namespace View
 
         struct SettingsData
         {
+            String name;
             uint32 tabSize;
             CharacterEncoding::Encoding encoding;
             WrapMethod wrapMethod;
@@ -75,7 +76,6 @@ namespace View
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
-            FixSizeString<29> name;
             Character chars[MAX_CHARACTERS_PER_LINE];
             uint32 lineNumberWidth;
             uint32 sizeOfBOM;
@@ -165,7 +165,7 @@ namespace View
             void MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex);
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             virtual void Paint(Graphics::Renderer& renderer) override;
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
@@ -180,7 +180,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual std::string_view GetName() override;
 
             // mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;

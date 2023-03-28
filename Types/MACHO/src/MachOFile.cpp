@@ -1319,7 +1319,13 @@ void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewI
     const auto length = (uint32) data->size;
 
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    GView::App::OpenBuffer(buffer, data->info.name, GView::App::OpenMethod::BestMatch);
+
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(this->obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(data->info.name);
+
+    GView::App::OpenBuffer(buffer, data->info.name, fullPath, GView::App::OpenMethod::BestMatch);
 }
 
 bool MachOFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)

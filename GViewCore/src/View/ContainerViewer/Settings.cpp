@@ -9,7 +9,7 @@ SettingsData::SettingsData()
 {
     this->columnsCount    = 0;
     this->propertiesCount = 0;
-    this->pathSeparator   = '/';
+    this->pathSeparator   = char16_t(std::filesystem::path::preferred_separator);
 }
 Settings::Settings()
 {
@@ -52,6 +52,11 @@ void Settings::SetEnumerateCallback(Reference<EnumerateInterface> callback)
 void Settings::SetOpenItemCallback(Reference<OpenItemInterface> callback)
 {
     SD->openItemInterface = callback;
+}
+
+bool Settings::SetName(std::string_view name)
+{
+    return SD->name.Set(name);
 }
 
 #undef SD

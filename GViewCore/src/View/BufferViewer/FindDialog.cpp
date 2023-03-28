@@ -94,7 +94,7 @@ FindDialog::FindDialog()
     ignoreCase->SetChecked(true);
     ignoreCase->Handlers()->OnCheck = this;
 
-    alingTextToUpperLeftCorner = Factory::CheckBox::Create(this, "&Align text to upper left corner", "x:0,y:12,w:45%,h:1", CHECKBOX_ID_ALIGN_TEXT_UPPER_LEFT);
+    alingTextToUpperLeftCorner = Factory::CheckBox::Create(this, "A&lign text to upper left corner", "x:0,y:12,w:45%,h:1", CHECKBOX_ID_ALIGN_TEXT_UPPER_LEFT);
     alingTextToUpperLeftCorner->SetChecked(true);
     alingTextToUpperLeftCorner->Handlers()->OnCheck = this;
 

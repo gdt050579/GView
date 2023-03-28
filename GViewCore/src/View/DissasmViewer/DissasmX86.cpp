@@ -10,7 +10,7 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
 {
     assert(!values.empty());
     uint32 left  = 0;
-    uint32 right = values.size() - 1u;
+    uint32 right = static_cast<uint32>(values.size() - 1u);
     while (left != right)
     {
         const uint32 mid = (left + right) / 2;
@@ -37,8 +37,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     if (dli.textLineToDraw == 0)
     {
-        dli.renderer.WriteSingleLineText(
-              Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
+        dli.renderer.WriteSingleLineText(Layout.startingTextLineOffset, dli.screenLineToDraw + 1, "Dissasm zone", config.Colors.StructureColor);
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
         AdjustZoneExtendedSize(zone, 100);
         return true;
@@ -95,13 +94,12 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return false;
     }
 
-    const auto instructionData = obj->GetData().Get(latestOffset, remainingZoneSize, false);
+    const auto instructionData = obj->GetData().Get(latestOffset, static_cast<uint32>(remainingZoneSize), false);
     if (!instructionData.IsValid())
         return true;
 
     cs_insn* insn;
-    size_t count = cs_disasm(
-          handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES, &insn);
+    size_t count = cs_disasm(handle, instructionData.GetData(), instructionData.GetLength(), zone->zoneDetails.entryPoint, DISSASM_MAX_CACHED_LINES, &insn);
     if (count > 0)
     {
         LocalString<192> string;

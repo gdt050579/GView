@@ -54,10 +54,15 @@ void DigitalSignature::MoreInfo()
 {
     if (humanReadable.IsValid() && humanReadable.IsCurrent())
     {
+        constexpr std::u16string_view name{ u"Digital Signature - PKCS#7 Human Readable" };
+
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(pe->obj->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(name);
+
         GView::App::OpenBuffer(
-              BufferView{ pe->data.data.humanReadable.GetText(), pe->data.data.humanReadable.Len() },
-              "Digital Signature - PKCS#7 Human Readable",
-              GView::App::OpenMethod::BestMatch);
+              BufferView{ pe->data.data.humanReadable.GetText(), pe->data.data.humanReadable.Len() }, name, fullPath, GView::App::OpenMethod::BestMatch);
     }
 
     if (PEMs.IsValid() && PEMs.IsCurrent())
@@ -70,8 +75,14 @@ void DigitalSignature::MoreInfo()
             input += pem;
             input += "\n";
         }
+        constexpr std::u16string_view name{ u"Digital Signature - PEM Certificates" };
 
-        GView::App::OpenBuffer(BufferView{ input.c_str(), input.size() }, "Digital Signature - PEM Certificates", GView::App::OpenMethod::BestMatch);
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(pe->obj->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(name);
+
+        GView::App::OpenBuffer(BufferView{ input.c_str(), input.size() }, name, fullPath, GView::App::OpenMethod::BestMatch);
     }
 }
 
