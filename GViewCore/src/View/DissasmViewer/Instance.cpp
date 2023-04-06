@@ -594,7 +594,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             }
             else
             {
-                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %ull", zone->data.startingOffset + zone->data.size);
+                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %llu", zone->data.startingOffset + zone->data.size);
             }
         }
     }
