@@ -555,7 +555,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
                 {
-                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
+                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %llu", zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
