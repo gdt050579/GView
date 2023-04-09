@@ -532,7 +532,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
     if (zone->data.canBeCollapsed && dli.textLineToDraw == 0)
     {
-        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%ull] ", zone->data.size);
+        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%llu] ", zone->data.size);
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
     }
     else
