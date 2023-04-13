@@ -439,7 +439,7 @@ namespace DigitalSignature
         {
             struct Signature
             {
-                uint32 statusCode;
+                uint32 statusCode{ 0 };
                 String status;
 
                 struct Signer
