@@ -215,7 +215,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
     return nullptr;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
-      AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
+      const string_view& extension, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
 {
     // check for extension first
     if (extensionHash != 0)
@@ -224,7 +224,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
         {
             if (pType.MatchExtension(extensionHash))
             {
-                if (pType.IsOfType(buf, textParser))
+                if (pType.IsOfType(buf, textParser, extension))
                     return &pType;
             }
         }
@@ -304,10 +304,19 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
     auto tp = GView::Type::Matcher::TextParser(text.text, text.size);
     auto sz = cache.GetSize();
 
+    LocalUnicodeStringBuilder<256> temp;
+    temp.Set(name);
+    auto pos = temp.ToStringView().find_last_of('.');
+
+    // Get extension as UTF-16 and convert it to UTF-8
+    auto u16Extension             = pos != u16string_view::npos ? (temp.ToStringView().substr(pos)) : std::u16string_view();
+    std::string extensionAsString = { u16Extension.begin(), u16Extension.end() };
+    std::string_view extension(extensionAsString.begin(), extensionAsString.end());
+
     switch (method)
     {
     case OpenMethod::FirstMatch:
-        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
+        return IdentifyTypePlugin_FirstMatch(extension, buf, tp, extensionHash);
     case OpenMethod::BestMatch:
         return IdentifyTypePlugin_BestMatch(name, path, sz, buf, tp, extensionHash);
     case OpenMethod::Select:
