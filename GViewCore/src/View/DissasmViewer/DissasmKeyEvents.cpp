@@ -229,7 +229,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         MoveScrollTo(this->Cursor.startView + 1);
         return true;
     };
-    return false;
+
+    return ViewControl::OnKeyEvent(select ? (keyCode | Key::Shift) : keyCode, charCode);
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

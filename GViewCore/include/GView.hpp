@@ -843,6 +843,8 @@ namespace View
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
+        virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
+
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {

@@ -138,7 +138,7 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
             auto window    = desktop->GetChild(i);
             auto interface = window.ToObjectRef<GView::View::WindowInterface>();
 
-            auto currentView = interface->GetCurrentView();
+            auto currentView    = interface->GetCurrentView();
             const auto viewName = currentView->GetName();
 
             if (filterName == "") // re-enable

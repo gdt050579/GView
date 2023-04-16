@@ -1344,7 +1344,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         return true;
     }
 
-    return false;
+    return ViewControl::OnKeyEvent(select ? (keyCode | Key::Shift) : keyCode, charCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
