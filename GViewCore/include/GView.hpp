@@ -870,10 +870,12 @@ namespace View
                 return start == GView::Utils::INVALID_OFFSET;
             }
         };
+
         struct CORE_EXPORT PositionToColorInterface
         {
             virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
+
         struct CORE_EXPORT OffsetTranslateInterface
         {
             virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;

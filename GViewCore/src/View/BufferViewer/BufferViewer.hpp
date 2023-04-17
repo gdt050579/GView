@@ -194,10 +194,11 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     } CursorColors;
     struct
     {
-        uint8 buffer[256];
-        uint32 size;
-        uint64 start, end;
-        bool highlight;
+        uint8 buffer[256]{ 0 };
+        uint32 size{ 0 };
+        uint64 start{ GView::Utils::INVALID_OFFSET };
+        uint64 end{ GView::Utils::INVALID_OFFSET };
+        bool highlight{ true };
         void Clear()
         {
             start     = GView::Utils::INVALID_OFFSET;
@@ -207,7 +208,8 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         }
     } CurrentSelection;
 
-    bool showTypeObjects;
+    bool showSyncCompare{ true };
+    bool showTypeObjects{ true };
     CodePage codePage;
     Pointer<SettingsData> settings;
     Reference<GView::Object> obj;

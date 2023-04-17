@@ -42,33 +42,27 @@ constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
 Config Instance::config;
 
 Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+    : obj(_obj), settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
-    this->obj = _obj;
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
-    this->showTypeObjects            = true;
-    this->Layout.nrCols              = 0;
-    this->Layout.charFormatMode      = CharacterFormatMode::Hex;
-    this->Layout.lineAddressSize     = 8;
-    this->Layout.lineNameSize        = 8;
-    this->Layout.charactersPerLine   = 1;
-    this->Layout.visibleRows         = 1;
-    this->Layout.xName               = 0;
-    this->Layout.xNumbers            = 0;
-    this->Layout.xAddress            = 0;
-    this->Layout.xText               = 0;
-    this->Cursor.currentPos          = 0;
-    this->Cursor.startView           = 0;
-    this->StringInfo.minCount        = 4;
-    this->StringInfo.showAscii       = true;
-    this->StringInfo.showUnicode     = true;
-    this->Cursor.base                = 16;
-    this->currentAdrressMode         = 0;
-    this->CurrentSelection.size      = 0;
-    this->CurrentSelection.start     = GView::Utils::INVALID_OFFSET;
-    this->CurrentSelection.end       = GView::Utils::INVALID_OFFSET;
-    this->CurrentSelection.highlight = true;
-    this->codePage                   = CodePageID::DOS_437;
+    this->Layout.nrCols            = 0;
+    this->Layout.charFormatMode    = CharacterFormatMode::Hex;
+    this->Layout.lineAddressSize   = 8;
+    this->Layout.lineNameSize      = 8;
+    this->Layout.charactersPerLine = 1;
+    this->Layout.visibleRows       = 1;
+    this->Layout.xName             = 0;
+    this->Layout.xNumbers          = 0;
+    this->Layout.xAddress          = 0;
+    this->Layout.xText             = 0;
+    this->Cursor.currentPos        = 0;
+    this->Cursor.startView         = 0;
+    this->StringInfo.minCount      = 4;
+    this->StringInfo.showAscii     = true;
+    this->StringInfo.showUnicode   = true;
+    this->Cursor.base              = 16;
+    this->currentAdrressMode       = 0;
+    this->codePage                 = CodePageID::DOS_437;
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
@@ -548,15 +542,72 @@ ColorPair Instance::OffsetToColor(uint64 offset)
             }
         }
     }
+
     // color
-    if ((showTypeObjects) && (settings) && (settings->positionToColorCallback))
+    if (settings)
     {
-        if ((offset >= bufColor.start) && (offset <= bufColor.end))
-            return bufColor.color;
-        if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->GetData().Get(offset, 16, false), bufColor))
-            return bufColor.color;
-        // no color provided for the specific buffer --> check strings and zones
+        if (showSyncCompare)
+        {
+            if ((offset >= bufColor.start) && (offset <= bufColor.end))
+                return bufColor.color;
+
+            // TODO:
+            auto desktop         = AppCUI::Application::GetDesktop();
+            const auto windowsNo = desktop->GetChildrenCount();
+
+            std::unordered_map<char, uint32> bytes;
+
+            for (uint32 i = 0; i < windowsNo; i++)
+            {
+                auto window      = desktop->GetChild(i);
+                auto interface   = window.ToObjectRef<GView::View::WindowInterface>();
+                auto currentView = interface->GetCurrentView();
+                auto instance    = currentView.ToObjectRef<GView::View::BufferViewer::Instance>();
+                if (instance)
+                {
+                    const auto base       = instance->Cursor.base;
+                    const auto startView  = instance->Cursor.startView;
+                    const auto currentPos = instance->Cursor.currentPos;
+
+                    auto& data                 = instance->GetObject()->GetData();
+                    const auto cacheCurrentPos = data.GetCurrentPos();
+                    const auto cacheSize       = data.GetCacheSize();
+                    const auto cacheObjectSize = data.GetSize();
+
+                    const auto buffer = data.Get(offset, 1, true);
+                    if (buffer.IsValid())
+                    {
+                        ++bytes[buffer.GetData()[0]];
+                    }
+                }
+            }
+
+            if (bytes.size() == 1)
+            {
+                return ColorPair{ Color::Black, Color::Green };
+            }
+            else if (bytes.size() < windowsNo)
+            {
+                auto b = this->obj->GetData().Get(offset, 1, true);
+                if (b.IsValid())
+                {
+                    if (bytes.at(b.GetData()[0]) >= 2)
+                    {
+                        return ColorPair{ Color::Black, Color::Yellow };
+                    }
+                }
+            }
+        }
+        else if (showTypeObjects && settings->positionToColorCallback)
+        {
+            if ((offset >= bufColor.start) && (offset <= bufColor.end))
+                return bufColor.color;
+            if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->GetData().Get(offset, 16, false), bufColor))
+                return bufColor.color;
+            // no color provided for the specific buffer --> check strings and zones
+        }
     }
+
     // check strings
     if (this->StringInfo.showAscii || this->StringInfo.showUnicode)
     {
@@ -1942,6 +1993,7 @@ enum class PropertyID : uint32
     ShowAddress,
     ShowZoneName,
     ShowTypeObject,
+    ShowSyncCompare,
     AddressBarWidth,
     ZoneNameWidth,
     CodePage,
@@ -2008,6 +2060,9 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         return true;
     case PropertyID::ShowTypeObject:
         value = this->showTypeObjects;
+        return true;
+    case PropertyID::ShowSyncCompare:
+        value = this->showSyncCompare;
         return true;
     case PropertyID::HighlightSelection:
         value = this->CurrentSelection.highlight;
@@ -2124,6 +2179,9 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         return false;
     case PropertyID::ShowTypeObject:
         this->showTypeObjects = std::get<bool>(value);
+        return true;
+    case PropertyID::ShowSyncCompare:
+        this->showSyncCompare = std::get<bool>(value);
         return true;
     case PropertyID::HighlightSelection:
         this->CurrentSelection.highlight = std::get<bool>(value);
