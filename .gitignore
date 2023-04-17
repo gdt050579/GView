@@ -7,3 +7,6 @@
 build
 bin
 *.log
+/AppCUI
+/.gitignore
+/CMakeSettings.json
