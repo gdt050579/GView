@@ -38,6 +38,7 @@ constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
 constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
 constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
+constexpr int BUFFERVIEW_CMD_ACTIVATE_COMPARE  = 0xBF10;
 
 Config Instance::config;
 
@@ -45,24 +46,6 @@ Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
     : obj(_obj), settings(nullptr), ViewControl("Buffer View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
-    this->Layout.nrCols            = 0;
-    this->Layout.charFormatMode    = CharacterFormatMode::Hex;
-    this->Layout.lineAddressSize   = 8;
-    this->Layout.lineNameSize      = 8;
-    this->Layout.charactersPerLine = 1;
-    this->Layout.visibleRows       = 1;
-    this->Layout.xName             = 0;
-    this->Layout.xNumbers          = 0;
-    this->Layout.xAddress          = 0;
-    this->Layout.xText             = 0;
-    this->Cursor.currentPos        = 0;
-    this->Cursor.startView         = 0;
-    this->StringInfo.minCount      = 4;
-    this->StringInfo.showAscii     = true;
-    this->StringInfo.showUnicode   = true;
-    this->Cursor.base              = 16;
-    this->currentAdrressMode       = 0;
-    this->codePage                 = CodePageID::DOS_437;
 
     memcpy(this->StringInfo.AsciiMask, DefaultAsciiMask, 256);
 
@@ -551,7 +534,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
 
-            // TODO:
+            // TODO: remove this and pass it via an interface
             auto desktop         = AppCUI::Application::GetDesktop();
             const auto windowsNo = desktop->GetChildrenCount();
 
@@ -559,26 +542,18 @@ ColorPair Instance::OffsetToColor(uint64 offset)
 
             for (uint32 i = 0; i < windowsNo; i++)
             {
-                auto window      = desktop->GetChild(i);
-                auto interface   = window.ToObjectRef<GView::View::WindowInterface>();
-                auto currentView = interface->GetCurrentView();
-                auto instance    = currentView.ToObjectRef<GView::View::BufferViewer::Instance>();
-                if (instance)
+                auto window    = desktop->GetChild(i);
+                auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+
+                auto& data                 = interface->GetObject()->GetData();
+                const auto cacheCurrentPos = data.GetCurrentPos();
+                const auto cacheSize       = data.GetCacheSize();
+                const auto cacheObjectSize = data.GetSize();
+
+                const auto buffer = data.Get(offset, 1, true);
+                if (buffer.IsValid())
                 {
-                    const auto base       = instance->Cursor.base;
-                    const auto startView  = instance->Cursor.startView;
-                    const auto currentPos = instance->Cursor.currentPos;
-
-                    auto& data                 = instance->GetObject()->GetData();
-                    const auto cacheCurrentPos = data.GetCurrentPos();
-                    const auto cacheSize       = data.GetCacheSize();
-                    const auto cacheObjectSize = data.GetSize();
-
-                    const auto buffer = data.Get(offset, 1, true);
-                    if (buffer.IsValid())
-                    {
-                        ++bytes[buffer.GetData()[0]];
-                    }
+                    ++bytes[buffer.GetData()[0]];
                 }
             }
 
@@ -1541,6 +1516,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     }
     case BUFFERVIEW_CMD_DISSASM_DIALOG:
         this->ShowDissasmDialog();
+        return true;
+    case BUFFERVIEW_CMD_ACTIVATE_COMPARE:
+        showSyncCompare = true;
         return true;
     }
     return false;

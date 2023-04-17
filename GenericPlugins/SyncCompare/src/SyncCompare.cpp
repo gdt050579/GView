@@ -41,12 +41,12 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
         {
         case BTN_ID_CANCEL:
             ArrangeFilteredWindows("");
-            this->Exit();
+            this->Exit(Dialogs::Result::Cancel);
             break;
         case BTN_ID_OK:
             SetAllWindowsWithGivenViewName(VIEW_NAME);
             ArrangeFilteredWindows(VIEW_NAME);
-            this->Exit();
+            this->Exit(Dialogs::Result::Ok);
             break;
         default:
             break;
@@ -211,6 +211,43 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
             }
         }
     }
+
+    // TODO: create an interface for this and remove it from Instance class of buffer view
+    bool ViewCompareCallback(uint64 offset, char ch, AppCUI::Graphics::ColorPair& cp)
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+
+        std::unordered_map<char, uint32> bytes;
+
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window       = desktop->GetChild(i);
+            auto interface    = window.ToObjectRef<GView::View::WindowInterface>();
+            auto& data        = interface->GetObject()->GetData();
+            const auto buffer = data.Get(offset, 1, true);
+            if (buffer.IsValid())
+            {
+                ++bytes[buffer.GetData()[0]];
+            }
+        }
+
+        if (bytes.size() == 1)
+        {
+            cp = ColorPair{ Color::Black, Color::Green };
+            return true;
+        }
+        else if (bytes.size() < windowsNo)
+        {
+            if (bytes.at(ch) >= 2)
+            {
+                cp = AppCUI::Graphics::ColorPair{ Color::Black, Color::Yellow };
+                return true;
+            }
+        }
+
+        return false;
+    }
 };
 
 extern "C"
@@ -220,7 +257,24 @@ extern "C"
         if (command == "SyncCompare")
         {
             SyncCompareExample dlg;
-            dlg.Show();
+
+            // TODO: separate this in a function
+            if (dlg.Show() == Dialogs::Result::Ok)
+            {
+                auto desktop         = AppCUI::Application::GetDesktop();
+                const auto windowsNo = desktop->GetChildrenCount();
+                for (uint32 i = 0; i < windowsNo; i++)
+                {
+                    auto window                  = desktop->GetChild(i);
+                    auto interface               = window.ToObjectRef<GView::View::WindowInterface>();
+                    const uint32 totalViewsCount = interface->GetViewsCount();
+                    for (uint32 j = 0; j < totalViewsCount; j++)
+                    {
+                        auto view = interface->GetViewByIndex(j);
+                        view->OnEvent(nullptr, AppCUI::Controls::Event::Command, 0xBF10);
+                    }
+                }
+            }
             return true;
         }
         return false;
