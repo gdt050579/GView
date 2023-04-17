@@ -161,37 +161,43 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         bool recomputeOffsets{ true };
         DrawLineInfo() = default;
     };
+
     struct
     {
-        CharacterFormatMode charFormatMode;
-        uint32 nrCols;
-        uint32 lineAddressSize;
-        uint32 lineNameSize;
-        uint32 charactersPerLine;
-        uint32 visibleRows;
-        uint32 xName;
-        uint32 xAddress;
-        uint32 xNumbers;
-        uint32 xText;
+        CharacterFormatMode charFormatMode{ CharacterFormatMode::Hex };
+        uint32 nrCols{ 0 };
+        uint32 lineAddressSize{ 8 };
+        uint32 lineNameSize{ 8 };
+        uint32 charactersPerLine{ 1 };
+        uint32 visibleRows{ 1 };
+        uint32 xName{ 0 };
+        uint32 xAddress{ 0 };
+        uint32 xNumbers{ 0 };
+        uint32 xText{ 0 };
     } Layout;
+
     struct
     {
-        uint64 startView, currentPos;
-        uint32 base;
+        uint64 startView{ 0 }, currentPos{ 0 };
+        uint32 base{ 16 };
     } Cursor;
+
     struct
     {
         uint64 start, end, middle;
-        uint32 minCount;
+        uint32 minCount{ 4 };
         bool AsciiMask[256];
         StringType type;
         String asciiMaskRepr;
-        bool showAscii, showUnicode;
+        bool showAscii{ true };
+        bool showUnicode{ true };
     } StringInfo;
+
     struct
     {
         ColorPair Normal, Line, Highlighted;
     } CursorColors;
+
     struct
     {
         uint8 buffer[256]{ 0 };
@@ -208,14 +214,14 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         }
     } CurrentSelection;
 
-    bool showSyncCompare{ true };
+    bool showSyncCompare{ false };
     bool showTypeObjects{ true };
-    CodePage codePage;
+    CodePage codePage{ CodePageID::DOS_437 };
     Pointer<SettingsData> settings;
     Reference<GView::Object> obj;
     Utils::Selection selection;
     CharacterBuffer chars;
-    uint32 currentAdrressMode;
+    uint32 currentAdrressMode{ 0 };
     String addressModesList;
     BufferColor bufColor;
 
