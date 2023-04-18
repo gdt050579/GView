@@ -13,7 +13,7 @@ constexpr int BTN_ID_CANCEL = 2;
 
 constexpr std::string_view VIEW_NAME{ "Buffer View" };
 
-class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface
+class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface, public View::ViewControl::BufferColorInterface
 {
     Reference<ListView> list;
 
@@ -55,6 +55,12 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
 
     void Update()
     {
+        if (list.IsValid() == false)
+        {
+            return;
+        }
+        list->DeleteAllItems();
+
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
         for (uint32 i = 0; i < windowsNo; i++)
@@ -212,8 +218,7 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
         }
     }
 
-    // TODO: create an interface for this and remove it from Instance class of buffer view
-    bool ViewCompareCallback(uint64 offset, char ch, AppCUI::Graphics::ColorPair& cp)
+    bool GetColorForByteAt(uint64 offset, char ch, AppCUI::Graphics::ColorPair& cp) override
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
@@ -237,7 +242,8 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
             cp = ColorPair{ Color::Black, Color::Green };
             return true;
         }
-        else if (bytes.size() < windowsNo)
+
+        if (bytes.size() < windowsNo)
         {
             if (bytes.at(ch) >= 2)
             {
@@ -248,6 +254,29 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
 
         return false;
     }
+
+    void SetUpCallbackForViews(bool remove)
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window                  = desktop->GetChild(i);
+            auto interface               = window.ToObjectRef<GView::View::WindowInterface>();
+            const uint32 totalViewsCount = interface->GetViewsCount();
+            for (uint32 j = 0; j < totalViewsCount; j++)
+            {
+                auto view           = interface->GetViewByIndex(j);
+                const auto viewName = view->GetName();
+                if (viewName == VIEW_NAME) // doesn't actually matter but there's no point calling non buffer views
+                {
+                    view->SetBufferColorProcessorCallback(remove ? nullptr : this);
+                    view->OnEvent(
+                          nullptr, AppCUI::Controls::Event::Command, remove ? View::VIEW_COMMAND_DEACTIVATE_COMPARE : View::VIEW_COMMAND_ACTIVATE_COMPARE);
+                }
+            }
+        }
+    }
 };
 
 extern "C"
@@ -256,25 +285,8 @@ extern "C"
     {
         if (command == "SyncCompare")
         {
-            SyncCompareExample dlg;
-
-            // TODO: separate this in a function
-            if (dlg.Show() == Dialogs::Result::Ok)
-            {
-                auto desktop         = AppCUI::Application::GetDesktop();
-                const auto windowsNo = desktop->GetChildrenCount();
-                for (uint32 i = 0; i < windowsNo; i++)
-                {
-                    auto window                  = desktop->GetChild(i);
-                    auto interface               = window.ToObjectRef<GView::View::WindowInterface>();
-                    const uint32 totalViewsCount = interface->GetViewsCount();
-                    for (uint32 j = 0; j < totalViewsCount; j++)
-                    {
-                        auto view = interface->GetViewByIndex(j);
-                        view->OnEvent(nullptr, AppCUI::Controls::Event::Command, 0xBF10);
-                    }
-                }
-            }
+            static SyncCompareExample dlg; // you're passing the callback - this needs to be statically allocated
+            dlg.SetUpCallbackForViews(dlg.Show() != Dialogs::Result::Ok);
             return true;
         }
         return false;

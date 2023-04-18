@@ -32,8 +32,9 @@ struct SettingsData
     uint64 entryPointOffset;
     OffsetTranslationMethod translationMethods[16];
     uint32 translationMethodsCount;
-    Reference<OffsetTranslateInterface> offsetTranslateCallback;
-    Reference<PositionToColorInterface> positionToColorCallback;
+    Reference<OffsetTranslateInterface> offsetTranslateCallback{ nullptr };
+    Reference<PositionToColorInterface> positionToColorCallback{ nullptr };
+    Reference<ViewControl::BufferColorInterface> bufferColorCallback{ nullptr };
     String name;
     SettingsData();
 
@@ -264,6 +265,8 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
     void OpenCurrentSelection();
+
+    virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>) override;
 
   public:
     Instance(Reference<GView::Object> obj, Settings* settings);

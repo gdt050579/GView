@@ -813,6 +813,8 @@ class CORE_EXPORT Object
 namespace View
 {
     typedef uint8 MethodID;
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
 
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
@@ -845,11 +847,22 @@ namespace View
 
         virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
 
+        struct CORE_EXPORT BufferColorInterface
+        {
+            virtual bool GetColorForByteAt(uint64 offset, char ch, ColorPair& cp) = 0;
+        };
+
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
+        {
+            return false;
+        }
+
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {
         }
     };
+
     namespace BufferViewer
     {
         struct BufferColor

@@ -38,7 +38,6 @@ constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
 constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
 constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
-constexpr int BUFFERVIEW_CMD_ACTIVATE_COMPARE  = 0xBF10;
 
 Config Instance::config;
 
@@ -67,6 +66,12 @@ Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
 
     if (config.Loaded == false)
         config.Initialize();
+}
+
+bool Instance::SetBufferColorProcessorCallback(Reference<BufferColorInterface> cbk)
+{
+    this->settings->bufferColorCallback = cbk;
+    return true;
 }
 
 void Instance::OpenCurrentSelection()
@@ -534,51 +539,26 @@ ColorPair Instance::OffsetToColor(uint64 offset)
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
 
-            // TODO: remove this and pass it via an interface
-            auto desktop         = AppCUI::Application::GetDesktop();
-            const auto windowsNo = desktop->GetChildrenCount();
-
-            std::unordered_map<char, uint32> bytes;
-
-            for (uint32 i = 0; i < windowsNo; i++)
+            auto b = this->obj->GetData().Get(offset, 1, true);
+            if (b.IsValid())
             {
-                auto window    = desktop->GetChild(i);
-                auto interface = window.ToObjectRef<GView::View::WindowInterface>();
-
-                auto& data                 = interface->GetObject()->GetData();
-                const auto cacheCurrentPos = data.GetCurrentPos();
-                const auto cacheSize       = data.GetCacheSize();
-                const auto cacheObjectSize = data.GetSize();
-
-                const auto buffer = data.Get(offset, 1, true);
-                if (buffer.IsValid())
+                if (settings->bufferColorCallback->GetColorForByteAt(offset, b.GetData()[0], bufColor.color))
                 {
-                    ++bytes[buffer.GetData()[0]];
+                    bufColor.start = offset;
+                    bufColor.end   = offset + b.GetLength();
+                    return bufColor.color;
                 }
             }
-
-            if (bytes.size() == 1)
-            {
-                return ColorPair{ Color::Black, Color::Green };
-            }
-            else if (bytes.size() < windowsNo)
-            {
-                auto b = this->obj->GetData().Get(offset, 1, true);
-                if (b.IsValid())
-                {
-                    if (bytes.at(b.GetData()[0]) >= 2)
-                    {
-                        return ColorPair{ Color::Black, Color::Yellow };
-                    }
-                }
-            }
+            // no color provided for the specific buffer --> check show types
         }
-        else if (showTypeObjects && settings->positionToColorCallback)
+
+        if (showTypeObjects && settings->positionToColorCallback)
         {
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
             if (settings->positionToColorCallback->GetColorForBuffer(offset, this->obj->GetData().Get(offset, 16, false), bufColor))
                 return bufColor.color;
+
             // no color provided for the specific buffer --> check strings and zones
         }
     }
@@ -1517,8 +1497,11 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case BUFFERVIEW_CMD_DISSASM_DIALOG:
         this->ShowDissasmDialog();
         return true;
-    case BUFFERVIEW_CMD_ACTIVATE_COMPARE:
+    case VIEW_COMMAND_ACTIVATE_COMPARE:
         showSyncCompare = true;
+        return true;
+    case VIEW_COMMAND_DEACTIVATE_COMPARE:
+        showSyncCompare = false;
         return true;
     }
     return false;
