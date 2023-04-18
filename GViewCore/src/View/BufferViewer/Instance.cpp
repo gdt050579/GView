@@ -534,7 +534,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     // color
     if (settings)
     {
-        if (showSyncCompare)
+        if (showSyncCompare && settings->bufferColorCallback)
         {
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
