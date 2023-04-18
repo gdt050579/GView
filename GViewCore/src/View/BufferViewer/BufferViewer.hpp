@@ -34,7 +34,7 @@ struct SettingsData
     uint32 translationMethodsCount;
     Reference<OffsetTranslateInterface> offsetTranslateCallback{ nullptr };
     Reference<PositionToColorInterface> positionToColorCallback{ nullptr };
-    Reference<ViewControl::BufferColorInterface> bufferColorCallback{ nullptr };
+    Reference<BufferColorInterface> bufferColorCallback{ nullptr };
     String name;
     SettingsData();
 
@@ -267,6 +267,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     void OpenCurrentSelection();
 
     virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>) override;
+    virtual bool GetViewData(ViewData&, uint64) override;
 
   public:
     Instance(Reference<GView::Object> obj, Settings* settings);

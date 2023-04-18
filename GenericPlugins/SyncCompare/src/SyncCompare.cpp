@@ -13,7 +13,7 @@ constexpr int BTN_ID_CANCEL = 2;
 
 constexpr std::string_view VIEW_NAME{ "Buffer View" };
 
-class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface, public View::ViewControl::BufferColorInterface
+class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface, public View::BufferColorInterface
 {
     Reference<ListView> list;
 
@@ -218,19 +218,24 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
         }
     }
 
-    bool GetColorForByteAt(uint64 offset, char ch, AppCUI::Graphics::ColorPair& cp) override
+    bool GetColorForByteAt(uint64 offset, const ViewData& vd, AppCUI::Graphics::ColorPair& cp) override
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
 
-        std::unordered_map<char, uint32> bytes;
+        std::unordered_map<unsigned char, uint32> bytes;
 
         for (uint32 i = 0; i < windowsNo; i++)
         {
-            auto window       = desktop->GetChild(i);
-            auto interface    = window.ToObjectRef<GView::View::WindowInterface>();
-            auto& data        = interface->GetObject()->GetData();
-            const auto buffer = data.Get(offset, 1, true);
+            auto window    = desktop->GetChild(i);
+            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+            auto& data     = interface->GetObject()->GetData();
+
+            ViewData viewData{}; // we assume that current view is what we want (buffer view)
+            CHECK(interface->GetCurrentView()->GetViewData(viewData, GView::Utils::INVALID_OFFSET), false, "");
+            CHECK(viewData.viewStartOffset <= offset, false, "");
+
+            const auto buffer = data.Get(offset - viewData.viewStartOffset, 1, true);
             if (buffer.IsValid())
             {
                 ++bytes[buffer.GetData()[0]];
@@ -245,7 +250,7 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
 
         if (bytes.size() < windowsNo)
         {
-            if (bytes.at(ch) >= 2)
+            if (bytes.at(vd.byte) >= 2)
             {
                 cp = AppCUI::Graphics::ColorPair{ Color::Black, Color::Yellow };
                 return true;

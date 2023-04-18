@@ -74,6 +74,25 @@ bool Instance::SetBufferColorProcessorCallback(Reference<BufferColorInterface> c
     return true;
 }
 
+bool Instance::GetViewData(ViewData& vd, uint64 offset)
+{
+    vd.viewStartOffset   = Cursor.startView;
+    vd.cursorStartOffset = Cursor.currentPos;
+
+    if (offset != GView::Utils::INVALID_OFFSET)
+    {
+        const auto b = this->GetObject()->GetData().Get(offset, 1, true);
+        CHECK(b.IsValid(), false, "");
+        vd.byte = b.GetData()[0];
+    }
+    else
+    {
+        vd.byte = 0;
+    }
+
+    return true;
+}
+
 void Instance::OpenCurrentSelection()
 {
     uint64 start, end;
@@ -539,14 +558,20 @@ ColorPair Instance::OffsetToColor(uint64 offset)
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
 
-            auto b = this->obj->GetData().Get(offset, 1, true);
-            if (b.IsValid())
+            if (Cursor.startView <= offset)
             {
-                if (settings->bufferColorCallback->GetColorForByteAt(offset, b.GetData()[0], bufColor.color))
+                auto b = this->obj->GetData().Get(offset - Cursor.startView, 1, true);
+                if (b.IsValid())
                 {
-                    bufColor.start = offset;
-                    bufColor.end   = offset + b.GetLength();
-                    return bufColor.color;
+                    if (settings->bufferColorCallback->GetColorForByteAt(
+                              offset,
+                              ViewData{ .viewStartOffset = Cursor.startView, .cursorStartOffset = Cursor.currentPos, .byte = b.GetData()[0] },
+                              bufColor.color))
+                    {
+                        bufColor.start = offset;
+                        bufColor.end   = offset + b.GetLength();
+                        return bufColor.color;
+                    }
                 }
             }
             // no color provided for the specific buffer --> check show types
