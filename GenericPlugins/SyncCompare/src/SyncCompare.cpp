@@ -222,6 +222,7 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
+        CHECK(windowsNo > 1, false, "");
 
         std::unordered_map<unsigned char, uint32> bytes;
 
@@ -245,7 +246,7 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
             }
         }
 
-        if (bytes.size() == 1)
+        if (bytes.size() == 1 && bytes.at(vd.byte) == windowsNo)
         {
             cp = ColorPair{ Color::Black, Color::Green };
             return true;
