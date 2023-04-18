@@ -560,7 +560,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
 
             if (Cursor.startView <= offset)
             {
-                auto b = this->obj->GetData().Get(offset - Cursor.startView, 1, true);
+                auto b = this->obj->GetData().Get(offset, 1, true);
                 if (b.IsValid())
                 {
                     if (settings->bufferColorCallback->GetColorForByteAt(

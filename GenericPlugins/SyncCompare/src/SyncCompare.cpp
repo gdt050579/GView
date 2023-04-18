@@ -225,6 +225,9 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
 
         std::unordered_map<unsigned char, uint32> bytes;
 
+        CHECK(vd.viewStartOffset <= offset, false, "");
+        const auto deltaOffset = offset - vd.viewStartOffset;
+
         for (uint32 i = 0; i < windowsNo; i++)
         {
             auto window    = desktop->GetChild(i);
@@ -233,9 +236,9 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
 
             ViewData viewData{}; // we assume that current view is what we want (buffer view)
             CHECK(interface->GetCurrentView()->GetViewData(viewData, GView::Utils::INVALID_OFFSET), false, "");
-            CHECK(viewData.viewStartOffset <= offset, false, "");
 
-            const auto buffer = data.Get(offset - viewData.viewStartOffset, 1, true);
+            uint64 thisOffset = viewData.viewStartOffset + deltaOffset;
+            const auto buffer = data.Get(thisOffset, 1, true);
             if (buffer.IsValid())
             {
                 ++bytes[buffer.GetData()[0]];
