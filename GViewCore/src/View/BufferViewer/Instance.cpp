@@ -109,8 +109,8 @@ bool Instance::GetViewData(ViewData& vd, uint64 offset)
 
 bool Instance::AdvanceStartView(int64 offset)
 {
-    cursor.SetStartView(std::clamp(cursor.GetStartView() + offset, 0ull, this->GetObject()->GetData().GetSize() - 1ull));
-    cursor.SetCurrentPosition(std::clamp(
+    cursor.SetStartView(std::clamp<uint64>(cursor.GetStartView() + offset, 0ull, this->GetObject()->GetData().GetSize() - 1ull));
+    cursor.SetCurrentPosition(std::clamp<uint64>(
           cursor.GetCurrentPosition(), cursor.GetStartView(), cursor.GetStartView() + static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows));
     return true;
 }
