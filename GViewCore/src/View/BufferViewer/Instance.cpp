@@ -1,5 +1,7 @@
 #include "BufferViewer.hpp"
 
+#include <algorithm>
+
 using namespace GView::View::BufferViewer;
 using namespace AppCUI::Input;
 
@@ -38,6 +40,12 @@ constexpr int BUFFERVIEW_CMD_HIDESTRINGS       = 0xBF06;
 constexpr int BUFFERVIEW_CMD_FINDNEXT          = 0xBF07;
 constexpr int BUFFERVIEW_CMD_FINDPREVIOUS      = 0xBF08;
 constexpr int BUFFERVIEW_CMD_DISSASM_DIALOG    = 0xBF09;
+/*
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+*/
 
 Config Instance::config;
 
@@ -68,6 +76,12 @@ Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
         config.Initialize();
 }
 
+bool Instance::SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface> cbk)
+{
+    this->settings->onStartViewMoveCallback = cbk;
+    return true;
+}
+
 bool Instance::SetBufferColorProcessorCallback(Reference<BufferColorInterface> cbk)
 {
     this->settings->bufferColorCallback = cbk;
@@ -76,8 +90,8 @@ bool Instance::SetBufferColorProcessorCallback(Reference<BufferColorInterface> c
 
 bool Instance::GetViewData(ViewData& vd, uint64 offset)
 {
-    vd.viewStartOffset   = Cursor.startView;
-    vd.cursorStartOffset = Cursor.currentPos;
+    vd.viewStartOffset   = cursor.GetStartView();
+    vd.cursorStartOffset = cursor.GetCurrentPosition();
 
     if (offset != GView::Utils::INVALID_OFFSET)
     {
@@ -93,10 +107,18 @@ bool Instance::GetViewData(ViewData& vd, uint64 offset)
     return true;
 }
 
+bool Instance::AdvanceStartView(int64 offset)
+{
+    cursor.SetStartView(std::clamp(cursor.GetStartView() + offset, 0ull, this->GetObject()->GetData().GetSize() - 1ull));
+    cursor.SetCurrentPosition(std::clamp(
+          cursor.GetCurrentPosition(), cursor.GetStartView(), cursor.GetStartView() + static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows));
+    return true;
+}
+
 void Instance::OpenCurrentSelection()
 {
     uint64 start, end;
-    auto res = this->selection.OffsetToSelection(this->Cursor.currentPos, start, end);
+    auto res = this->selection.OffsetToSelection(this->cursor.GetCurrentPosition(), start, end);
     if (res >= 0)
     {
         LocalString<128> temp;
@@ -145,67 +167,96 @@ void Instance::UpdateCurrentSelection()
 }
 void Instance::MoveTo(uint64 offset, bool select)
 {
-    if (this->obj->GetData().GetSize() == 0)
+    if (obj->GetData().GetSize() == 0)
         return;
+
     if (offset > (obj->GetData().GetSize() - 1))
         offset = obj->GetData().GetSize() - 1;
 
-    if (offset == this->Cursor.currentPos)
+    if (offset == cursor.GetCurrentPosition())
     {
-        this->Cursor.startView = offset;
+        cursor.SetStartView(offset);
         return;
     }
 
-    auto h    = this->Layout.visibleRows;
-    auto sz   = this->Layout.charactersPerLine * h;
-    auto sidx = -1;
-    if (select)
-        sidx = this->selection.BeginSelection(this->Cursor.currentPos);
-    if ((offset >= this->Cursor.startView) && (offset < this->Cursor.startView + sz))
+    auto sidx     = (!select) ? (-1) : selection.BeginSelection(cursor.GetCurrentPosition());
+    const auto sz = Layout.charactersPerLine * Layout.visibleRows;
+    if ((offset >= cursor.GetStartView()) && (offset < cursor.GetStartView() + sz))
     {
-        this->Cursor.currentPos = offset;
-        if ((select) && (sidx >= 0))
+        cursor.SetCurrentPosition(offset);
+        if (select && sidx >= 0)
         {
-            this->selection.UpdateSelection(sidx, offset);
+            selection.UpdateSelection(sidx, offset);
             UpdateCurrentSelection();
             return; // nothing to do ... already in visual space
         }
     }
 
-    if (offset < this->Cursor.startView)
-        this->Cursor.startView = offset;
+    if (offset < cursor.GetStartView())
+    {
+        cursor.SetStartView(offset);
+    }
     else
     {
-        auto dif = this->Cursor.currentPos - this->Cursor.startView;
-        if (offset >= dif)
-            this->Cursor.startView = offset - dif;
+        const auto delta = cursor.GetCurrentPosition() - cursor.GetStartView();
+        if (offset >= delta)
+        {
+            if (offset - delta != cursor.GetStartView())
+            {
+                cursor.SetStartView(offset - delta);
+            }
+        }
         else
-            this->Cursor.startView = 0;
+        {
+            cursor.SetStartView(0);
+        }
     }
-    this->Cursor.currentPos = offset;
-    if ((select) && (sidx >= 0))
+
+    cursor.SetCurrentPosition(offset);
+    if (select && sidx >= 0)
     {
-        this->selection.UpdateSelection(sidx, offset);
+        selection.UpdateSelection(sidx, offset);
         UpdateCurrentSelection();
     }
+
+    if (moveInSync && settings && settings->onStartViewMoveCallback)
+    {
+        if (cursor.GetDeltaStartView() != 0)
+        {
+            settings->onStartViewMoveCallback->GenerateActionOnMove(
+                  this,
+                  cursor.GetDeltaStartView(),
+                  ViewData{ .viewStartOffset = cursor.GetStartView(), .cursorStartOffset = cursor.GetCurrentPosition(), .byte = 0 });
+        }
+    }
+
+    cursor.SetStartView(cursor.GetStartView()); // invalidate delta
 }
 void Instance::MoveScrollTo(uint64 offset)
 {
-    if (this->obj->GetData().GetSize() == 0)
+    if (obj->GetData().GetSize() == 0)
         return;
+
     if (offset > (obj->GetData().GetSize() - 1))
         offset = obj->GetData().GetSize() - 1;
-    auto old               = this->Cursor.startView;
-    this->Cursor.startView = offset;
-    if (this->Cursor.startView > old)
-        MoveTo(this->Cursor.currentPos + (this->Cursor.startView - old), false);
+
+    const auto previous = cursor.GetStartView();
+    cursor.SetStartView(offset);
+    if (cursor.GetStartView() > previous)
+    {
+        MoveTo(cursor.GetCurrentPosition() + (cursor.GetStartView() - previous), false);
+    }
     else
     {
-        auto dif = old - Cursor.startView;
-        if (dif <= this->Cursor.currentPos)
-            MoveTo(this->Cursor.currentPos - dif, false);
+        auto delta = previous - cursor.GetStartView();
+        if (delta <= cursor.GetCurrentPosition() && delta != 0)
+        {
+            MoveTo(cursor.GetCurrentPosition() - delta, false);
+        }
         else
+        {
             MoveTo(0, false);
+        }
     }
 }
 void Instance::MoveToSelection(uint32 selIndex)
@@ -214,7 +265,7 @@ void Instance::MoveToSelection(uint32 selIndex)
 
     if (this->selection.GetSelection(selIndex, start, end))
     {
-        if (this->Cursor.currentPos != start)
+        if (this->cursor.GetCurrentPosition() != start)
             MoveTo(start, false);
         else
             MoveTo(end, false);
@@ -225,14 +276,14 @@ void Instance::SkipCurentCaracter(bool selected)
     uint64 tr, fileSize;
     uint32 gr;
 
-    auto buf = this->obj->GetData().Get(this->Cursor.currentPos, 1, true);
+    auto buf = this->obj->GetData().Get(this->cursor.GetCurrentPosition(), 1, true);
 
     if (!buf.IsValid())
         return;
     auto toSkip = *buf.GetData();
 
     fileSize = this->obj->GetData().GetSize();
-    for (tr = this->Cursor.currentPos; tr < fileSize;)
+    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;)
     {
         auto buf = this->obj->GetData().Get(tr, 256, false);
         if (!buf.IsValid())
@@ -294,7 +345,7 @@ void Instance::MoveTillEndBlock(bool selected)
 
     fileSize = this->obj->GetData().GetSize();
 
-    for (tr = this->Cursor.currentPos; tr < fileSize;)
+    for (tr = this->cursor.GetCurrentPosition(); tr < fileSize;)
     {
         auto buf = this->obj->GetData().Get(tr, 4096, false);
         if (!buf.IsValid())
@@ -327,7 +378,7 @@ void Instance::MoveTillEndBlock(bool selected)
 }
 void Instance::MoveToZone(bool startOfZone, bool select)
 {
-    if (auto z = settings->zList.OffsetToZone(this->Cursor.currentPos))
+    if (auto z = settings->zList.OffsetToZone(this->cursor.GetCurrentPosition()))
     {
         MoveTo(startOfZone ? z->interval.low : z->interval.high, select);
     }
@@ -335,7 +386,7 @@ void Instance::MoveToZone(bool startOfZone, bool select)
 
 bool Instance::ShowGoToDialog()
 {
-    GoToDialog dlg(settings.get(), this->Cursor.currentPos, this->obj->GetData().GetSize());
+    GoToDialog dlg(settings.get(), this->cursor.GetCurrentPosition(), this->obj->GetData().GetSize());
     if (dlg.Show() == Dialogs::Result::Ok)
     {
         MoveTo(dlg.GetResultedPos(), false);
@@ -344,10 +395,10 @@ bool Instance::ShowGoToDialog()
 }
 bool Instance::ShowFindDialog()
 {
-    findDialog.UpdateData(this->Cursor.currentPos, this->obj);
+    findDialog.UpdateData(this->cursor.GetCurrentPosition(), this->obj);
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
 
-    const auto [start, length] = findDialog.GetNextMatch(this->Cursor.currentPos);
+    const auto [start, length] = findDialog.GetNextMatch(this->cursor.GetCurrentPosition());
     if (start != GView::Utils::INVALID_OFFSET && length != GView::Utils::INVALID_OFFSET)
     {
         if (findDialog.AlignToUpperRightCorner())
@@ -558,18 +609,18 @@ ColorPair Instance::OffsetToColor(uint64 offset)
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
 
-            if (Cursor.startView <= offset)
+            if (cursor.GetStartView() <= offset)
             {
                 auto b = this->obj->GetData().Get(offset, 1, true);
                 if (b.IsValid())
                 {
                     if (settings->bufferColorCallback->GetColorForByteAt(
                               offset,
-                              ViewData{ .viewStartOffset = Cursor.startView, .cursorStartOffset = Cursor.currentPos, .byte = b.GetData()[0] },
+                              ViewData{ .viewStartOffset = cursor.GetStartView(), .cursorStartOffset = cursor.GetCurrentPosition(), .byte = b.GetData()[0] },
                               bufColor.color))
                     {
                         bufColor.start = offset;
-                        bufColor.end   = offset + b.GetLength();
+                        bufColor.end   = offset;
                         return bufColor.color;
                     }
                 }
@@ -878,9 +929,9 @@ void Instance::WriteLineTextToChars(DrawLineInfo& dli)
             dli.start++;
             dli.offset++;
         }
-        if ((this->Cursor.currentPos >= ofsStart) && (this->Cursor.currentPos < dli.offset))
+        if ((this->cursor.GetCurrentPosition() >= ofsStart) && (this->cursor.GetCurrentPosition() < dli.offset))
         {
-            (startCh + (this->Cursor.currentPos - ofsStart))->Color = Cfg.Cursor.Normal;
+            (startCh + (this->cursor.GetCurrentPosition() - ofsStart))->Color = Cfg.Cursor.Normal;
         }
     }
     else
@@ -1075,10 +1126,10 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
         c->Color = Cfg.Text.Inactive;
         c++;
     }
-    if ((activ) && (this->Cursor.currentPos >= start) && (this->Cursor.currentPos < end))
+    if ((activ) && (this->cursor.GetCurrentPosition() >= start) && (this->cursor.GetCurrentPosition() < end))
     {
         const auto reprsz = characterFormatModeSize[static_cast<uint32>(this->Layout.charFormatMode)] + 1;
-        c                 = dli.chNumbers + (this->Cursor.currentPos - start) * reprsz;
+        c                 = dli.chNumbers + (this->cursor.GetCurrentPosition() - start) * reprsz;
         const auto st     = this->chars.GetBuffer();
         const auto c_e    = std::min<>(c + reprsz, sps);
         c                 = std::max<>(c - 1, st);
@@ -1087,7 +1138,7 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
             c->Color = Cfg.Cursor.Normal;
             c++;
         }
-        c = sps + (this->Cursor.currentPos - start);
+        c = sps + (this->cursor.GetCurrentPosition() - start);
         if ((c >= st) && (c < dli.chText))
             c->Color = Cfg.Cursor.Normal;
     }
@@ -1100,11 +1151,11 @@ void Instance::Paint(Renderer& renderer)
     WriteHeaders(renderer);
 
     settings->zList.SetCache(
-          { this->Cursor.startView, ((uint64) this->Layout.charactersPerLine) * (this->Layout.visibleRows - 1ull) + this->Cursor.startView });
+          { this->cursor.GetStartView(), ((uint64) this->Layout.charactersPerLine) * (this->Layout.visibleRows - 1ull) + this->cursor.GetStartView() });
 
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
-        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->Cursor.startView;
+        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->cursor.GetStartView();
         if (dli.offset >= this->obj->GetData().GetSize())
             break;
         PrepareDrawLineInfo(dli);
@@ -1244,55 +1295,55 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     switch (keyCode)
     {
     case Key::Down:
-        MoveTo(this->Cursor.currentPos + this->Layout.charactersPerLine, select);
+        MoveTo(this->cursor.GetCurrentPosition() + this->Layout.charactersPerLine, select);
         return true;
     case Key::Up:
-        if (this->Cursor.currentPos > this->Layout.charactersPerLine)
-            MoveTo(this->Cursor.currentPos - this->Layout.charactersPerLine, select);
+        if (this->cursor.GetCurrentPosition() > this->Layout.charactersPerLine)
+            MoveTo(this->cursor.GetCurrentPosition() - this->Layout.charactersPerLine, select);
         else
             MoveTo(0, select);
         return true;
     case Key::Left:
-        if (this->Cursor.currentPos > 0)
-            MoveTo(this->Cursor.currentPos - 1, select);
+        if (this->cursor.GetCurrentPosition() > 0)
+            MoveTo(this->cursor.GetCurrentPosition() - 1, select);
         return true;
     case Key::Right:
-        MoveTo(this->Cursor.currentPos + 1, select);
+        MoveTo(this->cursor.GetCurrentPosition() + 1, select);
         return true;
     case Key::PageDown:
-        MoveTo(this->Cursor.currentPos + (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows, select);
+        MoveTo(this->cursor.GetCurrentPosition() + (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows, select);
         return true;
     case Key::PageUp:
-        if (this->Cursor.currentPos > (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows)
-            MoveTo(this->Cursor.currentPos - ((uint64) this->Layout.charactersPerLine * this->Layout.visibleRows), select);
+        if (this->cursor.GetCurrentPosition() > (uint64) this->Layout.charactersPerLine * this->Layout.visibleRows)
+            MoveTo(this->cursor.GetCurrentPosition() - ((uint64) this->Layout.charactersPerLine * this->Layout.visibleRows), select);
         else
             MoveTo(0, select);
         return true;
     case Key::Home:
-        MoveTo(this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLine, select);
+        MoveTo(this->cursor.GetCurrentPosition() - (this->cursor.GetCurrentPosition() - this->cursor.GetStartView()) % this->Layout.charactersPerLine, select);
         return true;
     case Key::End:
         MoveTo(
-              this->Cursor.currentPos - (this->Cursor.currentPos - this->Cursor.startView) % this->Layout.charactersPerLine + this->Layout.charactersPerLine -
-                    1,
+              this->cursor.GetCurrentPosition() - (this->cursor.GetCurrentPosition() - this->cursor.GetStartView()) % this->Layout.charactersPerLine +
+                    this->Layout.charactersPerLine - 1,
               select);
         return true;
 
     case Key::Ctrl | Key::Up:
-        if (this->Cursor.startView > this->Layout.charactersPerLine)
-            MoveScrollTo(this->Cursor.startView - this->Layout.charactersPerLine);
+        if (this->cursor.GetStartView() > this->Layout.charactersPerLine)
+            MoveScrollTo(this->cursor.GetStartView() - this->Layout.charactersPerLine);
         else
             MoveScrollTo(0);
         return true;
     case Key::Ctrl | Key::Down:
-        MoveScrollTo(this->Cursor.startView + this->Layout.charactersPerLine);
+        MoveScrollTo(this->cursor.GetStartView() + this->Layout.charactersPerLine);
         return true;
     case Key::Ctrl | Key::Left:
-        if (this->Cursor.startView >= 1)
-            MoveScrollTo(this->Cursor.startView - 1);
+        if (this->cursor.GetStartView() >= 1)
+            MoveScrollTo(this->cursor.GetStartView() - 1);
         return true;
     case Key::Ctrl | Key::Right:
-        MoveScrollTo(this->Cursor.startView + 1);
+        MoveScrollTo(this->cursor.GetStartView() + 1);
         return true;
 
     case Key::Ctrl | Key::Home:
@@ -1379,8 +1430,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if (eventType != Event::Command)
-        return false;
+    CHECK(eventType == Event::Command, false, "");
+
     switch (ID)
     {
     case BUFFERVIEW_CMD_CHANGECOL:
@@ -1441,10 +1492,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     {
         selection.Clear();
         CurrentSelection.Clear();
-        const auto [start, length] = findDialog.GetNextMatch(this->Cursor.currentPos + 1);
+        const auto [start, length] = findDialog.GetNextMatch(this->cursor.GetCurrentPosition() + 1);
         if (start != GView::Utils::INVALID_OFFSET && length > 0)
         {
-            bool samePosition = this->Cursor.currentPos == start;
+            bool samePosition = this->cursor.GetCurrentPosition() == start;
 
             if (findDialog.AlignToUpperRightCorner())
             {
@@ -1477,7 +1528,7 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     }
     case BUFFERVIEW_CMD_FINDPREVIOUS:
     {
-        if (this->Cursor.currentPos == 0)
+        if (this->cursor.GetCurrentPosition() == 0)
         {
             Dialogs::MessageBox::ShowError("Error!", "No previous match found!");
             return true;
@@ -1485,10 +1536,10 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 
         selection.Clear();
         CurrentSelection.Clear();
-        const auto [start, length] = findDialog.GetPreviousMatch(this->Cursor.currentPos - 1);
+        const auto [start, length] = findDialog.GetPreviousMatch(this->cursor.GetCurrentPosition() - 1);
         if (start != GView::Utils::INVALID_OFFSET && length > 0)
         {
-            bool samePosition = this->Cursor.currentPos == start;
+            bool samePosition = this->cursor.GetCurrentPosition() == start;
 
             if (findDialog.AlignToUpperRightCorner())
             {
@@ -1522,14 +1573,30 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case BUFFERVIEW_CMD_DISSASM_DIALOG:
         this->ShowDissasmDialog();
         return true;
+
     case VIEW_COMMAND_ACTIVATE_COMPARE:
         showSyncCompare = true;
         return true;
     case VIEW_COMMAND_DEACTIVATE_COMPARE:
         showSyncCompare = false;
         return true;
+
+    case VIEW_COMMAND_ACTIVATE_SYNC:
+        moveInSync = true;
+        return true;
+    case VIEW_COMMAND_DEACTIVATE_SYNC:
+        moveInSync = false;
+        return true;
     }
     return false;
+}
+void Instance::OnFocus()
+{
+    cursor.SetStartView(cursor.GetStartView()); // invalidate delta;
+}
+void Instance::OnLoseFocus()
+{
+    cursor.SetStartView(cursor.GetStartView()); // invalidate delta;
 }
 bool Instance::GoTo(uint64 offset)
 {
@@ -1573,7 +1640,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos, this->Cursor.base), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->cursor.GetCurrentPosition(), this->cursor.GetBase()), this->CursorColors.Normal);
     x += width;
     if (addSeparator)
         r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
@@ -1582,7 +1649,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
     if (this->obj->GetData().GetSize() > 0)
     {
         LocalString<32> tmp;
-        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->GetData().GetSize());
+        tmp.Format("%3u%%", (this->cursor.GetCurrentPosition() + 1) * 100ULL / this->obj->GetData().GetSize());
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
@@ -1594,7 +1661,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 }
 int Instance::PrintCursorZone(int x, int y, uint32 width, Renderer& r)
 {
-    if (auto z = this->settings->zList.OffsetToZone(this->Cursor.currentPos))
+    if (auto z = this->settings->zList.OffsetToZone(this->cursor.GetCurrentPosition()))
     {
         r.WriteSingleLineText(x, y, width, z->name, this->CursorColors.Highlighted);
     }
@@ -1803,7 +1870,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
         this->CursorColors.Highlighted = Cfg.Text.Inactive;
     }
     r.Clear();
-    auto buf = this->obj->GetData().Get(this->Cursor.currentPos, 8, false);
+    auto buf = this->obj->GetData().Get(this->cursor.GetCurrentPosition(), 8, false);
     switch (height)
     {
     case 0:
@@ -1904,7 +1971,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
     }
     if (mpInfo.location == MouseLocation::OnView)
     {
-        mpInfo.bufferOffset += Cursor.startView;
+        mpInfo.bufferOffset += cursor.GetStartView();
         if (mpInfo.bufferOffset >= this->obj->GetData().GetSize())
             mpInfo.location = MouseLocation::Outside;
     }
@@ -1914,7 +1981,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != cursor.GetCurrentPosition()))
     {
         MoveTo(mpInfo.bufferOffset, false);
     }
@@ -1927,7 +1994,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != Cursor.currentPos))
+    if ((mpInfo.location == MouseLocation::OnView) && (mpInfo.bufferOffset != cursor.GetCurrentPosition()))
     {
         MoveTo(mpInfo.bufferOffset, true);
         return true;
@@ -1966,7 +2033,7 @@ bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
 // =====================================================================[SCROLLBAR]===========================
 void Instance::OnUpdateScrollBars()
 {
-    this->UpdateVScrollBar(this->Cursor.currentPos + 1, this->obj->GetData().GetSize());
+    this->UpdateVScrollBar(this->cursor.GetCurrentPosition() + 1, this->obj->GetData().GetSize());
 }
 
 //======================================================================[PROPERTY]============================
@@ -2015,7 +2082,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
         value = this->Layout.nrCols;
         return true;
     case PropertyID::CursorOffset:
-        value = this->Cursor.base == 16;
+        value = this->cursor.GetBase() == 16;
         return true;
     case PropertyID::DataFormat:
         value = (uint64) this->Layout.charFormatMode;
@@ -2108,7 +2175,7 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
         UpdateViewSizes();
         return true;
     case PropertyID::CursorOffset:
-        this->Cursor.base = std::get<bool>(value) ? 16 : 10;
+        this->cursor.SetBase(std::get<bool>(value) ? 16 : 10);
         return true;
     case PropertyID::DataFormat:
         this->Layout.charFormatMode = static_cast<CharacterFormatMode>(std::get<uint64>(value));

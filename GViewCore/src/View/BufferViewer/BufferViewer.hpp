@@ -35,6 +35,7 @@ struct SettingsData
     Reference<OffsetTranslateInterface> offsetTranslateCallback{ nullptr };
     Reference<PositionToColorInterface> positionToColorCallback{ nullptr };
     Reference<BufferColorInterface> bufferColorCallback{ nullptr };
+    Reference<OnStartViewMoveInterface> onStartViewMoveCallback{ nullptr };
     String name;
     SettingsData();
 
@@ -179,9 +180,44 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 
     struct
     {
-        uint64 startView{ 0 }, currentPos{ 0 };
+      private:
+        uint64 startView{ 0 };
+        uint64 currentPos{ 0 };
         uint32 base{ 16 };
-    } Cursor;
+        int64 deltaStartView{ 0 }; // previous - current
+
+      public:
+        inline decltype(startView) GetStartView() const
+        {
+            return startView;
+        }
+        inline decltype(currentPos) GetCurrentPosition() const
+        {
+            return currentPos;
+        }
+        inline decltype(base) GetBase() const
+        {
+            return base;
+        }
+        inline decltype(deltaStartView) GetDeltaStartView() const
+        {
+            return deltaStartView;
+        }
+
+        inline void SetStartView(decltype(startView) startView)
+        {
+            deltaStartView  = startView - this->startView;
+            this->startView = startView;
+        }
+        inline void SetCurrentPosition(decltype(currentPos) currentPos)
+        {
+            this->currentPos = currentPos;
+        }
+        inline void SetBase(decltype(base) base)
+        {
+            this->base = base;
+        }
+    } cursor;
 
     struct
     {
@@ -216,6 +252,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     } CurrentSelection;
 
     bool showSyncCompare{ false };
+    bool moveInSync{ false };
     bool showTypeObjects{ true };
     CodePage codePage{ CodePageID::DOS_437 };
     Pointer<SettingsData> settings;
@@ -249,7 +286,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     void MoveTo(uint64 offset, bool select);
     void MoveScrollTo(uint64 offset);
     void MoveToSelection(uint32 selIndex);
-    void MoveToZone(bool startOfZome, bool select);
+    void MoveToZone(bool startOfZone, bool select);
     void SkipCurentCaracter(bool selected);
     void MoveTillEndBlock(bool selected);
     void MoveTillNextBlock(bool select, int dir);
@@ -266,8 +303,10 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 
     void OpenCurrentSelection();
 
+    virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>) override;
     virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>) override;
     virtual bool GetViewData(ViewData&, uint64) override;
+    virtual bool AdvanceStartView(int64) override;
 
   public:
     Instance(Reference<GView::Object> obj, Settings* settings);
@@ -277,6 +316,8 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
     virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+    virtual void OnFocus() override;
+    virtual void OnLoseFocus() override;
 
     virtual bool GoTo(uint64 offset) override;
     virtual bool Select(uint64 offset, uint64 size) override;
@@ -347,7 +388,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 
     uint64 GetCursorCurrentPosition() const
     {
-        return Cursor.currentPos;
+        return cursor.GetCurrentPosition();
     };
 };
 

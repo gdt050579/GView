@@ -816,6 +816,8 @@ namespace View
 
     constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
 
     struct ViewData
     {
@@ -827,6 +829,11 @@ namespace View
     struct CORE_EXPORT BufferColorInterface
     {
         virtual bool GetColorForByteAt(uint64 offset, const ViewData& vd, ColorPair& cp) = 0;
+    };
+
+    struct CORE_EXPORT OnStartViewMoveInterface
+    {
+        virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
     };
 
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
@@ -865,7 +872,17 @@ namespace View
             return false;
         }
 
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
+        {
+            return false;
+        }
+
         virtual bool GetViewData(ViewData&, uint64)
+        {
+            return false;
+        }
+
+        virtual bool AdvanceStartView(int64)
         {
             return false;
         }

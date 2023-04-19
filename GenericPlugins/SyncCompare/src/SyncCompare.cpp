@@ -13,7 +13,7 @@ constexpr int BTN_ID_CANCEL = 2;
 
 constexpr std::string_view VIEW_NAME{ "Buffer View" };
 
-class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface, public View::BufferColorInterface
+class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterface, public View::BufferColorInterface, public View::OnStartViewMoveInterface
 {
     Reference<ListView> list;
 
@@ -264,26 +264,39 @@ class SyncCompareExample : public Window, public Handlers::OnButtonPressedInterf
         return false;
     }
 
+    virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) override
+    {
+        CHECK(deltaStartView != 0, false, "");
+
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window    = desktop->GetChild(i);
+            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+            auto view      = interface->GetCurrentView();
+            if (view.ToObjectRef<Control>() != sender)
+            {
+                view->AdvanceStartView(deltaStartView);
+            }
+        }
+
+        return true;
+    }
+
     void SetUpCallbackForViews(bool remove)
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
         for (uint32 i = 0; i < windowsNo; i++)
         {
-            auto window                  = desktop->GetChild(i);
-            auto interface               = window.ToObjectRef<GView::View::WindowInterface>();
-            const uint32 totalViewsCount = interface->GetViewsCount();
-            for (uint32 j = 0; j < totalViewsCount; j++)
-            {
-                auto view           = interface->GetViewByIndex(j);
-                const auto viewName = view->GetName();
-                if (viewName == VIEW_NAME) // doesn't actually matter but there's no point calling non buffer views
-                {
-                    view->SetBufferColorProcessorCallback(remove ? nullptr : this);
-                    view->OnEvent(
-                          nullptr, AppCUI::Controls::Event::Command, remove ? View::VIEW_COMMAND_DEACTIVATE_COMPARE : View::VIEW_COMMAND_ACTIVATE_COMPARE);
-                }
-            }
+            auto window    = desktop->GetChild(i);
+            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+            auto view      = interface->GetCurrentView();
+            view->SetBufferColorProcessorCallback(remove ? nullptr : this);
+            view->SetOnStartViewMoveCallback(remove ? nullptr : this);
+            view->OnEvent(nullptr, AppCUI::Controls::Event::Command, remove ? View::VIEW_COMMAND_DEACTIVATE_COMPARE : View::VIEW_COMMAND_ACTIVATE_COMPARE);
+            view->OnEvent(nullptr, AppCUI::Controls::Event::Command, remove ? View::VIEW_COMMAND_DEACTIVATE_SYNC : View::VIEW_COMMAND_ACTIVATE_SYNC);
         }
     }
 };
