@@ -24,5 +24,6 @@ class Plugin : public Window, public Handlers::OnButtonPressedInterface, public 
     virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) override;
     void SetUpCallbackForViews(bool remove);
     bool ToggleSync();
+    bool FindNextDifference();
 };
 } // namespace GView::GenericPlugins::SyncCompare

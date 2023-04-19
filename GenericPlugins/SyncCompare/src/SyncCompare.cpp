@@ -118,6 +118,8 @@ void Plugin::SetAllWindowsWithGivenViewName(const std::string_view& viewName)
 {
     auto desktop         = AppCUI::Application::GetDesktop();
     const auto windowsNo = desktop->GetChildrenCount();
+    CHECKRET(windowsNo > 1, "");
+
     for (uint32 i = 0; i < windowsNo; i++)
     {
         auto window    = desktop->GetChild(i);
@@ -141,6 +143,7 @@ void Plugin::ArrangeFilteredWindows(const std::string_view& filterName)
 {
     auto desktop         = AppCUI::Application::GetDesktop();
     const auto windowsNo = desktop->GetChildrenCount();
+    CHECKRET(windowsNo > 1, "");
 
     std::vector<Reference<Control>> filteredWindows{};
     filteredWindows.reserve(windowsNo);
@@ -276,6 +279,8 @@ bool Plugin::GenerateActionOnMove(Reference<Control> sender, int64 deltaStartVie
 
     auto desktop         = AppCUI::Application::GetDesktop();
     const auto windowsNo = desktop->GetChildrenCount();
+    CHECK(windowsNo > 1, false, "");
+
     for (uint32 i = 0; i < windowsNo; i++)
     {
         auto window    = desktop->GetChild(i);
@@ -294,6 +299,8 @@ void Plugin::SetUpCallbackForViews(bool remove)
 {
     auto desktop         = AppCUI::Application::GetDesktop();
     const auto windowsNo = desktop->GetChildrenCount();
+    CHECKRET(windowsNo > 1, "");
+
     for (uint32 i = 0; i < windowsNo; i++)
     {
         auto window    = desktop->GetChild(i);
@@ -325,6 +332,62 @@ bool Plugin::ToggleSync()
         view->SetOnStartViewMoveCallback(sync->IsChecked() ? this : nullptr);
         view->OnEvent(nullptr, AppCUI::Controls::Event::Command, sync->IsChecked() ? View::VIEW_COMMAND_ACTIVATE_SYNC : View::VIEW_COMMAND_DEACTIVATE_SYNC);
     }
+
+    return true;
+}
+
+bool Plugin::FindNextDifference()
+{
+    auto desktop         = AppCUI::Application::GetDesktop();
+    const auto windowsNo = desktop->GetChildrenCount();
+
+    std::vector<Reference<ViewControl>*> views;
+    views.reserve(windowsNo);
+
+    std::vector<DataCache*> caches;
+    caches.reserve(windowsNo);
+
+    // TODO: this is dumb, unreliable and slow - it will be rewritten
+
+    for (uint32 i = 0; i < windowsNo; i++)
+    {
+        auto window         = desktop->GetChild(i);
+        auto interface      = window.ToObjectRef<GView::View::WindowInterface>();
+        auto view           = interface->GetCurrentView();
+        const auto viewName = view->GetName();
+        if (viewName == VIEW_NAME)
+        {
+            views.push_back(&view);
+            caches.push_back(&interface->GetObject()->GetData());
+        }
+    }
+
+    ViewData vd1{};
+    auto firstView = views.at(0);
+    (*firstView)->GetViewData(vd1, GView::Utils::INVALID_OFFSET);
+
+    auto firstCache  = caches.at(0);
+    auto firstBuffer = firstCache->Get(vd1.viewStartOffset, std::min<uint64>(static_cast<uint64>(firstCache->GetCacheSize()), firstCache->GetSize()), false);
+
+    bool differenceNotFound{ true };
+    do
+    {
+        for (uint32 i = 1; i < windowsNo; i++)
+        {
+            ViewData vd{};
+            auto view = views.at(i);
+            (*view)->GetViewData(vd, GView::Utils::INVALID_OFFSET);
+
+            auto cache  = caches.at(i);
+            auto buffer = cache->Get(vd.viewStartOffset, std::min<uint64>(static_cast<uint64>(cache->GetCacheSize()), cache->GetSize()), false);
+
+            const auto count = std::min<>(firstBuffer.GetLength(), buffer.GetLength());
+            for (uint32 j = 0; j < count; j++)
+            {
+                differenceNotFound = false;
+            }
+        }
+    } while (differenceNotFound);
 
     return true;
 }
@@ -362,7 +425,8 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["command.SyncCompare"] = Input::Key::Ctrl | Input::Key::Shift | Input::Key::Space;
-        sect["command.ToggleSync"]  = Input::Key::Ctrl | Input::Key::Space;
+        sect["command.SyncCompare"]        = Input::Key::Ctrl | Input::Key::Shift | Input::Key::Space;
+        sect["command.ToggleSync"]         = Input::Key::Ctrl | Input::Key::Space;
+        sect["command.FindNextDifference"] = Input::Key::Shift | Input::Key::Space;
     }
 }
