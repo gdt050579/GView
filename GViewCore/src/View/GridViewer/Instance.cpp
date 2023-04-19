@@ -63,7 +63,14 @@ bool Instance::ShowGoToDialog()
 
 bool Instance::ShowFindDialog()
 {
-    NOT_IMPLEMENTED(false);
+    findDialog.UpdateData(0, this->obj);
+    CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
+    
+    auto filterValue = findDialog.GetFilterValue();
+    grid->SetFilterOnCurrentColumn(filterValue);
+    grid->Filter();
+    
+    return true;
 }
 
 bool Instance::ShowCopyDialog()
