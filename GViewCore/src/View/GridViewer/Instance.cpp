@@ -63,7 +63,6 @@ bool Instance::ShowGoToDialog()
 
 bool Instance::ShowFindDialog()
 {
-    findDialog.UpdateData(0, this->obj);
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
     
     auto filterValue = findDialog.GetFilterValue();
