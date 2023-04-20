@@ -822,6 +822,7 @@ namespace View
     struct ViewData
     {
         uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
+        uint64 viewSize{ GView::Utils::INVALID_OFFSET };
         uint64 cursorStartOffset{ GView::Utils::INVALID_OFFSET };
         unsigned char byte{ 0 };
     };

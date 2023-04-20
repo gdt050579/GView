@@ -91,6 +91,7 @@ bool Instance::SetBufferColorProcessorCallback(Reference<BufferColorInterface> c
 bool Instance::GetViewData(ViewData& vd, uint64 offset)
 {
     vd.viewStartOffset   = cursor.GetStartView();
+    vd.viewSize          = static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows;
     vd.cursorStartOffset = cursor.GetCurrentPosition();
 
     if (offset != GView::Utils::INVALID_OFFSET)
@@ -226,7 +227,10 @@ void Instance::MoveTo(uint64 offset, bool select)
             settings->onStartViewMoveCallback->GenerateActionOnMove(
                   this,
                   cursor.GetDeltaStartView(),
-                  ViewData{ .viewStartOffset = cursor.GetStartView(), .cursorStartOffset = cursor.GetCurrentPosition(), .byte = 0 });
+                  ViewData{ .viewStartOffset   = cursor.GetStartView(),
+                            .viewSize          = static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows,
+                            .cursorStartOffset = cursor.GetCurrentPosition(),
+                            .byte              = 0 });
         }
     }
 
@@ -616,7 +620,10 @@ ColorPair Instance::OffsetToColor(uint64 offset)
                 {
                     if (settings->bufferColorCallback->GetColorForByteAt(
                               offset,
-                              ViewData{ .viewStartOffset = cursor.GetStartView(), .cursorStartOffset = cursor.GetCurrentPosition(), .byte = b.GetData()[0] },
+                              ViewData{ .viewStartOffset   = cursor.GetStartView(),
+                                        .viewSize          = static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows,
+                                        .cursorStartOffset = cursor.GetCurrentPosition(),
+                                        .byte              = b.GetData()[0] },
                               bufColor.color))
                     {
                         bufColor.start = offset;
