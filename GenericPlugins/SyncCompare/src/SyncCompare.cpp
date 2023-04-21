@@ -1,5 +1,8 @@
 #include "SyncCompare.hpp"
 
+#include <unordered_map>
+#include <vector>
+
 using namespace AppCUI;
 using namespace AppCUI::Utils;
 using namespace AppCUI::Application;
@@ -341,13 +344,14 @@ bool Plugin::FindNextDifference()
     auto desktop         = AppCUI::Application::GetDesktop();
     const auto windowsNo = desktop->GetChildrenCount();
 
-    std::vector<Reference<ViewControl>*> views;
+    std::vector<Reference<ViewControl>> views;
     views.reserve(windowsNo);
 
     std::vector<DataCache*> caches;
     caches.reserve(windowsNo);
 
-    // TODO: this is dumb, unreliable and slow - it will be rewritten
+    std::vector<ViewData> viewsData;
+    viewsData.reserve(windowsNo);
 
     for (uint32 i = 0; i < windowsNo; i++)
     {
@@ -357,37 +361,77 @@ bool Plugin::FindNextDifference()
         const auto viewName = view->GetName();
         if (viewName == VIEW_NAME)
         {
-            views.push_back(&view);
+            views.push_back(view);
             caches.push_back(&interface->GetObject()->GetData());
+
+            auto& vd = viewsData.emplace_back();
+            view->GetViewData(vd, GView::Utils::INVALID_OFFSET);
+            vd.viewStartOffset += 1;
         }
     }
 
-    ViewData vd1{};
-    auto firstView = views.at(0);
-    (*firstView)->GetViewData(vd1, GView::Utils::INVALID_OFFSET);
-
-    auto firstCache  = caches.at(0);
-    auto firstBuffer = firstCache->Get(vd1.viewStartOffset, std::min<uint64>(static_cast<uint64>(firstCache->GetCacheSize()), firstCache->GetSize()), false);
+    uint64 bufferSize{ GView::Utils::INVALID_OFFSET };
+    for (const auto& data : viewsData)
+    {
+        if (data.viewSize > 0)
+        {
+            bufferSize = std::min<uint64>(bufferSize, data.viewSize);
+        }
+    }
+    CHECK(bufferSize != GView::Utils::INVALID_OFFSET, false, "");
 
     bool differenceNotFound{ true };
     do
     {
-        for (uint32 i = 1; i < windowsNo; i++)
+        std::vector<BufferView> buffers;
+        buffers.reserve(windowsNo);
+
+        for (uint32 i = 0; i < windowsNo; i++)
         {
-            ViewData vd{};
-            auto view = views.at(i);
-            (*view)->GetViewData(vd, GView::Utils::INVALID_OFFSET);
+            auto& view             = views.at(i);
+            auto& data             = viewsData.at(i);
+            auto& cache            = caches.at(i);
+            buffers.emplace_back() = cache->Get(data.viewStartOffset, static_cast<uint32>(bufferSize), false);
+        }
 
-            auto cache  = caches.at(i);
-            auto buffer = cache->Get(vd.viewStartOffset, std::min<uint64>(static_cast<uint64>(cache->GetCacheSize()), cache->GetSize()), false);
+        uint32 i = 0;
+        std::vector<char> bytes;
+        bytes.reserve(windowsNo);
+        for (; i < bufferSize; i++)
+        {
+            for (const auto& buffer : buffers)
+            {
+                if (buffer.GetLength() <= i)
+                {
+                    differenceNotFound = false;
+                    break;
+                }
 
-            const auto count = std::min<>(firstBuffer.GetLength(), buffer.GetLength());
-            for (uint32 j = 0; j < count; j++)
+                bytes.push_back(buffer.GetData()[i]);
+            }
+
+            if (bytes.empty() || std::equal(bytes.begin() + 1, bytes.end(), bytes.begin()) == false)
             {
                 differenceNotFound = false;
+                break;
             }
+
+            bytes.clear();
         }
+
+        for (auto& data : viewsData)
+        {
+            data.viewStartOffset += i;
+        }
+
     } while (differenceNotFound);
+
+    for (uint32 i = 0; i < windowsNo; i++)
+    {
+        auto& view = views.at(i);
+        view->GoTo(viewsData.at(i).viewStartOffset); // moves the cursor
+        view->GoTo(viewsData.at(i).viewStartOffset); // moves the start view
+    }
 
     return true;
 }
@@ -418,6 +462,15 @@ extern "C"
                 plugin.reset(new GView::GenericPlugins::SyncCompare::Plugin());
             }
             plugin->ToggleSync();
+            return true;
+        }
+        if (command == "FindNextDifference")
+        {
+            if (plugin == nullptr)
+            {
+                plugin.reset(new GView::GenericPlugins::SyncCompare::Plugin());
+            }
+            plugin->FindNextDifference();
             return true;
         }
         return false;
