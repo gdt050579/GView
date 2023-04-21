@@ -110,6 +110,14 @@ bool Instance::GetViewData(ViewData& vd, uint64 offset)
 
 bool Instance::AdvanceStartView(int64 offset)
 {
+    if (offset < 0)
+    {
+        if (abs(offset) > cursor.GetStartView())
+        {
+            offset = -cursor.GetStartView();
+        }
+    }
+
     cursor.SetStartView(std::clamp<uint64>(cursor.GetStartView() + offset, 0ull, this->GetObject()->GetData().GetSize() - 1ull));
     cursor.SetCurrentPosition(std::clamp<uint64>(
           cursor.GetCurrentPosition(), cursor.GetStartView(), cursor.GetStartView() + static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows));
@@ -193,16 +201,17 @@ void Instance::MoveTo(uint64 offset, bool select)
         }
     }
 
-    if (offset < cursor.GetStartView())
+    const auto& startView = cursor.GetStartView();
+    if (offset < startView)
     {
         cursor.SetStartView(offset);
     }
     else
     {
-        const auto delta = cursor.GetCurrentPosition() - cursor.GetStartView();
+        const auto delta = cursor.GetCurrentPosition() - startView;
         if (offset >= delta)
         {
-            if (offset - delta != cursor.GetStartView())
+            if (offset - delta != startView)
             {
                 cursor.SetStartView(offset - delta);
             }
@@ -1154,20 +1163,20 @@ void Instance::WriteLineNumbersToChars(DrawLineInfo& dli)
 void Instance::Paint(Renderer& renderer)
 {
     renderer.Clear();
-    DrawLineInfo dli;
     WriteHeaders(renderer);
 
-    settings->zList.SetCache(
-          { this->cursor.GetStartView(), ((uint64) this->Layout.charactersPerLine) * (this->Layout.visibleRows - 1ull) + this->cursor.GetStartView() });
+    const auto& startView = cursor.GetStartView();
+    settings->zList.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
 
-    for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
+    DrawLineInfo dli;
+    for (uint32 tr = 0; tr < Layout.visibleRows; tr++)
     {
-        dli.offset = ((uint64) this->Layout.charactersPerLine) * tr + this->cursor.GetStartView();
-        if (dli.offset >= this->obj->GetData().GetSize())
+        dli.offset = ((uint64) Layout.charactersPerLine) * tr + startView;
+        if (dli.offset >= obj->GetData().GetSize())
             break;
         PrepareDrawLineInfo(dli);
         WriteLineAddress(dli);
-        if (this->Layout.nrCols == 0)
+        if (Layout.nrCols == 0)
             WriteLineTextToChars(dli);
         else
             WriteLineNumbersToChars(dli);
