@@ -429,13 +429,17 @@ bool Plugin::FindNextDifference()
     for (uint32 i = 0; i < windowsNo; i++)
     {
         auto& view = views.at(i);
+
+        view->OnEvent(nullptr, AppCUI::Controls::Event::Command, View::VIEW_COMMAND_DEACTIVATE_SYNC);
+
         view->GoTo(viewsData.at(i).viewStartOffset); // moves the cursor
         view->GoTo(viewsData.at(i).viewStartOffset); // moves the start view
+
+        view->OnEvent(nullptr, AppCUI::Controls::Event::Command, sync->IsChecked() ? View::VIEW_COMMAND_ACTIVATE_SYNC : View::VIEW_COMMAND_DEACTIVATE_SYNC);
     }
 
     return true;
 }
-
 } // namespace GView::GenericPlugins::SyncCompare
 
 // you're passing the callbacks - this needs to be statically allocated
@@ -479,7 +483,7 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect["command.SyncCompare"]        = Input::Key::Ctrl | Input::Key::Shift | Input::Key::Space;
-        sect["command.ToggleSync"]         = Input::Key::Ctrl | Input::Key::Space;
-        sect["command.FindNextDifference"] = Input::Key::Shift | Input::Key::Space;
+        sect["command.ToggleSync"]         = Input::Key::Shift | Input::Key::Space;
+        sect["command.FindNextDifference"] = Input::Key::Shift | Input::Key::F11;
     }
 }

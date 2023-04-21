@@ -112,15 +112,16 @@ bool Instance::AdvanceStartView(int64 offset)
 {
     if (offset < 0)
     {
-        if (abs(offset) > cursor.GetStartView())
+        if (static_cast<uint64>(abs(offset)) > cursor.GetStartView())
         {
-            offset = -cursor.GetStartView();
+            offset = -1ll * cursor.GetStartView();
         }
     }
 
-    cursor.SetStartView(std::clamp<uint64>(cursor.GetStartView() + offset, 0ull, this->GetObject()->GetData().GetSize() - 1ull));
-    cursor.SetCurrentPosition(std::clamp<uint64>(
-          cursor.GetCurrentPosition(), cursor.GetStartView(), cursor.GetStartView() + static_cast<uint64>(Layout.charactersPerLine) * Layout.visibleRows));
+    const auto newStartView = std::clamp<uint64>(cursor.GetStartView() + offset, 0ull, this->GetObject()->GetData().GetSize() - 1ull);
+    cursor.SetCurrentPosition(newStartView);
+    cursor.SetStartView(newStartView);
+
     return true;
 }
 
