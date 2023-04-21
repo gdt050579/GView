@@ -311,7 +311,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
     // Get extension as UTF-16 and convert it to UTF-8
     auto u16Extension             = pos != u16string_view::npos ? (temp.ToStringView().substr(pos)) : std::u16string_view();
     std::string extensionAsString = { u16Extension.begin(), u16Extension.end() };
-    std::string_view extension(extensionAsString.begin(), extensionAsString.end());
+    std::string_view extension(extensionAsString);
 
     switch (method)
     {

@@ -7,9 +7,9 @@ namespace GView::Type::MAM
 class MAMFile : public TypeInterface
 {
   public:
-    uint32 signature;
-    uint32 uncompressedSize;
-    uint32 compressedSize;
+    uint32 signature{ 0 };
+    uint32 uncompressedSize{ 0 };
+    uint32 compressedSize{ 0 };
 
     MAMFile() = default;
     virtual ~MAMFile()

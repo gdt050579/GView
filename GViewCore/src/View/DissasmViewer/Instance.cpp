@@ -532,7 +532,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
     if (zone->data.canBeCollapsed && dli.textLineToDraw == 0)
     {
-        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%ull] ", zone->data.size);
+        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%llu] ", zone->data.size);
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
     }
     else
@@ -555,7 +555,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
                 {
-                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
+                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %llu", zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -594,7 +594,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             }
             else
             {
-                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %ull", zone->data.startingOffset + zone->data.size);
+                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %llu", zone->data.startingOffset + zone->data.size);
             }
         }
     }

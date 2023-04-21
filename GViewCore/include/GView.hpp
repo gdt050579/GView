@@ -439,7 +439,7 @@ namespace DigitalSignature
         {
             struct Signature
             {
-                uint32 statusCode;
+                uint32 statusCode{ 0 };
                 String status;
 
                 struct Signer
@@ -814,6 +814,29 @@ namespace View
 {
     typedef uint8 MethodID;
 
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+
+    struct ViewData
+    {
+        uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
+        uint64 viewSize{ GView::Utils::INVALID_OFFSET };
+        uint64 cursorStartOffset{ GView::Utils::INVALID_OFFSET };
+        unsigned char byte{ 0 };
+    };
+
+    struct CORE_EXPORT BufferColorInterface
+    {
+        virtual bool GetColorForByteAt(uint64 offset, const ViewData& vd, ColorPair& cp) = 0;
+    };
+
+    struct CORE_EXPORT OnStartViewMoveInterface
+    {
+        virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
+    };
+
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
       protected:
@@ -843,11 +866,34 @@ namespace View
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
+        virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
+
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
+        {
+            return false;
+        }
+
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
+        {
+            return false;
+        }
+
+        virtual bool GetViewData(ViewData&, uint64)
+        {
+            return false;
+        }
+
+        virtual bool AdvanceStartView(int64)
+        {
+            return false;
+        }
+
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {
         }
     };
+
     namespace BufferViewer
     {
         struct BufferColor
@@ -868,10 +914,12 @@ namespace View
                 return start == GView::Utils::INVALID_OFFSET;
             }
         };
+
         struct CORE_EXPORT PositionToColorInterface
         {
             virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
+
         struct CORE_EXPORT OffsetTranslateInterface
         {
             virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;

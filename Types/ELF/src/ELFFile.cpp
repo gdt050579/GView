@@ -416,7 +416,7 @@ uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
     {
         for (const auto& section : sections32)
         {
-            if (section.sh_offset <= fileOffset && fileOffset <= static_cast<uint64>(section.sh_offset + section.sh_size))
+            if (section.sh_offset <= fileOffset && fileOffset <= (static_cast<uint64>(section.sh_offset) + section.sh_size))
             {
                 auto diff     = fileOffset - section.sh_offset;
                 const auto fa = section.sh_addr + diff;
