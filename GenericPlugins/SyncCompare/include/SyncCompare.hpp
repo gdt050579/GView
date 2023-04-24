@@ -25,5 +25,6 @@ class Plugin : public Window, public Handlers::OnButtonPressedInterface, public 
     void SetUpCallbackForViews(bool remove);
     bool ToggleSync();
     bool FindNextDifference();
+    static bool FindNextDifferentCharacter();
 };
 } // namespace GView::GenericPlugins::SyncCompare

@@ -440,6 +440,56 @@ bool Plugin::FindNextDifference()
 
     return true;
 }
+
+bool Plugin::FindNextDifferentCharacter()
+{
+    auto desktop         = AppCUI::Application::GetDesktop();
+    const auto windowsNo = desktop->GetChildrenCount();
+    for (uint32 i = 0; i < windowsNo; i++)
+    {
+        auto window = desktop->GetChild(i);
+        if (window->HasFocus() == false)
+        {
+            continue;
+        }
+
+        auto interface      = window.ToObjectRef<GView::View::WindowInterface>();
+        auto view           = interface->GetCurrentView();
+        const auto viewName = view->GetName();
+        if (viewName == VIEW_NAME)
+        {
+            DataCache& dc = interface->GetObject()->GetData();
+
+            ViewData vd{};
+            view->GetViewData(vd, GView::Utils::INVALID_OFFSET);
+
+            const auto bvc = dc.Get(vd.cursorStartOffset, 1, true);
+            CHECK(bvc.IsValid(), false, "");
+            const auto initial = bvc.GetData()[0];
+            vd.cursorStartOffset += 1;
+
+            while (true)
+            {
+                const auto bf = dc.Get(vd.cursorStartOffset, dc.GetCacheSize(), false);
+                for (uint64 i = 0; i < bf.GetLength(); i++)
+                {
+                    const auto c = bf.GetData()[i];
+                    if (c != initial)
+                    {
+                        view->GoTo(vd.cursorStartOffset + i); // moves the cursor
+                        return true;
+                    }
+                }
+                if (bf.IsValid() == false || bf.GetLength() == 0)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    return true;
+}
 } // namespace GView::GenericPlugins::SyncCompare
 
 // you're passing the callbacks - this needs to be statically allocated
@@ -477,6 +527,11 @@ extern "C"
             plugin->FindNextDifference();
             return true;
         }
+        if (command == "FindNextDC")
+        {
+            GView::GenericPlugins::SyncCompare::Plugin::FindNextDifferentCharacter();
+            return true;
+        }
         return false;
     }
 
@@ -485,5 +540,6 @@ extern "C"
         sect["command.SyncCompare"]        = Input::Key::Ctrl | Input::Key::Shift | Input::Key::Space;
         sect["command.ToggleSync"]         = Input::Key::Shift | Input::Key::Space;
         sect["command.FindNextDifference"] = Input::Key::Shift | Input::Key::F11;
+        sect["command.FindNextDC"]         = Input::Key::Ctrl | Input::Key::Shift | Input::Key::F11;
     }
 }
