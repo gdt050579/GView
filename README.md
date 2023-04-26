@@ -31,9 +31,11 @@ Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can b
 #### Windows
 Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg).                                                  
 #### OSX
-Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg) and curl (for vcpkg).
+We are using [vcpkg](https://github.com/microsoft/vcpkg) and curl (for vcpkg).
+
+Unfortunately, some vcpkg ports require manual installation via [brew package manager](https://brew.sh) of [pkg-config](https://formulae.brew.sh/formula/pkg-config).
 #### Linux
-Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg) and curl (for vcpkg).
+Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg) and [curl](https://curl.se) (for vcpkg).
 
 ## CI/CD
 At the moment we are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artefacts, storing them and eventually building a release flow.
