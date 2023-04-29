@@ -1,9 +1,17 @@
 cmake_minimum_required(VERSION 3.15)
 
+# Uncomment this for Linux ARM architectures.
+# This will require manual installation of ninja (ninja-build).
+# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
   CACHE STRING "Vcpkg toolchain file")
 
 message("CMAKE_TOOLCHAIN_FILE => ${CMAKE_TOOLCHAIN_FILE}")
+
+message("CMAKE_SYSTEM_PROCESSOR => ${CMAKE_SYSTEM_PROCESSOR}")
+message("CMAKE_HOST_SYSTEM_PROCESSOR => ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+message("CMAKE_C_COMPILER_ARCHITECTURE_ID => ${CMAKE_C_COMPILER_ARCHITECTURE_ID}")
 
 project(GView VERSION 1.0)
 

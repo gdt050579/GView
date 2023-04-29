@@ -10,7 +10,8 @@
 		- [Supported platforms](#supported-platforms)
 			- [Windows](#windows)
 			- [OSX](#osx)
-			- [Linux](#linux)
+			- [Linux (Intel)](#linux-intel)
+			- [Linux (ARM (M1))](#linux-arm-m1)
 	- [CI/CD](#cicd)
 	- [Documentation](#documentation)
 	- [Start contributing](#start-contributing)
@@ -31,12 +32,23 @@ Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can b
 #### Windows
 Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg).                                                  
 #### OSX
-We are using [vcpkg](https://github.com/microsoft/vcpkg) and curl (for vcpkg).
+We are using [vcpkg](https://github.com/microsoft/vcpkg). It requires [curl](https://curl.se) installation.
 
-Unfortunately, some vcpkg ports require manual installation via [brew package manager](https://brew.sh) of [pkg-config](https://formulae.brew.sh/formula/pkg-config).
-#### Linux
-Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg) and [curl](https://curl.se) (for vcpkg).
+Unfortunately, some vcpkg ports require manual installation via [brew package manager](https://brew.sh) of [pkg-config](https://formulae.brew.sh/formula/pkg-config) before building the project.
+#### Linux (Intel)
+Requires pkg-config package.
 
+Works using [vcpkg](https://github.com/microsoft/vcpkg) and [curl](https://curl.se) (for vcpkg).
+
+#### Linux (ARM (M1))
+Requires pkg-config package.
+
+Uncomment this line in top level CMakeLists.txt for Linux ARM architectures.
+
+This will require manual installation of ninja (ninja-build).
+```
+# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+```
 ## CI/CD
 At the moment we are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artefacts, storing them and eventually building a release flow.
 For static analysis, we are using `CodeQL` & `Microsoft C++ Code Analysis`.
