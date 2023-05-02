@@ -72,3 +72,9 @@ SettingsData::SettingsData()
     defaultLanguage = DisassemblyLanguage::Default;
     availableID     = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
 }
+}
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
+}

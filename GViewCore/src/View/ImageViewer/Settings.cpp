@@ -26,3 +26,8 @@ void Settings::AddImage(uint64 offset, uint64 size)
         elem.end   = offset + size;
     }
 }
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
+}

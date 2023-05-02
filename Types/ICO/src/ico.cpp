@@ -47,7 +47,8 @@ extern "C"
                 settings.AddBookmark(idx, e.cursor.offset);
             idx++;
         }
-        win->CreateViewer("BufferView", settings);
+
+        ico->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
     void CreateImageView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
     {
@@ -59,7 +60,7 @@ extern "C"
             settings.AddImage(ico->dirs[idx].ico.offset, ico->dirs[idx].ico.size);
         }
 
-        win->CreateViewer("ImageView", settings);
+        win->CreateViewer(settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
@@ -82,7 +83,7 @@ extern "C"
             "magic:00 00 01 00",
             "magic:00 00 02 00",
         };
-        sect["Priority"] = 1;
+        sect["Priority"]    = 1;
         sect["Description"] = "Icon/Cursor image file (*.ico, *.cur)";
     }
 }

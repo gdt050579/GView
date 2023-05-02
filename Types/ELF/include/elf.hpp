@@ -12,18 +12,12 @@ enum class AddressType : uint8
 
 constexpr auto ELF_INVALID_ADDRESS = 0xFFFFFFFFFFFFFFFF;
 
-static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
-static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
-
-static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
-static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
-
-static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue };
-
-static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::White, Color::Teal };
-static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Yellow, Color::Teal };
-
-static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+static constexpr auto INS_CALL_COLOR       = ColorPair{ Color::White, Color::Silver };
+static constexpr auto INS_JUMP_COLOR       = ColorPair{ Color::Yellow, Color::DarkRed };
+static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Green, Color::DarkBlue };
+static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::Yellow, Color::Olive };
+static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Black, Color::Olive };
+static constexpr auto EXE_MARKER_COLOR     = ColorPair{ Color::Yellow, Color::DarkRed };
 
 namespace Panels
 {
@@ -39,9 +33,7 @@ namespace Panels
     };
 };
 
-class ELFFile : public TypeInterface,
-                public GView::View::BufferViewer::OffsetTranslateInterface,
-                public GView::View::BufferViewer::PositionToColorInterface
+class ELFFile : public TypeInterface, public GView::View::BufferViewer::OffsetTranslateInterface, public GView::View::BufferViewer::PositionToColorInterface
 {
   public:
     uint64 panelsMask{ 0 };
@@ -78,7 +70,6 @@ class ELFFile : public TypeInterface,
 
     uint32 showOpcodesMask{ 0 };
     std::vector<std::pair<uint64, uint64>> executableZonesFAs;
-    GView::Dissasembly::DissasemblerIntel dissasembler{};
 
   public:
     ELFFile();
@@ -111,6 +102,24 @@ class ELFFile : public TypeInterface,
     void RunCommand(std::string_view) override
     {
     }
+
+  public:
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 namespace Panels
@@ -134,8 +143,7 @@ namespace Panels
         void RecomputePanelsPositions();
 
         template <typename T>
-        ListViewItem AddDecAndHexElement(
-              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
@@ -213,8 +221,7 @@ namespace Panels
         GoInformation(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile> _elf);
 
         template <typename T>
-        ListViewItem AddDecAndHexElement(
-              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
@@ -252,8 +259,7 @@ namespace Panels
         GoFiles(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile> _elf);
 
         template <typename T>
-        ListViewItem AddDecAndHexElement(
-              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
@@ -342,9 +348,7 @@ namespace Panels
         AppCUI::Controls::ListViewItem all;
         AppCUI::Controls::ListViewItem header;
         AppCUI::Controls::ListViewItem call;
-        AppCUI::Controls::ListViewItem lcall;
         AppCUI::Controls::ListViewItem jmp;
-        AppCUI::Controls::ListViewItem ljmp;
         AppCUI::Controls::ListViewItem bp;
         AppCUI::Controls::ListViewItem fstart;
         AppCUI::Controls::ListViewItem fend;

@@ -9,21 +9,25 @@ constexpr int32 BTN_ID_OK             = 1;
 constexpr int32 BTN_ID_CANCEL         = 2;
 constexpr uint32 INVALID_TOKEN_NUMBER = 0xFFFFFFFF;
 
-FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens, const char16* txt)
+FindAllDialog::FindAllDialog(const TokenObject& currentToken, const std::vector<TokenObject>& tokens, const char16* txt)
     : Window("All apearences", "d:c,w:80,h:20", WindowFlags::ProcessReturn)
 {
     LocalString<128> tmp;
     LocalUnicodeStringBuilder<512> content;
     this->selectedTokenIndex = INVALID_TOKEN_NUMBER;
 
-    lst = Factory::ListView::Create(this, "l:1,t:0,r:1,b:3", { "n:Line,a:l,w:6", "n:Content,a:l,w:200" });
+    lst = Factory::ListView::Create(this, "l:1,t:0,r:1,b:3", { "n:Line,a:l,w:6", "n:Content,a:l,w:200" }, ListViewFlags::HideSearchBar);
     // add all lines
     auto len      = static_cast<uint32>(tokens.size());
     auto lastLine = 0xFFFFFFFFU;
+    auto ctokSize = static_cast<uint32>(currentToken.GetText(txt).size());
+    uint32 indexes[64];
+    uint32 indexesCount;
+
     for (auto idx = 0U; idx < len; idx++)
     {
         const auto& tok = tokens[idx];
-        if (tok.hash != hash)
+        if (tok.hash != currentToken.hash)
             continue;
         if (tok.lineNo == lastLine)
             continue;
@@ -40,7 +44,8 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
         end--;
         // between start and end a new line is found
         content.Clear();
-        auto lastX = 0U;
+        auto lastX   = 0U;
+        indexesCount = 0;
         while (start < end)
         {
             if ((tokens[start].start > lastX) && (lastX > 0))
@@ -52,11 +57,20 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
                     lastX++;
                 }
             }
+            if ((tokens[start].hash == currentToken.hash) && (indexesCount < 64))
+            {
+                indexes[indexesCount++] = content.Len();
+            }
+
             content.Add(tokens[start].GetText(txt));
             lastX = tokens[start].end;
             start++;
         }
         item.SetText(1, content);
+        for (auto idx = 0u; idx < indexesCount; idx++)
+        {
+            item.HighlightText(1, indexes[idx], ctokSize);
+        }
         lastLine = tok.lineNo;
     }
 
@@ -66,7 +80,7 @@ FindAllDialog::FindAllDialog(uint64 hash, const std::vector<TokenObject>& tokens
 
 void FindAllDialog::Validate()
 {
-    selectedTokenIndex = lst->GetCurrentItem().GetData(INVALID_TOKEN_NUMBER);
+    selectedTokenIndex = static_cast<uint32>(lst->GetCurrentItem().GetData(INVALID_TOKEN_NUMBER));
     if (selectedTokenIndex == INVALID_TOKEN_NUMBER)
         return;
     Exit(Dialogs::Result::Ok);

@@ -10,7 +10,8 @@
 		- [Supported platforms](#supported-platforms)
 			- [Windows](#windows)
 			- [OSX](#osx)
-			- [Linux](#linux)
+			- [Linux (Intel)](#linux-intel)
+			- [Linux (ARM (M1))](#linux-arm-m1)
 	- [CI/CD](#cicd)
 	- [Documentation](#documentation)
 	- [Start contributing](#start-contributing)
@@ -25,17 +26,29 @@
 
 ## Building
 ### Tools used
-CMake is used to build the entire project regardless of the platform.
+CMake is used to build the entire project regardless of the platform.README.md
+Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can be seen [here](/.github/workflows/ci.yml).
 ### Supported platforms
 #### Windows
-Requires a manual installation of `OpenSSL 1.x`. You can get an already built .msi or .exe or you can install it via package manager [vcpkg](https://github.com/microsoft/vcpkg).
-You can grab an `OpenSSL 1.x` binary from [here](https://slproweb.com/products/Win32OpenSSL.html).
-Usage of [vcpkg](https://github.com/microsoft/vcpkg) in our build pipeline can be seen [here](/.github/workflows/ci.yml).
+Works out of the box using [vcpkg](https://github.com/microsoft/vcpkg).                                                  
 #### OSX
-Works out of the box as long as you have an installation of `OpenSSL 1.x`.
-#### Linux
-Works out of the box as long as you have an installation of `OpenSSL 1.x`.
+We are using [vcpkg](https://github.com/microsoft/vcpkg). It requires [curl](https://curl.se) installation.
 
+Unfortunately, some vcpkg ports require manual installation via [brew package manager](https://brew.sh) of [pkg-config](https://formulae.brew.sh/formula/pkg-config) before building the project.
+#### Linux (Intel)
+Requires pkg-config package.
+
+Works using [vcpkg](https://github.com/microsoft/vcpkg) and [curl](https://curl.se) (for vcpkg).
+
+#### Linux (ARM (M1))
+Requires pkg-config package.
+
+Uncomment this line in top level CMakeLists.txt for Linux ARM architectures.
+
+This will require manual installation of ninja (ninja-build).
+```
+# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+```
 ## CI/CD
 At the moment we are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artefacts, storing them and eventually building a release flow.
 For static analysis, we are using `CodeQL` & `Microsoft C++ Code Analysis`.

@@ -139,8 +139,8 @@ bool Instance::BuildMainMenus()
 bool Instance::Init()
 {
     InitializationData initData;
-    initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile |
-                     InitializationFlags::AutoHotKeyForWindow;
+    initData.Flags =
+          InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile | InitializationFlags::AutoHotKeyForWindow;
 
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
@@ -215,7 +215,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
     return nullptr;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
-      AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
+      const string_view& extension, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
 {
     // check for extension first
     if (extensionHash != 0)
@@ -224,7 +224,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
         {
             if (pType.MatchExtension(extensionHash))
             {
-                if (pType.IsOfType(buf, textParser))
+                if (pType.IsOfType(buf, textParser, extension))
                     return &pType;
             }
         }
@@ -299,15 +299,24 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
     auto buf    = cache.Get(0, 0x8800, false);
     auto bomLen = 0U;
     auto enc    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
-    auto text   = enc != GView::Utils::CharacterEncoding::Encoding::Binary ? GView::Utils::CharacterEncoding::ConvertToUnicode16(buf)
-                                                                           : GView::Utils::UnicodeString();
-    auto tp     = GView::Type::Matcher::TextParser(text.text, text.size);
-    auto sz     = cache.GetSize();
+    auto text =
+          enc != GView::Utils::CharacterEncoding::Encoding::Binary ? GView::Utils::CharacterEncoding::ConvertToUnicode16(buf) : GView::Utils::UnicodeString();
+    auto tp = GView::Type::Matcher::TextParser(text.text, text.size);
+    auto sz = cache.GetSize();
+
+    LocalUnicodeStringBuilder<256> temp;
+    temp.Set(name);
+    auto pos = temp.ToStringView().find_last_of('.');
+
+    // Get extension as UTF-16 and convert it to UTF-8
+    auto u16Extension             = pos != u16string_view::npos ? (temp.ToStringView().substr(pos)) : std::u16string_view();
+    std::string extensionAsString = { u16Extension.begin(), u16Extension.end() };
+    std::string_view extension(extensionAsString);
 
     switch (method)
     {
     case OpenMethod::FirstMatch:
-        return IdentifyTypePlugin_FirstMatch(buf, tp, extensionHash);
+        return IdentifyTypePlugin_FirstMatch(extension, buf, tp, extensionHash);
     case OpenMethod::BestMatch:
         return IdentifyTypePlugin_BestMatch(name, path, sz, buf, tp, extensionHash);
     case OpenMethod::Select:
@@ -328,6 +337,23 @@ bool Instance::Add(
       OpenMethod method,
       std::string_view typeName)
 {
+    Reference<Window> parentWindow{ nullptr }; // reference for window manager
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        auto focusedChild    = desktop->GetFocusedChild();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window = desktop->GetChild(i);
+
+            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
+            {
+                parentWindow = window.ToObjectRef<Window>();
+                break;
+            }
+        }
+    }
+
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
@@ -335,9 +361,9 @@ bool Instance::Add(
     LocalUnicodeStringBuilder<256> temp;
     CHECK(temp.Set(path), false, "Fail to get path object");
     // search for the last "."
-    auto pos     = temp.ToStringView().find_last_of('.');
-    auto extHash = pos != u16string_view::npos ? GView::Type::Plugin::ExtensionToHash(temp.ToStringView().substr(pos))
-                                               : GView::Type::Plugin::ExtensionToHash("");
+    auto pos = temp.ToStringView().find_last_of('.');
+    auto extHash =
+          pos != u16string_view::npos ? GView::Type::Plugin::ExtensionToHash(temp.ToStringView().substr(pos)) : GView::Type::Plugin::ExtensionToHash("");
 
     auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName);
     CHECK(plg, false, "Unable to identify a valid plugin open canceled !");
@@ -346,15 +372,15 @@ bool Instance::Add(
     auto contentType = plg->CreateInstance();
     CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
-    auto win =
-          std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this, plg);
+    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this, plg);
 
     // instantiate window
     while (true)
     {
-        CHECKBK(plg->PopulateWindow(win.get()), "Fail to populate file window !");
+        CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
-        auto res = AppCUI::Application::AddWindow(std::move(win));
+
+        auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
@@ -369,9 +395,7 @@ bool Instance::AddFolder(const std::filesystem::path& path)
 
     GView::Utils::DataCache cache;
     auto win = std::make_unique<FileWindow>(
-          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0),
-          this,
-          nullptr);
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this, nullptr);
 
     // instantiate window
     while (true)

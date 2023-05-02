@@ -28,7 +28,7 @@ Panels::Sections::Sections(Reference<GView::Type::PE::PEFile> _pe, Reference<GVi
             "n:PtrLnNum,w:10",
             "n:NrLnNum,a:r,w:10",
             "n:Characteristics,w:32" },
-          ListViewFlags::None);
+          ListViewFlags::AllowMultipleItemsSelection);
 
     Update();
 }

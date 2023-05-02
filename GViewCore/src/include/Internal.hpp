@@ -29,7 +29,7 @@ namespace Utils
         bool Clear(int index);
         inline constexpr bool HasSelection(uint32 index) const
         {
-            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+            if (index < MAX_SELECTION_ZONES)
                 return zones[index].start != INVALID_OFFSET;
             return false;
         }
@@ -42,18 +42,18 @@ namespace Utils
         }
         inline constexpr uint32 GetCount() const
         {
-            return Selection::MAX_SELECTION_ZONES;
+            return MAX_SELECTION_ZONES;
         }
         bool GetSelection(uint32 index, uint64& Start, uint64& End);
         inline uint64 GetSelectionStart(uint32 index) const
         {
-            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+            if (index < MAX_SELECTION_ZONES)
                 return zones[index].start;
             return INVALID_OFFSET;
         }
         inline uint64 GetSelectionEnd(uint32 index) const
         {
-            if ((index >= 0) && (index < MAX_SELECTION_ZONES))
+            if (index < MAX_SELECTION_ZONES)
                 return zones[index].end;
             return INVALID_OFFSET;
         }
@@ -94,29 +94,35 @@ namespace Utils
         void CopySetTo(bool ascii[256]);
     };
 
+    // Structure to represent an interval
     struct Zone
     {
-        unsigned long long start, end;
-        AppCUI::Graphics::ColorPair color;
-        AppCUI::Utils::FixSizeString<25> name;
+        struct Interval
+        {
+            uint64 low{ INVALID_OFFSET }, high{ INVALID_OFFSET };
+        } interval{};
 
-        Zone();
-        void Set(uint64 s, uint64 e, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        AppCUI::Graphics::ColorPair color{ NoColorPair };
+        AppCUI::Utils::FixSizeString<25> name{};
+
+        Zone(uint64 low, uint64 high) : interval{ low, high }
+        {
+        }
+        Zone(uint64 low, uint64 high, ColorPair cp, std::string_view name) : interval{ low, high }, color(cp), name(name)
+        {
+        }
+        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name(){};
     };
 
     class ZonesList
     {
-        Zone* list;
-        Zone* lastZone;
-        unsigned int count, allocated;
-        unsigned long long cacheStart, cacheEnd;
+        std::vector<Zone> zones{};
+        std::vector<Zone> cache{};
 
       public:
-        ZonesList();
-        ~ZonesList();
-        bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
-        bool Reserve(unsigned int count);
-        const Zone* OffsetToZone(uint64 offset);
+        void Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
+        const std::optional<Zone> OffsetToZone(uint64 offset) const;
+        void SetCache(const Zone::Interval& interval);
     };
 
     struct UnicodeString
@@ -420,7 +426,7 @@ namespace Type
         void Init();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
-        bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser);
+        bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, const std::string_view& extension = "");
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance() const;
         inline bool operator<(const Plugin& plugin) const
@@ -496,6 +502,7 @@ namespace App
         void ShowErrors();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
+              const std::string_view& extension,
               AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_BestMatch(
               const AppCUI::Utils::ConstString& name,
@@ -608,10 +615,7 @@ namespace App
         void UpdateView(uint64 mode);
         void PopulateViewModes();
         void PopulateTypes(
-              std::vector<GView::Type::Plugin>& typePlugins,
-              AppCUI::Utils::BufferView buf,
-              GView::Type::Matcher::TextParser& textParser,
-              uint64 extensionHash);
+              std::vector<GView::Type::Plugin>& typePlugins, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
 
       public:
         SelectTypeDialog(
@@ -661,15 +665,20 @@ namespace App
 
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
-        bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
+        bool CreateViewer(View::BufferViewer::Settings& settings) override;
+        bool CreateViewer(View::ImageViewer::Settings& settings) override;
+        bool CreateViewer(View::GridViewer::Settings& settings) override;
+        bool CreateViewer(View::DissasmViewer::Settings& settings) override;
+        bool CreateViewer(View::TextViewer::Settings& settings) override;
+        bool CreateViewer(View::ContainerViewer::Settings& settings) override;
+        bool CreateViewer(View::LexicalViewer::Settings& settings) override;
+
+        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 
         Reference<View::ViewControl> GetCurrentView() override;
+        uint32 GetViewsCount() override;
+        Reference<View::ViewControl> GetViewByIndex(uint32 index) override;
+        bool SetViewByIndex(uint32 index) override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

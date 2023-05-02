@@ -52,7 +52,7 @@ extern "C"
             count++;
         }
 
-        win->CreateViewer("BufferView", settings);
+        pcap->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

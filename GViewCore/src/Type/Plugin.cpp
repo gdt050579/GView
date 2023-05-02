@@ -207,7 +207,7 @@ bool Plugin::MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& te
     }
     return false;
 }
-bool Plugin::IsOfType(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser)
+bool Plugin::IsOfType(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser, const std::string_view& extension)
 {
     if (this->Invalid)
         return false;
@@ -219,7 +219,7 @@ bool Plugin::IsOfType(AppCUI::Utils::BufferView buf, Matcher::TextParser& textPa
             return false; // something went wrong when loading he plugin
     }
     // all good -> code is loaded
-    return fnValidate(buf, "");
+    return fnValidate(buf, extension);
 }
 
 bool Plugin::PopulateWindow(Reference<GView::View::WindowInterface> win) const

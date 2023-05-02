@@ -12,7 +12,7 @@ void Config::Initialize()
     auto ini = AppCUI::Application::GetAppSettings();
     if (ini)
     {
-        auto sect          = ini->GetSection("ContainerView");
+        auto sect = ini->GetSection("ContainerView");
     }
     else
     {

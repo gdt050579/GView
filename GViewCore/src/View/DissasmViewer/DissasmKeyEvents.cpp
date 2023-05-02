@@ -280,7 +280,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         AddComment();
         return true;
     }
-    return false;
+
+    return ViewControl::OnKeyEvent(select ? (keyCode | Key::Shift) : keyCode, charCode);
 }
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

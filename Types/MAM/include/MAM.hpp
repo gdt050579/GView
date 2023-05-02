@@ -7,9 +7,9 @@ namespace GView::Type::MAM
 class MAMFile : public TypeInterface
 {
   public:
-    uint32 signature;
-    uint32 uncompressedSize;
-    uint32 compressedSize;
+    uint32 signature{ 0 };
+    uint32 uncompressedSize{ 0 };
+    uint32 compressedSize{ 0 };
 
     MAMFile() = default;
     virtual ~MAMFile()
@@ -25,6 +25,24 @@ class MAMFile : public TypeInterface
     }
 
     void RunCommand(std::string_view) override;
+
+  public:
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 namespace Panels

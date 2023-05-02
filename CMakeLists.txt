@@ -1,9 +1,17 @@
 cmake_minimum_required(VERSION 3.15)
 
+# Uncomment this for Linux ARM architectures.
+# This will require manual installation of ninja (ninja-build).
+# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
   CACHE STRING "Vcpkg toolchain file")
 
 message("CMAKE_TOOLCHAIN_FILE => ${CMAKE_TOOLCHAIN_FILE}")
+
+message("CMAKE_SYSTEM_PROCESSOR => ${CMAKE_SYSTEM_PROCESSOR}")
+message("CMAKE_HOST_SYSTEM_PROCESSOR => ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+message("CMAKE_C_COMPILER_ARCHITECTURE_ID => ${CMAKE_C_COMPILER_ARCHITECTURE_ID}")
 
 project(GView VERSION 1.0)
 
@@ -140,10 +148,12 @@ add_subdirectory(Types/JSON)
 add_subdirectory(Types/VBA)
 add_subdirectory(Types/JS)
 add_subdirectory(Types/PYEXTRACTOR)
+add_subdirectory(Types/ZIP)
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)
 add_subdirectory(GenericPlugins/Hashes)
+add_subdirectory(GenericPlugins/SyncCompare)
                                                                 
 if (APPLE)
     	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")

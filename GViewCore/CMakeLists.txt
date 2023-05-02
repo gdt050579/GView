@@ -4,12 +4,12 @@ cmake_minimum_required(VERSION 3.13)
 project(GViewCore VERSION 1.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-add_library(GViewCore SHARED)
-set_target_properties(GViewCore PROPERTIES PREFIX "lib")
-target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
-target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
-target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
-target_link_libraries(GViewCore PRIVATE LLVMDemangle)
+add_library(${PROJECT_NAME} SHARED)
+set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "lib")
+target_compile_definitions(${PROJECT_NAME} PRIVATE -DBUILD_AS_DYNAMIC_LIB)
+target_compile_definitions(${PROJECT_NAME} PRIVATE -DCORE_EXPORTABLE)
+target_include_directories(${PROJECT_NAME} PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
+target_link_libraries(${PROJECT_NAME} PRIVATE LLVMDemangle)
                                                              
 find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
@@ -23,6 +23,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
 
 find_package(capstone CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
+
+find_package(minizip-ng CONFIG REQUIRED)
+message(STATUS "minizip-ng_DIR => ${minizip-ng_DIR}")
+
+# vcpkg directory structure
+get_filename_component(MINIZIP_SHARE_INCLUDE_DIR ${minizip-ng_DIR} DIRECTORY)
+get_filename_component(MINIZIP_PARENT_DIR ${MINIZIP_SHARE_INCLUDE_DIR} DIRECTORY)
+set(MINIZIP_INCLUDE_DIR "${MINIZIP_PARENT_DIR}/include/minizip-ng")
+
+message(STATUS "MINIZIP_INCLUDE_DIR => ${MINIZIP_INCLUDE_DIR}")
+target_include_directories(${PROJECT_NAME} PRIVATE ${MINIZIP_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PRIVATE MINIZIP::minizip-ng)
 
 if (MSVC)
     add_compile_options(-W3)

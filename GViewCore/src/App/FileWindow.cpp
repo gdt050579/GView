@@ -125,46 +125,64 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
         return false;
     }
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
+
+bool FileWindow::CreateViewer(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::TextViewer::Settings& settings)
+
+Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
+          .ToBase<GView::Utils::SelectionZoneInterface>();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
+
+bool FileWindow::CreateViewer(GView::View::TextViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
+bool FileWindow::CreateViewer(GView::View::ImageViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings)
+bool FileWindow::CreateViewer(View::GridViewer::Settings& settings)
 {
-    return this->view
-          ->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
+bool FileWindow::CreateViewer(View::ContainerViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::LexicalViewer::Settings& settings)
+bool FileWindow::CreateViewer(GView::View::DissasmViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(name, Reference<GView::Object>(this->obj.get()), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
+bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+}
+
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
     return view->GetCurrentTab().ToObjectRef<ViewControl>();
 }
+
+uint32 FileWindow::GetViewsCount()
+{
+    return view->GetChildrenCount();
+}
+
+Reference<ViewControl> FileWindow::GetViewByIndex(uint32 index)
+{
+    return view->GetChild(index).ToObjectRef<ViewControl>();
+}
+
+bool FileWindow::SetViewByIndex(uint32 index)
+{
+    CHECK(index < view->GetChildrenCount(), false, "");
+    return view->SetCurrentTabPageByIndex(index, true);
+}
+
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
     if (Window::OnKeyEvent(keyCode, unicode))
@@ -256,8 +274,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(
-          this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
     commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
     commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
     commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);
