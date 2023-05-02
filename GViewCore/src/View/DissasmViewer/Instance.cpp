@@ -1224,7 +1224,7 @@ void Instance::RecomputeDissasmLayout()
 void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
 {
     selection.Clear();
-    int16 sizeToAdjust = zoneToChange->extendedSize;
+    int32 sizeToAdjust = static_cast<int32>(zoneToChange->extendedSize);
     if (!zoneToChange->isCollapsed)
         sizeToAdjust *= -1;
     zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
