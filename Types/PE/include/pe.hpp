@@ -1175,6 +1175,16 @@ namespace Type
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
             };
+
+			class AreaHighlighter : public AppCUI::Controls::Window 
+			{
+			private:
+				Reference<PEFile> pe;
+				Reference<GView::View::WindowInterface> win;
+
+			public:
+				AreaHighlighter(Reference<PEFile> pe);
+			};
         } // namespace Commands
     }     // namespace PE
 } // namespace Type
