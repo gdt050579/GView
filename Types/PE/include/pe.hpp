@@ -1182,6 +1182,8 @@ namespace Type
 				Reference<PEFile> pe;
 				Reference<GView::View::WindowInterface> win;
 
+				Reference<TextField> chosenPath;
+
 			public:
 				AreaHighlighter(Reference<PEFile> pe);
 			};

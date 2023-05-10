@@ -270,6 +270,7 @@ UInt16 e_res[4];)");
         sect["Description"]              = "Portable executable format for Windows OS binaries";
         sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
         sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
+        sect["Command.AreaHighlighter"]  = Key::Alt | Key::F9;
     }
 }
 

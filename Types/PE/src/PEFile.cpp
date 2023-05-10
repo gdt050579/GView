@@ -2190,4 +2190,8 @@ void PEFile::RunCommand(std::string_view commandName)
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Digital signature not found!");
         }
     }
+	else if (commandName == "AreaHighlighter")
+	{
+		PE::Commands::AreaHighlighter(this).Show();
+	}
 }
