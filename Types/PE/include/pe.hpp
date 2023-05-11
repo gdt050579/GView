@@ -1182,10 +1182,21 @@ namespace Type
 				Reference<PEFile> pe;
 				Reference<GView::View::WindowInterface> win;
 
-				Reference<TextField> chosenPath;
+				Reference<Label> ld;
+				Reference<Label> lfn;
+				Reference<Button> bcp;
+				Reference<TextField> tfcp;
+				Reference<Label> lre;
+				Reference<TextField> tfre;
+
+				Reference<Button> bok;
+				Reference<Button> bcancel;
 
 			public:
 				AreaHighlighter(Reference<PEFile> pe);
+				bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+
+				void ChooseFile();
 			};
         } // namespace Commands
     }     // namespace PE
