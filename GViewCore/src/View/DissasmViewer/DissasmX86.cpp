@@ -10,7 +10,7 @@ uint64 SearchForClosestOffset(std::vector<uint64>& values, uint64 searchedOffset
 {
     assert(!values.empty());
     uint32 left  = 0;
-    uint32 right = values.size() - 1u;
+    size_t right = values.size() - 1u;
     while (left != right)
     {
         const uint32 mid = (left + right) / 2;
@@ -95,7 +95,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return false;
     }
 
-    const auto instructionData = obj->GetData().Get(latestOffset, remainingZoneSize, false);
+    const auto instructionData = obj->GetData().Get(latestOffset, static_cast<uint32>(remainingZoneSize), false);
     if (!instructionData.IsValid())
         return true;
 
