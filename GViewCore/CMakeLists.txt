@@ -35,7 +35,6 @@ set(MINIZIP_INCLUDE_DIR "${MINIZIP_PARENT_DIR}/include/minizip-ng")
 message(STATUS "MINIZIP_INCLUDE_DIR => ${MINIZIP_INCLUDE_DIR}")
 target_include_directories(${PROJECT_NAME} PRIVATE ${MINIZIP_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE MINIZIP::minizip-ng)
-
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)

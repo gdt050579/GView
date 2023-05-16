@@ -11,5 +11,3 @@ add_subdirectory(ZLIB)
 add_subdirectory(Dissasembly)
 add_subdirectory(ZIP)
 target_sources(GViewCore PRIVATE main.cpp)
-
-

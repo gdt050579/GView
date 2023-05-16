@@ -16,7 +16,6 @@ Config Instance::config;
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings(nullptr), ViewControl("Grid View")
 {
     this->obj = obj;
-
     // settings
     if ((_settings) && (_settings->data))
     {
@@ -29,7 +28,6 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings
         // default setup
         settings.reset(new SettingsData());
     }
-
     if (settings)
     {
         grid = AppCUI::Controls::Factory::Grid::Create(
@@ -64,11 +62,11 @@ bool Instance::ShowGoToDialog()
 bool Instance::ShowFindDialog()
 {
     CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
-    
+
     auto filterValue = findDialog.GetFilterValue();
     grid->SetFilterOnCurrentColumn(filterValue);
     grid->Filter();
-    
+
     return true;
 }
 
@@ -219,7 +217,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
 
     do
     {
-        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const auto buf     = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         auto nPos       = data.find_first_of('\n', 0);

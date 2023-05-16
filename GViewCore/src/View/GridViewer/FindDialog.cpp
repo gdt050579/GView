@@ -123,7 +123,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
     }
 
     switch (eventType)
-    {
+    { 
     case Event::WindowAccept:
         Exit(Dialogs::Result::Ok);
         newRequest = true;

@@ -141,6 +141,8 @@ add_subdirectory(Types/VBA)
 add_subdirectory(Types/JS)
 add_subdirectory(Types/PYEXTRACTOR)
 add_subdirectory(Types/ZIP)
+add_subdirectory(Types/SQLite)
+
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)

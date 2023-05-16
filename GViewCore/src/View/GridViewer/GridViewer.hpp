@@ -61,6 +61,10 @@ namespace View
             virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
             virtual void OnCheck(Reference<Controls::Control> control, bool value) override;
             virtual void OnFocus() override; // but it's triggered only on first show call :(
+            virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override
+            {
+                return true;
+            }
 
             bool SetDescription();
             bool Update();
@@ -74,6 +78,7 @@ namespace View
                 AppCUI::Input::Key replaceHeaderWith1stRow;
                 AppCUI::Input::Key toggleHorizontalLines;
                 AppCUI::Input::Key toggleVerticalLines;
+                AppCUI::Input::Key showSqlDialog;
             } keys;
             struct
             {

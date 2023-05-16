@@ -170,7 +170,6 @@ extern "C"
         // add panels
         win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(win->GetObject(), iso)), true);
         win->AddPanel(Pointer<TabPage>(new ISO::Panels::Objects(iso, win)), false);
-
         return true;
     }
 
