@@ -14,25 +14,22 @@ namespace Type
         constexpr char BUFFER_VIEW_SEPARATOR[] = ",";
         constexpr char separator               = ',';
 
-        class SQLiteFile : public TypeInterface, public AppCUI::Controls::Handlers::OnListViewItemPressedInterface
+        class SQLiteFile : public TypeInterface
         {
           public:
             DB db;
             Buffer buf;
 
           public:
-            SQLiteFile()          = default;
-            virtual ~SQLiteFile() = default;
+            SQLiteFile() = default;
 
             bool Update();
 
             std::string_view GetTypeName() override;
 
             void OnListViewItemPressed(const std::string_view& tableName);
-
-            void InitListView(Reference<Controls::ListView> lv);
             void OnButtonPressed(const std::string_view& statement);
-            void RunCommand(std::string_view commandName);
+            virtual void RunCommand(std::string_view commandName) override;
         };
         namespace Panels
         {
@@ -41,7 +38,6 @@ namespace Type
                 Reference<GView::Type::SQLite::SQLiteFile> sqlite;
                 Reference<AppCUI::Controls::ListView> tables;
                 Reference<AppCUI::Controls::ListView> general;
-                void UpdateTableInformation();
                 void RecomputePanelsPositions();
 
               public:
@@ -52,11 +48,11 @@ namespace Type
                 {
                     RecomputePanelsPositions();
                 }
-                bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
+                virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 void UpdateGeneralInfo();
                 void UpdateTablesInfo();
             };
-        }; 
+        }; // namespace Panels
         namespace PluginDialogs
         {
             class TablesDialog : public AppCUI::Controls::Window, public AppCUI::Controls::Handlers::OnListViewItemPressedInterface
@@ -69,19 +65,19 @@ namespace Type
 
               public:
                 TablesDialog(Reference<GView::Type::SQLite::SQLiteFile> _sqlite);
-                bool OnEvent(Reference<Control>, Event eventType, int ID);
-                void OnFocus();
+                virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+                virtual void OnFocus() override;
                 void OnCheck(Reference<Controls::Control> control, bool /* value */);
-                bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar);
+                virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
                 bool ProcessInput();
                 void Update();
                 void UpdateTablesInformation();
-                void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item);
+                virtual void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
                 void InitListView(Reference<Controls::ListView> lv);
-            };        
-       }
-        
+            };
+        } // namespace PluginDialogs
+
         // namespace Panels
-    }      // namespace SQLite
+    } // namespace SQLite
 } // namespace Type
 } // namespace GView
