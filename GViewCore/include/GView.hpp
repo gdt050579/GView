@@ -31,7 +31,7 @@ namespace GView
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface
 {
-    Object* obj;
+    Object* obj{ nullptr };
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
@@ -358,7 +358,7 @@ namespace DigitalSignature
         String errorVerify;
 
         int32 signerVerify; //  compares the certificate cert against the signer identifier si
-        String errorSignerVerify;
+        String errorSignerVerify{};
     };
 
     constexpr auto ERR_SIGNER            = -1;
@@ -367,8 +367,8 @@ namespace DigitalSignature
     struct CORE_EXPORT SignerAttributes
     {
         String name;
-        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
-                                               // V_ASN1_SEQUENCE
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]{}; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
+                                                 // V_ASN1_SEQUENCE
         String contentType;
         String contentTypeData;
         int32 count;
@@ -379,13 +379,13 @@ namespace DigitalSignature
     struct CORE_EXPORT Signer
     {
         int32 count;
-        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER];
+        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER]{};
         uint32 attributesCount;
     };
 
     struct CORE_EXPORT SignatureMachO
     {
-        int32 isDetached;
+        int32 isDetached{ 0 };
         String sn;
         Buffer snContent;
 
@@ -565,7 +565,7 @@ namespace Golang
     struct CORE_EXPORT Function
     {
         char* name{ nullptr };
-        Func64 func;
+        Func64 func{};
         union FstEntry
         {
             FstEntry32* _32;
