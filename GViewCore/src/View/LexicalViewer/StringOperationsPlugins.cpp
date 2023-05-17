@@ -29,7 +29,7 @@ void LowerCase(TextEditor& editor, uint32 start, uint32 end)
 void RemoveUnnecesaryWhiteSpaces(TextEditor& editor, uint32 start, uint32 end)
 {
     auto len = editor.Len();
-    auto pos = 0;
+    auto pos = 0u;
     while (pos < len)
     {
         if ((editor[pos] == ' ') || (editor[pos] == '\t'))
