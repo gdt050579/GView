@@ -41,8 +41,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         imgView->SetImage(this->settings->icon, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
     this->propList = Factory::ListView::Create(this, "l:17,t:0,r:0,h:8", { "n:Field,w:20", "n:Value,w:200" }, ListViewFlags::HideColumns);
 
-    this->items = Factory::TreeView::Create(
-          this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
+    this->items = Factory::TreeView::Create(this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
     this->items->Handlers()->OnItemToggle         = this;
     this->items->Handlers()->OnItemPressed        = this;
     this->items->Handlers()->OnCurrentItemChanged = this;
@@ -147,6 +146,8 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return false;
     switch (ID)
     {
+    default:
+        break;
     }
     return false;
 }
@@ -193,6 +194,8 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
+    default:
+        break;
     }
     return false;
 }
@@ -200,6 +203,8 @@ bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& e
 {
     switch (static_cast<PropertyID>(id))
     {
+    default:
+        break;
     }
     error.SetFormat("Unknown internat ID: %u", id);
     return false;
