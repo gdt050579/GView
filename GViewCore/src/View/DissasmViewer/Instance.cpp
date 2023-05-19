@@ -1275,20 +1275,20 @@ void Instance::ProcessSpaceKey()
     const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
     if (zonesFound.empty() || zonesFound.size() != 1)
     {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single zone!");
         return;
     }
 
     const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
-    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    if (zonesFound[0].startingLine == 0)// extending zone
     {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        ChangeZoneCollapseState(zone.get());
         return;
     }
 
-    if (zonesFound[0].startingLine == 0)
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
     {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        //Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
     }
 
