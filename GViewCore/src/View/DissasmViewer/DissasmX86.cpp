@@ -323,11 +323,8 @@ inline cs_insn* GetCurrentInstructionByLine(
         zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
         // if (lineInView > zone->lastDrawnLine)
         //     lineDifferences = lineInView - zone->lastDrawnLine + 1;
-        if (lineToReach < zone->lastDrawnLine)
-        {
             lineDifferences = lineToReach - closestData.line + 1;
         }
-    }
 
     if (diffLines == 1)
     {
