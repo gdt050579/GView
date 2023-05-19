@@ -399,8 +399,8 @@ inline cs_insn* GetCurrentInstructionByOffset(
 
     diffLines     = 0;
     cs_insn* insn = cs_malloc(handle);
-    assert(offsetToReach > zone->cachedCodeOffsets[0].offset);
-    offsetToReach -= zone->cachedCodeOffsets[0].offset;
+    if (offsetToReach > zone->cachedCodeOffsets[0].offset)
+        offsetToReach -= zone->cachedCodeOffsets[0].offset;
     while (zone->asmAddress <= offsetToReach)
     {
         if (!cs_disasm_iter(handle, &zone->asmData, &zone->asmSize, &zone->asmAddress, insn))
@@ -494,7 +494,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
 
-		if (!zone->isInit)
+        if (!zone->isInit)
         {
             if (!InitDissasmZone(dli, zone))
                 return false;
