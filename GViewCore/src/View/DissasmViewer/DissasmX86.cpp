@@ -319,8 +319,8 @@ inline cs_insn* GetCurrentInstructionByLine(
         zone->lastClosestLine  = closestData.line;
         zone->asmAddress       = closestData.offset - zone->cachedCodeOffsets[0].offset;
         zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
-        if (codeOffsetIndex + 1 < zone->cachedCodeOffsets.size())
-            zone->offsetCacheMaxLine = zone->cachedCodeOffsets[codeOffsetIndex + 1].line;
+        if (static_cast<size_t>(codeOffsetIndex) + 1u < zone->cachedCodeOffsets.size())
+            zone->offsetCacheMaxLine = zone->cachedCodeOffsets[static_cast<size_t>(codeOffsetIndex) + 1u].line;
         else
             zone->offsetCacheMaxLine = UINT32_MAX;
 
