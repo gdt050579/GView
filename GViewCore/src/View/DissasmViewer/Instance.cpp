@@ -1306,5 +1306,5 @@ void DrawLineInfo::WriteErrorToScreen(std::string_view error) const
 
 LinePosition Instance::CursorDissasm::ToLinePosition() const
 {
-    return LinePosition(startViewLine + lineInView, offset);
+    return LinePosition{ startViewLine + lineInView, offset };
 }
