@@ -157,7 +157,7 @@ bool Instance::Init()
         {
             oldSettingsFile.Close();
             auto preservedSettingsNewPath = settingsPath;
-            preservedSettingsNewPath.replace_extension(".ini.old");
+            preservedSettingsNewPath.replace_extension(".ini.bak");
             std::filesystem::rename(settingsPath, preservedSettingsNewPath);
             AppCUI::Log::Report(AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
             CHECK(GView::App::ResetConfiguration(), false, "");
