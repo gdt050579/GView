@@ -145,7 +145,24 @@ bool Instance::Init()
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
     this->typePlugins.reserve(128);
-    CHECK(LoadSettings(), false, "Fail to load settings !");
+    if(!LoadSettings())
+    {
+        const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
+        AppCUI::OS::File oldSettingsFile;
+        if (!oldSettingsFile.OpenRead(settingsPath))
+        {
+            CHECK(GView::App::ResetConfiguration(), false, "");
+        }
+        else
+        {
+            oldSettingsFile.Close();
+            auto preservedSettingsNewPath = settingsPath;
+            preservedSettingsNewPath.replace_extension(".ini.bak");
+            std::filesystem::rename(settingsPath, preservedSettingsNewPath);
+            AppCUI::Log::Report(AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
+            CHECK(GView::App::ResetConfiguration(), false, "");
+        }
+    }
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
     // set up handlers
