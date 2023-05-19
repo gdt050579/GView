@@ -98,13 +98,7 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg,
 
 // TODO: to be moved inside plugin for some sort of API for token<->color
 inline void DissasmAddColorsToInstruction(
-      const cs_insn& insn,
-      CharacterBuffer& cb,
-      CodePage& cp,
-      Config& cfg,
-      const LayoutDissasm& layout,
-      AsmData& data,
-      uint64 addressPadding = 0)
+      const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout, AsmData& data, uint64 addressPadding = 0)
 {
     cb.Clear();
 
@@ -211,7 +205,14 @@ inline bool populate_offsets_vector(
     size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
     size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
     size_t endAddress = zoneDetails.size;
-    auto data         = instructionData.GetData() + address;
+
+    if (address >= endAddress)
+    {
+        cs_close(&handle);
+        return false;
+    }
+
+    auto data = instructionData.GetData() + address;
 
     // std::string saved1 = "s1", saved2 = "s2";
     uint64 startingOffset = offsets[0].offset;
@@ -309,9 +310,8 @@ inline cs_insn* GetCurrentInstructionByLine(
         if (closestData.line != zone->lastClosestLine)
         {
             // TODO: maybe get less data ?
-            const auto instructionData =
-                  obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
-            zone->lastData = instructionData;
+            const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
+            zone->lastData             = instructionData;
             if (!instructionData.IsValid())
             {
                 if (dli)
@@ -374,9 +374,8 @@ inline cs_insn* GetCurrentInstructionByOffset(
     zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
 
     // TODO: maybe get less data ?
-    const auto instructionData =
-          obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
-    zone->lastData = instructionData;
+    const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
+    zone->lastData             = instructionData;
     if (!instructionData.IsValid())
     {
         if (dli)
@@ -419,6 +418,48 @@ inline cs_insn* GetCurrentInstructionByOffset(
     return insn;
 }
 
+bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
+{
+    uint32 totalLines = 0;
+    if (!populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture, totalLines))
+    {
+        // dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        // return false;
+    }
+    AdjustZoneExtendedSize(zone, totalLines);
+    zone->lastDrawnLine    = 0;
+    const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
+    zone->lastClosestLine  = closestData.line;
+    switch (zone->zoneDetails.architecture)
+    {
+    case DissasmArchitecture::x86:
+        zone->internalArchitecture = CS_MODE_32;
+        break;
+    case DissasmArchitecture::x64:
+        zone->internalArchitecture = CS_MODE_64;
+        break;
+    case DissasmArchitecture::Other:
+    {
+        return false;
+    }
+    }
+    zone->isInit = true;
+
+    zone->asmAddress = 0;
+    zone->asmSize    = zone->zoneDetails.size - zone->asmAddress;
+
+    const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
+    zone->lastData             = instructionData;
+    if (!instructionData.IsValid())
+    {
+        dli.WriteErrorToScreen("ERROR: extract valid data from file!");
+        return false;
+    }
+    zone->asmData = const_cast<uint8*>(instructionData.GetData());
+
+    return true;
+}
+
 bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0)
@@ -447,14 +488,18 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         chars.Add(zoneName.data(), config.Colors.StructureColor);
 
         // TODO: maybe extract this as methods?
-        HighlightSelectionAndDrawCursorText(
-              dli, static_cast<uint32>(zoneName.size()), static_cast<uint32>(zoneName.size()) + Layout.startingTextLineOffset);
+        HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(zoneName.size()), static_cast<uint32>(zoneName.size()) + Layout.startingTextLineOffset);
 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
 
-        // TODO: instead of this maybe call something on init? and move init up
+		if (!zone->isInit)
+        {
+            if (!InitDissasmZone(dli, zone))
+                return false;
+        }
+
         return true;
     }
 
@@ -505,37 +550,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     if (!zone->isInit)
     {
-        uint32 totalLines = 0;
-        populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture, totalLines);
-        AdjustZoneExtendedSize(zone, totalLines);
-        zone->lastDrawnLine    = 0;
-        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
-        zone->lastClosestLine  = closestData.line;
-        switch (zone->zoneDetails.architecture)
-        {
-        case DissasmArchitecture::x86:
-            zone->internalArchitecture = CS_MODE_32;
-            break;
-        case DissasmArchitecture::x64:
-            zone->internalArchitecture = CS_MODE_64;
-            break;
-        case DissasmArchitecture::Other:
+        if (!InitDissasmZone(dli, zone))
             return false;
-        }
-        zone->isInit = true;
-
-        zone->asmAddress = 0;
-        zone->asmSize    = zone->zoneDetails.size - zone->asmAddress;
-
-        const auto instructionData =
-              obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
-        zone->lastData = instructionData;
-        if (!instructionData.IsValid())
-        {
-            dli.WriteErrorToScreen("ERROR: extract valid data from file!");
-            return false;
-        }
-        zone->asmData = const_cast<uint8*>(instructionData.GetData());
     }
 
     // currentLine = lineToReach;
