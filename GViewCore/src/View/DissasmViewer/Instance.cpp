@@ -154,7 +154,7 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
     if (Layout.totalLinesSize > 0)
     {
         LocalString<32> tmp;
-        tmp.Format("%3u%%", (Cursor.startViewLine + Cursor.lineInView) * 100ULL / Layout.totalLinesSize);
+        tmp.Format("%3u%%", (static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView) * 100ULL / Layout.totalLinesSize);
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
@@ -301,7 +301,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 
     // TODO: current algorithm is build with ordered index values, could be improved later with a binary search
 
-    uint32 currentLineIndex = dli.currentLineFromOffset + dli.screenLineToDraw;
+    const uint32 currentLineIndex = dli.currentLineFromOffset + dli.screenLineToDraw;
     if (!settings->parseZones.empty())
     {
         auto& zones       = settings->parseZones;

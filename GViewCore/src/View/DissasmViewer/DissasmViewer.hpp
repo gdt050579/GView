@@ -226,7 +226,11 @@ namespace View
             uint32 lineOffset;
             ColorPair errorColor;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
-                : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
+                : start(nullptr), end(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0),
+                  textLineToDraw(0),
+                  renderer(renderer),
+                  lineOffset(lineOffset),
+                  errorColor(errorColor)
             {
             }
 
