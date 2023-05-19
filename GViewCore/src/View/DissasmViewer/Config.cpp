@@ -42,6 +42,8 @@ void Config::Initialize()
             this->Keys.AddNewType         = sect.GetValue("AddNewType").ToKey(Key::F6);
             this->Keys.ShowFileContentKey = sect.GetValue("ShowFileContentKey").ToKey(Key::F9);
             this->Keys.ExportAsmToFile    = sect.GetValue("AsmExportToFile").ToKey(Key::F8);
+            this->Keys.JumpBack           = sect.GetValue("JumpBack").ToKey(Key::Ctrl | Key::Q);
+            this->Keys.JumpForward        = sect.GetValue("JumpForward").ToKey(Key::Ctrl | Key::E);
             this->ShowFileContent         = sect.GetValue("ShowFileContent").ToBool(true);
             foundSettings                 = true;
         }
@@ -51,6 +53,8 @@ void Config::Initialize()
         this->Keys.AddNewType         = Key::F6;
         this->Keys.ShowFileContentKey = Key::F9;
         this->Keys.ExportAsmToFile    = Key::F8;
+        this->Keys.JumpBack           = Key::Ctrl | Key::Q;
+        this->Keys.JumpForward        = Key::Ctrl | Key::E;
         this->ShowFileContent         = true;
     }
 

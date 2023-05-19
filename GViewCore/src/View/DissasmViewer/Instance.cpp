@@ -10,6 +10,9 @@ using namespace AppCUI::Input;
 
 Config Instance::config;
 
+constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
+
+// TODO: fix remove duplicate with DissasmKeyEvents.cpp
 constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
 constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
 constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
@@ -35,7 +38,8 @@ struct
                                   { RIGHT_CLICK_DISSASM_REMOVE_ZONE, "Remove dissasm zone" }
 };
 
-Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : obj(obj), settings(nullptr), ViewControl("Dissasm View")
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
+    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     // settings
@@ -67,6 +71,8 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : obj(obj)
     this->Layout.startingTextLineOffset          = 5;
     this->Layout.structuresInitialCollapsedState = true;
     this->Layout.totalLinesSize                  = 0;
+
+	this->CurrentSelection = {};
 
     this->codePage = CodePageID::DOS_437;
 
@@ -1167,18 +1173,21 @@ bool Instance::ShowGoToDialog()
 {
     if (settings->parseZones.empty())
         return true;
-    const uint32 lines        = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
-    const uint32 currentLines = Cursor.lineInView + Cursor.startViewLine;
-    GoToDialog dlg(currentLines, lines);
+    const uint32 totalLines        = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
+    const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
+    GoToDialog dlg(currentLine, totalLines);
     if (dlg.Show() == Dialogs::Result::Ok)
     {
         const auto lineToReach = dlg.GetResultedLine();
-        if (lineToReach != currentLines)
-            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLines), false);
+        if (lineToReach != currentLine)
+        {
+            jumps_holder.insert(Cursor.saveState());
+            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);
+        }
     }
-    /*const uint32 currentLines  = Cursor.lineInView + Cursor.startViewLine;
+    /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
     constexpr auto lineToReach = 248;
-    MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLines), false);*/
+    MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);*/
     return true;
 }
 bool Instance::ShowFindDialog()

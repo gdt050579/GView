@@ -6,6 +6,7 @@
 #include <utility>
 #include <deque>
 #include <list>
+#include <cassert>
 #include <capstone/capstone.h>
 
 namespace GView
@@ -49,6 +50,8 @@ namespace View
                 AppCUI::Input::Key AddNewType;
                 AppCUI::Input::Key ShowFileContentKey;
                 AppCUI::Input::Key ExportAsmToFile;
+                AppCUI::Input::Key JumpBack;
+                AppCUI::Input::Key JumpForward;
             } Keys;
             bool Loaded;
 
@@ -228,14 +231,62 @@ namespace View
             ColorPair errorColor;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
                 : start(nullptr), end(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0),
-                  textLineToDraw(0),
-                  renderer(renderer),
-                  lineOffset(lineOffset),
-                  errorColor(errorColor)
+                  textLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
             {
             }
 
             void WriteErrorToScreen(std::string_view error) const;
+        };
+
+        struct CursorState
+        {
+            uint32 startViewLine, lineInView;
+
+            bool operator==(const CursorState& other) const
+            {
+                return startViewLine == other.startViewLine && lineInView == other.lineInView;
+            }
+        };
+
+        class JumpsHolder
+        {
+            const size_t maxCapacity;
+            int32 current_index;
+            std::deque<CursorState> jumps;
+
+          public:
+            JumpsHolder(size_t maxCapacity) : maxCapacity(maxCapacity), current_index(-1)
+            {
+                assert(maxCapacity > 0);
+            }
+
+            void insert(CursorState&& newState)
+            {
+                for (int32 i = 0; i < jumps.size(); i++)
+                    if (jumps[i] == newState)
+                    {
+                        current_index = i;
+                        return;
+                    }
+                if (jumps.size() == maxCapacity)
+                    jumps.pop_back();
+                jumps.push_back(newState);
+                current_index = static_cast<int32>(jumps.size()) - 1;
+            }
+
+            std::pair<bool, CursorState> JumpBack()
+            {
+                if (current_index >= 0)
+                    return { true, jumps[current_index--] };
+                return { false, {} };
+            }
+
+            std::pair<bool, CursorState> JumpFront()
+            {
+                if (current_index + 1 < static_cast<int32>(jumps.size()))
+                    return { true, jumps[++current_index] };
+                return { false, {} };
+            }
         };
 
         class Instance : public View::ViewControl
@@ -258,6 +309,15 @@ namespace View
                 uint32 startViewLine, lineInView, offset;
                 [[nodiscard]] LinePosition ToLinePosition() const;
                 uint64 GetOffset(uint32 textSize) const;
+                void restorePosition(const CursorState& oldState)
+                {
+                    lineInView    = oldState.lineInView;
+                    startViewLine = oldState.startViewLine;
+                }
+                CursorState saveState() const
+                {
+                    return CursorState{ startViewLine, lineInView };
+                }
             } Cursor;
 
             struct
@@ -307,6 +367,7 @@ namespace View
             // uint64 rightClickOffset;
 
             AsmData asmData;
+            JumpsHolder jumps_holder;
 
             inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 

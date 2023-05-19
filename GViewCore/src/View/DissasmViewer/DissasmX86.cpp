@@ -9,7 +9,7 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
-#define DISSASM_INSTRUCTION_OFFSET_MARGIN 500
+constexpr size_t DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
 
 //TODO consider inline?
 AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine,uint32* index = nullptr)
@@ -782,6 +782,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
     }
     cs_free(insn, 1);
 
+	jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = 0;
     Cursor.startViewLine = diffLines + zone->startLineIndex;
 }

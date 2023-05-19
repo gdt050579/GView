@@ -4,6 +4,8 @@
 constexpr uint32 COMMAND_ADD_NEW_TYPE          = 100;
 constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 101;
 constexpr uint32 COMMAND_EXPORT_ASM_FILE       = 102;
+constexpr uint32 COMMAND_JUMP_BACK             = 103;
+constexpr uint32 COMMAND_JUMP_FORWARD            = 104;
 
 // TODO: fix remove duplicate with Instance.cpp
 constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
@@ -178,8 +180,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
     // make sure that consecutive click on the same location will not scroll the view to that location
-    if (button == MouseButton::Left && mpInfo.location == MouseLocation::OnView &&
-        (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset))
+    if (button == MouseButton::Left && mpInfo.location == MouseLocation::OnView && (mpInfo.lines != Cursor.lineInView || mpInfo.offset != Cursor.offset))
     {
         const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
         const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
@@ -290,7 +291,8 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", COMMAND_ADD_NEW_TYPE);
     commandBar.SetCommand(config.Keys.ShowFileContentKey, ShowFileContentText, COMMAND_ADD_SHOW_FILE_CONTENT);
     commandBar.SetCommand(config.Keys.ExportAsmToFile, "Export asm file", COMMAND_EXPORT_ASM_FILE);
-
+    commandBar.SetCommand(config.Keys.JumpBack, "Jump back", COMMAND_JUMP_BACK);
+    commandBar.SetCommand(config.Keys.JumpForward, "Jump forward", COMMAND_JUMP_FORWARD);
     return false;
 }
 
@@ -325,6 +327,18 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case RIGHT_CLICK_DISSASM_REMOVE_ZONE:
             CommandDissasmRemoveZone();
             return true;
+        case COMMAND_JUMP_BACK:
+        {
+            if (const auto [canJump, location] = jumps_holder.JumpBack(); canJump)
+                Cursor.restorePosition(location);
+            return true;
+        }
+        case COMMAND_JUMP_FORWARD:
+        {
+            if (const auto [canJump, location] = jumps_holder.JumpFront(); canJump)
+                Cursor.restorePosition(location);
+            return true;
+        }
         default:
             return false;
         }
