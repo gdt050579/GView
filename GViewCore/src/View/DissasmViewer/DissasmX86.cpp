@@ -213,8 +213,8 @@ inline bool populate_offsets_vector(
     std::list<uint64> finalOffsets;
 
     size_t size       = zoneDetails.startingZonePoint + zoneDetails.size;
-    size_t address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
-    size_t endAddress = zoneDetails.size;
+    uint64 address    = zoneDetails.entryPoint - zoneDetails.startingZonePoint;
+    uint64 endAddress = zoneDetails.size;
 
     if (address >= endAddress)
     {
@@ -364,7 +364,7 @@ inline cs_insn* GetCurrentInstructionByLine(
 
     while (lineDifferences > 0)
     {
-        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, (size_t*) &zone->asmAddress, insn))
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) & zone->asmSize, &zone->asmAddress, insn))
         {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -417,7 +417,7 @@ inline cs_insn* GetCurrentInstructionByOffset(
         offsetToReach -= zone->cachedCodeOffsets[0].offset;
     while (zone->asmAddress <= offsetToReach)
     {
-        if (!cs_disasm_iter(handle, &zone->asmData, &zone->asmSize, &zone->asmAddress, insn))
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) & zone->asmSize, &zone->asmAddress, insn))
         {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -706,8 +706,8 @@ void Instance::CommandExportAsmFile()
             const uint64 staringOffset = dissamZone->cachedCodeOffsets[0].offset;
             size_t size                = dissamZone->zoneDetails.size - (staringOffset - dissamZone->zoneDetails.startingZonePoint);
 
-            size_t address          = 0;
-            const size_t endAddress = size;
+            uint64 address          = 0;
+            const uint64 endAddress = size;
 
             const auto dataBuffer = obj->GetData().Get(staringOffset, static_cast<uint32>(size), false);
             if (!dataBuffer.IsValid())

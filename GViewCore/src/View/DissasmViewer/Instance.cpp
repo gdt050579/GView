@@ -887,6 +887,7 @@ void Instance::RecomputeDissasmZones()
 
                 codeZone->isInit = false;
                 // initial offset is the entry point
+                codeZone->offsetCacheMaxLine = 0;
                 codeZone->cachedCodeOffsets.push_back({ convertedData->entryPoint, 0 });
                 // codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
 
@@ -1165,7 +1166,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 bool Instance::ShowGoToDialog()
 {
     if (settings->parseZones.empty())
-        return false;
+        return true;
     const uint32 lines        = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
     const uint32 currentLines = Cursor.lineInView + Cursor.startViewLine;
     GoToDialog dlg(currentLines, lines);
@@ -1175,6 +1176,9 @@ bool Instance::ShowGoToDialog()
         if (lineToReach != currentLines)
             MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLines), false);
     }
+    /*const uint32 currentLines  = Cursor.lineInView + Cursor.startViewLine;
+    constexpr auto lineToReach = 248;
+    MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLines), false);*/
     return true;
 }
 bool Instance::ShowFindDialog()
