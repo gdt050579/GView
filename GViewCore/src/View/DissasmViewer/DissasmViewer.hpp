@@ -153,6 +153,7 @@ namespace View
             // std::vector<CharacterBuffer> cachedLines;
             uint32 lastDrawnLine; // optimization not to recompute buffer every time
             uint32 lastClosestLine;
+            uint32 offsetCacheMaxLine;
             BufferView lastData;
 
             const uint8* asmData;

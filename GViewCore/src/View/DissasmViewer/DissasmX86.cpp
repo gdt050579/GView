@@ -11,7 +11,8 @@ using namespace AppCUI::Input;
 
 #define DISSASM_INSTRUCTION_OFFSET_MARGIN 500
 
-AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine)
+//TODO consider inline?
+AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine,uint32* index = nullptr)
 {
     assert(!values.empty());
     uint32 left  = 0;
@@ -20,15 +21,24 @@ AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLin
     {
         const uint32 mid = (left + right) / 2;
         if (searchedLine == values[mid].line)
+        {
+            if (index)
+                *index = mid;
             return values[mid];
+        }
         if (searchedLine < values[mid].line)
             right = mid - 1;
         else
             left = mid + 1;
     }
     if (left > 0 && values[left].line > searchedLine)
+    {
+        if (index)
+            *index = left - 1;
         return values[left - 1];
-
+    }
+    if (index)
+        *index = left;
     return values[left];
 }
 
@@ -300,13 +310,20 @@ inline cs_insn* GetCurrentInstructionByLine(
       uint32 lineToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli = nullptr)
 {
     uint32 lineDifferences = 1;
-    if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1)
+	//TODO: first or be transformed into an abs ?
+    if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineToReach >= zone->offsetCacheMaxLine)
     {
         // TODO: can be inlined as function
-        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach);
+        uint32 codeOffsetIndex = 0;
+        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach, &codeOffsetIndex);
         zone->lastClosestLine  = closestData.line;
         zone->asmAddress       = closestData.offset - zone->cachedCodeOffsets[0].offset;
         zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
+        if (codeOffsetIndex + 1 < zone->cachedCodeOffsets.size())
+            zone->offsetCacheMaxLine = zone->cachedCodeOffsets[codeOffsetIndex + 1].line;
+        else
+            zone->offsetCacheMaxLine = UINT32_MAX;
+
         if (closestData.line != zone->lastClosestLine)
         {
             // TODO: maybe get less data ?
@@ -323,8 +340,8 @@ inline cs_insn* GetCurrentInstructionByLine(
         zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
         // if (lineInView > zone->lastDrawnLine)
         //     lineDifferences = lineInView - zone->lastDrawnLine + 1;
-            lineDifferences = lineToReach - closestData.line + 1;
-        }
+        lineDifferences = lineToReach - closestData.line + 1;
+    }
 
     if (diffLines == 1)
     {
