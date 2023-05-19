@@ -170,8 +170,7 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(
-          x + 5, y, width - 4, n.ToString(Cursor.lineInView + Cursor.startViewLine, NumericFormatFlags::None), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 5, y, width - 4, n.ToString(Cursor.lineInView + Cursor.startViewLine, NumericFormatFlags::None), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -654,11 +653,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid())
                 {
-                    AddStringToChars(
-                          dli,
-                          config.Colors.StructureColor,
-                          "\tInvalid buff at position: %ull",
-                          zone->data.startingOffset + zone->data.size);
+                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %ull", zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -785,8 +780,7 @@ void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 max
         if (index < availableCharacters - Layout.startingTextLineOffset)
             dli.chNameAndSize[index].Color = config.Colors.Selection;
         else
-            dli.renderer.WriteCharacter(
-                  Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
+            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
     }
 }
 
@@ -1038,8 +1032,7 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
     uint32* value = nullptr;
     for (uint32 line = lineStart; line <= lineEnd && zoneIndex < zonesCount; line++)
     {
-        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex &&
-            (result.empty() || result.back().zoneIndex != zoneIndex))
+        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex && (result.empty() || result.back().zoneIndex != zoneIndex))
         {
             result.push_back({ zoneIndex, line - zones[zoneIndex]->startLineIndex, line - zones[zoneIndex]->startLineIndex });
             value = &result[result.size() - 1].endingLine;
@@ -1050,7 +1043,6 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
         {
             (*value)++;
         }
-
     }
 
     return result;
@@ -1172,7 +1164,18 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 
 bool Instance::ShowGoToDialog()
 {
-    NOT_IMPLEMENTED(false);
+    if (settings->parseZones.empty())
+        return false;
+    const uint32 lines        = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
+    const uint32 currentLines = Cursor.lineInView + Cursor.startViewLine;
+    GoToDialog dlg(currentLines, lines);
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        const auto lineToReach = dlg.GetResultedLine();
+        if (lineToReach != currentLines)
+            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLines), false);
+    }
+    return true;
 }
 bool Instance::ShowFindDialog()
 {
@@ -1280,7 +1283,7 @@ void Instance::ProcessSpaceKey()
     }
 
     const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
-    if (zonesFound[0].startingLine == 0)// extending zone
+    if (zonesFound[0].startingLine == 0) // extending zone
     {
         ChangeZoneCollapseState(zone.get());
         return;
@@ -1288,7 +1291,7 @@ void Instance::ProcessSpaceKey()
 
     if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
     {
-        //Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        // Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
     }
 

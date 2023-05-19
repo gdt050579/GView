@@ -226,8 +226,7 @@ namespace View
             uint32 lineOffset;
             ColorPair errorColor;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
-                : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), lineOffset(lineOffset),
-                  errorColor(errorColor)
+                : recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
             {
             }
 
@@ -400,7 +399,25 @@ namespace View
                 return data;
             }
         };
+
+        class GoToDialog : public Window
+        {
+          private:
+            uint32 resultLine, totalAvailableLines;
+            Reference<TextField> lineTextField;
+
+            void Validate();
+
+          public:
+            GoToDialog(uint32 currentLine, uint32 totalAvailableLines);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint32 GetResultedLine() const
+            {
+                return resultLine;
+            }
+        };
+
     } // namespace DissasmViewer
 } // namespace View
-
 }; // namespace GView
