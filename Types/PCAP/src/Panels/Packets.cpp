@@ -622,6 +622,10 @@ void Packets::PacketDialog::Add_TCPHeader_Options(const TCPHeader* tcp, uint32 p
                 options = ((uint8*) options + option->length);
                 list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
                 break;
+            case TCPHeader_OptionsKind::TimestampOption:
+                options = ((uint8*) options + option->length);
+                list->AddItem({ "Option: TimeStamp", tmp.Format("%s", GetValue(n, option->length).data()) });
+                break;
             default:
                 options = ((uint8*) options + option->length);
                 list->AddItem({ "Option: not_mapped" });
