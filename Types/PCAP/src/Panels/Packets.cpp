@@ -585,7 +585,10 @@ void Packets::PacketDialog::Add_TCPHeader_Options(const TCPHeader* tcp, uint32 p
         {
             option               = (TCPHeader_Options*) options;
             kind                 = option->kind;
-            const auto& kindName = TCPHeader_OptionsKindNames.at(kind).data();
+            const char* kindName = "not_mapped";
+            const auto foundName = TCPHeader_OptionsKindNames.find(kind);
+            if (foundName != TCPHeader_OptionsKindNames.end())
+                kindName = foundName->second.data();
             const auto kindHex   = GetValue(n, BigToNative((uint8) kind));
             list->AddItem({ "Option: Kind", tmp.Format("%-10s (%s)", kindName, kindHex.data()) }).SetType(ListViewItem::Type::Emphasized_1);
 
@@ -620,6 +623,8 @@ void Packets::PacketDialog::Add_TCPHeader_Options(const TCPHeader* tcp, uint32 p
                 list->AddItem({ "Option: Length", tmp.Format("%s", GetValue(n, option->length).data()) });
                 break;
             default:
+                options = ((uint8*) options + option->length);
+                list->AddItem({ "Option: not_mapped" });
                 break;
             }
         } while (kind != TCPHeader_OptionsKind::EndOfOptionsList && (uint8*) option + option->length < end);
