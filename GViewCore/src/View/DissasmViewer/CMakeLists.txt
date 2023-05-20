@@ -10,4 +10,5 @@ target_sources(
 	DissasmProperties.cpp
 	DissasmKeyEvents.cpp
         DissasmX86.cpp
+	CommentDataWindow.cpp
 )

@@ -63,3 +63,4 @@ const vector<Property> Instance::GetPropertiesList()
         { PROP_ID_SHOW_FILE_CONTENT_KEY, "General", "Show file content key", PropertyType::Key},
     };
 }
+
