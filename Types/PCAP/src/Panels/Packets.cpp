@@ -101,6 +101,11 @@ void Packets::PacketDialog::Add_PacketHeader(LinkType type, const PacketHeader* 
         auto peh = (Package_EthernetHeader*) ((uint8*) packet + sizeof(PacketHeader));
         Add_Package_EthernetHeader(peh, packet->inclLen);
     }
+    if (type == LinkType::NULL_)
+    {
+        auto pnh = (Package_NullHeader*) ((uint8*) packet + sizeof(PacketHeader));
+        Add_Package_NullHeader(pnh, packet->inclLen);
+    }
 }
 
 void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen)
@@ -134,6 +139,18 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHea
     {
         auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
         Add_IPv6Header(ipv6, packetInclLen);
+    }
+}
+
+void Packets::PacketDialog::Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 packetInclLen)
+{
+    LocalString<32> tmp;
+    if (pnh->family_ip == NULL_FAMILY_IP)
+    {
+        list->AddItem({ "Family: IP ", tmp.Format("%u", pnh->family_ip) });
+        list->AddItem("IPv4").SetType(ListViewItem::Type::Category);
+        auto ipv4 = (IPv4Header*) ((uint8*) pnh + sizeof(Package_NullHeader));
+        Add_IPv4Header(ipv4, packetInclLen);
     }
 }
 

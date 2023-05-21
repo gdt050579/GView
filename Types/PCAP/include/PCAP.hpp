@@ -173,6 +173,7 @@ namespace Panels
             std::string_view GetValue(NumericFormatter& n, uint64 value);
             void Add_PacketHeader(LinkType type, const PacketHeader* packet);
             void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 packetInclLen);
+            void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 packetInclLen);
             void Add_IPv4Header(const IPv4Header* ipv4, uint32 packetInclLen);
             void Add_IPv6Header(const IPv6Header* ipv6, uint32 packetInclLen);
             void Add_UDPHeader(const UDPHeader* udp);

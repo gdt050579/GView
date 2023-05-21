@@ -607,6 +607,9 @@ enum class EtherType : uint16 // https://www.liveaction.com/resources/glossary/e
     BBNVITALLANBridgeCacheWakeup                 = 122,
 };
 
+//TODO: extend NULL types
+constexpr uint32 NULL_FAMILY_IP = 2;
+
 #define CASE_RETURN(x, y)                                                                                                                  \
     case x:                                                                                                                                \
         return y;
@@ -1002,6 +1005,10 @@ struct Package_EthernetHeader
     uint8 etherShost[6]; // source host
     uint16 etherType;    // 2 bytes, Protocol type, type of Packet: ARP, DOD(IPv4), IPv6,..
                          // http://www.networksorcery.com/enp/protocol/802/ethertypes.htm
+};
+struct Package_NullHeader
+{
+    uint32 family_ip;
 };
 #pragma pack(pop)
 
