@@ -1688,7 +1688,8 @@ enum class TCPHeader_OptionsKind : uint8 // https://en.wikipedia.org/wiki/Transm
     WindowScale                         = 3,
     SelectiveAcknowledgementPermitted   = 4,
     SACK                                = 5,
-    TimestampAndEchoOfPreviousTimestamp = 6
+    TimestampAndEchoOfPreviousTimestamp = 6,
+    TimestampOption = 8
 };
 
 static const std::map<TCPHeader_OptionsKind, std::string_view> TCPHeader_OptionsKindNames{
@@ -1698,7 +1699,8 @@ static const std::map<TCPHeader_OptionsKind, std::string_view> TCPHeader_Options
     GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::WindowScale),
     GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::SelectiveAcknowledgementPermitted),
     GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::SACK),
-    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp)
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampOption)
 };
 
 struct TCPHeader_Options
