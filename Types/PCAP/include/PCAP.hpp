@@ -4,18 +4,21 @@
 
 namespace GView::Type::PCAP
 {
-class PCAPFile : public TypeInterface
+class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
     Buffer data; // it's maximum 0xFFFF so just save it here
 
     Header header;
     std::vector<std::pair<PacketHeader*, uint32>> packetHeaders;
+    StreamManager streamManager;
+
+	uint32 currentItemIndex{ 0 };
+    std::vector<uint32> currentChildIndexes{};
 
     PCAPFile();
-    virtual ~PCAPFile()
-    {
-    }
+
+    ~PCAPFile() override = default;
 
     bool Update();
 
@@ -26,6 +29,10 @@ class PCAPFile : public TypeInterface
     void RunCommand(std::string_view) override
     {
     }
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 
   public:
     Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
@@ -46,6 +53,36 @@ class PCAPFile : public TypeInterface
     }
 };
 
+namespace Utils
+{
+    static void IPv4ElementToString(uint32 ip, LocalString<64>& out)
+    {
+        union
+        {
+            uint8 values[4];
+            uint32 value;
+        } ipv4{ .value = ip };
+
+        out.Format("%02u.%02u.%02u.%02u (0x%X)", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0], ipv4.value);
+    }
+
+	static void IPv4ElementToStringNoHex(uint32 ip, LocalString<64>& out)
+    {
+        union
+        {
+            uint8 values[4];
+            uint32 value;
+        } ipv4{ .value = ip };
+
+        out.Format("%u.%u.%u.%u", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0]);
+    }
+
+    static void IPv6ElementToString(const uint16 ipv6[8], LocalString<64>& out)
+    {
+        out.Format("%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", ipv6[0], ipv6[1], ipv6[2], ipv6[3], ipv6[4], ipv6[5], ipv6[6], ipv6[7]);
+    }
+} // namespace Utils
+
 namespace Panels
 {
     static ListViewItem AddMACElement(Reference<ListView> list, std::string_view name, const MAC& mac)
@@ -53,32 +90,18 @@ namespace Panels
         CHECK(list.IsValid(), ListViewItem{}, "");
 
         LocalString<64> tmp;
-        return list->AddItem({ name.data(),
-                               tmp.Format(
-                                     "%02X:%02X:%02X:%02X:%02X:%02X (0x%X)",
-                                     mac.arr[0],
-                                     mac.arr[1],
-                                     mac.arr[2],
-                                     mac.arr[3],
-                                     mac.arr[4],
-                                     mac.arr[5],
-                                     mac.value) });
+        return list->AddItem(
+              { name.data(),
+                tmp.Format("%02X:%02X:%02X:%02X:%02X:%02X (0x%X)", mac.arr[0], mac.arr[1], mac.arr[2], mac.arr[3], mac.arr[4], mac.arr[5], mac.value) });
     }
 
     static ListViewItem AddIPv4Element(Reference<ListView> list, std::string_view name, uint32 ip)
     {
         CHECK(list.IsValid(), ListViewItem{}, "");
 
-        union
-        {
-            uint8 values[4];
-            uint32 value;
-        } ipv4{ .value = ip };
-
         LocalString<64> tmp;
-        return list->AddItem(
-              { name.data(),
-                tmp.Format("%02u.%02u.%02u.%02u (0x%X)", ipv4.values[3], ipv4.values[2], ipv4.values[1], ipv4.values[0], ipv4.value) });
+        Utils::IPv4ElementToString(ip, tmp);
+        return list->AddItem({ name.data(), tmp.GetText() });
     }
 
     static ListViewItem AddIPv6Element(Reference<ListView> list, std::string_view name, uint16 ipv6[8])
@@ -86,10 +109,8 @@ namespace Panels
         CHECK(list.IsValid(), ListViewItem{}, "");
 
         LocalString<64> tmp;
-        return list->AddItem(
-              { name.data(),
-                tmp.Format(
-                      "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", ipv6[0], ipv6[1], ipv6[2], ipv6[3], ipv6[4], ipv6[5], ipv6[6], ipv6[7]) });
+        Utils::IPv6ElementToString(ipv6, tmp);
+        return list->AddItem({ name.data(), tmp.GetText() });
     }
 
     class Information : public AppCUI::Controls::TabPage
@@ -185,12 +206,7 @@ namespace Panels
 
           public:
             PacketDialog(
-                  Reference<GView::Object> _object,
-                  std::string_view name,
-                  std::string_view layout,
-                  LinkType type,
-                  const PacketHeader* packet,
-                  int32 _base);
+                  Reference<GView::Object> _object, std::string_view name, std::string_view layout, LinkType type, const PacketHeader* packet, int32 _base);
         };
     };
 }; // namespace Panels

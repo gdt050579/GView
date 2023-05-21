@@ -128,12 +128,12 @@ void Packets::PacketDialog::Add_Package_EthernetHeader(const Package_EthernetHea
     if (etherType == EtherType::IPv4)
     {
         auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv4Header(ipv4, packetInclLen);
+        Add_IPv4Header(ipv4, packetInclLen - sizeof(Package_EthernetHeader));
     }
     else if (etherType == EtherType::IPv6)
     {
         auto ipv6 = (IPv6Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
-        Add_IPv6Header(ipv6, packetInclLen);
+        Add_IPv6Header(ipv6, packetInclLen - sizeof(Package_EthernetHeader));
     }
 }
 
@@ -255,8 +255,8 @@ void Packets::PacketDialog::Add_IPv6Header(const IPv6Header* ipv6, uint32 packet
     list->AddItem(protocolName).SetType(ListViewItem::Type::Category);
     if (ipv6Ref.nextHeader == IP_Protocol::TCP)
     {
-        auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv4Header));
-        Add_TCPHeader(tcp, packetInclLen);
+        auto tcp = (TCPHeader*) ((uint8*) ipv6 + sizeof(IPv6Header));
+        Add_TCPHeader(tcp, packetInclLen - sizeof(IPv6Header));
     }
     else if (ipv6Ref.nextHeader == IP_Protocol::UDP)
     {
