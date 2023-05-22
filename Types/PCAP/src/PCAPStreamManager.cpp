@@ -25,7 +25,10 @@ void StreamData::computeFinalPayload()
 
 void StreamManager::Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet)
 {
-    const auto etherType = PCAP::GetEtherType(peh->etherType);
+    auto pehRef = *peh;
+    Swap(pehRef);
+
+    const auto etherType = PCAP::GetEtherType(pehRef.etherType);
     if (etherType == EtherType::IPv4)
     {
         auto ipv4 = (IPv4Header*) ((uint8*) peh + sizeof(Package_EthernetHeader));
@@ -137,7 +140,7 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     StreamData* streamToAddTo = nullptr;
 
     LocalString<256> streamName;
-    streamName.Format("%s:%s->%s:%s", dstIp.GetText(), dstPort.GetText(), srcIp.GetText(), srcPort.GetText());
+    streamName.Format("%s:%s -> %s:%s", dstIp.GetText(), dstPort.GetText(), srcIp.GetText(), srcPort.GetText());
     auto revStream = streams.find(streamName.GetText());
     if (revStream != streams.end())
     {
@@ -153,7 +156,7 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     }
     else
     {
-        const auto name     = streamName.Format("%s:%s->%s:%s", srcIp.GetText(), srcPort.GetText(), dstIp.GetText(), dstPort.GetText());
+        const auto name     = streamName.Format("%s:%s -> %s:%s", srcIp.GetText(), srcPort.GetText(), dstIp.GetText(), dstPort.GetText());
         auto& currentStream = streams[name.data()];
         if (currentStream.empty())
         {

@@ -86,7 +86,8 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
 
     if (isTree)
     {
-        item.SetExpandable(!stream->applicationLayers.empty());
+        const bool isExpandable = !stream->applicationLayers.empty();
+        item.SetExpandable(isExpandable);
         item.SetData(currentItemIndex);
 
         item.SetText(tmp.Format("%s", n.ToString(streamIndex, NUMERIC_FORMAT).data()));
@@ -95,6 +96,9 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetText(3, stream->GetTransportProtocolName());
         item.SetText(4, tmp.Format("%s", n.ToString(stream->totalPayload, NUMERIC_FORMAT).data()));
         item.SetText(5, stream->appLayerName.data());
+
+        if (isExpandable)
+            item.SetType(TreeViewItem::Type::Highlighted);
     }
     else
     {
@@ -105,6 +109,10 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
 
         item.SetText(4, tmp.Format("%s", n.ToString(stream->applicationLayers[currentItemIndex].payload.size, NUMERIC_FORMAT).data()));
+        /*if (stream->applicationLayers[currentItemIndex].payload.size == 0)
+        {
+            item.SetType(TreeViewItem::Type::Category);
+        }*/
     }
 
     currentItemIndex++;
@@ -134,11 +142,14 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
         return;
 
     const auto appLayerVar = Number::ToUInt32(applicationText);
-    if (!streamIdVar.has_value())
+    if (!appLayerVar.has_value())
         return;
 
     const auto& stream = streamManager[streamIdVar.value()];
     if (!stream)
+        return;
+
+    if (appLayerVar.value() >= stream->applicationLayers.size())
         return;
 
     const auto& layer = stream->applicationLayers[appLayerVar.value()];

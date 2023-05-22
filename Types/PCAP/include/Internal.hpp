@@ -1948,7 +1948,7 @@ struct StreamPacketData
     StreamPayload payload;
     StreamTCPOrder order;
 
-	//TODO
+    // TODO
     bool operator<(const StreamPacketData& other) const
     {
         return order.packetIndex < other.order.packetIndex;
