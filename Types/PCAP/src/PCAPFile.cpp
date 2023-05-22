@@ -94,6 +94,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetText(2, stream->GetIpProtocolName());
         item.SetText(3, stream->GetTransportProtocolName());
         item.SetText(4, tmp.Format("%s", n.ToString(stream->totalPayload, NUMERIC_FORMAT).data()));
+        item.SetText(5, stream->appLayerName.data());
     }
     else
     {
@@ -102,6 +103,8 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
 
         item.SetText(tmp.Format("%s", n.ToString(currentItemIndex, NUMERIC_FORMAT).data()));
         item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
+
+        item.SetText(4, tmp.Format("%s", n.ToString(stream->applicationLayers[currentItemIndex].payload.size, NUMERIC_FORMAT).data()));
     }
 
     currentItemIndex++;

@@ -1986,6 +1986,7 @@ struct StreamData
     std::string name                                         = {};
     bool isFinished                                          = false;
     uint8 finFlagsFound                                      = 0;
+    std::string appLayerName                                 = "";
 
     StreamPayload connPayload                    = {};
     std::deque<StreamTcpLayer> applicationLayers = {};

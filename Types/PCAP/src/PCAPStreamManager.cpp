@@ -291,6 +291,9 @@ void StreamData::tryParsePayload()
 
         startPtr++;
     }
+
+	if (startPtr >= endPtr)
+        appLayerName = "HTTP";
 }
 
 void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
