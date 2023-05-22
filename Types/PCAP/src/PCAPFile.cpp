@@ -110,13 +110,41 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
 
 void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
-    const auto stream = streamManager[static_cast<uint32>(item.GetData(-1))];
+    const std::u16string currentPath(this->obj->GetPath());
+    const auto itemsPath = path.substr(currentPath.size() + 1); //.0/0
+    if (itemsPath.empty())
+        return;
+
+    // TODO: improve
+    std::string streamText, applicationText;
+    std::string* toAppend = &streamText;
+    for (const auto c : itemsPath)
+    {
+        if (c >= '0' && c < '9')
+            toAppend->push_back(c);
+        else
+            toAppend = &applicationText;
+    }
+
+    const auto streamIdVar = Number::ToUInt32(streamText);
+    if (!streamIdVar.has_value())
+        return;
+
+    const auto appLayerVar = Number::ToUInt32(applicationText);
+    if (!streamIdVar.has_value())
+        return;
+
+    const auto& stream = streamManager[streamIdVar.value()];
     if (!stream)
         return;
 
-    uint8* payload = new uint8[stream->connPayload.size];
-    memcpy(payload, stream->connPayload.location, stream->connPayload.size);
+    const auto& layer = stream->applicationLayers[appLayerVar.value()];
+    if (layer.payload.size == 0)
+        return;
 
-    const Buffer buffer = { payload, stream->connPayload.size };
-    GView::App::OpenBuffer(buffer, "name", "name", GView::App::OpenMethod::BestMatch);
+    uint8* payload = new uint8[layer.payload.size];
+    memcpy(payload, layer.payload.location, layer.payload.size);
+
+    const Buffer buffer = { payload, layer.payload.size };
+    GView::App::OpenBuffer(buffer, (const char*) layer.name, stream->name, GView::App::OpenMethod::BestMatch);
 }
