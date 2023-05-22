@@ -2,6 +2,27 @@
 
 using namespace GView::Type::PCAP;
 
+void StreamData::computeFinalPayload()
+{
+    if (totalPayload == 0)
+        return;
+
+    uint8* payload = new uint8[totalPayload];
+
+    auto payloadPtr = payload;
+    for (const auto& packet : packetsOffsets)
+        if (packet.payload.location)
+        {
+            memcpy(payloadPtr, packet.payload.location, packet.payload.size);
+            payloadPtr += packet.payload.size;
+        }
+
+    connPayload.size     = (uint32) totalPayload;
+    connPayload.location = payload;
+
+    tryParsePayload();
+}
+
 void StreamManager::Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet)
 {
     const auto etherType = PCAP::GetEtherType(peh->etherType);
@@ -158,8 +179,118 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     if (hasSynFlag && streamToAddTo->finFlagsFound >= 2)
         streamToAddTo->isFinished = true;
 
+    StreamTCPOrder order{};
+    order.seqNumber   = tcp->seq;
+    order.ackNumber   = tcp->ack;
+    order.maxNumber   = std::max(tcp->seq, tcp->ack);
+    order.packetIndex = (uint32) streamToAddTo->packetsOffsets.size();
+
     streamToAddTo->totalPayload += payload.size;
-    streamToAddTo->packetsOffsets.push_back({ packet, payload });
+    streamToAddTo->packetsOffsets.push_back({ packet, payload, order });
+}
+
+constexpr uint32 maxWaitUntilEndLine = 300;
+
+constexpr std::string_view httpPattern        = "HTTP/1.";
+constexpr std::string_view httpContentPattern = "Content-Length: ";
+void StreamData::tryParsePayload()
+{
+    if (connPayload.size < 3)
+        return;
+    for (int i = 0; i < 3; i++)
+        if (!isalpha(connPayload.location[i]))
+            return;
+
+    uint8 buffer[300]     = {};
+    uint32 bufferSize     = 0;
+    const uint8* startPtr = connPayload.location;
+    const uint8* endPtr   = connPayload.location + connPayload.size;
+    bool wasEndline       = false;
+    uint32 spaces         = 0;
+
+    bool identified = false;
+
+    StreamTcpLayer layer{};
+
+    while (startPtr < endPtr)
+    {
+        if (*startPtr == 0x0D || *startPtr == 0x0a)
+        {
+            wasEndline = true;
+            ++spaces;
+        }
+        else if (wasEndline)
+        {
+            if (spaces >= 4)
+            {
+                if (identified)
+                {
+                    if (layer.payload.size)
+                    {
+                        layer.payload.location = (uint8*) startPtr;
+                        // push
+
+                        startPtr += layer.payload.size;
+                        bufferSize         = 0;
+                        buffer[bufferSize] = '\0';
+                        identified         = false;
+                        applicationLayers.push_back(layer);
+                        layer = {};
+                        continue;
+                    }
+                    applicationLayers.push_back(layer);
+                    layer      = {};
+                    identified = false;
+                }
+            }
+
+            buffer[bufferSize] = '\0';
+
+            if (identified)
+            {
+                if (bufferSize >= httpContentPattern.size() && memcmp(buffer, httpContentPattern.data(), httpContentPattern.size()) == 0)
+                {
+                    identified      = true;
+                    auto payloadLen = Number::ToInt64((char*) buffer + httpContentPattern.size());
+                    if (payloadLen.has_value())
+                        layer.payload.size = payloadLen.value();
+                }
+            }
+
+            wasEndline = false;
+            spaces     = 0;
+
+            if (!identified)
+            {
+                if (bufferSize < httpPattern.size())
+                    break;
+                if (memcmp(buffer, httpPattern.data(), httpPattern.size()) == 0)
+                {
+                    identified = true;
+                    layer.name = (uint8*) strdup((char*) buffer);
+                }
+                else if (memcmp(buffer + bufferSize - httpPattern.size() - 1, httpPattern.data(), httpPattern.size()) == 0)
+                {
+                    identified = true;
+                    layer.name = (uint8*) strdup((char*) buffer);
+                }
+            }
+            bufferSize         = 0;
+            buffer[bufferSize] = '\0';
+
+            if (bufferSize >= maxWaitUntilEndLine - 1)
+                break;
+            buffer[bufferSize++] = *startPtr;
+        }
+        else
+        {
+            if (bufferSize >= maxWaitUntilEndLine - 1)
+                return;
+            buffer[bufferSize++] = *startPtr;
+        }
+
+        startPtr++;
+    }
 }
 
 void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
@@ -188,6 +319,8 @@ void StreamManager::FinishedAdding()
         for (auto& conn : connections)
         {
             conn.name = streamName;
+            // conn.sortPackets();
+            conn.computeFinalPayload();
             finalStreams.push_back(conn);
         }
     }

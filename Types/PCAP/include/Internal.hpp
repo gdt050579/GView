@@ -1934,10 +1934,30 @@ struct StreamPayload
 };
 
 // TODO: for the future maybe change structure for a more generic structure
+struct StreamTCPOrder
+{
+    uint32 packetIndex;
+    uint32 seqNumber;
+    uint32 ackNumber;
+    uint32 maxNumber; // between seqNumber and ackNumber
+};
+
 struct StreamPacketData
 {
     const PacketHeader* header;
     StreamPayload payload;
+    StreamTCPOrder order;
+
+	//TODO
+    bool operator<(const StreamPacketData& other) const
+    {
+        return order.packetIndex < other.order.packetIndex;
+    }
+
+    bool operator==(const StreamPacketData&) const
+    {
+        return true;
+    }
 };
 
 struct StreamPacketContext
@@ -1945,6 +1965,13 @@ struct StreamPacketContext
     const PacketHeader* packet;
     const void* ipHeader;
     uint32 ipProto;
+};
+
+struct StreamTcpLayer
+{
+    // TODO: delete it
+    uint8* name;
+    StreamPayload payload;
 };
 
 // TODO: for the future maybe change structure for a more generic structure
@@ -1960,6 +1987,9 @@ struct StreamData
     bool isFinished                                          = false;
     uint8 finFlagsFound                                      = 0;
 
+    StreamPayload connPayload                    = {};
+    std::deque<StreamTcpLayer> applicationLayers = {};
+
     std::string_view GetIpProtocolName() const
     {
         if (ipProtocol == INVALID_IP_PROTOCOL_VALUE)
@@ -1973,6 +2003,14 @@ struct StreamData
             return "null";
         return IP_ProtocolNames.at(static_cast<IP_Protocol>(transportProtocol));
     }
+
+    void sortPackets()
+    {
+        std::sort(packetsOffsets.begin(), packetsOffsets.end());
+    }
+
+    void computeFinalPayload();
+    void tryParsePayload();
 };
 
 class StreamManager

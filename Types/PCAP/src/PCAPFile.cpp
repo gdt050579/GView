@@ -30,6 +30,8 @@ bool PCAPFile::Update()
     return true;
 }
 
+constexpr uint64 ITEM_INVALID_VALUE = static_cast<uint64>(-1);
+
 bool PCAPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
     if (streamManager.empty())
@@ -38,22 +40,42 @@ bool PCAPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVi
     currentItemIndex = 0;
     currentChildIndexes.clear();
 
-    if (path.empty())
-    {
-        for (uint32 i = 0; i < streamManager.size(); i++)
-            currentChildIndexes.push_back(i);
+    uint32 totalItems = (uint32) streamManager.size();
 
-        return currentItemIndex != this->currentChildIndexes.size();
+    if (!path.empty())
+    {
+        const std::string_view sv = std::string_view{ (char*) path.data(), path.size() };
+        const auto indexVal       = Number::ToInt32(sv);
+        if (indexVal.has_value())
+        {
+            const auto& stream = streamManager[indexVal.value()];
+            totalItems         = stream->applicationLayers.size();
+            parent.SetData(indexVal.value());
+        }
     }
 
-    return false;
+    for (uint32 i = 0; i < totalItems; i++)
+        currentChildIndexes.push_back(i);
+
+    return currentItemIndex != this->currentChildIndexes.size();
 }
 
 bool PCAPFile::PopulateItem(TreeViewItem item)
 {
-    const auto realIndex = currentChildIndexes.at(currentItemIndex);
+    uint32 streamIndex;
+    const uint64 itemData = item.GetParent().GetData(ITEM_INVALID_VALUE);
+    bool isTree           = false;
+    if (itemData != ITEM_INVALID_VALUE)
+    {
+        streamIndex = itemData;
+    }
+    else
+    {
+        streamIndex = currentItemIndex;
+        isTree      = true;
+    }
 
-    const auto stream = streamManager[realIndex];
+    const auto stream = streamManager[streamIndex];
     if (!stream)
         return false;
 
@@ -62,14 +84,25 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
     LocalString<128> tmp;
     NumericFormatter n;
 
-    item.SetExpandable(true);
-    item.SetData(realIndex);
+    if (isTree)
+    {
+        item.SetExpandable(!stream->applicationLayers.empty());
+        item.SetData(currentItemIndex);
 
-    item.SetText(tmp.Format("%s", n.ToString(realIndex, NUMERIC_FORMAT).data()));
-    item.SetText(1, stream->name);
-    item.SetText(2, stream->GetIpProtocolName());
-    item.SetText(3, stream->GetTransportProtocolName());
-    item.SetText(4, tmp.Format("%s", n.ToString(stream->totalPayload, NUMERIC_FORMAT).data()));
+        item.SetText(tmp.Format("%s", n.ToString(streamIndex, NUMERIC_FORMAT).data()));
+        item.SetText(1, stream->name);
+        item.SetText(2, stream->GetIpProtocolName());
+        item.SetText(3, stream->GetTransportProtocolName());
+        item.SetText(4, tmp.Format("%s", n.ToString(stream->totalPayload, NUMERIC_FORMAT).data()));
+    }
+    else
+    {
+        item.SetExpandable(false);
+        item.SetData(currentItemIndex);
+
+        item.SetText(tmp.Format("%s", n.ToString(currentItemIndex, NUMERIC_FORMAT).data()));
+        item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
+    }
 
     currentItemIndex++;
     return currentItemIndex != this->currentChildIndexes.size();
@@ -81,16 +114,9 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     if (!stream)
         return;
 
-    uint8* payload = new uint8[stream->totalPayload];
+    uint8* payload = new uint8[stream->connPayload.size];
+    memcpy(payload, stream->connPayload.location, stream->connPayload.size);
 
-    auto payloadPtr = payload;
-    for (const auto& packet : stream->packetsOffsets)
-        if (packet.payload.location)
-        {
-            memcpy(payloadPtr, packet.payload.location, packet.payload.size);
-            payloadPtr += packet.payload.size;
-        }
-
-    const Buffer buffer = { payload, stream->totalPayload };
+    const Buffer buffer = { payload, stream->connPayload.size };
     GView::App::OpenBuffer(buffer, "name", "name", GView::App::OpenMethod::BestMatch);
 }
