@@ -16,7 +16,7 @@ constexpr string_view PCAP_ICON = "WWWWWWW.WWWWWWW."  // 1
                                   "W.....W.W......."  // 2
                                   "W.....W.W......."  // 3
                                   "W.....W.W......."  // 4
-                                  "WWWWWWW.W......." // 5
+                                  "WWWWWWW.W......."  // 5
                                   "W.......W......."  // 6
                                   "W.......WWWWWWW."  // 7
                                   "................"  // 8
@@ -76,20 +76,15 @@ extern "C"
     {
         ContainerViewer::Settings settings;
 
-		settings.SetName("StreamView");
+        settings.SetName("StreamView");
         settings.SetIcon(PCAP_ICON);
-        settings.SetColumns({
-              "n:&ID,a:l,w:6",
-              "n:&Connection,a:l,w:60",
-              "n:&IpProt.,a:l,w:10",
-              "n:&Transport,a:l,w:10",
-              "n:&Payload,a:l,w:10"
-        });
+        settings.SetColumns(
+              { "n:&ID,a:l,w:6", "n:&Connection,a:l,w:60", "n:&IpProt.,a:l,w:12", "n:&Transport,a:l,w:12", "n:&Payload,a:l,w:12", "n:&AppLayer,a:l,w:12" });
 
         settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
         settings.SetOpenItemCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
-		for (const auto& [header, offset] : pcap->packetHeaders)
+        for (const auto& [header, offset] : pcap->packetHeaders)
             pcap->streamManager.AddPacket(header, pcap->header.network);
         pcap->streamManager.FinishedAdding();
 

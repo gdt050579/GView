@@ -90,6 +90,10 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
         return;
     }
 
+    const bool hasRstFlag = (tcp->flags & RST) > 0;
+    const bool hasFinFlag = (tcp->flags & FIN) > 0;
+    const bool hasSynFlag = (tcp->flags & SYN) > 0;
+
     auto tcpRef = *tcp;
     Swap(tcpRef);
 
@@ -109,21 +113,53 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     srcPort.Format("%s", n.ToString(tcpRef.sPort, { NumericFormatFlags::None, 10, 3, '.' }).data());
     dstPort.Format("%s", n.ToString(tcpRef.dPort, { NumericFormatFlags::None, 10, 3, '.' }).data());
 
+    StreamData* streamToAddTo = nullptr;
+
     LocalString<256> streamName;
     streamName.Format("%s:%s->%s:%s", dstIp.GetText(), dstPort.GetText(), srcIp.GetText(), srcPort.GetText());
     auto revStream = streams.find(streamName.GetText());
     if (revStream != streams.end())
     {
-        revStream->second.totalPayload += payload.size;
-        revStream->second.packetsOffsets.push_back({ packet, payload });
-        return;
+        if (!revStream->second.back().isFinished)
+            streamToAddTo = &revStream->second.back();
+        else
+        {
+            revStream->second.push_back({});
+            streamToAddTo                    = &revStream->second.back();
+            streamToAddTo->ipProtocol        = (uint16) ipProto;
+            streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
+        }
     }
-    const auto name     = streamName.Format("%s:%s->%s:%s", srcIp.GetText(), srcPort.GetText(), dstIp.GetText(), dstPort.GetText());
-    auto& currentStream = streams[name.data()];
-    currentStream.totalPayload += payload.size;
-    currentStream.packetsOffsets.push_back({ packet, payload });
-    currentStream.ipProtocol        = (uint16) ipProto;
-    currentStream.transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
+    else
+    {
+        const auto name     = streamName.Format("%s:%s->%s:%s", srcIp.GetText(), srcPort.GetText(), dstIp.GetText(), dstPort.GetText());
+        auto& currentStream = streams[name.data()];
+        if (currentStream.empty())
+        {
+            currentStream.push_back({});
+            streamToAddTo                    = &currentStream.back();
+            streamToAddTo->ipProtocol        = (uint16) ipProto;
+            streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
+        }
+        streamToAddTo = &currentStream.back();
+        if (streamToAddTo->isFinished)
+        {
+            revStream->second.push_back({});
+            streamToAddTo                    = &revStream->second.back();
+            streamToAddTo->ipProtocol        = (uint16) ipProto;
+            streamToAddTo->transportProtocol = static_cast<uint16>(IP_Protocol::TCP);
+        }
+    }
+
+    if (hasRstFlag)
+        streamToAddTo->isFinished = true;
+    if (hasFinFlag)
+        ++streamToAddTo->finFlagsFound;
+    if (hasSynFlag && streamToAddTo->finFlagsFound >= 2)
+        streamToAddTo->isFinished = true;
+
+    streamToAddTo->totalPayload += payload.size;
+    streamToAddTo->packetsOffsets.push_back({ packet, payload });
 }
 
 void StreamManager::AddPacket(const PacketHeader* packet, LinkType network)
@@ -147,10 +183,14 @@ void StreamManager::FinishedAdding()
 
     finalStreams.reserve(streams.size());
 
-    for (auto& [fst, snd] : streams)
+    for (auto& [streamName, connections] : streams)
     {
-        snd.name = fst;
-        finalStreams.push_back(std::move(snd));
+        for (auto& conn : connections)
+        {
+            conn.name = streamName;
+            finalStreams.push_back(conn);
+        }
     }
+
     streams.clear();
 }

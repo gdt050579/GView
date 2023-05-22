@@ -1,6 +1,7 @@
 #pragma once
 
 #include <GView.hpp>
+#include <deque>
 
 // PCAPNG -> https://tools.ietf.org/id/draft-gharris-opsawg-pcap-00.html
 // PCAP   -> https://wiki.wireshark.org/Development/LibpcapFileFormat
@@ -1932,30 +1933,41 @@ struct StreamPayload
     uint32 size;
 };
 
+// TODO: for the future maybe change structure for a more generic structure
 struct StreamPacketData
 {
     const PacketHeader* header;
     StreamPayload payload;
 };
 
+struct StreamPacketContext
+{
+    const PacketHeader* packet;
+    const void* ipHeader;
+    uint32 ipProto;
+};
+
+// TODO: for the future maybe change structure for a more generic structure
 struct StreamData
 {
     static constexpr uint32 INVALID_TRANSPORT_PROTOCOL_VALUE = static_cast<uint16>(IP_Protocol::Reserved) + 1;
     static constexpr uint32 INVALID_IP_PROTOCOL_VALUE        = static_cast<uint16>(EtherType::Unknown);
-    std::vector<StreamPacketData> packetsOffsets  = {};
-    uint16 ipProtocol                             = INVALID_IP_PROTOCOL_VALUE;
-    uint16 transportProtocol                      = INVALID_TRANSPORT_PROTOCOL_VALUE;
-    uint64 totalPayload                           = 0;
-    std::string name                              = {};
+    std::vector<StreamPacketData> packetsOffsets             = {};
+    uint16 ipProtocol                                        = INVALID_IP_PROTOCOL_VALUE;
+    uint16 transportProtocol                                 = INVALID_TRANSPORT_PROTOCOL_VALUE;
+    uint64 totalPayload                                      = 0;
+    std::string name                                         = {};
+    bool isFinished                                          = false;
+    uint8 finFlagsFound                                      = 0;
 
-	std::string_view GetIpProtocolName() const
-	{
+    std::string_view GetIpProtocolName() const
+    {
         if (ipProtocol == INVALID_IP_PROTOCOL_VALUE)
             return "null";
-        return EtherTypeNames.at(static_cast <EtherType>(ipProtocol));
-	}
+        return EtherTypeNames.at(static_cast<EtherType>(ipProtocol));
+    }
 
-	std::string_view GetTransportProtocolName() const
+    std::string_view GetTransportProtocolName() const
     {
         if (transportProtocol == INVALID_TRANSPORT_PROTOCOL_VALUE)
             return "null";
@@ -1965,10 +1977,10 @@ struct StreamData
 
 class StreamManager
 {
-    std::unordered_map<std::string, StreamData> streams;
+    std::unordered_map<std::string, std::deque<StreamData>> streams;
     std::vector<StreamData> finalStreams;
 
-	//TODO: maybe sync functions with those used in Panels?
+    // TODO: maybe sync functions with those used in Panels?
     void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
     void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet);
 
@@ -1986,7 +1998,7 @@ class StreamManager
         return finalStreams.empty();
     }
 
-	decltype(finalStreams.size()) size() const noexcept
+    decltype(finalStreams.size()) size() const noexcept
     {
         return finalStreams.size();
     }
@@ -2000,14 +2012,12 @@ class StreamManager
         return finalStreams.end();
     }
 
-	const StreamData* operator[](uint32 index) const
-	{
+    const StreamData* operator[](uint32 index) const
+    {
         if (index < finalStreams.size())
             return &finalStreams.at(index);
         return nullptr;
-	}
-
-
+    }
 };
 
 } // namespace GView::Type::PCAP

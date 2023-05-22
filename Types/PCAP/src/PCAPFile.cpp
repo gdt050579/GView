@@ -62,7 +62,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
     LocalString<128> tmp;
     NumericFormatter n;
 
-    item.SetExpandable(false);
+    item.SetExpandable(true);
     item.SetData(realIndex);
 
     item.SetText(tmp.Format("%s", n.ToString(realIndex, NUMERIC_FORMAT).data()));
