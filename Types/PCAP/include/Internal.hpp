@@ -2,6 +2,7 @@
 
 #include <GView.hpp>
 #include <deque>
+#include <unordered_map>
 
 // PCAPNG -> https://tools.ietf.org/id/draft-gharris-opsawg-pcap-00.html
 // PCAP   -> https://wiki.wireshark.org/Development/LibpcapFileFormat
