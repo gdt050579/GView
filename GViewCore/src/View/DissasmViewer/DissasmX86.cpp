@@ -11,8 +11,8 @@ using namespace AppCUI::Input;
 
 constexpr size_t DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
 
-//TODO consider inline?
-AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine,uint32* index = nullptr)
+// TODO consider inline?
+AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
 {
     assert(!values.empty());
     uint32 left  = 0;
@@ -200,7 +200,9 @@ inline bool populate_offsets_vector(
     cs_insn* insn     = cs_malloc(handle);
     size_t lastOffset = offsets[0].offset;
 
-    constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
+    constexpr uint32 callOP              = 1819042147u; //*(uint32*) "call";
+    constexpr uint32 addOP               = 6579297u;    //*((uint32*) "add");
+    constexpr uint32 addInstructionsStop = 30;          // TODO: update this -> for now it stops, later will fold
 
     // TODO: change method!
     uint8 mapper[(int) 'g'] = { 0 };
@@ -244,16 +246,25 @@ inline bool populate_offsets_vector(
             if (!cs_disasm_iter(handle, &data, &size, &address, insn))
                 break;
 
-            if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP) && insn->op_str[0] == '0' && insn->op_str[1] == 'x')
+            if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP) && insn->op_str[0] == '0' /* && insn->op_str[1] == 'x'*/)
             {
                 uint64 computedValue = 0;
-                char* ptr            = &insn->op_str[2];
-                // TODO: also check not to overflow access!
-                while (*ptr && *ptr != ' ' && *ptr != ',')
+                if (insn->op_str[1] == 'x')
                 {
-                    computedValue = computedValue * 16 + mapper[*ptr];
-                    ptr++;
+                    // uint64 computedValue = 0;
+                    char* ptr = &insn->op_str[2];
+                    // TODO: also check not to overflow access!
+                    while (*ptr && *ptr != ' ' && *ptr != ',')
+                    {
+                        computedValue = computedValue * 16 + mapper[*ptr];
+                        ptr++;
+                    }
                 }
+                else if (insn->op_str[1] == '\0')
+                {
+                    computedValue = zoneDetails.startingZonePoint;
+                }
+
                 if (computedValue < minimalValue && computedValue >= zoneDetails.startingZonePoint)
                 {
                     minimalValue = computedValue;
@@ -291,6 +302,9 @@ inline bool populate_offsets_vector(
     offsets.clear();
     offsets.push_back({ minimalValue, 0 });
 
+    constexpr uint32 alOpStr         = 7102752u; //* (uint32*) " al";
+    uint32 continuousAddInstructions = 0;
+
     while (cs_disasm_iter(handle, &data, &size, &address, insn))
     {
         lineIndex++;
@@ -300,8 +314,20 @@ inline bool populate_offsets_vector(
             const size_t adjustedSize = address + zoneDetails.startingZonePoint;
             offsets.push_back({ adjustedSize, lineIndex });
         }
+
+        if (*(uint32*) insn->mnemonic == addOP && insn->op_str[0] == 'b' && *(uint32*) &insn->op_str[15] == alOpStr)
+        {
+            if (++continuousAddInstructions == addInstructionsStop)
+            {
+                lineIndex -= continuousAddInstructions;
+                break;
+            }
+        }
+        else
+            continuousAddInstructions = 0;
     }
     totalLines = lineIndex;
+    cs_free(insn, 1);
     cs_close(&handle);
     return true;
 }
@@ -310,7 +336,7 @@ inline cs_insn* GetCurrentInstructionByLine(
       uint32 lineToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli = nullptr)
 {
     uint32 lineDifferences = 1;
-	//TODO: first or be transformed into an abs ?
+    // TODO: first or be transformed into an abs ?
     if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineToReach >= zone->offsetCacheMaxLine)
     {
         // TODO: can be inlined as function
@@ -364,7 +390,7 @@ inline cs_insn* GetCurrentInstructionByLine(
 
     while (lineDifferences > 0)
     {
-        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) & zone->asmSize, &zone->asmAddress, insn))
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn))
         {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -417,7 +443,7 @@ inline cs_insn* GetCurrentInstructionByOffset(
         offsetToReach -= zone->cachedCodeOffsets[0].offset;
     while (zone->asmAddress <= offsetToReach)
     {
-        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) & zone->asmSize, &zone->asmAddress, insn))
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn))
         {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -782,7 +808,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
     }
     cs_free(insn, 1);
 
-	jumps_holder.insert(Cursor.saveState());
+    jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = 0;
     Cursor.startViewLine = diffLines + zone->startLineIndex;
 }
