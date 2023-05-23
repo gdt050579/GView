@@ -684,7 +684,10 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         }
     }
 
-    // TODO: refactor this in the future
+    // cursorLine == zone->startLineIndex - currentLine
+    //  TODO: refactor this in the future
+    /*const uint32 cursorLine = Cursor.lineInView + Cursor.startViewLine;
+    const bool isCursorLine = cursorLine == dli.screenLineToDraw;*/
     DissasmAddColorsToInstruction(*insn, chars, config, Layout, asmData, zone->cachedCodeOffsets[0].offset, mappingPtr);
 
     cs_free(insn, 1);
@@ -768,6 +771,9 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     // cs_close(&handle);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
+
+    /*if (isCursorLine)
+        chars.SetColor(Layout.startingTextLineOffset, chars.Len(), config.Colors.HighlightCursorLine);*/
 
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
 

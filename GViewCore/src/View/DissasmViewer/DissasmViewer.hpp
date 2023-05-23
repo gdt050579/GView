@@ -27,6 +27,7 @@ namespace View
             {
                 ColorPair Normal;
                 ColorPair Highlight;
+                ColorPair HighlightCursorLine;
                 ColorPair Inactive;
                 ColorPair Cursor;
                 ColorPair Line;
