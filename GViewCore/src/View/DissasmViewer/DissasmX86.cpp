@@ -10,6 +10,12 @@ using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
 constexpr size_t DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
+constexpr uint32 callOP                            = 1819042147u; //*(uint32*) "call";
+constexpr uint32 addOP                             = 6579297u;    //*((uint32*) "add");
+
+const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15 };
 
 // TODO consider inline?
 AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
@@ -108,7 +114,13 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg,
 
 // TODO: to be moved inside plugin for some sort of API for token<->color
 inline void DissasmAddColorsToInstruction(
-      const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout, AsmData& data, uint64 addressPadding = 0)
+      const cs_insn& insn,
+      CharacterBuffer& cb,
+      Config& cfg,
+      const LayoutDissasm& layout,
+      AsmData& data,
+      uint64 addressPadding                = 0,
+      const MemoryMappingEntry* mappingPtr = nullptr)
 {
     cb.Clear();
 
@@ -124,7 +136,7 @@ inline void DissasmAddColorsToInstruction(
     cb.Add(string, color);
 
     const std::string_view op_str = insn.op_str;
-    if (!op_str.empty())
+    if (!op_str.empty() && !mappingPtr)
     {
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
@@ -178,6 +190,12 @@ inline void DissasmAddColorsToInstruction(
             checkValidAndAdd(buffer.GetText());
         }
     }
+    else if (mappingPtr)
+    {
+        string.SetFormat("%s", mappingPtr->name.data());
+        const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? cfg.Colors.AsmLocationInstruction : cfg.Colors.AsmFunctionColor;
+        cb.Add(string, mapColor);
+    }
 
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
 }
@@ -200,17 +218,7 @@ inline bool populate_offsets_vector(
     cs_insn* insn     = cs_malloc(handle);
     size_t lastOffset = offsets[0].offset;
 
-    constexpr uint32 callOP              = 1819042147u; //*(uint32*) "call";
-    constexpr uint32 addOP               = 6579297u;    //*((uint32*) "add");
-    constexpr uint32 addInstructionsStop = 30;          // TODO: update this -> for now it stops, later will fold
-
-    // TODO: change method!
-    uint8 mapper[(int) 'g'] = { 0 };
-    for (int i = '0'; i <= '9'; i++)
-        mapper[i] = i - '0';
-    uint8 value = 10;
-    for (int i = 'a'; i <= 'f'; i++)
-        mapper[i] = value++;
+    constexpr uint32 addInstructionsStop = 30; // TODO: update this -> for now it stops, later will fold
 
     std::list<uint64> finalOffsets;
 
@@ -256,7 +264,7 @@ inline bool populate_offsets_vector(
                     // TODO: also check not to overflow access!
                     while (*ptr && *ptr != ' ' && *ptr != ',')
                     {
-                        computedValue = computedValue * 16 + mapper[*ptr];
+                        computedValue = computedValue * 16 + HEX_MAPPER[*ptr];
                         ptr++;
                     }
                 }
@@ -329,6 +337,63 @@ inline bool populate_offsets_vector(
     totalLines = lineIndex;
     cs_free(insn, 1);
     cs_close(&handle);
+    return true;
+}
+
+// TODO: maybe add also minimum number?
+bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
+{
+    char* ptr   = insn.op_str;
+    char* start = nullptr;
+    uint32 size = 0;
+
+    while (ptr && *ptr != '\0')
+    {
+        if (!start)
+        {
+            if (ptr && *ptr == '0')
+            {
+                ptr++;
+                if (!ptr || *ptr != 'x')
+                    return false;
+                ptr++;
+                start = ptr;
+                continue;
+            }
+        }
+        else
+        {
+            if (*ptr >= '0' && *ptr <= '9' || *ptr >= 'a' && *ptr <= 'f')
+            {
+                size++;
+            }
+            else
+            {
+                if (size < maxSize - 2)
+                    return false;
+                break;
+            }
+        }
+        ptr++;
+    }
+
+    if (maxSize < size)
+    {
+        const uint32 diff = size - static_cast<uint32>(maxSize);
+        size -= diff;
+        start += diff;
+    }
+
+    if (!start || !ptr || size < 2)
+        return false;
+
+    const auto sv        = std::string_view(start, size);
+    const auto converted = Number::ToUInt64(sv, NumberParseFlags::Base16);
+    if (!converted.has_value())
+        return false;
+
+    value = converted.value();
+
     return true;
 }
 
@@ -601,7 +666,26 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (!insn)
         return false;
 
-    DissasmAddColorsToInstruction(*insn, chars, codePage, config, Layout, asmData, zone->cachedCodeOffsets[0].offset);
+    // TODO: improve efficiency by filtering instructions
+    const MemoryMappingEntry* mappingPtr = nullptr;
+    const uint64 finalIndex =
+          zone->asmAddress + settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
+    uint64 hexVal = 0;
+    if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
+    {
+        const auto& mapping = settings->memoryMappings.find(hexVal);
+        if (mapping != settings->memoryMappings.end())
+            mappingPtr = &mapping->second;
+        else
+        {
+            const auto& mapping2 = settings->memoryMappings.find(hexVal + finalIndex);
+            if (mapping2 != settings->memoryMappings.end())
+                mappingPtr = &mapping2->second;
+        }
+    }
+
+    // TODO: refactor this in the future
+    DissasmAddColorsToInstruction(*insn, chars, config, Layout, asmData, zone->cachedCodeOffsets[0].offset, mappingPtr);
 
     cs_free(insn, 1);
     // cs_close(&handle);

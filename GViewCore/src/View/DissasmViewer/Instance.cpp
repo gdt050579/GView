@@ -72,7 +72,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->Layout.structuresInitialCollapsedState = true;
     this->Layout.totalLinesSize                  = 0;
 
-	this->CurrentSelection = {};
+    this->CurrentSelection = {};
 
     this->codePage = CodePageID::DOS_437;
 
@@ -1173,7 +1173,7 @@ bool Instance::ShowGoToDialog()
 {
     if (settings->parseZones.empty())
         return true;
-    const uint32 totalLines        = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
+    const uint32 totalLines  = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
     const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
     GoToDialog dlg(currentLine, totalLines);
     if (dlg.Show() == Dialogs::Result::Ok)
@@ -1212,6 +1212,15 @@ void Instance::OnStart()
 
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
+
+    uint32 maxSize = 0;
+    while (settings->maxLocationMemoryMappingSize > 0)
+    {
+        maxSize++;
+        settings->maxLocationMemoryMappingSize /= 10;
+    }
+    // TODO: do a research! this is an imperative setting
+    settings->maxLocationMemoryMappingSize = maxSize + 1;
 }
 
 void Instance::RecomputeDissasmLayout()

@@ -1475,6 +1475,7 @@ namespace View
              * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
+            void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<BufferViewer::OffsetTranslateInterface> cbk);
 
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);

@@ -166,6 +166,9 @@ extern "C"
             }
         }
 
+        // translation
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
+
         uint32 typeImageDOSHeader = settings.AddType(
               "ImageDOSHeader",
               R"(UInt16 e_magic;
@@ -197,6 +200,11 @@ UInt16 e_res[4];)");
         // UInt32 e_lfanew;)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
+
+        for (const auto& [RVA, dllIndex, Name] : pe->impFunc)
+        {
+            settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        }
 
         win->CreateViewer(settings);
     }

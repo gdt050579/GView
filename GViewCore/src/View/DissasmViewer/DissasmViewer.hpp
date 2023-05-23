@@ -173,11 +173,19 @@ namespace View
             void RemoveComment(uint32 line);
         };
 
-		struct MemoryMappingEntry
-		{
+        struct MemoryMappingEntry
+        {
             string_view name;
             MemoryMappingType type;
-		};
+        };
+
+		//TODO: improve to be more generic!
+        enum class DissasmPEConversionType : uint8
+        {
+            FileOffset = 0,
+            RVA        = 1,
+            VA         = 2
+        };
 
         struct SettingsData
         {
@@ -188,12 +196,14 @@ namespace View
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
+			uint64 maxLocationMemoryMappingSize;
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
             std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
             std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
+            Reference<BufferViewer::OffsetTranslateInterface> offsetTranslateCallback;
             SettingsData();
         };
 
