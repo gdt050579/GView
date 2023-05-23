@@ -1,6 +1,8 @@
 #pragma once
 
 #include <GView.hpp>
+#include <deque>
+#include <unordered_map>
 
 // PCAPNG -> https://tools.ietf.org/id/draft-gharris-opsawg-pcap-00.html
 // PCAP   -> https://wiki.wireshark.org/Development/LibpcapFileFormat
@@ -607,8 +609,11 @@ enum class EtherType : uint16 // https://www.liveaction.com/resources/glossary/e
     BBNVITALLANBridgeCacheWakeup                 = 122,
 };
 
-#define CASE_RETURN(x, y)                                                                                                                  \
-    case x:                                                                                                                                \
+// TODO: extend NULL types
+constexpr uint32 NULL_FAMILY_IP = 2;
+
+#define CASE_RETURN(x, y)                                                                                                                                      \
+    case x:                                                                                                                                                    \
         return y;
 
 static EtherType GetEtherType(uint16 value)
@@ -1002,6 +1007,10 @@ struct Package_EthernetHeader
     uint8 etherShost[6]; // source host
     uint16 etherType;    // 2 bytes, Protocol type, type of Packet: ARP, DOD(IPv4), IPv6,..
                          // http://www.networksorcery.com/enp/protocol/802/ethertypes.htm
+};
+struct Package_NullHeader
+{
+    uint32 family_ip;
 };
 #pragma pack(pop)
 
@@ -1672,8 +1681,8 @@ static void Swap(TCPHeader& tcp)
     tcp.dPort = AppCUI::Endian::BigToNative(tcp.dPort);
     tcp.seq   = AppCUI::Endian::BigToNative(tcp.seq);
     tcp.ack   = AppCUI::Endian::BigToNative(tcp.ack);
-    *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)) = AppCUI::Endian::BigToNative(
-          *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)));
+    *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)) =
+          AppCUI::Endian::BigToNative(*(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)));
     tcp.flags = AppCUI::Endian::BigToNative(tcp.flags);
     tcp.win   = AppCUI::Endian::BigToNative(tcp.win);
     tcp.sum   = AppCUI::Endian::BigToNative(tcp.sum);
@@ -1923,4 +1932,137 @@ static void Swap(ICMPHeader_13_14& icmp13_14)
     icmp13_14.receiveTimestamp   = AppCUI::Endian::BigToNative(icmp13_14.receiveTimestamp);
     icmp13_14.transmitTimestamp  = AppCUI::Endian::BigToNative(icmp13_14.transmitTimestamp);
 }
+
+struct StreamPayload
+{
+    uint8* location;
+    uint32 size;
+};
+
+// TODO: for the future maybe change structure for a more generic structure
+struct StreamTCPOrder
+{
+    uint32 packetIndex;
+    uint32 seqNumber;
+    uint32 ackNumber;
+    uint32 maxNumber; // between seqNumber and ackNumber
+};
+
+struct StreamPacketData
+{
+    const PacketHeader* header;
+    StreamPayload payload;
+    StreamTCPOrder order;
+
+    // TODO
+    bool operator<(const StreamPacketData& other) const
+    {
+        return order.packetIndex < other.order.packetIndex;
+    }
+
+    bool operator==(const StreamPacketData&) const
+    {
+        return true;
+    }
+};
+
+struct StreamPacketContext
+{
+    const PacketHeader* packet;
+    const void* ipHeader;
+    uint32 ipProto;
+};
+
+struct StreamTcpLayer
+{
+    // TODO: delete it
+    uint8* name;
+    StreamPayload payload;
+};
+
+// TODO: for the future maybe change structure for a more generic structure
+struct StreamData
+{
+    static constexpr uint32 INVALID_TRANSPORT_PROTOCOL_VALUE = static_cast<uint16>(IP_Protocol::Reserved) + 1;
+    static constexpr uint32 INVALID_IP_PROTOCOL_VALUE        = static_cast<uint16>(EtherType::Unknown);
+    std::vector<StreamPacketData> packetsOffsets             = {};
+    uint16 ipProtocol                                        = INVALID_IP_PROTOCOL_VALUE;
+    uint16 transportProtocol                                 = INVALID_TRANSPORT_PROTOCOL_VALUE;
+    uint64 totalPayload                                      = 0;
+    std::string name                                         = {};
+    bool isFinished                                          = false;
+    uint8 finFlagsFound                                      = 0;
+    std::string appLayerName                                 = "";
+
+    StreamPayload connPayload                    = {};
+    std::deque<StreamTcpLayer> applicationLayers = {};
+
+    std::string_view GetIpProtocolName() const
+    {
+        if (ipProtocol == INVALID_IP_PROTOCOL_VALUE)
+            return "null";
+        return EtherTypeNames.at(static_cast<EtherType>(ipProtocol));
+    }
+
+    std::string_view GetTransportProtocolName() const
+    {
+        if (transportProtocol == INVALID_TRANSPORT_PROTOCOL_VALUE)
+            return "null";
+        return IP_ProtocolNames.at(static_cast<IP_Protocol>(transportProtocol));
+    }
+
+    void sortPackets()
+    {
+        std::sort(packetsOffsets.begin(), packetsOffsets.end());
+    }
+
+    void computeFinalPayload();
+    void tryParsePayload();
+};
+
+class StreamManager
+{
+    std::unordered_map<std::string, std::deque<StreamData>> streams;
+    std::vector<StreamData> finalStreams;
+
+    // TODO: maybe sync functions with those used in Panels?
+    void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
+    void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet);
+
+    void Add_IPv4Header(const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet);
+    void Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet);
+
+    void Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet);
+
+  public:
+    void AddPacket(const PacketHeader* header, LinkType network);
+    void FinishedAdding();
+
+    bool empty() const noexcept
+    {
+        return finalStreams.empty();
+    }
+
+    decltype(finalStreams.size()) size() const noexcept
+    {
+        return finalStreams.size();
+    }
+
+    decltype(finalStreams)::iterator begin() noexcept
+    {
+        return finalStreams.begin();
+    }
+    decltype(finalStreams)::iterator end() noexcept
+    {
+        return finalStreams.end();
+    }
+
+    const StreamData* operator[](uint32 index) const
+    {
+        if (index < finalStreams.size())
+            return &finalStreams.at(index);
+        return nullptr;
+    }
+};
+
 } // namespace GView::Type::PCAP
