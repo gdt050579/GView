@@ -178,10 +178,11 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
       AppCUI::Utils::BufferView buf,
       GView::Type::Matcher::TextParser& textParser,
       uint64 extensionHash,
-      std::string_view typeName)
+      std::string_view typeName,
+      std::u16string& newName)
 {
     GView::Type::Plugin* plg = nullptr;
-    // search for the pluggin
+    // search for the plugin
     auto sz = typeName.size();
     for (auto& pType : this->typePlugins)
     {
@@ -203,7 +204,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
         temp.Add(typeName);
         AppCUI::Dialogs::MessageBox::ShowError("Error", temp);
         // default to selection mode
-        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash);
+        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
     }
     // check if the parser accepts it
     if (plg->IsOfType(buf, textParser) == false)
@@ -213,7 +214,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
         temp.Add(typeName);
         AppCUI::Dialogs::MessageBox::ShowError("Error", temp);
         // default to selection mode
-        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash);
+        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
     }
     // all good return the type plugin
     return plg;
@@ -224,15 +225,22 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
       uint64 dataSize,
       AppCUI::Utils::BufferView buf,
       GView::Type::Matcher::TextParser& textParser,
-      uint64 extensionHash)
+      uint64 extensionHash,
+      std::u16string& newName)
 {
     SelectTypeDialog dlg(name, path, dataSize, this->typePlugins, buf, textParser, extensionHash);
     if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        newName = dlg.GetFilename();
         return dlg.GetSelectedPlugin(&this->defaultPlugin);
+    }
     return nullptr;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
-      const string_view& extension, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
+      const string_view& extension,
+      AppCUI::Utils::BufferView buf,
+      GView::Type::Matcher::TextParser& textParser,
+      uint64 extensionHash)
 {
     // check for extension first
     if (extensionHash != 0)
@@ -266,7 +274,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
       uint64 dataSize,
       AppCUI::Utils::BufferView buf,
       GView::Type::Matcher::TextParser& textParser,
-      uint64 extensionHash)
+      uint64 extensionHash,
+      std::u16string& newName)
 {
     auto plg   = &this->defaultPlugin;
     auto count = 0;
@@ -281,7 +290,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
                     count++;
                     plg = &pType;
                     if (count > 1) // at least two options
-                        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash);
+                        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
                 }
             }
         }
@@ -297,7 +306,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
                 count++;
                 plg = &pType;
                 if (count > 1) // at least two options
-                    return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash);
+                    return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
             }
         }
     }
@@ -311,7 +320,8 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
       GView::Utils::DataCache& cache,
       uint64 extensionHash,
       OpenMethod method,
-      std::string_view typeName)
+      std::string_view typeName,
+      std::u16string& newName)
 {
     auto buf    = cache.Get(0, 0x8800, false);
     auto bomLen = 0U;
@@ -335,11 +345,11 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
     case OpenMethod::FirstMatch:
         return IdentifyTypePlugin_FirstMatch(extension, buf, tp, extensionHash);
     case OpenMethod::BestMatch:
-        return IdentifyTypePlugin_BestMatch(name, path, sz, buf, tp, extensionHash);
+        return IdentifyTypePlugin_BestMatch(name, path, sz, buf, tp, extensionHash, newName);
     case OpenMethod::Select:
-        return IdentifyTypePlugin_Select(name, path, sz, buf, tp, extensionHash);
+        return IdentifyTypePlugin_Select(name, path, sz, buf, tp, extensionHash, newName);
     case OpenMethod::ForceType:
-        return IdentifyTypePlugin_WithSelectedType(name, path, sz, buf, tp, extensionHash, typeName);
+        return IdentifyTypePlugin_WithSelectedType(name, path, sz, buf, tp, extensionHash, typeName, newName);
     }
 
     // for other methods --> return the default plugin
@@ -382,14 +392,15 @@ bool Instance::Add(
     auto extHash =
           pos != u16string_view::npos ? GView::Type::Plugin::ExtensionToHash(temp.ToStringView().substr(pos)) : GView::Type::Plugin::ExtensionToHash("");
 
-    auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName);
+    std::u16string newName;
+    auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName, newName);
     CHECK(plg, false, "Unable to identify a valid plugin open canceled !");
 
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
     CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
-    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this, plg);
+    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, newName, path, PID), this, plg);
 
     // instantiate window
     while (true)

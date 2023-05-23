@@ -128,7 +128,7 @@ SelectTypeDialog::SelectTypeDialog(
     auto lbPath    = Factory::Label::Create(this, "&Path", "x:1,y:5,w:10");
     auto lbView    = Factory::Label::Create(this, "Pre&view", "x:1,y:7,w:10");
     cbType         = Factory::ComboBox::Create(this, "l:12,t:1,r:1");
-    auto txName    = Factory::TextField::Create(this, name, "x:12,y:3,w:33", TextFieldFlags::Readonly);
+    txName    = Factory::TextField::Create(this, name, "x:12,y:3,w:33", TextFieldFlags::None);
     auto txSize    = Factory::TextField::Create(this, num.ToString(dataSize, numFormat), "l:56,t:3,r:1", TextFieldFlags::Readonly);
     auto txPath    = Factory::TextField::Create(this, path, "l:12,t:5,r:1", TextFieldFlags::Readonly);
     cbView         = Factory::ComboBox::Create(this, "l:12,t:7,r:1");
