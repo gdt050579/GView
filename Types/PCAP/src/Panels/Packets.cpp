@@ -25,7 +25,12 @@ Packets::Packets(Reference<PCAPFile> _pcap, Reference<GView::View::WindowInterfa
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { "n:#,a:r,w:6", "n:Timestamp,a:r,w:20", "n:Seconds,a:r,w:16", "n:Microseconds,a:r,w:16", "n:Octets Saved,a:r,w:16", "n:Actual Length,a:r,w:16" },
+          { "n:#,a:r,w:6",
+            "n:Timestamp,a:r,w:20",
+            "n:Seconds,a:r,w:16",
+            "n:Microseconds,a:r,w:16",
+            "n:Octets Saved,a:r,w:16",
+            "n:Actual Length,a:r,w:16" },
           ListViewFlags::None);
 
     Update();
