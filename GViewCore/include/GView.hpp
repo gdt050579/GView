@@ -1436,6 +1436,12 @@ namespace View
             Utf32Z
         };
 
+		enum class MemoryMappingType
+		{
+		    FunctionMapping,
+			TextMapping
+		};
+
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
         struct CORE_EXPORT Settings
@@ -1456,7 +1462,7 @@ namespace View
                   DissasmArchitecture architecture,
                   DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
-            void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**

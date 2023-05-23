@@ -173,6 +173,12 @@ namespace View
             void RemoveComment(uint32 line);
         };
 
+		struct MemoryMappingEntry
+		{
+            string_view name;
+            MemoryMappingType type;
+		};
+
         struct SettingsData
         {
             String name;
@@ -182,7 +188,7 @@ namespace View
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-            std::unordered_map<uint64, string_view> memoryMappings; // memory locations to functions
+            std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file

@@ -21,9 +21,9 @@ void Settings::AddDisassemblyZone(
     INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang, architecture };
 }
 
-void Settings::AddMemoryMapping(uint64 address, std::string_view name)
+void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)
 {
-    INTERNAL_SETTINGS->memoryMappings[address] = name;
+    INTERNAL_SETTINGS->memoryMappings[address] = { name, mappingType };
 }
 
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
