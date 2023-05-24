@@ -274,8 +274,10 @@ void StreamData::tryParsePayload()
                 }
                 else if (memcmp(buffer + bufferSize - httpPattern.size() - 1, httpPattern.data(), httpPattern.size()) == 0)
                 {
-                    identified = true;
-                    layer.name = (uint8*) strdup((char*) buffer);
+                    identified          = true;
+                    layer.name          = (uint8*) strdup((char*) buffer);
+                    std::string_view sv = { (char*) buffer, bufferSize - httpPattern.size() - 2 };
+                    AddDataToSummary(sv);
                 }
             }
             bufferSize         = 0;
@@ -295,7 +297,7 @@ void StreamData::tryParsePayload()
         startPtr++;
     }
 
-	if (startPtr >= endPtr)
+    if (startPtr >= endPtr)
         appLayerName = "HTTP";
 }
 

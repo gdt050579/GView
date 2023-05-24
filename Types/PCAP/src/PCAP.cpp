@@ -78,8 +78,15 @@ extern "C"
 
         settings.SetName("StreamView");
         settings.SetIcon(PCAP_ICON);
-        settings.SetColumns(
-              { "n:&ID,a:l,w:6", "n:&Connection,a:l,w:60", "n:&IpProt.,a:l,w:12", "n:&Transport,a:l,w:12", "n:&Payload,a:l,w:12", "n:&AppLayer,a:l,w:12" });
+        settings.SetColumns({
+              "n:&ID,a:l,w:6",
+              "n:&Connection,a:l,w:50",
+              "n:&IpProt.,a:c,w:8",
+              "n:&Transport,a:c,w:12",
+              "n:&Payload,a:c,w:9",
+              "n:&AppLayer,a:c,w:10",
+              "n:&Summary,a:c,w:50",
+        });
 
         settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
         settings.SetOpenItemCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
