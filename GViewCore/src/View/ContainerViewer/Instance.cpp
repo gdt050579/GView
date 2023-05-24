@@ -128,9 +128,15 @@ void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
     {
         UpdatePathForItem(item);
 
-        std::u16string newPath(this->obj->GetPath());
-        newPath.append(u".").append(this->currentPath);
-        this->settings->openItemInterface->OnOpenItem(newPath, item);
+        // TODO: investigate this:
+        /*
+
+            std::u16string newPath(this->obj->GetPath());
+            newPath.append(u".").append(this->currentPath);
+            this->settings->openItemInterface->OnOpenItem(newPath, item);
+        */
+
+        this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
     }
 }
 void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& item)
