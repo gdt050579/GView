@@ -374,6 +374,91 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
+void DissasmCharacterBufferPool::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails)
+{
+    if (pool.empty())
+        return;
+    constexpr uint32 MAX_LINE_DIFF = 10;
+
+    const uint32 currentLine = pool.back().currentLine;
+    auto it                  = pool.rbegin() + 1; // ignoring last element
+    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
+    for (; it != pool.rend() && pushesRemaining > 0; ++it)
+    {
+        if (currentLine - it->currentLine < MAX_LINE_DIFF && it->isPush)
+        {
+            // TODO: improve performance, remove string concatenation as much as possible
+            auto param           = std::string(functionDetails->params[pushIndex].name);
+            const auto commentIt = it->comments->find(it->currentLine);
+            if (commentIt != it->comments->end())
+            {
+                commentIt->second = param + " " + commentIt->second;
+            }
+            else
+            {
+                it->comments->insert({ it->currentLine, param });
+                it->needCommentUpdate = true;
+            }
+
+            pushesRemaining--;
+            pushIndex++;
+        }
+    }
+}
+
+DissasmCharacterBufferPool::PoolBuffer& DissasmCharacterBufferPool::GetPoolBuffer(uint32 currentLine)
+{
+    if (currentSize >= pool.size())
+    {
+        PoolBuffer buffer{};
+        buffer.lineToDrawOnScreen = currentLine;
+        buffer.chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+        pool.push_back(std::move(buffer));
+        return pool.back();
+    }
+
+    pool[currentSize] = {};
+    return pool[currentSize++];
+}
+
+void DissasmCharacterBufferPool::Draw(Renderer& renderer, Config& config)
+{
+    for (auto& buffer : pool)
+    {
+        if (buffer.needCommentUpdate)
+        {
+            const auto bufferSize = buffer.chars.Len();
+            auto dataStart        = buffer.chars.GetBuffer();
+            const auto dataEnd    = buffer.chars.GetBuffer() + bufferSize;
+
+            while (dataStart != dataEnd)
+            {
+                if (dataStart->Code == '/')
+                {
+                    assert(false);
+                    break;
+                }
+                dataStart++;
+            }
+            if (dataStart == dataEnd) // no comment
+            {
+                const auto it = buffer.comments->find(buffer.currentLine);
+                assert(it != buffer.comments->end());
+                constexpr char tmp[] = "    //";
+                buffer.chars.Add(tmp, config.Colors.AsmComment);
+                buffer.chars.Add(it->second, config.Colors.AsmComment);
+            }
+        }
+
+        const auto bufferToDraw = CharacterView{ buffer.chars.GetBuffer(), buffer.chars.Len() };
+
+        // HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
+
+        renderer.WriteSingleLineCharacterBuffer(0, buffer.lineToDrawOnScreen, bufferToDraw, false);
+    }
+    pool.clear();
+}
+
 inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
@@ -1183,6 +1268,8 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 
+    asmData.bufferPool.Draw(renderer, config);
+
     if (!MyLine.buttons.empty())
     {
         for (const auto& btn : MyLine.buttons)
@@ -1245,15 +1332,15 @@ void Instance::OnStart()
 
     GView::Hashes::CRC16 crc16{};
     uint16 hashVal = 0;
-    // for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++)
-    //{
-    //     if (!crc16.Init() || !crc16.Update(KNOWN_FUNCTIONS[i].functionName) || !crc16.Final(hashVal))
-    //     {
-    //         // show err
-    //         return;
-    //     }
-    //     asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
-    // }
+    for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++)
+    {
+        if (!crc16.Init() || !crc16.Update(KNOWN_FUNCTIONS[i].functionName) || !crc16.Final(hashVal))
+        {
+            // show err
+            return;
+        }
+        asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
+    }
 }
 
 void Instance::RecomputeDissasmLayout()

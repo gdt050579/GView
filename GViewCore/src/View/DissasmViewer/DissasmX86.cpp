@@ -610,6 +610,16 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     }
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
+    auto& poolBuffer         = asmData.bufferPool.GetPoolBuffer(currentLine);
+    poolBuffer.comments      = &zone->comments;
+    poolBuffer.currentLine   = currentLine;
+    auto& chars              = poolBuffer.chars;
+
+    chars.Clear();
+
+    dli.chNameAndSize = chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chText        = dli.chNameAndSize;
+
     // TODO: reenable caching
     /*
     //if (zone->isInit && lineInView >= zone->startingCacheLineIndex &&
@@ -667,11 +677,23 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (!insn)
         return false;
 
+    bool isCall               = false;
+    const std::string_view sv = insn->mnemonic;
+    if (sv.size() == 4)
+    {
+        if (sv == "push")
+            poolBuffer.isPush = true;
+        else if (sv == "call")
+            isCall = true;
+    }
+
     // TODO: improve efficiency by filtering instructions
     const MemoryMappingEntry* mappingPtr = nullptr;
     const uint64 finalIndex =
           zone->asmAddress + settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
     uint64 hexVal = 0;
+
+    // TODO: once found an offset store it to not redo the same computation again
     if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
     {
         const auto& mapping = settings->memoryMappings.find(hexVal);
@@ -682,6 +704,37 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
             const auto& mapping2 = settings->memoryMappings.find(hexVal + finalIndex);
             if (mapping2 != settings->memoryMappings.end())
                 mappingPtr = &mapping2->second;
+        }
+
+        if (mappingPtr)
+        {
+            if (mappingPtr->type == MemoryMappingType::FunctionMapping)
+            {
+                GView::Hashes::CRC16 crc16{};
+                uint16 hash    = 0;
+                const bool res = crc16.Init() && crc16.Update((const uint8*) mappingPtr->name.data(), mappingPtr->name.size()) && crc16.Final(hash);
+                if (res)
+                {
+                    const auto it = asmData.functions.find(hash);
+                    if (it != asmData.functions.end())
+                    {
+                        if (!asmData.CheckInstructionHasFlag(currentLine, AsmData::CallFlag))
+                        {
+                            /*const auto commentIt = zone->comments.find(currentLine);
+                            if (commentIt != zone->comments.end())
+                            {
+                                commentIt->second = mappingPtr->name + " " + commentIt->second;
+                            }
+                            else
+                            {
+                                zone->comments.insert({ currentLine, mappingPtr->name });
+                            }*/
+                            asmData.bufferPool.AnnounceCallInstruction(it->second);
+                            asmData.AddInstructionFlag(currentLine, AsmData::CallFlag);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -778,7 +831,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    // dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     return true;
 }
 
