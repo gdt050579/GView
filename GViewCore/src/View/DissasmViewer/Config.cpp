@@ -30,7 +30,7 @@ void Config::Initialize()
     this->Colors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
     this->Colors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
     this->Colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->Colors.AsmComment                    = ColorPair{ Color::DarkGreen, Color::DarkBlue };
+    this->Colors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
     this->Colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
 
     bool foundSettings = false;

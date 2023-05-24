@@ -752,8 +752,13 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     const auto it = zone->comments.find(currentLine);
     if (it != zone->comments.end())
     {
-        constexpr char tmp[] = "    //";
-        chars.Add(tmp, config.Colors.AsmComment);
+        auto len = 10;
+        if (chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+            len = DISSAM_MINIMUM_COMMENTS_X - chars.Len();
+        LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+        spaces.AddChars(' ', len);
+        spaces.AddChars(';', 1);
+        chars.Add(spaces, config.Colors.AsmComment);
         chars.Add(it->second, config.Colors.AsmComment);
     }
 

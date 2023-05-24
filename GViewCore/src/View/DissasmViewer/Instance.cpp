@@ -444,8 +444,14 @@ void DissasmCharacterBufferPool::Draw(Renderer& renderer, Config& config)
             {
                 const auto it = buffer.comments->find(buffer.currentLine);
                 assert(it != buffer.comments->end());
-                constexpr char tmp[] = "    //";
-                buffer.chars.Add(tmp, config.Colors.AsmComment);
+
+                auto len = 10;
+                if (buffer.chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+                    len = DISSAM_MINIMUM_COMMENTS_X - buffer.chars.Len();
+                LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+                spaces.AddChars(' ', len);
+                spaces.AddChars(';', 1);
+                buffer.chars.Add(spaces, config.Colors.AsmComment);
                 buffer.chars.Add(it->second, config.Colors.AsmComment);
             }
         }
