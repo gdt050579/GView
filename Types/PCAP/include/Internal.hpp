@@ -1981,7 +1981,7 @@ struct StreamTcpLayer
 };
 
 // TODO: for the future maybe change structure for a more generic structure
-constexpr uint32 PCAP_MAX_SUMMARY_SIZE = 45;
+constexpr uint32 PCAP_MAX_SUMMARY_SIZE = 100;
 struct StreamData
 {
     static constexpr uint32 INVALID_TRANSPORT_PROTOCOL_VALUE = static_cast<uint16>(IP_Protocol::Reserved) + 1;

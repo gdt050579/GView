@@ -44,14 +44,17 @@ bool PCAPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVi
 
     if (!path.empty())
     {
-        const std::string_view sv = std::string_view{ (char*) path.data(), path.size() };
-        const auto indexVal       = Number::ToInt32(sv);
-        if (indexVal.has_value())
+        uint32 value = 0;
+        auto data    = path.data();
+        auto dataEnd = data + path.size();
+        while (data < dataEnd)
         {
-            const auto& stream = streamManager[indexVal.value()];
-            totalItems         = stream->applicationLayers.size();
-            parent.SetData(indexVal.value());
+            value = value * 10 + (int) *data - '0';
+            data++;
         }
+        const auto& stream = streamManager[value];
+        totalItems         = stream->applicationLayers.size();
+        parent.SetData(value);
     }
 
     for (uint32 i = 0; i < totalItems; i++)
