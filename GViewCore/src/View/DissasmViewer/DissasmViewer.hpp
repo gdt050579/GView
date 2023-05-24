@@ -176,11 +176,11 @@ namespace View
 
         struct MemoryMappingEntry
         {
-            string_view name;
+            std::string name;
             MemoryMappingType type;
         };
 
-		//TODO: improve to be more generic!
+        // TODO: improve to be more generic!
         enum class DissasmPEConversionType : uint8
         {
             FileOffset = 0,
@@ -197,7 +197,7 @@ namespace View
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-			uint64 maxLocationMemoryMappingSize;
+            uint64 maxLocationMemoryMappingSize;
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
@@ -219,9 +219,22 @@ namespace View
             uint32 totalLinesSize;
         };
 
+        struct AsmFunctionDetails
+        {
+            struct NameType
+            {
+                const char* name;
+                const char* type;
+            };
+
+            const char* functionName;
+            std::vector<NameType> params;
+        };
+
         struct AsmData
         {
             std::map<uint32, ColorPair> instructionToColor;
+            std::unordered_map<uint32, const AsmFunctionDetails*> functions;
         };
 
         struct LinePosition

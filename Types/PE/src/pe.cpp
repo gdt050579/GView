@@ -201,8 +201,11 @@ UInt16 e_res[4];)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
 
+        //LocalString<128> processedName;
+
         for (const auto& [RVA, dllIndex, Name] : pe->impFunc)
         {
+            //processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
             settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
         }
 

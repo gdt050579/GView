@@ -23,7 +23,7 @@ void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zone
 
 void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)
 {
-    INTERNAL_SETTINGS->memoryMappings[address] = { name, mappingType };
+    INTERNAL_SETTINGS->memoryMappings.insert({ address, { name.data(), mappingType } });
     if (address > INTERNAL_SETTINGS->maxLocationMemoryMappingSize)
         INTERNAL_SETTINGS->maxLocationMemoryMappingSize = address;
 }
@@ -78,9 +78,9 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, TypeI
 
 SettingsData::SettingsData()
 {
-    defaultLanguage          = DisassemblyLanguage::Default;
-    availableID              = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
-    offsetTranslateCallback  = nullptr;
+    defaultLanguage              = DisassemblyLanguage::Default;
+    availableID                  = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
+    offsetTranslateCallback      = nullptr;
     maxLocationMemoryMappingSize = 0;
 }
 

@@ -1,3 +1,5 @@
+#include <array>
+
 #include "DissasmViewer.hpp"
 
 #include <stdarg.h>
@@ -21,6 +23,25 @@ constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
 constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
 constexpr int32 RIGHT_CLICK_DISSASM_ADD_ZONE    = 6;
 constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_ZONE = 7;
+
+const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
+    { { "WriteFile",
+        { { "hFile", "HANDLE" },
+          { "lpBuffer", "LPCVOID" },
+          { "nNumberOfBytesToWrite", "DWORD" },
+          { "lpNumberOfBytesWritten", "LPDWORD" },
+          { "lpOverlapped", "LPOVERLAPPED" } } },
+      { "CloseHandle", { { "hObject", "HANDLE" } } },
+      { "CreateFileW",
+        { { "lpFileName", "LPCWSTR" },
+          { "dwDesiredAccess", "DWORD" },
+          { "dwShareMode", "DWORD" },
+          { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
+          { "dwCreationDisposition", "DWORD" },
+          { "dwFlagsAndAttributes", "DWORD" },
+          { "hTemplateFile", "HANDLE" } } },
+      { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } } }
+};
 
 struct
 {
@@ -1221,6 +1242,18 @@ void Instance::OnStart()
     }
     // TODO: do a research! this is an imperative setting
     settings->maxLocationMemoryMappingSize = maxSize + 1;
+
+    GView::Hashes::CRC16 crc16{};
+    uint16 hashVal = 0;
+    // for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++)
+    //{
+    //     if (!crc16.Init() || !crc16.Update(KNOWN_FUNCTIONS[i].functionName) || !crc16.Final(hashVal))
+    //     {
+    //         // show err
+    //         return;
+    //     }
+    //     asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
+    // }
 }
 
 void Instance::RecomputeDissasmLayout()

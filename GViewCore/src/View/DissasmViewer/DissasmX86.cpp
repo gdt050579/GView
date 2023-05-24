@@ -4,6 +4,7 @@
 #include <ranges>
 #include <utility>
 #include <list>
+#include <array>
 #include <cmath>
 
 using namespace GView::View::DissasmViewer;
