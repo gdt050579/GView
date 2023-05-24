@@ -121,15 +121,13 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
 
 void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
-    const std::u16string currentPath(this->obj->GetPath());
-    const auto itemsPath = path.substr(currentPath.size() + 1); //.0/0
-    if (itemsPath.empty())
+    if (path.empty())
         return;
 
     // TODO: improve
     std::string streamText, applicationText;
     std::string* toAppend = &streamText;
-    for (const auto c : itemsPath)
+    for (const auto c : path)
     {
         if (c >= '0' && c < '9')
             toAppend->push_back(c);
