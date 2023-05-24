@@ -397,9 +397,8 @@ void DissasmCharacterBufferPool::AnnounceCallInstruction(const AsmFunctionDetail
             else
             {
                 it->comments->insert({ it->currentLine, param });
-                it->needCommentUpdate = true;
             }
-
+            it->needCommentUpdate = true;
             pushesRemaining--;
             pushIndex++;
         }
@@ -430,30 +429,32 @@ void DissasmCharacterBufferPool::Draw(Renderer& renderer, Config& config)
             const auto bufferSize = buffer.chars.Len();
             auto dataStart        = buffer.chars.GetBuffer();
             const auto dataEnd    = buffer.chars.GetBuffer() + bufferSize;
+            bool useSpaces        = true;
 
             while (dataStart != dataEnd)
             {
-                if (dataStart->Code == '/')
+                if (dataStart->Code == ';')
                 {
-                    assert(false);
+                    auto size = dataEnd - dataStart;
+                    buffer.chars.Delete(buffer.chars.Len() - size, buffer.chars.Len());
+                    if (buffer.chars.Len() == DISSAM_MINIMUM_COMMENTS_X) // TODO: update for future to search and also deleted the spaces at the end
+                        useSpaces = false;
                     break;
                 }
                 dataStart++;
             }
-            if (dataStart == dataEnd) // no comment
-            {
-                const auto it = buffer.comments->find(buffer.currentLine);
-                assert(it != buffer.comments->end());
+            const auto it = buffer.comments->find(buffer.currentLine);
+            assert(it != buffer.comments->end());
 
-                auto len = 10;
-                if (buffer.chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
-                    len = DISSAM_MINIMUM_COMMENTS_X - buffer.chars.Len();
-                LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+            auto len = 10;
+            if (buffer.chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+                len = DISSAM_MINIMUM_COMMENTS_X - buffer.chars.Len();
+            LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+            if (useSpaces)
                 spaces.AddChars(' ', len);
-                spaces.AddChars(';', 1);
-                buffer.chars.Add(spaces, config.Colors.AsmComment);
-                buffer.chars.Add(it->second, config.Colors.AsmComment);
-            }
+            spaces.AddChars(';', 1);
+            buffer.chars.Add(spaces, config.Colors.AsmComment);
+            buffer.chars.Add(it->second, config.Colors.AsmComment);
         }
 
         const auto bufferToDraw = CharacterView{ buffer.chars.GetBuffer(), buffer.chars.Len() };

@@ -677,14 +677,20 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (!insn)
         return false;
 
-    bool isCall               = false;
+    bool isCall = false, shouldSearchHex = false;
     const std::string_view sv = insn->mnemonic;
     if (sv.size() == 4)
     {
         if (sv == "push")
+        {
             poolBuffer.isPush = true;
+            shouldSearchHex   = true;
+        }
         else if (sv == "call")
-            isCall = true;
+        {
+            isCall          = true;
+            shouldSearchHex = true;
+        }
     }
 
     // TODO: improve efficiency by filtering instructions
@@ -694,44 +700,106 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     uint64 hexVal = 0;
 
     // TODO: once found an offset store it to not redo the same computation again
-    if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
+    if (shouldSearchHex && CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
     {
-        const auto& mapping = settings->memoryMappings.find(hexVal);
-        if (mapping != settings->memoryMappings.end())
-            mappingPtr = &mapping->second;
-        else
+        // poolBuffer.isPush
+        if (isCall)
         {
-            const auto& mapping2 = settings->memoryMappings.find(hexVal + finalIndex);
-            if (mapping2 != settings->memoryMappings.end())
-                mappingPtr = &mapping2->second;
-        }
-
-        if (mappingPtr)
-        {
-            if (mappingPtr->type == MemoryMappingType::FunctionMapping)
+            const auto& mapping = settings->memoryMappings.find(hexVal);
+            if (mapping != settings->memoryMappings.end())
+                mappingPtr = &mapping->second;
+            else
             {
-                GView::Hashes::CRC16 crc16{};
-                uint16 hash    = 0;
-                const bool res = crc16.Init() && crc16.Update((const uint8*) mappingPtr->name.data(), mappingPtr->name.size()) && crc16.Final(hash);
-                if (res)
+                const auto& mapping2 = settings->memoryMappings.find(hexVal + finalIndex);
+                if (mapping2 != settings->memoryMappings.end())
+                    mappingPtr = &mapping2->second;
+            }
+
+            if (mappingPtr)
+            {
+                if (mappingPtr->type == MemoryMappingType::FunctionMapping)
                 {
-                    const auto it = asmData.functions.find(hash);
-                    if (it != asmData.functions.end())
+                    GView::Hashes::CRC16 crc16{};
+                    uint16 hash    = 0;
+                    const bool res = crc16.Init() && crc16.Update((const uint8*) mappingPtr->name.data(), mappingPtr->name.size()) && crc16.Final(hash);
+                    if (res)
                     {
-                        if (!asmData.CheckInstructionHasFlag(currentLine, AsmData::CallFlag))
+                        const auto it = asmData.functions.find(hash);
+                        if (it != asmData.functions.end())
                         {
-                            /*const auto commentIt = zone->comments.find(currentLine);
-                            if (commentIt != zone->comments.end())
+                            if (!asmData.CheckInstructionHasFlag(currentLine, AsmData::CallFlag))
                             {
-                                commentIt->second = mappingPtr->name + " " + commentIt->second;
+                                asmData.bufferPool.AnnounceCallInstruction(it->second);
+                                asmData.AddInstructionFlag(currentLine, AsmData::CallFlag);
                             }
-                            else
-                            {
-                                zone->comments.insert({ currentLine, mappingPtr->name });
-                            }*/
-                            asmData.bufferPool.AnnounceCallInstruction(it->second);
-                            asmData.AddInstructionFlag(currentLine, AsmData::CallFlag);
                         }
+                    }
+                }
+            }
+        }
+        else if (poolBuffer.isPush)
+        {
+            auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
+            if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < obj->GetData().GetSize())
+            {
+                const auto stringBuffer = obj->GetData().Get(offset, DISSAM_MAXIMUM_STRING_PREVIEW * 2, false);
+                if (stringBuffer.IsValid())
+                {
+                    auto dataStart = stringBuffer.GetData();
+                    auto dataEnd   = dataStart + stringBuffer.GetLength();
+
+                    std::vector<uint8> textFound;
+                    textFound.reserve(DISSAM_MAXIMUM_STRING_PREVIEW * 2);
+                    textFound.push_back('"');
+                    bool wasZero = true;
+
+                    while (dataStart < dataEnd)
+                    {
+                        if (*dataStart >= 32 && *dataStart <= 126)
+                        {
+                            textFound.push_back(*dataStart);
+                            wasZero = false;
+                        }
+                        else if (*dataStart == '\0')
+                        {
+                            if (wasZero)
+                                break;
+                            wasZero = true;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                        dataStart++;
+                    }
+
+                    if (textFound.size() >= DISSAM_MAXIMUM_STRING_PREVIEW)
+                    {
+                        while (textFound.size() > 10)
+                            textFound.erase(textFound.begin() + textFound.size() - 1);
+                        textFound.push_back('.');
+                        textFound.push_back('.');
+                        textFound.push_back('.');
+                    }
+                    textFound.push_back('"');
+                    textFound.push_back('\0');
+
+                    if (textFound.size() > 3)
+                    {
+                        const auto it = zone->comments.find(currentLine);
+                        if (it != zone->comments.end())
+                        {
+                            auto len = 10;
+                            if (chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+                                len = DISSAM_MINIMUM_COMMENTS_X - chars.Len();
+                            LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+                            spaces.AddChars(' ', len);
+                            spaces.AddChars(';', 1);
+                            chars.Add(spaces, config.Colors.AsmComment);
+                            chars.Add(it->second, config.Colors.AsmComment);
+                        }
+                        else
+                            zone->comments.insert({ currentLine, (char*) textFound.data() });
                     }
                 }
             }
