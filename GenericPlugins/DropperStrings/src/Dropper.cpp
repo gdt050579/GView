@@ -14,16 +14,24 @@ using namespace GView::View;
 
 namespace GView::GenericPlugins::DroppperStrings
 {
-const std::string_view EMAIL_REGEX_ASCII{ R"(^[\w-\.]+@([\w-]+\.)+[\w-]{2,4})" };
-const std::u16string_view EMAIL_REGEX_UNICODE{ uR"(^[\w-\.]+@([\w-]+\.)+[\w-]{2,4})" };
+const std::string_view EMAIL_REGEX_ASCII{ R"(([a-z0-9\_\.]+@[a-z\_]+\.[a-z]{2,5}))" };
+const std::u16string_view EMAIL_REGEX_UNICODE{ uR"(([a-z0-9\_\.]+@[a-z\_]+\.[a-z]{2,5}))" };
 
-const std::string_view URL_REGEX_ASCII{ R"((http:\/\/www\.[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\/[a-zA-Z0-9_\.]+))" };
-const std::u16string_view URL_REGEX_UNICODE{ uR"((http:\/\/www\.[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\/[a-zA-Z0-9_\.]+))" };
+const std::string_view URL_REGEX_ASCII{ R"((((https*:\/\/)|((https*:\/\/www)|(www)\.))[a-zA-Z0-9_]+\.[a-zA-Z0-9_\.]+(\/[a-zA-Z0-9_\.]*)*))" };
+const std::u16string_view URL_REGEX_UNICODE{ uR"((((https*:\/\/)|((https*:\/\/www)|(www)\.))[a-zA-Z0-9_]+\.[a-zA-Z0-9_\.]+(\/[a-zA-Z0-9_\.]*)*))" };
 
-const std::string_view PATH_WINDOWS_REGEX_ASCII{ R"(([a-zA-Z]{1}\:\\[a-zA-Z0-9\\_\.]+))" };
-const std::u16string_view PATH_WINDOWS_REGEX_UNICODE{ uR"(([a-zA-Z]{1}\:\\[a-zA-Z0-9\\_\.]+))" };
+const std::string_view PATH_WINDOWS_REGEX_ASCII{ R"(([a-zA-Z]{1}\:\\[a-zA-Z0-9\\_\. ]+))" };
+const std::u16string_view PATH_WINDOWS_REGEX_UNICODE{ uR"(([a-zA-Z]{1}\:\\[a-zA-Z0-9\\_\. ]+))" };
 
-const std::string_view REGISTRY_HKLM_REGEX_ASCII{ R"((HKEY_LOCAL_MACHINE\\[a-zA-Z .0-9\_\\]+))" };
+const std::string_view REGISTRY_HKLM_REGEX_ASCII{ R"(((HKEY_LOCAL_MACHINE|HKLM)\\[a-zA-Z .0-9\_\\]+))" };
+
+const std::string_view PATH_UNIX_REGEX_ASCII{ R"(((\/|\.\.)[a-zA-Z\/\.0-9]+\/[a-zA-Z\/\.0-9]+))" };
+
+const std::string_view IPS_REGEX_ASCII{ R"(([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(\:[0-9]{1,5})*))" };
+
+const std::string_view WALLET_BITCOIN_REGEX_ASCII{ R"(((bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}))" };
+const std::string_view WALLET_ETHEREUM_REGEX_ASCII{ R"((0x[a-fA-F0-9]{40}))" };
+const std::string_view WALLET_STERLLAR_REGEX_ASCII{ R"((G[a-zA-Z0-9]{55}))" };
 
 const std::string_view TEXT_ASCII{ R"(([a-zA-Z .0-9\_\<\>\(\)@]{4,}))" };
 const std::u16string_view TEXT_UNICODE{ uR"(([a-zA-Z .0-9\_\<\>\(\)@]{4,}))" };
@@ -38,6 +46,8 @@ enum class ArtefactType
     Path,
     Registry,
     RegistryPersistence,
+    IP,
+    Wallet,
     Text
 };
 
@@ -52,7 +62,8 @@ bool operator<(const Entry& a, const Entry& b)
     return memcmp(&a, &b, sizeof(Entry)) < 0;
 }
 
-const static std::map<Entry, std::string_view> GetAsciiMatches(const Buffer& buffer, ArtefactType type, std::string_view asciiPattern)
+const static std::map<Entry, std::string_view> GetAsciiMatches(
+      const Buffer& buffer, ArtefactType type, std::string_view asciiPattern, bool caseSensitive = false)
 {
     const auto initialStart = reinterpret_cast<char const*>(buffer.GetData());
     auto start              = reinterpret_cast<char const*>(buffer.GetData());
@@ -61,7 +72,10 @@ const static std::map<Entry, std::string_view> GetAsciiMatches(const Buffer& buf
     std::map<Entry, std::string_view> matchesMap;
 
     std::cmatch matches{};
-    const std::regex pattern(asciiPattern.data(), std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize);
+    const std::regex pattern(
+          asciiPattern.data(),
+          caseSensitive ? std::regex_constants::ECMAScript | std::regex_constants::optimize
+                        : std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize);
     while (std::regex_search(start, end, matches, pattern))
     {
         const auto m  = std::pair<uint64, uint64>{ uint64((start - initialStart) + matches.position()), matches.length() };
@@ -91,7 +105,7 @@ const static std::map<Entry, std::u16string_view> GetUnicodeMatches(const Buffer
           std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize);
     while (std::regex_search(start, end, matches, pattern))
     {
-        const auto m  = std::pair<uint64, uint64>{ uint64((start - initialStart) + matches.position()), matches.length() };
+        const auto m  = std::pair<uint64, uint64>{ uint64((start - initialStart) * sizeof(wchar_t) + matches.position()), matches.length() };
         const auto sv = std::u16string_view{ (char16_t*) ((char16_t*) buffer.GetData() + m.first), m.second };
 
         if (sv.find_first_not_of(u' ') != std::string::npos)
@@ -107,17 +121,22 @@ const static std::map<Entry, std::u16string_view> GetUnicodeMatches(const Buffer
 class Dropper : public Window, public Handlers::OnButtonPressedInterface
 {
   public:
-    Dropper(Reference<Object> object) : Window("Strings", "d:c,w:60%,h:80%", WindowFlags::Sizeable | WindowFlags::Maximized)
+    Dropper(Reference<Object> object) : Window("Strings", "d:c,w:80%,h:90%", WindowFlags::Sizeable)
     {
         const auto buffer = object->GetData().CopyEntireFile(true);
         CHECKRET(buffer.IsValid(), "");
 
-        const auto emails     = GetAsciiMatches(buffer, ArtefactType::Email, EMAIL_REGEX_ASCII);
-        const auto urls       = GetAsciiMatches(buffer, ArtefactType::URL, URL_REGEX_ASCII);
-        const auto paths      = GetAsciiMatches(buffer, ArtefactType::Path, PATH_WINDOWS_REGEX_ASCII);
-        const auto registries = GetAsciiMatches(buffer, ArtefactType::Registry, REGISTRY_HKLM_REGEX_ASCII);
-        const auto texts      = GetAsciiMatches(buffer, ArtefactType::Text, TEXT_ASCII);
-        const auto uTexts     = GetUnicodeMatches(buffer, ArtefactType::Text, TEXT_UNICODE);
+        const auto emails          = GetAsciiMatches(buffer, ArtefactType::Email, EMAIL_REGEX_ASCII);
+        const auto urls            = GetAsciiMatches(buffer, ArtefactType::URL, URL_REGEX_ASCII);
+        const auto windowsPaths    = GetAsciiMatches(buffer, ArtefactType::Path, PATH_WINDOWS_REGEX_ASCII);
+        const auto unixPaths       = GetAsciiMatches(buffer, ArtefactType::Path, PATH_UNIX_REGEX_ASCII);
+        const auto ips             = GetAsciiMatches(buffer, ArtefactType::IP, IPS_REGEX_ASCII);
+        const auto walletsBitcoin  = GetAsciiMatches(buffer, ArtefactType::Wallet, WALLET_BITCOIN_REGEX_ASCII, true);
+        const auto walletsEthereum = GetAsciiMatches(buffer, ArtefactType::Wallet, WALLET_ETHEREUM_REGEX_ASCII, true);
+        const auto walletsStellar  = GetAsciiMatches(buffer, ArtefactType::Wallet, WALLET_STERLLAR_REGEX_ASCII, true);
+        const auto registries      = GetAsciiMatches(buffer, ArtefactType::Registry, REGISTRY_HKLM_REGEX_ASCII);
+        const auto texts           = GetAsciiMatches(buffer, ArtefactType::Text, TEXT_ASCII);
+        const auto uTexts = std::map<Entry, std::u16string_view>(); // TODO: re-enable unicode GetUnicodeMatches(buffer, ArtefactType::Text, TEXT_UNICODE);
 
         auto lv = Factory::ListView::Create(
               this, "x:0,y:0,w:100%,h:90%", { "n:Type,w:15%", "n:Offset,w:10%", "n:Value,w:75%" }, ListViewFlags::AllowMultipleItemsSelection);
@@ -174,16 +193,66 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
             }
         }
 
-        const auto sortedPaths = getSortedKeys(paths);
-        if (paths.empty() == false)
+        const auto sortedIPs = getSortedKeys(ips);
+        if (sortedIPs.empty() == false)
+        {
+            lv->AddItem({ "IPs" }).SetType(ListViewItem::Type::Category);
+
+            for (const auto& key : sortedIPs)
+            {
+                const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
+                const auto& value = ips.at(key);
+                lv->AddItem({ "IP", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+            }
+        }
+
+        const auto sortedWalletsBitcoin  = getSortedKeys(walletsBitcoin);
+        const auto sortedWalletsEthereum = getSortedKeys(walletsEthereum);
+        const auto sortedWalletsStellar  = getSortedKeys(walletsStellar);
+        if (sortedWalletsBitcoin.empty() == false || sortedWalletsEthereum.empty() == false || sortedWalletsStellar.empty() == false)
+        {
+            lv->AddItem({ "Wallets" }).SetType(ListViewItem::Type::Category);
+
+            for (const auto& key : sortedWalletsBitcoin)
+            {
+                const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
+                const auto& value = walletsBitcoin.at(key);
+                lv->AddItem({ "Wallet (Bitcoin)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+            }
+
+            for (const auto& key : sortedWalletsEthereum)
+            {
+                const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
+                const auto& value = walletsEthereum.at(key);
+                lv->AddItem({ "Wallet (Ethereum)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+            }
+
+            for (const auto& key : sortedWalletsStellar)
+            {
+                const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
+                const auto& value = walletsStellar.at(key);
+                lv->AddItem({ "Wallet (Stellar)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+            }
+        }
+
+        const auto sortedWindowsPaths = getSortedKeys(windowsPaths);
+        const auto sortedUnixPaths    = getSortedKeys(unixPaths);
+        if (windowsPaths.empty() == false || sortedUnixPaths.empty() == false)
         {
             lv->AddItem({ "Paths" }).SetType(ListViewItem::Type::Category);
 
-            for (const auto& key : sortedPaths)
+            for (const auto& key : sortedWindowsPaths)
             {
                 const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
-                const auto& value = paths.at(key);
-                lv->AddItem({ "Path", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+                const auto& value = windowsPaths.at(key);
+                lv->AddItem({ "Path (Win)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+            }
+
+            for (const auto& key : sortedUnixPaths)
+            {
+                const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
+                const auto& value = unixPaths.at(key);
+                lv->AddItem({ "Path (Unix)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
             }
         }
 
@@ -199,7 +268,7 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
                 if (value.ends_with(R"(\Run)"))
                 {
                     lv->AddItem({ "Registry (Persistence)", svp.data(), std::string{ value.data(), key.position.second }.c_str() })
-                          .SetType(ListViewItem::Type::Emphasized_3);
+                          .SetType(ListViewItem::Type::Emphasized_2);
                 }
                 else
                 {
@@ -237,37 +306,27 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
             for (const auto& key : sortedTexts)
             {
                 if (shouldSkip(key, sortedEmails))
-                {
                     continue;
-                }
-
                 if (shouldSkip(key, sortedURLs))
-                {
                     continue;
-                }
-
-                if (shouldSkip(key, sortedPaths))
-                {
+                if (shouldSkip(key, sortedWindowsPaths))
                     continue;
-                }
-
+                if (shouldSkip(key, sortedUnixPaths))
+                    continue;
                 if (shouldSkip(key, sortedRegistries))
-                {
                     continue;
-                }
+                if (shouldSkip(key, sortedIPs))
+                    continue;
+                if (shouldSkip(key, sortedTexts))
+                    continue;
+
                 const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
                 const auto& value = texts.at(key);
-
-                if (shouldSkip(key, sortedTexts))
-                {
-                    continue;
-                }
-
                 lv->AddItem({ "Text", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
             }
         }
 
-        const auto uSortedTexts = getUSortedKeys(uTexts);
+        const std::vector<Entry> uSortedTexts{}; // = getUSortedKeys(uTexts); // TODO: re-enable unicode strings
         if (uSortedTexts.empty() == false)
         {
             if (texts.empty())
@@ -286,7 +345,9 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
                 std::string sValue;
                 usb.ToString(sValue);
 
-                lv->AddItem({ "(U) Text", svp.data(), sValue.c_str() });
+                auto item = lv->AddItem({ "(U) Text", svp.data(), sValue.c_str() });
+                item.SetType(ListViewItem::Type::SubItemColored);
+                item.SetColor(0, { Color::Yellow, Color::Transparent });
             }
         }
 
