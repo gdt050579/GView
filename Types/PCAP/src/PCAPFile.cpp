@@ -96,6 +96,7 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetText(3, stream->GetTransportProtocolName());
         item.SetText(4, tmp.Format("%s", n.ToString(stream->totalPayload, NUMERIC_FORMAT).data()));
         item.SetText(5, stream->appLayerName.data());
+        item.SetText(6, stream->summary.data());
 
         if (isExpandable)
             item.SetType(TreeViewItem::Type::Highlighted);
