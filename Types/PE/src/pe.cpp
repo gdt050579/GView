@@ -154,15 +154,20 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    const uint32 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    entryPoint        = pe->RVAtoFilePointer(entryPoint);
 
                     DissasmViewer::DissasmArchitecture architecture =
                           pe->hdr64 ? DissasmViewer::DissasmArchitecture::x64 : DissasmViewer::DissasmArchitecture::x86;
+
                     settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, architecture);
                     break;
                 }
             }
         }
+
+        // translation
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         uint32 typeImageDOSHeader = settings.AddType(
               "ImageDOSHeader",
@@ -195,6 +200,14 @@ UInt16 e_res[4];)");
         // UInt32 e_lfanew;)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
+
+        //LocalString<128> processedName;
+
+        for (const auto& [RVA, dllIndex, Name] : pe->impFunc)
+        {
+            //processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
+            settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        }
 
         win->CreateViewer(settings);
     }

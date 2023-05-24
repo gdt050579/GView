@@ -1436,6 +1436,12 @@ namespace View
             Utf32Z
         };
 
+		enum class MemoryMappingType
+		{
+		    FunctionMapping,
+			TextMapping
+		};
+
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
         struct CORE_EXPORT Settings
@@ -1456,7 +1462,7 @@ namespace View
                   DissasmArchitecture architecture,
                   DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
-            void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
@@ -1469,6 +1475,7 @@ namespace View
              * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
+            void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<BufferViewer::OffsetTranslateInterface> cbk);
 
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);

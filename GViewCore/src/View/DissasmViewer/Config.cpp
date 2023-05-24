@@ -17,6 +17,7 @@ void Config::Initialize()
     this->Colors.Line                          = ColorPair{ Color::Gray, Color::DarkBlue };
     this->Colors.Normal                        = ColorPair{ Color::Silver, Color::DarkBlue };
     this->Colors.Highlight                     = ColorPair{ Color::Yellow, Color::DarkBlue };
+    this->Colors.HighlightCursorLine           = ColorPair{ Color::Teal, Color::Gray };
     this->Colors.Selection                     = ColorPair{ Color::Black, Color::White };
     this->Colors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
     this->Colors.StructureColor                = ColorPair{ Color::Magenta, Color::DarkBlue };
@@ -29,7 +30,7 @@ void Config::Initialize()
     this->Colors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
     this->Colors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
     this->Colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->Colors.AsmComment                    = ColorPair{ Color::DarkGreen, Color::DarkBlue };
+    this->Colors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
     this->Colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
 
     bool foundSettings = false;

@@ -4,15 +4,22 @@
 #include <ranges>
 #include <utility>
 #include <list>
+#include <array>
 #include <cmath>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
 constexpr size_t DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
+constexpr uint32 callOP                            = 1819042147u; //*(uint32*) "call";
+constexpr uint32 addOP                             = 6579297u;    //*((uint32*) "add");
 
-//TODO consider inline?
-AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine,uint32* index = nullptr)
+const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15 };
+
+// TODO consider inline?
+AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
 {
     assert(!values.empty());
     uint32 left  = 0;
@@ -108,7 +115,13 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg,
 
 // TODO: to be moved inside plugin for some sort of API for token<->color
 inline void DissasmAddColorsToInstruction(
-      const cs_insn& insn, CharacterBuffer& cb, CodePage& cp, Config& cfg, const LayoutDissasm& layout, AsmData& data, uint64 addressPadding = 0)
+      const cs_insn& insn,
+      CharacterBuffer& cb,
+      Config& cfg,
+      const LayoutDissasm& layout,
+      AsmData& data,
+      uint64 addressPadding                = 0,
+      const MemoryMappingEntry* mappingPtr = nullptr)
 {
     cb.Clear();
 
@@ -124,7 +137,7 @@ inline void DissasmAddColorsToInstruction(
     cb.Add(string, color);
 
     const std::string_view op_str = insn.op_str;
-    if (!op_str.empty())
+    if (!op_str.empty() && !mappingPtr)
     {
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
@@ -178,6 +191,12 @@ inline void DissasmAddColorsToInstruction(
             checkValidAndAdd(buffer.GetText());
         }
     }
+    else if (mappingPtr)
+    {
+        string.SetFormat("%s", mappingPtr->name.data());
+        const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? cfg.Colors.AsmLocationInstruction : cfg.Colors.AsmFunctionColor;
+        cb.Add(string, mapColor);
+    }
 
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
 }
@@ -200,15 +219,7 @@ inline bool populate_offsets_vector(
     cs_insn* insn     = cs_malloc(handle);
     size_t lastOffset = offsets[0].offset;
 
-    constexpr uint32 callOP = 1819042147u; //*(uint32*) "call";
-
-    // TODO: change method!
-    uint8 mapper[(int) 'g'] = { 0 };
-    for (int i = '0'; i <= '9'; i++)
-        mapper[i] = i - '0';
-    uint8 value = 10;
-    for (int i = 'a'; i <= 'f'; i++)
-        mapper[i] = value++;
+    constexpr uint32 addInstructionsStop = 30; // TODO: update this -> for now it stops, later will fold
 
     std::list<uint64> finalOffsets;
 
@@ -244,16 +255,25 @@ inline bool populate_offsets_vector(
             if (!cs_disasm_iter(handle, &data, &size, &address, insn))
                 break;
 
-            if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP) && insn->op_str[0] == '0' && insn->op_str[1] == 'x')
+            if ((insn->mnemonic[0] == 'j' || *(uint32*) insn->mnemonic == callOP) && insn->op_str[0] == '0' /* && insn->op_str[1] == 'x'*/)
             {
                 uint64 computedValue = 0;
-                char* ptr            = &insn->op_str[2];
-                // TODO: also check not to overflow access!
-                while (*ptr && *ptr != ' ' && *ptr != ',')
+                if (insn->op_str[1] == 'x')
                 {
-                    computedValue = computedValue * 16 + mapper[*ptr];
-                    ptr++;
+                    // uint64 computedValue = 0;
+                    char* ptr = &insn->op_str[2];
+                    // TODO: also check not to overflow access!
+                    while (*ptr && *ptr != ' ' && *ptr != ',')
+                    {
+                        computedValue = computedValue * 16 + HEX_MAPPER[*ptr];
+                        ptr++;
+                    }
                 }
+                else if (insn->op_str[1] == '\0')
+                {
+                    computedValue = zoneDetails.startingZonePoint;
+                }
+
                 if (computedValue < minimalValue && computedValue >= zoneDetails.startingZonePoint)
                 {
                     minimalValue = computedValue;
@@ -291,6 +311,9 @@ inline bool populate_offsets_vector(
     offsets.clear();
     offsets.push_back({ minimalValue, 0 });
 
+    constexpr uint32 alOpStr         = 7102752u; //* (uint32*) " al";
+    uint32 continuousAddInstructions = 0;
+
     while (cs_disasm_iter(handle, &data, &size, &address, insn))
     {
         lineIndex++;
@@ -300,9 +323,78 @@ inline bool populate_offsets_vector(
             const size_t adjustedSize = address + zoneDetails.startingZonePoint;
             offsets.push_back({ adjustedSize, lineIndex });
         }
+
+        if (*(uint32*) insn->mnemonic == addOP && insn->op_str[0] == 'b' && *(uint32*) &insn->op_str[15] == alOpStr)
+        {
+            if (++continuousAddInstructions == addInstructionsStop)
+            {
+                lineIndex -= continuousAddInstructions;
+                break;
+            }
+        }
+        else
+            continuousAddInstructions = 0;
     }
     totalLines = lineIndex;
+    cs_free(insn, 1);
     cs_close(&handle);
+    return true;
+}
+
+// TODO: maybe add also minimum number?
+bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
+{
+    char* ptr   = insn.op_str;
+    char* start = nullptr;
+    uint32 size = 0;
+
+    while (ptr && *ptr != '\0')
+    {
+        if (!start)
+        {
+            if (ptr && *ptr == '0')
+            {
+                ptr++;
+                if (!ptr || *ptr != 'x')
+                    return false;
+                ptr++;
+                start = ptr;
+                continue;
+            }
+        }
+        else
+        {
+            if (*ptr >= '0' && *ptr <= '9' || *ptr >= 'a' && *ptr <= 'f')
+            {
+                size++;
+            }
+            else
+            {
+                if (size < maxSize - 2)
+                    return false;
+                break;
+            }
+        }
+        ptr++;
+    }
+
+    if (maxSize < size)
+    {
+        const uint32 diff = size - static_cast<uint32>(maxSize);
+        size -= diff;
+        start += diff;
+    }
+
+    if (!start || !ptr || size < 2)
+        return false;
+
+    const auto sv        = std::string_view(start, size);
+    const auto converted = Number::ToUInt64(sv, NumberParseFlags::Base16);
+    if (!converted.has_value())
+        return false;
+
+    value = converted.value();
+
     return true;
 }
 
@@ -310,7 +402,7 @@ inline cs_insn* GetCurrentInstructionByLine(
       uint32 lineToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli = nullptr)
 {
     uint32 lineDifferences = 1;
-	//TODO: first or be transformed into an abs ?
+    // TODO: first or be transformed into an abs ?
     if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineToReach >= zone->offsetCacheMaxLine)
     {
         // TODO: can be inlined as function
@@ -364,7 +456,7 @@ inline cs_insn* GetCurrentInstructionByLine(
 
     while (lineDifferences > 0)
     {
-        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) & zone->asmSize, &zone->asmAddress, insn))
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn))
         {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -417,7 +509,7 @@ inline cs_insn* GetCurrentInstructionByOffset(
         offsetToReach -= zone->cachedCodeOffsets[0].offset;
     while (zone->asmAddress <= offsetToReach)
     {
-        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) & zone->asmSize, &zone->asmAddress, insn))
+        if (!cs_disasm_iter(handle, &zone->asmData, (size_t*) &zone->asmSize, &zone->asmAddress, insn))
         {
             if (dli)
                 dli->WriteErrorToScreen("Failed to dissasm!");
@@ -518,6 +610,16 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     }
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
+    auto& poolBuffer         = asmData.bufferPool.GetPoolBuffer(currentLine);
+    poolBuffer.comments      = &zone->comments;
+    poolBuffer.currentLine   = currentLine;
+    auto& chars              = poolBuffer.chars;
+
+    chars.Clear();
+
+    dli.chNameAndSize = chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chText        = dli.chNameAndSize;
+
     // TODO: reenable caching
     /*
     //if (zone->isInit && lineInView >= zone->startingCacheLineIndex &&
@@ -575,7 +677,140 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (!insn)
         return false;
 
-    DissasmAddColorsToInstruction(*insn, chars, codePage, config, Layout, asmData, zone->cachedCodeOffsets[0].offset);
+    bool isCall = false, shouldSearchHex = false;
+    const std::string_view sv = insn->mnemonic;
+    if (sv.size() == 4)
+    {
+        if (sv == "push")
+        {
+            poolBuffer.isPush = true;
+            shouldSearchHex   = true;
+        }
+        else if (sv == "call")
+        {
+            isCall          = true;
+            shouldSearchHex = true;
+        }
+    }
+
+    // TODO: improve efficiency by filtering instructions
+    const MemoryMappingEntry* mappingPtr = nullptr;
+    const uint64 finalIndex =
+          zone->asmAddress + settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
+    uint64 hexVal = 0;
+
+    // TODO: once found an offset store it to not redo the same computation again
+    if (shouldSearchHex && CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
+    {
+        // poolBuffer.isPush
+        if (isCall)
+        {
+            const auto& mapping = settings->memoryMappings.find(hexVal);
+            if (mapping != settings->memoryMappings.end())
+                mappingPtr = &mapping->second;
+            else
+            {
+                const auto& mapping2 = settings->memoryMappings.find(hexVal + finalIndex);
+                if (mapping2 != settings->memoryMappings.end())
+                    mappingPtr = &mapping2->second;
+            }
+
+            if (mappingPtr)
+            {
+                if (mappingPtr->type == MemoryMappingType::FunctionMapping)
+                {
+                    GView::Hashes::CRC16 crc16{};
+                    uint16 hash    = 0;
+                    const bool res = crc16.Init() && crc16.Update((const uint8*) mappingPtr->name.data(), mappingPtr->name.size()) && crc16.Final(hash);
+                    if (res)
+                    {
+                        const auto it = asmData.functions.find(hash);
+                        if (it != asmData.functions.end())
+                        {
+                            if (!asmData.CheckInstructionHasFlag(currentLine, AsmData::CallFlag))
+                            {
+                                asmData.bufferPool.AnnounceCallInstruction(it->second);
+                                asmData.AddInstructionFlag(currentLine, AsmData::CallFlag);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else if (poolBuffer.isPush)
+        {
+            auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
+            if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < obj->GetData().GetSize())
+            {
+                const auto stringBuffer = obj->GetData().Get(offset, DISSAM_MAXIMUM_STRING_PREVIEW * 2, false);
+                if (stringBuffer.IsValid())
+                {
+                    auto dataStart = stringBuffer.GetData();
+                    auto dataEnd   = dataStart + stringBuffer.GetLength();
+
+                    std::vector<uint8> textFound;
+                    textFound.reserve(DISSAM_MAXIMUM_STRING_PREVIEW * 2);
+                    textFound.push_back('"');
+                    bool wasZero = true;
+
+                    while (dataStart < dataEnd)
+                    {
+                        if (*dataStart >= 32 && *dataStart <= 126)
+                        {
+                            textFound.push_back(*dataStart);
+                            wasZero = false;
+                        }
+                        else if (*dataStart == '\0')
+                        {
+                            if (wasZero)
+                                break;
+                            wasZero = true;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                        dataStart++;
+                    }
+
+                    if (textFound.size() >= DISSAM_MAXIMUM_STRING_PREVIEW)
+                    {
+                        while (textFound.size() > 10)
+                            textFound.erase(textFound.begin() + textFound.size() - 1);
+                        textFound.push_back('.');
+                        textFound.push_back('.');
+                        textFound.push_back('.');
+                    }
+                    textFound.push_back('"');
+                    textFound.push_back('\0');
+
+                    if (textFound.size() > 3)
+                    {
+                        const auto it = zone->comments.find(currentLine);
+                        if (it != zone->comments.end())
+                        {
+                            auto len = 10;
+                            if (chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+                                len = DISSAM_MINIMUM_COMMENTS_X - chars.Len();
+                            LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+                            spaces.AddChars(' ', len);
+                            spaces.AddChars(';', 1);
+                            chars.Add(spaces, config.Colors.AsmComment);
+                            chars.Add(it->second, config.Colors.AsmComment);
+                        }
+                        else
+                            zone->comments.insert({ currentLine, (char*) textFound.data() });
+                    }
+                }
+            }
+        }
+    }
+
+    // cursorLine == zone->startLineIndex - currentLine
+    //  TODO: refactor this in the future
+    /*const uint32 cursorLine = Cursor.lineInView + Cursor.startViewLine;
+    const bool isCursorLine = cursorLine == dli.screenLineToDraw;*/
+    DissasmAddColorsToInstruction(*insn, chars, config, Layout, asmData, zone->cachedCodeOffsets[0].offset, mappingPtr);
 
     cs_free(insn, 1);
     // cs_close(&handle);
@@ -585,8 +820,13 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     const auto it = zone->comments.find(currentLine);
     if (it != zone->comments.end())
     {
-        constexpr char tmp[] = "    //";
-        chars.Add(tmp, config.Colors.AsmComment);
+        auto len = 10;
+        if (chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+            len = DISSAM_MINIMUM_COMMENTS_X - chars.Len();
+        LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+        spaces.AddChars(' ', len);
+        spaces.AddChars(';', 1);
+        chars.Add(spaces, config.Colors.AsmComment);
         chars.Add(it->second, config.Colors.AsmComment);
     }
 
@@ -659,9 +899,13 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
 
+    /*if (isCursorLine)
+        chars.SetColor(Layout.startingTextLineOffset, chars.Len(), config.Colors.HighlightCursorLine);*/
+
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
 
-    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    // dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     return true;
 }
 
@@ -782,7 +1026,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
     }
     cs_free(insn, 1);
 
-	jumps_holder.insert(Cursor.saveState());
+    jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = 0;
     Cursor.startViewLine = diffLines + zone->startLineIndex;
 }

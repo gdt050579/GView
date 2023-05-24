@@ -1,3 +1,5 @@
+#include <array>
+
 #include "DissasmViewer.hpp"
 
 #include <stdarg.h>
@@ -21,6 +23,25 @@ constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
 constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
 constexpr int32 RIGHT_CLICK_DISSASM_ADD_ZONE    = 6;
 constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_ZONE = 7;
+
+const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
+    { { "WriteFile",
+        { { "hFile", "HANDLE" },
+          { "lpBuffer", "LPCVOID" },
+          { "nNumberOfBytesToWrite", "DWORD" },
+          { "lpNumberOfBytesWritten", "LPDWORD" },
+          { "lpOverlapped", "LPOVERLAPPED" } } },
+      { "CloseHandle", { { "hObject", "HANDLE" } } },
+      { "CreateFileW",
+        { { "lpFileName", "LPCWSTR" },
+          { "dwDesiredAccess", "DWORD" },
+          { "dwShareMode", "DWORD" },
+          { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
+          { "dwCreationDisposition", "DWORD" },
+          { "dwFlagsAndAttributes", "DWORD" },
+          { "hTemplateFile", "HANDLE" } } },
+      { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } } }
+};
 
 struct
 {
@@ -72,7 +93,7 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->Layout.structuresInitialCollapsedState = true;
     this->Layout.totalLinesSize                  = 0;
 
-	this->CurrentSelection = {};
+    this->CurrentSelection = {};
 
     this->codePage = CodePageID::DOS_437;
 
@@ -351,6 +372,98 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     }
 
     return true;
+}
+
+void DissasmCharacterBufferPool::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails)
+{
+    if (pool.empty())
+        return;
+    constexpr uint32 MAX_LINE_DIFF = 10;
+
+    const uint32 currentLine = pool.back().currentLine;
+    auto it                  = pool.rbegin() + 1; // ignoring last element
+    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
+    for (; it != pool.rend() && pushesRemaining > 0; ++it)
+    {
+        if (currentLine - it->currentLine < MAX_LINE_DIFF && it->isPush)
+        {
+            // TODO: improve performance, remove string concatenation as much as possible
+            auto param           = std::string(functionDetails->params[pushIndex].name);
+            const auto commentIt = it->comments->find(it->currentLine);
+            if (commentIt != it->comments->end())
+            {
+                commentIt->second = param + " " + commentIt->second;
+            }
+            else
+            {
+                it->comments->insert({ it->currentLine, param });
+            }
+            it->needCommentUpdate = true;
+            pushesRemaining--;
+            pushIndex++;
+        }
+    }
+}
+
+DissasmCharacterBufferPool::PoolBuffer& DissasmCharacterBufferPool::GetPoolBuffer(uint32 currentLine)
+{
+    if (currentSize >= pool.size())
+    {
+        PoolBuffer buffer{};
+        buffer.lineToDrawOnScreen = currentLine;
+        buffer.chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+        pool.push_back(std::move(buffer));
+        return pool.back();
+    }
+
+    pool[currentSize] = {};
+    return pool[currentSize++];
+}
+
+void DissasmCharacterBufferPool::Draw(Renderer& renderer, Config& config)
+{
+    for (auto& buffer : pool)
+    {
+        if (buffer.needCommentUpdate)
+        {
+            const auto bufferSize = buffer.chars.Len();
+            auto dataStart        = buffer.chars.GetBuffer();
+            const auto dataEnd    = buffer.chars.GetBuffer() + bufferSize;
+            bool useSpaces        = true;
+
+            while (dataStart != dataEnd)
+            {
+                if (dataStart->Code == ';')
+                {
+                    auto size = dataEnd - dataStart;
+                    buffer.chars.Delete(buffer.chars.Len() - size, buffer.chars.Len());
+                    if (buffer.chars.Len() == DISSAM_MINIMUM_COMMENTS_X) // TODO: update for future to search and also deleted the spaces at the end
+                        useSpaces = false;
+                    break;
+                }
+                dataStart++;
+            }
+            const auto it = buffer.comments->find(buffer.currentLine);
+            assert(it != buffer.comments->end());
+
+            auto len = 10;
+            if (buffer.chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+                len = DISSAM_MINIMUM_COMMENTS_X - buffer.chars.Len();
+            LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+            if (useSpaces)
+                spaces.AddChars(' ', len);
+            spaces.AddChars(';', 1);
+            buffer.chars.Add(spaces, config.Colors.AsmComment);
+            buffer.chars.Add(it->second, config.Colors.AsmComment);
+        }
+
+        const auto bufferToDraw = CharacterView{ buffer.chars.GetBuffer(), buffer.chars.Len() };
+
+        // HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
+
+        renderer.WriteSingleLineCharacterBuffer(0, buffer.lineToDrawOnScreen, bufferToDraw, false);
+    }
+    pool.clear();
 }
 
 inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
@@ -1162,6 +1275,8 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 
+    asmData.bufferPool.Draw(renderer, config);
+
     if (!MyLine.buttons.empty())
     {
         for (const auto& btn : MyLine.buttons)
@@ -1173,7 +1288,7 @@ bool Instance::ShowGoToDialog()
 {
     if (settings->parseZones.empty())
         return true;
-    const uint32 totalLines        = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
+    const uint32 totalLines  = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
     const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
     GoToDialog dlg(currentLine, totalLines);
     if (dlg.Show() == Dialogs::Result::Ok)
@@ -1212,6 +1327,27 @@ void Instance::OnStart()
 
     this->RecomputeDissasmLayout();
     this->RecomputeDissasmZones();
+
+    uint32 maxSize = 0;
+    while (settings->maxLocationMemoryMappingSize > 0)
+    {
+        maxSize++;
+        settings->maxLocationMemoryMappingSize /= 10;
+    }
+    // TODO: do a research! this is an imperative setting
+    settings->maxLocationMemoryMappingSize = maxSize + 1;
+
+    GView::Hashes::CRC16 crc16{};
+    uint16 hashVal = 0;
+    for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++)
+    {
+        if (!crc16.Init() || !crc16.Update(KNOWN_FUNCTIONS[i].functionName) || !crc16.Final(hashVal))
+        {
+            // show err
+            return;
+        }
+        asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
+    }
 }
 
 void Instance::RecomputeDissasmLayout()

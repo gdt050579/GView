@@ -20,6 +20,8 @@ namespace View
         static constexpr size_t CACHE_OFFSETS_DIFFERENCE      = 500;
         static constexpr size_t DISSASM_MAX_CACHED_LINES      = 50;
         static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
+        static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
+        static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 10;
 
         struct Config
         {
@@ -27,6 +29,7 @@ namespace View
             {
                 ColorPair Normal;
                 ColorPair Highlight;
+                ColorPair HighlightCursorLine;
                 ColorPair Inactive;
                 ColorPair Cursor;
                 ColorPair Line;
@@ -173,6 +176,20 @@ namespace View
             void RemoveComment(uint32 line);
         };
 
+        struct MemoryMappingEntry
+        {
+            std::string name;
+            MemoryMappingType type;
+        };
+
+        // TODO: improve to be more generic!
+        enum class DissasmPEConversionType : uint8
+        {
+            FileOffset = 0,
+            RVA        = 1,
+            VA         = 2
+        };
+
         struct SettingsData
         {
             String name;
@@ -182,12 +199,14 @@ namespace View
             std::deque<char*> buffersToDelete;
             uint32 availableID;
 
-            std::unordered_map<uint64, string_view> memoryMappings; // memory locations to functions
+            uint64 maxLocationMemoryMappingSize;
+            std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
             std::map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
             std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
             std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
+            Reference<BufferViewer::OffsetTranslateInterface> offsetTranslateCallback;
             SettingsData();
         };
 
@@ -202,9 +221,66 @@ namespace View
             uint32 totalLinesSize;
         };
 
+        struct AsmFunctionDetails
+        {
+            struct NameType
+            {
+                const char* name;
+                const char* type;
+            };
+
+            std::string_view functionName;
+            std::vector<NameType> params;
+        };
+
+        // TODO: optimize this as a buffer of 10 elements instead of how many lines are on screen
+        struct DissasmCharacterBufferPool
+        {
+            struct PoolBuffer
+            {
+                uint32 currentLine;
+                uint32 lineToDrawOnScreen;
+                bool isPush;
+                bool needCommentUpdate;
+                std::unordered_map<uint32, std::string>* comments;
+                CharacterBuffer chars;
+            };
+
+            std::deque<PoolBuffer> pool;
+            uint32 currentSize;
+
+            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails);
+            PoolBuffer& GetPoolBuffer(uint32 currentLine);
+            void Draw(Renderer& renderer, Config& config);
+        };
+
         struct AsmData
         {
+            enum InstructionFlag
+            {
+                CallFlag = 0x1,
+                TextFlag = 0x2,
+            };
+
             std::map<uint32, ColorPair> instructionToColor;
+            std::unordered_map<uint32, const AsmFunctionDetails*> functions;
+            DissasmCharacterBufferPool bufferPool;
+            // instructionFlags is used for calls and text comments
+            std::unordered_map<uint32, uint8> instructionFlags;
+
+            bool CheckInstructionHasFlag(uint32 line, InstructionFlag flag) const
+            {
+                const auto it = instructionFlags.find(line);
+                if (it == instructionFlags.end())
+                    return false;
+                return (it->second & flag) > 0;
+            }
+
+            void AddInstructionFlag(uint32 line, InstructionFlag flag)
+            {
+                auto& val = instructionFlags[line];
+                val |= flag;
+            }
         };
 
         struct LinePosition
