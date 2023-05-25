@@ -505,7 +505,7 @@ inline cs_insn* GetCurrentInstructionByOffset(
 
     diffLines     = 0;
     cs_insn* insn = cs_malloc(handle);
-    if (offsetToReach > zone->cachedCodeOffsets[0].offset)
+    if (offsetToReach >= zone->cachedCodeOffsets[0].offset)
         offsetToReach -= zone->cachedCodeOffsets[0].offset;
     while (zone->asmAddress <= offsetToReach)
     {
@@ -1003,31 +1003,48 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
             return;
         }
-        if (insn->mnemonic[0] == 'j')// || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)
+        if (insn->mnemonic[0] == 'j' || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)
         {
-            char* val = &insn->op_str[2];
-
-            while (*val && *val != ',' && *val != ' ')
+            if (insn->op_str[0] == '0' && insn->op_str[1] == 'x')
             {
-                if (*val >= '0' && *val <= '9')
-                    computedValue = computedValue * 16 + (*val - '0');
-                else if (*val >= 'a' && *val <= 'f')
-                    computedValue = computedValue * 16 + (*val - 'a' + 10);
-                else
+                char* val = &insn->op_str[2];
+
+                while (*val && *val != ',' && *val != ' ')
                 {
-                    Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
-                    computedValue = 0;
-                    break;
+                    if (*val >= '0' && *val <= '9')
+                        computedValue = computedValue * 16 + (*val - '0');
+                    else if (*val >= 'a' && *val <= 'f')
+                        computedValue = computedValue * 16 + (*val - 'a' + 10);
+                    else
+                    {
+                        Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
+                        computedValue = 0;
+                        break;
+                    }
+                    val++;
                 }
-                val++;
             }
+            else if (insn->op_str[0] == '0' && insn->op_str[1] == '\0')
+            {
+                computedValue = zone->cachedCodeOffsets[0].offset;
+            }
+            else
+            {
+                cs_free(insn, 1);
+                return;
+            }
+            cs_free(insn, 1);
         }
-        cs_free(insn, 1);
+        else
+        {
+            cs_free(insn, 1);
+            return;
+        }
     }
     else
         computedValue = *offsetToReach;
 
-    if (computedValue == 0)
+    if (computedValue == 0 || computedValue > zone->zoneDetails.startingZonePoint + zone->zoneDetails.size)
         return;
 
     // computedValue = 1064;
