@@ -693,6 +693,15 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         }
     }
 
+    // TODO: be more generic
+    if (isCall && insn->op_str[0] == '0' && insn->op_str[1] == '\0')
+    {
+        NumericFormatter n;
+        const auto res = n.ToString(zone->cachedCodeOffsets[0].offset, { NumericFormatFlags::HexPrefix, 16 });
+        if (res.size() < 16)
+            memcpy(insn->op_str, res.data(), res.size() + 1);
+    }
+
     // TODO: improve efficiency by filtering instructions
     const MemoryMappingEntry* mappingPtr = nullptr;
     const uint64 finalIndex =
