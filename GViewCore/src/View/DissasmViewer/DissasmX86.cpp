@@ -784,7 +784,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
                     if (textFound.size() >= DISSAM_MAXIMUM_STRING_PREVIEW)
                     {
-                        while (textFound.size() > 10)
+                        while (textFound.size() > DISSAM_MAXIMUM_STRING_PREVIEW)
                             textFound.erase(textFound.begin() + textFound.size() - 1);
                         textFound.push_back('.');
                         textFound.push_back('.');
