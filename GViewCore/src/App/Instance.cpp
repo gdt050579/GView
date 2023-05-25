@@ -363,7 +363,7 @@ bool Instance::Add(
       std::string_view typeName,
       Reference<Window> parent)
 {
-    Reference<Window> parentWindow{ parent }; // reference for window manager
+    Reference<Window> parentWindow{ parent }; // reference for window manager // TODO: a more generic way
     if (parentWindow == nullptr)
     {
         auto desktop         = AppCUI::Application::GetDesktop();
@@ -449,7 +449,7 @@ void Instance::ShowErrors()
     err.Show();
     errList.Clear();
 }
-bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName)
+bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent)
 {
     try
     {
@@ -465,7 +465,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod metho
                 errList.AddError("Fail to open file: %s", path.u8string().c_str());
                 RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
             }
-            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName);
+            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName, parent);
         }
     }
     catch (std::filesystem::filesystem_error /* e */)

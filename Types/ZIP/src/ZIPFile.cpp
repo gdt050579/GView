@@ -258,7 +258,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     GView::ZIP::Entry entry{ 0 };
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
-    Reference<Window> parentWindow{ nullptr }; // reference for window manager
+    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         auto focusedChild    = desktop->GetFocusedChild();

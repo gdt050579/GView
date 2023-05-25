@@ -107,11 +107,12 @@ bool GView::App::ResetConfiguration()
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
 
-void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName)
+void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent)
 {
-    OpenFile(path, OpenMethod::ForceType, typeName);
+    OpenFile(path, OpenMethod::ForceType, typeName, parent);
 }
-void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName)
+
+void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
 {
     if (gviewAppInstance)
     {
@@ -119,17 +120,17 @@ void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, 
         {
             if (path.is_absolute())
             {
-                gviewAppInstance->AddFileWindow(path, method, typeName);
+                gviewAppInstance->AddFileWindow(path, method, typeName, parent);
             }
             else
             {
                 const auto absPath = std::filesystem::canonical(path);
-                gviewAppInstance->AddFileWindow(absPath, method, typeName);
+                gviewAppInstance->AddFileWindow(absPath, method, typeName, parent);
             }
         }
         catch (std::filesystem::filesystem_error /* e */)
         {
-            gviewAppInstance->AddFileWindow(path, method, typeName);
+            gviewAppInstance->AddFileWindow(path, method, typeName, parent);
         }
     }
 }
