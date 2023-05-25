@@ -206,7 +206,7 @@ void GetFileExtracted(StreamTcpLayer& output)
     const auto lastSpace = sv.find_last_of(' ');
     if (lastSpace == std::string::npos)
         return;
-    const auto extractedLocation = sv.substr(firstSpace + 1, lastSpace - firstSpace);
+    const auto extractedLocation = sv.substr(firstSpace + 1, lastSpace - firstSpace - 1);
     const auto slashLoc          = extractedLocation.find_last_of('/');
     if (slashLoc == std::string::npos)
     {
