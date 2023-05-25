@@ -54,8 +54,9 @@ SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,
     comboNewLine->SetCurentItemIndex(0);
     comboNewLine->SetHotKey('N');
 
-    cbOpenInNewWindow    = Factory::CheckBox::Create(this, "Open the file in a new &window after saving it", "l:1,t:9,r:1");
-    cbBackupOriginalFile = Factory::CheckBox::Create(this, "Backup of the original file (when overwriting content)", "l:1,t:10,r:1");
+    cbOpenInNewWindow     = Factory::CheckBox::Create(this, "Open the file in a new &window after saving it", "l:1,t:9,r:1");
+    cbBackupOriginalFile  = Factory::CheckBox::Create(this, "Backup of the original file (when overwriting content)", "l:1,t:10,r:1");
+    cIgnoreMetadataOnSave = Factory::CheckBox::Create(this, "Ignore metadata on saving file", "l:1,t:11,r:1");
 
     Factory::Button::Create(this, "&OK", "l:21,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_ID_CANCEL);

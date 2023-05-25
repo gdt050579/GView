@@ -552,7 +552,7 @@ namespace View
         {
             Reference<TextField> txPath;
             Reference<ComboBox> comboEncoding, comboNewLine;
-            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile,cIgnoreMetadataOnSave;
             void Validate();
             void BrowseForFile();
 
@@ -572,6 +572,10 @@ namespace View
             inline bool ShouldOpenANewWindow()
             {
                 return cbOpenInNewWindow->IsChecked();
+            }
+            inline bool ShouldIgnoreMetadataOnSave()
+            {
+                return cIgnoreMetadataOnSave->IsChecked();
             }
             inline const CharacterBuffer& GetFilePath()
             {
