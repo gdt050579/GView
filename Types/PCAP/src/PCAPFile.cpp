@@ -113,10 +113,8 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
 
         item.SetText(4, tmp.Format("%s", n.ToString(stream->applicationLayers[currentItemIndex].payload.size, NUMERIC_FORMAT).data()));
-        /*if (stream->applicationLayers[currentItemIndex].payload.size == 0)
-        {
-            item.SetType(TreeViewItem::Type::Category);
-        }*/
+        if (stream->applicationLayers[currentItemIndex].payload.size > 0)
+            item.SetType(TreeViewItem::Type::Highlighted);
     }
 
     currentItemIndex++;
