@@ -55,6 +55,7 @@ namespace View
                 AppCUI::Input::Key ExportAsmToFile;
                 AppCUI::Input::Key JumpBack;
                 AppCUI::Input::Key JumpForward;
+                AppCUI::Input::Key DissasmGotoEntrypoint;
             } Keys;
             bool Loaded;
 
@@ -487,10 +488,10 @@ namespace View
             void AddComment();
             void RemoveComment();
             void CommandExportAsmFile();
-            void ProcessSpaceKey();
+            void ProcessSpaceKey(bool goToEntryPoint = false);
             void CommandDissasmAddZone();
             void CommandDissasmRemoveZone();
-            void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line);
+            void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);

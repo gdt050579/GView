@@ -1419,7 +1419,7 @@ void GView::View::DissasmViewer::DissasmCodeZone::RemoveComment(uint32 line)
     Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
 }
 
-void Instance::ProcessSpaceKey()
+void Instance::ProcessSpaceKey(bool goToEntryPoint)
 {
     const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
     const uint64 offsetEnd   = offsetStart + 1;
@@ -1432,7 +1432,11 @@ void Instance::ProcessSpaceKey()
     }
 
     const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
-    if (zonesFound[0].startingLine == 0) // extending zone
+    if (goToEntryPoint && zone->isCollapsed)
+    {
+        ChangeZoneCollapseState(zone.get());
+    }
+    if (!goToEntryPoint && zonesFound[0].startingLine == 0) // extending zone
     {
         ChangeZoneCollapseState(zone.get());
         return;
@@ -1440,12 +1444,16 @@ void Instance::ProcessSpaceKey()
 
     if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
     {
-        // Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        if (goToEntryPoint)
+            Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine);
+    uint64* offsetToReach    = nullptr;
+    if (goToEntryPoint)
+        offsetToReach = &convertedZone->zoneDetails.entryPoint;
+    DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);
 }
 
 void DrawLineInfo::WriteErrorToScreen(std::string_view error) const

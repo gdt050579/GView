@@ -990,36 +990,42 @@ void Instance::CommandExportAsmFile()
     }
 }
 
-void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
+void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach)
 {
-    uint32 diffLines = 0;
-    cs_insn* insn    = GetCurrentInstructionByLine(line - 1, zone, obj, diffLines);
-    if (!insn)
+    uint32 diffLines     = 0;
+    uint64 computedValue = 0;
+    cs_insn* insn;
+    if (!offsetToReach)
     {
-        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
-        return;
-    }
-    uint32 computedValue = 0;
-    if (insn->mnemonic[0] == 'j')
-    {
-        char* val = &insn->op_str[2];
-
-        while (*val && *val != ',' && *val != ' ')
+        insn = GetCurrentInstructionByLine(line - 1, zone, obj, diffLines);
+        if (!insn)
         {
-            if (*val >= '0' && *val <= '9')
-                computedValue = computedValue * 16 + (*val - '0');
-            else if (*val >= 'a' && *val <= 'f')
-                computedValue = computedValue * 16 + (*val - 'a' + 10);
-            else
-            {
-                Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
-                computedValue = 0;
-                break;
-            }
-            val++;
+            Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+            return;
         }
+        if (insn->mnemonic[0] == 'j')// || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)
+        {
+            char* val = &insn->op_str[2];
+
+            while (*val && *val != ',' && *val != ' ')
+            {
+                if (*val >= '0' && *val <= '9')
+                    computedValue = computedValue * 16 + (*val - '0');
+                else if (*val >= 'a' && *val <= 'f')
+                    computedValue = computedValue * 16 + (*val - 'a' + 10);
+                else
+                {
+                    Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
+                    computedValue = 0;
+                    break;
+                }
+                val++;
+            }
+        }
+        cs_free(insn, 1);
     }
-    cs_free(insn, 1);
+    else
+        computedValue = *offsetToReach;
 
     if (computedValue == 0)
         return;
