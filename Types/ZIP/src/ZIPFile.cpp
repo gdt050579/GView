@@ -184,9 +184,9 @@ class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
     std::string password;
 
   public:
-    PasswordDialog() : Window("Enter Password", "d:c,w:25%,h:15%", WindowFlags::ProcessReturn)
+    PasswordDialog() : Window("Enter Password", "d:c,w:60,h:9", WindowFlags::ProcessReturn)
     {
-        input = Factory::Password::Create(this, "", "x:1,y:1,w:100%,h:1%");
+        input = Factory::Password::Create(this, "", "x:1,y:1,w:56,h:1");
 
         savePasswordAsDefault = Factory::CheckBox::Create(this, "Save password as default", "x:1,y:3,w:100%,h:1%", 1);
         savePasswordAsDefault->SetChecked(true);
