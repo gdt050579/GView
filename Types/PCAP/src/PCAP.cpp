@@ -83,7 +83,7 @@ extern "C"
               "n:&Connection,a:l,w:50",
               "n:&IpProt.,a:c,w:8",
               "n:&Transport,a:c,w:12",
-              "n:&Payload,a:c,w:9",
+              "n:&Payload,a:r,w:9",
               "n:&AppLayer,a:c,w:10",
               "n:&Summary,a:l,w:50",
         });
