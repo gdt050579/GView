@@ -12,22 +12,22 @@ constexpr uint32 PK{ 0x04034B50 };
 constexpr uint32 PK_EMPTY{ 0x06054B50 };
 constexpr uint32 PK_SPANNED{ 0x08074B50 };
 
-constexpr string_view ZIP_ICON = "................"  // 1
-                                 "................"  // 2
-                                 "................"  // 3
-                                 "................"  // 4
-                                 "WWWWW.WW.WWWWWWW"  // 5
-                                 "....W.WW.W.....W"  // 6
-                                 "....W....W.....W"  // 7
-                                 "....W.WW.W.....W"  // 8
-                                 "WWWWW.WW.WWWWWWW"  // 9
-                                 "W.....WW.W......"  // 10
-                                 "W.....WW.W......"  // 11
-                                 "WWWWW.WW.W......"  // 12
-                                 "................"  // 13
-                                 "................"  // 14
-                                 "................"  // 15
-                                 "................"; // 16
+constexpr string_view ZIP_ICON =   "................"  // 1
+                                   "...WWW.........."  // 2
+                                   "..WYYYW........."  // 3
+                                   ".WYYYYYWWWWWWW.."  // 4
+                                   ".WbbbbybybbbbyW."  // 5
+                                   ".WyyybyyybyybyW."  // 6
+                                   ".WyybyybybbbbyW."  // 7
+                                   ".WybyyybybyyyyW."  // 8
+                                   ".WbbbbybybyyyyW."  // 9
+                                   ".WyyyyyyyyyyyyW."  // 10
+                                   "..WWWWWWWWWWWW.."  // 11
+                                   "................"  // 12
+                                   "................"  // 13
+                                   "................"  // 14
+                                   "................"  // 15
+                                   "................"; // 16
 
 extern "C"
 {
