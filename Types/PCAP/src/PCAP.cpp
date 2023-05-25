@@ -85,7 +85,7 @@ extern "C"
               "n:&Transport,a:c,w:12",
               "n:&Payload,a:c,w:9",
               "n:&AppLayer,a:c,w:10",
-              "n:&Summary,a:c,w:50",
+              "n:&Summary,a:l,w:50",
         });
 
         settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
