@@ -360,9 +360,11 @@ bool Instance::Add(
       const AppCUI::Utils::ConstString& path,
       uint32 PID,
       OpenMethod method,
-      std::string_view typeName)
+      std::string_view typeName,
+      Reference<Window> parent)
 {
-    Reference<Window> parentWindow{ nullptr }; // reference for window manager
+    Reference<Window> parentWindow{ parent }; // reference for window manager
+    if (parentWindow == nullptr)
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         auto focusedChild    = desktop->GetFocusedChild();
@@ -472,7 +474,8 @@ bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod metho
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
 }
-bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName)
+bool Instance::AddBufferWindow(
+      BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent)
 {
     auto f = std::make_unique<AppCUI::OS::MemoryFile>();
     if (f->Create(buf.GetData(), buf.GetLength()) == false)
@@ -480,7 +483,7 @@ bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, const Co
         errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
         RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
     }
-    return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName);
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName, parent);
 }
 void Instance::OpenFile()
 {
