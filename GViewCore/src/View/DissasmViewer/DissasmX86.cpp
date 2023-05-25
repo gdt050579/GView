@@ -1036,8 +1036,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
     cs_free(insn, 1);
 
     jumps_holder.insert(Cursor.saveState());
-    Cursor.lineInView    = 0;
-    Cursor.startViewLine = diffLines + zone->startLineIndex;
+    Cursor.lineInView    = std::min<uint32>(5, diffLines);
+    Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
 }
 
 void Instance::CommandDissasmAddZone()

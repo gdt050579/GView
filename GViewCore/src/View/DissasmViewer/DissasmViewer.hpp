@@ -21,7 +21,7 @@ namespace View
         static constexpr size_t DISSASM_MAX_CACHED_LINES      = 50;
         static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
-        static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 10;
+        static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 30;
 
         struct Config
         {
