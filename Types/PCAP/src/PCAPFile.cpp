@@ -161,6 +161,12 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     uint8* payload = new uint8[layer.payload.size];
     memcpy(payload, layer.payload.location, layer.payload.size);
 
+	std::string extractionName;
+    if (!layer.extractionName.empty())
+        extractionName = std::string(layer.extractionName.data(), layer.extractionName.size());
+    else
+        extractionName = (const char*) layer.name;
+
     const Buffer buffer = { payload, layer.payload.size };
-    GView::App::OpenBuffer(buffer, (const char*) layer.name, stream->name, GView::App::OpenMethod::BestMatch);
+    GView::App::OpenBuffer(buffer, extractionName, stream->name, GView::App::OpenMethod::BestMatch);
 }

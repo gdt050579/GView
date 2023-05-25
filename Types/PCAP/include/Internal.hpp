@@ -1975,8 +1975,9 @@ struct StreamPacketContext
 
 struct StreamTcpLayer
 {
-    // TODO: delete it
+    // TODO: delete name when no longer used!
     uint8* name;
+    std::string_view extractionName;
     StreamPayload payload;
 };
 
