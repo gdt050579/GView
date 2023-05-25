@@ -131,7 +131,7 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     std::string* toAppend = &streamText;
     for (const auto c : path)
     {
-        if (c >= '0' && c < '9')
+        if (c >= '0' && c <= '9')
             toAppend->push_back(c);
         else
             toAppend = &applicationText;

@@ -79,7 +79,7 @@ extern "C"
         settings.SetName("StreamView");
         settings.SetIcon(PCAP_ICON);
         settings.SetColumns({
-              "n:&ID,a:l,w:6",
+              "n:&ID,a:l,w:8",
               "n:&Connection,a:l,w:50",
               "n:&IpProt.,a:c,w:8",
               "n:&Transport,a:c,w:12",
