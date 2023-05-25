@@ -169,3 +169,20 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
 
     GView::App::OpenBuffer(buffer, extractionName, extractionName, GView::App::OpenMethod::BestMatch);
 }
+
+std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForContainerView()
+{
+    std::vector<std::pair<std::string, std::string>> result{};
+    result.reserve(4);
+
+    LocalString<32> tmp;
+    tmp.SetFormat("%hu.%hu", header.versionMajor, header.versionMinor);
+
+    NumericFormatter n;
+    result.emplace_back("PCAP Version", tmp.GetText());
+    result.emplace_back("Total packets", n.ToString(packetHeaders.size(), NumericFormatFlags::None).data());
+    result.emplace_back("Total streams", n.ToString(streamManager.size(), NumericFormatFlags::None).data());
+    result.emplace_back("Protocols", streamManager.GetProtocolsFound().data());
+
+    return result;
+}

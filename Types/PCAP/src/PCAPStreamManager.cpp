@@ -192,6 +192,16 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     streamToAddTo->packetsOffsets.push_back({ packet, payload, order });
 }
 
+void StreamManager::AddToKnownProtocols(const std::string& layerName)
+{
+    if (layerName.empty())
+        return;
+    for (const auto& name : protocolsFound)
+        if (name == layerName)
+            return;
+    protocolsFound.push_back(layerName);
+}
+
 constexpr uint32 maxWaitUntilEndLine = 300;
 
 constexpr std::string_view httpPattern        = "HTTP/1.";
@@ -352,6 +362,8 @@ void StreamManager::FinishedAdding()
             conn.name = streamName;
             // conn.sortPackets();
             conn.computeFinalPayload();
+            if (!conn.appLayerName.empty())
+                AddToKnownProtocols(conn.appLayerName);
             finalStreams.push_back(conn);
         }
     }

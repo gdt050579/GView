@@ -51,6 +51,8 @@ class PCAPFile : public TypeInterface, public View::ContainerViewer::EnumerateIn
 
         return selectionZoneInterface->GetSelectionZone(index);
     }
+
+	std::vector<std::pair<std::string, std::string>> GetPropertiesForContainerView();
 };
 
 namespace Utils

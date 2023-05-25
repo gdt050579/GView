@@ -95,6 +95,10 @@ extern "C"
             pcap->streamManager.AddPacket(header, pcap->header.network);
         pcap->streamManager.FinishedAdding();
 
+		const auto properties = pcap->GetPropertiesForContainerView();
+        for (const auto& property : properties)
+            settings.AddProperty(property.first.data(), property.second.data());
+
         win->CreateViewer(settings);
     }
 
