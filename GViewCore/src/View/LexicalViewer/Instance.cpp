@@ -1892,8 +1892,17 @@ void Instance::ShowSaveAsDialog()
     // step 1 --> make sure that we save all tokens , not just the visible ones
     BakupTokensPositions();
     auto originalShowMetaDataValue = this->showMetaData;
-    this->showMetaData             = true;
-    ExpandAll();
+
+    if (dlg.ShouldIgnoreMetadataOnSave())
+    {
+        this->showMetaData = false;
+    }
+    else
+    {
+        this->showMetaData = true;
+        ExpandAll();
+    }
+
 
     // Step 2 --> create a buffer for the entire text
     Buffer b;
