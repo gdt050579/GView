@@ -11,7 +11,7 @@ constexpr int32 BTN_ID_BROWSER = 3;
 
 std::string_view newLineFormats[] = { "\r\n", "\n", "\r", "\n\r" };
 
-SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,h:16", WindowFlags::ProcessReturn)
+SaveAsDialog::SaveAsDialog(Reference<Object> obj) : Window("Save As", "d:c,w:70,h:17", WindowFlags::ProcessReturn)
 {
     Factory::Label::Create(this, "File &path", "x:1,y:1,w:10");
     txPath = Factory::TextField::Create(this, "", "l:1,t:2,r:15,h:2");
