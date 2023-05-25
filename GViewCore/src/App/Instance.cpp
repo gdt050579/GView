@@ -145,7 +145,7 @@ bool Instance::Init()
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
     this->typePlugins.reserve(128);
-    if(!LoadSettings())
+    if (!LoadSettings())
     {
         const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
         AppCUI::OS::File oldSettingsFile;
@@ -159,7 +159,8 @@ bool Instance::Init()
             auto preservedSettingsNewPath = settingsPath;
             preservedSettingsNewPath.replace_extension(".ini.bak");
             std::filesystem::rename(settingsPath, preservedSettingsNewPath);
-            AppCUI::Log::Report(AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
+            AppCUI::Log::Report(
+                  AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
             CHECK(GView::App::ResetConfiguration(), false, "");
         }
     }
@@ -237,10 +238,7 @@ Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
     return nullptr;
 }
 Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
-      const string_view& extension,
-      AppCUI::Utils::BufferView buf,
-      GView::Type::Matcher::TextParser& textParser,
-      uint64 extensionHash)
+      const string_view& extension, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
 {
     // check for extension first
     if (extensionHash != 0)
@@ -392,7 +390,8 @@ bool Instance::Add(
     auto extHash =
           pos != u16string_view::npos ? GView::Type::Plugin::ExtensionToHash(temp.ToStringView().substr(pos)) : GView::Type::Plugin::ExtensionToHash("");
 
-    std::u16string newName;
+    CHECK(temp.Set(name), false, "Fail to get filename object");
+    std::u16string newName{ temp.ToStringView() };
     auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName, newName);
     CHECK(plg, false, "Unable to identify a valid plugin open canceled !");
 
@@ -423,7 +422,9 @@ bool Instance::AddFolder(const std::filesystem::path& path)
 
     GView::Utils::DataCache cache;
     auto win = std::make_unique<FileWindow>(
-          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this, nullptr);
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, path.filename().u16string(), path.u16string(), 0),
+          this,
+          nullptr);
 
     // instantiate window
     while (true)
