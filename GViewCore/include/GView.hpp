@@ -355,9 +355,9 @@ namespace DigitalSignature
         String issuer;
         String subject;
         int32 verify;
-        String errorVerify;
+        String errorVerify{};
 
-        int32 signerVerify; //  compares the certificate cert against the signer identifier si
+        int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si
         String errorSignerVerify{};
     };
 
@@ -366,21 +366,21 @@ namespace DigitalSignature
 
     struct CORE_EXPORT SignerAttributes
     {
-        String name;
+        String name{};
         ASN1TYPE types[MAX_SIZE_IN_CONTAINER]{}; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
                                                  // V_ASN1_SEQUENCE
-        String contentType;
-        String contentTypeData;
-        int32 count;
+        String contentType{};
+        String contentTypeData{};
+        int32 count{ 0 };
 
         String CDHashes[MAX_SIZE_IN_CONTAINER]; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
     };
 
     struct CORE_EXPORT Signer
     {
-        int32 count;
+        int32 count{ 0 };
         SignerAttributes attributes[MAX_SIZE_IN_CONTAINER]{};
-        uint32 attributesCount;
+        uint32 attributesCount{ 0 };
     };
 
     struct CORE_EXPORT SignatureMachO
