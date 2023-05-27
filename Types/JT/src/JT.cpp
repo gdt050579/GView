@@ -69,7 +69,7 @@ extern "C"
             i++;
         }
 
-        win->CreateViewer("BufferView", settings);
+        jt->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
@@ -89,7 +89,7 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        // sect["Pattern"]   = "hex:'4C 00 00 00'";
+        // sect["Pattern"]   = "magic:4C 00 00 00";
         sect["Extension"]   = "jlwf";
         sect["Priority"]    = 1;
         sect["Description"] = "JLWF file format (*.jlwf)";

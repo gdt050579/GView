@@ -68,6 +68,7 @@ Instance::Instance()
 {
     this->defaultCacheSize  = DEFAULT_CACHE_SIZE;
     this->Keys.changeViews  = Key::F4;
+    this->Keys.choseNewType = Key::Alt | Key::F1;
     this->Keys.find         = Key::Alt | Key::F7;
     this->Keys.switchToView = Key::Alt | Key::F;
     this->Keys.goTo         = Key::F5;
@@ -120,6 +121,7 @@ bool Instance::LoadSettings()
     this->Keys.switchToView = sect.GetValue("Key.SwitchToView").ToKey(Key::F | Key::Alt);
     this->Keys.find         = sect.GetValue("Key.Find").ToKey(Key::F7 | Key::Alt);
     this->Keys.goTo         = sect.GetValue("Key.GoTo").ToKey(Key::F5);
+    this->Keys.choseNewType = sect.GetValue("Key.ChoseType").ToKey(Key::F1 | Key::Alt);
 
     return true;
 }
@@ -137,13 +139,31 @@ bool Instance::BuildMainMenus()
 bool Instance::Init()
 {
     InitializationData initData;
-    initData.Flags = InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile |
-                     InitializationFlags::AutoHotKeyForWindow;
+    initData.Flags =
+          InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile | InitializationFlags::AutoHotKeyForWindow;
 
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
     this->typePlugins.reserve(128);
-    CHECK(LoadSettings(), false, "Fail to load settings !");
+    if (!LoadSettings())
+    {
+        const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
+        AppCUI::OS::File oldSettingsFile;
+        if (!oldSettingsFile.OpenRead(settingsPath))
+        {
+            CHECK(GView::App::ResetConfiguration(), false, "");
+        }
+        else
+        {
+            oldSettingsFile.Close();
+            auto preservedSettingsNewPath = settingsPath;
+            preservedSettingsNewPath.replace_extension(".ini.bak");
+            std::filesystem::rename(settingsPath, preservedSettingsNewPath);
+            AppCUI::Log::Report(
+                  AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
+            CHECK(GView::App::ResetConfiguration(), false, "");
+        }
+    }
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
     // set up handlers
@@ -152,41 +172,244 @@ bool Instance::Init()
     dsk->Handlers()->OnStart = this;
     return true;
 }
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_WithSelectedType(
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      uint64 dataSize,
+      AppCUI::Utils::BufferView buf,
+      GView::Type::Matcher::TextParser& textParser,
+      uint64 extensionHash,
+      std::string_view typeName,
+      std::u16string& newName)
+{
+    GView::Type::Plugin* plg = nullptr;
+    // search for the plugin
+    auto sz = typeName.size();
+    for (auto& pType : this->typePlugins)
+    {
+        auto pName = pType.GetName();
+        if (pName.size() != sz)
+            continue;
+        if (AppCUI::Utils::String::StartsWith(pName, typeName, true))
+        {
+            plg = &pType;
+            break;
+        }
+    }
+
+    // plugin was not found
+    if (plg == nullptr)
+    {
+        LocalString<128> temp;
+        temp.Set("Unable to find any registered plugin for type: ");
+        temp.Add(typeName);
+        AppCUI::Dialogs::MessageBox::ShowError("Error", temp);
+        // default to selection mode
+        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
+    }
+    // check if the parser accepts it
+    if (plg->IsOfType(buf, textParser) == false)
+    {
+        LocalString<128> temp;
+        temp.Set("Current file/buffer can not be matched plugin registered for type : ");
+        temp.Add(typeName);
+        AppCUI::Dialogs::MessageBox::ShowError("Error", temp);
+        // default to selection mode
+        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
+    }
+    // all good return the type plugin
+    return plg;
+}
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_Select(
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      uint64 dataSize,
+      AppCUI::Utils::BufferView buf,
+      GView::Type::Matcher::TextParser& textParser,
+      uint64 extensionHash,
+      std::u16string& newName)
+{
+    SelectTypeDialog dlg(name, path, dataSize, this->typePlugins, buf, textParser, extensionHash);
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        newName = dlg.GetFilename();
+        return dlg.GetSelectedPlugin(&this->defaultPlugin);
+    }
+    return nullptr;
+}
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_FirstMatch(
+      const string_view& extension, AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash)
+{
+    // check for extension first
+    if (extensionHash != 0)
+    {
+        for (auto& pType : this->typePlugins)
+        {
+            if (pType.MatchExtension(extensionHash))
+            {
+                if (pType.IsOfType(buf, textParser, extension))
+                    return &pType;
+            }
+        }
+    }
+
+    // check the content
+    for (auto& pType : this->typePlugins)
+    {
+        if (pType.MatchContent(buf, textParser))
+        {
+            if (pType.IsOfType(buf, textParser))
+                return &pType;
+        }
+    }
+
+    // nothing matched => return the default plugin
+    return &this->defaultPlugin;
+}
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin_BestMatch(
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      uint64 dataSize,
+      AppCUI::Utils::BufferView buf,
+      GView::Type::Matcher::TextParser& textParser,
+      uint64 extensionHash,
+      std::u16string& newName)
+{
+    auto plg   = &this->defaultPlugin;
+    auto count = 0;
+    if (extensionHash != 0)
+    {
+        for (auto& pType : this->typePlugins)
+        {
+            if (pType.MatchExtension(extensionHash))
+            {
+                if (pType.IsOfType(buf, textParser))
+                {
+                    count++;
+                    plg = &pType;
+                    if (count > 1) // at least two options
+                        return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
+                }
+            }
+        }
+    }
+
+    // check the content
+    for (auto& pType : this->typePlugins)
+    {
+        if (pType.MatchContent(buf, textParser))
+        {
+            if (pType.IsOfType(buf, textParser))
+            {
+                count++;
+                plg = &pType;
+                if (count > 1) // at least two options
+                    return IdentifyTypePlugin_Select(name, path, dataSize, buf, textParser, extensionHash, newName);
+            }
+        }
+    }
+
+    // nothing matched => return the default plugin
+    return plg;
+}
+Reference<GView::Type::Plugin> Instance::IdentifyTypePlugin(
+      const AppCUI::Utils::ConstString& name,
+      const AppCUI::Utils::ConstString& path,
+      GView::Utils::DataCache& cache,
+      uint64 extensionHash,
+      OpenMethod method,
+      std::string_view typeName,
+      std::u16string& newName)
+{
+    auto buf    = cache.Get(0, 0x8800, false);
+    auto bomLen = 0U;
+    auto enc    = GView::Utils::CharacterEncoding::AnalyzeBufferForEncoding(buf, true, bomLen);
+    auto text =
+          enc != GView::Utils::CharacterEncoding::Encoding::Binary ? GView::Utils::CharacterEncoding::ConvertToUnicode16(buf) : GView::Utils::UnicodeString();
+    auto tp = GView::Type::Matcher::TextParser(text.text, text.size);
+    auto sz = cache.GetSize();
+
+    LocalUnicodeStringBuilder<256> temp;
+    temp.Set(name);
+    auto pos = temp.ToStringView().find_last_of('.');
+
+    // Get extension as UTF-16 and convert it to UTF-8
+    auto u16Extension             = pos != u16string_view::npos ? (temp.ToStringView().substr(pos)) : std::u16string_view();
+    std::string extensionAsString = { u16Extension.begin(), u16Extension.end() };
+    std::string_view extension(extensionAsString);
+
+    switch (method)
+    {
+    case OpenMethod::FirstMatch:
+        return IdentifyTypePlugin_FirstMatch(extension, buf, tp, extensionHash);
+    case OpenMethod::BestMatch:
+        return IdentifyTypePlugin_BestMatch(name, path, sz, buf, tp, extensionHash, newName);
+    case OpenMethod::Select:
+        return IdentifyTypePlugin_Select(name, path, sz, buf, tp, extensionHash, newName);
+    case OpenMethod::ForceType:
+        return IdentifyTypePlugin_WithSelectedType(name, path, sz, buf, tp, extensionHash, typeName, newName);
+    }
+
+    // for other methods --> return the default plugin
+    return &this->defaultPlugin;
+}
 bool Instance::Add(
       GView::Object::Type objType,
       std::unique_ptr<AppCUI::OS::DataObject> data,
       const AppCUI::Utils::ConstString& name,
       const AppCUI::Utils::ConstString& path,
       uint32 PID,
-      std::string_view ext)
+      OpenMethod method,
+      std::string_view typeName,
+      Reference<Window> parent)
 {
+    Reference<Window> parentWindow{ parent }; // reference for window manager // TODO: a more generic way
+    if (parentWindow == nullptr)
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        auto focusedChild    = desktop->GetFocusedChild();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window = desktop->GetChild(i);
+
+            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
+            {
+                parentWindow = window.ToObjectRef<Window>();
+                break;
+            }
+        }
+    }
+
     GView::Utils::DataCache cache;
     CHECK(cache.Init(std::move(data), this->defaultCacheSize), false, "Fail to instantiate cache object");
 
-    auto buf  = cache.Get(0, 0x8800, false);
-    auto* plg = &this->defaultPlugin;
-    // iterate from existing types
-    for (auto& pType : this->typePlugins)
-    {
-        if (pType.Validate(buf, ext))
-        {
-            plg = &pType;
-            break;
-        }
-    }
+    // extract extension
+    LocalUnicodeStringBuilder<256> temp;
+    CHECK(temp.Set(path), false, "Fail to get path object");
+    // search for the last "."
+    auto pos = temp.ToStringView().find_last_of('.');
+    auto extHash =
+          pos != u16string_view::npos ? GView::Type::Plugin::ExtensionToHash(temp.ToStringView().substr(pos)) : GView::Type::Plugin::ExtensionToHash("");
+
+    CHECK(temp.Set(name), false, "Fail to get filename object");
+    std::u16string newName{ temp.ToStringView() };
+    auto plg = IdentifyTypePlugin(name, path, cache, extHash, method, typeName, newName);
+    CHECK(plg, false, "Unable to identify a valid plugin open canceled !");
+
     // create an instance of that object type
     auto contentType = plg->CreateInstance();
     CHECK(contentType, false, "'CreateInstance' returned a null pointer to a content type object !");
 
-    auto win =
-          std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, name, path, PID), this, plg);
+    auto win = std::make_unique<FileWindow>(std::make_unique<GView::Object>(objType, std::move(cache), contentType, newName, path, PID), this, plg);
 
     // instantiate window
     while (true)
     {
-        CHECKBK(plg->PopulateWindow(win.get()), "Fail to populate file window !");
+        CHECKBK(plg->PopulateWindow(win.get()), "Failed to populate file window!");
         win->Start(); // starts the window and set focus
-        auto res = AppCUI::Application::AddWindow(std::move(win));
+
+        auto res = AppCUI::Application::AddWindow(std::move(win), parentWindow);
         CHECKBK(res != InvalidItemHandle, "Fail to add newly created window to desktop");
 
         return true;
@@ -201,7 +424,9 @@ bool Instance::AddFolder(const std::filesystem::path& path)
 
     GView::Utils::DataCache cache;
     auto win = std::make_unique<FileWindow>(
-          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, "", path.u16string(), 0), this, nullptr);
+          std::make_unique<GView::Object>(GView::Object::Type::Folder, std::move(cache), contentType, path.filename().u16string(), path.u16string(), 0),
+          this,
+          nullptr);
 
     // instantiate window
     while (true)
@@ -224,7 +449,7 @@ void Instance::ShowErrors()
     err.Show();
     errList.Clear();
 }
-bool Instance::AddFileWindow(const std::filesystem::path& path)
+bool Instance::AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent)
 {
     try
     {
@@ -240,7 +465,7 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
                 errList.AddError("Fail to open file: %s", path.u8string().c_str());
                 RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
             }
-            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, path.extension().string());
+            return Add(Object::Type::File, std::move(f), path.filename().u16string(), path.u16string(), 0, method, typeName, parent);
         }
     }
     catch (std::filesystem::filesystem_error /* e */)
@@ -249,7 +474,8 @@ bool Instance::AddFileWindow(const std::filesystem::path& path)
         RETURNERROR(false, "Fail to open file: %s", path.u8string().c_str());
     }
 }
-bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_view typeExtension)
+bool Instance::AddBufferWindow(
+      BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent)
 {
     auto f = std::make_unique<AppCUI::OS::MemoryFile>();
     if (f->Create(buf.GetData(), buf.GetLength()) == false)
@@ -257,14 +483,14 @@ bool Instance::AddBufferWindow(BufferView buf, const ConstString& name, string_v
         errList.AddError("Fail to open memory buffer of size: %llu", buf.GetLength());
         RETURNERROR(false, "Fail to open memory buffer of size: %llu", buf.GetLength());
     }
-    return Add(Object::Type::MemoryBuffer, std::move(f), name, "", 0, typeExtension);
+    return Add(Object::Type::MemoryBuffer, std::move(f), name, path, 0, method, typeName, parent);
 }
 void Instance::OpenFile()
 {
     auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", ".");
     if (res.has_value())
     {
-        if (AddFileWindow(res.value()) == false)
+        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
             ShowErrors();
     }
 }

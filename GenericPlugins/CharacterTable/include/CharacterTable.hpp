@@ -2,13 +2,6 @@
 
 #include "GView.hpp"
 
-namespace GView
+namespace GView::GenericPlugins::CharacterTable
 {
-namespace GenericPlugins
-{
-    namespace CharacterTable
-    {
-
-    } // namespace CharacterTable
-} // namespace GenericPlugins
-} // namespace GView
+} // namespace GView::GenericPlugins::CharacterTable

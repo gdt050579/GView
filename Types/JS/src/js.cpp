@@ -35,8 +35,10 @@ extern "C"
         settings.AddPlugin(&js->plugins.constPropagation);
         win->CreateViewer("Lexical", settings);
 
-        win->CreateViewer<TextViewer::Settings>("Text View");
-        win->CreateViewer<BufferViewer::Settings>("Buffer View");
+        win->CreateViewer<TextViewer::Settings>();
+
+        GView::View::BufferViewer::Settings s{};
+        js->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new JS::Panels::Information(js)), true);

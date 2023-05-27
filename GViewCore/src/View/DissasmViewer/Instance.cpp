@@ -1,16 +1,66 @@
+#include <array>
+
 #include "DissasmViewer.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <cassert>
+#include <unordered_map>
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings)
-    : name(name), obj(obj), settings(nullptr)
+constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
+
+// TODO: fix remove duplicate with DissasmKeyEvents.cpp
+constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
+constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
+constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
+constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE   = 3;
+constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
+constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
+constexpr int32 RIGHT_CLICK_DISSASM_ADD_ZONE    = 6;
+constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_ZONE = 7;
+
+const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
+    { { "WriteFile",
+        { { "hFile", "HANDLE" },
+          { "lpBuffer", "LPCVOID" },
+          { "nNumberOfBytesToWrite", "DWORD" },
+          { "lpNumberOfBytesWritten", "LPDWORD" },
+          { "lpOverlapped", "LPOVERLAPPED" } } },
+      { "CloseHandle", { { "hObject", "HANDLE" } } },
+      { "CreateFileW",
+        { { "lpFileName", "LPCWSTR" },
+          { "dwDesiredAccess", "DWORD" },
+          { "dwShareMode", "DWORD" },
+          { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
+          { "dwCreationDisposition", "DWORD" },
+          { "dwFlagsAndAttributes", "DWORD" },
+          { "hTemplateFile", "HANDLE" } } },
+      { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } } }
+};
+
+struct
+{
+    int commandID;
+    string_view text;
+    // Input::Key shortcutKey = Input::Key::None;
+    ItemHandle handle = InvalidItemHandle;
+} RIGHT_CLICK_MENU_COMMANDS[] = { /*{ RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
+                                  { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
+                                  { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
+                                  { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },*/
+                                  { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
+                                  { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
+                                  { RIGHT_CLICK_DISSASM_ADD_ZONE, "Collapse dissasm zone" },
+                                  { RIGHT_CLICK_DISSASM_REMOVE_ZONE, "Remove dissasm zone" }
+};
+
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
+    : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
 {
     this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
     // settings
@@ -28,9 +78,9 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     if (config.Loaded == false)
         config.Initialize();
 
-    this->Cursor.currentPos = 0;
-    this->Cursor.startView  = 0;
-    this->Cursor.base       = 10;
+    this->Cursor.lineInView    = 0;
+    this->Cursor.startViewLine = 0;
+    this->Cursor.offset        = 0;
 
     this->CursorColors.Normal      = config.Colors.Normal;
     this->CursorColors.Highlighted = config.Colors.Highlight;
@@ -41,8 +91,35 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
     this->Layout.totalCharactersPerLine          = 1;
     this->Layout.startingTextLineOffset          = 5;
     this->Layout.structuresInitialCollapsedState = true;
+    this->Layout.totalLinesSize                  = 0;
+
+    this->CurrentSelection = {};
 
     this->codePage = CodePageID::DOS_437;
+
+    for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS)
+    {
+        menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
+    }
+    // rightClickOffset = 0;
+
+    // TODO: to be moved inside plugin for some sort of API for token<->color
+    asmData.instructionToColor = {
+        { *((uint32*) "int3"), config.Colors.AsmIrrelevantInstructionColor },
+        { *((uint32*) "ret"), config.Colors.AsmFunctionColor },
+        { *((uint32*) "call"), config.Colors.AsmFunctionColor },
+        { *((uint32*) "cmp"), config.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "test"), config.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "word"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "dwor"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "qwor"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "ptr"), config.Colors.AsmLocationInstruction },
+    };
+}
+
+inline uint64 LinePositionToOffset(LinePosition&& linePosition, uint32 textSize)
+{
+    return static_cast<uint64>(linePosition.line) * textSize + linePosition.offset;
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -53,11 +130,6 @@ bool Instance::GoTo(uint64 offset)
 bool Instance::Select(uint64 offset, uint64 size)
 {
     return true;
-}
-
-std::string_view Instance::GetName()
-{
-    return "DissasmView";
 }
 
 // bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
@@ -100,22 +172,21 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(
-          x + 4, y, width - 4, n.ToBase(this->Cursor.currentPos % Layout.textSize, this->Cursor.base), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.offset, 10), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
         r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 
-    if (this->obj->GetData().GetSize() > 0)
+    if (Layout.totalLinesSize > 0)
     {
         LocalString<32> tmp;
-        tmp.Format("%3u%%", (this->Cursor.currentPos + 1) * 100ULL / this->obj->GetData().GetSize());
+        tmp.Format("%3u%%", (static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView) * 100ULL / Layout.totalLinesSize);
         r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
     }
     else
     {
-        r.WriteSingleLineText(x, y, "----", this->CursorColors.Line);
+        r.WriteSingleLineText(x, y, "  0%", this->CursorColors.Line);
     }
     r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
 
@@ -126,8 +197,7 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
 {
     NumericFormatter n;
     r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(
-          x + 5, y, width - 4, n.ToString(this->Cursor.currentPos / Layout.textSize, NumericFormatFlags::None), this->CursorColors.Normal);
+    r.WriteSingleLineText(x + 5, y, width - 4, n.ToString(Cursor.lineInView + Cursor.startViewLine, NumericFormatFlags::None), this->CursorColors.Normal);
     x += width;
 
     if (addSeparator)
@@ -138,31 +208,138 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
     return x + 5;
 }
 
+void Instance::AddNewCollapsibleZone()
+{
+    if (!selection.HasAnySelection())
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
+        return;
+    }
+
+    const uint64 offsetStart = selection.GetSelectionStart(0);
+    const uint64 offsetEnd   = selection.GetSelectionEnd(0);
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single text zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::CollapsibleAndTextZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone!");
+        return;
+    }
+
+    auto data = static_cast<CollapsibleAndTextZone*>(zone.get());
+    if (data->data.canBeCollapsed)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone that cannot be collapsed!");
+        return;
+    }
+
+    // TODO:
+    settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
+    RecomputeDissasmZones();
+}
+
+void Instance::AddComment()
+{
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].startingLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+
+    std::string foundComment;
+    // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
+    convertedZone->HasComment(zonesFound[0].startingLine, foundComment);
+
+    selection.Clear();
+    CommentDataWindow dlg(foundComment);
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        convertedZone->AddOrUpdateComment(zonesFound[0].startingLine, dlg.GetResult());
+    }
+}
+
+void Instance::RemoveComment()
+{
+    // TODO: duplicate code -> maybe extract this?
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    if (zonesFound[0].startingLine == 0)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    convertedZone->RemoveComment(zonesFound[0].startingLine);
+}
+
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 {
     if (dli.recomputeOffsets)
     {
         this->chars.Resize(Layout.totalCharactersPerLine);
         dli.recomputeOffsets      = false;
-        dli.currentLineFromOffset = (uint32) (this->Cursor.startView / this->Layout.textSize);
+        dli.currentLineFromOffset = this->Cursor.startViewLine;
     }
 
     // TODO: send multiple lines to be drawn with each other instead of searching line by line
-    //          for example: search how many line from the text needs to be written -> write all of thems
+    //          for example: search how many line from the text needs to be written -> write all of them
 
-    uint32 currentLineIndex = dli.currentLineFromOffset + dli.screenLineToDraw;
+    // TODO: current algorithm is build with ordered index values, could be improved later with a binary search
+
+    const uint32 currentLineIndex = dli.currentLineFromOffset + dli.screenLineToDraw;
     if (!settings->parseZones.empty())
     {
         auto& zones       = settings->parseZones;
         uint32 zonesCount = (uint32) settings->parseZones.size();
-        // TODO: optimization -> instead of search every time keep the last zone index inside memmory and search from there
+        // TODO: optimization -> instead of search every time keep the last zone index inside memory and search from there
         for (uint32 i = 0; i < zonesCount; i++)
         {
             if ((currentLineIndex >= zones[i]->startLineIndex && currentLineIndex < zones[i]->endingLineIndex))
             {
                 // struct
-                dli.textLineToDraw       = currentLineIndex - zones[i]->startLineIndex;
-                dli.lastZoneIndexToReset = i;
+                dli.textLineToDraw = currentLineIndex - zones[i]->startLineIndex;
                 switch (zones[i]->zoneType)
                 {
                 case DissasmParseZoneType::StructureParseZone:
@@ -170,28 +347,26 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
 
                 // TODO:
                 case DissasmParseZoneType::DissasmCodeParseZone:
-                    return DrawStructureZone(dli, (DissasmParseStructureZone*) zones[i].get());
+                    return DrawDissasmZone(dli, (DissasmCodeZone*) zones[i].get());
+                case DissasmParseZoneType::CollapsibleAndTextZone:
+                    return DrawCollapsibleAndTextZone(dli, (CollapsibleAndTextZone*) zones[i].get());
                 default:
                     return false;
                 }
             }
-            else
-            {
-                dli.textLineToDraw = currentLineIndex + zones[i]->textLinesOffset - zones[i]->endingLineIndex;
-                if (i + 1 >= zonesCount)
-                {
-                    return WriteTextLineToChars(dli);
-                    break;
-                }
-                if (currentLineIndex < zones[i + 1]->startLineIndex)
-                {
-                    return WriteTextLineToChars(dli);
-                }
-            }
         }
+        // return true;
+        assert(false);
     }
     else
     {
+        if (!config.ShowFileContent)
+        {
+            dli.renderer.WriteSingleLineText(
+                  Layout.startingTextLineOffset, 1, "No structures found an File content is hidden. No content to show.", config.Colors.Normal);
+            return true;
+        }
+
         dli.textLineToDraw = currentLineIndex;
         return WriteTextLineToChars(dli);
     }
@@ -199,8 +374,99 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
-inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
-      const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
+void DissasmCharacterBufferPool::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails)
+{
+    if (pool.empty())
+        return;
+    constexpr uint32 MAX_LINE_DIFF = 10;
+
+    const uint32 currentLine = pool.back().currentLine;
+    auto it                  = pool.rbegin() + 1; // ignoring last element
+    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
+    for (; it != pool.rend() && pushesRemaining > 0; ++it)
+    {
+        if (currentLine - it->currentLine < MAX_LINE_DIFF && it->isPush)
+        {
+            // TODO: improve performance, remove string concatenation as much as possible
+            auto param           = std::string(functionDetails->params[pushIndex].name);
+            const auto commentIt = it->comments->find(it->currentLine);
+            if (commentIt != it->comments->end())
+            {
+                commentIt->second = param + " " + commentIt->second;
+            }
+            else
+            {
+                it->comments->insert({ it->currentLine, param });
+            }
+            it->needCommentUpdate = true;
+            pushesRemaining--;
+            pushIndex++;
+        }
+    }
+}
+
+DissasmCharacterBufferPool::PoolBuffer& DissasmCharacterBufferPool::GetPoolBuffer(uint32 currentLine)
+{
+    if (currentSize >= pool.size())
+    {
+        PoolBuffer buffer{};
+        buffer.lineToDrawOnScreen = currentLine;
+        buffer.chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+        pool.push_back(std::move(buffer));
+        return pool.back();
+    }
+
+    pool[currentSize] = {};
+    return pool[currentSize++];
+}
+
+void DissasmCharacterBufferPool::Draw(Renderer& renderer, Config& config)
+{
+    for (auto& buffer : pool)
+    {
+        if (buffer.needCommentUpdate)
+        {
+            const auto bufferSize = buffer.chars.Len();
+            auto dataStart        = buffer.chars.GetBuffer();
+            const auto dataEnd    = buffer.chars.GetBuffer() + bufferSize;
+            bool useSpaces        = true;
+
+            while (dataStart != dataEnd)
+            {
+                if (dataStart->Code == ';')
+                {
+                    auto size = dataEnd - dataStart;
+                    buffer.chars.Delete(buffer.chars.Len() - size, buffer.chars.Len());
+                    if (buffer.chars.Len() == DISSAM_MINIMUM_COMMENTS_X) // TODO: update for future to search and also deleted the spaces at the end
+                        useSpaces = false;
+                    break;
+                }
+                dataStart++;
+            }
+            const auto it = buffer.comments->find(buffer.currentLine);
+            assert(it != buffer.comments->end());
+
+            auto len = 10;
+            if (buffer.chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
+                len = DISSAM_MINIMUM_COMMENTS_X - buffer.chars.Len();
+            LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
+            if (useSpaces)
+                spaces.AddChars(' ', len);
+            spaces.AddChars(';', 1);
+            buffer.chars.Add(spaces, config.Colors.AsmComment);
+            buffer.chars.Add(it->second, config.Colors.AsmComment);
+        }
+
+        const auto bufferToDraw = CharacterView{ buffer.chars.GetBuffer(), buffer.chars.Len() };
+
+        // HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
+
+        renderer.WriteSingleLineCharacterBuffer(0, buffer.lineToDrawOnScreen, bufferToDraw, false);
+    }
+    pool.clear();
+}
+
+inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
     {
@@ -226,14 +492,14 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
         structureZone->levels.pop_back();
         structureZone->levels.push_back(0);
         structureZone->structureIndex = 0;
-        structureZone->textFileOffset = structureZone->initalTextFileOffset;
+        structureZone->textFileOffset = structureZone->initialTextFileOffset;
     }
 
-    uint32 levelToReach    = dli.textLineToDraw;
-    int16& levelNow        = structureZone->structureIndex;
-    dli.wasInsideStructure = true;
+    uint32 levelToReach = dli.textLineToDraw;
+    int16& levelNow     = structureZone->structureIndex;
+
     // TODO: consider if this value can be biffer than int16
-    bool increaseOffset = levelNow < (int16) levelToReach;
+    // bool increaseOffset = levelNow < (int16) levelToReach;
 
     // levelNow     = 0;
     // levelToReach = 47;
@@ -336,13 +602,12 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
 
     // assert(structureZone->levels.size() == 1);
     // assert(structureZone->levels.back() == 0);
-    // assert(structureZone->textFileOffset == structureZone->initalTextFileOffset);
+    // assert(structureZone->textFileOffset == structureZone->initialTextFileOffset);
 
     return true;
 }
 
-bool Instance::WriteStructureToScreen(
-      DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
+bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
 {
     ColorPair normalColor = config.Colors.Normal;
 
@@ -420,8 +685,7 @@ bool Instance::WriteStructureToScreen(
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
         AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        RegisterStructureCollapseButton(
-              dli, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
+        RegisterStructureCollapseButton(dli, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
         break;
     default:
         return false;
@@ -449,21 +713,111 @@ bool Instance::WriteStructureToScreen(
         }
     }
 
-    size_t buffer_size = dli.chText - this->chars.GetBuffer();
+    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
 
-    const uint32 cursorLine = static_cast<uint32>(this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize;
-    if (cursorLine == dli.screenLineToDraw)
+    // const uint32 cursorLine = Cursor.lineInView;
+    // if (cursorLine == dli.screenLineToDraw)
+    //{
+    //     uint32 index = this->Cursor.offset;
+    //     if (index < buffer_size - Layout.startingTextLineOffset)
+    //         dli.chNameAndSize[index].Color = config.Colors.Selection;
+    //     else
+    //         dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
+    // }
+
+    HighlightSelectionAndDrawCursorText(dli, buffer_size - Layout.startingTextLineOffset, buffer_size);
+
+    const auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
+
+    // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
+    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+    return true;
+}
+
+bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone)
+{
+    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+
+    auto clearChar = this->chars.GetBuffer();
+    for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
     {
-        uint32 index = this->Cursor.currentPos % Layout.textSize;
-        if (index < buffer_size - Layout.startingTextLineOffset)
-            dli.chNameAndSize[index].Color = config.Colors.Selection;
-        else
-            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, cursorLine + 1, codePage[' '], config.Colors.Selection);
+        clearChar->Code  = codePage[' '];
+        clearChar->Color = config.Colors.Normal;
+        clearChar++;
+    }
+    dli.chText = dli.chNameAndSize;
+
+    if (zone->data.canBeCollapsed && dli.textLineToDraw == 0)
+    {
+        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%llu] ", zone->data.size);
+        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+    }
+    else
+    {
+        if (!zone->isCollapsed)
+        {
+            // TODO: hack-ish, maybe find another alternative or reset it down
+            if (!zone->data.canBeCollapsed)
+                dli.textLineToDraw++;
+
+            uint64 dataNeeded = std::min<uint64>(zone->data.size, Layout.textSize);
+            if (zone->data.size / Layout.textSize + 1 == dli.textLineToDraw)
+            {
+                dataNeeded = std::min<uint64>(zone->data.size % Layout.textSize, Layout.textSize);
+            }
+            const uint64 startingOffset = zone->data.startingOffset + (static_cast<uint64>(dli.textLineToDraw) - 1ull) * Layout.textSize;
+
+            if (startingOffset + dataNeeded <= this->obj->GetData().GetSize())
+            {
+                const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
+                if (!buf.IsValid())
+                {
+                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %llu", zone->data.startingOffset + zone->data.size);
+
+                    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
+                    const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
+
+                    // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
+                    dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
+                    return true;
+                }
+
+                dli.start         = buf.GetData();
+                dli.end           = buf.GetData() + buf.GetLength();
+                dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+                dli.chText        = dli.chNameAndSize;
+
+                const bool activeColor = this->HasFocus();
+                auto textColor         = activeColor ? config.Colors.Line : config.Colors.Inactive;
+                if (!zone->data.canBeCollapsed)
+                    textColor = config.Colors.Normal;
+
+                while (dli.start < dli.end)
+                {
+                    dli.chText->Code  = codePage[*dli.start];
+                    dli.chText->Color = textColor;
+                    dli.chText++;
+                    dli.start++;
+                }
+
+                HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength() + Layout.startingTextLineOffset);
+
+                // const uint32 cursorLine = Cursor.lineInView;
+                // if (cursorLine == dli.screenLineToDraw)
+                //{
+                //     const uint32 index             = this->Cursor.offset;
+                //     dli.chNameAndSize[index].Color = config.Colors.Selection;
+                // }
+            }
+            else
+            {
+                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %llu", zone->data.startingOffset + zone->data.size);
+            }
+        }
     }
 
-    HighlightSelectionText(dli, buffer_size - Layout.startingTextLineOffset);
-
-    auto bufferToDraw = CharacterView{ chars.GetBuffer(), buffer_size };
+    const size_t buffer_size = dli.chText - this->chars.GetBuffer();
+    const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
 
     // this->chars.Resize((uint32) (dli.chText - dli.chNameAndSize));
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
@@ -506,16 +860,16 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
     }
 }
 
-void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
+void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters)
 {
     if (selection.HasAnySelection())
     {
         const uint64 selectionStart = selection.GetSelectionStart(0);
         const uint64 selectionEnd   = selection.GetSelectionEnd(0);
 
-        uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
-        uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startView / Layout.textSize;
+        const uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
+        const uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+        const uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startViewLine;
 
         if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
         {
@@ -526,15 +880,321 @@ void Instance::HighlightSelectionText(DrawLineInfo& dli, uint64 maxLineLength)
             if (lineToDrawTo < selectionEndLine)
                 endIndex = static_cast<uint32>(maxLineLength);
             // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
-            dli.chText = dli.chNameAndSize + startingIndex;
+            // TODO: variables can be skipped, use startingPointer < EndPointer
+            const auto savedChText = dli.chText;
+            dli.chText             = dli.chNameAndSize + startingIndex;
             while (startingIndex < endIndex)
             {
                 dli.chText->Color = Cfg.Selection.Editor;
                 dli.chText++;
                 startingIndex++;
             }
+            dli.chText = savedChText;
         }
     }
+
+    if (Cursor.lineInView == dli.screenLineToDraw)
+    {
+        uint32 index = this->Cursor.offset;
+        if (index < availableCharacters - Layout.startingTextLineOffset)
+            dli.chNameAndSize[index].Color = config.Colors.Selection;
+        else
+            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
+    }
+}
+
+struct MappingZonesData
+{
+    void* data;
+    DissasmParseZoneType zoneType;
+};
+
+void Instance::RecomputeDissasmZones()
+{
+    std::map<uint32, std::vector<MappingZonesData>> mappingData;
+    for (auto& mapping : this->settings->dissasmTypeMapped)
+    {
+        mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
+    }
+    for (auto& dissasmZone : settings->disassemblyZones)
+    {
+        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
+    }
+    for (auto& zone : settings->collapsibleAndTextZones)
+    {
+        mappingData[OffsetToLinePosition(zone.first).line].push_back({ &zone.second, DissasmParseZoneType::CollapsibleAndTextZone });
+    }
+
+    uint32 lastZoneEndingIndex = 0;
+    uint16 currentIndex        = 0;
+    uint32 textLinesOffset     = 0;
+    settings->parseZones.clear();
+
+    for (const auto& mapping : mappingData)
+    {
+        for (const auto& entry : mapping.second)
+        {
+            uint32 zoneStartingLine = mapping.first;
+            if (zoneStartingLine < lastZoneEndingIndex || !config.ShowFileContent)
+                zoneStartingLine = lastZoneEndingIndex;
+            if (zoneStartingLine > lastZoneEndingIndex)
+            {
+                const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
+                textLinesOffset += zoneStartingLine - lastZoneEndingIndex;
+                const uint64 endTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
+
+                auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+
+                collapsibleZone->data            = { startingTextOffset, endTextOffset - startingTextOffset, false };
+                collapsibleZone->startLineIndex  = lastZoneEndingIndex;
+                collapsibleZone->isCollapsed     = false;
+                collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex;
+                // collapsibleZone->textLinesOffset = textLinesOffset;
+                collapsibleZone->zoneID       = currentIndex++;
+                collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
+                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize);
+
+                if (!collapsibleZone->isCollapsed)
+                    collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
+
+                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
+                lastZoneEndingIndex = collapsibleZone->endingLineIndex;
+                settings->parseZones.push_back(std::move(collapsibleZone));
+            }
+
+            switch (entry.zoneType)
+            {
+            case DissasmParseZoneType::StructureParseZone:
+            {
+                const auto convertedData   = static_cast<DissasmType*>(entry.data);
+                auto parseZone             = std::make_unique<DissasmParseStructureZone>();
+                parseZone->startLineIndex  = zoneStartingLine;
+                parseZone->endingLineIndex = parseZone->startLineIndex + 1;
+                parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                parseZone->extendedSize    = convertedData->GetExpandedSize() - 1;
+                // parseZone->textLinesOffset = textLinesOffset;
+                parseZone->dissasmType = *convertedData;
+                parseZone->levels.push_back(0);
+                parseZone->types.emplace_back(parseZone->dissasmType);
+                parseZone->structureIndex        = 0;
+                parseZone->textFileOffset        = mapping.first;
+                parseZone->initialTextFileOffset = mapping.first;
+                parseZone->zoneID                = currentIndex++;
+                parseZone->zoneType              = DissasmParseZoneType::StructureParseZone;
+
+                if (!parseZone->isCollapsed)
+                    parseZone->endingLineIndex += parseZone->extendedSize;
+
+                // lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
+                lastZoneEndingIndex = parseZone->endingLineIndex;
+                settings->parseZones.push_back(std::move(parseZone));
+            }
+            break;
+            case DissasmParseZoneType::DissasmCodeParseZone:
+            {
+                // TODO: resize vectors! -> there could be done some approximations for the best speed
+                const auto convertedData  = static_cast<DisassemblyZone*>(entry.data);
+                auto codeZone             = std::make_unique<DissasmCodeZone>();
+                codeZone->zoneDetails     = *convertedData;
+                codeZone->startLineIndex  = zoneStartingLine;
+                codeZone->endingLineIndex = codeZone->startLineIndex + 1;
+                codeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
+                codeZone->isCollapsed     = false; // Layout.structuresInitialCollapsedState;
+                // codeZone->textLinesOffset = textLinesOffset;
+                codeZone->zoneID   = currentIndex++;
+                codeZone->zoneType = DissasmParseZoneType::DissasmCodeParseZone;
+
+                codeZone->isInit = false;
+                // initial offset is the entry point
+                codeZone->offsetCacheMaxLine = 0;
+                codeZone->cachedCodeOffsets.push_back({ convertedData->entryPoint, 0 });
+                // codeZone->cachedLines.resize(DISSASM_MAX_CACHED_LINES);
+
+                if (!codeZone->isCollapsed)
+                    codeZone->endingLineIndex += codeZone->extendedSize;
+
+                // lastEndMinusLastOffset = codeZone->endingLineIndex + codeZone->textLinesOffset;
+                lastZoneEndingIndex = codeZone->endingLineIndex;
+                settings->parseZones.push_back(std::move(codeZone));
+            }
+            break;
+            case DissasmParseZoneType::CollapsibleAndTextZone:
+            {
+                const auto convertedData         = static_cast<CollapsibleAndTextData*>(entry.data);
+                auto collapsibleZone             = std::make_unique<CollapsibleAndTextZone>();
+                collapsibleZone->data            = *convertedData;
+                collapsibleZone->startLineIndex  = zoneStartingLine;
+                collapsibleZone->isCollapsed     = Layout.structuresInitialCollapsedState;
+                collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex + 1;
+                // collapsibleZone->textLinesOffset = textLinesOffset;
+                collapsibleZone->zoneID       = currentIndex++;
+                collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
+                collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+
+                if (!collapsibleZone->isCollapsed)
+                    collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
+
+                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
+                lastZoneEndingIndex = collapsibleZone->endingLineIndex;
+                settings->parseZones.push_back(std::move(collapsibleZone));
+            }
+            break;
+            }
+        }
+    }
+
+    if (settings->parseZones.empty())
+        return; // TODO: only text -> add zone text
+
+    const uint64 startingTextOffset = LinePositionToOffset({ textLinesOffset }, Layout.textSize);
+    const uint64 totalFileSize      = this->obj->GetData().GetSize();
+    if (startingTextOffset >= totalFileSize)
+        return;
+
+    const uint64 zoneSize = totalFileSize - startingTextOffset;
+
+    auto collapsibleZone = std::make_unique<CollapsibleAndTextZone>();
+
+    collapsibleZone->data            = { startingTextOffset, zoneSize, false };
+    collapsibleZone->startLineIndex  = lastZoneEndingIndex;
+    collapsibleZone->isCollapsed     = false;
+    collapsibleZone->endingLineIndex = collapsibleZone->startLineIndex;
+    // collapsibleZone->textLinesOffset = textLinesOffset;
+    collapsibleZone->zoneID       = currentIndex++;
+    collapsibleZone->zoneType     = DissasmParseZoneType::CollapsibleAndTextZone;
+    collapsibleZone->extendedSize = static_cast<uint32>(collapsibleZone->data.size / Layout.textSize) + 1u;
+
+    if (!collapsibleZone->isCollapsed)
+        collapsibleZone->endingLineIndex += collapsibleZone->extendedSize;
+
+    // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
+    lastZoneEndingIndex = collapsibleZone->endingLineIndex;
+    settings->parseZones.push_back(std::move(collapsibleZone));
+
+    UpdateLayoutTotalLines();
+
+    // vector<CollapsibleAndTextData> textData;
+    // const uint32 textLinesCount = obj->GetData().GetSize() / Layout.textSize;
+    // auto& zones                 = settings->parseZones;
+    // if (zones[0]->startLineIndex > 0)
+    //{
+    //     textData.emplace_back(0, zones[0]->startLineIndex * Layout.textSize);
+    // }
+    // const uint32 zonesCount = settings->parseZones.size();
+    // if (zonesCount == 1)
+    //{
+    //     uint64 size = (textLinesCount - zones[0]->endingLineIndex + zones[0]->textLinesOffset) * Layout.textSize +
+    //                   obj->GetData().GetSize() % Layout.textSize;
+    //     textData.emplace_back(zones[0]->endingLineIndex, size, false);
+    // }
+    // for (uint32 i = 0; i < zonesCount - 1; i++)
+    //{
+    //     if (zones[i]->endingLineIndex < zones[i + 1]->startLineIndex)
+    //     {
+    //         uint64 size = (zones[i + 1]->startLineIndex - zones[i]->endingLineIndex) * Layout.textSize;
+    //         textData.emplace_back(zones[i]->endingLineIndex, size, false);
+    //     }
+    // }
+    // if (zones[zonesCount - 1]->endingLineIndex <= textLinesCount)
+    //{
+    //     uint64 size = (textLinesCount - zones[zonesCount - 1]->endingLineIndex - zones[zonesCount - 1]->textLinesOffset) *
+    //     Layout.textSize; textData.emplace_back(zones[zonesCount - 1]->endingLineIndex, size, false);
+    // }
+}
+
+uint64 Instance::GetZonesMaxSize() const
+{
+    if (settings->parseZones.empty())
+        return 0;
+    uint64 linesOccupiedByZones = 0;
+
+    for (const auto& zone : settings->parseZones)
+        linesOccupiedByZones += zone->endingLineIndex - zone->startLineIndex;
+    return linesOccupiedByZones * Layout.textSize;
+}
+
+void Instance::UpdateLayoutTotalLines()
+{
+    // TODO: check if +1 or not
+    Layout.totalLinesSize = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex - 1;
+}
+
+LinePosition Instance::OffsetToLinePosition(uint64 offset) const
+{
+    return { static_cast<uint32>(offset / Layout.textSize), static_cast<uint32>(offset % Layout.textSize) };
+}
+
+uint64 Instance::CursorDissasm::GetOffset(uint32 textSize) const
+{
+    return LinePositionToOffset(ToLinePosition(), textSize);
+}
+
+vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset) const
+{
+    if (settings->parseZones.empty())
+        return {};
+
+    const uint32 lineStart = OffsetToLinePosition(startingOffset).line;
+    uint32 lineEnd         = OffsetToLinePosition(endingOffset).line;
+
+    if (endingOffset < startingOffset)
+        lineEnd = lineStart;
+
+    const auto& zones     = settings->parseZones;
+    const auto zonesCount = static_cast<uint32>(settings->parseZones.size());
+
+    vector<ZoneLocation> result;
+
+    uint32 zoneIndex = 0;
+    while (zoneIndex < zonesCount && lineStart >= zones[zoneIndex]->endingLineIndex)
+        zoneIndex++;
+
+    uint32* value = nullptr;
+    for (uint32 line = lineStart; line <= lineEnd && zoneIndex < zonesCount; line++)
+    {
+        if (zones[zoneIndex]->startLineIndex <= line && line < zones[zoneIndex]->endingLineIndex && (result.empty() || result.back().zoneIndex != zoneIndex))
+        {
+            result.push_back({ zoneIndex, line - zones[zoneIndex]->startLineIndex, line - zones[zoneIndex]->startLineIndex });
+            value = &result[result.size() - 1].endingLine;
+        }
+        else if (line >= zones[zoneIndex]->endingLineIndex)
+            zoneIndex++;
+        else if (value)
+        {
+            (*value)++;
+        }
+    }
+
+    return result;
+}
+
+void GView::View::DissasmViewer::Instance::AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize)
+{
+    if (zone->isCollapsed)
+    {
+        zone->extendedSize = newExtendedSize;
+        return;
+    }
+    if (zone->extendedSize == newExtendedSize)
+        return;
+    selection.Clear();
+
+    const int32 sizeToAdjust = static_cast<int32>(newExtendedSize) - zone->extendedSize;
+    zone->endingLineIndex += sizeToAdjust;
+    bool foundZone = false;
+    for (const auto& availableZone : settings->parseZones)
+    {
+        if (foundZone)
+        {
+            availableZone->startLineIndex += sizeToAdjust;
+            availableZone->endingLineIndex += sizeToAdjust;
+        }
+        if (availableZone->zoneID == zone->zoneID)
+            foundZone = true;
+    }
+    zone->extendedSize = newExtendedSize;
+    UpdateLayoutTotalLines();
+    assert(foundZone);
 }
 
 bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
@@ -570,14 +1230,14 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
         dli.start++;
     }
 
-    HighlightSelectionText(dli, buf.GetLength());
+    HighlightSelectionAndDrawCursorText(dli, buf.GetLength(), buf.GetLength());
 
-    const uint32 cursorLine = static_cast<uint32>((this->Cursor.currentPos - this->Cursor.startView) / Layout.textSize);
-    if (cursorLine == dli.screenLineToDraw)
-    {
-        const uint32 index             = this->Cursor.currentPos % Layout.textSize;
-        dli.chNameAndSize[index].Color = config.Colors.Selection;
-    }
+    // const uint32 cursorLine = Cursor.lineInView;
+    // if (cursorLine == dli.screenLineToDraw)
+    //{
+    //     const uint32 index             = this->Cursor.offset;
+    //     dli.chNameAndSize[index].Color = config.Colors.Selection;
+    // }
 
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, chars, true);
     return true;
@@ -595,7 +1255,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     if (Layout.textSize == 0)
         return;
 
-    DrawLineInfo dli(renderer);
+    DrawLineInfo dli(renderer, Layout.startingTextLineOffset, config.Colors.Normal);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.screenLineToDraw = tr;
@@ -605,7 +1265,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // uint64 val2 = ((uint64) tr - 1) * Layout.charactersPerLine;
         // if (dli.viewOffset <= Cursor.currentPos && Cursor.currentPos < nextOffset)
         //{
-        //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.lineOffset;
+        //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.offset;
         //    chars.GetBuffer()[val].Color = config.Colors.Cursor;
         //}
         // auto asdasdasd = CharacterView{ chars.GetBuffer(), 10 };
@@ -614,6 +1274,8 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // chars.Resize(10);
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
+
+    asmData.bufferPool.Draw(renderer, config);
 
     if (!MyLine.buttons.empty())
     {
@@ -624,7 +1286,24 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 
 bool Instance::ShowGoToDialog()
 {
-    NOT_IMPLEMENTED(false);
+    if (settings->parseZones.empty())
+        return true;
+    const uint32 totalLines  = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex;
+    const uint32 currentLine = Cursor.lineInView + Cursor.startViewLine;
+    GoToDialog dlg(currentLine, totalLines);
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        const auto lineToReach = dlg.GetResultedLine();
+        if (lineToReach != currentLine)
+        {
+            jumps_holder.insert(Cursor.saveState());
+            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);
+        }
+    }
+    /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
+    constexpr auto lineToReach = 248;
+    MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);*/
+    return true;
 }
 bool Instance::ShowFindDialog()
 {
@@ -642,75 +1321,47 @@ void Instance::OnAfterResize(int newWidth, int newHeight)
 
 void Instance::OnStart()
 {
-    this->RecomputeDissasmLayout();
-
-    // from dli, may need to be recomputed
-    const uint32 textSize = Layout.textSize;
-
-    uint32 lastEndMinusLastOffset = 0;
-    uint32 lastZoneEndingIndex    = 0;
-    uint16 currentIndex           = 0;
-
-    for (const auto& mapping : this->settings->dissasmTypeMapped)
-    {
-        std::unique_ptr<DissasmParseStructureZone> parseZone = std::make_unique<DissasmParseStructureZone>();
-        parseZone->startLineIndex                            = (uint32) (mapping.first / textSize);
-        if (parseZone->startLineIndex < lastZoneEndingIndex)
-            parseZone->startLineIndex = lastZoneEndingIndex;
-        parseZone->endingLineIndex = parseZone->startLineIndex + 1;
-        parseZone->isCollapsed     = Layout.structuresInitialCollapsedState;
-        parseZone->extendedSize    = mapping.second.GetExpandedSize() - 1;
-        parseZone->textLinesOffset = parseZone->startLineIndex - lastEndMinusLastOffset;
-        parseZone->dissasmType     = mapping.second;
-        parseZone->levels.push_back(0);
-        parseZone->types.emplace_back(mapping.second);
-        parseZone->structureIndex       = 0;
-        parseZone->textFileOffset       = mapping.first;
-        parseZone->initalTextFileOffset = mapping.first;
-        parseZone->zoneID               = currentIndex++;
-        parseZone->zoneType             = DissasmParseZoneType::StructureParseZone;
-
-        if (!parseZone->isCollapsed)
-            parseZone->endingLineIndex += parseZone->extendedSize;
-
-        lastEndMinusLastOffset = parseZone->endingLineIndex + parseZone->textLinesOffset;
-        lastZoneEndingIndex    = parseZone->endingLineIndex;
-        settings->parseZones.push_back(std::move(parseZone));
-    }
-
     // TODO: rethink
-    if (settings->defaultLanguage == DissasemblyLanguage::Default)
-        settings->defaultLanguage = DissasemblyLanguage::x86;
+    if (settings->defaultLanguage == DisassemblyLanguage::Default)
+        settings->defaultLanguage = DisassemblyLanguage::x86;
 
-    // TODO: fix dissasemblyZones to be where they belong not really after structuress
+    this->RecomputeDissasmLayout();
+    this->RecomputeDissasmZones();
 
-    for (const auto& dissasmZone : settings->dissasemblyZones)
+    uint32 maxSize = 0;
+    while (settings->maxLocationMemoryMappingSize > 0)
     {
-        std::unique_ptr<DissasmCodeZone> codeZone = std::make_unique<DissasmCodeZone>();
-        codeZone->zoneDetails                     = dissasmZone.second;
-        codeZone->startLineIndex                  = (uint32) (dissasmZone.first / textSize);
-        if (codeZone->startLineIndex < lastZoneEndingIndex)
-            codeZone->startLineIndex = lastZoneEndingIndex;
-        codeZone->endingLineIndex = codeZone->startLineIndex + 1;
-        codeZone->textLinesOffset = codeZone->startLineIndex - lastEndMinusLastOffset;
-        codeZone->zoneID          = currentIndex++;
-        codeZone->zoneType        = DissasmParseZoneType::DissasmCodeParseZone;
+        maxSize++;
+        settings->maxLocationMemoryMappingSize /= 10;
+    }
+    // TODO: do a research! this is an imperative setting
+    settings->maxLocationMemoryMappingSize = maxSize + 1;
+
+    GView::Hashes::CRC16 crc16{};
+    uint16 hashVal = 0;
+    for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++)
+    {
+        if (!crc16.Init() || !crc16.Update(KNOWN_FUNCTIONS[i].functionName) || !crc16.Final(hashVal))
+        {
+            // show err
+            return;
+        }
+        asmData.functions.insert({ hashVal, &KNOWN_FUNCTIONS[i] });
     }
 }
 
-void GView::View::DissasmViewer::Instance::RecomputeDissasmLayout()
+void Instance::RecomputeDissasmLayout()
 {
     Layout.visibleRows            = this->GetHeight() - 1;
     Layout.totalCharactersPerLine = this->GetWidth() - 1;
 
-    Layout.textSize =
-          std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
+    Layout.textSize = std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
 }
 
 void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
 {
-    int16 sizeToAdjust;
-    sizeToAdjust = zoneToChange->extendedSize;
+    selection.Clear();
+    int32 sizeToAdjust = static_cast<int32>(zoneToChange->extendedSize);
     if (!zoneToChange->isCollapsed)
         sizeToAdjust *= -1;
     zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
@@ -727,7 +1378,7 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
         if (zoneToChange->zoneID == zone->zoneID)
             foundZone = true;
     }
-
+    UpdateLayoutTotalLines();
     // TODO: search for following zones and update their size
 }
 
@@ -739,4 +1390,78 @@ Instance::~Instance()
         settings->buffersToDelete.pop_back();
         delete bufferToDelete;
     }
+}
+
+void DissasmCodeZone::AddOrUpdateComment(uint32 line, std::string comment)
+{
+    comments[line - 1] = std::move(comment);
+}
+
+bool DissasmCodeZone::HasComment(uint32 line, std::string& comment) const
+{
+    const auto it = comments.find(line - 1);
+    if (it != comments.end())
+    {
+        comment = it->second;
+        return true;
+    }
+    return false;
+}
+
+void GView::View::DissasmViewer::DissasmCodeZone::RemoveComment(uint32 line)
+{
+    const auto it = comments.find(line - 1);
+    if (it != comments.end())
+    {
+        comments.erase(it);
+        return;
+    }
+    Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
+}
+
+void Instance::ProcessSpaceKey(bool goToEntryPoint)
+{
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1)
+    {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (goToEntryPoint && zone->isCollapsed)
+    {
+        ChangeZoneCollapseState(zone.get());
+    }
+    if (!goToEntryPoint && zonesFound[0].startingLine == 0) // extending zone
+    {
+        ChangeZoneCollapseState(zone.get());
+        return;
+    }
+
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone)
+    {
+        if (goToEntryPoint)
+            Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    uint64* offsetToReach    = nullptr;
+    if (goToEntryPoint)
+        offsetToReach = &convertedZone->zoneDetails.entryPoint;
+    DissasmZoneProcessSpaceKey(convertedZone, zonesFound[0].startingLine, offsetToReach);
+}
+
+void DrawLineInfo::WriteErrorToScreen(std::string_view error) const
+{
+    renderer.WriteSingleLineText(lineOffset, screenLineToDraw + 1, error, errorColor);
+}
+
+LinePosition Instance::CursorDissasm::ToLinePosition() const
+{
+    return LinePosition{ startViewLine + lineInView, offset };
 }

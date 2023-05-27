@@ -2,27 +2,30 @@
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
+using GView::View::BufferViewer::OffsetTranslateInterface;
 
 #define INTERNAL_SETTINGS static_cast<SettingsData*>(this->data)
 
 Settings::Settings()
 {
-    this->data                     = new SettingsData();
+    this->data = new SettingsData();
 }
 
-void Settings::SetDefaultDisassemblyLanguage(DissasemblyLanguage lang)
+void Settings::SetDefaultDisassemblyLanguage(DisassemblyLanguage lang)
 {
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
-void Settings::AddDisassemblyZone(uint64 start, uint64 size, DissasemblyLanguage lang)
+void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DissasmArchitecture architecture, DisassemblyLanguage lang)
 {
-    INTERNAL_SETTINGS->dissasemblyZones[start] = { size, lang };
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang, architecture };
 }
 
-void Settings::AddMemoryMapping(uint64 address, std::string_view name)
+void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)
 {
-    INTERNAL_SETTINGS->memoryMappings[address] = name;
+    INTERNAL_SETTINGS->memoryMappings.insert({ address, { name.data(), mappingType } });
+    if (address > INTERNAL_SETTINGS->maxLocationMemoryMappingSize)
+        INTERNAL_SETTINGS->maxLocationMemoryMappingSize = address;
 }
 
 void Settings::AddVariable(uint64 offset, std::string_view name, VariableType type)
@@ -43,8 +46,8 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, Varia
 
 void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
 {
-    auto res = INTERNAL_SETTINGS->userDeginedTypes.find(type);
-    if (res == INTERNAL_SETTINGS->userDeginedTypes.end())
+    auto res = INTERNAL_SETTINGS->userDesignedTypes.find(type);
+    if (res == INTERNAL_SETTINGS->userDesignedTypes.end())
     {
         // err;
         return;
@@ -53,6 +56,19 @@ void Settings::AddVariable(uint64 offset, std::string_view name, TypeID type)
     INTERNAL_SETTINGS->dissasmTypeMapped[offset] = res->second;
     INTERNAL_SETTINGS->offsetsToSearch.push_back(offset);
 }
+
+void Settings::AddCollapsibleZone(uint64 offset, uint64 size)
+{
+    INTERNAL_SETTINGS->collapsibleAndTextZones[offset] = { offset, size, true };
+}
+
+void Settings::SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk)
+{
+    if ((!cbk.IsValid()) || (list.size() == 0))
+        return;
+    INTERNAL_SETTINGS->offsetTranslateCallback = cbk;
+}
+
 void Settings::AddArray(uint64 offset, std::string_view name, TypeID type, uint32 count)
 {
 }
@@ -62,6 +78,13 @@ void Settings::AddBidimensionalArray(uint64 offset, std::string_view name, TypeI
 
 SettingsData::SettingsData()
 {
-    defaultLanguage = DissasemblyLanguage::Default;
-    availableID     = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
+    defaultLanguage              = DisassemblyLanguage::Default;
+    availableID                  = static_cast<uint32>(InternalDissasmType::CustomTypesStartingId);
+    offsetTranslateCallback      = nullptr;
+    maxLocationMemoryMappingSize = 0;
+}
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
 }

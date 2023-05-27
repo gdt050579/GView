@@ -26,20 +26,38 @@ bool PYEXTRACTORFile::HasPanel(Panels::IDs id)
 
 bool PYEXTRACTORFile::SetCookiePosition()
 {
-    const auto fullBuffer = obj->GetData().GetEntireFile();
-    if (fullBuffer.IsValid())
+    const auto buffer = obj->GetData().GetEntireFile();
+    if (buffer.IsValid())
     {
-        const std::string_view fullView{ reinterpret_cast<char*>(const_cast<uint8*>(fullBuffer.GetData())), fullBuffer.GetLength() };
-        if (const auto index = fullView.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
+        const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
+        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
         {
             archive.cookiePosition = index;
             return true;
         }
+        return false;
     }
-    else
+
+    const auto fileSize  = obj->GetData().GetSize();
+    const auto cacheSize = (uint64) obj->GetData().GetCacheSize();
+    uint64 sizeToRead    = cacheSize;
+    uint64 index         = 0;
+
+    do
     {
-        throw std::runtime_error("Not implemented!");
-    }
+        const auto buffer = obj->GetData().CopyToBuffer(index, sizeToRead);
+        CHECK(buffer.IsValid(), false, "");
+
+        const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
+        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
+        {
+            archive.cookiePosition = index;
+            return true;
+        }
+
+        index += sizeToRead;
+        sizeToRead = std::min(fileSize, cacheSize);
+    } while (index < fileSize);
 
     return false;
 }
@@ -188,14 +206,8 @@ void PYEXTRACTORFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::Tre
     const auto offset = (uint64) data->entryPos;
     const auto length = (uint32) data->cmprsdDataSize;
     const auto name   = std::string_view{ reinterpret_cast<char*>(data->name.GetData()), data->name.GetLength() };
-
-    std::string_view extension{ "" };
-    if (const auto pos = name.find_last_of('.'); pos != std::string::npos)
-    {
-        extension = std::string_view{ reinterpret_cast<char*>(data->name.GetData()) + pos, data->name.GetLength() - pos };
-    }
-
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    GView::App::OpenBuffer(buffer, name, extension);
+
+    GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
 }
 } // namespace GView::Type::PYEXTRACTOR

@@ -183,11 +183,10 @@ class UnicodeLine
 
 UnicodeLine tempLine;
 
-uint8 CharsGroups[128] = { 0, 2, 2, 2, 2, 2, 2,  2,  2,  0,  0,  2,  2,  0,  2,  2,  2,  2,  2,  2,   2,   2,   2,   2,  2, 2,
-                           2, 2, 2, 2, 2, 2, 0,  33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 1,   46,  47,  1,   1,  1, 1,
-                           1, 1, 1, 1, 1, 1, 58, 59, 60, 61, 62, 63, 64, 1,  1,  1,  1,  1,  1,  1,   1,   1,   1,   1,  1, 1,
-                           1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1,  91, 92, 93, 94, 1,  96, 1,   1,   1,   1,   1,  1, 1,
-                           1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  123, 124, 125, 126, 127 };
+uint8 CharsGroups[128] = { 0,  2,  2,  2,  2,  2,  2,  2,  2,  0,  0,  2,  2,  0, 2,  2,  2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  2,   2,   2,   2,   2,
+                           0,  33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 1, 46, 47, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 58, 59,  60,  61,  62,  63,
+                           64, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1, 1,  1,  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  91,  92,  93,  94,  1,
+                           96, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1, 1,  1,  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  123, 124, 125, 126, 127 };
 uint8 GetCharGroup(char16 ch)
 {
     if ((ch >= 128) || (ch < 0))
@@ -268,11 +267,10 @@ class DataCharacterStream
     }
 };
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl("Text View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
-    this->obj  = _obj;
-    this->name = _name;
+    this->obj = _obj;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -301,6 +299,29 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     this->MoveTo(0, 0, false);
 }
 
+void Instance::OpenCurrentSelection()
+{
+    uint64 start, end;
+    auto res = this->selection.OffsetToSelection(this->Cursor.pos, start, end);
+    if (res >= 0)
+    {
+        LocalString<128> temp;
+        temp.Format("Buffer_%llx_%llx", start, end);
+        auto buf = this->obj->GetData().CopyToBuffer(start, (uint32) (end - start + 1));
+        if (buf.IsValid() == false)
+        {
+            Dialogs::MessageBox::ShowError("Error", "Fail to read content to buffer");
+            return;
+        }
+
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->obj->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(temp);
+
+        GView::App::OpenBuffer(buf, temp, fullPath, GView::App::OpenMethod::Select);
+    }
+}
 void Instance::RecomputeLineIndexes()
 {
     // first --> simple estimation
@@ -474,8 +495,7 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
             if (cs.GetNextXOffset() > w)
             {
                 // move to next line
-                this->SubLines.entries.emplace_back(
-                      bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
+                this->SubLines.entries.emplace_back(bufPos, cs.GetCurrentBufferPos() - bufPos, charIndex, cs.GetNextCharIndex() - charIndex);
                 bufPos            = cs.GetCurrentBufferPos();
                 charIndex         = cs.GetNextCharIndex();
                 computeAlignament = false;
@@ -518,8 +538,7 @@ void Instance::ComputeSubLineIndexes(uint32 lineNo, BufferView& buf, uint64& sta
                     {
                         this->SubLines.leftAlignament = cs.GetNextXOffset();
                         bpBulletWidth++;
-                        if ((cs.GetCharacter() == '-') || (cs.GetCharacter() == '*') || (cs.GetCharacter() == '.') ||
-                            (cs.GetCharacter() == ')'))
+                        if ((cs.GetCharacter() == '-') || (cs.GetCharacter() == '*') || (cs.GetCharacter() == '.') || (cs.GetCharacter() == ')'))
                             bp = BulletParserState::NextPadding;
                         else if (bpBulletWidth > 4)
                         {
@@ -935,8 +954,7 @@ void Instance::MoveScrollUp()
         else
         {
             ComputeSubLineIndexes(this->ViewPort.Start.lineNo - 1);
-            this->ComputeViewPort(
-                  this->ViewPort.Start.lineNo - 1, static_cast<uint32>(this->SubLines.entries.size() - 1), Direction::TopToBottom);
+            this->ComputeViewPort(this->ViewPort.Start.lineNo - 1, static_cast<uint32>(this->SubLines.entries.size() - 1), Direction::TopToBottom);
         }
     }
     else
@@ -1101,8 +1119,7 @@ void Instance::UpdateViewPort()
         else
             UpdateCursor_Wrap();
     }
-    if ((Cursor.lineNo < ViewPort.Start.lineNo) ||
-        ((Cursor.lineNo == ViewPort.Start.lineNo) && (Cursor.sublineNo < ViewPort.Start.subLineNo)))
+    if ((Cursor.lineNo < ViewPort.Start.lineNo) || ((Cursor.lineNo == ViewPort.Start.lineNo) && (Cursor.sublineNo < ViewPort.Start.subLineNo)))
     {
         // cursor is before current ViewPort
         ComputeViewPort(Cursor.lineNo, Cursor.sublineNo, Direction::TopToBottom);
@@ -1354,9 +1371,12 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
     case Key::End | Key::Ctrl | Key::Shift:
         MoveToEndOfFile(true);
         return true;
+    case Key::Enter:
+        OpenCurrentSelection();
+        return true;
     }
 
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 void Instance::OnStart()
 {
@@ -1472,10 +1492,6 @@ bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
-std::string_view Instance::GetName()
-{
-    return this->name;
-}
 //======================================================================[Mouse coords]==================
 void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIndex)
 {
@@ -1488,8 +1504,8 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
             auto xScroll = 0U;
             auto vsX     = ViewPort.scrollX;
 
-            if (x <= (int32)this->lineNumberWidth)
-            {                
+            if (x <= (int32) this->lineNumberWidth)
+            {
                 vsX = static_cast<uint32>(std::max<>(0, (int) vsX + x - (int32) this->lineNumberWidth));
             }
             if (vsX > 0)

@@ -28,10 +28,12 @@ extern "C"
         LexicalViewer::Settings settings;
         settings.SetParser(cpp.ToObjectRef<LexicalViewer::ParseInterface>());
         settings.AddPlugin(&cpp->plugins.removeComments);
-        win->CreateViewer("Lexical", settings);
+        win->CreateViewer(settings);
 
-        win->CreateViewer<TextViewer::Settings>("Text View");
-        win->CreateViewer<BufferViewer::Settings>("Buffer View");
+        win->CreateViewer<TextViewer::Settings>();
+
+        View::BufferViewer::Settings s{};
+        cpp->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new CPP::Panels::Information(cpp)), true);
@@ -40,8 +42,9 @@ extern "C"
     }
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "cpp", "c", "h", "hpp" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = { "cpp", "c", "h", "hpp" };
+        sect["Priority"]    = 1;
+        sect["Pattern"]     = { "linestartswith:#include", "linestartswith:#pragma", "linestartswith:#define" };
         sect["Description"] = "C/C++ language file (*.h, *.hpp, *.c, *.cpp)";
     }
 }

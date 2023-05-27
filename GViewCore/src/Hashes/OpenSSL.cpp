@@ -37,7 +37,10 @@ OpenSSLHash::OpenSSLHash(OpenSSLHashKind kind)
     }
 
     auto ctx = EVP_MD_CTX_new();
-    assert(EVP_DigestInit_ex(ctx, alg, nullptr));
+    if (EVP_DigestInit_ex(ctx, alg, nullptr) == 0)
+    {
+        throw std::runtime_error("Failed to init EVP for OpenSSL!");
+    }
     handle = ctx;
     size   = 0;
 }
@@ -74,7 +77,7 @@ std::string_view OpenSSLHash::GetHexValue()
     }
     memcpy(hexDigest, ls.GetText(), size * 2ULL);
 
-    return { hexDigest, size * 2 };
+    return { hexDigest, size * 2ULL };
 }
 
 const uint8* OpenSSLHash::Get() const

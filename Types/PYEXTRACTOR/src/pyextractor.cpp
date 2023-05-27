@@ -47,7 +47,7 @@ extern "C"
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<PYEXTRACTOR::PYEXTRACTORFile> py)
     {
         BufferViewer::Settings settings;
-        win->CreateViewer("BufferView", settings);
+        py->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<PYEXTRACTOR::PYEXTRACTORFile> py)
@@ -68,7 +68,7 @@ extern "C"
         settings.SetOpenItemCallback(
               win->GetObject()->GetContentType<PYEXTRACTOR::PYEXTRACTORFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
-        win->CreateViewer("ContainerView", settings);
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
@@ -94,7 +94,7 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]     = { "hex:'78 01'", "hex:'78 9C'", "hex:'78 DA'" };
+        sect["Pattern"]     = { "magic:78 01", "magic:78 9C", "magic:78 DA" };
         sect["Priority"]    = 1;
         sect["Description"] = "PyExtractor file format";
     }

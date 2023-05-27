@@ -5,19 +5,12 @@
 
 namespace GView::Type::MachO
 {
-
-static constexpr auto INS_CALL_COLOR  = ColorPair{ Color::White, Color::DarkGreen };
-static constexpr auto INS_LCALL_COLOR = ColorPair{ Color::Red, Color::DarkGreen };
-
-static constexpr auto INS_JUMP_COLOR  = ColorPair{ Color::White, Color::DarkRed };
-static constexpr auto INS_LJUMP_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
-
-static constexpr auto INS_BREAKPOINT_COLOR = ColorPair{ Color::Magenta, Color::DarkBlue };
-
-static constexpr auto START_FUNCTION_COLOR = ColorPair{ Color::White, Color::Teal };
-static constexpr auto END_FUNCTION_COLOR   = ColorPair{ Color::Yellow, Color::Teal };
-
-static constexpr auto EXE_MARKER_COLOR = ColorPair{ Color::Yellow, Color::DarkRed };
+static constexpr ColorPair INS_CALL_COLOR{ Color::White, Color::Silver };
+static constexpr ColorPair INS_JUMP_COLOR{ Color::Yellow, Color::DarkRed };
+static constexpr ColorPair INS_BREAKPOINT_COLOR{ Color::Green, Color::DarkBlue };
+static constexpr ColorPair START_FUNCTION_COLOR{ Color::Yellow, Color::Olive };
+static constexpr ColorPair END_FUNCTION_COLOR{ Color::Black, Color::Olive };
+static constexpr ColorPair EXE_MARKER_COLOR{ Color::Yellow, Color::DarkRed };
 
 namespace Panels
 {
@@ -30,9 +23,8 @@ namespace Panels
         DyldInfo      = 0x4,
         Dylib         = 0x5,
         DySymTab      = 0x6,
-        CodeSign      = 0x7,
-        GoInformation = 0x8,
-        OpCodes       = 0x9,
+        GoInformation = 0x7,
+        OpCodes       = 0x8,
     };
 };
 
@@ -117,6 +109,12 @@ class MachOFile : public TypeInterface,
         std::vector<MyNList> objects;
     };
 
+    struct HashPair
+    {
+        std::string found;
+        std::string computed;
+    };
+
     struct CodeSignature
     {
         MAC::linkedit_data_command ledc;
@@ -125,11 +123,11 @@ class MachOFile : public TypeInterface,
         MAC::CS_CodeDirectory codeDirectory;
         std::string codeDirectoryIdentifier;
         std::string cdHash;
-        std::vector<std::pair<std::string, std::string>> cdSlotsHashes; // per normal slots
+        std::vector<HashPair> cdSlotsHashes; // per normal slots
         std::vector<MAC::CS_CodeDirectory> alternateDirectories;
         std::vector<std::string> alternateDirectoriesIdentifiers;
         std::vector<std::string> acdHashes;
-        std::vector<std::vector<std::pair<std::string, std::string>>> acdSlotsHashes; // per normal slots
+        std::vector<std::vector<HashPair>> acdSlotsHashes; // per normal slots
 
         struct
         {
@@ -156,8 +154,11 @@ class MachOFile : public TypeInterface,
             uint32 PEMsCount = 0;
 
             bool errorSig = false;
-            DigitalSignature::Signature sig;
+            DigitalSignature::SignatureMachO sig;
         } signature;
+
+        std::map<MAC::CodeSignMagic, HashPair> specialSlotsHashes{};
+        std::vector<std::map<MAC::CodeSignMagic, HashPair>> alternateSpecialSlotsHashes{};
     };
 
   public:
@@ -182,6 +183,7 @@ class MachOFile : public TypeInterface,
     bool isFat;
     bool shouldSwapEndianess;
     bool is64;
+    bool signatureChecked{ false };
 
     uint64 panelsMask;
     uint32 currentItemIndex;
@@ -191,11 +193,6 @@ class MachOFile : public TypeInterface,
 
     uint32 showOpcodesMask{ 0 };
     std::vector<std::pair<uint64, uint64>> executableZonesFAs;
-    GView::Dissasembly::DissasemblerIntel dissasembler{};
-
-    // these are required here for Fat Containers (can't put them on function level)
-    std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
-    std::map<uint64, bool> cacheDiscard{};
 
   public:
     // OffsetTranslateInterface
@@ -207,9 +204,8 @@ class MachOFile : public TypeInterface,
     {
         return "Mach-O";
     }
-    void RunCommand(std::string_view) override
-    {
-    }
+
+    void RunCommand(std::string_view) override;
 
   public:
     MachOFile(Reference<GView::Utils::DataCache> file);
@@ -247,6 +243,24 @@ class MachOFile : public TypeInterface,
 
     bool GetColorForBuffer(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result) override;
     bool GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result);
+
+  public:
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 namespace Panels
@@ -392,49 +406,6 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 
-    class CodeSignMagic : public AppCUI::Controls::TabPage
-    {
-      private:
-        Reference<MachOFile> machO;
-        Reference<GView::View::WindowInterface> win;
-        Reference<AppCUI::Controls::ListView> general;
-
-        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
-        ListViewItem cmsSize;       // MAC CMS signature/digital signature
-        ListViewItem humanReadable; // MAC CMS signature/digital signature
-        ListViewItem PEMs;          // MAC CMS signature/digital signature
-
-        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-
-        void UpdateLinkeditDataCommand();
-        void UpdateSuperBlob();
-        void UpdateSlots();
-        void UpdateBlobs();
-        void UpdateCodeDirectory(
-              const MAC::CS_CodeDirectory& code,
-              const std::string& identifier,
-              const std::string& cdHash,
-              const std::vector<std::pair<std::string, std::string>>& slotsHashes);
-
-        void RecomputePanelsPositions();
-
-        void GoToSelectedOffset();
-        void SelectArea();
-        void MoreInfo();
-
-      public:
-        CodeSignMagic(Reference<MachOFile> machO, Reference<GView::View::WindowInterface> win);
-
-        void Update();
-        virtual void OnAfterResize(int newWidth, int newHeight) override
-        {
-            RecomputePanelsPositions();
-        }
-        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
-    };
-
     class GoInformation : public TabPage
     {
         inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
@@ -451,8 +422,7 @@ namespace Panels
         GoInformation(Reference<Object> _object, Reference<GView::Type::MachO::MachOFile> _macho);
 
         template <typename T>
-        ListViewItem AddDecAndHexElement(
-              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
@@ -490,8 +460,7 @@ namespace Panels
         GoFiles(Reference<Object> _object, Reference<GView::Type::MachO::MachOFile> _macho);
 
         template <typename T>
-        ListViewItem AddDecAndHexElement(
-              std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
+        ListViewItem AddDecAndHexElement(std::string_view name, std::string_view format, T value, ListViewItem::Type type = ListViewItem::Type::Normal)
         {
             LocalString<1024> ls;
             NumericFormatter nf;
@@ -542,9 +511,7 @@ namespace Panels
         AppCUI::Controls::ListViewItem all;
         AppCUI::Controls::ListViewItem header;
         AppCUI::Controls::ListViewItem call;
-        AppCUI::Controls::ListViewItem lcall;
         AppCUI::Controls::ListViewItem jmp;
-        AppCUI::Controls::ListViewItem ljmp;
         AppCUI::Controls::ListViewItem bp;
         AppCUI::Controls::ListViewItem fstart;
         AppCUI::Controls::ListViewItem fend;
@@ -562,4 +529,43 @@ namespace Panels
         bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
     };
 } // namespace Panels
+
+namespace Commands
+{
+    class CodeSignMagic : public AppCUI::Controls::Window
+    {
+      private:
+        Reference<MachOFile> machO;
+        Reference<GView::View::WindowInterface> win;
+        Reference<AppCUI::Controls::ListView> general;
+
+        ListViewItem cmsOffset;     // MAC CMS signature/digital signature
+        ListViewItem cmsSize;       // MAC CMS signature/digital signature
+        ListViewItem humanReadable; // MAC CMS signature/digital signature
+        ListViewItem PEMs;          // MAC CMS signature/digital signature
+
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+        void UpdateLinkeditDataCommand();
+        void UpdateSuperBlob();
+        void UpdateSlots();
+        void UpdateBlobs();
+        void UpdateCodeDirectory(
+              const MAC::CS_CodeDirectory& code,
+              const std::string& identifier,
+              const std::string& cdHash,
+              const std::vector<MachO::MachOFile::HashPair>& slotsHashes,
+              const std::map<MAC::CodeSignMagic, MachO::MachOFile::HashPair>& specialSlotsHashes);
+
+        void MoreInfo();
+
+      public:
+        CodeSignMagic(Reference<MachOFile> machO);
+
+        void Update();
+        bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+    };
+} // namespace Commands
 } // namespace GView::Type::MachO

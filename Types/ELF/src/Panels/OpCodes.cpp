@@ -5,9 +5,7 @@ using namespace AppCUI::Controls;
 constexpr auto ID_CHECKBOX_ALL    = 0x1001U;
 constexpr auto ID_CHECKBOX_HEADER = 0x1002U;
 constexpr auto ID_CHECKBOX_CALL   = 0x1003U;
-constexpr auto ID_CHECKBOX_LCALL  = 0x1004U;
 constexpr auto ID_CHECKBOX_JMP    = 0x1005U;
-constexpr auto ID_CHECKBOX_LJMP   = 0x1006U;
 constexpr auto ID_CHECKBOX_BP     = 0x1007U;
 constexpr auto ID_CHECKBOX_FSTART = 0x1008U;
 constexpr auto ID_CHECKBOX_FEND   = 0x1009U;
@@ -18,7 +16,8 @@ OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile>
 {
     value = Factory::Label::Create(this, "Mask", "x:1,y:1,w:60");
 
-    list = Factory::ListView::Create(this, "x:1,y:2,h:20,w:60", { "n:Enabled,a:l,w:60" }, AppCUI::Controls::ListViewFlags::CheckBoxes);
+    list = Factory::ListView::Create(
+          this, "x:1,y:2,h:20,w:60", { "n:Enabled,a:l,w:60" }, AppCUI::Controls::ListViewFlags::CheckBoxes | AppCUI::Controls::ListViewFlags::HideSearchBar);
 
     all = list->AddItem("All");
     all.SetData(ID_CHECKBOX_ALL);
@@ -27,23 +26,15 @@ OpCodes::OpCodes(Reference<Object> _object, Reference<GView::Type::ELF::ELFFile>
     header.SetColor(ELF::EXE_MARKER_COLOR);
     header.SetData(ID_CHECKBOX_HEADER);
 
-    call = list->AddItem("CALL");
+    call = list->AddItem("CALL API");
     call.SetColor(ELF::INS_CALL_COLOR);
     call.SetData(ID_CHECKBOX_CALL);
 
-    lcall = list->AddItem("LCALL");
-    lcall.SetColor(ELF::INS_LCALL_COLOR);
-    lcall.SetData(ID_CHECKBOX_LCALL);
-
-    jmp = list->AddItem("JMP");
+    jmp = list->AddItem("JMP API");
     jmp.SetColor(ELF::INS_JUMP_COLOR);
     jmp.SetData(ID_CHECKBOX_JMP);
 
-    ljmp = list->AddItem("LJMP");
-    ljmp.SetColor(ELF::INS_LJUMP_COLOR);
-    ljmp.SetData(ID_CHECKBOX_LJMP);
-
-    bp = list->AddItem("Breakpoints");
+    bp = list->AddItem("Breakpoint");
     bp.SetColor(ELF::INS_BREAKPOINT_COLOR);
     bp.SetData(ID_CHECKBOX_BP);
 
@@ -78,9 +69,7 @@ void OpCodes::Update()
 
     header.SetCheck((elf->showOpcodesMask >> 0) & 1U);
     call.SetCheck((elf->showOpcodesMask >> 1) & 1U);
-    lcall.SetCheck((elf->showOpcodesMask >> 2) & 1U);
     jmp.SetCheck((elf->showOpcodesMask >> 3) & 1U);
-    ljmp.SetCheck((elf->showOpcodesMask >> 4) & 1U);
     bp.SetCheck((elf->showOpcodesMask >> 5) & 1U);
     fstart.SetCheck((elf->showOpcodesMask >> 6) & 1U);
     fend.SetCheck((elf->showOpcodesMask >> 7) & 1U);
@@ -97,8 +86,7 @@ bool OpCodes::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 
 inline bool OpCodes::AllChecked()
 {
-    return header.IsChecked() && call.IsChecked() && lcall.IsChecked() && jmp.IsChecked() && ljmp.IsChecked() && bp.IsChecked() &&
-           fstart.IsChecked() && fend.IsChecked();
+    return header.IsChecked() && call.IsChecked() && jmp.IsChecked() && bp.IsChecked() && fstart.IsChecked() && fend.IsChecked();
 }
 
 inline bool OpCodes::AllUnChecked()
@@ -111,8 +99,8 @@ inline void OpCodes::SetMaskText()
     auto settings = Application::GetAppSettings();
     if (settings->HasSection("Type.ELF"))
     {
-        auto pe        = settings->GetSection("Type.ELF");
-        auto optValue  = pe["OpCodes.Mask"];
+        auto elf       = settings->GetSection("Type.ELF");
+        auto optValue  = elf["OpCodes.Mask"];
         uint32 mask    = 0;
         auto optUInt32 = optValue.AsUInt32();
         if (optValue.HasValue() && optUInt32.has_value())
@@ -170,9 +158,7 @@ bool OpCodes::OnEvent(Reference<Control>, Event evnt, int controlID)
 
         header.SetCheck(isChecked);
         call.SetCheck(isChecked);
-        lcall.SetCheck(isChecked);
         jmp.SetCheck(isChecked);
-        ljmp.SetCheck(isChecked);
         bp.SetCheck(isChecked);
         fstart.SetCheck(isChecked);
         fend.SetCheck(isChecked);
@@ -201,22 +187,10 @@ bool OpCodes::OnEvent(Reference<Control>, Event evnt, int controlID)
         SetConfig(call.IsChecked(), 1);
         return true;
     }
-    case ID_CHECKBOX_LCALL:
-    {
-        all.SetCheck(AllChecked());
-        SetConfig(lcall.IsChecked(), 2);
-        return true;
-    }
     case ID_CHECKBOX_JMP:
     {
         all.SetCheck(AllChecked());
         SetConfig(jmp.IsChecked(), 3);
-        return true;
-    }
-    case ID_CHECKBOX_LJMP:
-    {
-        all.SetCheck(AllChecked());
-        SetConfig(ljmp.IsChecked(), 4);
         return true;
     }
     case ID_CHECKBOX_BP:

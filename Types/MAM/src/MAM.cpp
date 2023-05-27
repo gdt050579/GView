@@ -38,7 +38,7 @@ extern "C"
         settings.AddZone(4, 4, ColorPair{ Color::Magenta, Color::DarkBlue }, "Size Uncompressed");
         settings.AddZone(8, win->GetObject()->GetData().GetSize() - 8, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Content");
 
-        win->CreateViewer("BufferView", settings);
+        mam->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
@@ -57,9 +57,10 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]   = "hex:'4D 41 4D 04'";
-        sect["Extension"] = "pf";
-        sect["Priority"]  = 1;
-        sect["Description"] = "PF file format (*.pf)";
+        sect["Pattern"]            = "magic:4D 41 4D 04";
+        sect["Extension"]          = "pf";
+        sect["Priority"]           = 1;
+        sect["Description"]        = "PF file format (*.pf)";
+        sect["Command.Decompress"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
     }
 }

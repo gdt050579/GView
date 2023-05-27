@@ -206,6 +206,7 @@ namespace View
 
         struct SettingsData
         {
+            String name;
             std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
             AppCUI::Graphics::Size maxTokenSize;
@@ -282,7 +283,6 @@ namespace View
         class Instance : public View::ViewControl
         {
             FoldColumn foldColumn;
-            FixSizeString<29> name;
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
@@ -344,6 +344,7 @@ namespace View
             void DeleteTokens();
             void ShowPlugins();
             void ShowSaveAsDialog();
+            void ShowFindAllDialog();
             void ShowRefactorDialog(TokenObject& tok);
             void ShowStringOpDialog(TokenObject& tok);
 
@@ -361,7 +362,7 @@ namespace View
             std::vector<BlockObject> blocks;
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             inline uint32 GetUnicodeTextLen() const
             {
@@ -385,7 +386,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual std::string_view GetName() override;
 
             // mouse events
             virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
@@ -533,11 +533,26 @@ namespace View
                 return selectedLineNo;
             }
         };
+        class FindAllDialog : public Window
+        {
+            Reference<ListView> lst;
+            uint32 selectedTokenIndex;
+            void Validate();
+
+          public:
+            FindAllDialog(const TokenObject& currentToken,const std::vector<TokenObject>& tokens, const char16* txt);
+
+            virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+            inline uint32 GetSelectedTokenIndex() const
+            {
+                return selectedTokenIndex;
+            }
+        };
         class SaveAsDialog : public Window
         {
             Reference<TextField> txPath;
             Reference<ComboBox> comboEncoding, comboNewLine;
-            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile,cIgnoreMetadataOnSave;
             void Validate();
             void BrowseForFile();
 
@@ -557,6 +572,10 @@ namespace View
             inline bool ShouldOpenANewWindow()
             {
                 return cbOpenInNewWindow->IsChecked();
+            }
+            inline bool ShouldIgnoreMetadataOnSave()
+            {
+                return cIgnoreMetadataOnSave->IsChecked();
             }
             inline const CharacterBuffer& GetFilePath()
             {

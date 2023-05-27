@@ -13,5 +13,6 @@ target_sources(GViewCore PRIVATE
 	DeleteDialog.cpp
 	PluginDialog.cpp
 	SaveAsDialog.cpp
+	FindAllDialog.cpp
 	StringOperationsPlugins.cpp
 	Settings.cpp)
