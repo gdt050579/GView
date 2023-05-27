@@ -192,10 +192,40 @@ void StreamManager::Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, co
     streamToAddTo->packetsOffsets.push_back({ packet, payload, order });
 }
 
+void StreamManager::AddToKnownProtocols(const std::string& layerName)
+{
+    if (layerName.empty())
+        return;
+    for (const auto& name : protocolsFound)
+        if (name == layerName)
+            return;
+    protocolsFound.push_back(layerName);
+}
+
 constexpr uint32 maxWaitUntilEndLine = 300;
 
 constexpr std::string_view httpPattern        = "HTTP/1.";
 constexpr std::string_view httpContentPattern = "Content-Length: ";
+
+void GetFileExtracted(StreamTcpLayer& output)
+{
+    const auto sv         = std::string_view((char*) output.name);
+    const auto firstSpace = sv.find_first_of(' ');
+    if (firstSpace == std::string::npos)
+        return;
+    const auto lastSpace = sv.find_last_of(' ');
+    if (lastSpace == std::string::npos)
+        return;
+    const auto extractedLocation = sv.substr(firstSpace + 1, lastSpace - firstSpace - 1);
+    const auto slashLoc          = extractedLocation.find_last_of('/');
+    if (slashLoc == std::string::npos)
+    {
+        output.extractionName = extractedLocation;
+        return;
+    }
+    output.extractionName = extractedLocation.substr(slashLoc + 1);
+}
+
 void StreamData::tryParsePayload()
 {
     if (connPayload.size < 3)
@@ -237,6 +267,8 @@ void StreamData::tryParsePayload()
                         bufferSize         = 0;
                         buffer[bufferSize] = '\0';
                         identified         = false;
+                        if (!applicationLayers.empty() && !applicationLayers.back().extractionName.empty())
+                            layer.extractionName = applicationLayers.back().extractionName;
                         applicationLayers.push_back(layer);
                         layer = {};
                         continue;
@@ -277,6 +309,7 @@ void StreamData::tryParsePayload()
                     identified          = true;
                     layer.name          = (uint8*) strdup((char*) buffer);
                     std::string_view sv = { (char*) buffer, bufferSize - httpPattern.size() - 2 };
+                    GetFileExtracted(layer);
                     AddDataToSummary(sv);
                 }
             }
@@ -329,6 +362,8 @@ void StreamManager::FinishedAdding()
             conn.name = streamName;
             // conn.sortPackets();
             conn.computeFinalPayload();
+            if (!conn.appLayerName.empty())
+                AddToKnownProtocols(conn.appLayerName);
             finalStreams.push_back(conn);
         }
     }

@@ -44,14 +44,17 @@ bool PCAPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVi
 
     if (!path.empty())
     {
-        const std::string_view sv = std::string_view{ (char*) path.data(), path.size() };
-        const auto indexVal       = Number::ToInt32(sv);
-        if (indexVal.has_value())
+        uint32 value = 0;
+        auto data    = path.data();
+        auto dataEnd = data + path.size();
+        while (data < dataEnd)
         {
-            const auto& stream = streamManager[indexVal.value()];
-            totalItems         = stream->applicationLayers.size();
-            parent.SetData(indexVal.value());
+            value = value * 10 + (int) *data - '0';
+            data++;
         }
+        const auto& stream = streamManager[value];
+        totalItems         = stream->applicationLayers.size();
+        parent.SetData(value);
     }
 
     for (uint32 i = 0; i < totalItems; i++)
@@ -110,10 +113,8 @@ bool PCAPFile::PopulateItem(TreeViewItem item)
         item.SetText(1, tmp.Format("%s", stream->applicationLayers[currentItemIndex].name));
 
         item.SetText(4, tmp.Format("%s", n.ToString(stream->applicationLayers[currentItemIndex].payload.size, NUMERIC_FORMAT).data()));
-        /*if (stream->applicationLayers[currentItemIndex].payload.size == 0)
-        {
-            item.SetType(TreeViewItem::Type::Category);
-        }*/
+        if (stream->applicationLayers[currentItemIndex].payload.size > 0)
+            item.SetType(TreeViewItem::Type::Highlighted);
     }
 
     currentItemIndex++;
@@ -130,7 +131,7 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     std::string* toAppend = &streamText;
     for (const auto c : path)
     {
-        if (c >= '0' && c < '9')
+        if (c >= '0' && c <= '9')
             toAppend->push_back(c);
         else
             toAppend = &applicationText;
@@ -158,6 +159,30 @@ void PCAPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIt
     uint8* payload = new uint8[layer.payload.size];
     memcpy(payload, layer.payload.location, layer.payload.size);
 
+    std::string extractionName;
+    if (!layer.extractionName.empty())
+        extractionName = std::string(layer.extractionName.data(), layer.extractionName.size());
+    else
+        extractionName = (const char*) layer.name;
+
     const Buffer buffer = { payload, layer.payload.size };
-    GView::App::OpenBuffer(buffer, (const char*) layer.name, stream->name, GView::App::OpenMethod::BestMatch);
+
+    GView::App::OpenBuffer(buffer, extractionName, extractionName, GView::App::OpenMethod::BestMatch);
+}
+
+std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForContainerView()
+{
+    std::vector<std::pair<std::string, std::string>> result{};
+    result.reserve(4);
+
+    LocalString<32> tmp;
+    tmp.SetFormat("%hu.%hu", header.versionMajor, header.versionMinor);
+
+    NumericFormatter n;
+    result.emplace_back("PCAP Version", tmp.GetText());
+    result.emplace_back("Total packets", n.ToString((uint32) packetHeaders.size(), NumericFormatFlags::None).data());
+    result.emplace_back("Total streams", n.ToString((uint32) streamManager.size(), NumericFormatFlags::None).data());
+    result.emplace_back("Protocols", streamManager.GetProtocolsFound().data());
+
+    return result;
 }

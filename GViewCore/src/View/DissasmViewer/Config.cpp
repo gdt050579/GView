@@ -40,23 +40,25 @@ void Config::Initialize()
         auto sect = ini->GetSection("DissasmView");
         if (sect.Exists())
         {
-            this->Keys.AddNewType         = sect.GetValue("AddNewType").ToKey(Key::F6);
-            this->Keys.ShowFileContentKey = sect.GetValue("ShowFileContentKey").ToKey(Key::F9);
-            this->Keys.ExportAsmToFile    = sect.GetValue("AsmExportToFile").ToKey(Key::F8);
-            this->Keys.JumpBack           = sect.GetValue("JumpBack").ToKey(Key::Ctrl | Key::Q);
-            this->Keys.JumpForward        = sect.GetValue("JumpForward").ToKey(Key::Ctrl | Key::E);
-            this->ShowFileContent         = sect.GetValue("ShowFileContent").ToBool(true);
-            foundSettings                 = true;
+            this->Keys.AddNewType            = sect.GetValue("AddNewType").ToKey(Key::F6);
+            this->Keys.ShowFileContentKey    = sect.GetValue("ShowFileContentKey").ToKey(Key::F9);
+            this->Keys.ExportAsmToFile       = sect.GetValue("AsmExportToFile").ToKey(Key::F8);
+            this->Keys.JumpBack              = sect.GetValue("JumpBack").ToKey(Key::Ctrl | Key::Q);
+            this->Keys.JumpForward           = sect.GetValue("JumpForward").ToKey(Key::Ctrl | Key::E);
+            this->Keys.DissasmGotoEntrypoint = sect.GetValue("Entrypoint").ToKey(Key::F2);
+            this->ShowFileContent            = sect.GetValue("ShowFileContent").ToBool(true);
+            foundSettings                    = true;
         }
     }
     if (!foundSettings)
     {
-        this->Keys.AddNewType         = Key::F6;
-        this->Keys.ShowFileContentKey = Key::F9;
-        this->Keys.ExportAsmToFile    = Key::F8;
-        this->Keys.JumpBack           = Key::Ctrl | Key::Q;
-        this->Keys.JumpForward        = Key::Ctrl | Key::E;
-        this->ShowFileContent         = true;
+        this->Keys.AddNewType            = Key::F6;
+        this->Keys.ShowFileContentKey    = Key::F9;
+        this->Keys.ExportAsmToFile       = Key::F8;
+        this->Keys.JumpBack              = Key::Ctrl | Key::Q;
+        this->Keys.JumpForward           = Key::Ctrl | Key::E;
+        this->Keys.DissasmGotoEntrypoint = Key::F2;
+        this->ShowFileContent            = true;
     }
 
     this->Loaded = true;

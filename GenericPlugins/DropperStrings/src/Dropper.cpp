@@ -245,14 +245,32 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
             {
                 const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
                 const auto& value = windowsPaths.at(key);
-                lv->AddItem({ "Path (Win)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+
+                if (value.ends_with(R"(\StartUp)"))
+                {
+                    lv->AddItem({ "Path (Win) (Persistence)", svp.data(), std::string{ value.data(), key.position.second }.c_str() })
+                          .SetType(ListViewItem::Type::Emphasized_2);
+                }
+                else
+                {
+                    lv->AddItem({ "Path (Win)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+                }
             }
 
             for (const auto& key : sortedUnixPaths)
             {
                 const auto svp    = n.ToString(key.position.first, { NumericFormatFlags::HexPrefix, 16 });
                 const auto& value = unixPaths.at(key);
-                lv->AddItem({ "Path (Unix)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+
+                if (value.ends_with(R"(/passwd)"))
+                {
+                    lv->AddItem({ "Path (Unix) (Credentials)", svp.data(), std::string{ value.data(), key.position.second }.c_str() })
+                          .SetType(ListViewItem::Type::Emphasized_2);
+                }
+                else
+                {
+                    lv->AddItem({ "Path (Unix)", svp.data(), std::string{ value.data(), key.position.second }.c_str() });
+                }
             }
         }
 

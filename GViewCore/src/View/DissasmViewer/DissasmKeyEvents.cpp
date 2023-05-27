@@ -1,11 +1,12 @@
 #include "DissasmViewer.hpp"
 #include <cmath>
 
-constexpr uint32 COMMAND_ADD_NEW_TYPE          = 100;
-constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT = 101;
-constexpr uint32 COMMAND_EXPORT_ASM_FILE       = 102;
-constexpr uint32 COMMAND_JUMP_BACK             = 103;
-constexpr uint32 COMMAND_JUMP_FORWARD            = 104;
+constexpr uint32 COMMAND_ADD_NEW_TYPE           = 100;
+constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT  = 101;
+constexpr uint32 COMMAND_EXPORT_ASM_FILE        = 102;
+constexpr uint32 COMMAND_JUMP_BACK              = 103;
+constexpr uint32 COMMAND_JUMP_FORWARD           = 104;
+constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
 
 // TODO: fix remove duplicate with Instance.cpp
 constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
@@ -293,6 +294,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.ExportAsmToFile, "Export asm file", COMMAND_EXPORT_ASM_FILE);
     commandBar.SetCommand(config.Keys.JumpBack, "Jump back", COMMAND_JUMP_BACK);
     commandBar.SetCommand(config.Keys.JumpForward, "Jump forward", COMMAND_JUMP_FORWARD);
+    commandBar.SetCommand(config.Keys.DissasmGotoEntrypoint, "Entry point", COMMAND_DISSAM_GOTO_ENTRYPOINT);
     return false;
 }
 
@@ -337,6 +339,11 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         {
             if (const auto [canJump, location] = jumps_holder.JumpFront(); canJump)
                 Cursor.restorePosition(location);
+            return true;
+        }
+        case COMMAND_DISSAM_GOTO_ENTRYPOINT:
+        {
+            ProcessSpaceKey(true);
             return true;
         }
         default:

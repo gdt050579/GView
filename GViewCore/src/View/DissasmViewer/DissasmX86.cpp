@@ -505,7 +505,7 @@ inline cs_insn* GetCurrentInstructionByOffset(
 
     diffLines     = 0;
     cs_insn* insn = cs_malloc(handle);
-    if (offsetToReach > zone->cachedCodeOffsets[0].offset)
+    if (offsetToReach >= zone->cachedCodeOffsets[0].offset)
         offsetToReach -= zone->cachedCodeOffsets[0].offset;
     while (zone->asmAddress <= offsetToReach)
     {
@@ -693,6 +693,15 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         }
     }
 
+    // TODO: be more generic
+    if (isCall && insn->op_str[0] == '0' && insn->op_str[1] == '\0')
+    {
+        NumericFormatter n;
+        const auto res = n.ToString(zone->cachedCodeOffsets[0].offset, { NumericFormatFlags::HexPrefix, 16 });
+        if (res.size() < 16)
+            memcpy(insn->op_str, res.data(), res.size() + 1);
+    }
+
     // TODO: improve efficiency by filtering instructions
     const MemoryMappingEntry* mappingPtr = nullptr;
     const uint64 finalIndex =
@@ -775,7 +784,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
                     if (textFound.size() >= DISSAM_MAXIMUM_STRING_PREVIEW)
                     {
-                        while (textFound.size() > 10)
+                        while (textFound.size() > DISSAM_MAXIMUM_STRING_PREVIEW)
                             textFound.erase(textFound.begin() + textFound.size() - 1);
                         textFound.push_back('.');
                         textFound.push_back('.');
@@ -981,38 +990,61 @@ void Instance::CommandExportAsmFile()
     }
 }
 
-void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
+void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach)
 {
-    uint32 diffLines = 0;
-    cs_insn* insn    = GetCurrentInstructionByLine(line - 1, zone, obj, diffLines);
-    if (!insn)
+    uint32 diffLines     = 0;
+    uint64 computedValue = 0;
+    cs_insn* insn;
+    if (!offsetToReach)
     {
-        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
-        return;
-    }
-    uint32 computedValue = 0;
-    if (insn->mnemonic[0] == 'j')
-    {
-        char* val = &insn->op_str[2];
-
-        while (*val && *val != ',' && *val != ' ')
+        insn = GetCurrentInstructionByLine(line - 1, zone, obj, diffLines);
+        if (!insn)
         {
-            if (*val >= '0' && *val <= '9')
-                computedValue = computedValue * 16 + (*val - '0');
-            else if (*val >= 'a' && *val <= 'f')
-                computedValue = computedValue * 16 + (*val - 'a' + 10);
+            Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+            return;
+        }
+        if (insn->mnemonic[0] == 'j' || insn->mnemonic[0] == 'c' && *(uint32*) insn->mnemonic == callOP)
+        {
+            if (insn->op_str[0] == '0' && insn->op_str[1] == 'x')
+            {
+                char* val = &insn->op_str[2];
+
+                while (*val && *val != ',' && *val != ' ')
+                {
+                    if (*val >= '0' && *val <= '9')
+                        computedValue = computedValue * 16 + (*val - '0');
+                    else if (*val >= 'a' && *val <= 'f')
+                        computedValue = computedValue * 16 + (*val - 'a' + 10);
+                    else
+                    {
+                        Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
+                        computedValue = 0;
+                        break;
+                    }
+                    val++;
+                }
+            }
+            else if (insn->op_str[0] == '0' && insn->op_str[1] == '\0')
+            {
+                computedValue = zone->cachedCodeOffsets[0].offset;
+            }
             else
             {
-                Dialogs::MessageBox::ShowNotification("Warning", "Invalid jump value!");
-                computedValue = 0;
-                break;
+                cs_free(insn, 1);
+                return;
             }
-            val++;
+            cs_free(insn, 1);
+        }
+        else
+        {
+            cs_free(insn, 1);
+            return;
         }
     }
-    cs_free(insn, 1);
+    else
+        computedValue = *offsetToReach;
 
-    if (computedValue == 0)
+    if (computedValue == 0 || computedValue > zone->zoneDetails.startingZonePoint + zone->zoneDetails.size)
         return;
 
     // computedValue = 1064;
@@ -1027,8 +1059,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line)
     cs_free(insn, 1);
 
     jumps_holder.insert(Cursor.saveState());
-    Cursor.lineInView    = 0;
-    Cursor.startViewLine = diffLines + zone->startLineIndex;
+    Cursor.lineInView    = std::min<uint32>(5, diffLines);
+    Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
 }
 
 void Instance::CommandDissasmAddZone()

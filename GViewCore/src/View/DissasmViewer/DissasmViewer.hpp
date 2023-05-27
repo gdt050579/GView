@@ -21,7 +21,7 @@ namespace View
         static constexpr size_t DISSASM_MAX_CACHED_LINES      = 50;
         static constexpr size_t DISSASM_INITIAL_EXTENDED_SIZE = 1;
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
-        static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 10;
+        static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 90;
 
         struct Config
         {
@@ -55,6 +55,7 @@ namespace View
                 AppCUI::Input::Key ExportAsmToFile;
                 AppCUI::Input::Key JumpBack;
                 AppCUI::Input::Key JumpForward;
+                AppCUI::Input::Key DissasmGotoEntrypoint;
             } Keys;
             bool Loaded;
 
@@ -487,10 +488,10 @@ namespace View
             void AddComment();
             void RemoveComment();
             void CommandExportAsmFile();
-            void ProcessSpaceKey();
+            void ProcessSpaceKey(bool goToEntryPoint = false);
             void CommandDissasmAddZone();
             void CommandDissasmRemoveZone();
-            void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line);
+            void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);

@@ -79,13 +79,13 @@ extern "C"
         settings.SetName("StreamView");
         settings.SetIcon(PCAP_ICON);
         settings.SetColumns({
-              "n:&ID,a:l,w:6",
+              "n:&ID,a:l,w:8",
               "n:&Connection,a:l,w:50",
               "n:&IpProt.,a:c,w:8",
               "n:&Transport,a:c,w:12",
-              "n:&Payload,a:c,w:9",
+              "n:&Payload,a:r,w:9",
               "n:&AppLayer,a:c,w:10",
-              "n:&Summary,a:c,w:50",
+              "n:&Summary,a:l,w:50",
         });
 
         settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
@@ -94,6 +94,10 @@ extern "C"
         for (const auto& [header, offset] : pcap->packetHeaders)
             pcap->streamManager.AddPacket(header, pcap->header.network);
         pcap->streamManager.FinishedAdding();
+
+		const auto properties = pcap->GetPropertiesForContainerView();
+        for (const auto& property : properties)
+            settings.AddProperty(property.first.data(), property.second.data());
 
         win->CreateViewer(settings);
     }

@@ -546,14 +546,15 @@ namespace App
               const AppCUI::Utils::ConstString& path,
               uint32 PID,
               OpenMethod method,
-              std::string_view typeName);
+              std::string_view typeName,
+              Reference<Window> parent = nullptr);
         bool AddFolder(const std::filesystem::path& path);
 
       public:
         Instance();
         bool Init();
-        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName);
+        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters

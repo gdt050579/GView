@@ -1975,13 +1975,14 @@ struct StreamPacketContext
 
 struct StreamTcpLayer
 {
-    // TODO: delete it
+    // TODO: delete name when no longer used!
     uint8* name;
+    std::string_view extractionName;
     StreamPayload payload;
 };
 
 // TODO: for the future maybe change structure for a more generic structure
-constexpr uint32 PCAP_MAX_SUMMARY_SIZE = 45;
+constexpr uint32 PCAP_MAX_SUMMARY_SIZE = 100;
 struct StreamData
 {
     static constexpr uint32 INVALID_TRANSPORT_PROTOCOL_VALUE = static_cast<uint16>(IP_Protocol::Reserved) + 1;
@@ -2039,6 +2040,7 @@ class StreamManager
 {
     std::unordered_map<std::string, std::deque<StreamData>> streams;
     std::vector<StreamData> finalStreams;
+    std::vector<std::string> protocolsFound;
 
     // TODO: maybe sync functions with those used in Panels?
     void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
@@ -2048,6 +2050,8 @@ class StreamManager
     void Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet);
 
     void Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet);
+
+	void AddToKnownProtocols(const std::string& layerName);
 
   public:
     void AddPacket(const PacketHeader* header, LinkType network);
@@ -2077,6 +2081,18 @@ class StreamManager
         if (index < finalStreams.size())
             return &finalStreams.at(index);
         return nullptr;
+    }
+
+    std::string GetProtocolsFound() const
+    {
+        if (protocolsFound.empty())
+            return "none recognized";
+		//TODO: improve performance with faster string addition
+        std::string res;
+        for (const auto& proto : protocolsFound)
+            res += proto + " ";
+
+        return res;
     }
 };
 
