@@ -58,7 +58,7 @@ Visualize graphical representation of different image formats.
 ### Table Viewer
 Represents data that has a tabelar format in an organized manner (CSV, TSV, SQL databases).
 
-![Table Viewer](./docs/source/_static/TableView.gif)
+![Table Viewer](./docs/source/_static/GridView.gif)
 
 ### Dissasm Viewer
 Presents the content of binary files through a disassembly process that examines the code and deduces relevant details like imported function names, parameter names, and string pointers. This disassembly process relies on the Capstone library. In addition, the **data identifier plugin** plays a crucial role by providing essential information such as the required decoding method (e.g., x86, x64) and the code's entrypoint offset.
