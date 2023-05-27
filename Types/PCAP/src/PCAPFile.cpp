@@ -180,8 +180,8 @@ std::vector<std::pair<std::string, std::string>> PCAPFile::GetPropertiesForConta
 
     NumericFormatter n;
     result.emplace_back("PCAP Version", tmp.GetText());
-    result.emplace_back("Total packets", n.ToString(packetHeaders.size(), NumericFormatFlags::None).data());
-    result.emplace_back("Total streams", n.ToString(streamManager.size(), NumericFormatFlags::None).data());
+    result.emplace_back("Total packets", n.ToString((uint32) packetHeaders.size(), NumericFormatFlags::None).data());
+    result.emplace_back("Total streams", n.ToString((uint32) streamManager.size(), NumericFormatFlags::None).data());
     result.emplace_back("Protocols", streamManager.GetProtocolsFound().data());
 
     return result;
