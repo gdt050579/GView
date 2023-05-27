@@ -4,7 +4,6 @@
 
 - [GView](#gview)
 	- [General description](#general-description)
-	- [Data Identifier Plugins](#data-identifier-plugins)
 	- [Smart Viewers](#smart-viewers)
 		- [Buffer Viewer](#buffer-viewer)
 		- [Text Viewer](#text-viewer)
@@ -13,6 +12,7 @@
 		- [Table Viewer](#table-viewer)
 		- [Dissasm Viewer](#dissasm-viewer)
 		- [Container Viewer](#container-viewer)
+	- [Data Identifier Plugins](#data-identifier-plugins)
 	- [Architecture](#architecture)
 	- [Building](#building)
 		- [Tools used](#tools-used)
@@ -29,6 +29,46 @@
 **GView** framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones. Users can leverage the diverse range of available visualization options to effectively analyze and interpret the information.
 
 On the other hand, from the perspective of developers, **GView** offers a flexible platform to create plugins that can parse various data structures. Developers can harness this capability to develop customized views and enhance the analysis capabilities of **GView**. By creating plugins, developers can extend the framework's functionality and tailor it to specific data formats or requirements, enabling more efficient and insightful data analysis.
+
+## Smart Viewers
+
+**Smart viewers** are software components designed to display data in various formats or representations. In the context of a **data identifier plugin**, multiple smart viewers are usually available, with one being designated as the primary viewer. This setup allows users to effortlessly switch between different viewers, selecting the visualization method that most effectively meets their specific needs.
+
+### Buffer Viewer
+
+Interprets data as a binary buffer and possesses the ability to identify and highlight specific portions of the buffer using various specifications such as regular expressions, offsets, content patterns, and more. It can effectively detect and highlight strings in both ASCII and Unicode formats. Additionally, the view is equipped with the capability to adjust code pages, enabling the clear representation of characters from diverse languages.
+
+![Buffer Viewer](./docs/source/_static/BufferView.gif)
+
+### Text Viewer
+Interprets data as a sequence of characters arranged in lines, each separated by an identifier. It offers comprehensive support for various line separators, including CR, LF, CRLF, and LFCR. The view also provides flexible options for alignment, allowing different interpretations of the TAB character, and offers customizable wrapping settings for each line.
+
+![Text Viewer](./docs/source/_static/TextView.gif)
+
+### Lexical Viewer
+This viewer leverages the lexer provided by the **data identifier plugin**. It offers advanced functionalities such as displaying text with highlighted colors, enabling the folding or collapsing of code blocks, and incorporating diverse refactoring operations like variable and function renaming. Additionally, a data identification plugin can provide a range of language-specific transformations that can be applied to the text.
+
+![Lexical Viewer](./docs/source/_static/LexicalView.gif)
+
+### Image Viewer
+Visualize graphical representation of different image formats.
+
+![Image Viewer](./docs/source/_static/ImageView.gif)
+
+### Table Viewer
+Represents data that has a tabelar format in an organized manner (CSV, TSV, SQL databases).
+
+![Table Viewer](./docs/source/_static/TableView.gif)
+
+### Dissasm Viewer
+Presents the content of binary files through a disassembly process that examines the code and deduces relevant details like imported function names, parameter names, and string pointers. This disassembly process relies on the Capstone library. In addition, the **data identifier plugin** plays a crucial role by providing essential information such as the required decoding method (e.g., x86, x64) and the code's entrypoint offset.
+
+![Dissasm Viewer](./docs/source/_static/DissasmView.gif)
+
+### Container Viewer
+The viewer displays a range of components that can be extracted using the current **data identifier plugin**. This versatile functionality can be applied in various scenarios, such as extracting files from an archive or extracting streams from a PCAP file.
+
+![Container Viewer](./docs/source/_static/FolderView.gif)
 
 ## Data Identifier Plugins
 
@@ -56,32 +96,6 @@ In the context of data analysis, a **data identifier plugin** serves as a valuab
 | PYEXTRACTOR | PyInstaller combines a Python application and its associated dependencies into a unified package, enabling the execution of the packaged application without the need for a separate Python interpreter or individual module installations | Extract the PyInstaller-generated package of the bundled Python application and its dependencies from the packaged format (ELF, Mach-O, PE) |
 | VBA         | VBA (Visual Basic for Applications) format refers to the file format used to store VBA code modules and associated macros within Microsoft Office documents, such as Excel workbooks, Word documents, PowerPoint presentations, and Access databases | WIP |
 | ZIP         | ZIP is a widely used file compression and archival format | Parse .zip files building a navigable tree from their content |
-
-## Smart Viewers
-
-**Smart viewers** are software components designed to display data in various formats or representations. In the context of a data **identifier plugin**, multiple smart viewers are usually available, with one being designated as the primary viewer. This setup allows users to effortlessly switch between different viewers, selecting the visualization method that most effectively meets their specific needs.
-
-### Buffer Viewer
-
-Interprets data as a binary buffer and possesses the ability to identify and highlight specific portions of the buffer using various specifications such as regular expressions, offsets, content patterns, and more. It can effectively detect and highlight strings in both ASCII and Unicode formats. Additionally, the view is equipped with the capability to adjust code pages, enabling the clear representation of characters from diverse languages.
-
-### Text Viewer
-Interprets data as a sequence of characters arranged in lines, each separated by an identifier. It offers comprehensive support for various line separators, including CR, LF, CRLF, and LFCR. The view also provides flexible options for alignment, allowing different interpretations of the TAB character, and offers customizable wrapping settings for each line.
-
-### Lexical Viewer
-This viewer leverages the lexer provided by the **data identifier plugin**. It offers advanced functionalities such as displaying text with highlighted colors, enabling the folding or collapsing of code blocks, and incorporating diverse refactoring operations like variable and function renaming. Additionally, a data identification plugin can provide a range of language-specific transformations that can be applied to the text.
-
-### Image Viewer
-Visualize graphical representation of different image formats.
-
-### Table Viewer
-Represents data that has a tabelar format in an organized manner (CSV, TSV, SQL databases).
-
-### Dissasm Viewer
-Presents the content of binary files through a disassembly process that examines the code and deduces relevant details like imported function names, parameter names, and string pointers. This disassembly process relies on the Capstone library. In addition, the **data identifier plugin** plays a crucial role by providing essential information such as the required decoding method (e.g., x86, x64) and the code's entrypoint offset.
-
-### Container Viewer
-The viewer displays a range of components that can be extracted using the current **data identifier plugin**. This versatile functionality can be applied in various scenarios, such as extracting files from an archive or extracting streams from a PCAP file.
 
 ## Architecture
 
