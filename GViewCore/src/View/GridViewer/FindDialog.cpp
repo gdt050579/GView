@@ -234,13 +234,8 @@ bool FindDialog::Update()
     }
 
     const auto height = textOption->IsChecked() ? DIALOG_HEIGHT_TEXT_FORMAT : DIALOG_HEIGHT_BINARY_FORMAT;
-
     this->Resize(this->GetWidth(), height);
     SetDescription();
-
-    const uint32 deltaHeight = DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT;
-    const int32 sign         = textOption->IsChecked() ? -1 : 1;
-    const int32 deltaSigned  = sign * deltaHeight;
 
     if (textOption->IsChecked())
     {
@@ -253,6 +248,10 @@ bool FindDialog::Update()
 
         return true;
     }
+
+    const uint32 deltaHeight = DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT;
+    const int32 sign         = textOption->IsChecked() ? -1 : 1;
+    const int32 deltaSigned  = sign * deltaHeight;
 
     input->MoveTo(input->GetX(), input->GetY() + deltaSigned);
     textOption->MoveTo(textOption->GetX(), textOption->GetY() + deltaSigned);
@@ -285,8 +284,9 @@ std::u16string FindDialog::GetFilterValue()
 
 bool FindDialog::ProcessInput()
 {
-    CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
-    CHECK(object.IsValid(), false, "");
+    // No current implementation for this
+    // CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
+    // CHECK(object.IsValid(), false, "");
     CHECK(input.IsValid(), false, "");
 
     if (input->GetText().Len() == 0)
