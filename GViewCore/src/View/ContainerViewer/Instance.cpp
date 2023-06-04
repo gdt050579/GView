@@ -143,7 +143,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
