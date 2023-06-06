@@ -801,8 +801,8 @@ std::string_view PEFile::DirectoryIDToName(uint32_t dirID)
 
 bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
 {
-    DIBInfoHeader dibHeader;
-    r.Image.type = ImageType::Unknwown;
+    DIBInfoHeader dibHeader{};
+    r.Image.type = ImageType::Unknown;
     auto buf     = this->obj->GetData().Get(r.Start, sizeof(dibHeader), true);
     if (buf.Empty())
     {
@@ -857,7 +857,7 @@ bool PEFile::ProcessResourceImageInformation(ResourceInformation& r)
         r.Image.bitsPerPixel = 0;
     }
     // general checks
-    if (r.Image.type == ImageType::Unknwown)
+    if (r.Image.type == ImageType::Unknown)
     {
         errList.AddWarning("Unkown image resourse type (for resourse at offset %llu)", r.Start);
         return false;
@@ -2190,8 +2190,8 @@ void PEFile::RunCommand(std::string_view commandName)
             AppCUI::Dialogs::MessageBox::ShowError("Error", "Digital signature not found!");
         }
     }
-	else if (commandName == "AreaHighlighter")
-	{
-		PE::Commands::AreaHighlighter(this).Show();
-	}
+    else if (commandName == "AreaHighlighter")
+    {
+        PE::Commands::AreaHighlighter(this).Show();
+    }
 }

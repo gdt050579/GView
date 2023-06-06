@@ -697,7 +697,7 @@ namespace Type
             {
                 DIB = 0,
                 PNG,
-                Unknwown = 0xFF
+                Unknown = 0xFF
             };
             struct ResourceInformation
             {
