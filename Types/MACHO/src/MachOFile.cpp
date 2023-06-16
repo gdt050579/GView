@@ -3,7 +3,7 @@
 namespace GView::Type::MachO
 {
 MachOFile::MachOFile(Reference<GView::Utils::DataCache> file)
-    : header({}), fatHeader({}), isFat(false), isMacho(false), is64(false), shouldSwapEndianess(false), panelsMask(0)
+    : header({}), fatHeader({}), isFat(false), isMacho(false), is64(false), shouldSwapEndianess(false), panelsMask(0), currentItemIndex(0)
 {
 }
 
