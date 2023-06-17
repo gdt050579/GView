@@ -1144,6 +1144,7 @@ bool CounterSignature::ParsePKCS9(
     if (!messageDigest)
     {
         verifyFlags = (int) CountersignatureVFY::DigestMissing;
+        return false;
     }
 
     size_t digestLen = messageDigest->value.octet_string->length;
