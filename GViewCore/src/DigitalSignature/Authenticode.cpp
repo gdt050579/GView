@@ -861,7 +861,7 @@ static char* PubkeyToPEM(EVP_PKEY* pubkey)
         return NULL;
     }
 
-    int resultLen = 0;
+    size_t resultLen = 0;
     int tmp       = 0;
     EVP_EncodeInit(ctx);
     EVP_EncodeUpdate(ctx, result, &tmp, der, len);
@@ -953,7 +953,7 @@ static void ToHex(const unsigned char* v, char* b, int len)
     for (i = 0; i < len; i++)
     {
 #ifdef WIN32
-        int size = EVP_MAX_MD_SIZE * 2 + 1;
+        size_t size = EVP_MAX_MD_SIZE * 2 + 1;
         j += sprintf_s(b + j, size - j, "%02X", v[i]);
 #else
         j += sprintf(b + j, "%02X", v[i]);
