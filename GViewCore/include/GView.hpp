@@ -302,7 +302,7 @@ namespace Hashes
 
       private:
         void* handle;
-        uint8 hash[64];
+        uint8 hash[64]{ 0 };
         uint32 size;
 
       private:
