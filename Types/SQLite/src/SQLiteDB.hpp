@@ -10,10 +10,23 @@ using namespace AppCUI::Utils;
 
 namespace GView::Type::SQLite
 {
-struct Blob
+class Blob
 {
-    const uint8* data;
-    int32 size;
+  public:
+    uint8* data;
+    int size;
+
+    Blob(const uint8* data, int size)
+    {
+        this->data = new uint8_t[size];
+        memcpy(this->data, data, size);
+        this->size = size;
+    }
+
+    ~Blob()
+    {
+        delete[] data;
+    }
 };
 struct Column
 {
@@ -30,62 +43,77 @@ struct Column
     std::string name;
     std::vector<std::variant<AppCUI::int64, double, std::string*, Blob*, void*>> values;
 
-    AppCUI::Utils::String ValueToString(uint32 index)
+    std::string ValueToString(uint32 index)
     {
-        AppCUI::Utils::String str;
-
         if (type == Type::Null)
         {
-            str = "NULL";
-            return str;
+            return "NULL";
         }
 
         // TODO: out of bounds check?
         auto& value = values[index];
 
-        switch (type)
+        int intValue;
+        if (type == Type::Integer)
         {
-        case Type::Integer:
-            str.SetFormat("%lld", std::get<int64>(value));
-            break;
-        case Type::Float:
-            str.SetFormat("%f", std::get<double>(value));
-            break;
-        case Type::Text:
-            str.Set(*std::get<std::string*>(value));
-            break;
-        case Type::Blob:
-        {
-            auto blob = std::get<Blob*>(value);
-            for (int32 i = 0; i < blob->size; ++i)
-            {
-                str.AddFormat("%02x", blob->data[i]);
-            }
-            break;
-        }
-        case Type::Null:
-            str = "NULL";
-            break;
+            int64 newValue = std::get<int64>(value);
+            return std::to_string(newValue);
         }
 
-        return str;
+        if (type == Type::Float)
+        {
+            double floatValue = std::get<double>(value);
+            return std::to_string(floatValue);
+        }
+
+        if (type == Type::Text)
+        {
+            auto strPtr = *std::get<std::string*>(value);
+            return strPtr;
+        }
+
+        if (type == Type::Blob)
+        {
+            auto blob         = std::get<Blob*>(value);
+            std::string returnValue = "";
+            std::vector<uint8> blobVector(static_cast<uint8*>(blob->data), static_cast<uint8*>(blob->data) +  blob->size - 1);
+            for (auto& c : blobVector)
+            {
+                std::string data;
+                for (int i = 7; i >= 0; --i)
+                {
+                    data.push_back(((c & (1 << i)) ? '1' : '0'));
+                    //returnValue.push_back(((c & (1 << i)) ? '1' : '0'));
+                }
+                returnValue.append(data);
+            }
+            // return value;
+            return returnValue;
+        }
+
+        if (type == Type::Null)
+        {
+            return "NULL";
+        }
+
+        return "Should not reach";
     }
 
-    ~Column()
-    {
-        for (auto& value : values)
-        {
-            switch (type)
-            {
-            case Type::Text:
-                delete std::get<std::string*>(value);
-                break;
-            case Type::Blob:
-                delete std::get<Blob*>(value);
-                break;
-            }
-        }
-    }
+    /* ~Column()
+     {
+         for (auto& value : values)
+         {
+             switch (type)
+             {
+             case Type::Text:
+                 delete std::get<std::string*>(value);
+                 break;
+             case Type::Blob:
+                 delete std::get<Blob*>(value);
+                 break;
+             }
+         }
+     }*/
 };
 
 class Statement
@@ -118,16 +146,7 @@ class Statement
         {
             shouldReset = true;
         }
-
-        auto status = sqlite3_step(handle);
-
-        if (status == SQLITE_DONE)
-        {
-            return {};
-        }
-
         auto columnCount = sqlite3_column_count(handle);
-
         std::vector<Column> result;
 
         for (int i = 0; i < columnCount; ++i)
@@ -157,6 +176,40 @@ class Statement
             }
         }
 
+        auto status = sqlite3_step(handle);
+
+        if (status == SQLITE_DONE)
+        {
+            return {};
+        }
+
+        /*for (int i = 0; i < columnCount; ++i)
+        {
+            result.push_back({});
+            result[i].name = sqlite3_column_name(handle, i);
+
+            auto type = sqlite3_column_type(handle, i);
+
+            switch (type)
+            {
+            case SQLITE_INTEGER:
+                result[i].type = Column::Type::Integer;
+                break;
+            case SQLITE_FLOAT:
+                result[i].type = Column::Type::Float;
+                break;
+            case SQLITE_TEXT:
+                result[i].type = Column::Type::Text;
+                break;
+            case SQLITE_BLOB:
+                result[i].type = Column::Type::Blob;
+                break;
+            case SQLITE_NULL:
+                result[i].type = Column::Type::Null;
+                break;
+            }
+        }*/
+
         do
         {
             for (int i = 0; i < columnCount; ++i)
@@ -164,10 +217,9 @@ class Statement
                 // If the column is null now, it may not be null in future rows.
                 // Therefore, get the actual type. If the actual type is also null,
                 // the column is null for every row.
-                if (result[i].type == Column::Type::Null)
+                auto type = sqlite3_column_type(handle, i);
+                if (type != SQLITE_NULL)
                 {
-                    auto type = sqlite3_column_type(handle, i);
-
                     switch (type)
                     {
                     case SQLITE_INTEGER:
@@ -181,8 +233,6 @@ class Statement
                         break;
                     case SQLITE_BLOB:
                         result[i].type = Column::Type::Blob;
-                        break;
-                    case SQLITE_NULL:
                         break;
                     }
                 }
@@ -212,16 +262,34 @@ class Statement
                 {
                     auto ptr  = sqlite3_column_blob(handle, i);
                     auto size = sqlite3_column_bytes(handle, i);
+                    if (size == 0)
+                    {
+                        result[i].values.push_back(new Blob((const uint8*) "test", 4));
+                        break;
+                    }
+                    auto theContent = (const uint8*) ptr;
 
-                    result[i].values.push_back(new Blob{ (const uint8*) ptr, size });
+                    result[i].values.push_back(new Blob((const uint8*) ptr, size));
                     break;
                 }
                 case Column::Type::Null:
                 {
+                    /*if (type == SQLITE_NULL)
+                    {
+                        break;
+                    }
+                    auto ptr  = sqlite3_column_blob(handle, i);
+                    auto size = sqlite3_column_bytes(handle, i);
+                    if (size != 0)
+                    {
+                        result[i].values.push_back(new Blob{ (const uint8*) ptr, size });
+                        break;
+                    }*/
+
                     // When retrieving the name and SQL query for a specific table,
                     // the columns are expected to have the string type. Therefore,
                     // return nullptr of type string
-                    result[i].values.push_back((std::string*) nullptr);
+                    result[i].values.push_back(new Blob((const uint8*) "test", 4));
                     break;
                 }
                 }
@@ -324,7 +392,7 @@ class DB
                 }
             }
         }
-        
+
         return results;
     }
 
@@ -419,7 +487,7 @@ class DB
 
             for (int j = 0; j < columns.size(); ++j)
             {
-                result.second[i].emplace_back(columns[j].ValueToString(i));
+                result.second[i].emplace_back(std::move(columns[j].ValueToString(i)));
             }
         }
 

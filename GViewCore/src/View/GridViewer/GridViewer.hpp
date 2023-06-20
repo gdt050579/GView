@@ -78,7 +78,7 @@ namespace View
                 AppCUI::Input::Key replaceHeaderWith1stRow;
                 AppCUI::Input::Key toggleHorizontalLines;
                 AppCUI::Input::Key toggleVerticalLines;
-                AppCUI::Input::Key showSqlDialog;
+                AppCUI::Input::Key viewCellContent;
             } keys;
             struct
             {

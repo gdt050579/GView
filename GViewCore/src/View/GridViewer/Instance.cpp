@@ -10,6 +10,7 @@ constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
 constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
 constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
+constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003;
 
 Config Instance::config;
 
@@ -123,6 +124,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.keys.replaceHeaderWith1stRow, "ReplaceHeader", COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW);
     commandBar.SetCommand(config.keys.toggleHorizontalLines, "ToggleHorizontalLines", COMMAND_ID_TOGGLE_HORIZONTAL_LINES);
     commandBar.SetCommand(config.keys.toggleVerticalLines, "ToggleVerticalLines", COMMAND_ID_TOGGLE_VERTICAL_LINES);
+    commandBar.SetCommand(config.keys.viewCellContent, "ViewCellContent", COMMAND_ID_VIEW_CELL_CONTENT);
     return false;
 }
 
@@ -145,6 +147,12 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         {
             grid->ToggleVerticalLines();
             return true;
+        }
+        else if (ID == COMMAND_ID_VIEW_CELL_CONTENT)
+        {
+            auto content = grid->GetSelectedCellContent();
+            BufferView buffer(content.value().GetText(), content.value().Len());
+            GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
         }
     }
 
@@ -210,14 +218,14 @@ void GView::View::GridViewer::Instance::ProcessContent()
 
     const auto oSize = obj->GetData().GetSize();
     const auto cSize = obj->GetData().GetCacheSize();
-
+    auto lines1 = settings->lines;
     auto oSizeProcessed = 0ULL;
     auto lineStart      = 0ULL;
     auto currentLine    = 0ULL;
 
     do
     {
-        const auto buf     = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         auto nPos       = data.find_first_of('\n', 0);
@@ -259,10 +267,22 @@ void GView::View::GridViewer::Instance::ProcessContent()
         std::vector<uint64> separators;
         {
             size_t pos = line.find(settings->separator[0]);
-            while (pos != std::string::npos)
+            while (pos < line.size())
             {
                 separators.push_back(pos + oldOSizeProcessed);
-                pos = line.find(settings->separator[0], pos + 1);
+               /* auto value = line.size() > pos + 1;
+
+                auto distance = (int) (line.end() - line.begin() + pos - 1);
+                auto offset   = std::min<>(distance, 100);
+               */
+                auto new_pos = std::search(
+                      line.begin() + pos + 1, line.end(),
+                      settings->separator,
+                      settings->separator + 1,
+                      [](char a, char b) { return a == b ; });
+
+                pos          = new_pos - line.begin(); 
+                //pos        = line.find(settings->separator[0], pos + 1);
             }
             separators.push_back(line.size() + oldOSizeProcessed);
         }

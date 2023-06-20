@@ -14,9 +14,9 @@ PluginDialogs::TablesDialog::TablesDialog(Reference<GView::Type::SQLite::SQLiteF
     sqlite   = _sqlite;
 
     statementDescription = Factory::CanvasViewer::Create(
-          this, "d:t,h:2", this->GetWidth(), DESCRIPTION_HEIGHT_TEXT_FORMAT, Controls::ViewerFlags::Border | Controls::ViewerFlags::HideScrollBar);
+          this, "d:t,h:6", this->GetWidth(), DESCRIPTION_HEIGHT_TEXT_FORMAT, Controls::ViewerFlags::Border | Controls::ViewerFlags::HideScrollBar);
     statementDescription->SetText("Query");
-    textArea = Factory::TextArea::Create(this, "", "x:10%,y:2,w:80%,h:3");
+    textArea = Factory::TextArea::Create(statementDescription, "", "l:1,r:1,t:1,b:1");
     Factory::Button::Create(this, "&OK", "x:25%,y:8,a:b,w:12", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "x:75%,y:8,a:b,w:12", BTN_ID_CANCEL);
     tables = Factory::ListView::Create(this, "x:0,y:9,w:100%,h:10", { "n:Name,w:20", "n:Original SQL,w:100" }, ListViewFlags::None);
