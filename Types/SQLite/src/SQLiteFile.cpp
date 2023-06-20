@@ -72,11 +72,11 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
 {
     auto data = db.GetTableData(tableName);
 
-    AppCUI::Utils::String contents;
+    std::string contents;
 
     bool comma = false;
 
-    for (const auto& column : data.first)
+    for (auto& column : data.first)
     {
         if (!comma)
         {
@@ -84,19 +84,19 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
         }
         else
         {
-            contents.AddChar(separator);
+            contents.push_back(separator);
         }
 
-        contents.Add(column);
+        contents += column;
     }
 
-    contents.Add("\n");
+    contents += "\n";
 
-    for (const auto& row : data.second)
+    for (auto& row : data.second)
     {
         comma = false;
 
-        for (const auto& entry : row)
+        for (auto& entry : row)
         {
             if (!comma)
             {
@@ -104,15 +104,23 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
             }
             else
             {
-                contents.AddChar(separator);
+                contents.push_back(separator);
             }
 
-            contents.Add(entry);
+            contents.append(entry);
         }
 
-        contents.Add("\n");
+        contents += "\n";
     }
-    BufferView buff(contents.GetText(), contents.Len());
+
+    size_t found = contents.find("Dummy Data 2-8");
+    if (found != std::string::npos)
+    {
+        int a = 1;
+    }
+
+    string_view contents_view = string_view(contents);
+    BufferView buff(contents_view);
 
     AppCUI::Utils::String tableAsCsv;
     tableAsCsv.SetFormat("%.*s.csv", tableName.size(), tableName.data());
