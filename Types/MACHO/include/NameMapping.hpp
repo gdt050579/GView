@@ -437,6 +437,7 @@ static const std::map<PlatformType, std::string_view> CodeSignPlatformNames{
     GET_PAIR_FROM_ENUM(PlatformType::TVOSSIMULATOR), GET_PAIR_FROM_ENUM(PlatformType::WATCHOSSIMULATOR),
     GET_PAIR_FROM_ENUM(PlatformType::DRIVERKIT),     GET_PAIR_FROM_ENUM(PlatformType::_11),
     GET_PAIR_FROM_ENUM(PlatformType::_12),           GET_PAIR_FROM_ENUM(PlatformType::_13),
+    GET_PAIR_FROM_ENUM(PlatformType::_14),
 };
 
 static const std::map<CodeSignFlags, std::string_view> CodeSignFlagNames{ GET_PAIR_FROM_ENUM(CodeSignFlags::VALID),

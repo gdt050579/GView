@@ -11,8 +11,8 @@ constexpr uint32 FAT_CIGAM_64 = 0xbfbafeca; /* NXSwapLong(FAT_MAGIC_64) */
 
 struct fat_header
 {
-    unsigned long magic;     /* FAT_MAGIC or FAT_MAGIC_64 */
-    unsigned long nfat_arch; /* number of structs that follow */
+    uint32 magic;     /* FAT_MAGIC or FAT_MAGIC_64 */
+    uint32 nfat_arch; /* number of structs that follow */
 };
 
 constexpr uint32 MH_MAGIC    = 0xfeedface; /* the mach magic number */
@@ -768,6 +768,7 @@ enum class PlatformType : uint8
     _11              = 11, // TODO: ??
     _12              = 12, // TODO: ??
     _13              = 13, // TODO: ??
+    _14              = 14, // TODO: ??
 };
 
 enum class Tool
