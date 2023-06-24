@@ -920,7 +920,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
     resInf.Start      = fileAddress;
     resInf.Size       = resDE.Size;
     resInf.CodePage   = resDE.CodePage;
-    resInf.Image.type = ImageType::Unknwown;
+    resInf.Image.type = ImageType::Unknown;
     resInf.Name.Set(resName);
 
     if (resInf.Type == ResourceType::Icon)
@@ -1311,7 +1311,7 @@ void PEFile::GetSectionName(uint32 index, String& sectionName)
 
 bool PEFile::GetResourceImageInformation(const ResourceInformation& r, String& info)
 {
-    CHECK(r.Image.type != ImageType::Unknwown, false, "Imvalid image type !");
+    CHECK(r.Image.type != ImageType::Unknown, false, "Imvalid image type !");
     switch (r.Image.type)
     {
     case ImageType::DIB:
