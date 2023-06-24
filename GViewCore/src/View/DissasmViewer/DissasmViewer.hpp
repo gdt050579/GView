@@ -153,6 +153,76 @@ namespace View
             uint32 line;
         };
 
+        struct DissasmAsmPreCacheLine
+        {
+            uint64 address;
+            uint8 bytes[24];
+            uint16 size;
+            char mnemonic[CS_MNEMONIC_SIZE];
+            char* op_str;
+            std::optional<uint64> hexValue;
+            uint8 flags;
+            const void* mapping;
+        };
+
+        struct DissasmAsmPreCacheData
+        {
+            enum InstructionFlag : uint8
+            {
+                NoneFlag = 0x00,
+                CallFlag = 0x1,
+                PushFlag = 0x2,
+                JmpFlag  = 0x4,
+            };
+
+            std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
+            std::unordered_map<uint32, uint8> instructionFlags;
+            uint16 index;
+
+            bool CheckInstructionHasFlag(uint32 line, InstructionFlag flag) const
+            {
+                const auto it = instructionFlags.find(line);
+                if (it == instructionFlags.end())
+                    return false;
+                return (it->second & flag) > 0;
+            }
+
+            void AddInstructionFlag(uint32 line, InstructionFlag flag)
+            {
+                auto& val = instructionFlags[line];
+                val |= flag;
+            }
+
+            bool HasAnyFlag(uint32 line) const
+            {
+                const auto it = instructionFlags.find(line);
+                if (it == instructionFlags.end())
+                    return false;
+                return it->second > 0;
+            }
+
+            DissasmAsmPreCacheLine& GetLine()
+            {
+                return cachedAsmLines[index++];
+            }
+
+            void Clear()
+            {
+                for (const auto& cachedLine : cachedAsmLines)
+                    free(cachedLine.op_str);
+                cachedAsmLines.clear();
+                index = 0;
+            }
+
+            DissasmAsmPreCacheData() : index(0)
+            {
+            }
+            ~DissasmAsmPreCacheData()
+            {
+                Clear();
+            }
+        };
+
         struct DissasmCodeZone : public ParseZone
         {
             // uint32 startingCacheLineIndex;
@@ -165,6 +235,8 @@ namespace View
 
             const uint8* asmData;
             uint64 asmSize, asmAddress;
+
+            DissasmAsmPreCacheData asmPreCacheData;
 
             std::vector<AsmOffsetLine> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
@@ -306,6 +378,7 @@ namespace View
 
             uint32 lineOffset;
             ColorPair errorColor;
+            std::deque<DissasmCodeZone*> zonesToClear;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
                 : start(nullptr), end(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0),
                   textLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)

@@ -1275,7 +1275,9 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 
-    asmData.bufferPool.Draw(renderer, config);
+    //asmData.bufferPool.Draw(renderer, config);
+    for (const auto& zone : dli.zonesToClear)
+        zone->asmPreCacheData.Clear();
 
     if (!MyLine.buttons.empty())
     {
@@ -1337,11 +1339,11 @@ void Instance::OnStart()
     // TODO: do a research! this is an imperative setting
     settings->maxLocationMemoryMappingSize = maxSize + 1;
 
-    GView::Hashes::CRC16 crc16{};
-    uint16 hashVal = 0;
+    GView::Hashes::CRC32 crc32{};
+    uint32 hashVal = 0;
     for (uint32 i = 0; i < KNOWN_FUNCTIONS.size(); i++)
     {
-        if (!crc16.Init() || !crc16.Update(KNOWN_FUNCTIONS[i].functionName) || !crc16.Final(hashVal))
+        if (!crc32.Init(Hashes::CRC32Type::JAMCRC) || !crc32.Update(KNOWN_FUNCTIONS[i].functionName) || !crc32.Final(hashVal))
         {
             // show err
             return;
