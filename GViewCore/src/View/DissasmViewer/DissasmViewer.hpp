@@ -158,11 +158,24 @@ namespace View
             uint64 address;
             uint8 bytes[24];
             uint16 size;
+            uint32 currentLine;
             char mnemonic[CS_MNEMONIC_SIZE];
             char* op_str;
             std::optional<uint64> hexValue;
             uint8 flags;
             const void* mapping;
+        };
+
+        struct AsmFunctionDetails
+        {
+            struct NameType
+            {
+                const char* name;
+                const char* type;
+            };
+
+            std::string_view functionName;
+            std::vector<NameType> params;
         };
 
         struct DissasmAsmPreCacheData
@@ -221,6 +234,8 @@ namespace View
             {
                 Clear();
             }
+
+            void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
         };
 
         struct DissasmCodeZone : public ParseZone
@@ -294,66 +309,10 @@ namespace View
             uint32 totalLinesSize;
         };
 
-        struct AsmFunctionDetails
-        {
-            struct NameType
-            {
-                const char* name;
-                const char* type;
-            };
-
-            std::string_view functionName;
-            std::vector<NameType> params;
-        };
-
-        // TODO: optimize this as a buffer of 10 elements instead of how many lines are on screen
-        struct DissasmCharacterBufferPool
-        {
-            struct PoolBuffer
-            {
-                uint32 currentLine;
-                uint32 lineToDrawOnScreen;
-                bool isPush;
-                bool needCommentUpdate;
-                std::unordered_map<uint32, std::string>* comments;
-                CharacterBuffer chars;
-            };
-
-            std::deque<PoolBuffer> pool;
-            uint32 currentSize;
-
-            void AnnounceCallInstruction(const AsmFunctionDetails* functionDetails);
-            PoolBuffer& GetPoolBuffer(uint32 currentLine);
-            void Draw(Renderer& renderer, Config& config);
-        };
-
         struct AsmData
         {
-            enum InstructionFlag
-            {
-                CallFlag = 0x1,
-                TextFlag = 0x2,
-            };
-
             std::map<uint32, ColorPair> instructionToColor;
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
-            DissasmCharacterBufferPool bufferPool;
-            // instructionFlags is used for calls and text comments
-            std::unordered_map<uint32, uint8> instructionFlags;
-
-            bool CheckInstructionHasFlag(uint32 line, InstructionFlag flag) const
-            {
-                const auto it = instructionFlags.find(line);
-                if (it == instructionFlags.end())
-                    return false;
-                return (it->second & flag) > 0;
-            }
-
-            void AddInstructionFlag(uint32 line, InstructionFlag flag)
-            {
-                auto& val = instructionFlags[line];
-                val |= flag;
-            }
         };
 
         struct LinePosition

@@ -374,98 +374,6 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
-void DissasmCharacterBufferPool::AnnounceCallInstruction(const AsmFunctionDetails* functionDetails)
-{
-    if (pool.empty())
-        return;
-    constexpr uint32 MAX_LINE_DIFF = 10;
-
-    const uint32 currentLine = pool.back().currentLine;
-    auto it                  = pool.rbegin() + 1; // ignoring last element
-    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
-    for (; it != pool.rend() && pushesRemaining > 0; ++it)
-    {
-        if (currentLine - it->currentLine < MAX_LINE_DIFF && it->isPush)
-        {
-            // TODO: improve performance, remove string concatenation as much as possible
-            auto param           = std::string(functionDetails->params[pushIndex].name);
-            const auto commentIt = it->comments->find(it->currentLine);
-            if (commentIt != it->comments->end())
-            {
-                commentIt->second = param + " " + commentIt->second;
-            }
-            else
-            {
-                it->comments->insert({ it->currentLine, param });
-            }
-            it->needCommentUpdate = true;
-            pushesRemaining--;
-            pushIndex++;
-        }
-    }
-}
-
-DissasmCharacterBufferPool::PoolBuffer& DissasmCharacterBufferPool::GetPoolBuffer(uint32 currentLine)
-{
-    if (currentSize >= pool.size())
-    {
-        PoolBuffer buffer{};
-        buffer.lineToDrawOnScreen = currentLine;
-        buffer.chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
-        pool.push_back(std::move(buffer));
-        return pool.back();
-    }
-
-    pool[currentSize] = {};
-    return pool[currentSize++];
-}
-
-void DissasmCharacterBufferPool::Draw(Renderer& renderer, Config& config)
-{
-    for (auto& buffer : pool)
-    {
-        if (buffer.needCommentUpdate)
-        {
-            const auto bufferSize = buffer.chars.Len();
-            auto dataStart        = buffer.chars.GetBuffer();
-            const auto dataEnd    = buffer.chars.GetBuffer() + bufferSize;
-            bool useSpaces        = true;
-
-            while (dataStart != dataEnd)
-            {
-                if (dataStart->Code == ';')
-                {
-                    auto size = dataEnd - dataStart;
-                    buffer.chars.Delete(buffer.chars.Len() - size, buffer.chars.Len());
-                    if (buffer.chars.Len() == DISSAM_MINIMUM_COMMENTS_X) // TODO: update for future to search and also deleted the spaces at the end
-                        useSpaces = false;
-                    break;
-                }
-                dataStart++;
-            }
-            const auto it = buffer.comments->find(buffer.currentLine);
-            assert(it != buffer.comments->end());
-
-            auto len = 10;
-            if (buffer.chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
-                len = DISSAM_MINIMUM_COMMENTS_X - buffer.chars.Len();
-            LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
-            if (useSpaces)
-                spaces.AddChars(' ', len);
-            spaces.AddChars(';', 1);
-            buffer.chars.Add(spaces, config.Colors.AsmComment);
-            buffer.chars.Add(it->second, config.Colors.AsmComment);
-        }
-
-        const auto bufferToDraw = CharacterView{ buffer.chars.GetBuffer(), buffer.chars.Len() };
-
-        // HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
-
-        renderer.WriteSingleLineCharacterBuffer(0, buffer.lineToDrawOnScreen, bufferToDraw, false);
-    }
-    pool.clear();
-}
-
 inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
@@ -1275,7 +1183,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 
-    //asmData.bufferPool.Draw(renderer, config);
+    // asmData.bufferPool.Draw(renderer, config);
     for (const auto& zone : dli.zonesToClear)
         zone->asmPreCacheData.Clear();
 
@@ -1391,6 +1299,38 @@ Instance::~Instance()
         char* bufferToDelete = settings->buffersToDelete.back();
         settings->buffersToDelete.pop_back();
         delete bufferToDelete;
+    }
+}
+
+void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone *zone, const AsmFunctionDetails* functionDetails)
+{
+    if (cachedAsmLines.empty())
+        return;
+    constexpr uint32 MAX_LINE_DIFF = 10;
+
+    const uint32 startingLine = cachedAsmLines.back().currentLine;
+    uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
+
+    for (auto it = cachedAsmLines.rbegin() + 1; it != cachedAsmLines.rend() &&pushesRemaining; ++it)
+    {
+        if (startingLine - it->currentLine > MAX_LINE_DIFF)
+            break;
+        if (it->flags != InstructionFlag::PushFlag)
+            continue;
+
+        // TODO: improve performance, remove string concatenation as much as possible
+        auto param           = std::string(functionDetails->params[pushIndex].name);
+        const auto commentIt = zone->comments.find(it->currentLine);
+        if (commentIt != zone->comments.end())
+        {
+            commentIt->second = param + " " + commentIt->second;
+        }
+        else
+        {
+            zone->comments.insert({ it->currentLine, param });
+        }
+        pushesRemaining--;
+        pushIndex++;
     }
 }
 

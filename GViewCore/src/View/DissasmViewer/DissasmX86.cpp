@@ -607,6 +607,7 @@ bool populateAsmPreCacheData(
         memcpy(asmCacheLine.bytes, insn->bytes, std::min<uint32>(sizeof(asmCacheLine.bytes), sizeof(insn->bytes)));
         asmCacheLine.size = insn->size;
         memcpy(asmCacheLine.mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
+        asmCacheLine.currentLine = currentLine;
 
         switch (*((uint32*) insn->mnemonic))
         {
@@ -646,16 +647,10 @@ bool populateAsmPreCacheData(
         // TODO: improve efficiency by filtering instructions
         uint64 hexVal = 0;
         if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
-            asmCacheLine.hexValue = hexVal;   
+            asmCacheLine.hexValue = hexVal;
+        bool alreadyInitComment = false;
         if (zone->asmPreCacheData.HasAnyFlag(currentLine))
-        {
-            if (!asmCacheLine.op_str)
-                asmCacheLine.op_str = strdup(insn->op_str);
-            zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
-            cs_free(insn, 1);
-            currentLine++;
-            continue;
-        }
+            alreadyInitComment = true;
 
         const uint64 finalIndex = zone->asmAddress + settings->offsetTranslateCallback->TranslateFromFileOffset(
                                                            zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
@@ -665,7 +660,7 @@ bool populateAsmPreCacheData(
             if (mappingPtr)
             {
                 asmCacheLine.mapping = mappingPtr;
-                if (mappingPtr->type == MemoryMappingType::FunctionMapping)
+                if (mappingPtr->type == MemoryMappingType::FunctionMapping && !alreadyInitComment)
                 {
                     // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
                     GView::Hashes::CRC32 crc32{};
@@ -677,8 +672,8 @@ bool populateAsmPreCacheData(
                         const auto it = asmData.functions.find(hash);
                         if (it != asmData.functions.end())
                         {
-                            // asmData.bufferPool.AnnounceCallInstruction(it->second);
-                            // asmData.AddInstructionFlag(currentLine, AsmData::CallFlag);
+                            zone->asmPreCacheData.AnnounceCallInstruction(zone, it->second);
+                            zone->asmPreCacheData.AddInstructionFlag(currentLine, DissasmAsmPreCacheData::CallFlag);
                         }
                     }
                 }
@@ -686,7 +681,7 @@ bool populateAsmPreCacheData(
         }
         else if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::PushFlag)
         {
-            if (!zone->comments.contains(currentLine))
+            if (!alreadyInitComment  && !zone->comments.contains(currentLine))
             {
                 const auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
                 if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < obj->GetData().GetSize())
@@ -699,6 +694,7 @@ bool populateAsmPreCacheData(
                         {
                             // TODO: add functions zone->comments to adjust comments instead of manually doing it
                             zone->comments.insert({ currentLine, (char*) textFound.data() });
+                            zone->asmPreCacheData.AddInstructionFlag(currentLine, DissasmAsmPreCacheData::PushFlag);
                         }
                     }
                 }
