@@ -701,7 +701,7 @@ bool MachOFile::SetCodeSignature()
 
             codeSignature->cdSlotsHashes.reserve(codeSignature->codeDirectory.nCodeSlots);
 
-            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
+            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0x1000U;
             auto remaining      = codeSignature->codeDirectory.codeLimit;
             auto processed      = 0ULL;
             for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
