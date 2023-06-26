@@ -114,7 +114,7 @@ extern "C"
             break;
         };
 
-        elf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        elf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

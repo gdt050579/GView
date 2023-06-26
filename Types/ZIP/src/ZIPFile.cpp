@@ -156,8 +156,7 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     item.SetText(2, tmp.Format("%s (%s)", entry.GetFlagNames().c_str(), n.ToString(entry.GetFlags(), NUMERIC_FORMAT).data()));
     item.SetText(3, tmp.Format("%s", n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
     item.SetText(4, tmp.Format("%s", n.ToString(entry.GetUncompressedSize(), NUMERIC_FORMAT).data()));
-    item.SetText(
-          5, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
+    item.SetText(5, tmp.Format("%s (%s)", entry.GetCompressionMethodName().data(), n.ToString(entry.GetCompressedSize(), NUMERIC_FORMAT).data()));
     item.SetText(6, tmp.Format("%s", n.ToString(entry.GetDiskNumber(), NUMERIC_FORMAT).data()));
     item.SetText(7, tmp.Format("%s", n.ToString(entry.GetDiskOffset(), NUMERIC_FORMAT).data()));
 
@@ -185,9 +184,9 @@ class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
     std::string password;
 
   public:
-    PasswordDialog() : Window("Enter Password", "d:c,w:25%,h:15%", WindowFlags::ProcessReturn)
+    PasswordDialog() : Window("Enter Password", "d:c,w:60,h:9", WindowFlags::ProcessReturn)
     {
-        input = Factory::Password::Create(this, "", "x:1,y:1,w:100%,h:1%");
+        input = Factory::Password::Create(this, "", "x:1,y:1,w:56,h:1");
 
         savePasswordAsDefault = Factory::CheckBox::Create(this, "Save password as default", "x:1,y:3,w:100%,h:1%", 1);
         savePasswordAsDefault->SetChecked(true);
@@ -259,6 +258,23 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     GView::ZIP::Entry entry{ 0 };
     CHECKRET(this->info.GetEntry((uint32) index, entry), "");
 
+    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        auto focusedChild    = desktop->GetFocusedChild();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window = desktop->GetChild(i);
+
+            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
+            {
+                parentWindow = window.ToObjectRef<Window>();
+                break;
+            }
+        }
+    }
+
     Buffer buffer{};
     bool decompressed{ false };
 
@@ -279,8 +295,22 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 
         if (decompressed)
         {
+            std::u16string path{ obj->GetPath() };
+            path.append(u".drop");
+            path.push_back((char16_t) std::filesystem::path::preferred_separator);
+
+            LocalUnicodeStringBuilder<1024> ub;
             const auto name = entry.GetFilename();
-            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+            CHECKRET(ub.Set(name), "");
+
+            path.append(ub.ToStringView());
+
+            if (std::filesystem::path::preferred_separator == u'\\') // if on windows
+            {
+                std::replace(path.begin(), path.end(), u'/', u'\\');
+            }
+            GView::App::OpenBuffer(buffer, name, path, GView::App::OpenMethod::BestMatch);
+
             return;
         }
 
@@ -319,7 +349,7 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             }
 
             const auto name = entry.GetFilename();
-            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch);
+            GView::App::OpenBuffer(buffer, name, name, GView::App::OpenMethod::BestMatch, "", parentWindow);
             return;
         }
 

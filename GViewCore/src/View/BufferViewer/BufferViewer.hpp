@@ -32,14 +32,17 @@ struct SettingsData
     uint64 entryPointOffset;
     OffsetTranslationMethod translationMethods[16];
     uint32 translationMethodsCount;
-    Reference<OffsetTranslateInterface> offsetTranslateCallback;
-    Reference<PositionToColorInterface> positionToColorCallback;
+    Reference<OffsetTranslateInterface> offsetTranslateCallback{ nullptr };
+    Reference<PositionToColorInterface> positionToColorCallback{ nullptr };
+    Reference<BufferColorInterface> bufferColorCallback{ nullptr };
+    Reference<OnStartViewMoveInterface> onStartViewMoveCallback{ nullptr };
+    String name;
     SettingsData();
 
     // dissasm related settings
-    GView::Dissasembly::Architecture architecture;
-    GView::Dissasembly::Design design;
-    GView::Dissasembly::Endianess endianess;
+    GView::Dissasembly::Architecture architecture{ GView::Dissasembly::Architecture::Invalid };
+    GView::Dissasembly::Design design{ GView::Dissasembly::Design::Invalid };
+    GView::Dissasembly::Endianess endianess{ GView::Dissasembly::Endianess::Invalid };
 };
 enum class MouseLocation : uint8
 {
@@ -160,43 +163,85 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         bool recomputeOffsets{ true };
         DrawLineInfo() = default;
     };
+
     struct
     {
-        CharacterFormatMode charFormatMode;
-        uint32 nrCols;
-        uint32 lineAddressSize;
-        uint32 lineNameSize;
-        uint32 charactersPerLine;
-        uint32 visibleRows;
-        uint32 xName;
-        uint32 xAddress;
-        uint32 xNumbers;
-        uint32 xText;
+        CharacterFormatMode charFormatMode{ CharacterFormatMode::Hex };
+        uint32 nrCols{ 0 };
+        uint32 lineAddressSize{ 8 };
+        uint32 lineNameSize{ 8 };
+        uint32 charactersPerLine{ 1 };
+        uint32 visibleRows{ 1 };
+        uint32 xName{ 0 };
+        uint32 xAddress{ 0 };
+        uint32 xNumbers{ 0 };
+        uint32 xText{ 0 };
     } Layout;
+
     struct
     {
-        uint64 startView, currentPos;
-        uint32 base;
-    } Cursor;
+      private:
+        uint64 startView{ 0 };
+        uint64 currentPos{ 0 };
+        uint32 base{ 16 };
+        int64 deltaStartView{ 0 }; // previous - current
+
+      public:
+        inline decltype(startView) GetStartView() const
+        {
+            return startView;
+        }
+        inline decltype(currentPos) GetCurrentPosition() const
+        {
+            return currentPos;
+        }
+        inline decltype(base) GetBase() const
+        {
+            return base;
+        }
+        inline decltype(deltaStartView) GetDeltaStartView() const
+        {
+            return deltaStartView;
+        }
+
+        inline void SetStartView(decltype(startView) startView)
+        {
+            deltaStartView  = startView - this->startView;
+            this->startView = startView;
+        }
+        inline void SetCurrentPosition(decltype(currentPos) currentPos)
+        {
+            this->currentPos = currentPos;
+        }
+        inline void SetBase(decltype(base) base)
+        {
+            this->base = base;
+        }
+    } cursor;
+
     struct
     {
         uint64 start, end, middle;
-        uint32 minCount;
+        uint32 minCount{ 4 };
         bool AsciiMask[256];
         StringType type;
         String asciiMaskRepr;
-        bool showAscii, showUnicode;
+        bool showAscii{ true };
+        bool showUnicode{ true };
     } StringInfo;
+
     struct
     {
         ColorPair Normal, Line, Highlighted;
     } CursorColors;
+
     struct
     {
-        uint8 buffer[256];
-        uint32 size;
-        uint64 start, end;
-        bool highlight;
+        uint8 buffer[256]{ 0 };
+        uint32 size{ 0 };
+        uint64 start{ GView::Utils::INVALID_OFFSET };
+        uint64 end{ GView::Utils::INVALID_OFFSET };
+        bool highlight{ true };
         void Clear()
         {
             start     = GView::Utils::INVALID_OFFSET;
@@ -206,16 +251,17 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         }
     } CurrentSelection;
 
-    bool showTypeObjects;
-    CodePage codePage;
+    bool showSyncCompare{ false };
+    bool moveInSync{ false };
+    bool showTypeObjects{ true };
+    CodePage codePage{ CodePageID::DOS_437 };
     Pointer<SettingsData> settings;
     Reference<GView::Object> obj;
     Utils::Selection selection;
     CharacterBuffer chars;
-    uint32 currentAdrressMode;
+    uint32 currentAdrressMode{ 0 };
     String addressModesList;
     BufferColor bufColor;
-    FixSizeString<29> name;
 
     static Config config;
 
@@ -240,7 +286,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     void MoveTo(uint64 offset, bool select);
     void MoveScrollTo(uint64 offset);
     void MoveToSelection(uint32 selIndex);
-    void MoveToZone(bool startOfZome, bool select);
+    void MoveToZone(bool startOfZone, bool select);
     void SkipCurentCaracter(bool selected);
     void MoveTillEndBlock(bool selected);
     void MoveTillNextBlock(bool select, int dir);
@@ -257,14 +303,21 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 
     void OpenCurrentSelection();
 
+    virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>) override;
+    virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>) override;
+    virtual bool GetViewData(ViewData&, uint64) override;
+    virtual bool AdvanceStartView(int64) override;
+
   public:
-    Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+    Instance(Reference<GView::Object> obj, Settings* settings);
 
     virtual void Paint(Renderer& renderer) override;
     virtual void OnAfterResize(int newWidth, int newHeight) override;
     virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
     virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
     virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+    virtual void OnFocus() override;
+    virtual void OnLoseFocus() override;
 
     virtual bool GoTo(uint64 offset) override;
     virtual bool Select(uint64 offset, uint64 size) override;
@@ -272,7 +325,6 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool ShowFindDialog() override;
     virtual bool ShowCopyDialog() override;
     bool ShowDissasmDialog();
-    virtual std::string_view GetName() override;
 
     virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
@@ -336,7 +388,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
 
     uint64 GetCursorCurrentPosition() const
     {
-        return Cursor.currentPos;
+        return cursor.GetCurrentPosition();
     };
 };
 

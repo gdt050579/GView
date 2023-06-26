@@ -40,8 +40,8 @@ namespace Type
         class BMPFile : public TypeInterface, public View::ImageViewer::LoadImageInterface
         {
           public:
-            Header header;
-            InfoHeader infoHeader;
+            Header header{};
+            InfoHeader infoHeader{};
 
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 

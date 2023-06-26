@@ -1,15 +1,17 @@
 #pragma once
 
 #include <GView.hpp>
+#include <deque>
+#include <unordered_map>
 
 // PCAPNG -> https://tools.ietf.org/id/draft-gharris-opsawg-pcap-00.html
 // PCAP   -> https://wiki.wireshark.org/Development/LibpcapFileFormat
 
 namespace GView::Type::PCAP
 {
-#define GET_PAIR_FROM_ENUM(x)                                                                                                              \
-    {                                                                                                                                      \
-        x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                       \
+#define GET_PAIR_FROM_ENUM(x)                                                                                                                                  \
+    {                                                                                                                                                          \
+        x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                                           \
     }
 
 /*
@@ -447,14 +449,14 @@ struct Header
                             following fields will have to be swapped too. */
     uint16 versionMajor; /* The version number of this file format 2. */
     uint16 versionMinor; /* The version number of this file format 4. */
-    int32 thiszone;   /* The correction time in seconds between GMT (UTC) and the local timezone of the following packet header timestamps.
-                         Examples: If the timestamps are in GMT (UTC), thiszone is simply 0. If the timestamps are in Central European time
-                         (Amsterdam, Berlin, …) which is GMT + 1:00, thiszone must be -3600. In practice, time stamps are always in GMT, so
-                         thiszone is always 0. */
-    uint32 sigfigs;   /* In theory, the accuracy of time stamps in the capture; in practice, all tools set it to 0. */
-    uint32 snaplen;   /* Max length of captured packets, in octets. The "snapshot length" for the capture (typically 65535 or even more, but
-                         might be limited by the user). */
-    LinkType network; /* Link-layer header type, specifying the type of headers at the beginning of the packet. */
+    int32 thiszone;      /* The correction time in seconds between GMT (UTC) and the local timezone of the following packet header timestamps.
+                            Examples: If the timestamps are in GMT (UTC), thiszone is simply 0. If the timestamps are in Central European time
+                            (Amsterdam, Berlin, …) which is GMT + 1:00, thiszone must be -3600. In practice, time stamps are always in GMT, so
+                            thiszone is always 0. */
+    uint32 sigfigs;      /* In theory, the accuracy of time stamps in the capture; in practice, all tools set it to 0. */
+    uint32 snaplen;      /* Max length of captured packets, in octets. The "snapshot length" for the capture (typically 65535 or even more, but
+                            might be limited by the user). */
+    LinkType network;    /* Link-layer header type, specifying the type of headers at the beginning of the packet. */
 };
 
 static_assert(sizeof(Header) == 24);
@@ -607,8 +609,11 @@ enum class EtherType : uint16 // https://www.liveaction.com/resources/glossary/e
     BBNVITALLANBridgeCacheWakeup                 = 122,
 };
 
-#define CASE_RETURN(x, y)                                                                                                                  \
-    case x:                                                                                                                                \
+// TODO: extend NULL types
+constexpr uint32 NULL_FAMILY_IP = 2;
+
+#define CASE_RETURN(x, y)                                                                                                                                      \
+    case x:                                                                                                                                                    \
         return y;
 
 static EtherType GetEtherType(uint16 value)
@@ -1002,6 +1007,10 @@ struct Package_EthernetHeader
     uint8 etherShost[6]; // source host
     uint16 etherType;    // 2 bytes, Protocol type, type of Packet: ARP, DOD(IPv4), IPv6,..
                          // http://www.networksorcery.com/enp/protocol/802/ethertypes.htm
+};
+struct Package_NullHeader
+{
+    uint32 family_ip;
 };
 #pragma pack(pop)
 
@@ -1448,8 +1457,8 @@ union IPv6Header_v_tf_fl
 struct IPv6Header
 {
     IPv6Header_v_tf_fl first;
-    uint16 payloadLength; // The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop
-                          // extension header carries a Jumbo Payload option.
+    uint16 payloadLength;         // The size of the payload in octets, including any extension headers. The length is set to zero when a Hop-by-Hop
+                                  // extension header carries a Jumbo Payload option.
     IP_Protocol nextHeader;       // Specifies the type of the next header.
     uint8 hopLimit;               // Replaces the time to live field in IPv4.
     uint16 sourceAddress[8];      // The unicast IPv6 address of the sending node.
@@ -1672,8 +1681,8 @@ static void Swap(TCPHeader& tcp)
     tcp.dPort = AppCUI::Endian::BigToNative(tcp.dPort);
     tcp.seq   = AppCUI::Endian::BigToNative(tcp.seq);
     tcp.ack   = AppCUI::Endian::BigToNative(tcp.ack);
-    *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)) = AppCUI::Endian::BigToNative(
-          *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)));
+    *(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)) =
+          AppCUI::Endian::BigToNative(*(uint8*) ((uint8*) &tcp + sizeof(tcp.sPort) + sizeof(tcp.dPort) + sizeof(tcp.seq) + sizeof(tcp.ack)));
     tcp.flags = AppCUI::Endian::BigToNative(tcp.flags);
     tcp.win   = AppCUI::Endian::BigToNative(tcp.win);
     tcp.sum   = AppCUI::Endian::BigToNative(tcp.sum);
@@ -1688,7 +1697,8 @@ enum class TCPHeader_OptionsKind : uint8 // https://en.wikipedia.org/wiki/Transm
     WindowScale                         = 3,
     SelectiveAcknowledgementPermitted   = 4,
     SACK                                = 5,
-    TimestampAndEchoOfPreviousTimestamp = 6
+    TimestampAndEchoOfPreviousTimestamp = 6,
+    TimestampOption                     = 8
 };
 
 static const std::map<TCPHeader_OptionsKind, std::string_view> TCPHeader_OptionsKindNames{
@@ -1698,7 +1708,8 @@ static const std::map<TCPHeader_OptionsKind, std::string_view> TCPHeader_Options
     GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::WindowScale),
     GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::SelectiveAcknowledgementPermitted),
     GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::SACK),
-    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp)
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampAndEchoOfPreviousTimestamp),
+    GET_PAIR_FROM_ENUM(TCPHeader_OptionsKind::TimestampOption)
 };
 
 struct TCPHeader_Options
@@ -1921,4 +1932,168 @@ static void Swap(ICMPHeader_13_14& icmp13_14)
     icmp13_14.receiveTimestamp   = AppCUI::Endian::BigToNative(icmp13_14.receiveTimestamp);
     icmp13_14.transmitTimestamp  = AppCUI::Endian::BigToNative(icmp13_14.transmitTimestamp);
 }
+
+struct StreamPayload
+{
+    uint8* location;
+    uint32 size;
+};
+
+// TODO: for the future maybe change structure for a more generic structure
+struct StreamTCPOrder
+{
+    uint32 packetIndex;
+    uint32 seqNumber;
+    uint32 ackNumber;
+    uint32 maxNumber; // between seqNumber and ackNumber
+};
+
+struct StreamPacketData
+{
+    const PacketHeader* header;
+    StreamPayload payload;
+    StreamTCPOrder order;
+
+    // TODO
+    bool operator<(const StreamPacketData& other) const
+    {
+        return order.packetIndex < other.order.packetIndex;
+    }
+
+    bool operator==(const StreamPacketData&) const
+    {
+        return true;
+    }
+};
+
+struct StreamPacketContext
+{
+    const PacketHeader* packet;
+    const void* ipHeader;
+    uint32 ipProto;
+};
+
+struct StreamTcpLayer
+{
+    // TODO: delete name when no longer used!
+    uint8* name;
+    std::string_view extractionName;
+    StreamPayload payload;
+};
+
+// TODO: for the future maybe change structure for a more generic structure
+constexpr uint32 PCAP_MAX_SUMMARY_SIZE = 100;
+struct StreamData
+{
+    static constexpr uint32 INVALID_TRANSPORT_PROTOCOL_VALUE = static_cast<uint16>(IP_Protocol::Reserved) + 1;
+    static constexpr uint32 INVALID_IP_PROTOCOL_VALUE        = static_cast<uint16>(EtherType::Unknown);
+    std::vector<StreamPacketData> packetsOffsets             = {};
+    uint16 ipProtocol                                        = INVALID_IP_PROTOCOL_VALUE;
+    uint16 transportProtocol                                 = INVALID_TRANSPORT_PROTOCOL_VALUE;
+    uint64 totalPayload                                      = 0;
+    std::string name                                         = {};
+    bool isFinished                                          = false;
+    uint8 finFlagsFound                                      = 0;
+    std::string appLayerName                                 = "";
+    std::string summary                                      = "";
+
+    StreamPayload connPayload                    = {};
+    std::deque<StreamTcpLayer> applicationLayers = {};
+
+    void AddDataToSummary(std::string_view sv)
+    {
+        std::string toAdd = { sv.data(), sv.size() };
+        if (summary.size() + 5 >= PCAP_MAX_SUMMARY_SIZE)
+            return;
+        if (!summary.empty())
+            summary = (summary + ", ") + toAdd;
+        else
+            summary = toAdd;
+        if (summary.size() > PCAP_MAX_SUMMARY_SIZE)
+            summary.erase(summary.begin() + PCAP_MAX_SUMMARY_SIZE, summary.begin() + summary.size());
+    }
+
+    std::string_view GetIpProtocolName() const
+    {
+        if (ipProtocol == INVALID_IP_PROTOCOL_VALUE)
+            return "null";
+        return EtherTypeNames.at(static_cast<EtherType>(ipProtocol));
+    }
+
+    std::string_view GetTransportProtocolName() const
+    {
+        if (transportProtocol == INVALID_TRANSPORT_PROTOCOL_VALUE)
+            return "null";
+        return IP_ProtocolNames.at(static_cast<IP_Protocol>(transportProtocol));
+    }
+
+    void sortPackets()
+    {
+        std::sort(packetsOffsets.begin(), packetsOffsets.end());
+    }
+
+    void computeFinalPayload();
+    void tryParsePayload();
+};
+
+class StreamManager
+{
+    std::unordered_map<std::string, std::deque<StreamData>> streams;
+    std::vector<StreamData> finalStreams;
+    std::vector<std::string> protocolsFound;
+
+    // TODO: maybe sync functions with those used in Panels?
+    void Add_Package_EthernetHeader(const Package_EthernetHeader* peh, uint32 length, const PacketHeader* packet);
+    void Add_Package_NullHeader(const Package_NullHeader* pnh, uint32 length, const PacketHeader* packet);
+
+    void Add_IPv4Header(const IPv4Header* ipv4, size_t packetInclLen, const PacketHeader* packet);
+    void Add_IPv6Header(const IPv6Header* ipv6, size_t packetInclLen, const PacketHeader* packet);
+
+    void Add_TCPHeader(const TCPHeader* tcp, size_t packetInclLen, const void* ipHeader, uint32 ipProto, const PacketHeader* packet);
+
+	void AddToKnownProtocols(const std::string& layerName);
+
+  public:
+    void AddPacket(const PacketHeader* header, LinkType network);
+    void FinishedAdding();
+
+    bool empty() const noexcept
+    {
+        return finalStreams.empty();
+    }
+
+    decltype(finalStreams.size()) size() const noexcept
+    {
+        return finalStreams.size();
+    }
+
+    decltype(finalStreams)::iterator begin() noexcept
+    {
+        return finalStreams.begin();
+    }
+    decltype(finalStreams)::iterator end() noexcept
+    {
+        return finalStreams.end();
+    }
+
+    const StreamData* operator[](uint32 index) const
+    {
+        if (index < finalStreams.size())
+            return &finalStreams.at(index);
+        return nullptr;
+    }
+
+    std::string GetProtocolsFound() const
+    {
+        if (protocolsFound.empty())
+            return "none recognized";
+		//TODO: improve performance with faster string addition
+        std::string res;
+        for (const auto& proto : protocolsFound)
+            res += proto + " ";
+
+        return res;
+    }
+};
+
 } // namespace GView::Type::PCAP

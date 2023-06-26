@@ -76,11 +76,10 @@ inline std::string_view TokenDataTypeToString(TokenDataType dataType)
     }
 }
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings)
-    : settings(nullptr), ViewControl(UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings)
+    : settings(nullptr), ViewControl("Lexical View", UserControlFlags::ShowVerticalScrollBar | UserControlFlags::ScrollBarOutsideControl)
 {
-    this->obj  = _obj;
-    this->name = _name;
+    this->obj = _obj;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -854,9 +853,8 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
         if (bottomPos > tok.pos.y)
         {
             // multi-line block
-            bool fillLastLine =
-                  ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].pos.y != tknEnd.pos.y) : true;
-            auto leftPos = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
+            bool fillLastLine = ((size_t) block.tokenEnd + (size_t) 1 < tokens.size()) ? (tokens[block.tokenEnd + 1].pos.y != tknEnd.pos.y) : true;
+            auto leftPos      = this->prettyFormat ? lineNrWidth + block.leftHighlightMargin - Scroll.x : 0;
             // first draw the first line
             renderer.FillHorizontalLine(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, this->GetWidth(), ' ', col);
             // draw the middle part
@@ -873,8 +871,7 @@ void Instance::FillBlockSpace(Graphics::Renderer& renderer, const BlockObject& b
         }
         else
         {
-            renderer.FillHorizontalLine(
-                  lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
+            renderer.FillHorizontalLine(lineNrWidth + tok.pos.x - Scroll.x, tok.pos.y - Scroll.y, lineNrWidth + rightPos - Scroll.x, ' ', col);
         }
     }
 }
@@ -1407,8 +1404,14 @@ void Instance::ShowStringOpDialog(TokenObject& tok)
         }
         // Buffer build --> open
         LocalString<128> tmpName;
+        tmpName.SetFormat("string_ofs_%08x", tok.start);
 
-        GView::App::OpenBuffer(buf, tmpName.Format("string_ofs_%08x", tok.start), GView::App::OpenMethod::Select);
+        LocalUnicodeStringBuilder<2048> fullPath;
+        fullPath.Add(this->obj->GetPath());
+        fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+        fullPath.Add(tmpName);
+
+        GView::App::OpenBuffer(buf, tmpName, fullPath, GView::App::OpenMethod::Select);
     }
     else
     {
@@ -1671,7 +1674,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         }
     }
 
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 void Instance::OnStart()
 {
@@ -1837,6 +1840,23 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
+    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        auto focusedChild    = desktop->GetFocusedChild();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window = desktop->GetChild(i);
+
+            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
+            {
+                parentWindow = window.ToObjectRef<Window>();
+                break;
+            }
+        }
+    }
+
     SaveAsDialog dlg(this->obj);
     if (dlg.Show() != Dialogs::Result::Ok)
         return;
@@ -1854,8 +1874,8 @@ void Instance::ShowSaveAsDialog()
         }
         catch (...)
         {
-            if (Dialogs::MessageBox::ShowOkCancel(
-                      "Backup", "Unable to backup the original file. Do you want to continue and overwrite it ?") != Dialogs::Result::Ok)
+            if (Dialogs::MessageBox::ShowOkCancel("Backup", "Unable to backup the original file. Do you want to continue and overwrite it ?") !=
+                Dialogs::Result::Ok)
                 return;
         }
     }
@@ -1872,8 +1892,17 @@ void Instance::ShowSaveAsDialog()
     // step 1 --> make sure that we save all tokens , not just the visible ones
     BakupTokensPositions();
     auto originalShowMetaDataValue = this->showMetaData;
-    this->showMetaData             = true;
-    ExpandAll();
+
+    if (dlg.ShouldIgnoreMetadataOnSave())
+    {
+        this->showMetaData = false;
+    }
+    else
+    {
+        this->showMetaData = true;
+        ExpandAll();
+    }
+
 
     // Step 2 --> create a buffer for the entire text
     Buffer b;
@@ -1954,10 +1983,10 @@ void Instance::ShowSaveAsDialog()
         }
     }
     f.Close();
-    AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
+    AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save successful!");
     if (dlg.ShouldOpenANewWindow())
     {
-        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch);
+        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch, "", parentWindow);
     }
 }
 void Instance::ShowFindAllDialog()
@@ -1977,10 +2006,6 @@ void Instance::ShowFindAllDialog()
     {
         MoveToToken(dlg.GetSelectedTokenIndex(), false, true);
     }
-}
-std::string_view Instance::GetName()
-{
-    return this->name;
 }
 //======================================================================[Mouse coords]========================
 uint32 Instance::MousePositionToTokenID(int x, int y)

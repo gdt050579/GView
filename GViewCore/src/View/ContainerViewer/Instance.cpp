@@ -10,10 +10,9 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Container View")
 {
     this->obj                     = _obj;
-    this->name                    = _name;
     this->tempCountRecursiveItems = 0;
 
     // settings
@@ -31,6 +30,11 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
 
     if (config.Loaded == false)
         config.Initialize();
+
+    if (this->settings->name.Len() > 0)
+    {
+        this->name.Set(this->settings->name);
+    }
 
     this->currentPath.Resize(256);
     this->currentPath.Clear();
@@ -62,7 +66,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     }
     if (settings->enumInterface)
     {
-        this->root = this->items->AddItem("/", true);
+        const std::u16string sep{ char16_t(std::filesystem::path::preferred_separator) };
+        this->root = this->items->AddItem(sep, true);
         this->root.Unfold();
     }
     this->items->Sort(0, SortDirection::Ascendent);
@@ -123,9 +128,15 @@ void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
     {
         UpdatePathForItem(item);
 
-        std::u16string newPath(this->obj->GetPath());
-        newPath.append(u".").append(this->currentPath);
-        this->settings->openItemInterface->OnOpenItem(newPath, item);
+        // TODO: investigate this:
+        /*
+
+            std::u16string newPath(this->obj->GetPath());
+            newPath.append(u".").append(this->currentPath);
+            this->settings->openItemInterface->OnOpenItem(newPath, item);
+        */
+
+        this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
     }
 }
 void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& item)
@@ -138,7 +149,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
@@ -163,10 +174,6 @@ bool Instance::ShowFindDialog()
 bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
-}
-std::string_view Instance::GetName()
-{
-    return this->name;
 }
 //======================================================================[Cursor information]==================
 

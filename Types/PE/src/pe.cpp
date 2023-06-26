@@ -96,46 +96,20 @@ extern "C"
         };
 
         // set entry point
-        if (pe->hdr64)
-            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth64.OptionalHeader.AddressOfEntryPoint));
-        else
-            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
+        const uint32 addressOfEntryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+        settings.SetEntryPointOffset(pe->RVAtoFilePointer(addressOfEntryPoint));
 
-        if (pe->hdr64)
+        const uint32 pointerToSymbolTable = pe->hdr64 ? pe->nth64.FileHeader.PointerToSymbolTable : pe->nth32.FileHeader.PointerToSymbolTable;
+        if (pointerToSymbolTable > 0)
         {
-            if (pe->nth64.FileHeader.PointerToSymbolTable > 0)
-            {
-                settings.AddZone(
-                      pe->nth64.FileHeader.PointerToSymbolTable,
-                      (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
-                      pe->peCols.colSectDef,
-                      "SymbolTable");
+            const uint64 numberOfSymbols = (uint64) (pe->hdr64 ? pe->nth64.FileHeader.NumberOfSymbols : pe->nth32.FileHeader.NumberOfSymbols);
+            settings.AddZone(pointerToSymbolTable, numberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL, pe->peCols.colSectDef, "SymbolTable");
 
-                const auto strTableOffset = pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+            const auto stringsTableOffset = pointerToSymbolTable + numberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+            uint32 stringsTableSize       = 0;
+            pe->obj->GetData().Copy(stringsTableOffset, stringsTableSize);
 
-                uint32 strTableSize = 0;
-                pe->obj->GetData().Copy(strTableOffset, strTableSize);
-
-                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
-            }
-        }
-        else
-        {
-            if (pe->nth32.FileHeader.PointerToSymbolTable > 0)
-            {
-                settings.AddZone(
-                      pe->nth32.FileHeader.PointerToSymbolTable,
-                      (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
-                      pe->peCols.colSectDef,
-                      "SymbolTable");
-
-                const auto strTableOffset = pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
-
-                uint32 strTableSize = 0;
-                pe->obj->GetData().Copy(strTableOffset, strTableSize);
-
-                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
-            }
+            settings.AddZone(stringsTableOffset, stringsTableSize, pe->peCols.colPE, "StringsTable");
         }
 
         switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
@@ -164,7 +138,7 @@ extern "C"
             break;
         }
 
-        pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation("Buffer View", settings);
+        pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
@@ -180,13 +154,20 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    const uint32 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    entryPoint        = pe->RVAtoFilePointer(entryPoint);
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
+                    DissasmViewer::DissasmArchitecture architecture =
+                          pe->hdr64 ? DissasmViewer::DissasmArchitecture::x64 : DissasmViewer::DissasmArchitecture::x86;
+
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, architecture);
                     break;
                 }
             }
         }
+
+        // translation
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         uint32 typeImageDOSHeader = settings.AddType(
               "ImageDOSHeader",
@@ -220,7 +201,15 @@ UInt16 e_res[4];)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
 
-        win->CreateViewer("DissasmView", settings);
+        //LocalString<128> processedName;
+
+        for (const auto& [RVA, dllIndex, Name] : pe->impFunc)
+        {
+            //processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
+            settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        }
+
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

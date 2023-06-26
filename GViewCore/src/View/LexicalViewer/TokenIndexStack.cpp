@@ -32,7 +32,7 @@ bool TokenIndexStack::Push(uint32 index)
             // double the size
             try
             {
-                auto* temp = new uint32[this->allocated * 2];
+                auto* temp = new uint32[this->allocated * 2ull];
                 memcpy(temp, this->stack, this->count * sizeof(uint32));
                 delete[] this->stack;
                 this->stack                = temp;

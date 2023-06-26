@@ -16,6 +16,7 @@ namespace View
         };
         struct SettingsData
         {
+            String name;
             vector<ImageInfo> imgList;            
             Reference<LoadImageInterface> loadImageCallback;
             SettingsData();
@@ -41,7 +42,6 @@ namespace View
             Pointer<SettingsData> settings;
             Reference<AppCUI::Controls::ImageView> imgView;
             Reference<GView::Object> obj;
-            FixSizeString<29> name;
             uint32 currentImageIndex;
             ImageScaleMethod scale;
 
@@ -51,7 +51,7 @@ namespace View
             void RedrawImage();
             ImageScaleMethod NextPreviousScale(bool next);
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
@@ -62,7 +62,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

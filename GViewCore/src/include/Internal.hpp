@@ -426,7 +426,7 @@ namespace Type
         void Init();
         bool MatchExtension(uint64 extensionHash);
         bool MatchContent(AppCUI::Utils::BufferView buf, Matcher::TextParser& textParser);
-        bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser);
+        bool IsOfType(AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, const std::string_view& extension = "");
         bool PopulateWindow(Reference<GView::View::WindowInterface> win) const;
         TypeInterface* CreateInstance() const;
         inline bool operator<(const Plugin& plugin) const
@@ -502,21 +502,26 @@ namespace App
         void ShowErrors();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
-              AppCUI::Utils::BufferView buf, GView::Type::Matcher::TextParser& textParser, uint64 extensionHash);
+              const std::string_view& extension,
+              AppCUI::Utils::BufferView buf,
+              GView::Type::Matcher::TextParser& textParser,
+              uint64 extensionHash);
         Reference<Type::Plugin> IdentifyTypePlugin_BestMatch(
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
               uint64 dataSize,
               AppCUI::Utils::BufferView buf,
               GView::Type::Matcher::TextParser& textParser,
-              uint64 extensionHash);
+              uint64 extensionHash,
+              std::u16string& newName);
         Reference<Type::Plugin> IdentifyTypePlugin_Select(
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
               uint64 dataSize,
               AppCUI::Utils::BufferView buf,
               GView::Type::Matcher::TextParser& textParser,
-              uint64 extensionHash);
+              uint64 extensionHash,
+              std::u16string& newName);
         Reference<Type::Plugin> IdentifyTypePlugin_WithSelectedType(
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
@@ -524,14 +529,16 @@ namespace App
               AppCUI::Utils::BufferView buf,
               GView::Type::Matcher::TextParser& textParser,
               uint64 extensionHash,
-              std::string_view typeName);
+              std::string_view typeName,
+              std::u16string& newName);
         Reference<Type::Plugin> IdentifyTypePlugin(
               const AppCUI::Utils::ConstString& name,
               const AppCUI::Utils::ConstString& path,
               GView::Utils::DataCache& cache,
               uint64 extensionHash,
               OpenMethod method,
-              std::string_view typeName);
+              std::string_view typeName,
+              std::u16string& newName);
         bool Add(
               GView::Object::Type objType,
               std::unique_ptr<AppCUI::OS::DataObject> data,
@@ -539,14 +546,15 @@ namespace App
               const AppCUI::Utils::ConstString& path,
               uint32 PID,
               OpenMethod method,
-              std::string_view typeName);
+              std::string_view typeName,
+              Reference<Window> parent = nullptr);
         bool AddFolder(const std::filesystem::path& path);
 
       public:
         Instance();
         bool Init();
-        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName);
-        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName);
+        bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
+        bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);
         void UpdateCommandBar(AppCUI::Application::CommandBar& commandBar);
 
         // inline getters
@@ -606,6 +614,8 @@ namespace App
 
         GView::Type::Plugin* result;
 
+        Reference<TextField> txName;
+
         void PaintHex();
         void PaintBuffer();
         void PaintText(bool wrap);
@@ -629,6 +639,17 @@ namespace App
         inline Reference<GView::Type::Plugin> GetSelectedPlugin(Reference<GView::Type::Plugin> errorValue) const
         {
             return result ? result : errorValue;
+        }
+
+        inline const std::u16string GetFilename()
+        {
+            std::u16string filename;
+            if (txName.IsValid())
+            {
+                txName->GetText().ToString(filename);
+            }
+
+            return filename;
         }
     };
 
@@ -664,18 +685,20 @@ namespace App
 
         Reference<Object> GetObject() override;
         bool AddPanel(Pointer<TabPage> page, bool vertical) override;
-        bool CreateViewer(const std::string_view& name, View::BufferViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::ImageViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::DissasmViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::TextViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings) override;
-        bool CreateViewer(const std::string_view& name, View::LexicalViewer::Settings& settings) override;
+        bool CreateViewer(View::BufferViewer::Settings& settings) override;
+        bool CreateViewer(View::ImageViewer::Settings& settings) override;
+        bool CreateViewer(View::GridViewer::Settings& settings) override;
+        bool CreateViewer(View::DissasmViewer::Settings& settings) override;
+        bool CreateViewer(View::TextViewer::Settings& settings) override;
+        bool CreateViewer(View::ContainerViewer::Settings& settings) override;
+        bool CreateViewer(View::LexicalViewer::Settings& settings) override;
 
-        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
-              const std::string_view& name, View::BufferViewer::Settings& settings) override;
+        Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) override;
 
         Reference<View::ViewControl> GetCurrentView() override;
+        uint32 GetViewsCount() override;
+        Reference<View::ViewControl> GetViewByIndex(uint32 index) override;
+        bool SetViewByIndex(uint32 index) override;
 
         bool OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode) override;
         bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;

@@ -2,20 +2,36 @@
 
 #include <fstream>
 
-namespace GView::DigitalSignature
-{
-#ifdef BUILD_FOR_WINDOWS
-
-#    include <Windows.h>
-#    include <Softpub.h>
-#    include <wincrypt.h>
-#    include <wintrust.h>
+#if defined(BUILD_FOR_WINDOWS)
+#    if defined(_M_ARM) || defined(_M_ARM64) || defined(_M_HYBRID_X86_ARM64) || defined(_M_ARM64EC) || __arm__ || __aarch64__
+#        include <Windows.h>
+#        include <Softpub.h>
+#        include <wincrypt.h>
+#        include <wintrust.h>
 
 // Link with the Wintrust.lib file.
-#    pragma comment(lib, "wintrust")
+#        pragma comment(lib, "wintrust")
 
 // Link with the Crypt32.lib file.
-#    pragma comment(lib, "Crypt32")
+#        pragma comment(lib, "Crypt32")
+#    endif
+#endif
+
+namespace GView::DigitalSignature
+{
+#if defined(BUILD_FOR_WINDOWS)
+#    if !(defined(_M_ARM) || defined(_M_ARM64) || defined(_M_HYBRID_X86_ARM64) || defined(_M_ARM64EC) || __arm__ || __aarch64__)
+#        include <Windows.h>
+#        include <Softpub.h>
+#        include <wincrypt.h>
+#        include <wintrust.h>
+
+// Link with the Wintrust.lib file.
+#        pragma comment(lib, "wintrust")
+
+// Link with the Crypt32.lib file.
+#        pragma comment(lib, "Crypt32")
+#    endif
 
 struct WrapperHStore
 {
@@ -156,10 +172,50 @@ bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, Authentic
     ub.Set(source);
     std::u16string sv{ ub.GetString(), ub.Len() };
 
-    if (!std::filesystem::exists(sv)) // must be a memory file from a container => drop it on disk
+    std::filesystem::path fullpath{ sv };
+    if (!std::filesystem::exists(fullpath)) // must be a memory file from a container => drop it on disk
     {
-        std::filesystem::path path{ sv };
-        std::ofstream ofs(path, std::ios::binary);
+        auto parent = fullpath.parent_path();
+        std::vector<std::filesystem::path> filenames{};
+        bool regularFileFound{ (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false) };
+
+        while (parent != parent.parent_path())
+        {
+            filenames.emplace(filenames.begin(), parent.filename());
+            parent = parent.parent_path();
+            regularFileFound |= (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false);
+        };
+
+        parent = std::filesystem::path(LR"(\\?\)" + parent.lexically_normal().native());
+
+        if (regularFileFound)
+        {
+            for (const auto& filename : filenames)
+            {
+                parent /= filename;
+                if (std::filesystem::exists(parent) && (std::filesystem::is_regular_file(parent) && std::filesystem::is_directory(parent) == false))
+                {
+                    parent.replace_filename(filename.u8string() + u8".drop");
+                }
+            }
+
+            const auto actualFilename = fullpath.filename();
+            fullpath                  = parent;
+            fullpath /= actualFilename;
+        }
+
+        if (!std::filesystem::exists(parent))
+        {
+            std::error_code ec{};
+            if (!std::filesystem::create_directories(parent, ec))
+            {
+                data.winTrust.errorCode = -1;
+                data.winTrust.errorMessage.Set(ec.message());
+                return false;
+            }
+        }
+
+        std::ofstream ofs(fullpath, std::ios::binary);
         if (ofs.is_open())
         {
             const auto buffer = cache.GetEntireFile();
@@ -174,9 +230,11 @@ bool VerifySignatureForPE(ConstString source, Utils::DataCache& cache, Authentic
         }
     }
 
+    const auto path = fullpath.wstring();
     WINTRUST_FILE_INFO fileData{
-        .cbStruct = sizeof(WINTRUST_FILE_INFO), .pcwszFilePath = reinterpret_cast<LPCWSTR>(sv.data()), .hFile = nullptr, .pgKnownSubject = nullptr
+        .cbStruct = sizeof(WINTRUST_FILE_INFO), .pcwszFilePath = reinterpret_cast<LPCWSTR>(path.c_str()), .hFile = nullptr, .pgKnownSubject = nullptr
     };
+
     WINTRUST_DATA WinTrustData{ .cbStruct            = sizeof(WinTrustData),
                                 .pPolicyCallbackData = nullptr,
                                 .pSIPClientData      = nullptr,

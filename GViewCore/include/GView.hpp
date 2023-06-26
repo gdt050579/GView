@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.265.0"
+#define GVIEW_VERSION "0.292.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -439,7 +439,7 @@ namespace DigitalSignature
         {
             struct Signature
             {
-                uint32 statusCode;
+                uint32 statusCode{ 0 };
                 String status;
 
                 struct Signer
@@ -814,28 +814,86 @@ namespace View
 {
     typedef uint8 MethodID;
 
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+
+    struct ViewData
+    {
+        uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
+        uint64 viewSize{ GView::Utils::INVALID_OFFSET };
+        uint64 cursorStartOffset{ GView::Utils::INVALID_OFFSET };
+        unsigned char byte{ 0 };
+    };
+
+    struct CORE_EXPORT BufferColorInterface
+    {
+        virtual bool GetColorForByteAt(uint64 offset, const ViewData& vd, ColorPair& cp) = 0;
+    };
+
+    struct CORE_EXPORT OnStartViewMoveInterface
+    {
+        virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
+    };
+
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
       protected:
         const AppCUI::Application::Config& Cfg;
+        String name;
 
       public:
-        virtual bool GoTo(uint64 offset)                                                                       = 0;
-        virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
-        virtual bool ShowGoToDialog()                                                                          = 0;
-        virtual bool ShowFindDialog()                                                                          = 0;
-        virtual bool ShowCopyDialog()                                                                          = 0;
-        virtual std::string_view GetName()                                                                     = 0;
+        virtual bool GoTo(uint64 offset)                = 0;
+        virtual bool Select(uint64 offset, uint64 size) = 0;
+        virtual bool ShowGoToDialog()                   = 0;
+        virtual bool ShowFindDialog()                   = 0;
+        virtual bool ShowCopyDialog()                   = 0;
+
+        inline std::string_view GetName() const
+        {
+            return name.ToStringView();
+        }
+
+        bool SetName(const std::string_view& name)
+        {
+            return this->name.Set(name);
+        }
+
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
-        ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
+        virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
+
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
+        {
+            return false;
+        }
+
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
+        {
+            return false;
+        }
+
+        virtual bool GetViewData(ViewData&, uint64)
+        {
+            return false;
+        }
+
+        virtual bool AdvanceStartView(int64)
+        {
+            return false;
+        }
+
+        ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
+            : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {
         }
     };
+
     namespace BufferViewer
     {
         struct BufferColor
@@ -856,10 +914,12 @@ namespace View
                 return start == GView::Utils::INVALID_OFFSET;
             }
         };
+
         struct CORE_EXPORT PositionToColorInterface
         {
             virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
+
         struct CORE_EXPORT OffsetTranslateInterface
         {
             virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;
@@ -877,6 +937,7 @@ namespace View
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
             void SetEntryPointOffset(uint64 offset);
+            bool SetName(std::string_view name);
 
             // dissasm related settings
             void SetArchitecture(GView::Dissasembly::Architecture architecture);
@@ -898,6 +959,7 @@ namespace View
             Settings();
             void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
             void AddImage(uint64 offset, uint64 size);
+            bool SetName(std::string_view name);
         };
     }; // namespace ImageViewer
 
@@ -923,6 +985,7 @@ namespace View
             void SetColumns(std::initializer_list<ConstString> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
             void SetOpenItemCallback(Reference<OpenItemInterface> callback);
+            bool SetName(std::string_view name);
         };
     }; // namespace ContainerViewer
 
@@ -944,6 +1007,7 @@ namespace View
             void SetTabSize(uint32 tabSize);
             void ShowTabCharacter(bool show);
             void HightlightCurrentLine(bool highlight);
+            bool SetName(std::string_view name);
         };
     }; // namespace TextViewer
 
@@ -1319,6 +1383,7 @@ namespace View
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
             void SetMaxTokenSize(Size sz);
+            bool SetName(std::string_view name);
         };
     }; // namespace LexicalViewer
 
@@ -1331,6 +1396,7 @@ namespace View
             Settings();
 
             void SetSeparator(char separator[2]);
+            bool SetName(std::string_view name);
         };
     }; // namespace GridViewer
 
@@ -1348,6 +1414,13 @@ namespace View
             Count
         };
 
+        enum class DissasmArchitecture : uint8
+        {
+            x86,
+            x64,
+            Other
+        };
+
         enum class VariableType : uint32
         {
             UInt8,
@@ -1363,20 +1436,33 @@ namespace View
             Utf32Z
         };
 
+		enum class MemoryMappingType
+		{
+		    FunctionMapping,
+			TextMapping
+		};
+
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
         struct CORE_EXPORT Settings
         {
             void* data;
 
+            bool SetName(std::string_view name);
+
             /**
              * \brief Sets the default disassembly language that will be used when an assembly zone will be used with the default option.
              * \param lang The DissasemblyLanguage to use when the Default option will be met.
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
-            void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+            void AddDisassemblyZone(
+                  uint64 zoneStart,
+                  uint64 zoneSize,
+                  uint64 zoneDissasmStartPoint,
+                  DissasmArchitecture architecture,
+                  DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
-            void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
@@ -1389,6 +1475,7 @@ namespace View
              * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
+            void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<BufferViewer::OffsetTranslateInterface> cbk);
 
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);
@@ -1411,26 +1498,32 @@ namespace View
 
     struct CORE_EXPORT WindowInterface
     {
-        virtual Reference<Object> GetObject()                                                        = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                  = 0;
-        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings)    = 0;
-        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)     = 0;
-        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings)   = 0;
-        virtual bool CreateViewer(const std::string_view& name, TextViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(const std::string_view& name, ContainerViewer::Settings& settings) = 0;
-        virtual bool CreateViewer(const std::string_view& name, LexicalViewer::Settings& settings)   = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                              = 0;
+        virtual Reference<Object> GetObject()                          = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)    = 0;
+        virtual bool CreateViewer(BufferViewer::Settings& settings)    = 0;
+        virtual bool CreateViewer(ImageViewer::Settings& settings)     = 0;
+        virtual bool CreateViewer(GridViewer::Settings& settings)      = 0;
+        virtual bool CreateViewer(DissasmViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(TextViewer::Settings& settings)      = 0;
+        virtual bool CreateViewer(ContainerViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(LexicalViewer::Settings& settings)   = 0;
+        virtual Reference<ViewControl> GetCurrentView()                = 0;
+        virtual uint32 GetViewsCount()                                 = 0;
+        virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
+        virtual bool SetViewByIndex(uint32 index)                      = 0;
 
         template <typename T>
-        inline bool CreateViewer(const std::string_view& name)
+        inline bool CreateViewer(const std::optional<std::string_view> name = {})
         {
-            T settings;
-            return CreateViewer(name, settings);
+            T settings{};
+            if (name.has_value())
+            {
+                CHECK(settings.SetName(*name), false, "");
+            }
+            return CreateViewer(settings);
         }
 
-        virtual Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(
-              const std::string_view& name, View::BufferViewer::Settings& settings) = 0;
+        virtual Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) = 0;
     };
 }; // namespace View
 namespace App
@@ -1445,10 +1538,9 @@ namespace App
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

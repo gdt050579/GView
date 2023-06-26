@@ -13,10 +13,9 @@ constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
 
 Config Instance::config;
 
-Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings(nullptr), ViewControl("Grid View")
 {
-    this->obj  = obj;
-    this->name = name;
+    this->obj = obj;
 
     // settings
     if ((_settings) && (_settings->data))
@@ -47,11 +46,6 @@ Instance::Instance(const std::string_view& name, Reference<GView::Object> obj, S
         config.Initialize();
 }
 
-std::string_view Instance::GetName()
-{
-    return name;
-}
-
 bool Instance::GoTo(uint64 offset)
 {
     return true;
@@ -69,7 +63,13 @@ bool Instance::ShowGoToDialog()
 
 bool Instance::ShowFindDialog()
 {
-    NOT_IMPLEMENTED(false);
+    CHECK(findDialog.Show() == Dialogs::Result::Ok, true, "");
+    
+    auto filterValue = findDialog.GetFilterValue();
+    grid->SetFilterOnCurrentColumn(filterValue);
+    grid->Filter();
+    
+    return true;
 }
 
 bool Instance::ShowCopyDialog()
@@ -355,8 +355,7 @@ void GView::View::GridViewer::Instance::PaintCursorInformationCells(AppCUI::Grap
     renderer.WriteText(ls, params);
 }
 
-void GView::View::GridViewer::Instance::PaintCursorInformationCurrentLocation(
-      AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+void GView::View::GridViewer::Instance::PaintCursorInformationCurrentLocation(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
 {
     WriteTextParams params{ WriteTextFlags::SingleLine };
     params.Color = config.color.cursorInformation.name;
@@ -382,8 +381,7 @@ void GView::View::GridViewer::Instance::PaintCursorInformationCurrentLocation(
     renderer.WriteText(ls, params);
 }
 
-void GView::View::GridViewer::Instance::PaintCursorInformationSelection(
-      AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+void GView::View::GridViewer::Instance::PaintCursorInformationSelection(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
 {
     WriteTextParams params{ WriteTextFlags::SingleLine };
     params.Color = config.color.cursorInformation.name;
@@ -410,8 +408,7 @@ void GView::View::GridViewer::Instance::PaintCursorInformationSelection(
     renderer.WriteText(ls, params);
 }
 
-void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(
-      AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
+void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(AppCUI::Graphics::Renderer& renderer, unsigned int x, unsigned int y)
 {
     renderer.DrawVerticalLine(x, y, y + 4, config.color.cursorInformation.value);
 }

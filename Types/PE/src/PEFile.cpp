@@ -2156,6 +2156,8 @@ void PEFile::RunCommand(std::string_view commandName)
     {
         while (!signatureChecked)
         {
+            data.winTrust.errorMessage = "Digital signature not found!";
+
             const auto& securityDirectory = dirs[(uint32) DirectoryType::Security];
 
             WinCertificate cert{};
@@ -2187,7 +2189,7 @@ void PEFile::RunCommand(std::string_view commandName)
         }
         else
         {
-            AppCUI::Dialogs::MessageBox::ShowError("Error", "Digital signature not found!");
+            AppCUI::Dialogs::MessageBox::ShowError("Error", data.winTrust.errorMessage);
         }
     }
     else if (commandName == "AreaHighlighter")
