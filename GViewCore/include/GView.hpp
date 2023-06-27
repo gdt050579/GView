@@ -818,6 +818,8 @@ namespace View
     constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
     constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
 
     struct ViewData
     {
@@ -1436,11 +1438,11 @@ namespace View
             Utf32Z
         };
 
-		enum class MemoryMappingType
-		{
-		    FunctionMapping,
-			TextMapping
-		};
+        enum class MemoryMappingType
+        {
+            FunctionMapping,
+            TextMapping
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
@@ -1540,7 +1542,13 @@ namespace App
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenBuffer(
+          BufferView buf,
+          const ConstString& name,
+          const ConstString& path,
+          OpenMethod method,
+          std::string_view typeName = "",
+          Reference<Window> parent  = nullptr);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

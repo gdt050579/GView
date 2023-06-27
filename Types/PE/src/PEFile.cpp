@@ -260,7 +260,7 @@ PEFile::PEFile()
 
 std::string_view PEFile::ReadString(uint32 RVA, uint32 maxSize)
 {
-    const auto fa = RVAtoFilePointer(RVA);
+    const auto fa = RVAToFA(RVA);
     auto buf      = obj->GetData().Get(fa, maxSize, true);
     if (buf.IsValid() == false || buf.Empty())
     {
@@ -312,7 +312,7 @@ uint64 PEFile::VAtoFA(uint64 va) const
     RETURNERROR(PE_INVALID_ADDRESS, "Address not found!");
 }
 
-uint64 PEFile::RVAtoFilePointer(uint64 RVA)
+uint64 PEFile::RVAToFA(uint64 RVA)
 {
     if (RVA < sect[0].VirtualAddress)
         return PE_INVALID_ADDRESS;
@@ -456,7 +456,7 @@ std::string_view PEFile::GetSubsystem()
     return "";
 }
 
-uint64_t PEFile::FilePointerToRVA(uint64_t fileAddress)
+uint64_t PEFile::FAToRVA(uint64_t fileAddress)
 {
     uint32 tr;
     uint64_t temp;
@@ -474,11 +474,11 @@ uint64_t PEFile::FilePointerToRVA(uint64_t fileAddress)
     return PE_INVALID_ADDRESS;
 }
 
-uint64 PEFile::FilePointerToVA(uint64_t fileAddress)
+uint64 PEFile::FAToVA(uint64_t fileAddress)
 {
     uint64 RVA;
 
-    if ((RVA = FilePointerToRVA(fileAddress)) != PE_INVALID_ADDRESS)
+    if ((RVA = FAToRVA(fileAddress)) != PE_INVALID_ADDRESS)
         return RVA + imageBase;
 
     return PE_INVALID_ADDRESS;
@@ -502,9 +502,9 @@ uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, A
         case AddressType::FileOffset:
             return address;
         case AddressType::VA:
-            return FilePointerToVA(address);
+            return FAToVA(address);
         case AddressType::RVA:
-            return FilePointerToRVA(address);
+            return FAToRVA(address);
         };
         break;
     case AddressType::VA:
@@ -512,13 +512,17 @@ uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, A
         {
         case AddressType::FileOffset:
             if (address > imageBase)
-                return RVAtoFilePointer(address - imageBase);
+            {
+                return RVAToFA(address - imageBase);
+            }
             break;
         case AddressType::VA:
             return address;
         case AddressType::RVA:
             if (address > imageBase)
+            {
                 return address - imageBase;
+            }
             break;
         };
         break;
@@ -526,7 +530,7 @@ uint64_t PEFile::ConvertAddress(uint64_t address, AddressType fromAddressType, A
         switch (toAddressType)
         {
         case AddressType::FileOffset:
-            return RVAtoFilePointer(address);
+            return RVAToFA(address);
         case AddressType::VA:
             return address + imageBase;
         case AddressType::RVA:
@@ -549,7 +553,7 @@ bool PEFile::BuildExport()
     RVA = dirs[(uint8) DirectoryType::Export].VirtualAddress; // export directory
     CHECK(RVA != 0, false, "")
 
-    if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
+    if ((faddr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid RVA for Export directory (0x%X)", (uint32) RVA);
         return false;
@@ -590,17 +594,17 @@ bool PEFile::BuildExport()
         return false;
     }
 
-    if ((naddr = RVAtoFilePointer(exportDir.AddressOfNames)) == PE_INVALID_ADDRESS)
+    if ((naddr = RVAToFA(exportDir.AddressOfNames)) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid AddressOfNames (0x%x) from export directory", (uint32) exportDir.AddressOfNames);
         return false;
     }
-    if ((oaddr = RVAtoFilePointer(exportDir.AddressOfNameOrdinals)) == PE_INVALID_ADDRESS)
+    if ((oaddr = RVAToFA(exportDir.AddressOfNameOrdinals)) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid AddressOfNameOrdinals (0x%x) from export directory", (uint32) exportDir.AddressOfNameOrdinals);
         return false;
     }
-    if ((faddr = RVAtoFilePointer(exportDir.AddressOfFunctions)) == PE_INVALID_ADDRESS)
+    if ((faddr = RVAToFA(exportDir.AddressOfFunctions)) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid AddressOfFunctions (0x%x) from export directory", (uint32) exportDir.AddressOfFunctions);
         return false;
@@ -695,7 +699,7 @@ bool PEFile::BuildTLS()
     if ((RVA == 0) || (dir.Size == 0))
         return false;
 
-    if ((faddr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
+    if ((faddr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
         return false;
     if (obj->GetData().Copy<ImageTLSDirectory32>(faddr, tlsDir) == false)
         return false;
@@ -906,7 +910,7 @@ bool PEFile::ProcessResourceDataEntry(uint64_t relAddress, uint64_t startRes, ui
         return false;
     }
 
-    if ((fileAddress = RVAtoFilePointer(resDE.OffsetToData)) == PE_INVALID_ADDRESS)
+    if ((fileAddress = RVAToFA(resDE.OffsetToData)) == PE_INVALID_ADDRESS)
     {
         errList.AddWarning("Invalid RVA for resource entry (0x%X)", (uint32_t) resDE.OffsetToData);
         return false;
@@ -1012,7 +1016,7 @@ bool PEFile::BuildResources()
     RVA = dirs[2].VirtualAddress; // export directory
     if (RVA == 0)
         return false;
-    if ((addr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
+    if ((addr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
     {
         errList.AddWarning("Invalid RVA for Resource directory (0x%X)", (uint32_t) RVA);
         return false;
@@ -1030,9 +1034,13 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
     uint32 count_f = 0;
 
     if (impD->OriginalFirstThunk == 0)
-        addr = RVAtoFilePointer(impD->FirstThunk);
+    {
+        addr = RVAToFA(impD->FirstThunk);
+    }
     else
-        addr = RVAtoFilePointer(impD->OriginalFirstThunk);
+    {
+        addr = RVAToFA(impD->OriginalFirstThunk);
+    }
     if (addr == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid RVA for OriginalFirstThunk (0x%X)", (uint32_t) impD->OriginalFirstThunk);
@@ -1040,7 +1048,7 @@ bool PEFile::BuildImportDLLFunctions(uint32_t index, ImageImportDescriptor* impD
     }
 
     IATaddr = impD->FirstThunk;
-    if (RVAtoFilePointer(impD->FirstThunk) == PE_INVALID_ADDRESS)
+    if (RVAToFA(impD->FirstThunk) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid RVA for FirstThunk (0x%X)", (uint32_t) impD->FirstThunk);
         return false;
@@ -1132,7 +1140,7 @@ bool PEFile::BuildImport()
     RVA = dirs[1].VirtualAddress; // export directory
     if (RVA == 0)
         return false;
-    if ((addr = RVAtoFilePointer(RVA)) == PE_INVALID_ADDRESS)
+    if ((addr = RVAToFA(RVA)) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid RVA for Import directory (0x%X)", (uint32_t) RVA);
         return false;
@@ -1174,7 +1182,7 @@ bool PEFile::BuildDebugData()
     CHECK(dirDebug.VirtualAddress != 0, false, "");
 
     uint64 faddr;
-    if ((faddr = RVAtoFilePointer(dirDebug.VirtualAddress)) == PE_INVALID_ADDRESS)
+    if ((faddr = RVAToFA(dirDebug.VirtualAddress)) == PE_INVALID_ADDRESS)
     {
         errList.AddError("Invalid RVA for Debug directory (0x%X)", (uint32) dirDebug.VirtualAddress);
         return false;
@@ -1541,7 +1549,7 @@ bool PEFile::Update()
     BuildDebugData();
 
     // EP
-    filePoz = RVAtoFilePointer(rvaEntryPoint);
+    filePoz = RVAToFA(rvaEntryPoint);
 
     if (filePoz != PE_INVALID_ADDRESS)
     {
@@ -1610,7 +1618,7 @@ bool PEFile::Update()
                 errList.AddWarning("Directory '%s' (#%d) has an invalid Size (0x%08X)", peDirsNames[tr].data(), tr, dr->Size);
             }
 
-            filePoz = RVAtoFilePointer(dr->VirtualAddress);
+            filePoz = RVAToFA(dr->VirtualAddress);
             if (filePoz == PE_INVALID_ADDRESS)
             {
                 errList.AddWarning("Directory '%s' (#%d) has an invalid RVA address (0x%08X)", peDirsNames[tr].data(), tr, dr->VirtualAddress);
@@ -2194,6 +2202,7 @@ void PEFile::RunCommand(std::string_view commandName)
     }
     else if (commandName == "AreaHighlighter")
     {
-        PE::Commands::AreaHighlighter(this).Show();
+        static auto ah = PE::Commands::AreaHighlighter(this);
+        ah.Show();
     }
 }
