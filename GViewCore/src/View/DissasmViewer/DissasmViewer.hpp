@@ -47,6 +47,7 @@ namespace View
                 ColorPair AsmJumpInstruction;            // jmp
                 ColorPair AsmComment;                    // comments added by user
                 ColorPair AsmDefaultColor;               // rest of things
+                ColorPair AsmTitleColor;                
             } Colors;
             struct
             {

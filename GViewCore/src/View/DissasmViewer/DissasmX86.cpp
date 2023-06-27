@@ -19,6 +19,14 @@ const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15 };
 
+// Dissasm menu configuration
+constexpr uint32 addressTotalLength     = 16;
+constexpr uint32 opCodesGroupsShown     = 8;
+constexpr uint32 opCodesTotalLength     = opCodesGroupsShown * 3;
+constexpr uint32 textColumnTextLength   = opCodesGroupsShown;
+constexpr uint32 textColumnSpacesLength = 4;
+constexpr uint32 textColumnTotalLength  = textColumnTextLength + textColumnSpacesLength;
+
 // TODO consider inline?
 AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
 {
@@ -121,17 +129,52 @@ inline void DissasmAddColorsToInstruction(
       Config& cfg,
       const LayoutDissasm& layout,
       AsmData& data,
-      uint64 addressPadding                = 0)
+      const CodePage& codePage,
+      uint64 addressPadding = 0)
 {
-    const MemoryMappingEntry* mappingPtr = (const MemoryMappingEntry*)insn.mapping;
-    //cb.Clear();
+    const MemoryMappingEntry* mappingPtr = (const MemoryMappingEntry*) insn.mapping;
+    // cb.Clear();
 
     LocalString<128> string;
     string.SetChars(' ', std::min<uint8>(128, static_cast<uint8>(layout.startingTextLineOffset)));
     cb.Add(string);
 
-    string.SetFormat("0x%" PRIx64 ":     ", insn.address + addressPadding);
+    string.SetFormat("0x%08" PRIx64 "      ", insn.address + addressPadding);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
+
+    for (uint32 i = 0; i < opCodesGroupsShown; i++)
+    {
+        if (i >= insn.size)
+        {
+            string.Clear();
+            const uint32 remaining = opCodesGroupsShown - i;
+            // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
+            string.SetChars(' ', remaining * 3);
+            cb.Add(string, cfg.Colors.AsmDefaultColor);
+            break;
+        }
+        const uint8 byte = insn.bytes[i];
+        string.SetFormat("%02x ", byte);
+        cb.Add(string, cfg.Colors.AsmDefaultColor);
+    }
+
+    for (uint32 i = 0; i < textColumnTextLength; i++)
+    {
+        if (i >= insn.size)
+        {
+            string.Clear();
+            const uint32 remaining = textColumnTextLength - i - 1;
+            string.SetChars(' ', remaining);
+            cb.Add(string, cfg.Colors.AsmDefaultColor);
+            break;
+        }
+        const uint8 byte = insn.bytes[i];
+        cb.InsertChar(codePage[byte], cb.Len() - 1, cfg.Colors.AsmDefaultColor);
+    }
+
+    string.Clear();
+    string.SetChars(' ', textColumnSpacesLength);
+    cb.Add(string, cfg.Colors.AsmDefaultColor);
 
     string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
@@ -681,7 +724,7 @@ bool populateAsmPreCacheData(
         }
         else if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::PushFlag)
         {
-            if (!alreadyInitComment  && !zone->comments.contains(currentLine))
+            if (!alreadyInitComment && !zone->comments.contains(currentLine))
             {
                 const auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
                 if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < obj->GetData().GetSize())
@@ -718,7 +761,7 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         // dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
         // return false;
     }
-    AdjustZoneExtendedSize(zone, totalLines);
+    AdjustZoneExtendedSize(zone, totalLines + 1); //+1 for title
     zone->lastDrawnLine    = 0;
     const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
     zone->lastClosestLine  = closestData.line;
@@ -798,6 +841,43 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return true;
     }
 
+    if (dli.textLineToDraw == 1)
+    {
+        LocalString<256> spaces;
+        spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
+        chars.Set(spaces);
+        constexpr std::string_view address = "File address";
+        chars.Add(address.data(), config.Colors.AsmTitleColor);
+
+        spaces.Clear();
+        spaces.SetChars(' ', addressTotalLength - address.size());
+        chars.Add(spaces, config.Colors.AsmTitleColor);
+
+        constexpr std::string_view opCodes = "Op Codes";
+        chars.Add(opCodes.data(), config.Colors.AsmTitleColor);
+        spaces.Clear();
+        spaces.SetChars(' ', opCodesTotalLength - opCodes.size() - 1);
+        chars.Add(spaces, config.Colors.AsmTitleColor);
+
+        constexpr std::string_view textTitle = "Text";
+        chars.Add(textTitle.data(), config.Colors.AsmTitleColor);
+        spaces.Clear();
+        spaces.SetChars(' ', textColumnTotalLength - textTitle.size());
+        chars.Add(spaces, config.Colors.AsmTitleColor);
+
+        constexpr std::string_view dissasmTitle = "Dissasm";
+        chars.Add(dissasmTitle.data(), config.Colors.AsmTitleColor);
+        const uint32 titleColorRemaining = Layout.totalCharactersPerLine - chars.Len();
+        spaces.Clear();
+        spaces.SetChars(' ', titleColorRemaining);
+        chars.Add(spaces, config.Colors.AsmTitleColor);
+
+        // HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(address.size()), static_cast<uint32>(address.size()) + Layout.startingTextLineOffset);
+
+        dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
+        return true;
+    }
+
     const uint32 currentLine = dli.textLineToDraw - 1u;
 
     // TODO: move this in onCreate and use a boolean value if enabled
@@ -819,7 +899,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         populateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare);
 
     auto& asmCacheLine = zone->asmPreCacheData.GetLine();
-    DissasmAddColorsToInstruction(asmCacheLine, chars, config, Layout, asmData, zone->cachedCodeOffsets[0].offset);
+    DissasmAddColorsToInstruction(asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
 
     zone->lastDrawnLine = currentLine;
 
@@ -844,7 +924,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
 
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
-    //poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
+    // poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     bool foundZone = false;
     for (const auto& z : asmData.zonesToClear)
         if (z == zone)
@@ -1000,6 +1080,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
     Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
+    Cursor.hasMovedView  = true;
 }
 
 void Instance::CommandDissasmAddZone()
