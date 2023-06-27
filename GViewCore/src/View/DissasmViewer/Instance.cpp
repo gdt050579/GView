@@ -1163,6 +1163,17 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     if (Layout.textSize == 0)
         return;
 
+    if (Cursor.hasMovedView)
+    {
+        for (const auto& zone : asmData.zonesToClear)
+            zone->asmPreCacheData.Clear();
+    }
+    else
+    {
+        for (const auto& zone : asmData.zonesToClear)
+            zone->asmPreCacheData.Reset();
+    }
+
     DrawLineInfo dli(renderer, Layout.startingTextLineOffset, config.Colors.Normal);
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
@@ -1184,8 +1195,6 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     }
 
     // asmData.bufferPool.Draw(renderer, config);
-    for (const auto& zone : dli.zonesToClear)
-        zone->asmPreCacheData.Clear();
 
     if (!MyLine.buttons.empty())
     {

@@ -227,6 +227,11 @@ namespace View
                 index = 0;
             }
 
+            void Reset()
+            {
+                index = 0;
+            }
+
             DissasmAsmPreCacheData() : index(0)
             {
             }
@@ -313,6 +318,7 @@ namespace View
         {
             std::map<uint32, ColorPair> instructionToColor;
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
+            std::deque<DissasmCodeZone*> zonesToClear;
         };
 
         struct LinePosition
@@ -337,7 +343,6 @@ namespace View
 
             uint32 lineOffset;
             ColorPair errorColor;
-            std::deque<DissasmCodeZone*> zonesToClear;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
                 : start(nullptr), end(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0),
                   textLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
@@ -427,6 +432,7 @@ namespace View
                 {
                     return CursorState{ startViewLine, lineInView };
                 }
+                bool hasMovedView;
             } Cursor;
 
             struct

@@ -107,6 +107,7 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
 {
     if (!Layout.totalLinesSize)
         return;
+    Cursor.hasMovedView = false;
 
     Cursor.offset += offset;
     // this->Cursor.startViewLine += lines;
@@ -117,7 +118,10 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
             lines += static_cast<int32>(Cursor.lineInView);
             Cursor.lineInView = 0;
             if (lines != 0)
+            {
                 Cursor.startViewLine += lines;
+                Cursor.hasMovedView = true;
+            }
         }
         else
         {
@@ -127,11 +131,12 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
     else
     {
         Cursor.lineInView += lines;
-        if (Cursor.lineInView >= Layout.visibleRows - 1)
+        if (Cursor.lineInView > Layout.visibleRows - 1)
         {
             const auto diff = abs(static_cast<int32>(Cursor.lineInView) - static_cast<int32>(Layout.visibleRows - 1));
             Cursor.startViewLine += diff;
             Cursor.lineInView -= diff;
+            Cursor.hasMovedView = true;
         }
     }
     /*if (this->Cursor.startViewLine > old)

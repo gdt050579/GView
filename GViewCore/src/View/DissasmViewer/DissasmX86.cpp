@@ -846,14 +846,14 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1, bufferToDraw, false);
     //poolBuffer.lineToDrawOnScreen = dli.screenLineToDraw + 1;
     bool foundZone = false;
-    for (const auto& z : dli.zonesToClear)
+    for (const auto& z : asmData.zonesToClear)
         if (z == zone)
         {
             foundZone = true;
             break;
         }
     if (!foundZone)
-        dli.zonesToClear.push_back(zone);
+        asmData.zonesToClear.push_back(zone);
     return true;
 }
 
