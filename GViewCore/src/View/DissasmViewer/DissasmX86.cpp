@@ -22,7 +22,7 @@ const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 // Dissasm menu configuration
 constexpr uint32 addressTotalLength     = 16;
 constexpr uint32 opCodesGroupsShown     = 8;
-constexpr uint32 opCodesTotalLength     = opCodesGroupsShown * 3;
+constexpr uint32 opCodesTotalLength     = opCodesGroupsShown * 3 + 1;
 constexpr uint32 textColumnTextLength   = opCodesGroupsShown;
 constexpr uint32 textColumnSpacesLength = 4;
 constexpr uint32 textColumnTotalLength  = textColumnTextLength + textColumnSpacesLength;
@@ -139,8 +139,9 @@ inline void DissasmAddColorsToInstruction(
     string.SetChars(' ', std::min<uint8>(128, static_cast<uint8>(layout.startingTextLineOffset)));
     cb.Add(string);
 
-    string.SetFormat("0x%08" PRIx64 "      ", insn.address + addressPadding);
+    string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
+    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
 
     for (uint32 i = 0; i < opCodesGroupsShown; i++)
     {
@@ -158,6 +159,8 @@ inline void DissasmAddColorsToInstruction(
         cb.Add(string, cfg.Colors.AsmDefaultColor);
     }
 
+    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
+
     for (uint32 i = 0; i < textColumnTextLength; i++)
     {
         if (i >= insn.size)
@@ -169,12 +172,14 @@ inline void DissasmAddColorsToInstruction(
             break;
         }
         const uint8 byte = insn.bytes[i];
-        cb.InsertChar(codePage[byte], cb.Len() - 1, cfg.Colors.AsmDefaultColor);
+        cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
     }
 
     string.Clear();
     string.SetChars(' ', textColumnSpacesLength);
     cb.Add(string, cfg.Colors.AsmDefaultColor);
+
+    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
 
     string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
@@ -843,6 +848,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     if (dli.textLineToDraw == 1)
     {
+        const ColorPair titleColumnColor = { config.Colors.AsmTitleColumnColor.Foreground, config.Colors.AsmTitleColor.Background };
+
         LocalString<256> spaces;
         spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
         chars.Set(spaces);
@@ -850,8 +857,10 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         chars.Add(address.data(), config.Colors.AsmTitleColor);
 
         spaces.Clear();
-        spaces.SetChars(' ', addressTotalLength - address.size());
+        spaces.SetChars(' ', addressTotalLength - address.size() - 1);
         chars.Add(spaces, config.Colors.AsmTitleColor);
+
+        chars.InsertChar('|', chars.Len(), titleColumnColor);
 
         constexpr std::string_view opCodes = "Op Codes";
         chars.Add(opCodes.data(), config.Colors.AsmTitleColor);
@@ -859,11 +868,15 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         spaces.SetChars(' ', opCodesTotalLength - opCodes.size() - 1);
         chars.Add(spaces, config.Colors.AsmTitleColor);
 
+        chars.InsertChar('|', chars.Len(), titleColumnColor);
+
         constexpr std::string_view textTitle = "Text";
         chars.Add(textTitle.data(), config.Colors.AsmTitleColor);
         spaces.Clear();
-        spaces.SetChars(' ', textColumnTotalLength - textTitle.size());
+        spaces.SetChars(' ', textColumnTotalLength - textTitle.size() - 1);
         chars.Add(spaces, config.Colors.AsmTitleColor);
+
+        chars.InsertChar('|', chars.Len(), titleColumnColor);
 
         constexpr std::string_view dissasmTitle = "Dissasm";
         chars.Add(dissasmTitle.data(), config.Colors.AsmTitleColor);

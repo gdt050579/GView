@@ -32,7 +32,8 @@ void Config::Initialize()
     this->Colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
     this->Colors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
     this->Colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmTitleColor                 = ColorPair{ Color::Yellow, Color::Magenta };
+    this->Colors.AsmTitleColor                 = ColorPair{ Color::Silver, Color::Magenta };
+    this->Colors.AsmTitleColumnColor           = ColorPair{ Color::Yellow, Color::DarkBlue };
 
     bool foundSettings = false;
     auto ini           = AppCUI::Application::GetAppSettings();

@@ -48,6 +48,7 @@ namespace View
                 ColorPair AsmComment;                    // comments added by user
                 ColorPair AsmDefaultColor;               // rest of things
                 ColorPair AsmTitleColor;                
+                ColorPair AsmTitleColumnColor;                
             } Colors;
             struct
             {
