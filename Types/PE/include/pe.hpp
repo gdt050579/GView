@@ -1201,7 +1201,7 @@ namespace Type
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
 
                 void ChooseFile();
-                void FindExecutedCode();
+                bool FindExecutedCode();
 
                 bool GetColorForByteAt(uint64 offset, const GView::View::ViewData& vd, ColorPair& cp) override;
             };

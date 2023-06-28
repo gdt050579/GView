@@ -51,6 +51,7 @@ void AreaHighlighter::ChooseFile()
             if (std::filesystem::is_regular_file(std::filesystem::path(p)))
             {
                 tfcp->SetText(p);
+                bok->SetFocus();
                 break;
             }
             else
@@ -66,13 +67,19 @@ void AreaHighlighter::ChooseFile()
     }
 }
 
-void AreaHighlighter::FindExecutedCode()
+bool AreaHighlighter::FindExecutedCode()
 {
     const auto path = std::filesystem::path(tfcp->GetText());
     if (!std::filesystem::is_regular_file(path))
     {
         MessageBox::ShowError("Error", u8"The chosen path is not a file: " + path.u8string());
-        return;
+        return false;
+    }
+
+    if (tfre->GetText().IsEmpty())
+    {
+        MessageBox::ShowError("Error", u8"The regex is empty!");
+        return false;
     }
 
     addresses.clear();
@@ -87,17 +94,23 @@ void AreaHighlighter::FindExecutedCode()
     // ascii = std::regex_replace(ascii, specialChars, R"(\$&)");
     const std::regex pattern(ascii, std::regex_constants::ECMAScript | std::regex_constants::optimize);
 
-    usb.Set(tfff->GetText());
     std::string filter;
-    usb.ToString(filter);
+    if (!tfff->GetText().IsEmpty())
+    {
+        usb.Set(tfff->GetText());
+        usb.ToString(filter);
+    }
 
     std::string line;
     auto offset = 0u;
     while (std::getline(infile, line))
     {
-        if (line.find(filter) == std::string::npos)
+        if (!filter.empty())
         {
-            continue;
+            if (line.find(filter) == std::string::npos)
+            {
+                continue;
+            }
         }
 
         const auto initialStart = reinterpret_cast<char const*>(line.c_str());
@@ -147,22 +160,25 @@ void AreaHighlighter::FindExecutedCode()
 
     infile.close();
 
-    if (!addresses.empty())
+    if (addresses.empty())
     {
-        auto desktop         = AppCUI::Application::GetDesktop();
-        const auto windowsNo = desktop->GetChildrenCount();
-
-        for (uint32 i = 0; i < windowsNo; i++)
-        {
-            auto window    = desktop->GetChild(i);
-            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
-            auto view      = interface->GetCurrentView();
-            view->SetBufferColorProcessorCallback(this);
-            view->OnEvent(nullptr, AppCUI::Controls::Event::Command, View::VIEW_COMMAND_ACTIVATE_CODE_EXECUTION);
-        }
+        MessageBox::ShowError("Error", u8"No executed code found!");
+        return false;
     }
 
-    bok->SetFocus();
+    auto desktop         = AppCUI::Application::GetDesktop();
+    const auto windowsNo = desktop->GetChildrenCount();
+
+    for (uint32 i = 0; i < windowsNo; i++)
+    {
+        auto window    = desktop->GetChild(i);
+        auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+        auto view      = interface->GetCurrentView();
+        view->SetBufferColorProcessorCallback(this);
+        view->OnEvent(nullptr, AppCUI::Controls::Event::Command, View::VIEW_COMMAND_ACTIVATE_CODE_EXECUTION);
+    }
+
+    return true;
 }
 
 bool AreaHighlighter::GetColorForByteAt(uint64 offset, const GView::View::ViewData& vd, ColorPair& cp)
@@ -192,8 +208,10 @@ bool AreaHighlighter::OnEvent(Reference<Control> ctrl, Event evnt, int controlID
             ChooseFile();
             return true;
         case BUTTON_ID_OK:
-            FindExecutedCode();
-            return Exit(Dialogs::Result::Ok);
+            if (FindExecutedCode())
+            {
+                return Exit(Dialogs::Result::Ok);
+            }
             return true;
         case BUTTON_ID_CANCEL:
             return Exit(Dialogs::Result::Cancel);
