@@ -618,7 +618,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     // color
     if (settings)
     {
-        if (showSyncCompare && settings->bufferColorCallback)
+        if ((showCodeExecution || showSyncCompare) && settings->bufferColorCallback)
         {
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
@@ -1603,6 +1603,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         return true;
     case VIEW_COMMAND_DEACTIVATE_SYNC:
         moveInSync = false;
+        return true;
+
+    case VIEW_COMMAND_ACTIVATE_CODE_EXECUTION:
+        showCodeExecution = true;
+        return true;
+    case VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION:
+        showCodeExecution = false;
         return true;
     }
     return false;

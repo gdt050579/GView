@@ -31,7 +31,7 @@ namespace GView
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface
 {
-    Object* obj;
+    Object* obj{ nullptr };
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
@@ -302,7 +302,7 @@ namespace Hashes
 
       private:
         void* handle;
-        uint8 hash[64];
+        uint8 hash[64]{ 0 };
         uint32 size;
 
       private:
@@ -355,10 +355,10 @@ namespace DigitalSignature
         String issuer;
         String subject;
         int32 verify;
-        String errorVerify;
+        String errorVerify{};
 
-        int32 signerVerify; //  compares the certificate cert against the signer identifier si
-        String errorSignerVerify;
+        int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si
+        String errorSignerVerify{};
     };
 
     constexpr auto ERR_SIGNER            = -1;
@@ -366,26 +366,26 @@ namespace DigitalSignature
 
     struct CORE_EXPORT SignerAttributes
     {
-        String name;
-        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
-                                               // V_ASN1_SEQUENCE
-        String contentType;
-        String contentTypeData;
-        int32 count;
+        String name{};
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]{}; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
+                                                 // V_ASN1_SEQUENCE
+        String contentType{};
+        String contentTypeData{};
+        int32 count{ 0 };
 
         String CDHashes[MAX_SIZE_IN_CONTAINER]; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
     };
 
     struct CORE_EXPORT Signer
     {
-        int32 count;
-        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER];
-        uint32 attributesCount;
+        int32 count{ 0 };
+        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER]{};
+        uint32 attributesCount{ 0 };
     };
 
     struct CORE_EXPORT SignatureMachO
     {
-        int32 isDetached;
+        int32 isDetached{ 0 };
         String sn;
         Buffer snContent;
 
@@ -565,7 +565,7 @@ namespace Golang
     struct CORE_EXPORT Function
     {
         char* name{ nullptr };
-        Func64 func;
+        Func64 func{};
         union FstEntry
         {
             FstEntry32* _32;
@@ -818,6 +818,8 @@ namespace View
     constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
     constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
 
     struct ViewData
     {
@@ -1436,11 +1438,11 @@ namespace View
             Utf32Z
         };
 
-		enum class MemoryMappingType
-		{
-		    FunctionMapping,
-			TextMapping
-		};
+        enum class MemoryMappingType
+        {
+            FunctionMapping,
+            TextMapping
+        };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
@@ -1540,7 +1542,13 @@ namespace App
     bool CORE_EXPORT ResetConfiguration();
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
     void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenBuffer(
+          BufferView buf,
+          const ConstString& name,
+          const ConstString& path,
+          OpenMethod method,
+          std::string_view typeName = "",
+          Reference<Window> parent  = nullptr);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

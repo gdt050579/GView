@@ -65,7 +65,7 @@ void GoFunctions::SelectCurrentSection()
 
     Golang::Function f1{};
     CHECKRET(pe->pcLnTab.GetFunction(i, f1), "");
-    const auto offset = pe->RVAtoFilePointer(f1.func.entry);
+    const auto offset = pe->RVAToFA(f1.func.entry);
 
     Golang::Function f2{};
     CHECKRET(pe->pcLnTab.GetFunction(i + 1, f2), "");

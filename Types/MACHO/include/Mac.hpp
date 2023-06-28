@@ -407,16 +407,16 @@ enum class VMProtectionFlags : uint32
     EXECUTE   = 0x4,                      /* execute permission */
     DEFAULT   = (READ | WRITE),           /* The default protection for newly-created virtual memory. */
     ALL       = (READ | WRITE | EXECUTE), /* The maximum privileges possible, for parameter checking. */
-    NO_CHANGE = 0x8,  /* An invalid protection value. Used only by memory_object_lock_request to indicate no change to page locks.  Using
-                       -1 here is a bad idea because it looks like VM_PROT::ALL and then some. */
-    COPY = 0x10,      /* When a caller finds that he cannot obtain write permission on a mapped entry, the following flag can be used.  The
-                       * entry will be made "needs copy" effectively copying the object (using COW), and write permission will be added to
-                       * the maximum protections for the associated entry. */
-    WANTS_COPY = 0x10 /* Another invalid protection value. Used only by memory_object_data_request upon an object which has specified a
-                       * copy_call copy strategy. It is used when the kernel wants a page belonging to a copy of the object, and is only
-                       * asking the object as a result of following a shadow chain. This solves the race between pages being pushed up
-                       * by the memory manager and the kernel walking down the shadow chain.
-                       */
+    NO_CHANGE = 0x8,                      /* An invalid protection value. Used only by memory_object_lock_request to indicate no change to page locks.  Using
+                                           -1 here is a bad idea because it looks like VM_PROT::ALL and then some. */
+    COPY = 0x10,                          /* When a caller finds that he cannot obtain write permission on a mapped entry, the following flag can be used.  The
+                                           * entry will be made "needs copy" effectively copying the object (using COW), and write permission will be added to
+                                           * the maximum protections for the associated entry. */
+    WANTS_COPY = 0x10                     /* Another invalid protection value. Used only by memory_object_data_request upon an object which has specified a
+                                           * copy_call copy strategy. It is used when the kernel wants a page belonging to a copy of the object, and is only
+                                           * asking the object as a result of following a shadow chain. This solves the race between pages being pushed up
+                                           * by the memory manager and the kernel walking down the shadow chain.
+                                           */
 };
 
 struct segment_command
@@ -452,11 +452,11 @@ struct segment_command_64
 enum class SegmentCommandFlags : uint32_t
 {
     NONE   = 0x0,
-    HIGHVM = 0x01,  /* The file contents for this segment is for the high part of the VM space, the low part is zero filled (for stacks
-                       in  core files). */
-    FVMLIB  = 0x02, /* This segment is the VM that is allocated by a fixed VM library, for overlap checking in the link editor */
-    NORELOC = 0x04, /* This segment has nothing that was relocated in it and nothing relocated to it, that is it maybe safely replaced
-                       without relocation. */
+    HIGHVM = 0x01,              /* The file contents for this segment is for the high part of the VM space, the low part is zero filled (for stacks
+                                   in  core files). */
+    FVMLIB  = 0x02,             /* This segment is the VM that is allocated by a fixed VM library, for overlap checking in the link editor */
+    NORELOC = 0x04,             /* This segment has nothing that was relocated in it and nothing relocated to it, that is it maybe safely replaced
+                                   without relocation. */
     PROTECTED_VERSION_1 = 0x08, /* This segment is protected. If the segment starts at file offset 0, the first page of the segment is
                                    not protected.  All other pages of the segment are protected. */
     READONLY = 0x10             /* This segment is made read-only after fixups */
@@ -752,23 +752,24 @@ enum class N_STAB_TYPE : uint8
     LENG    = 0xFE  // length of preceding entry
 };
 
-enum class PlatformType : uint8
+enum class PlatformType : uint32
 {
-    UNKNOWN          = 0,
-    MACOS            = 1,
-    IOS              = 2,
-    TVOS             = 3,
-    WATCHOS          = 4,
-    BRIDGEOS         = 5,
-    MACCATALYST      = 6,
-    IOSSIMULATOR     = 7,
-    TVOSSIMULATOR    = 8,
-    WATCHOSSIMULATOR = 9,
-    DRIVERKIT        = 10,
-    _11              = 11, // TODO: ??
-    _12              = 12, // TODO: ??
-    _13              = 13, // TODO: ??
-    _14              = 14, // TODO: ??
+    UNKNOWN            = 0,
+    MACOS              = 1,
+    IOS                = 2,
+    TVOS               = 3,
+    WATCHOS            = 4,
+    BRIDGEOS           = 5,
+    MACCATALYST        = 6,
+    IOSSIMULATOR       = 7,
+    TVOSSIMULATOR      = 8,
+    WATCHOSSIMULATOR   = 9,
+    DRIVERKIT          = 10,
+    REALITYOS          = 11,
+    REALITYOSSIMULATOR = 12,
+    FIRMWARE           = 13,
+    SEPOS              = 14,
+    ANY                = 0xFFFFFFFF,
 };
 
 enum class Tool
@@ -875,8 +876,8 @@ enum class CodeSignMagic : uint32
     CSSLOT_APPLICATION   = 4,
     CSSLOT_ENTITLEMENTS  = 5,
 
-    CSSLOT_ALTERNATE_CODEDIRECTORIES     = 0x1000, /* first alternate CodeDirectory, if any */
-    CSSLOT_ALTERNATE_CODEDIRECTORY_MAX   = 5,      /* max number of alternate CD slots */
+    CSSLOT_ALTERNATE_CODEDIRECTORIES     = 0x1000,                                                                /* first alternate CodeDirectory, if any */
+    CSSLOT_ALTERNATE_CODEDIRECTORY_MAX   = 5,                                                                     /* max number of alternate CD slots */
     CSSLOT_ALTERNATE_CODEDIRECTORY_LIMIT = CSSLOT_ALTERNATE_CODEDIRECTORIES + CSSLOT_ALTERNATE_CODEDIRECTORY_MAX, /* one past the last */
 
     CSSLOT_SIGNATURESLOT      = 0x10000, /* CMS Signature */

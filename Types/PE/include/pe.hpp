@@ -697,7 +697,7 @@ namespace Type
             {
                 DIB = 0,
                 PNG,
-                Unknwown = 0xFF
+                Unknown = 0xFF
             };
             struct ResourceInformation
             {
@@ -803,10 +803,10 @@ namespace Type
             std::string_view GetMachine();
             std::string_view GetSubsystem();
             uint64 VAtoFA(uint64 va) const;
-            uint64 RVAtoFilePointer(uint64 RVA);
+            uint64 RVAToFA(uint64 RVA);
             int32 RVAToSectionIndex(uint64 RVA);
-            uint64 FilePointerToRVA(uint64 fileAddress);
-            uint64 FilePointerToVA(uint64 fileAddress);
+            uint64 FAToRVA(uint64 fileAddress);
+            uint64 FAToVA(uint64 fileAddress);
 
             uint64 TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) override;
             uint64 TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) override;
@@ -1174,6 +1174,36 @@ namespace Type
                 void Update();
                 bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
                 bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+            };
+
+            class AreaHighlighter : public AppCUI::Controls::Window, public GView::View::BufferColorInterface
+            {
+              private:
+                Reference<PEFile> pe;
+                Reference<GView::View::WindowInterface> win;
+
+                Reference<Label> ld;
+                Reference<Label> lfn;
+                Reference<Button> bcp;
+                Reference<TextField> tfcp;
+                Reference<Label> lre;
+                Reference<TextField> tfre;
+                Reference<Label> lff;
+                Reference<TextField> tfff;
+
+                Reference<Button> bok;
+                Reference<Button> bcancel;
+
+                std::vector<std::pair<uint64, uint64>> addresses;
+
+              public:
+                AreaHighlighter(Reference<PEFile> pe);
+                bool OnEvent(Reference<Control>, Event evnt, int controlID) override;
+
+                void ChooseFile();
+                bool FindExecutedCode();
+
+                bool GetColorForByteAt(uint64 offset, const GView::View::ViewData& vd, ColorPair& cp) override;
             };
         } // namespace Commands
     }     // namespace PE

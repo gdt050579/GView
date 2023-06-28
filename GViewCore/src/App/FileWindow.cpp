@@ -256,7 +256,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         }
         if (((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START + 1000)) && (this->typePlugin.IsValid()))
         {
-            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[ID - CMD_FOR_TYPE_PLUGIN_START].name);
+            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[static_cast<size_t>(ID) - CMD_FOR_TYPE_PLUGIN_START].name);
             return true;
         }
         break;
