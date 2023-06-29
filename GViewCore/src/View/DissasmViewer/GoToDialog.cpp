@@ -50,7 +50,7 @@ GoToDialog::GoToDialog(uint32 currentLine, uint32 totalAvailableLines)
     lineTextField->SetFocus();
 }
 
-bool GoToDialog::OnEvent(Reference<Control> reference, Event eventType, int ID)
+bool GoToDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::ButtonClicked)
     {

@@ -43,8 +43,6 @@ constexpr std::array<std::string_view, 4> BINARY_FORMAT_BODY{ "Binary pattern to
 constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT      = DIALOG_HEIGHT_TEXT_FORMAT + (uint32) BINARY_FORMAT_BODY.size() - 1U;
 constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT = DESCRIPTION_HEIGHT_TEXT_FORMAT + (DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT);
 
-constexpr std::string_view ANYTHING_PATTERN{ "???" };
-
 FindDialog::FindDialog()
     : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
       position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })

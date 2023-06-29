@@ -131,11 +131,8 @@ bool CharacterSet::Set(std::string_view stringRepresentation, bool value)
 }
 bool CharacterSet::GetStringRepresentation(String& str) const
 {
-    uint32 start, end;
-    uint32 pzz;
+    uint32 start = 0, end;
     // caut pe rand blocurile libere
-    start = 0;
-    pzz   = 0;
     CHECK(str.Set(""), false, "");
     while (start < 256)
     {

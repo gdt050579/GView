@@ -30,7 +30,7 @@ CommentDataWindow::CommentDataWindow(std::string initialComment) : Window("Add c
     commentTextField->SetFocus();
 }
 
-bool CommentDataWindow::OnEvent(Reference<Control> reference, Event eventType, int ID)
+bool CommentDataWindow::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::ButtonClicked)
     {

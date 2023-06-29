@@ -265,7 +265,7 @@ inline bool populate_offsets_vector(
                     // TODO: also check not to overflow access!
                     while (*ptr && *ptr != ' ' && *ptr != ',')
                     {
-                        computedValue = computedValue * 16 + HEX_MAPPER[*ptr];
+                        computedValue = computedValue * 16 + HEX_MAPPER[static_cast<uint8>(*ptr)];
                         ptr++;
                     }
                 }
@@ -364,7 +364,7 @@ bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
         }
         else
         {
-            if (*ptr >= '0' && *ptr <= '9' || *ptr >= 'a' && *ptr <= 'f')
+            if ((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f'))
             {
                 size++;
             }
