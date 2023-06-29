@@ -7,3 +7,8 @@
 build
 bin
 *.log
+.idea/
+CMakeFiles/
+cmake-build-*/
+vcpkg_installed/
+.DS_Store
