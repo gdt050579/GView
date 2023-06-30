@@ -519,7 +519,8 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 {
     ColorPair normalColor = config.Colors.Normal;
 
-    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chLineStart = this->chars.GetBuffer();
+    dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
 
     auto clearChar = this->chars.GetBuffer();
     for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
@@ -644,9 +645,10 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 
 bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone)
 {
-    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chLineStart = this->chars.GetBuffer();
+    dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
 
-    auto clearChar = this->chars.GetBuffer();
+    auto clearChar = dli.chLineStart;
     for (uint32 i = 0; i < Layout.startingTextLineOffset; i++)
     {
         clearChar->Code  = codePage[' '];
@@ -692,7 +694,8 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
                 dli.start         = buf.GetData();
                 dli.end           = buf.GetData() + buf.GetLength();
-                dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+                dli.chLineStart   = this->chars.GetBuffer();
+                dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
                 dli.chText        = dli.chNameAndSize;
 
                 const bool activeColor = this->HasFocus();
@@ -723,7 +726,6 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             }
         }
     }
-
     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
 
@@ -747,6 +749,18 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view s
         dli.chText->Color = pair;
         dli.chText++;
     }
+}
+
+void Instance::HighlightCurrentLine(DrawLineInfo& dli, CharacterBuffer& cb)
+{
+    if (Cursor.lineInView != dli.screenLineToDraw)
+        return;
+    if (cb.Len() < 5)
+        return;
+    const auto buffer = cb.GetBuffer();
+    buffer[0].Code = '-';
+    buffer[1].Code = '-';
+    buffer[2].Code = '>';
 }
 
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...)
@@ -808,6 +822,16 @@ void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 max
             dli.chNameAndSize[index].Color = config.Colors.Selection;
         else
             dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
+
+        auto ch = dli.chLineStart;
+        ch->Code = codePage['-'];
+        ch->Color = config.Colors.Highlight;
+        ch++;
+        ch->Code = codePage['-'];
+        ch->Color = config.Colors.Highlight;
+        ch++;
+        ch->Code = codePage['>'];
+        ch->Color = config.Colors.Highlight;
     }
 }
 
@@ -1124,7 +1148,8 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
-    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chLineStart = this->chars.GetBuffer();
+    dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
 
     bool activ     = this->HasFocus();

@@ -333,6 +333,7 @@ namespace View
         {
             const uint8* start;
             const uint8* end;
+            Character* chLineStart;
             Character* chNameAndSize;
             Character* chText;
             bool recomputeOffsets;
@@ -346,7 +347,8 @@ namespace View
             uint32 lineOffset;
             ColorPair errorColor;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
-                : start(nullptr), end(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0), screenLineToDraw(0),
+                : start(nullptr), end(nullptr), chLineStart(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0),
+                  screenLineToDraw(0),
                   textLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
             {
             }
@@ -503,6 +505,7 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
+            void HighlightCurrentLine(DrawLineInfo&dli, CharacterBuffer& cb);
             void HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters);
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;

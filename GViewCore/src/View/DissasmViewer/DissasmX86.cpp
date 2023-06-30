@@ -136,9 +136,6 @@ inline void DissasmAddColorsToInstruction(
     // cb.Clear();
 
     LocalString<128> string;
-    string.SetChars(' ', std::min<uint8>(128, static_cast<uint8>(layout.startingTextLineOffset)));
-    cb.Add(string);
-
     string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
     cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
@@ -819,14 +816,18 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     chars.Clear();
 
-    dli.chNameAndSize = this->chars.GetBuffer() + Layout.startingTextLineOffset;
+    dli.chLineStart   = this->chars.GetBuffer();
+    dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
+
+    LocalString<256> spaces;
+    spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
+    chars.Set(spaces);
+
+    HighlightCurrentLine(dli, chars);
 
     if (dli.textLineToDraw == 0)
     {
-        LocalString<256> spaces;
-        spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
-        chars.Set(spaces);
         constexpr std::string_view zoneName = "Dissasm zone";
         chars.Add(zoneName.data(), config.Colors.StructureColor);
 
@@ -851,9 +852,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     {
         const ColorPair titleColumnColor = { config.Colors.AsmTitleColumnColor.Foreground, config.Colors.AsmTitleColor.Background };
 
-        LocalString<256> spaces;
-        spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
-        chars.Set(spaces);
         constexpr std::string_view address = "File address";
         chars.Add(address.data(), config.Colors.AsmTitleColor);
 
@@ -1093,7 +1091,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     }
     cs_free(insn, 1);
 
-    diffLines++; //increased because of the menu bar
+    diffLines++; // increased because of the menu bar
     jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
     Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
