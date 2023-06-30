@@ -885,7 +885,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         spaces.SetChars(' ', titleColorRemaining);
         chars.Add(spaces, config.Colors.AsmTitleColor);
 
-        // HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(address.size()), static_cast<uint32>(address.size()) + Layout.startingTextLineOffset);
+        HighlightSelectionAndDrawCursorText(dli, chars.Len() - Layout.startingTextLineOffset, chars.Len());
 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
         return true;
