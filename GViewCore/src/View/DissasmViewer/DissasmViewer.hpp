@@ -163,9 +163,15 @@ namespace View
             uint32 currentLine;
             char mnemonic[CS_MNEMONIC_SIZE];
             char* op_str;
+            uint32 op_str_size;
             std::optional<uint64> hexValue;
             uint8 flags;
             const void* mapping;
+
+            uint32 GetLineSize() const
+            {
+                return size * 2 + op_str_size;
+            }
         };
 
         struct AsmFunctionDetails
@@ -193,6 +199,7 @@ namespace View
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
             std::unordered_map<uint32, uint8> instructionFlags;
             uint16 index;
+            uint32 maxLineSize;
 
             bool CheckInstructionHasFlag(uint32 line, InstructionFlag flag) const
             {
@@ -227,11 +234,23 @@ namespace View
                     free(cachedLine.op_str);
                 cachedAsmLines.clear();
                 index = 0;
+                maxLineSize = 0;
             }
 
             void Reset()
             {
                 index = 0;
+            }
+
+            void ComputeMaxLine()
+            {
+                maxLineSize = 0;
+                for (const auto& cachedLine : cachedAsmLines)
+                {
+                    const auto lineSize = cachedLine.GetLineSize();
+                    if (lineSize > maxLineSize)
+                        maxLineSize = lineSize;
+                }
             }
 
             DissasmAsmPreCacheData() : index(0)
@@ -505,7 +524,6 @@ namespace View
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
 
-            void HighlightCurrentLine(DrawLineInfo&dli, CharacterBuffer& cb);
             void HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters);
             void RecomputeDissasmZones();
             uint64 GetZonesMaxSize() const;

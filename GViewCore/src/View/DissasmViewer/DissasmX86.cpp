@@ -26,6 +26,8 @@ constexpr uint32 opCodesTotalLength     = opCodesGroupsShown * 3 + 1;
 constexpr uint32 textColumnTextLength   = opCodesGroupsShown;
 constexpr uint32 textColumnSpacesLength = 4;
 constexpr uint32 textColumnTotalLength  = textColumnTextLength + textColumnSpacesLength;
+constexpr uint32 textTotalColumnLength  = addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength;
+constexpr uint32 commentPaddingLength   = 10;
 
 // TODO consider inline?
 AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
@@ -182,9 +184,9 @@ inline void DissasmAddColorsToInstruction(
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
     cb.Add(string, color);
 
-    const std::string_view op_str = insn.op_str;
-    if (!op_str.empty() && !mappingPtr)
+    if (insn.op_str)
     {
+        const std::string_view op_str = insn.op_str;
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
         auto checkValidAndAdd = [&cb, &cfg, &lambdaBuffer, &data](std::string_view token)
@@ -237,11 +239,15 @@ inline void DissasmAddColorsToInstruction(
             checkValidAndAdd(buffer.GetText());
         }
     }
-    else if (mappingPtr)
+    else
     {
-        string.SetFormat("%s", mappingPtr->name.data());
-        const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? cfg.Colors.AsmLocationInstruction : cfg.Colors.AsmFunctionColor;
-        cb.Add(string, mapColor);
+        if (mappingPtr)
+        {
+            string.SetFormat("%s", mappingPtr->name.data());
+            const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? cfg.Colors.AsmLocationInstruction : cfg.Colors.AsmFunctionColor;
+            cb.Add(string, mapColor);
+        }
+        assert(mappingPtr);
     }
 
     // string.SetFormat("0x%" PRIx64 ":           %s %s", insn[j].address, insn[j].mnemonic, insn[j].op_str);
@@ -669,7 +675,8 @@ bool populateAsmPreCacheData(
             }
             else
             {
-                asmCacheLine.op_str = strdup(insn->op_str);
+                asmCacheLine.op_str      = strdup(insn->op_str);
+                asmCacheLine.op_str_size = strlen(asmCacheLine.op_str);
                 zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
                 cs_free(insn, 1);
                 currentLine++;
@@ -681,8 +688,9 @@ bool populateAsmPreCacheData(
         if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::CallFlag && insn->op_str[0] == '0' && insn->op_str[1] == '\0')
         {
             NumericFormatter n;
-            const auto res      = n.ToString(zone->cachedCodeOffsets[0].offset, { NumericFormatFlags::HexPrefix, 16 });
-            asmCacheLine.op_str = strdup(res.data());
+            const auto res           = n.ToString(zone->cachedCodeOffsets[0].offset, { NumericFormatFlags::HexPrefix, 16 });
+            asmCacheLine.op_str      = strdup(res.data());
+            asmCacheLine.op_str_size = strlen(asmCacheLine.op_str);
             zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
             cs_free(insn, 1);
             currentLine++;
@@ -704,7 +712,8 @@ bool populateAsmPreCacheData(
             auto mappingPtr = TryExtractMemoryMapping(settings, hexVal, finalIndex);
             if (mappingPtr)
             {
-                asmCacheLine.mapping = mappingPtr;
+                asmCacheLine.mapping     = mappingPtr;
+                asmCacheLine.op_str_size = mappingPtr->name.size();
                 if (mappingPtr->type == MemoryMappingType::FunctionMapping && !alreadyInitComment)
                 {
                     // TODO: add functions to the obj AsmData to search for name instead of manually doing CRC
@@ -746,12 +755,16 @@ bool populateAsmPreCacheData(
             }
         }
 
-        if (!asmCacheLine.op_str)
-            asmCacheLine.op_str = strdup(insn->op_str);
+        if (!asmCacheLine.op_str && !asmCacheLine.mapping)
+        {
+            asmCacheLine.op_str      = strdup(insn->op_str);
+            asmCacheLine.op_str_size = strlen(asmCacheLine.op_str);
+        }
         zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
         cs_free(insn, 1);
         currentLine++;
     }
+    zone->asmPreCacheData.ComputeMaxLine();
     return true;
 }
 
@@ -823,8 +836,6 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     LocalString<256> spaces;
     spaces.SetChars(' ', std::min<uint16>(256, Layout.startingTextLineOffset));
     chars.Set(spaces);
-
-    HighlightCurrentLine(dli, chars);
 
     if (dli.textLineToDraw == 0)
     {
@@ -920,11 +931,13 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     const auto it = zone->comments.find(currentLine);
     if (it != zone->comments.end())
     {
-        auto len = 10;
-        if (chars.Len() < DISSAM_MINIMUM_COMMENTS_X)
-            len = DISSAM_MINIMUM_COMMENTS_X - chars.Len();
+        uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
+        if (chars.Len() > diffLine)
+            diffLine = commentPaddingLength;
+        else
+            diffLine -= chars.Len();
         LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
-        spaces.AddChars(' ', len);
+        spaces.AddChars(' ', diffLine);
         spaces.AddChars(';', 1);
         chars.Add(spaces, config.Colors.AsmComment);
         chars.Add(it->second, config.Colors.AsmComment);

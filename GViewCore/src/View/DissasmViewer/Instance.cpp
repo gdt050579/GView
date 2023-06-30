@@ -751,18 +751,6 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view s
     }
 }
 
-void Instance::HighlightCurrentLine(DrawLineInfo& dli, CharacterBuffer& cb)
-{
-    if (Cursor.lineInView != dli.screenLineToDraw)
-        return;
-    if (cb.Len() < 5)
-        return;
-    const auto buffer = cb.GetBuffer();
-    buffer[0].Code = '-';
-    buffer[1].Code = '-';
-    buffer[2].Code = '>';
-}
-
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...)
 {
     // TODO: increase and use more size
