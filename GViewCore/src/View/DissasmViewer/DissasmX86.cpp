@@ -846,7 +846,8 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return true;
     }
 
-    if (dli.textLineToDraw == 1)
+    const bool firstLineToDraw = dli.screenLineToDraw == 0;
+    if (dli.textLineToDraw == 1 || firstLineToDraw)
     {
         const ColorPair titleColumnColor = { config.Colors.AsmTitleColumnColor.Foreground, config.Colors.AsmTitleColor.Background };
 
@@ -891,7 +892,9 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         return true;
     }
 
-    const uint32 currentLine = dli.textLineToDraw - 1u;
+    uint32 currentLine = dli.textLineToDraw - 1u;
+    if (firstLineToDraw)
+        --currentLine;
 
     // TODO: move this in onCreate and use a boolean value if enabled
     if (!cs_support(CS_ARCH_X86))
