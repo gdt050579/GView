@@ -157,10 +157,10 @@ extern "C"
                     uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
                     entryPoint        = pe->RVAtoFilePointer(entryPoint);
 
-                    DissasmViewer::DissasmArchitecture architecture =
-                          pe->hdr64 ? DissasmViewer::DissasmArchitecture::x64 : DissasmViewer::DissasmArchitecture::x86;
+                    DissasmViewer::DisassemblyLanguage language =
+                          pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, architecture);
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
                     break;
                 }
             }

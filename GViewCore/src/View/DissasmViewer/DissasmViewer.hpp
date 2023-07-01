@@ -72,7 +72,6 @@ namespace View
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;
-            DissasmArchitecture architecture;
         };
 
         enum class InternalDissasmType : uint8
@@ -94,7 +93,7 @@ namespace View
             CustomTypesStartingId
         };
 
-        struct DissasmType
+        struct DissasmStructureType
         {
             InternalDissasmType primaryType;
             std::string_view name;
@@ -103,7 +102,7 @@ namespace View
             uint32 width;
             uint32 height;
 
-            std::vector<DissasmType> internalTypes;
+            std::vector<DissasmStructureType> internalTypes;
             uint32 GetExpandedSize() const;
         };
 
@@ -129,8 +128,8 @@ namespace View
         struct DissasmParseStructureZone : public ParseZone
         {
             int16 structureIndex;
-            DissasmType dissasmType;
-            std::list<std::reference_wrapper<const DissasmType>> types;
+            DissasmStructureType dissasmType;
+            std::list<std::reference_wrapper<const DissasmStructureType>> types;
             std::list<int32> levels;
             uint64 textFileOffset;
             uint64 initialTextFileOffset;
@@ -264,11 +263,15 @@ namespace View
             void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
         };
 
+        struct DissasmCodeInternalType
+        {
+            std::unordered_map<uint32, std::string> annotations;
+            bool isCollapsed;
+            std::vector<DissasmCodeInternalType> internalTypes;
+        };
+
         struct DissasmCodeZone : public ParseZone
         {
-            // uint32 startingCacheLineIndex;
-            // uint64 lastInstrOffsetInCachedLines;
-            // std::vector<CharacterBuffer> cachedLines;
             uint32 lastDrawnLine; // optimization not to recompute buffer every time
             uint32 lastClosestLine;
             uint32 offsetCacheMaxLine;
@@ -276,6 +279,11 @@ namespace View
 
             const uint8* asmData;
             uint64 asmSize, asmAddress;
+
+            int32 structureIndex;
+            std::list<std::reference_wrapper<const DissasmCodeInternalType>> types;
+            std::list<int32> levels;
+            DissasmCodeInternalType dissasmType;
 
             DissasmAsmPreCacheData asmPreCacheData;
 
@@ -317,9 +325,9 @@ namespace View
             std::unordered_map<uint64, MemoryMappingEntry> memoryMappings; // memory locations to functions
             std::vector<uint64> offsetsToSearch;
             std::vector<std::unique_ptr<ParseZone>> parseZones;
-            std::map<uint64, DissasmType> dissasmTypeMapped; // mapped types against the offset of the file
+            std::map<uint64, DissasmStructureType> dissasmTypeMapped; // mapped types against the offset of the file
             std::map<uint64, CollapsibleAndTextData> collapsibleAndTextZones;
-            std::unordered_map<TypeID, DissasmType> userDesignedTypes; // user defined types
+            std::unordered_map<TypeID, DissasmStructureType> userDesignedTypes; // user defined types
             Reference<BufferViewer::OffsetTranslateInterface> offsetTranslateCallback;
             SettingsData();
         };
@@ -507,15 +515,16 @@ namespace View
             AsmData asmData;
             JumpsHolder jumps_holder;
 
-            inline void UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
+            inline void UpdateCurrentZoneIndex(const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset);
 
             void RecomputeDissasmLayout();
             bool WriteTextLineToChars(DrawLineInfo& dli);
-            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
+            bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
             bool InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
+            bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
             void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);

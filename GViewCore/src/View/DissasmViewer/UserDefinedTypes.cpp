@@ -21,7 +21,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 {
     uint32& availableValue = INTERNAL_SETTINGS->availableID;
 
-    DissasmType userType{ InternalDissasmType::UserDefined, name, 0, 0, 0, {} };
+    DissasmStructureType userType{ InternalDissasmType::UserDefined, name, 0, 0, 0, {} };
 
     char* newBuffer = new char[definition.size() + 1];
     memcpy(newBuffer, definition.data(), definition.size());
@@ -38,7 +38,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
     const char* startingNamePtr = start;
     uint32 size                 = 0;
     uint32 arraySizes           = 0;
-    DissasmType newType{};
+    DissasmStructureType newType{};
 
     while (start < end)
     {
@@ -126,7 +126,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
 
             size = 0;
             userType.internalTypes.push_back(newType);
-            newType = DissasmType{};
+            newType = DissasmStructureType{};
         }
         else if (*start == '\n' || *start == '\r')
         {
@@ -148,7 +148,7 @@ TypeID Settings::AddType(std::string_view name, std::string_view definition)
     return availableValue++;
 }
 
-uint32 DissasmType::GetExpandedSize() const
+uint32 DissasmStructureType::GetExpandedSize() const
 {
     uint32 result = 1;
     for (const auto& child : this->internalTypes)

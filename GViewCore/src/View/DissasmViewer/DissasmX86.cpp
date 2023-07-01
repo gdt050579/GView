@@ -773,23 +773,24 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     uint32 totalLines = 0;
     if (!populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture, totalLines))
     {
-        // dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
-        // return false;
+        dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        return false;
     }
     AdjustZoneExtendedSize(zone, totalLines + 1); //+1 for title
     zone->lastDrawnLine    = 0;
     const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
     zone->lastClosestLine  = closestData.line;
-    switch (zone->zoneDetails.architecture)
+    switch (zone->zoneDetails.language)
     {
-    case DissasmArchitecture::x86:
+    case DisassemblyLanguage::x86:
         zone->internalArchitecture = CS_MODE_32;
         break;
-    case DissasmArchitecture::x64:
+    case DisassemblyLanguage::x64:
         zone->internalArchitecture = CS_MODE_64;
         break;
-    case DissasmArchitecture::Other:
+    default:
     {
+        dli.WriteErrorToScreen("ERROR: unsupported language!");
         return false;
     }
     }
@@ -813,17 +814,11 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     return true;
 }
 
-bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
+bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0)
     {
         dli.WriteErrorToScreen("No data available!");
-        return true;
-    }
-
-    if (zone->zoneDetails.architecture == DissasmArchitecture::Other)
-    {
-        dli.WriteErrorToScreen("Unsupported architecture!");
         return true;
     }
 

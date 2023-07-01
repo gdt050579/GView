@@ -374,7 +374,8 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     return true;
 }
 
-inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(const DissasmType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
+inline void GView::View::DissasmViewer::Instance::UpdateCurrentZoneIndex(
+      const DissasmStructureType& cType, DissasmParseStructureZone* zone, bool increaseOffset)
 {
     if (cType.primaryType >= InternalDissasmType::UInt8 && cType.primaryType <= InternalDissasmType::Int64)
     {
@@ -415,8 +416,8 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     // TODO: consider optimization if the levelToReach > levelNow and levelToReach should reach close to 0 then it all should be reset to 0
     while (levelNow < (int16) levelToReach)
     {
-        const DissasmType& currentType = structureZone->types.back();
-        int currentLevel               = structureZone->levels.back();
+        const DissasmStructureType& currentType = structureZone->types.back();
+        int currentLevel                        = structureZone->levels.back();
 
         switch (currentType.primaryType)
         {
@@ -459,8 +460,8 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
 
     while (levelNow > (int16) levelToReach)
     {
-        const DissasmType& currentType = structureZone->types.back();
-        int currentLevel               = structureZone->levels.back();
+        const DissasmStructureType& currentType = structureZone->types.back();
+        int currentLevel                        = structureZone->levels.back();
 
         switch (currentType.primaryType)
         {
@@ -515,11 +516,11 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     return true;
 }
 
-bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
+bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
 {
     ColorPair normalColor = config.Colors.Normal;
 
-    dli.chLineStart = this->chars.GetBuffer();
+    dli.chLineStart   = this->chars.GetBuffer();
     dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
 
     auto clearChar = this->chars.GetBuffer();
@@ -645,7 +646,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmType& curr
 
 bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone)
 {
-    dli.chLineStart = this->chars.GetBuffer();
+    dli.chLineStart   = this->chars.GetBuffer();
     dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
 
     auto clearChar = dli.chLineStart;
@@ -734,6 +735,17 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
     return true;
 }
 
+bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
+{
+    if (zone->zoneDetails.language != DisassemblyLanguage::x86 && zone->zoneDetails.language != DisassemblyLanguage::x64)
+    {
+        dli.WriteErrorToScreen("Not yet supported language!");
+        return true;
+    }
+
+    return DrawDissasmX86AndX64CodeZone(dli, zone);
+}
+
 void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone)
 {
     ButtonsData bData = { 3, (int) (dli.screenLineToDraw + 1), c, config.Colors.DataTypeColor, 3, zone };
@@ -811,14 +823,14 @@ void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 max
         else
             dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
 
-        auto ch = dli.chLineStart;
-        ch->Code = codePage['-'];
+        auto ch   = dli.chLineStart;
+        ch->Code  = codePage['-'];
         ch->Color = config.Colors.Highlight;
         ch++;
-        ch->Code = codePage['-'];
+        ch->Code  = codePage['-'];
         ch->Color = config.Colors.Highlight;
         ch++;
-        ch->Code = codePage['>'];
+        ch->Code  = codePage['>'];
         ch->Color = config.Colors.Highlight;
     }
 }
@@ -886,7 +898,7 @@ void Instance::RecomputeDissasmZones()
             {
             case DissasmParseZoneType::StructureParseZone:
             {
-                const auto convertedData   = static_cast<DissasmType*>(entry.data);
+                const auto convertedData   = static_cast<DissasmStructureType*>(entry.data);
                 auto parseZone             = std::make_unique<DissasmParseStructureZone>();
                 parseZone->startLineIndex  = zoneStartingLine;
                 parseZone->endingLineIndex = parseZone->startLineIndex + 1;
@@ -1136,7 +1148,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
 
     dli.start         = buf.GetData();
     dli.end           = buf.GetData() + buf.GetLength();
-    dli.chLineStart = this->chars.GetBuffer();
+    dli.chLineStart   = this->chars.GetBuffer();
     dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
     dli.chText        = dli.chNameAndSize;
 
@@ -1324,7 +1336,7 @@ Instance::~Instance()
     }
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone *zone, const AsmFunctionDetails* functionDetails)
+void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails)
 {
     if (cachedAsmLines.empty())
         return;
@@ -1333,7 +1345,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone *zon
     const uint32 startingLine = cachedAsmLines.back().currentLine;
     uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
 
-    for (auto it = cachedAsmLines.rbegin() + 1; it != cachedAsmLines.rend() &&pushesRemaining; ++it)
+    for (auto it = cachedAsmLines.rbegin() + 1; it != cachedAsmLines.rend() && pushesRemaining; ++it)
     {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
