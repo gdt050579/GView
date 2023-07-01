@@ -740,6 +740,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     if (zone->zoneDetails.language != DisassemblyLanguage::x86 && zone->zoneDetails.language != DisassemblyLanguage::x64)
     {
         dli.WriteErrorToScreen("Not yet supported language!");
+        AdjustZoneExtendedSize(zone, 1);
         return true;
     }
 

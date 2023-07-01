@@ -634,6 +634,63 @@ inline optional<vector<uint8>> TryExtractPushText(Reference<GView::Object> obj, 
     return textFound;
 }
 
+void DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine)
+{
+    const uint32 levelToReach = currentLine;
+    uint32& levelNow          = zone->structureIndex;
+    bool reAdapt              = false;
+    while (true)
+    {
+        const DissasmCodeInternalType& currentType = zone->types.back();
+        if (currentType.indexZoneStart <= levelToReach && currentType.indexZoneEnd >= levelToReach)
+            break;
+        zone->types.pop_back();
+        zone->levels.back();
+        reAdapt = true;
+    }
+
+    while (reAdapt && !zone->types.back().get().internalTypes.empty())
+    {
+        DissasmCodeInternalType& currentType = zone->types.back();
+        for (uint32 i = 0; i < currentType.internalTypes.size(); i++)
+        {
+            auto& internalType = currentType.internalTypes[i];
+            if (internalType.indexZoneStart <= levelToReach && internalType.indexZoneEnd >= levelToReach)
+            {
+                zone->types.push_back(internalType);
+                zone->levels.push_back(i);
+                break;
+            }
+        }
+    }
+
+    DissasmCodeInternalType& currentType = zone->types.back();
+
+    // TODO: maybe use some caching here?
+    if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach)
+    {
+        currentType.textLinesPassed = 0;
+        currentType.asmLinesPassed  = 0;
+        for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++)
+        {
+            if (currentType.annotations.contains(i))
+            {
+                currentType.textLinesPassed++;
+                continue;
+            }
+            currentType.asmLinesPassed++;
+        }
+    }
+    else
+    {
+        if (currentType.annotations.contains(levelNow))
+            currentType.textLinesPassed++;
+        else
+            currentType.asmLinesPassed++;
+    }
+    levelNow = levelToReach;
+}
+
 bool populateAsmPreCacheData(
       Config& config,
       Reference<GView::Object> obj,
@@ -649,6 +706,7 @@ bool populateAsmPreCacheData(
     const uint32 endingLine = currentLine + linesToPrepare;
     while (currentLine < endingLine)
     {
+        DissasmPrepareCodeZone(zone, currentLine);
         cs_insn* insn = GetCurrentInstructionByLine(currentLine, zone, obj, diffLines, &dli);
         if (!insn)
             return false;
@@ -770,13 +828,22 @@ bool populateAsmPreCacheData(
 
 bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
+    // TODO: move this on init
+    if (!cs_support(CS_ARCH_X86))
+    {
+        dli.WriteErrorToScreen("Capstone does not support X86");
+        AdjustZoneExtendedSize(zone, 1);
+        return false;
+    }
+
     uint32 totalLines = 0;
     if (!populate_offsets_vector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture, totalLines))
     {
         dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
         return false;
     }
-    AdjustZoneExtendedSize(zone, totalLines + 1); //+1 for title
+    totalLines++; //+1 for title
+    AdjustZoneExtendedSize(zone, totalLines);
     zone->lastDrawnLine    = 0;
     const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
     zone->lastClosestLine  = closestData.line;
@@ -810,6 +877,13 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
     const uint32 preReverseSize = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
     zone->asmPreCacheData.cachedAsmLines.reserve(preReverseSize);
+
+    zone->structureIndex = 1;
+    zone->types.push_back(zone->dissasmType);
+    zone->levels.push_back(0);
+
+    zone->dissasmType.indexZoneStart = 1; //+1 for the title
+    zone->dissasmType.indexZoneEnd   = totalLines + 1;
 
     return true;
 }
@@ -900,21 +974,18 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (firstLineToDraw)
         --currentLine;
 
-    // TODO: move this in onCreate and use a boolean value if enabled
-    if (!cs_support(CS_ARCH_X86))
-    {
-        dli.WriteErrorToScreen("Capstone does not support X86");
-        AdjustZoneExtendedSize(zone, 1);
-        return false;
-    }
-
     if (!zone->isInit)
     {
         if (!InitDissasmZone(dli, zone))
             return false;
     }
 
-    const uint32 linesToPrepare = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
+    // move the function DissasmPrepareCodeZone as a function inside DissasmCodeZone
+    // DissasmPrepareCodeZone(zone, currentLine);
+
+    uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
+    const uint32 remainingLines = zone->extendedSize - currentLine + 1;
+    linesToPrepare              = std::min<uint32>(linesToPrepare, remainingLines);
     if (zone->asmPreCacheData.cachedAsmLines.empty())
         populateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare);
 

@@ -265,6 +265,14 @@ namespace View
 
         struct DissasmCodeInternalType
         {
+            uint32 indexZoneStart;
+            uint32 indexZoneEnd;
+
+            uint32 beforeTextLines;
+            uint32 beforeAsmLines;
+
+            uint32 textLinesPassed;
+            uint32 asmLinesPassed;
             std::unordered_map<uint32, std::string> annotations;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
@@ -280,9 +288,9 @@ namespace View
             const uint8* asmData;
             uint64 asmSize, asmAddress;
 
-            int32 structureIndex;
-            std::list<std::reference_wrapper<const DissasmCodeInternalType>> types;
-            std::list<int32> levels;
+            uint32 structureIndex;
+            std::list<std::reference_wrapper<DissasmCodeInternalType>> types;
+            std::list<uint32> levels;
             DissasmCodeInternalType dissasmType;
 
             DissasmAsmPreCacheData asmPreCacheData;
