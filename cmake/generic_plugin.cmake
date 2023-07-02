@@ -47,6 +47,18 @@ function (create_generic_plugin generic_plugin_name)
 		set_target_properties(${PROJECT_NAME} PROPERTIES
 		    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/GenericPlugins"
 		    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/GenericPlugins")
+
+		if (APPLE)
+			if (CMAKE_GENERATOR STREQUAL "Xcode")
+				set_target_properties(${PROJECT_NAME} PROPERTIES
+					ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}/GenericPlugins"
+					LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}/GenericPlugins"
+					RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}/GenericPlugins"
+					ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}/GenericPlugins"
+					LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}/GenericPlugins"
+					RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}/GenericPlugins")
+			endif()
+		endif()
 	endif()
    	   
 	get_target_property(F ${PROJECT_NAME} FOLDER)
