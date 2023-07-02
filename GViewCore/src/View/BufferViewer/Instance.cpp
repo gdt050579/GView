@@ -840,6 +840,8 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
         const char* nm_end = nullptr;
 
         if (auto z = this->settings->zList.OffsetToZone(dli.offset))
+        auto z = this->settings->zList.OffsetToZone(dli.offset);
+        if (z)
         {
             nm     = z->name.GetText();
             nm_end = nm + z->name.Len();
