@@ -45,7 +45,7 @@ struct CORE_EXPORT TypeInterface
     {
         return 0;
     }
-    virtual SelectionZone GetSelectionZone(uint32 index)
+    virtual SelectionZone GetSelectionZone(uint32)
     {
         return { 0, 0 };
     }

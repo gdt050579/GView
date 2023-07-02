@@ -27,7 +27,7 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
     }
     return false;
 }
-bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String& error)
+bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, String&)
 {
     switch (propertyID)
     {
@@ -46,10 +46,10 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     }
     return false;
 }
-void Instance::SetCustomPropertyValue(uint32 propertyID)
+void Instance::SetCustomPropertyValue(uint32)
 {
 }
-bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
+bool Instance::IsPropertyValueReadOnly(uint32)
 {
     return false;
     // return propertyID == PROP_ID_DISSASM_LANGUAGE;

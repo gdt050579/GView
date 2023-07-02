@@ -11,7 +11,7 @@ using namespace GView::App;
 using namespace GView::View;
 using namespace AppCUI::Input;
 
-constexpr int HORIZONTA_PANEL_ID         = 100000;
+// constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
@@ -37,7 +37,7 @@ class CursorInformation : public UserControl
 };
 
 FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp, Reference<Type::Plugin> _typePlugin)
-    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj)), typePlugin(_typePlugin)
+: Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), typePlugin(_typePlugin), obj(std::move(_obj))
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters

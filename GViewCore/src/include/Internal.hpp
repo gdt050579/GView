@@ -552,6 +552,7 @@ namespace App
 
       public:
         Instance();
+        virtual ~Instance() {}
         bool Init();
         bool AddFileWindow(const std::filesystem::path& path, OpenMethod method, string_view typeName, Reference<Window> parent = nullptr);
         bool AddBufferWindow(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, string_view typeName, Reference<Window> parent);

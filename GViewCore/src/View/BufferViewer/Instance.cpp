@@ -836,26 +836,19 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
     if (this->Layout.lineNameSize > 0)
     {
         auto e             = n + this->Layout.lineNameSize;
-        const char* nm     = nullptr;
-        const char* nm_end = nullptr;
+        const char* nm     = "--------------------------------------------------------------------------------------------------------------";
+        const char* nm_end = nm + 100;
 
-        if (auto z = this->settings->zList.OffsetToZone(dli.offset))
+        auto z = this->settings->zList.OffsetToZone(dli.offset);
+        if (z)
         {
             nm     = z->name.GetText();
             nm_end = nm + z->name.Len();
         }
-        else
-        {
-            nm     = "--------------------------------------------------------------------------------------------------------------";
-            nm_end = nm + 100;
-        }
 
         while (n < e)
         {
-            if (nm < nm_end)
-                n->Code = *nm;
-            else
-                n->Code = ' ';
+            n->Code = nm < nm_end ? *nm : ' ';
             n->Color = c;
             n++;
             nm++;

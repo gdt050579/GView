@@ -83,7 +83,7 @@ void GoToDialog::Validate()
     Exit(Dialogs::Result::Ok);
 }
 
-bool GoToDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
+bool GoToDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     switch (eventType)
     {

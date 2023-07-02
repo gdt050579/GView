@@ -181,7 +181,7 @@ bool AreaHighlighter::FindExecutedCode()
     return true;
 }
 
-bool AreaHighlighter::GetColorForByteAt(uint64 offset, const GView::View::ViewData& vd, ColorPair& cp)
+bool AreaHighlighter::GetColorForByteAt(uint64 offset, const GView::View::ViewData&, ColorPair& cp)
 {
     for (const auto& [k, v] : addresses)
     {
@@ -195,7 +195,7 @@ bool AreaHighlighter::GetColorForByteAt(uint64 offset, const GView::View::ViewDa
     return false;
 }
 
-bool AreaHighlighter::OnEvent(Reference<Control> ctrl, Event evnt, int controlID)
+bool AreaHighlighter::OnEvent(Reference<Control>, Event evnt, int controlID)
 {
     switch (evnt)
     {

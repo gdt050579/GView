@@ -339,7 +339,7 @@ namespace View
 
             void insert(CursorState&& newState)
             {
-                for (int32 i = 0; i < jumps.size(); i++)
+                for (uint32 i = 0u; i < jumps.size(); i++)
                     if (jumps[i] == newState)
                     {
                         current_index = i;
