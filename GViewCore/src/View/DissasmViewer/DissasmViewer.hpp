@@ -273,7 +273,7 @@ namespace View
 
             uint32 textLinesPassed;
             uint32 asmLinesPassed;
-            std::unordered_map<uint32, std::string> annotations;
+            std::unordered_map<uint32, std::pair<std::string,uint64>> annotations;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
         };
