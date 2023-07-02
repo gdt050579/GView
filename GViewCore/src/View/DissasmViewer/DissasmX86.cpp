@@ -641,9 +641,12 @@ inline bool ExtractCallsToInsertFunctionNames(
 
         uint32 diffLines = 0;
         auto callInsn    = GetCurrentInstructionByOffset(callValue, zone, obj, diffLines);
-        callInsn         = callInsn;
-        zone->dissasmType.annotations.insert({ diffLines, { call.second, callValue - offsets[0].offset } });
-        cs_free(callInsn, 1);
+        if (callInsn)
+        {
+            zone->dissasmType.annotations.insert({ diffLines, { call.second, callValue - offsets[0].offset } });
+            cs_free(callInsn, 1);
+        }
+
     }
     totalLines += static_cast<uint32>(callsFound.size());
     cs_free(insn, 1);
@@ -963,11 +966,11 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
         return false;
     }
-    if (!ExtractCallsToInsertFunctionNames(zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines, settings->maxLocationMemoryMappingSize))
-    {
-        dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
-        return false;
-    }
+    //if (!ExtractCallsToInsertFunctionNames(zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines, settings->maxLocationMemoryMappingSize))
+    //{
+    //    dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+    //    return false;
+    //}
     totalLines++; //+1 for title
     AdjustZoneExtendedSize(zone, totalLines);
     zone->lastDrawnLine    = 0;
@@ -1102,8 +1105,10 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (zone->asmPreCacheData.cachedAsmLines.empty())
         populateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare);
 
-    auto& asmCacheLine = zone->asmPreCacheData.GetLine();
-    DissasmAddColorsToInstruction(asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
+    auto asmCacheLine = zone->asmPreCacheData.GetLine();
+    if (!asmCacheLine)
+        return false;
+    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
 
     zone->lastDrawnLine = currentLine;
 

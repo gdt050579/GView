@@ -222,9 +222,11 @@ namespace View
                 return it->second > 0;
             }
 
-            DissasmAsmPreCacheLine& GetLine()
+            DissasmAsmPreCacheLine* GetLine()
             {
-                return cachedAsmLines[index++];
+                if (index >= cachedAsmLines.size())
+                    return nullptr;
+                return &cachedAsmLines[index++];
             }
 
             void Clear()
