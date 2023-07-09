@@ -62,6 +62,7 @@ namespace View
             bool Loaded;
 
             bool ShowFileContent;
+            bool EnableDeepScanDissasmOnStart;
             static void Update(IniSection sect);
             void Initialize();
         };

@@ -580,7 +580,7 @@ inline cs_insn* GetCurrentInstructionByOffset(
         }
         diffLines++;
     }
-    diffLines += closestData.line;
+    diffLines += closestData.line - 1;
     cs_close(&handle);
     return insn;
 }
@@ -628,7 +628,7 @@ inline bool ExtractCallsToInsertFunctionNames(
                 auto sv = formatter.ToString(value, NumericFormatFlags::HexPrefix);
                 LocalString<64> callName;
                 callName.SetFormat("sub_%s", sv.data());
-                callsFound.push_back({ value, callName.GetText() });
+                callsFound.emplace_back(value, callName.GetText());
             }
         }
     }
@@ -714,7 +714,7 @@ inline optional<vector<uint8>> TryExtractPushText(Reference<GView::Object> obj, 
     return textFound;
 }
 
-std::optional<uint32> DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine)
+std::optional<uint32> DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine, bool populateAsmPreCacheData)
 {
     const uint32 levelToReach = currentLine;
     uint32& levelNow          = zone->structureIndex;
@@ -769,22 +769,26 @@ std::optional<uint32> DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 curre
             currentType.asmLinesPassed++;
     }
 
+    levelNow = levelToReach;
+
     const auto foundAnnotation = currentType.annotations.find(levelToReach);
     if (foundAnnotation != currentType.annotations.end())
     {
+        if (!populateAsmPreCacheData)
+            return {};
+
         DissasmAsmPreCacheLine asmCacheLine{};
         asmCacheLine.address = foundAnnotation->second.second;
         strncpy(asmCacheLine.mnemonic, foundAnnotation->second.first.data(), sizeof(asmCacheLine.mnemonic));
-        strncpy((char*) asmCacheLine.bytes, "------", sizeof(asmCacheLine.bytes));
-        asmCacheLine.size        = static_cast<uint32>(strlen((char*) asmCacheLine.bytes));
+        // strncpy((char*) asmCacheLine.bytes, "------", sizeof(asmCacheLine.bytes));
+        // asmCacheLine.size        = static_cast<uint32>(strlen((char*) asmCacheLine.bytes));
+        asmCacheLine.size        = 0;
         asmCacheLine.currentLine = currentLine;
         asmCacheLine.op_str      = strdup("<--");
         asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
         zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
         return {};
     }
-
-    levelNow = levelToReach;
 
     return currentType.asmLinesPassed + currentType.beforeAsmLines - 1;
 }
@@ -921,7 +925,7 @@ bool populateAsmPreCacheData(
     const uint32 endingLine = currentLine + linesToPrepare;
     while (currentLine < endingLine)
     {
-        auto adjustedLine = DissasmPrepareCodeZone(zone, currentLine);
+        auto adjustedLine = DissasmPrepareCodeZone(zone, currentLine, true);
         if (adjustedLine.has_value())
         {
             if (!ExtractDissasmAsmPreCacheLineFromCsInsn(obj, settings, asmData, dli, zone, adjustedLine.value()))
@@ -967,12 +971,12 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
         return false;
     }
-    // if (!ExtractCallsToInsertFunctionNames(zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines,
-    // settings->maxLocationMemoryMappingSize))
-    //{
-    //    dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
-    //    return false;
-    //}
+    if (config.EnableDeepScanDissasmOnStart &&
+        !ExtractCallsToInsertFunctionNames(zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines, settings->maxLocationMemoryMappingSize))
+    {
+        dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        return false;
+    }
     totalLines++; //+1 for title
     AdjustZoneExtendedSize(zone, totalLines);
     zone->lastDrawnLine    = 0;
@@ -1229,7 +1233,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     cs_insn* insn;
     if (!offsetToReach)
     {
-        insn = GetCurrentInstructionByLine(line - 1, zone, obj, diffLines);
+        insn = GetCurrentInstructionByLine(line - 2, zone, obj, diffLines);
         if (!insn)
         {
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
