@@ -462,11 +462,13 @@ inline cs_insn* GetCurrentInstructionByLine(
 {
     uint32 lineDifferences = 1;
     // TODO: first or be transformed into an abs ?
-    if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineToReach >= zone->offsetCacheMaxLine)
+    const bool lineIsAtMargin = lineToReach >= zone->offsetCacheMaxLine;
+    if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineIsAtMargin)
     {
         // TODO: can be inlined as function
         uint32 codeOffsetIndex = 0;
         const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach, &codeOffsetIndex);
+        const bool samePreviousZone = closestData.line == zone->lastClosestLine;
         zone->lastClosestLine  = closestData.line;
         zone->asmAddress       = closestData.offset - zone->cachedCodeOffsets[0].offset;
         zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
@@ -475,7 +477,7 @@ inline cs_insn* GetCurrentInstructionByLine(
         else
             zone->offsetCacheMaxLine = UINT32_MAX;
 
-        if (closestData.line != zone->lastClosestLine)
+        if (!samePreviousZone)
         {
             // TODO: maybe get less data ?
             const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
@@ -491,7 +493,7 @@ inline cs_insn* GetCurrentInstructionByLine(
         zone->asmData = const_cast<uint8*>(zone->lastData.GetData());
         // if (lineInView > zone->lastDrawnLine)
         //     lineDifferences = lineInView - zone->lastDrawnLine + 1;
-        lineDifferences = lineToReach - closestData.line;
+        lineDifferences = lineToReach - closestData.line + 1;
     }
 
     if (diffLines == 1)
@@ -646,7 +648,6 @@ inline bool ExtractCallsToInsertFunctionNames(
             zone->dissasmType.annotations.insert({ diffLines, { call.second, callValue - offsets[0].offset } });
             cs_free(callInsn, 1);
         }
-
     }
     totalLines += static_cast<uint32>(callsFound.size());
     cs_free(insn, 1);
@@ -785,7 +786,7 @@ std::optional<uint32> DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 curre
 
     levelNow = levelToReach;
 
-    return currentType.asmLinesPassed + currentType.beforeAsmLines;
+    return currentType.asmLinesPassed + currentType.beforeAsmLines - 1;
 }
 
 bool ExtractDissasmAsmPreCacheLineFromCsInsn(
@@ -966,7 +967,8 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
         dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
         return false;
     }
-    //if (!ExtractCallsToInsertFunctionNames(zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines, settings->maxLocationMemoryMappingSize))
+    // if (!ExtractCallsToInsertFunctionNames(zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines,
+    // settings->maxLocationMemoryMappingSize))
     //{
     //    dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
     //    return false;
@@ -993,11 +995,11 @@ bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     const uint32 preReverseSize = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
     zone->asmPreCacheData.cachedAsmLines.reserve(preReverseSize);
 
-    zone->structureIndex = 1;
+    zone->structureIndex = 0;
     zone->types.push_back(zone->dissasmType);
     zone->levels.push_back(0);
 
-    zone->dissasmType.indexZoneStart = 1; //+1 for the title
+    zone->dissasmType.indexZoneStart = 0; //+1 for the title
     zone->dissasmType.indexZoneEnd   = totalLines + 1;
     // zone->dissasmType.annotations.insert({ 2, "loc fn" });
 
@@ -1086,7 +1088,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         return true;
     }
 
-    uint32 currentLine = dli.textLineToDraw - 1u;
+    uint32 currentLine = dli.textLineToDraw - 2u;
     if (firstLineToDraw)
         --currentLine;
 
