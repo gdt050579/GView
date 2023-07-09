@@ -47,8 +47,8 @@ namespace View
                 ColorPair AsmJumpInstruction;            // jmp
                 ColorPair AsmComment;                    // comments added by user
                 ColorPair AsmDefaultColor;               // rest of things
-                ColorPair AsmTitleColor;                
-                ColorPair AsmTitleColumnColor;                
+                ColorPair AsmTitleColor;
+                ColorPair AsmTitleColumnColor;
             } Colors;
             struct
             {
@@ -235,7 +235,7 @@ namespace View
                 for (const auto& cachedLine : cachedAsmLines)
                     free(cachedLine.op_str);
                 cachedAsmLines.clear();
-                index = 0;
+                index       = 0;
                 maxLineSize = 0;
             }
 
@@ -276,9 +276,24 @@ namespace View
 
             uint32 textLinesPassed;
             uint32 asmLinesPassed;
-            std::unordered_map<uint32, std::pair<std::string,uint64>> annotations;
+            std::unordered_map<uint32, std::pair<std::string, uint64>> annotations;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
+
+            uint32 GetCurrentAsmLine() const
+            {
+                return beforeAsmLines + asmLinesPassed;
+            }
+
+            uint32 GetCurrentTextLine() const
+            {
+                return beforeTextLines + textLinesPassed;
+            }
+
+            uint32 GetCurrentActualLine() const
+            {
+                return beforeAsmLines + asmLinesPassed + beforeTextLines + textLinesPassed;
+            }
         };
 
         struct DissasmCodeZone : public ParseZone
@@ -386,8 +401,7 @@ namespace View
             ColorPair errorColor;
             DrawLineInfo(Renderer& renderer, uint32 lineOffset, ColorPair errorColor)
                 : start(nullptr), end(nullptr), chLineStart(nullptr), chNameAndSize(nullptr), chText(nullptr), recomputeOffsets(true), currentLineFromOffset(0),
-                  screenLineToDraw(0),
-                  textLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
+                  screenLineToDraw(0), textLineToDraw(0), renderer(renderer), lineOffset(lineOffset), errorColor(errorColor)
             {
             }
 

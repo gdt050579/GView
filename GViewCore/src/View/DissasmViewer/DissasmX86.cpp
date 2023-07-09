@@ -10,6 +10,9 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
+// TODO: performance improvements
+//  consider using the same cs_insn and cs handle for all instructions that are on the same thread instead of creating new ones
+
 constexpr size_t DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
 constexpr uint32 callOP                            = 1819042147u; //*(uint32*) "call";
 constexpr uint32 addOP                             = 6579297u;    //*((uint32*) "add");
@@ -466,12 +469,12 @@ inline cs_insn* GetCurrentInstructionByLine(
     if (lineToReach < zone->lastDrawnLine || lineToReach - zone->lastDrawnLine > 1 || lineIsAtMargin)
     {
         // TODO: can be inlined as function
-        uint32 codeOffsetIndex = 0;
-        const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach, &codeOffsetIndex);
+        uint32 codeOffsetIndex      = 0;
+        const auto closestData      = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, lineToReach, &codeOffsetIndex);
         const bool samePreviousZone = closestData.line == zone->lastClosestLine;
-        zone->lastClosestLine  = closestData.line;
-        zone->asmAddress       = closestData.offset - zone->cachedCodeOffsets[0].offset;
-        zone->asmSize          = zone->zoneDetails.size - zone->asmAddress;
+        zone->lastClosestLine       = closestData.line;
+        zone->asmAddress            = closestData.offset - zone->cachedCodeOffsets[0].offset;
+        zone->asmSize               = zone->zoneDetails.size - zone->asmAddress;
         if (static_cast<size_t>(codeOffsetIndex) + 1u < zone->cachedCodeOffsets.size())
             zone->offsetCacheMaxLine = zone->cachedCodeOffsets[static_cast<size_t>(codeOffsetIndex) + 1u].line;
         else
@@ -632,9 +635,9 @@ inline bool ExtractCallsToInsertFunctionNames(
             }
         }
     }
-    //callsFound.push_back({ 1030, "call2" });
-    //callsFound.push_back({ 1130, "call 3" });
-    //callsFound.push_back({ 1140, "call 5" });
+    // callsFound.push_back({ 1030, "call2" });
+    // callsFound.push_back({ 1130, "call 3" });
+    // callsFound.push_back({ 1140, "call 5" });
     for (const auto& call : callsFound)
     {
         uint64 callValue = call.first;
@@ -714,7 +717,7 @@ inline optional<vector<uint8>> TryExtractPushText(Reference<GView::Object> obj, 
     return textFound;
 }
 
-std::optional<uint32> DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine, bool populateAsmPreCacheData)
+std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine, bool populateAsmPreCacheData)
 {
     const uint32 levelToReach = currentLine;
     uint32& levelNow          = zone->structureIndex;
@@ -790,7 +793,11 @@ std::optional<uint32> DissasmPrepareCodeZone(DissasmCodeZone* zone, uint32 curre
         return {};
     }
 
-    return currentType.asmLinesPassed + currentType.beforeAsmLines - 1;
+    const uint32 value = currentType.GetCurrentAsmLine();
+    if (value == 0)
+        return {};
+
+    return value - 1u;
 }
 
 bool ExtractDissasmAsmPreCacheLineFromCsInsn(
@@ -925,7 +932,7 @@ bool populateAsmPreCacheData(
     const uint32 endingLine = currentLine + linesToPrepare;
     while (currentLine < endingLine)
     {
-        auto adjustedLine = DissasmPrepareCodeZone(zone, currentLine, true);
+        auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine, true);
         if (adjustedLine.has_value())
         {
             if (!ExtractDissasmAsmPreCacheLineFromCsInsn(obj, settings, asmData, dli, zone, adjustedLine.value()))
@@ -1102,8 +1109,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
             return false;
     }
 
-    // move the function DissasmPrepareCodeZone as a function inside DissasmCodeZone
-    // DissasmPrepareCodeZone(zone, currentLine);
+    // move the function DissasmGetCurrentAsmLineAndPrepareCodeZone as a function inside DissasmCodeZone
+    // DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine);
 
     uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
     const uint32 remainingLines = zone->extendedSize - currentLine + 1;
@@ -1233,7 +1240,20 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     cs_insn* insn;
     if (!offsetToReach)
     {
-        insn = GetCurrentInstructionByLine(line - 2, zone, obj, diffLines);
+        const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
+        decltype(DissasmCodeZone::types) types                = zone->types;
+        decltype(DissasmCodeZone::levels) levels              = zone->levels;
+
+        const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, line - 2, false);
+
+        zone->structureIndex = index;
+        zone->types          = std::move(types);
+        zone->levels         = std::move(levels);
+
+        if (!adjustedLine.has_value())
+            return;
+
+        insn = GetCurrentInstructionByLine(adjustedLine.value(), zone, obj, diffLines);
         if (!insn)
         {
             Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
@@ -1295,6 +1315,24 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     cs_free(insn, 1);
 
     diffLines++; // increased because of the menu bar
+
+    const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
+    decltype(DissasmCodeZone::types) types                = zone->types;
+    decltype(DissasmCodeZone::levels) levels              = zone->levels;
+
+    // TODO: can be improved by extracing the common part of the calculation of the actual line and to search for the closesest zone directly
+    const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines, false);
+    uint32 actualLine       = zone->types.back().get().GetCurrentTextLine() + 1; //+1 for menu
+
+    if (adjustedLine.has_value())
+        actualLine += adjustedLine.value() + 1;
+
+    zone->structureIndex = index;
+    zone->types          = std::move(types);
+    zone->levels         = std::move(levels);
+
+    diffLines = actualLine;
+
     jumps_holder.insert(Cursor.saveState());
     Cursor.lineInView    = std::min<uint32>(5, diffLines);
     Cursor.startViewLine = diffLines + zone->startLineIndex - Cursor.lineInView;
