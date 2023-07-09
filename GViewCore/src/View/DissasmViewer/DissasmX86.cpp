@@ -31,6 +31,7 @@ constexpr uint32 textColumnSpacesLength = 4;
 constexpr uint32 textColumnTotalLength  = textColumnTextLength + textColumnSpacesLength;
 constexpr uint32 textTotalColumnLength  = addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength;
 constexpr uint32 commentPaddingLength   = 10;
+constexpr uint32 textPaddingLabelsSpace = 4;
 
 // TODO consider inline?
 AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
@@ -182,6 +183,13 @@ inline void DissasmAddColorsToInstruction(
     cb.Add(string, cfg.Colors.AsmDefaultColor);
 
     cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
+
+    if (insn.size > 0)
+    {
+        string.Clear();
+        string.SetChars(' ', textPaddingLabelsSpace);
+        cb.Add(string, cfg.Colors.AsmDefaultColor);
+    }
 
     string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
@@ -628,9 +636,10 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (value == 0)
                     value = zoneDetails.startingZonePoint;
                 NumericFormatter formatter;
-                auto sv = formatter.ToString(value, NumericFormatFlags::HexPrefix);
+                auto sv = formatter.ToHex(value);
                 LocalString<64> callName;
-                callName.SetFormat("sub_%s", sv.data());
+                callName.SetFormat("sub_0x");
+                callName.AddFormat("%09s", sv.data());
                 callsFound.emplace_back(value, callName.GetText());
             }
         }
