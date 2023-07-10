@@ -296,6 +296,16 @@ namespace View
             }
         };
 
+        struct DissasmComments
+        {
+            std::unordered_map<uint32, std::string> comments;
+
+            void AddOrUpdateComment(uint32 line, std::string comment);
+            bool HasComment(uint32 line, std::string& comment) const;
+            void RemoveComment(uint32 line);
+            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+        };
+
         struct DissasmCodeZone : public ParseZone
         {
             uint32 lastDrawnLine; // optimization not to recompute buffer every time
@@ -315,13 +325,9 @@ namespace View
 
             std::vector<AsmOffsetLine> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
-            std::unordered_map<uint32, std::string> comments;
+            DissasmComments comments;
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
-
-            void AddOrUpdateComment(uint32 line, std::string comment);
-            bool HasComment(uint32 line, std::string& comment) const;
-            void RemoveComment(uint32 line);
         };
 
         struct MemoryMappingEntry

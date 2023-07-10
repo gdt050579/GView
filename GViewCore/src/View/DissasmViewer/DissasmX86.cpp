@@ -810,10 +810,16 @@ std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone
 }
 
 bool ExtractDissasmAsmPreCacheLineFromCsInsn(
-      Reference<GView::Object> obj, const Pointer<SettingsData>& settings, AsmData& asmData, DrawLineInfo& dli, DissasmCodeZone* zone, uint32 currentLine)
+      Reference<GView::Object> obj,
+      const Pointer<SettingsData>& settings,
+      AsmData& asmData,
+      DrawLineInfo& dli,
+      DissasmCodeZone* zone,
+      uint32 asmLine,
+      uint32 actualLine)
 {
     uint32 diffLines = 0;
-    cs_insn* insn    = GetCurrentInstructionByLine(currentLine, zone, obj, diffLines, &dli);
+    cs_insn* insn    = GetCurrentInstructionByLine(asmLine, zone, obj, diffLines, &dli);
     if (!insn)
         return false;
 
@@ -822,7 +828,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     memcpy(asmCacheLine.bytes, insn->bytes, std::min<uint32>(sizeof(asmCacheLine.bytes), sizeof(insn->bytes)));
     asmCacheLine.size = insn->size;
     memcpy(asmCacheLine.mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
-    asmCacheLine.currentLine = currentLine;
+    asmCacheLine.currentLine = actualLine;
 
     switch (*((uint32*) insn->mnemonic))
     {
@@ -864,7 +870,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
         asmCacheLine.hexValue = hexVal;
     bool alreadyInitComment = false;
-    if (zone->asmPreCacheData.HasAnyFlag(currentLine))
+    if (zone->asmPreCacheData.HasAnyFlag(asmLine))
         alreadyInitComment = true;
 
     const uint64 finalIndex =
@@ -889,7 +895,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                     if (it != asmData.functions.end())
                     {
                         zone->asmPreCacheData.AnnounceCallInstruction(zone, it->second);
-                        zone->asmPreCacheData.AddInstructionFlag(currentLine, DissasmAsmPreCacheData::CallFlag);
+                        zone->asmPreCacheData.AddInstructionFlag(asmLine, DissasmAsmPreCacheData::CallFlag);
                     }
                 }
             }
@@ -897,7 +903,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     }
     else if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::PushFlag)
     {
-        if (!alreadyInitComment && !zone->comments.contains(currentLine))
+        if (!alreadyInitComment && !zone->comments.comments.contains(actualLine))
         {
             const auto offset = settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
             if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < obj->GetData().GetSize())
@@ -909,8 +915,8 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                     if (textFound.size() > 3)
                     {
                         // TODO: add functions zone->comments to adjust comments instead of manually doing it
-                        zone->comments.insert({ currentLine, (const char*) textFound.data() });
-                        zone->asmPreCacheData.AddInstructionFlag(currentLine, DissasmAsmPreCacheData::PushFlag);
+                        zone->comments.comments.insert({ actualLine, (const char*) textFound.data() });
+                        zone->asmPreCacheData.AddInstructionFlag(asmLine, DissasmAsmPreCacheData::PushFlag);
                     }
                 }
             }
@@ -944,7 +950,7 @@ bool populateAsmPreCacheData(
         auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine, true);
         if (adjustedLine.has_value())
         {
-            if (!ExtractDissasmAsmPreCacheLineFromCsInsn(obj, settings, asmData, dli, zone, adjustedLine.value()))
+            if (!ExtractDissasmAsmPreCacheLineFromCsInsn(obj, settings, asmData, dli, zone, adjustedLine.value(), currentLine))
             {
                 dli.WriteErrorToScreen("ERROR: failed to extract asm ExtractDissasmAsmPreCacheLineFromCsInsn line!");
                 return false;
@@ -1127,15 +1133,15 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     if (zone->asmPreCacheData.cachedAsmLines.empty())
         populateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare);
 
-    auto asmCacheLine = zone->asmPreCacheData.GetLine();
+    const auto asmCacheLine = zone->asmPreCacheData.GetLine();
     if (!asmCacheLine)
         return false;
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
 
     zone->lastDrawnLine = currentLine;
 
-    const auto it = zone->comments.find(currentLine);
-    if (it != zone->comments.end())
+    const auto it = zone->comments.comments.find(currentLine);
+    if (it != zone->comments.comments.end())
     {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (chars.Len() > diffLine)

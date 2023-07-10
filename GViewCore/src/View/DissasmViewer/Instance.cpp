@@ -264,23 +264,25 @@ void Instance::AddComment()
         return;
     }
 
-    if (zonesFound[0].startingLine == 0)
+    uint32 startingLine = zonesFound[0].startingLine;
+    if (startingLine == 0 || startingLine == 1)
     {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }
+    startingLine--;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
 
     std::string foundComment;
     // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
-    convertedZone->HasComment(zonesFound[0].startingLine, foundComment);
+    convertedZone->comments.HasComment(startingLine, foundComment);
 
     selection.Clear();
     CommentDataWindow dlg(foundComment);
     if (dlg.Show() == Dialogs::Result::Ok)
     {
-        convertedZone->AddOrUpdateComment(zonesFound[0].startingLine, dlg.GetResult());
+        convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
     }
 }
 
@@ -311,7 +313,7 @@ void Instance::RemoveComment()
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    convertedZone->RemoveComment(zonesFound[0].startingLine);
+    convertedZone->comments.RemoveComment(zonesFound[0].startingLine);
 }
 
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
@@ -1355,26 +1357,26 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
 
         // TODO: improve performance, remove string concatenation as much as possible
         auto param           = std::string(functionDetails->params[pushIndex].name);
-        const auto commentIt = zone->comments.find(it->currentLine);
-        if (commentIt != zone->comments.end())
+        const auto commentIt = zone->comments.comments.find(it->currentLine);
+        if (commentIt != zone->comments.comments.end())
         {
             commentIt->second = param + " " + commentIt->second;
         }
         else
         {
-            zone->comments.insert({ it->currentLine, param });
+            zone->comments.comments.insert({ it->currentLine, param });
         }
         pushesRemaining--;
         pushIndex++;
     }
 }
 
-void DissasmCodeZone::AddOrUpdateComment(uint32 line, std::string comment)
+void DissasmComments::AddOrUpdateComment(uint32 line, std::string comment)
 {
     comments[line - 1] = std::move(comment);
 }
 
-bool DissasmCodeZone::HasComment(uint32 line, std::string& comment) const
+bool DissasmComments::HasComment(uint32 line, std::string& comment) const
 {
     const auto it = comments.find(line - 1);
     if (it != comments.end())
@@ -1385,7 +1387,7 @@ bool DissasmCodeZone::HasComment(uint32 line, std::string& comment) const
     return false;
 }
 
-void GView::View::DissasmViewer::DissasmCodeZone::RemoveComment(uint32 line)
+void DissasmComments::RemoveComment(uint32 line)
 {
     const auto it = comments.find(line - 1);
     if (it != comments.end())
@@ -1394,6 +1396,23 @@ void GView::View::DissasmViewer::DissasmCodeZone::RemoveComment(uint32 line)
         return;
     }
     Dialogs::MessageBox::ShowError("Error", "No comments found on the selected line !");
+}
+
+void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine)
+{
+    decltype(comments) commentsAjusted = {};
+    for (auto& comment : comments)
+    {
+        if (comment.first >= changedLine)
+        {
+            if (isAddedLine)
+                commentsAjusted.insert({ comment.first + 1, std::move(comment.second) });
+            else
+                commentsAjusted.insert({ comment.first - 1, std::move(comment.second) });
+        }
+    }
+
+    comments = std::move(commentsAjusted);
 }
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)
