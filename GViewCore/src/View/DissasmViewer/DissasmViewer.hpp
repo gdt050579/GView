@@ -264,6 +264,16 @@ namespace View
             }
 
             void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
+
+            bool PopulateAsmPreCacheData(
+                  Config& config,
+                  Reference<GView::Object> obj,
+                  const Pointer<struct SettingsData>& settings,
+                  struct AsmData& asmData,
+                  struct DrawLineInfo& dli,
+                  DissasmCodeZone* zone,
+                  uint32 startingLine,
+                  uint32 linesToPrepare);
         };
 
         struct DissasmCodeInternalType

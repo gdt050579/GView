@@ -797,27 +797,6 @@ std::optional<uint32> DissasmGetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone
     if (currentType.annotations.contains(levelToReach))
         return {};
 
-    // const auto foundAnnotation = currentType.annotations.find(levelToReach);
-    // if (foundAnnotation != currentType.annotations.end())
-    //{
-    //     return {};
-
-    //    if (!populateAsmPreCacheData)
-    //        return {};
-
-    //    DissasmAsmPreCacheLine asmCacheLine{};
-    //    asmCacheLine.address = foundAnnotation->second.second;
-    //    strncpy(asmCacheLine.mnemonic, foundAnnotation->second.first.data(), sizeof(asmCacheLine.mnemonic));
-    //    // strncpy((char*) asmCacheLine.bytes, "------", sizeof(asmCacheLine.bytes));
-    //    // asmCacheLine.size        = static_cast<uint32>(strlen((char*) asmCacheLine.bytes));
-    //    asmCacheLine.size        = 0;
-    //    asmCacheLine.currentLine = currentLine;
-    //    asmCacheLine.op_str      = strdup("<--");
-    //    asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
-    //    zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
-    //    return {};
-    //}
-
     const uint32 value = currentType.GetCurrentAsmLine();
     if (value == 0)
         return {};
@@ -869,28 +848,35 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
         }
     }
 
-    // TODO: be more generic not only x86
-    if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::CallFlag && insn->op_str[0] == '0' && insn->op_str[1] == '\0')
-    {
-        NumericFormatter n;
-        const auto res           = n.ToString(zone->cachedCodeOffsets[0].offset, { NumericFormatFlags::HexPrefix, 16 });
-        asmCacheLine.op_str      = strdup(res.data());
-        asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
-        zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
-        cs_free(insn, 1);
-        return true;
-    }
+    //// TODO: be more generic not only x86
+    // if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::CallFlag && insn->op_str[0] == '0' && insn->op_str[1] == '\0')
+    //{
+    //     NumericFormatter n;
+    //     const auto res           = n.ToString(zone->cachedCodeOffsets[0].offset, { NumericFormatFlags::HexPrefix, 16 });
+    //     asmCacheLine.op_str      = strdup(res.data());
+    //     asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
+    //     asmCacheLine.hexValue    = zone->cachedCodeOffsets[0].offset;
+    //     zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
+    //     cs_free(insn, 1);
+    //     return true;
+    // }
 
     // TODO: improve efficiency by filtering instructions
     uint64 hexVal = 0;
     if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
+    {
         asmCacheLine.hexValue = hexVal;
+        if (hexVal == 0)
+            asmCacheLine.hexValue = zone->cachedCodeOffsets[0].offset;
+    }
     bool alreadyInitComment = false;
     if (zone->asmPreCacheData.HasAnyFlag(asmLine))
         alreadyInitComment = true;
 
     const uint64 finalIndex =
           zone->asmAddress + settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
+
+    bool shouldConsiderCall = false;
     if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::CallFlag)
     {
         auto mappingPtr = TryExtractMemoryMapping(settings, hexVal, finalIndex);
@@ -916,6 +902,10 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                 }
             }
         }
+        else
+        {
+            shouldConsiderCall = true;
+        }
     }
     else if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::PushFlag)
     {
@@ -939,6 +929,23 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
         }
     }
 
+    if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::JmpFlag || shouldConsiderCall)
+    {
+        if (!asmCacheLine.hexValue.has_value())
+            return false;
+
+        const char* prefix = !shouldConsiderCall ? "jmp_0x" : "sub_0x";
+
+        NumericFormatter n;
+        const auto res = n.ToString(asmCacheLine.hexValue.value(), { NumericFormatFlags::HexPrefix, 16 });
+
+        auto fnName = FormatFunctionName(asmCacheLine.hexValue.value(), prefix);
+        fnName.AddFormat(" (%s)", res.data());
+
+        asmCacheLine.op_str      = strdup(fnName.GetText());
+        asmCacheLine.op_str_size = static_cast<uint32>(fnName.Len());
+    }
+
     if (!asmCacheLine.op_str && !asmCacheLine.mapping)
     {
         asmCacheLine.op_str      = strdup(insn->op_str);
@@ -949,7 +956,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     return true;
 }
 
-bool populateAsmPreCacheData(
+bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
       Config& config,
       Reference<GView::Object> obj,
       const Pointer<SettingsData>& settings,
@@ -959,6 +966,9 @@ bool populateAsmPreCacheData(
       uint32 startingLine,
       uint32 linesToPrepare)
 {
+    if (!cachedAsmLines.empty())
+        return true;
+
     uint32 currentLine      = startingLine;
     const uint32 endingLine = currentLine + linesToPrepare;
     while (currentLine < endingLine)
@@ -991,11 +1001,11 @@ bool populateAsmPreCacheData(
             asmCacheLine.currentLine = currentLine;
             asmCacheLine.op_str      = strdup("<--");
             asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
-            zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
+            cachedAsmLines.push_back(asmCacheLine);
         }
         currentLine++;
     }
-    zone->asmPreCacheData.ComputeMaxLine();
+    ComputeMaxLine();
     return true;
 }
 
@@ -1164,8 +1174,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
     const uint32 remainingLines = zone->extendedSize - currentLine + 1;
     linesToPrepare              = std::min<uint32>(linesToPrepare, remainingLines);
-    if (zone->asmPreCacheData.cachedAsmLines.empty())
-        populateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare);
+
+    if (!zone->asmPreCacheData.PopulateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare))
+        return false;
 
     const auto asmCacheLine = zone->asmPreCacheData.GetLine();
     if (!asmCacheLine)
