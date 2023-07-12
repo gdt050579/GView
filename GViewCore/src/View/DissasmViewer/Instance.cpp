@@ -1348,7 +1348,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
     const uint32 startingLine = cachedAsmLines.back().currentLine;
     uint32 pushIndex = 0, pushesRemaining = functionDetails->params.size();
 
-    for (auto it = cachedAsmLines.rbegin() + 1; it != cachedAsmLines.rend() && pushesRemaining; ++it)
+    for (auto it = cachedAsmLines.rbegin(); it != cachedAsmLines.rend() && pushesRemaining; ++it)
     {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
