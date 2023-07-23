@@ -139,7 +139,7 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
         const auto uTexts = std::map<Entry, std::u16string_view>(); // TODO: re-enable unicode GetUnicodeMatches(buffer, ArtefactType::Text, TEXT_UNICODE);
 
         auto lv = Factory::ListView::Create(
-              this, "x:0,y:0,w:100%,h:90%", { "n:Type,w:15%", "n:Offset,w:10%", "n:Value,w:75%" }, ListViewFlags::AllowMultipleItemsSelection);
+              this, "x:0,y:0,w:100%,h:90%", { "n:Type,w:10%", "n:Offset,w:5%", "n:Value,w:35%", "n:Hint,w:50%" }, ListViewFlags::AllowMultipleItemsSelection);
 
         NumericFormatter n;
 
@@ -248,7 +248,10 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
 
                 if (value.ends_with(R"(\StartUp)"))
                 {
-                    lv->AddItem({ "Path (Win) (Persistence)", svp.data(), std::string{ value.data(), key.position.second }.c_str() })
+                    lv->AddItem({ "Path (Win) (Persistence)",
+                                  svp.data(),
+                                  std::string{ value.data(), key.position.second }.c_str(),
+                                  "Everything that is in this folder gets executed as start up, as long as it is in an executable format." })
                           .SetType(ListViewItem::Type::Emphasized_2);
                 }
                 else
@@ -285,7 +288,10 @@ class Dropper : public Window, public Handlers::OnButtonPressedInterface
                 const auto& value = registries.at(key);
                 if (value.ends_with(R"(\Run)"))
                 {
-                    lv->AddItem({ "Registry (Persistence)", svp.data(), std::string{ value.data(), key.position.second }.c_str() })
+                    lv->AddItem({ "Registry (Persistence)",
+                                  svp.data(),
+                                  std::string{ value.data(), key.position.second }.c_str(),
+                                  "The command added here gets executed everytime an user logs in (HCKU) or the system boots up (HKLM)." })
                           .SetType(ListViewItem::Type::Emphasized_2);
                 }
                 else
