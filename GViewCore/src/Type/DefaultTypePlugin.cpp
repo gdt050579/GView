@@ -10,7 +10,7 @@ class DefaultType : public TypeInterface
     {
         return "GENERIC";
     }
-    void RunCommand(std::string_view commandName) override
+    void RunCommand(std::string_view) override
     {
     }
     ~DefaultType()
@@ -38,15 +38,15 @@ class DefaultType : public TypeInterface
 class DefaultInformationPanel : public TabPage
 {
   public:
-    DefaultInformationPanel(Reference<Object> obj) : TabPage("&Information")
+    DefaultInformationPanel(Reference<Object>) : TabPage("&Information")
     {
-        auto lv = Factory::ListView::Create(this, "d:c", { "n:Field,a:l,w:10", "n:Value,a:l,w:100" }, ListViewFlags::None);
+        Factory::ListView::Create(this, "d:c", { "n:Field,a:l,w:10", "n:Value,a:l,w:100" }, ListViewFlags::None);
     }
 };
 
 namespace GView::Type::DefaultTypePlugin
 {
-bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
+bool Validate(const AppCUI::Utils::BufferView&, const std::string_view&)
 {
     return true; // always match everything
 }

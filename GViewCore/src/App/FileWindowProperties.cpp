@@ -10,7 +10,7 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
 {
     auto t = Factory::Tab::Create(this, "l:1,t:1,r:1,b:3", TabFlags::LeftTabs | TabFlags::TabsBar);
 
-    auto tp1 = Factory::TabPage::Create(t, "General");
+    Factory::TabPage::Create(t, "General");
 
     // process all view modes
     for (uint32 idx = 0; idx < viewContainer->GetChildrenCount(); idx++)

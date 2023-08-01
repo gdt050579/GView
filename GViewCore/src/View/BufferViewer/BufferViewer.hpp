@@ -36,6 +36,7 @@ struct SettingsData
     Reference<PositionToColorInterface> positionToColorCallback{ nullptr };
     Reference<BufferColorInterface> bufferColorCallback{ nullptr };
     Reference<OnStartViewMoveInterface> onStartViewMoveCallback{ nullptr };
+    Reference<BufferColorInterface> codeExecutionColorCallback{ nullptr };
     String name;
     SettingsData();
 
@@ -254,6 +255,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     bool showSyncCompare{ false };
     bool moveInSync{ false };
     bool showTypeObjects{ true };
+    bool showCodeExecution{ false };
     CodePage codePage{ CodePageID::DOS_437 };
     Pointer<SettingsData> settings;
     Reference<GView::Object> obj;

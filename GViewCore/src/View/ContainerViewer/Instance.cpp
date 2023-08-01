@@ -153,11 +153,6 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if (eventType != Event::Command)
-        return false;
-    // switch (ID)
-    // {
-    // }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
@@ -199,15 +194,14 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
+    default:
+        break;
     }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    switch (static_cast<PropertyID>(id))
-    {
-    }
-    error.SetFormat("Unknown internat ID: %u", id);
+    CHECK(error.SetFormat("Unknown internat ID: %u", id), false, "");
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -219,8 +213,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {
-
-    };
+    return {};
 }
 #undef BT

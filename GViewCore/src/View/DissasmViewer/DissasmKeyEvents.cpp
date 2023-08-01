@@ -9,9 +9,9 @@ constexpr uint32 COMMAND_JUMP_FORWARD           = 104;
 constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
 
 // TODO: fix remove duplicate with Instance.cpp
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
-constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
-constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
+//constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
+//constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
+//constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
 constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE   = 3;
 constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
 constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
@@ -196,7 +196,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     return false;
 }
 
-bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int, int, AppCUI::Input::MouseWheel direction)
 {
     switch (direction)
     {

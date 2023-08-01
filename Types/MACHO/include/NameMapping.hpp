@@ -4,13 +4,13 @@
 
 namespace MAC
 {
-#define GET_PAIR(x)                                                                                                                        \
-    {                                                                                                                                      \
-        x, (#x)                                                                                                                            \
+#define GET_PAIR(x)                                                                                                                                            \
+    {                                                                                                                                                          \
+        x, (#x)                                                                                                                                                \
     }
-#define GET_PAIR_FROM_ENUM(x)                                                                                                              \
-    {                                                                                                                                      \
-        x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                       \
+#define GET_PAIR_FROM_ENUM(x)                                                                                                                                  \
+    {                                                                                                                                                          \
+        x, (std::string_view(#x).substr(std::string_view(#x).find_last_of(":") + 1))                                                                           \
     }
 
 static const std::map<ByteOrder, std::string_view> ByteOrderNames{
@@ -79,44 +79,39 @@ static const ArchInfo ArchInfoTable[] = {
     { "veo2", CPU_TYPE_VEO, CPU_SUBTYPE_VEO_2, ByteOrder::BigEndian, "veo 2" }
 };
 
-static const std::map<FileType, std::string_view> FileTypeNames{
-    GET_PAIR_FROM_ENUM(FileType::OBJECT),     GET_PAIR_FROM_ENUM(FileType::EXECUTE),    GET_PAIR_FROM_ENUM(FileType::FVMLIB),
-    GET_PAIR_FROM_ENUM(FileType::CORE),       GET_PAIR_FROM_ENUM(FileType::PRELOAD),    GET_PAIR_FROM_ENUM(FileType::DYLIB),
-    GET_PAIR_FROM_ENUM(FileType::BUNDLE),     GET_PAIR_FROM_ENUM(FileType::DYLIB_STUB), GET_PAIR_FROM_ENUM(FileType::DSYM),
-    GET_PAIR_FROM_ENUM(FileType::KEXT_BUNDLE)
-};
+static const std::map<FileType, std::string_view> FileTypeNames{ GET_PAIR_FROM_ENUM(FileType::OBJECT),  GET_PAIR_FROM_ENUM(FileType::EXECUTE),
+                                                                 GET_PAIR_FROM_ENUM(FileType::FVMLIB),  GET_PAIR_FROM_ENUM(FileType::CORE),
+                                                                 GET_PAIR_FROM_ENUM(FileType::PRELOAD), GET_PAIR_FROM_ENUM(FileType::DYLIB),
+                                                                 GET_PAIR_FROM_ENUM(FileType::BUNDLE),  GET_PAIR_FROM_ENUM(FileType::DYLIB_STUB),
+                                                                 GET_PAIR_FROM_ENUM(FileType::DSYM),    GET_PAIR_FROM_ENUM(FileType::KEXT_BUNDLE) };
 
-static const std::map<FileType, std::string_view> FileTypeDescriptions{
-    { FileType::OBJECT, "Relocatable object file." },
-    { FileType::EXECUTE, "Demand paged executable file." },
-    { FileType::FVMLIB, "Fixed VM shared library file." },
-    { FileType::CORE, "Core file." },
-    { FileType::PRELOAD, "Preloaded executable file." },
-    { FileType::DYLIB, "Dynamically bound shared library." },
-    { FileType::BUNDLE, "Dynamically bound bundle file." },
-    { FileType::DYLIB_STUB, "Shared library stub for static | linking only, no section contents." },
-    { FileType::DSYM, "Companion file with only debug | sections." },
-    { FileType::KEXT_BUNDLE, "X86_64 kexts." }
-};
+static const std::map<FileType, std::string_view> FileTypeDescriptions{ { FileType::OBJECT, "Relocatable object file." },
+                                                                        { FileType::EXECUTE, "Demand paged executable file." },
+                                                                        { FileType::FVMLIB, "Fixed VM shared library file." },
+                                                                        { FileType::CORE, "Core file." },
+                                                                        { FileType::PRELOAD, "Preloaded executable file." },
+                                                                        { FileType::DYLIB, "Dynamically bound shared library." },
+                                                                        { FileType::BUNDLE, "Dynamically bound bundle file." },
+                                                                        { FileType::DYLIB_STUB,
+                                                                          "Shared library stub for static | linking only, no section contents." },
+                                                                        { FileType::DSYM, "Companion file with only debug | sections." },
+                                                                        { FileType::KEXT_BUNDLE, "X86_64 kexts." } };
 
 static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescriptions{
     { MachHeaderFlags::NOUNDEFS, "The object file has no undefined references." },
-    { MachHeaderFlags::INCRLINK,
-      "The object file is the output of an incremental link against a base file and can't be link edited again." },
+    { MachHeaderFlags::INCRLINK, "The object file is the output of an incremental link against a base file and can't be link edited again." },
     { MachHeaderFlags::DYLDLINK, "The object file is input for the dynamic linker and can't be staticly link edited again." },
     { MachHeaderFlags::BINDATLOAD, "The object file's undefined references are bound by the dynamic linker when loaded." },
     { MachHeaderFlags::PREBOUND, "The file has its dynamic undefined references prebound." },
     { MachHeaderFlags::SPLIT_SEGS, "The file has its read-only and read-write segments split." },
-    { MachHeaderFlags::LAZY_INIT,
-      "The shared library init routine is to be run lazily via catching memory faults to its writeable segments (obsolete)." },
+    { MachHeaderFlags::LAZY_INIT, "The shared library init routine is to be run lazily via catching memory faults to its writeable segments (obsolete)." },
     { MachHeaderFlags::TWOLEVEL, "The image is using two-level name space bindings." },
     { MachHeaderFlags::FORCE_FLAT, "The executable is forcing all images to use flat name space bindings." },
     { MachHeaderFlags::NOMULTIDEFS,
       "This umbrella guarantees no multiple defintions of symbols in its sub-images so the two-level namespace hints can always be "
       "used." },
     { MachHeaderFlags::NOFIXPREBINDING, "Do not have dyld notify the prebinding agent about this executable." },
-    { MachHeaderFlags::PREBINDABLE,
-      "The binary is not prebound but can have its prebinding redone -> only used when FileType::PREBOUND is not set." },
+    { MachHeaderFlags::PREBINDABLE, "The binary is not prebound but can have its prebinding redone -> only used when FileType::PREBOUND is not set." },
     { MachHeaderFlags::ALLMODSBOUND,
       "Indicates that this binary binds to all two-level namespace modules of its dependent libraries -> only used when "
       "MH_PREBINDABLE and "
@@ -132,8 +127,7 @@ static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsDescript
     { MachHeaderFlags::SETUID_SAFE, "When this bit is set, the binary declares it is safe for use in processes when issetugid() is true." },
     { MachHeaderFlags::NO_REEXPORTED_DYLIBS,
       "When this bit is set on a dylib, the static linker does not need to examine dependent dylibs to see if any are re-exported." },
-    { MachHeaderFlags::PIE,
-      "When this bit is set, the OS will load the main executable at a random address -> only used in FileType::EXECUTE filetypes." },
+    { MachHeaderFlags::PIE, "When this bit is set, the OS will load the main executable at a random address -> only used in FileType::EXECUTE filetypes." },
     { MachHeaderFlags::DEAD_STRIPPABLE_DYLIB,
       "Only for use on dylibs -> when linking against a dylib that has this bit set, the static linker will automatically not create "
       "a "
@@ -176,8 +170,7 @@ static const std::map<MachHeaderFlags, std::string_view> MachHeaderFlagsNames{ G
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::HAS_TLV_DESCRIPTORS),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::NO_HEAP_EXECUTION),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::APP_EXTENSION_SAFE),
-                                                                               GET_PAIR_FROM_ENUM(
-                                                                                     MachHeaderFlags::NLIST_OUTOFSYNC_WITH_DYLDINFO),
+                                                                               GET_PAIR_FROM_ENUM(MachHeaderFlags::NLIST_OUTOFSYNC_WITH_DYLDINFO),
                                                                                GET_PAIR_FROM_ENUM(MachHeaderFlags::SIM_SUPPORT) };
 
 static const std::map<LoadCommandType, std::string_view> LoadCommandNames{ GET_PAIR_FROM_ENUM(LoadCommandType::REQ_DYLD),
@@ -261,8 +254,7 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions
     { LoadCommandType::SUB_LIBRARY, "Sub library." },
     { LoadCommandType::TWOLEVEL_HINTS, "Two-level namespace lookup hints." },
     { LoadCommandType::PREBIND_CKSUM, "Prebind checksum." },
-    { LoadCommandType::LOAD_WEAK_DYLIB,
-      "Load a dynamically linked shared library that is allowed to be missing (all symbols are weak imported)." },
+    { LoadCommandType::LOAD_WEAK_DYLIB, "Load a dynamically linked shared library that is allowed to be missing (all symbols are weak imported)." },
     { LoadCommandType::SEGMENT_64, "64-bit segment of this file to be mapped." },
     { LoadCommandType::ROUTINES_64, "64-bit image routines." },
     { LoadCommandType::UUID, "The uuid." },
@@ -296,19 +288,16 @@ static const std::map<LoadCommandType, std::string_view> LoadCommandDescriptions
 };
 
 static const std::map<VMProtectionFlags, std::string_view> VMProtectionNames{
-    GET_PAIR_FROM_ENUM(VMProtectionFlags::NONE),      GET_PAIR_FROM_ENUM(VMProtectionFlags::READ),
-    GET_PAIR_FROM_ENUM(VMProtectionFlags::WRITE),     GET_PAIR_FROM_ENUM(VMProtectionFlags::EXECUTE),
-    GET_PAIR_FROM_ENUM(VMProtectionFlags::DEFAULT),   GET_PAIR_FROM_ENUM(VMProtectionFlags::ALL),
-    GET_PAIR_FROM_ENUM(VMProtectionFlags::NO_CHANGE), GET_PAIR_FROM_ENUM(VMProtectionFlags::COPY),
-    GET_PAIR_FROM_ENUM(VMProtectionFlags::WANTS_COPY)
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::NONE),      GET_PAIR_FROM_ENUM(VMProtectionFlags::READ),    GET_PAIR_FROM_ENUM(VMProtectionFlags::WRITE),
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::EXECUTE),   GET_PAIR_FROM_ENUM(VMProtectionFlags::DEFAULT), GET_PAIR_FROM_ENUM(VMProtectionFlags::ALL),
+    GET_PAIR_FROM_ENUM(VMProtectionFlags::NO_CHANGE), GET_PAIR_FROM_ENUM(VMProtectionFlags::COPY),    GET_PAIR_FROM_ENUM(VMProtectionFlags::WANTS_COPY)
 };
 
 static const std::map<SegmentCommandFlags, std::string_view> SegmentCommandFlagsNames{ GET_PAIR_FROM_ENUM(SegmentCommandFlags::NONE),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::HIGHVM),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::FVMLIB),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::NORELOC),
-                                                                                       GET_PAIR_FROM_ENUM(
-                                                                                             SegmentCommandFlags::PROTECTED_VERSION_1),
+                                                                                       GET_PAIR_FROM_ENUM(SegmentCommandFlags::PROTECTED_VERSION_1),
                                                                                        GET_PAIR_FROM_ENUM(SegmentCommandFlags::READONLY) };
 
 static const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_FROM_ENUM(SectionType::REGULAR),
@@ -335,31 +324,28 @@ static const std::map<SectionType, std::string_view> SectionTypeNames{ GET_PAIR_
                                                                        GET_PAIR_FROM_ENUM(SectionType::THREAD_LOCAL_INIT_FUNCTION_POINTERS),
                                                                        GET_PAIR_FROM_ENUM(SectionType::S_INIT_FUNC_OFFSETS) };
 
-static const std::map<SectionAttributtes, std::string_view> SectionAttributtesNames{
-    GET_PAIR_FROM_ENUM(SectionAttributtes::USR),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::PURE_INSTRUCTIONS),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::NO_TOC),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::STRIP_STATIC_SYMS),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::NO_DEAD_STRIP),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::LIVE_SUPPORT),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::SELF_MODIFYING_CODE),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::DEBUG),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::SYS),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::SOME_INSTRUCTIONS),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::EXT_RELOC),
-    GET_PAIR_FROM_ENUM(SectionAttributtes::LOC_RELOC)
-};
+static const std::map<SectionAttributtes, std::string_view> SectionAttributtesNames{ GET_PAIR_FROM_ENUM(SectionAttributtes::USR),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::PURE_INSTRUCTIONS),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::NO_TOC),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::STRIP_STATIC_SYMS),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::NO_DEAD_STRIP),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::LIVE_SUPPORT),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::SELF_MODIFYING_CODE),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::DEBUG),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::SYS),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::SOME_INSTRUCTIONS),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::EXT_RELOC),
+                                                                                     GET_PAIR_FROM_ENUM(SectionAttributtes::LOC_RELOC) };
 
 static const std::map<N_TYPE, std::string_view> NTypeNames{
     GET_PAIR_FROM_ENUM(N_TYPE::STAB), GET_PAIR_FROM_ENUM(N_TYPE::PEXT), GET_PAIR_FROM_ENUM(N_TYPE::TYPE), GET_PAIR_FROM_ENUM(N_TYPE::EXT)
 };
 
-static const std::map<N_TYPE_BITS, std::string_view> NTypeBitsNames{
-    GET_PAIR_FROM_ENUM(N_TYPE_BITS::UNDF), GET_PAIR_FROM_ENUM(N_TYPE_BITS::ABS),  GET_PAIR_FROM_ENUM(N_TYPE_BITS::TEXT),
-    GET_PAIR_FROM_ENUM(N_TYPE_BITS::DATA), GET_PAIR_FROM_ENUM(N_TYPE_BITS::BSS),  GET_PAIR_FROM_ENUM(N_TYPE_BITS::SECT),
-    GET_PAIR_FROM_ENUM(N_TYPE_BITS::PBUD), GET_PAIR_FROM_ENUM(N_TYPE_BITS::INDR), GET_PAIR_FROM_ENUM(N_TYPE_BITS::COMM),
-    GET_PAIR_FROM_ENUM(N_TYPE_BITS::FN)
-};
+static const std::map<N_TYPE_BITS, std::string_view> NTypeBitsNames{ GET_PAIR_FROM_ENUM(N_TYPE_BITS::UNDF), GET_PAIR_FROM_ENUM(N_TYPE_BITS::ABS),
+                                                                     GET_PAIR_FROM_ENUM(N_TYPE_BITS::TEXT), GET_PAIR_FROM_ENUM(N_TYPE_BITS::DATA),
+                                                                     GET_PAIR_FROM_ENUM(N_TYPE_BITS::BSS),  GET_PAIR_FROM_ENUM(N_TYPE_BITS::SECT),
+                                                                     GET_PAIR_FROM_ENUM(N_TYPE_BITS::PBUD), GET_PAIR_FROM_ENUM(N_TYPE_BITS::INDR),
+                                                                     GET_PAIR_FROM_ENUM(N_TYPE_BITS::COMM), GET_PAIR_FROM_ENUM(N_TYPE_BITS::FN) };
 
 static const std::map<ReferenceFlag, std::string_view> ReferenceFlagNames{ GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_NON_LAZY),
                                                                            GET_PAIR_FROM_ENUM(ReferenceFlag::UNDEFINED_LAZY),
@@ -383,60 +369,49 @@ static const std::map<N_DESC_BIT_TYPE, std::string_view> NDescBitTypeNames{ GET_
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::SYMBOL_RESOLVER),
                                                                             GET_PAIR_FROM_ENUM(N_DESC_BIT_TYPE::ALT_ENTRY) };
 
-static const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{ GET_PAIR_FROM_ENUM(N_STAB_TYPE::GSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::FNAME),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::FUN),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::STSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LCSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::MAIN),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::BNSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::PC),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NSYMS),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NOMAP),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::OPT),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::RSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::M2C),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::SLINE),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::ENSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::DSLINE),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::BSLINE),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::DEFD),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::MOD2),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::CATCH),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::SSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::SO),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::OSO),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::BINCL),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::SOL),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::PARAMS),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::VERSION),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::OLEVEL),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::PSYM),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::EINCL),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::ENTRY),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LBRAC),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::EXCL),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::SCOPE),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::RBRAC),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::BCOMM),
-                                                                     { N_STAB_TYPE::ECOMM_, "ECOMM" /* macro on linux */ },
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::ECOML),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBTEXT),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBDATA),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBBSS),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBSTS),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBLCS),
-                                                                     GET_PAIR_FROM_ENUM(N_STAB_TYPE::LENG) };
+static const std::map<N_STAB_TYPE, std::string_view> NStabTypeNames{
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::GSYM),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::FNAME),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::FUN),    GET_PAIR_FROM_ENUM(N_STAB_TYPE::STSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::LCSYM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::MAIN),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::BNSYM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::PC),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::NSYMS),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::NOMAP),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::OPT),    GET_PAIR_FROM_ENUM(N_STAB_TYPE::RSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::M2C),    GET_PAIR_FROM_ENUM(N_STAB_TYPE::SLINE),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::ENSYM),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::DSLINE),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::BSLINE), GET_PAIR_FROM_ENUM(N_STAB_TYPE::DEFD),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::MOD2),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::CATCH),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::SSYM),   GET_PAIR_FROM_ENUM(N_STAB_TYPE::SO),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::OSO),    GET_PAIR_FROM_ENUM(N_STAB_TYPE::LSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::BINCL),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::SOL),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::PARAMS), GET_PAIR_FROM_ENUM(N_STAB_TYPE::VERSION),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::OLEVEL), GET_PAIR_FROM_ENUM(N_STAB_TYPE::PSYM),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::EINCL),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::ENTRY),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::LBRAC),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::EXCL),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::SCOPE),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::RBRAC),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::BCOMM),  { N_STAB_TYPE::ECOMM_, "ECOMM" /* macro on linux */ },
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::ECOML),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBTEXT),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBDATA), GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBBSS),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBSTS),  GET_PAIR_FROM_ENUM(N_STAB_TYPE::NBLCS),
+    GET_PAIR_FROM_ENUM(N_STAB_TYPE::LENG)
+};
 
 static const std::map<PlatformType, std::string_view> CodeSignPlatformNames{
-    GET_PAIR_FROM_ENUM(PlatformType::UNKNOWN),       GET_PAIR_FROM_ENUM(PlatformType::MACOS),
-    GET_PAIR_FROM_ENUM(PlatformType::IOS),           GET_PAIR_FROM_ENUM(PlatformType::TVOS),
-    GET_PAIR_FROM_ENUM(PlatformType::WATCHOS),       GET_PAIR_FROM_ENUM(PlatformType::BRIDGEOS),
-    GET_PAIR_FROM_ENUM(PlatformType::MACCATALYST),   GET_PAIR_FROM_ENUM(PlatformType::IOSSIMULATOR),
-    GET_PAIR_FROM_ENUM(PlatformType::TVOSSIMULATOR), GET_PAIR_FROM_ENUM(PlatformType::WATCHOSSIMULATOR),
-    GET_PAIR_FROM_ENUM(PlatformType::DRIVERKIT),     GET_PAIR_FROM_ENUM(PlatformType::_11),
-    GET_PAIR_FROM_ENUM(PlatformType::_12),           GET_PAIR_FROM_ENUM(PlatformType::_13),
+    GET_PAIR_FROM_ENUM(PlatformType::UNKNOWN),
+    GET_PAIR_FROM_ENUM(PlatformType::MACOS),
+    GET_PAIR_FROM_ENUM(PlatformType::IOS),
+    GET_PAIR_FROM_ENUM(PlatformType::TVOS),
+    GET_PAIR_FROM_ENUM(PlatformType::WATCHOS),
+    GET_PAIR_FROM_ENUM(PlatformType::BRIDGEOS),
+    GET_PAIR_FROM_ENUM(PlatformType::MACCATALYST),
+    GET_PAIR_FROM_ENUM(PlatformType::IOSSIMULATOR),
+    GET_PAIR_FROM_ENUM(PlatformType::TVOSSIMULATOR),
+    GET_PAIR_FROM_ENUM(PlatformType::WATCHOSSIMULATOR),
+    GET_PAIR_FROM_ENUM(PlatformType::DRIVERKIT),
+    GET_PAIR_FROM_ENUM(PlatformType::REALITYOS),
+    GET_PAIR_FROM_ENUM(PlatformType::REALITYOSSIMULATOR),
+    GET_PAIR_FROM_ENUM(PlatformType::FIRMWARE),
+    GET_PAIR_FROM_ENUM(PlatformType::SEPOS),
+    GET_PAIR_FROM_ENUM(PlatformType::ANY),
 };
 
 static const std::map<CodeSignFlags, std::string_view> CodeSignFlagNames{ GET_PAIR_FROM_ENUM(CodeSignFlags::VALID),
@@ -542,8 +517,7 @@ static const std::map<CodeSignFlags, std::string_view> CodeSignFlagsDescriptions
     { CodeSignFlags::NVRAM_UNRESTRICTED, "Has com.apple.rootless.restricted-nvram-variables.heritable entitlement." },
     { CodeSignFlags::RUNTIME, "Apply hardened runtime policies." },
     { CodeSignFlags::LINKER_SIGNED, "Automatically signed by the linker." },
-    { CodeSignFlags::ALLOWED_MACHO,
-      "(ADHOC | HARD | KILL | CHECK_EXPIRATION | RESTRICT | ENFORCEMENT | REQUIRE_LV | RUNTIME | LINKER_SIGNED)" },
+    { CodeSignFlags::ALLOWED_MACHO, "(ADHOC | HARD | KILL | CHECK_EXPIRATION | RESTRICT | ENFORCEMENT | REQUIRE_LV | RUNTIME | LINKER_SIGNED)" },
     { CodeSignFlags::EXEC_SET_HARD, "Set CS_HARD on any exec'ed process." },
     { CodeSignFlags::EXEC_SET_KILL, "Set CS_KILL on any exec'ed process." },
     { CodeSignFlags::EXEC_SET_ENFORCEMENT, "Set CS_ENFORCEMENT on any exec'ed process." },
