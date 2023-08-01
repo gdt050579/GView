@@ -493,63 +493,6 @@ inline bool populateOffsetsVector(
     return true;
 }
 
-// TODO: maybe add also minimum number?
-bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
-{
-    char* ptr   = insn.op_str;
-    char* start = nullptr;
-    uint32 size = 0;
-
-    while (ptr && *ptr != '\0')
-    {
-        if (!start)
-        {
-            if (ptr && *ptr == '0')
-            {
-                ptr++;
-                if (!ptr || *ptr != 'x')
-                    return false;
-                ptr++;
-                start = ptr;
-                continue;
-            }
-        }
-        else
-        {
-            if ((*ptr >= '0' && *ptr <= '9') || (*ptr >= 'a' && *ptr <= 'f'))
-            {
-                size++;
-            }
-            else
-            {
-                if (size < maxSize - 2)
-                    return false;
-                break;
-            }
-        }
-        ptr++;
-    }
-
-    if (maxSize < size)
-    {
-        const uint32 diff = size - static_cast<uint32>(maxSize);
-        size -= diff;
-        start += diff;
-    }
-
-    if (!start || !ptr || size < 2)
-        return false;
-
-    const auto sv        = std::string_view(start, size);
-    const auto converted = Number::ToUInt64(sv, NumberParseFlags::Base16);
-    if (!converted.has_value())
-        return false;
-
-    value = converted.value();
-
-    return true;
-}
-
 inline cs_insn* GetCurrentInstructionByLine(
       uint32 lineToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli = nullptr)
 {
