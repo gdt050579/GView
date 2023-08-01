@@ -493,8 +493,6 @@ inline bool populateOffsetsVector(
     return true;
 }
 
-<<<<<<< HEAD
-=======
 // TODO: maybe add also minimum number?
 bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
 {
@@ -552,7 +550,6 @@ bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
     return true;
 }
 
->>>>>>> main
 inline cs_insn* GetCurrentInstructionByLine(
       uint32 lineToReach, DissasmCodeZone* zone, Reference<GView::Object> obj, uint32& diffLines, DrawLineInfo* dli = nullptr)
 {
