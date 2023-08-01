@@ -157,6 +157,27 @@ namespace View
 
         struct DissasmAsmPreCacheLine
         {
+            enum InstructionFlag : uint8
+            {
+                NoneFlag = 0x00,
+                CallFlag = 0x1,
+                PushFlag = 0x2,
+                JmpFlag  = 0x4
+            };
+
+            enum LineArrowToDrawFlag : uint8
+            {
+                NoLines   = 0x00,
+                DrawLine1 = 0x1,
+                DrawLine2 = 0x2,
+                DrawLine3 = 0x4,
+                DrawLine4 = 0x8,
+                DrawLine5 = 0x10,
+
+                DrawStartingLine = 0x20,
+                DrawEndingLine   = 0x40
+            };
+
             uint64 address;
             uint8 bytes[24];
             uint16 size;
@@ -166,6 +187,7 @@ namespace View
             uint32 op_str_size;
             std::optional<uint64> hexValue;
             uint8 flags;
+            uint8 lineArrowToDraw;
             const void* mapping;
 
             uint32 GetLineSize() const
@@ -188,33 +210,22 @@ namespace View
 
         struct DissasmAsmPreCacheData
         {
-            enum InstructionFlag : uint8
-            {
-                NoneFlag = 0x00,
-                CallFlag = 0x1,
-                PushFlag = 0x2,
-                JmpFlag  = 0x4,
-            };
-
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
             std::unordered_map<uint32, uint8> instructionFlags;
             uint16 index;
             uint32 maxLineSize;
-
-            bool CheckInstructionHasFlag(uint32 line, InstructionFlag flag) const
+            bool CheckInstructionHasFlag(uint32 line, DissasmAsmPreCacheLine::InstructionFlag flag) const
             {
                 const auto it = instructionFlags.find(line);
                 if (it == instructionFlags.end())
                     return false;
                 return (it->second & flag) > 0;
             }
-
-            void AddInstructionFlag(uint32 line, InstructionFlag flag)
+            void AddInstructionFlag(uint32 line, DissasmAsmPreCacheLine::InstructionFlag flag)
             {
                 auto& val = instructionFlags[line];
                 val |= flag;
             }
-
             bool HasAnyFlag(uint32 line) const
             {
                 const auto it = instructionFlags.find(line);
@@ -222,28 +233,12 @@ namespace View
                     return false;
                 return it->second > 0;
             }
-
             DissasmAsmPreCacheLine* GetLine()
             {
                 if (index >= cachedAsmLines.size())
                     return nullptr;
                 return &cachedAsmLines[index++];
             }
-
-            void Clear()
-            {
-                for (const auto& cachedLine : cachedAsmLines)
-                    free(cachedLine.op_str);
-                cachedAsmLines.clear();
-                index       = 0;
-                maxLineSize = 0;
-            }
-
-            void Reset()
-            {
-                index = 0;
-            }
-
             void ComputeMaxLine()
             {
                 maxLineSize = 0;
@@ -254,8 +249,22 @@ namespace View
                         maxLineSize = lineSize;
                 }
             }
+            void PrepareLabelArrows();
 
-            DissasmAsmPreCacheData() : index(0)
+            void Clear()
+            {
+                for (const auto& cachedLine : cachedAsmLines)
+                    free(cachedLine.op_str);
+                cachedAsmLines.clear();
+                index       = 0;
+                maxLineSize = 0;
+            }
+            void Reset()
+            {
+                index = 0;
+            }
+
+            DissasmAsmPreCacheData() : index(0), maxLineSize(0)
             {
             }
             ~DissasmAsmPreCacheData()

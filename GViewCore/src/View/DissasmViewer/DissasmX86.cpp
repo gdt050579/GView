@@ -22,15 +22,17 @@ const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15 };
 
 // Dissasm menu configuration
-constexpr uint32 addressTotalLength     = 16;
-constexpr uint32 opCodesGroupsShown     = 8;
-constexpr uint32 opCodesTotalLength     = opCodesGroupsShown * 3 + 1;
-constexpr uint32 textColumnTextLength   = opCodesGroupsShown;
-constexpr uint32 textColumnSpacesLength = 4;
-constexpr uint32 textColumnTotalLength  = textColumnTextLength + textColumnSpacesLength;
-constexpr uint32 textTotalColumnLength  = addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength;
+constexpr uint32 addressTotalLength                 = 16;
+constexpr uint32 opCodesGroupsShown                 = 8;
+constexpr uint32 opCodesTotalLength                 = opCodesGroupsShown * 3 + 1;
+constexpr uint32 textColumnTextLength               = opCodesGroupsShown;
+constexpr uint32 textColumnSpacesLength             = 4;
+constexpr uint32 textColumnTotalLength              = textColumnTextLength + textColumnSpacesLength;
+constexpr uint32 textColumnIndicatorArrowLinesSpace = 3;
+constexpr uint32 textTotalColumnLength =
+      addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength + textColumnIndicatorArrowLinesSpace;
 constexpr uint32 commentPaddingLength   = 10;
-constexpr uint32 textPaddingLabelsSpace = 4;
+constexpr uint32 textPaddingLabelsSpace = 3;
 
 // TODO consider inline?
 AsmOffsetLine SearchForClosestAsmOffsetLineByLine(const std::vector<AsmOffsetLine>& values, uint64 searchedLine, uint32* index = nullptr)
@@ -189,8 +191,30 @@ inline void DissasmAddColorsToInstruction(
     {
         string.Clear();
         string.SetChars(' ', textPaddingLabelsSpace);
+
+        if (insn.flags && cfg.EnableDeepScanDissasmOnStart)
+        {
+            if (insn.flags & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1)
+                string[0] = '|';
+            if (insn.flags & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2)
+                string[1] = '|';
+            if (insn.flags & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3)
+                string[2] = '|';
+        }
+
         cb.Add(string, cfg.Colors.AsmDefaultColor);
     }
+
+    string.Clear();
+    string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
+
+    if (insn.lineArrowToDraw)
+    {
+        string.Clear();
+        string.SetChars('-', textColumnIndicatorArrowLinesSpace);
+    }
+
+    cb.Add(string, cfg.Colors.AsmDefaultColor);
 
     string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
@@ -828,15 +852,15 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     switch (*((uint32*) insn->mnemonic))
     {
     case pushOP:
-        asmCacheLine.flags = DissasmAsmPreCacheData::InstructionFlag::PushFlag;
+        asmCacheLine.flags = DissasmAsmPreCacheLine::InstructionFlag::PushFlag;
         break;
     case callOP:
-        asmCacheLine.flags = DissasmAsmPreCacheData::InstructionFlag::CallFlag;
+        asmCacheLine.flags = DissasmAsmPreCacheLine::InstructionFlag::CallFlag;
         break;
     default:
         if (insn->mnemonic[0] == 'j')
         {
-            asmCacheLine.flags = DissasmAsmPreCacheData::InstructionFlag::JmpFlag;
+            asmCacheLine.flags = DissasmAsmPreCacheLine::InstructionFlag::JmpFlag;
         }
         else
         {
@@ -866,7 +890,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize))
     {
         asmCacheLine.hexValue = hexVal;
-        if (hexVal == 0)
+        if (hexVal == 0 && asmCacheLine.flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             asmCacheLine.hexValue = zone->cachedCodeOffsets[0].offset;
     }
     bool alreadyInitComment = false;
@@ -877,7 +901,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
           zone->asmAddress + settings->offsetTranslateCallback->TranslateFromFileOffset(zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
 
     bool shouldConsiderCall = false;
-    if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::CallFlag)
+    if (asmCacheLine.flags == DissasmAsmPreCacheLine::InstructionFlag::CallFlag)
     {
         auto mappingPtr = TryExtractMemoryMapping(settings, hexVal, finalIndex);
         if (mappingPtr)
@@ -897,7 +921,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                     if (it != asmData.functions.end())
                     {
                         zone->asmPreCacheData.AnnounceCallInstruction(zone, it->second);
-                        zone->asmPreCacheData.AddInstructionFlag(asmLine, DissasmAsmPreCacheData::CallFlag);
+                        zone->asmPreCacheData.AddInstructionFlag(asmLine, DissasmAsmPreCacheLine::CallFlag);
                     }
                 }
             }
@@ -907,7 +931,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
             shouldConsiderCall = true;
         }
     }
-    else if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::PushFlag)
+    else if (asmCacheLine.flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
     {
         if (!alreadyInitComment && !zone->comments.comments.contains(actualLine))
         {
@@ -922,14 +946,14 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                     {
                         // TODO: add functions zone->comments to adjust comments instead of manually doing it
                         zone->comments.comments.insert({ actualLine, (const char*) textFound.data() });
-                        zone->asmPreCacheData.AddInstructionFlag(asmLine, DissasmAsmPreCacheData::PushFlag);
+                        zone->asmPreCacheData.AddInstructionFlag(asmLine, DissasmAsmPreCacheLine::PushFlag);
                     }
                 }
             }
         }
     }
 
-    if (asmCacheLine.flags == DissasmAsmPreCacheData::InstructionFlag::JmpFlag || shouldConsiderCall)
+    if (asmCacheLine.flags == DissasmAsmPreCacheLine::InstructionFlag::JmpFlag || shouldConsiderCall)
     {
         if (!asmCacheLine.hexValue.has_value())
             return false;
@@ -954,6 +978,104 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
     cs_free(insn, 1);
     return true;
+}
+
+void DissasmAsmPreCacheData::PrepareLabelArrows()
+{
+    if (cachedAsmLines.empty())
+        return;
+
+    const uint64 minimalAddress = cachedAsmLines.front().address;
+    const uint64 maximalAddress = cachedAsmLines.back().address;
+
+    std::vector<DissasmAsmPreCacheLine*> startInstructions;
+    startInstructions.reserve(textColumnIndicatorArrowLinesSpace);
+
+    for (auto& line : cachedAsmLines)
+    {
+        line.lineArrowToDraw = 0;
+        if (line.flags != DissasmAsmPreCacheLine::InstructionFlag::CallFlag && line.flags != DissasmAsmPreCacheLine::InstructionFlag::JmpFlag)
+            continue;
+        if (!line.hexValue.has_value())
+            continue;
+        if (line.hexValue.value() < minimalAddress || line.hexValue.value() > maximalAddress)
+            continue;
+        startInstructions.push_back(&line);
+        if (startInstructions.size() >= textColumnIndicatorArrowLinesSpace)
+            break;
+    }
+
+    if (startInstructions.empty())
+        return;
+
+    std::ranges::sort(
+          startInstructions, [](const DissasmAsmPreCacheLine* a, const DissasmAsmPreCacheLine* b) { return a->hexValue.value() < b->hexValue.value(); });
+
+    uint32 val = 0;
+
+    std::vector<DissasmAsmPreCacheLine*> actualLabelsLines;
+    actualLabelsLines.reserve(startInstructions.size());
+
+    {
+        auto cacheLineIt = cachedAsmLines.begin();
+        auto labelIt     = startInstructions.begin();
+        while (labelIt != startInstructions.end())
+        {
+            if (cacheLineIt->address == (*labelIt)->hexValue.value())
+            {
+                actualLabelsLines.push_back(&(*cacheLineIt));
+                ++labelIt;
+                ++cacheLineIt;
+            }
+            ++cacheLineIt;
+        }
+    }
+
+    assert(startInstructions.size() == actualLabelsLines.size());
+
+    auto startOpIt   = startInstructions.begin();
+    auto endOpIt     = actualLabelsLines.begin();
+    uint32 lineIndex = 0;
+    uint8 lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1;
+
+    while (startOpIt != startInstructions.end())
+    {
+        const bool startOpIsSmaller       = (*startOpIt)->currentLine < (*endOpIt)->currentLine;
+        DissasmAsmPreCacheLine* startLine = startOpIsSmaller ? *startOpIt : *endOpIt;
+        DissasmAsmPreCacheLine* endLine   = startOpIsSmaller ? *startOpIt : *endOpIt;
+
+        startLine->lineArrowToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine;
+        endLine->lineArrowToDraw   = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine;
+
+        while (startLine < endLine)
+        {
+            startLine->lineArrowToDraw |= lineToDraw;
+            ++startLine;
+        }
+
+        ++startOpIt;
+        ++endOpIt;
+        switch (++lineIndex)
+        {
+        case 0:
+            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1;
+            break;
+        case 1:
+            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2;
+            break;
+        case 2:
+            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3;
+            break;
+        case 3:
+            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine4;
+            break;
+        case 4:
+            lineToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine5;
+            break;
+        default:
+            assert(false); // invalid lineToDraw value
+        }
+    }
 }
 
 bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
@@ -1006,6 +1128,8 @@ bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
         currentLine++;
     }
     ComputeMaxLine();
+    if (config.EnableDeepScanDissasmOnStart)
+        PrepareLabelArrows();
     return true;
 }
 

@@ -1352,7 +1352,7 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
     {
         if (startingLine - it->currentLine > MAX_LINE_DIFF)
             break;
-        if (it->flags != InstructionFlag::PushFlag)
+        if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             continue;
 
         // TODO: improve performance, remove string concatenation as much as possible
