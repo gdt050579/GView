@@ -52,6 +52,28 @@ namespace Type
                 void UpdateGeneralInfo();
                 void UpdateTablesInfo();
             };
+
+            class Count : public AppCUI::Controls::TabPage
+            {
+                Reference<GView::Type::SQLite::SQLiteFile> sqlite;
+                Reference<AppCUI::Controls::ListView> tables;
+                Reference<AppCUI::Controls::ListView> general;
+                inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+                inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+                void RecomputePanelsPositions();
+
+              public:
+                Count(Reference<GView::Type::SQLite::SQLiteFile> sqlite);
+
+                void Update();
+                virtual void OnAfterResize(int newWidth, int newHeight) override
+                {
+                    RecomputePanelsPositions();
+                }
+                virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+                void UpdateGeneralInfo();
+                void UpdateTablesInfo();
+            };
         }; // namespace Panels
         namespace PluginDialogs
         {

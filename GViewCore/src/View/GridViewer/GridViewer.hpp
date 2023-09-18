@@ -79,6 +79,8 @@ namespace View
                 AppCUI::Input::Key toggleHorizontalLines;
                 AppCUI::Input::Key toggleVerticalLines;
                 AppCUI::Input::Key viewCellContent;
+                AppCUI::Input::Key exportCellContent;
+                AppCUI::Input::Key exportColumnContent;
             } keys;
             struct
             {
@@ -104,7 +106,8 @@ namespace View
 
             static Config config;
             FindDialog findDialog;
-
+            std::string exportedPathUTF8;
+            std::string exportedFolderPath;
           public:
             Instance(Reference<GView::Object> obj, Settings* settings);
 
@@ -126,6 +129,7 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
+            vector<uint8_t> getHexCellContent(const std::string& content);
 
           private:
             void PopulateGrid();

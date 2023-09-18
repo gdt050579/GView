@@ -37,6 +37,7 @@ extern "C"
         win->CreateViewer(settings);
 
         win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Information(sqlite)), true);
+        win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Count(sqlite)), true);
 
         return true;
     }

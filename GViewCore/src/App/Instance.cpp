@@ -6,7 +6,7 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
-constexpr uint32 DEFAULT_CACHE_SIZE    = 0xA00000; // 10 MB
+constexpr uint32 DEFAULT_CACHE_SIZE    = 0xA00000000; // 10 MB
 constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
 constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
 constexpr uint32 GENERIC_PLUGINS_FRAME = 100;

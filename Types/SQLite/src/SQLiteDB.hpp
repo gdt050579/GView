@@ -5,6 +5,7 @@
 #include "sqlite3.h"
 
 #include <vector>
+#include <fstream>
 
 using namespace AppCUI::Utils;
 
@@ -54,43 +55,59 @@ struct Column
         auto& value = values[index];
 
         int intValue;
-        if (type == Type::Integer)
+        try
         {
-            int64 newValue = std::get<int64>(value);
-            return std::to_string(newValue);
-        }
-
-        if (type == Type::Float)
-        {
-            double floatValue = std::get<double>(value);
-            return std::to_string(floatValue);
-        }
-
-        if (type == Type::Text)
-        {
-            auto strPtr = *std::get<std::string*>(value);
-            return strPtr;
-        }
-
-        if (type == Type::Blob)
-        {
-            auto blob         = std::get<Blob*>(value);
-            std::string returnValue = "";
-            std::vector<uint8> blobVector(static_cast<uint8*>(blob->data), static_cast<uint8*>(blob->data) +  blob->size - 1);
-            for (auto& c : blobVector)
+            if (type == Type::Integer)
             {
-                std::string data;
-                for (int i = 7; i >= 0; --i)
-                {
-                    data.push_back(((c & (1 << i)) ? '1' : '0'));
-                    //returnValue.push_back(((c & (1 << i)) ? '1' : '0'));
-                }
-                returnValue.append(data);
+                int64 newValue = std::get<int64>(value);
+                return std::to_string(newValue);
             }
-            // return value;
-            return returnValue;
-        }
 
+            if (type == Type::Float)
+            {
+                double floatValue = std::get<double>(value);
+                return std::to_string(floatValue);
+            }
+
+            if (type == Type::Text)
+            {
+                auto strPtr = *std::get<std::string*>(value);
+                if (strPtr == "")
+                {
+                    return "NULL";
+                }
+                return strPtr;
+            }
+
+            if (type == Type::Blob)
+            {
+                auto blob = std::get<Blob*>(value);
+                if (blob->size == 4)
+                {
+                    return "NULL";
+                }
+                std::string returnValue = "";
+                std::vector<uint8> blobVector(static_cast<uint8*>(blob->data), static_cast<uint8*>(blob->data) + blob->size);
+
+                for (auto& c : blobVector)
+                {
+                    std::string data;
+                    for (int i = 7; i >= 0; --i)
+                    {
+                        data.push_back(((c & (1 << i)) ? '1' : '0'));
+                        // returnValue.push_back(((c & (1 << i)) ? '1' : '0'));
+                    }
+                    returnValue.append(data);
+                }
+                returnValue.append("_BL");
+                // return value;
+                return returnValue;
+            }
+        }
+        catch (...)
+        {
+            return "NULL";
+        }
         if (type == Type::Null)
         {
             return "NULL";
@@ -119,7 +136,6 @@ struct Column
 class Statement
 {
     sqlite3_stmt* handle;
-    bool shouldReset;
 
   public:
     const char* query;
@@ -128,24 +144,12 @@ class Statement
     {
         this->query      = query;
         const char* tail = nullptr;
-
         // -1 = read until the null terminator
-        auto z = sqlite3_prepare_v2(db, query, -1, &handle, &tail);
-
-        shouldReset = false;
+        auto z          = sqlite3_prepare_v2(db, query, -1, &handle, & tail);
     }
 
     std::vector<Column> Exec()
     {
-        if (shouldReset)
-        {
-            // TODO: Move this logic at the bottom and get rid of this ugly edge case
-            sqlite3_reset(handle);
-        }
-        else
-        {
-            shouldReset = true;
-        }
         auto columnCount = sqlite3_column_count(handle);
         std::vector<Column> result;
 
@@ -180,35 +184,9 @@ class Statement
 
         if (status == SQLITE_DONE)
         {
+            sqlite3_reset(handle);
             return {};
         }
-
-        /*for (int i = 0; i < columnCount; ++i)
-        {
-            result.push_back({});
-            result[i].name = sqlite3_column_name(handle, i);
-
-            auto type = sqlite3_column_type(handle, i);
-
-            switch (type)
-            {
-            case SQLITE_INTEGER:
-                result[i].type = Column::Type::Integer;
-                break;
-            case SQLITE_FLOAT:
-                result[i].type = Column::Type::Float;
-                break;
-            case SQLITE_TEXT:
-                result[i].type = Column::Type::Text;
-                break;
-            case SQLITE_BLOB:
-                result[i].type = Column::Type::Blob;
-                break;
-            case SQLITE_NULL:
-                result[i].type = Column::Type::Null;
-                break;
-            }
-        }*/
 
         do
         {
@@ -255,7 +233,7 @@ class Statement
                     auto size = sqlite3_column_bytes(handle, i);
 
                     // TODO: Don't forget to free this everywhere
-                    result[i].values.push_back(new std::string((const char*) ptr, size));
+                    result[i].values.push_back(new std::string((const char*) ptr, (const char*) ptr + size));
                     break;
                 }
                 case Column::Type::Blob:
@@ -264,7 +242,7 @@ class Statement
                     auto size = sqlite3_column_bytes(handle, i);
                     if (size == 0)
                     {
-                        result[i].values.push_back(new Blob((const uint8*) "test", 4));
+                        result[i].values.push_back(new Blob((const uint8*) "dest", 4));
                         break;
                     }
                     auto theContent = (const uint8*) ptr;
@@ -274,22 +252,7 @@ class Statement
                 }
                 case Column::Type::Null:
                 {
-                    /*if (type == SQLITE_NULL)
-                    {
-                        break;
-                    }
-                    auto ptr  = sqlite3_column_blob(handle, i);
-                    auto size = sqlite3_column_bytes(handle, i);
-                    if (size != 0)
-                    {
-                        result[i].values.push_back(new Blob{ (const uint8*) ptr, size });
-                        break;
-                    }*/
-
-                    // When retrieving the name and SQL query for a specific table,
-                    // the columns are expected to have the string type. Therefore,
-                    // return nullptr of type string
-                    result[i].values.push_back(new Blob((const uint8*) "test", 4));
+                    result[i].values.push_back(new Blob((const uint8*) "cest12", 4));
                     break;
                 }
                 }
@@ -300,13 +263,13 @@ class Statement
 
         for (int i = 0; i < columnCount; ++i)
         {
-            // No need to store a list full of nulls
             if (result[i].type == Column::Type::Null)
             {
                 result[i].values.clear();
             }
         }
 
+        sqlite3_reset(handle);
         return result;
     }
 };
@@ -320,25 +283,9 @@ class DB
     {
     }
 
-    DB(BufferView buffer)
+    DB(const std::u16string_view& filePath)
     {
-        auto path = AppCUI::OS::GetCurrentApplicationPath();
-        path.remove_filename();
-        // TODO: This is hardcoded, the DLL needs to be compiled manually
-        // Do it better
-        path /= "Types";
-        path /= "memvfs.dll";
-
-        // Open the database from an in-memory buffer by using memvfs.
-        // https://www.sqlite.org/src/file/ext/misc/memvfs.c
-        auto x = sqlite3_open(":memory:", &handle);
-        auto y = sqlite3_enable_load_extension(handle, 1);
-        auto z = sqlite3_load_extension(handle, path.string().c_str(), nullptr, nullptr);
-        auto t = sqlite3_close(handle);
-
-        auto uri = sqlite3_mprintf("file:mem?ptr=0x%p&sz=%lld", buffer.GetData(), (long long) buffer.GetLength());
-        auto w   = sqlite3_open_v2(uri, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, "memvfs");
-        sqlite3_free(uri);
+        auto x = sqlite3_open16(filePath.data(), &handle);
     }
 
     DB& operator=(DB&& other) noexcept
@@ -356,6 +303,10 @@ class DB
         }
 
         auto columns = Exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC;");
+        if (columns.size() == 0)
+        {
+            return {};
+        }
         std::vector<std::string> result;
 
         for (auto str : columns[0].values)
@@ -421,7 +372,13 @@ class DB
             return {};
         }
 
-        auto columns = Exec("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name ASC;");
+        auto columns = Exec("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name ASC");
+        
+        if (columns.size() == 0)
+        {
+            return {};
+        }
+        
         std::vector<std::pair<std::string, std::string>> result;
 
         for (int i = 0; i < columns[0].values.size(); ++i)

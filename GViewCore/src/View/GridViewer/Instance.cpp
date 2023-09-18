@@ -1,4 +1,8 @@
 #include "GridViewer.hpp"
+#include <fstream>
+#include <filesystem>
+
+ //#include <windows.h>
 
 using namespace GView::View::GridViewer;
 using namespace AppCUI::Input;
@@ -10,7 +14,9 @@ constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
 constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
 constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
-constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003;
+constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003; 
+constexpr uint32 COMMAND_ID_EXPORT_CELL_CONTENT         = 0x1004; 
+constexpr uint32 COMMAND_ID_EXPORT_COLUMN_CONTENT       = 0x1005;
 
 Config Instance::config;
 
@@ -43,6 +49,21 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings
 
     if (config.loaded == false)
         config.Initialize();
+    const auto count = GView::App::GetObjectsCount();
+    if (count == 0)
+    {
+        return;
+    }
+    auto path                   = GView::App::GetObject(0)->GetPath();
+    auto lastSlash              = path.rfind(u".");
+    std::u16string exportedPath = std::u16string(path.substr(0, lastSlash));
+    exportedPath.append(u"_exported");
+    this->exportedPathUTF8 = { exportedPath.begin(), exportedPath.end() };
+    auto lastP = path.rfind(u"\\");
+    std::u16string exportedPathSlash = std::u16string(path.substr(0, lastP));
+    exportedPathSlash.append(u"\\");
+
+    this->exportedFolderPath = { exportedPathSlash.begin(), exportedPathSlash.end() };
 }
 
 bool Instance::GoTo(uint64 offset)
@@ -73,7 +94,8 @@ bool Instance::ShowFindDialog()
 
 bool Instance::ShowCopyDialog()
 {
-    NOT_IMPLEMENTED(false);
+    grid->OnKeyEvent(Key::Ctrl | Key::C, 0);
+    return true;
 }
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
@@ -84,7 +106,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         const uint32 x2 = x1 + config.cursorInformationCellSpace + 1;
         const uint32 x3 = x2 + config.cursorInformationCellSpace + 1;
         const uint32 x4 = x3 + config.cursorInformationCellSpace + 1;
-        const uint32 x5 = x4 + config.cursorInformationCellSpace + 1;
+        const uint32 x5 = x4 + config.cursorInformationCellSpace + 1 ;
         const uint32 x6 = x5 + config.cursorInformationCellSpace + 1;
         const uint32 y  = 0;
 
@@ -125,7 +147,24 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.keys.toggleHorizontalLines, "ToggleHorizontalLines", COMMAND_ID_TOGGLE_HORIZONTAL_LINES);
     commandBar.SetCommand(config.keys.toggleVerticalLines, "ToggleVerticalLines", COMMAND_ID_TOGGLE_VERTICAL_LINES);
     commandBar.SetCommand(config.keys.viewCellContent, "ViewCellContent", COMMAND_ID_VIEW_CELL_CONTENT);
+    commandBar.SetCommand(config.keys.exportCellContent, "ExportCellContent", COMMAND_ID_EXPORT_CELL_CONTENT);
+    commandBar.SetCommand(config.keys.exportColumnContent, "ExportColumnContent", COMMAND_ID_EXPORT_COLUMN_CONTENT);
     return false;
+}
+
+vector<uint8_t> Instance::getHexCellContent(const std::string& content) {
+
+    vector<uint8_t> hexData;
+    for (auto chunkIndex = 0; chunkIndex < content.size() / 8; chunkIndex++)
+    {
+        uint8_t value = 0;
+        for (auto valueIndex = chunkIndex * 8; valueIndex < (chunkIndex + 1) * 8; valueIndex++)
+        {
+            value = value * 2 + content[valueIndex] - '0';
+        }
+        hexData.push_back(value);
+    }
+    return hexData;
 }
 
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
@@ -150,9 +189,56 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
         }
         else if (ID == COMMAND_ID_VIEW_CELL_CONTENT)
         {
-            auto content = grid->GetSelectedCellContent();
-            BufferView buffer(content.value().GetText(), content.value().Len());
+            auto cellContent = grid->GetSelectedCellContent();
+            auto content = getHexCellContent(cellContent.value());
+            BufferView buffer(content.data(), content.size());
             GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
+        }
+        else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT)
+        {
+            auto cellContent = grid->GetSelectedCellContent();
+            auto content     = getHexCellContent(cellContent.value());
+            
+            std::time_t t = std::time(0);
+            auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
+
+            std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
+            file.write(reinterpret_cast<const char*>(content.data()), content.size());
+            file.close();
+            
+
+            AppCUI::Dialogs::MessageBox::ShowNotification("File Export Result", std::string("File exported successfully at: ") + timestampPath);
+        }
+        else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT)
+        {
+            auto data = grid->GetSelectedColumnContent();
+            auto index = 0;
+
+            auto folderPath = this->exportedFolderPath + data.value().first + "_";
+            std::time_t t   = std::time(0);
+            folderPath += std::to_string(t);
+
+            if (!std::filesystem::exists(folderPath)) {
+                std::filesystem::create_directory(folderPath);
+            }
+
+
+            for (auto& content : data.value().second)
+            {
+                auto hexContent = getHexCellContent(content);
+                std::string newName = folderPath + "\\row_" + std::to_string(index);
+                std::ofstream file(newName.c_str(), std::ios::binary); // Open the file in binary mode
+
+                file.write(reinterpret_cast<const char*>(hexContent.data()), hexContent.size());
+                file.close();
+                
+                index++;
+            }
+
+            folderPath.pop_back();
+            folderPath.pop_back();
+            AppCUI::Dialogs::MessageBox::ShowNotification("Files Export Result", std::string("Files exported successfully at folder: ") + folderPath);
+
         }
     }
 

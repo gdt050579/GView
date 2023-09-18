@@ -4,13 +4,16 @@ using namespace GView::Type::SQLite;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
-const auto BTN_ID_OK = 0;
+const auto BTN_ID_OK             = 0;
 constexpr uint32 SQL_SHOW_DIALOG = 1;
 
 Panels::Information::Information(Reference<GView::Type::SQLite::SQLiteFile> _sqlite) : TabPage("&Tables")
 {
-    sqlite = _sqlite;
-    general = CreateChildControl<ListView>("x:0,y:0,w:100%,h:100%", std::initializer_list<ConstString>{ "n:Field,w:24", "n:Value,w:100" }, ListViewFlags::None);
+    sqlite  = _sqlite;
+    general = CreateChildControl<ListView>(
+          "x:0,y:0,w:100%,h:100%",
+          std::initializer_list<ConstString>{ "n:Column,w:20", "n:Column Type,w:20", "n:Is Pk,w:20", "n:Is Unique, w:20", "n:Default Value, w:20" },
+          ListViewFlags::None);
     this->Update();
 }
 void Panels::Information::UpdateTablesInfo()
@@ -19,46 +22,27 @@ void Panels::Information::UpdateTablesInfo()
     LocalString<1024> tmp;
 
     auto tables = sqlite->db.GetTables();
+
     for (auto& table : tables)
     {
         auto tableMetadata = sqlite->db.GetTableMetadata(table);
         general->AddItem(table).SetType(ListViewItem::Type::Category);
 
-        auto noEntries = sqlite->db.GetTableCount(table);
-        general->AddItem({ "Number of entries", std::to_string(noEntries) });
-
         for (auto& columnMetadata : tableMetadata)
         {
-            
             LocalString<1024> columnInfoReadable;
             LocalString<200> columnName;
+            LocalString<200> columnType;
+            LocalString<200> isPk;
+            LocalString<200> isUnique;
+            LocalString<200> defaultValue;
             columnName.Add(columnMetadata[0]);
-            
-            if (columnMetadata[4] == "1")
-            {
-                columnName.Add(" (PK)");   
-            }
-
-            columnInfoReadable.Add(columnMetadata[1]);
-            columnInfoReadable.Add(", ");
-            if (columnMetadata[3] == "NULL")
-            {
-                columnInfoReadable.Add("NO DEFAULT VALUE");
-            }
-            else
-            {
-                columnInfoReadable.Add("WITH DEFAULT VALUE ");
-                columnInfoReadable.Add(columnMetadata[3]);
-            }
-
-            if (columnMetadata[2] == "1" && columnMetadata[4] != "1")
-            {
-                columnInfoReadable.Add(", UNIQUE CONSTRAINT");
-            }
-
-            general->AddItem({ columnName, columnInfoReadable });
+            columnType.Add(columnMetadata[1]);
+            defaultValue.Add(columnMetadata[3]);
+            isPk.Add(columnMetadata[4] == "1" ? "YES" : "NO");
+            isUnique.Add(columnMetadata[2] == "1" ? "YES" : "NO");
+            general->AddItem({ columnName, columnType, isPk, isUnique, defaultValue });
         }
-        
     }
 }
 
@@ -79,15 +63,12 @@ void Panels::Information::RecomputePanelsPositions()
 
 void Panels::Information::UpdateGeneralInfo()
 {
-    LocalString<1024> ls;
-
-    general->AddItem("Info").SetType(ListViewItem::Type::Category);
-    general->AddItem({ "SQLite lib version", sqlite->db.GetLibraryVersion() });
+    
 }
 
 void Panels::Information::Update()
 {
-    //general->DeleteAllItems();
+    // general->DeleteAllItems();
 
     UpdateGeneralInfo();
     UpdateTablesInfo();

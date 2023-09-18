@@ -46,7 +46,7 @@ constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT = DESCRIPTION_HEIGHT_TEXT_FORM
 constexpr std::string_view ANYTHING_PATTERN{ "???" };
 
 FindDialog::FindDialog()
-    : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
+    : Window("Filter", "d:c,w:63%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
       position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })
 {
     description = Factory::CanvasViewer::Create(
