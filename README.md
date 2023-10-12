@@ -146,7 +146,7 @@ For static analysis, we are using `CodeQL` & `Microsoft C++ Code Analysis`.
 ## Documentation 
 The project uses Sphinx as the main documentation engine. Sphinx sources can be located under `docs` folder.
 
-On every commit to `main`, a compiled version of the Sphinx documentation is published to `gh-pages` and then to [docs](https://gdt050579.github.io/GView).
+On every commit to `main`, a compiled version of the Sphinx documentation is published to `gh-pages` and then to docs.
 
 ## Start contributing
 - Clone this repository using recurse submodules: 
