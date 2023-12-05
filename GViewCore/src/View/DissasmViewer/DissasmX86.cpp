@@ -678,7 +678,7 @@ inline bool ExtractCallsToInsertFunctionNames(
     }
 
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
-    std::ranges::sort(callsFound, [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::sort(callsFound.begin(), callsFound.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
     // callsFound.push_back({ 1030, "call2" });
     // callsFound.push_back({ 1130, "call 3" });
@@ -1008,8 +1008,10 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     if (startInstructions.empty())
         return;
 
-    std::ranges::sort(
-          startInstructions, [](const DissasmAsmPreCacheLine* a, const DissasmAsmPreCacheLine* b) { return a->hexValue.value() < b->hexValue.value(); });
+    std::sort(
+          startInstructions.begin(),
+          startInstructions.end(),
+          [](const DissasmAsmPreCacheLine* a, const DissasmAsmPreCacheLine* b) { return a->hexValue.value() < b->hexValue.value(); });
 
     uint32 val = 0;
 
@@ -1509,7 +1511,7 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
 
     const auto annotations = zone->types.back().get().annotations;
-    for (const auto& entry: annotations) // no std::views::keys on mac
+    for (const auto& entry : annotations) // no std::views::keys on mac
     {
         if (entry.first >= diffLines)
             break;
