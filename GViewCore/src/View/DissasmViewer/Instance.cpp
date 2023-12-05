@@ -358,7 +358,10 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
             }
         }
         // return true;
-        assert(false);
+        if (!zonesCount)
+        {
+            assert(false);
+        }
     }
     else
     {

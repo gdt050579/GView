@@ -1509,9 +1509,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
 
     const auto annotations = zone->types.back().get().annotations;
-    for (const auto& key : annotations | std::views::keys)
+    for (const auto& entry: annotations) // no std::views::keys on mac
     {
-        if (key >= diffLines)
+        if (entry.first >= diffLines)
             break;
         actualLine++;
     }
