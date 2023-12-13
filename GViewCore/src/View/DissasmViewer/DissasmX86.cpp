@@ -177,8 +177,11 @@ inline void DissasmAddColorsToInstruction(
             cb.Add(string, cfg.Colors.AsmDefaultColor);
             break;
         }
-        const uint8 byte = insn.bytes[i];
-        cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
+        if (i != textColumnTextLength - 1)
+        {
+            const uint8 byte = insn.bytes[i];
+            cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
+        }
     }
 
     string.Clear();
@@ -914,7 +917,8 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                 GView::Hashes::CRC32 crc32{};
                 uint32 hash    = 0;
                 const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
-                                 crc32.Update((const uint8*) mappingPtr->name.data(), mappingPtr->name.size()) && crc32.Final(hash);
+                                 crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
+                                 crc32.Final(hash);
                 if (res)
                 {
                     const auto it = asmData.functions.find(hash);
