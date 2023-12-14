@@ -597,7 +597,7 @@ namespace View
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
-            void MoveTo(int32 offset = 0, int32 lines = 0, bool select = false);
+            void MoveTo(int32 offset = 0, int32 lines = 0, AppCUI::Input::Key key = AppCUI::Input::Key::None, bool select = false);
             void MoveScrollTo(int32 offset, int32 lines);
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);

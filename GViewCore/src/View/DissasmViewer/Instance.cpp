@@ -78,6 +78,8 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     if (config.Loaded == false)
         config.Initialize();
 
+    this->selection.EnableMultiSelection(true);
+
     this->Cursor.lineInView    = 0;
     this->Cursor.startViewLine = 0;
     this->Cursor.offset        = 0;
@@ -790,34 +792,37 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
 
 void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters)
 {
-    if (selection.HasAnySelection())
+    for (uint32 i = 0; i < selection.GetCount(); i++)
     {
-        const uint64 selectionStart = selection.GetSelectionStart(0);
-        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
-
-        const uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
-        const uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        const uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startViewLine;
-
-        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
+        if (selection.HasSelection(i))
         {
-            uint32 startingIndex = selectionStart % Layout.textSize;
-            if (selectStartLine < lineToDrawTo)
-                startingIndex = 0;
-            uint32 endIndex = selectionEnd % Layout.textSize + 1;
-            if (lineToDrawTo < selectionEndLine)
-                endIndex = static_cast<uint32>(maxLineLength);
-            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
-            // TODO: variables can be skipped, use startingPointer < EndPointer
-            const auto savedChText = dli.chText;
-            dli.chText             = dli.chNameAndSize + startingIndex;
-            while (startingIndex < endIndex)
+            const uint64 selectionStart = selection.GetSelectionStart(i);
+            const uint64 selectionEnd   = selection.GetSelectionEnd(i);
+
+            const uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
+            const uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
+            const uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startViewLine;
+
+            if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
             {
-                dli.chText->Color = Cfg.Selection.Editor;
-                dli.chText++;
-                startingIndex++;
+                uint32 startingIndex = selectionStart % Layout.textSize;
+                if (selectStartLine < lineToDrawTo)
+                    startingIndex = 0;
+                uint32 endIndex = selectionEnd % Layout.textSize + 1;
+                if (lineToDrawTo < selectionEndLine)
+                    endIndex = static_cast<uint32>(maxLineLength);
+                // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
+                // TODO: variables can be skipped, use startingPointer < EndPointer
+                const auto savedChText = dli.chText;
+                dli.chText             = dli.chNameAndSize + startingIndex;
+                while (startingIndex < endIndex)
+                {
+                    dli.chText->Color = Cfg.Selection.Editor;
+                    dli.chText++;
+                    startingIndex++;
+                }
+                dli.chText = savedChText;
             }
-            dli.chText = savedChText;
         }
     }
 
@@ -1247,7 +1252,7 @@ bool Instance::ShowGoToDialog()
         if (lineToReach != currentLine)
         {
             jumps_holder.insert(Cursor.saveState());
-            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);
+            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
         }
     }
     /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
