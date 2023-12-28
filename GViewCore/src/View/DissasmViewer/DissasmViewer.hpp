@@ -9,6 +9,9 @@
 #include <cassert>
 #include <capstone/capstone.h>
 
+#include "AdvancedSelection.hpp"
+#include "DissasmDataTypes.hpp"
+
 namespace GView
 {
 namespace View
@@ -401,12 +404,6 @@ namespace View
             std::deque<DissasmCodeZone*> zonesToClear;
         };
 
-        struct LinePosition
-        {
-            uint32 line;
-            uint32 offset;
-        };
-
         struct DrawLineInfo
         {
             const uint8* start;
@@ -516,6 +513,12 @@ namespace View
                 bool hasMovedView;
             } Cursor;
 
+            struct OverridenKeys
+            {
+                bool is_ctrl_down;
+                bool is_alt_down;
+            };
+
             struct
             {
                 ColorPair Normal, Line, Highlighted;
@@ -557,9 +560,10 @@ namespace View
             Pointer<SettingsData> settings;
             static Config config;
             CharacterBuffer chars;
-            Utils::Selection selection;
+            AdvancedSelection selection;
             CodePage codePage;
             Menu rightClickMenu;
+            OverridenKeys overriden_keys;
             // uint64 rightClickOffset;
 
             AsmData asmData;
@@ -589,9 +593,11 @@ namespace View
             void UpdateLayoutTotalLines();
 
             // Utils
+            bool ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb);
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             // inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
+            [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromLinePosition(uint32 lineStart, uint32 lineEnd = 0) const;
 
             void AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize);
 
@@ -602,6 +608,8 @@ namespace View
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
+
+            void OpenCurrentSelection();
 
             // Operations
             void AddNewCollapsibleZone();

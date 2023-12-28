@@ -13,4 +13,6 @@ target_sources(
 	CommentDataWindow.cpp
         AdvancedSelection.hpp
 	AdvancedSelection.cpp
+	DissasmDataTypes.hpp
+	DissasmDataTypes.cpp
 )

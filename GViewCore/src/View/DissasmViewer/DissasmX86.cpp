@@ -146,6 +146,9 @@ inline void DissasmAddColorsToInstruction(
     const MemoryMappingEntry* mappingPtr = (const MemoryMappingEntry*) insn.mapping;
     // cb.Clear();
 
+    //TODO: Unicode --> alt caracter
+    //AppCUI::Graphics:: GetCharacterCode
+    //TODO: in loc de label jmp_address:
     LocalString<128> string;
     string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
@@ -1543,13 +1546,17 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
 void Instance::CommandDissasmAddZone()
 {
+    return;
+
     uint64 offsetStart = 0;
     uint64 offsetEnd   = 0;
-    if (!selection.HasAnySelection() || !selection.GetSelection(0, offsetStart, offsetEnd))
+
+    //TODO: reenable this
+    /*if (!selection.HasAnySelection() || !selection.GetSelection(0, offsetStart, offsetEnd))
     {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
-    }
+    }*/
 
     const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
     if (zonesFound.empty() || zonesFound.size() != 1)
