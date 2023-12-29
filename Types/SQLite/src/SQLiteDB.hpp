@@ -2,7 +2,7 @@
 #pragma once
 
 #include "GView.hpp"
-#include "sqlite3.h"
+#include <sqlite3.h>
 
 #include <vector>
 #include <fstream>

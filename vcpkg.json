@@ -50,6 +50,10 @@
     {
       "name": "minizip-ng",
       "platform": "windows | linux | osx"
+    },
+    {
+      "name": "sqlite3",
+      "platform": "windows | linux | osx"
     }
   ]
 }
