@@ -152,15 +152,13 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     return false;
 }
 
-vector<uint8_t> Instance::getHexCellContent(const std::string& content) {
-
+vector<uint8_t> Instance::getHexCellContent(const AppCUI::Utils::String& content) {
+    constexpr uint32_t SIZE = 8;
     vector<uint8_t> hexData;
-    for (auto chunkIndex = 0; chunkIndex < content.size() / 8; chunkIndex++)
-    {
+    for (auto chunkIndex = 0; chunkIndex < content.Len() / SIZE; chunkIndex++) {
         uint8_t value = 0;
-        for (auto valueIndex = chunkIndex * 8; valueIndex < (chunkIndex + 1) * 8; valueIndex++)
-        {
-            value = value * 2 + content[valueIndex] - '0';
+        for (auto valueIndex = chunkIndex * SIZE; valueIndex < (chunkIndex + 1) * SIZE; valueIndex++) {
+            value = value * 2 + content.GetChar(valueIndex) - '0';
         }
         hexData.push_back(value);
     }

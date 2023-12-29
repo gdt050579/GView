@@ -129,7 +129,7 @@ namespace View
             void SetCustomPropertyValue(uint32 propertyID) override;
             bool IsPropertyValueReadOnly(uint32 propertyID) override;
             const vector<Property> GetPropertiesList() override;
-            vector<uint8_t> getHexCellContent(const std::string& content);
+            vector<uint8_t> getHexCellContent(const AppCUI::Utils::String& content);
 
           private:
             void PopulateGrid();
