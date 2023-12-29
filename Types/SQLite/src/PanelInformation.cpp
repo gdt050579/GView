@@ -16,6 +16,7 @@ Panels::Information::Information(Reference<GView::Type::SQLite::SQLiteFile> _sql
           ListViewFlags::None);
     this->Update();
 }
+
 void Panels::Information::UpdateTablesInfo()
 {
     NumericFormatter n;
@@ -23,13 +24,11 @@ void Panels::Information::UpdateTablesInfo()
 
     auto tables = sqlite->db.GetTables();
 
-    for (auto& table : tables)
-    {
+    for (auto& table : tables) {
         auto tableMetadata = sqlite->db.GetTableMetadata(table);
         general->AddItem(table).SetType(ListViewItem::Type::Category);
 
-        for (auto& columnMetadata : tableMetadata)
-        {
+        for (auto& columnMetadata : tableMetadata) {
             LocalString<1024> columnInfoReadable;
             LocalString<200> columnName;
             LocalString<200> columnType;
@@ -53,8 +52,7 @@ void Panels::Information::RecomputePanelsPositions()
     int w    = this->GetWidth();
     int h    = this->GetHeight();
 
-    if ((!tables.IsValid()))
-    {
+    if ((!tables.IsValid())) {
         return;
     }
 
@@ -63,7 +61,6 @@ void Panels::Information::RecomputePanelsPositions()
 
 void Panels::Information::UpdateGeneralInfo()
 {
-    
 }
 
 void Panels::Information::Update()

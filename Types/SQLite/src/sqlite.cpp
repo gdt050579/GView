@@ -9,48 +9,46 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-extern "C"
+extern "C" {
+
+PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
 {
-    PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
-    {
-        if (buf.GetLength() < sizeof(SQLite::SQLITE3_MAGIC))
-        {
-            return false;
-        }
-        if (memcmp(buf.GetData(), SQLite::SQLITE3_MAGIC, sizeof(SQLite::SQLITE3_MAGIC)) != 0) // Note that \0 is part of the magic
-        {
-            return false;
-        }
-
-        return true;
+    if (buf.GetLength() < sizeof(SQLite::SQLITE3_MAGIC)) {
+        return false;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance()
+    if (memcmp(buf.GetData(), SQLite::SQLITE3_MAGIC, sizeof(SQLite::SQLITE3_MAGIC)) != 0) // Note that \0 is part of the magic
     {
-        return new SQLite::SQLiteFile();
+        return false;
     }
-    PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
-    {
-        auto sqlite = win->GetObject()->GetContentType<SQLite::SQLiteFile>();
-        sqlite->Update();
 
-        BufferViewer::Settings settings;
-        win->CreateViewer(settings);
-
-        win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Information(sqlite)), true);
-        win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Count(sqlite)), true);
-
-        return true;
-    }
-    PLUGIN_EXPORT void UpdateSettings(IniSection sect)
-    {
-        sect["Description"] = "Executable and Linkable Format (for UNIX systems)";
-        sect["Extension"]   = { "db" };
-        sect["Command.ShowTablesDialog"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
-        sect["Priority"] = 1;
-    }
+    return true;
 }
 
-int main()
+PLUGIN_EXPORT TypeInterface* CreateInstance()
 {
-    return 0;
+    return new SQLite::SQLiteFile();
+}
+
+PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
+{
+    auto sqlite = win->GetObject()->GetContentType<SQLite::SQLiteFile>();
+    sqlite->Update();
+
+    BufferViewer::Settings settings;
+    win->CreateViewer(settings);
+
+    win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Information(sqlite)), true);
+    win->AddPanel(Pointer<TabPage>(new SQLite::Panels::Count(sqlite)), true);
+
+    return true;
+}
+
+PLUGIN_EXPORT void UpdateSettings(IniSection sect)
+{
+    sect["Description"]              = "Executable and Linkable Format (for UNIX systems)";
+    sect["Extension"]                = { "db" };
+    sect["Command.ShowTablesDialog"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
+    sect["Priority"]                 = 1;
+}
+
 }

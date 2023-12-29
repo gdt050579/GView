@@ -11,7 +11,7 @@ std::string_view SQLiteFile::GetTypeName()
 bool SQLiteFile::Update()
 {
     auto path = obj->GetPath();
-    db = DB(path);
+    db        = DB(path);
     return true;
 }
 
@@ -23,14 +23,10 @@ void SQLiteFile::OnButtonPressed(const std::string_view& statement)
 
     bool comma = false;
 
-    for (const auto& column : data.first)
-    {
-        if (!comma)
-        {
+    for (const auto& column : data.first) {
+        if (!comma) {
             comma = true;
-        }
-        else
-        {
+        } else {
             contents.AddChar(separator);
         }
 
@@ -39,18 +35,13 @@ void SQLiteFile::OnButtonPressed(const std::string_view& statement)
 
     contents.Add("\n");
 
-    for (const auto& row : data.second)
-    {
+    for (const auto& row : data.second) {
         comma = false;
 
-        for (const auto& entry : row)
-        {
-            if (!comma)
-            {
+        for (const auto& entry : row) {
+            if (!comma) {
                 comma = true;
-            }
-            else
-            {
+            } else {
                 contents.AddChar(separator);
             }
 
@@ -72,14 +63,10 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
 
     bool comma = false;
 
-    for (auto& column : data.first)
-    {
-        if (!comma)
-        {
+    for (auto& column : data.first) {
+        if (!comma) {
             comma = true;
-        }
-        else
-        {
+        } else {
             contents.push_back(separator);
         }
 
@@ -88,18 +75,13 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
 
     contents += "\n";
 
-    for (auto& row : data.second)
-    {
+    for (auto& row : data.second) {
         comma = false;
 
-        for (auto& entry : row)
-        {
-            if (!comma)
-            {
+        for (auto& entry : row) {
+            if (!comma) {
                 comma = true;
-            }
-            else
-            {
+            } else {
                 contents.push_back(separator);
             }
 
@@ -108,7 +90,6 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
 
         contents += "\n";
     }
-
 
     string_view contents_view = string_view(contents);
     BufferView buff(contents_view);
@@ -120,8 +101,7 @@ void SQLiteFile::OnListViewItemPressed(const std::string_view& tableName)
 
 void SQLiteFile::RunCommand(std::string_view commandName)
 {
-    if (commandName == "ShowTablesDialog")
-    {
+    if (commandName == "ShowTablesDialog") {
         auto dialog = PluginDialogs::TablesDialog(this);
         dialog.Show();
     }

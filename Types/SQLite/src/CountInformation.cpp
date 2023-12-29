@@ -1,27 +1,25 @@
 #include "sqlite.hpp"
 
-using namespace GView::Type::SQLite;
 using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 
+namespace GView::Type::SQLite::Panels
+{
 
-Panels::Count::Count(Reference<GView::Type::SQLite::SQLiteFile> _sqlite) : TabPage("&Additional Information")
+Count::Count(Reference<GView::Type::SQLite::SQLiteFile> _sqlite) : TabPage("&Additional Information")
 {
     sqlite  = _sqlite;
-    general = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:100%",
-          std::initializer_list<ConstString>{ "n:Field,w:50", "n:Value,w:50" },
-          ListViewFlags::None);
+    general = CreateChildControl<ListView>("x:0,y:0,w:100%,h:100%", std::initializer_list<ConstString>{ "n:Field,w:50", "n:Value,w:50" }, ListViewFlags::None);
     this->Update();
 }
-void Panels::Count::UpdateTablesInfo()
+
+void Count::UpdateTablesInfo()
 {
     NumericFormatter n;
     LocalString<1024> tmp;
 
     auto tables = sqlite->db.GetTables();
-    for (auto& table : tables)
-    {
+    for (auto& table : tables) {
         auto tableMetadata = sqlite->db.GetTableMetadata(table);
         general->AddItem(table).SetType(ListViewItem::Type::Category);
 
@@ -30,22 +28,21 @@ void Panels::Count::UpdateTablesInfo()
     }
 }
 
-void Panels::Count::RecomputePanelsPositions()
+void Count::RecomputePanelsPositions()
 {
     int py   = 0;
     int last = 0;
     int w    = this->GetWidth();
     int h    = this->GetHeight();
 
-    if ((!tables.IsValid()))
-    {
+    if ((!tables.IsValid())) {
         return;
     }
 
     this->tables->Resize(w, h);
 }
 
-void Panels::Count::UpdateGeneralInfo()
+void Count::UpdateGeneralInfo()
 {
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
@@ -59,7 +56,7 @@ void Panels::Count::UpdateGeneralInfo()
     general->AddItem({ "SQLite lib version", sqlite->db.GetLibraryVersion() });
 }
 
-void Panels::Count::Update()
+void Count::Update()
 {
     // general->DeleteAllItems();
 
@@ -67,7 +64,9 @@ void Panels::Count::Update()
     UpdateTablesInfo();
 }
 
-bool Panels::Count::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
+bool Count::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     return true;
 }
+
+} // namespace GView::Type::SQLite::Panels

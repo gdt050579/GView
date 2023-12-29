@@ -11,7 +11,7 @@ constexpr int32 DESCRIPTION_HEIGHT_TEXT_FORMAT = 3;
 PluginDialogs::TablesDialog::TablesDialog(Reference<GView::Type::SQLite::SQLiteFile> _sqlite)
     : Window("Tables", "d:c,w:60%,h:24", WindowFlags::ProcessReturn | WindowFlags::Sizeable)
 {
-    sqlite   = _sqlite;
+    sqlite = _sqlite;
 
     statementDescription = Factory::CanvasViewer::Create(
           this, "d:t,h:6", this->GetWidth(), DESCRIPTION_HEIGHT_TEXT_FORMAT, Controls::ViewerFlags::Border | Controls::ViewerFlags::HideScrollBar);
@@ -27,10 +27,8 @@ PluginDialogs::TablesDialog::TablesDialog(Reference<GView::Type::SQLite::SQLiteF
 
 bool PluginDialogs::TablesDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if (eventType == Event::ButtonClicked)
-    {
-        switch (ID)
-        {
+    if (eventType == Event::ButtonClicked) {
+        switch (ID) {
         case BTN_ID_CANCEL:
             Exit(Dialogs::Result::Cancel);
             return true;
@@ -41,8 +39,7 @@ bool PluginDialogs::TablesDialog::OnEvent(Reference<Control>, Event eventType, i
         }
     }
 
-    switch (eventType)
-    {
+    switch (eventType) {
     case Event::WindowClose:
         Exit(Dialogs::Result::Cancel);
         return true;
@@ -53,8 +50,7 @@ bool PluginDialogs::TablesDialog::OnEvent(Reference<Control>, Event eventType, i
 
 void PluginDialogs::TablesDialog::OnFocus()
 {
-    if (this->textArea.IsValid())
-    {
+    if (this->textArea.IsValid()) {
         this->textArea->SetFocus();
     }
     return Window::OnFocus();
@@ -67,8 +63,7 @@ void PluginDialogs::TablesDialog::OnCheck(Reference<Controls::Control> control, 
 
 bool PluginDialogs::TablesDialog::OnKeyEvent(Input::Key keyCode, char16 UnicodeChar)
 {
-    if (keyCode == (Input::Key::Alt | Input::Key::I))
-    {
+    if (keyCode == (Input::Key::Alt | Input::Key::I)) {
         textArea->SetFocus();
         return true;
     }
@@ -78,8 +73,7 @@ bool PluginDialogs::TablesDialog::OnKeyEvent(Input::Key keyCode, char16 UnicodeC
 bool PluginDialogs::TablesDialog::ProcessInput()
 {
     auto content = (std::string) textArea->GetText();
-    if (content.size() == 0)
-    {
+    if (content.size() == 0) {
         Dialogs::MessageBox::ShowError("Error!", "Missing input!");
         return false;
     }
@@ -102,8 +96,7 @@ void PluginDialogs::TablesDialog::UpdateTablesInformation()
 
     auto data = sqlite->db.GetTableInfo();
 
-    for (auto& table : data)
-    {
+    for (auto& table : data) {
         tables->AddItem({ table.first, table.second });
     }
 }
