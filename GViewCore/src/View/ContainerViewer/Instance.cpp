@@ -128,9 +128,15 @@ void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
     {
         UpdatePathForItem(item);
 
-        std::u16string newPath(this->obj->GetPath());
-        newPath.append(u".").append(this->currentPath);
-        this->settings->openItemInterface->OnOpenItem(newPath, item);
+        // TODO: investigate this:
+        /*
+
+            std::u16string newPath(this->obj->GetPath());
+            newPath.append(u".").append(this->currentPath);
+            this->settings->openItemInterface->OnOpenItem(newPath, item);
+        */
+
+        this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
     }
 }
 void Instance::OnTreeViewCurrentItemChanged(Reference<TreeView>, TreeViewItem& item)
@@ -143,15 +149,10 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if (eventType != Event::Command)
-        return false;
-    // switch (ID)
-    // {
-    // }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
@@ -193,15 +194,14 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
+    default:
+        break;
     }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    switch (static_cast<PropertyID>(id))
-    {
-    }
-    error.SetFormat("Unknown internat ID: %u", id);
+    CHECK(error.SetFormat("Unknown internat ID: %u", id), false, "");
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -213,8 +213,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {
-
-    };
+    return {};
 }
 #undef BT

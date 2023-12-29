@@ -86,7 +86,7 @@ void FindAllDialog::Validate()
     Exit(Dialogs::Result::Ok);
 }
 
-bool FindAllDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
+bool FindAllDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     switch (eventType)
     {

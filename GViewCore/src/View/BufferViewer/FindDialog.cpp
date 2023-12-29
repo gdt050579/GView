@@ -360,7 +360,7 @@ bool ValidateDecimal(std::string_view number)
     return true;
 }
 
-bool ValidateHexa(std::string_view number)
+bool ValidateHex(std::string_view number)
 {
     CHECK(number.size() <= 2, false, "");
 
@@ -635,7 +635,7 @@ bool FindDialog::ProcessInput(uint64 end, bool last)
                     return false;
                 }
 
-                if (ValidateHexa(number) == false)
+                if (ValidateHex(number) == false)
                 {
                     Dialogs::MessageBox::ShowError("Error!", "Invalid input!");
                     return false;

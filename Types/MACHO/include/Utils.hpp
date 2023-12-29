@@ -40,9 +40,9 @@ void SwapEndianInplace(T& var)
 
     std::array<uint8, sizeof(T)> bytes;
     std::memcpy(bytes.data(), &var, sizeof(T));
-    for (uint32 i = 0; i < static_cast<uint32>(sizeof(var) / 2); i++)
+    for (uint32 i = 0; i < static_cast<uint32>(sizeof(T) / 2); i++)
     {
-        std::swap(bytes[sizeof(var) - 1 - i], bytes[i]);
+        std::swap(bytes[sizeof(T) - 1 - i], bytes[i]);
     }
     std::memcpy(&var, bytes.data(), sizeof(T));
 }

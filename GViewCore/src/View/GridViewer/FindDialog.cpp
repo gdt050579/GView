@@ -43,8 +43,6 @@ constexpr std::array<std::string_view, 4> BINARY_FORMAT_BODY{ "Binary pattern to
 constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT      = DIALOG_HEIGHT_TEXT_FORMAT + (uint32) BINARY_FORMAT_BODY.size() - 1U;
 constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT = DESCRIPTION_HEIGHT_TEXT_FORMAT + (DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT);
 
-constexpr std::string_view ANYTHING_PATTERN{ "???" };
-
 FindDialog::FindDialog()
     : Window("Filter", "d:c,w:63%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
       position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })
@@ -234,13 +232,8 @@ bool FindDialog::Update()
     }
 
     const auto height = textOption->IsChecked() ? DIALOG_HEIGHT_TEXT_FORMAT : DIALOG_HEIGHT_BINARY_FORMAT;
-
     this->Resize(this->GetWidth(), height);
     SetDescription();
-
-    const uint32 deltaHeight = DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT;
-    const int32 sign         = textOption->IsChecked() ? -1 : 1;
-    const int32 deltaSigned  = sign * deltaHeight;
 
     if (textOption->IsChecked())
     {
@@ -253,6 +246,10 @@ bool FindDialog::Update()
 
         return true;
     }
+
+    const uint32 deltaHeight = DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT;
+    const int32 sign         = textOption->IsChecked() ? -1 : 1;
+    const int32 deltaSigned  = sign * deltaHeight;
 
     input->MoveTo(input->GetX(), input->GetY() + deltaSigned);
     textOption->MoveTo(textOption->GetX(), textOption->GetY() + deltaSigned);
@@ -285,8 +282,9 @@ std::u16string FindDialog::GetFilterValue()
 
 bool FindDialog::ProcessInput()
 {
-    CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
-    CHECK(object.IsValid(), false, "");
+    // No current implementation for this
+    // CHECK(currentPos != GView::Utils::INVALID_OFFSET, false, "");
+    // CHECK(object.IsValid(), false, "");
     CHECK(input.IsValid(), false, "");
 
     if (input->GetText().Len() == 0)

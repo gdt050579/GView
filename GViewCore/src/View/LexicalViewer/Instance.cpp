@@ -1674,7 +1674,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         }
     }
 
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 void Instance::OnStart()
 {
@@ -1840,6 +1840,23 @@ void Instance::ShowPlugins()
 }
 void Instance::ShowSaveAsDialog()
 {
+    Reference<Window> parentWindow{ nullptr }; // reference for window manager  // TODO: a more generic way
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        auto focusedChild    = desktop->GetFocusedChild();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++)
+        {
+            auto window = desktop->GetChild(i);
+
+            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
+            {
+                parentWindow = window.ToObjectRef<Window>();
+                break;
+            }
+        }
+    }
+
     SaveAsDialog dlg(this->obj);
     if (dlg.Show() != Dialogs::Result::Ok)
         return;
@@ -1875,8 +1892,17 @@ void Instance::ShowSaveAsDialog()
     // step 1 --> make sure that we save all tokens , not just the visible ones
     BakupTokensPositions();
     auto originalShowMetaDataValue = this->showMetaData;
-    this->showMetaData             = true;
-    ExpandAll();
+
+    if (dlg.ShouldIgnoreMetadataOnSave())
+    {
+        this->showMetaData = false;
+    }
+    else
+    {
+        this->showMetaData = true;
+        ExpandAll();
+    }
+
 
     // Step 2 --> create a buffer for the entire text
     Buffer b;
@@ -1957,10 +1983,10 @@ void Instance::ShowSaveAsDialog()
         }
     }
     f.Close();
-    AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save succesifull !");
+    AppCUI::Dialogs::MessageBox::ShowNotification("Save As", "Save successful!");
     if (dlg.ShouldOpenANewWindow())
     {
-        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch);
+        GView::App::OpenFile(tmpPath, GView::App::OpenMethod::BestMatch, "", parentWindow);
     }
 }
 void Instance::ShowFindAllDialog()

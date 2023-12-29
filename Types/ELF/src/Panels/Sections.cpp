@@ -95,7 +95,7 @@ void Sections::Update()
 
     if (elf->is64)
     {
-        for (auto i = 0ULL; i < elf->sections64.size(); i++)
+        for (auto i = 0ULL; i < elf->sections64.size() && i < elf->sectionsToSegments.size(); i++)
         {
             const auto& record = elf->sections64[i];
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
@@ -106,11 +106,7 @@ void Sections::Update()
                 const auto& segment = elf->segments64.at(segmentIdx);
                 item.SetText(
                       1,
-                      tmp.Format(
-                            "#%u %s (%s)",
-                            segmentIdx,
-                            ELF::GetNameFromElfProgramHeaderType(segment.p_type).data(),
-                            GetValue(n2, segment.p_type).data()));
+                      tmp.Format("#%u %s (%s)", segmentIdx, ELF::GetNameFromElfProgramHeaderType(segment.p_type).data(), GetValue(n2, segment.p_type).data()));
             }
             else
             {
@@ -121,8 +117,7 @@ void Sections::Update()
             item.SetText(2, tmp.Format("%s", name.c_str()));
             item.SetText(3, tmp.Format("%s", GetValue(n, record.sh_name).data()));
             item.SetText(4, tmp.Format("%s (%s)", ELF::GetNameFromSectionType(record.sh_type).data(), GetValue(n, record.sh_type).data()));
-            item.SetText(
-                  5, tmp.Format("%s (%s)", ELF::GetNamesFromSectionFlags(record.sh_flags).c_str(), GetValue(n, record.sh_flags).data()));
+            item.SetText(5, tmp.Format("%s (%s)", ELF::GetNamesFromSectionFlags(record.sh_flags).c_str(), GetValue(n, record.sh_flags).data()));
             item.SetText(6, tmp.Format("%s", GetValue(n, record.sh_addr).data()));
             item.SetText(7, tmp.Format("%s", GetValue(n, record.sh_offset).data()));
             item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_size).data()));
@@ -136,7 +131,7 @@ void Sections::Update()
     }
     else
     {
-        for (auto i = 0ULL; i < elf->sections32.size(); i++)
+        for (auto i = 0ULL; i < elf->sections32.size() && i < elf->sectionsToSegments.size(); i++)
         {
             const auto& record = elf->sections32[i];
             auto item          = list->AddItem({ tmp.Format("%s", GetValue(n, i).data()) });
@@ -147,11 +142,7 @@ void Sections::Update()
                 const auto& segment = elf->segments32.at(segmentIdx);
                 item.SetText(
                       1,
-                      tmp.Format(
-                            "#%u %s (%s)",
-                            segmentIdx,
-                            ELF::GetNameFromElfProgramHeaderType(segment.p_type).data(),
-                            GetValue(n2, segment.p_type).data()));
+                      tmp.Format("#%u %s (%s)", segmentIdx, ELF::GetNameFromElfProgramHeaderType(segment.p_type).data(), GetValue(n2, segment.p_type).data()));
             }
             else
             {
@@ -162,8 +153,7 @@ void Sections::Update()
             item.SetText(2, tmp.Format("%s", name.c_str()));
             item.SetText(3, tmp.Format("%s", GetValue(n, record.sh_name).data()));
             item.SetText(4, tmp.Format("%s (%s)", ELF::GetNameFromSectionType(record.sh_type).data(), GetValue(n, record.sh_type).data()));
-            item.SetText(
-                  5, tmp.Format("%s (%s)", ELF::GetNamesFromSectionFlags(record.sh_flags).c_str(), GetValue(n, record.sh_flags).data()));
+            item.SetText(5, tmp.Format("%s (%s)", ELF::GetNamesFromSectionFlags(record.sh_flags).c_str(), GetValue(n, record.sh_flags).data()));
             item.SetText(6, tmp.Format("%s", GetValue(n, record.sh_addr).data()));
             item.SetText(7, tmp.Format("%s", GetValue(n, record.sh_offset).data()));
             item.SetText(8, tmp.Format("%s", GetValue(n, record.sh_size).data()));

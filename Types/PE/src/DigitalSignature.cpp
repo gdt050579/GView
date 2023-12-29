@@ -2,19 +2,36 @@
 
 #include <fstream>
 
-namespace GView::DigitalSignature
-{
-#ifdef BUILD_FOR_WINDOWS
-#    include <Windows.h>
-#    include <Softpub.h>
-#    include <wincrypt.h>
-#    include <wintrust.h>
+#if defined(BUILD_FOR_WINDOWS)
+#    if defined(_M_ARM) || defined(_M_ARM64) || defined(_M_HYBRID_X86_ARM64) || defined(_M_ARM64EC) || __arm__ || __aarch64__
+#        include <Windows.h>
+#        include <Softpub.h>
+#        include <wincrypt.h>
+#        include <wintrust.h>
 
 // Link with the Wintrust.lib file.
-#    pragma comment(lib, "wintrust")
+#        pragma comment(lib, "wintrust")
 
 // Link with the Crypt32.lib file.
-#    pragma comment(lib, "Crypt32")
+#        pragma comment(lib, "Crypt32")
+#    endif
+#endif
+
+namespace GView::DigitalSignature
+{
+#if defined(BUILD_FOR_WINDOWS)
+#    if !(defined(_M_ARM) || defined(_M_ARM64) || defined(_M_HYBRID_X86_ARM64) || defined(_M_ARM64EC) || __arm__ || __aarch64__)
+#        include <Windows.h>
+#        include <Softpub.h>
+#        include <wincrypt.h>
+#        include <wintrust.h>
+
+// Link with the Wintrust.lib file.
+#        pragma comment(lib, "wintrust")
+
+// Link with the Crypt32.lib file.
+#        pragma comment(lib, "Crypt32")
+#    endif
 
 struct WrapperHStore
 {

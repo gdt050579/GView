@@ -12,6 +12,23 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+constexpr string_view PCAP_ICON = "WWWWWWW.WWWWWWW."  // 1
+                                  "W.....W.W......."  // 2
+                                  "W.....W.W......."  // 3
+                                  "W.....W.W......."  // 4
+                                  "WWWWWWW.W......."  // 5
+                                  "W.......W......."  // 6
+                                  "W.......WWWWWWW."  // 7
+                                  "................"  // 8
+                                  "WWWWWWW.WWWWWWW."  // 9
+                                  "W.....W.W.....W."  // 10
+                                  "W.....W.W.....W."  // 11
+                                  "W.....W.W.....W."  // 12
+                                  "WWWWWWW.WWWWWWW."  // 13
+                                  "W.....W.W......."  // 14
+                                  "W.....W.W......."  // 15
+                                  "W.....W.W......."; // 16
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
@@ -55,12 +72,43 @@ extern "C"
         pcap->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<GView::Type::PCAP::PCAPFile> pcap)
+    {
+        ContainerViewer::Settings settings;
+
+        settings.SetName("StreamView");
+        settings.SetIcon(PCAP_ICON);
+        settings.SetColumns({
+              "n:&ID,a:l,w:8",
+              "n:&Connection,a:l,w:50",
+              "n:&IpProt.,a:c,w:8",
+              "n:&Transport,a:c,w:12",
+              "n:&Payload,a:r,w:9",
+              "n:&AppLayer,a:c,w:10",
+              "n:&Summary,a:l,w:50",
+        });
+
+        settings.SetEnumerateCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(win->GetObject()->GetContentType<GView::Type::PCAP::PCAPFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+        for (const auto& [header, offset] : pcap->packetHeaders)
+            pcap->streamManager.AddPacket(header, pcap->header.network);
+        pcap->streamManager.FinishedAdding();
+
+		const auto properties = pcap->GetPropertiesForContainerView();
+        for (const auto& property : properties)
+            settings.AddProperty(property.first.data(), property.second.data());
+
+        win->CreateViewer(settings);
+    }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
         auto pcap = win->GetObject()->GetContentType<PCAP::PCAPFile>();
         pcap->Update();
 
         // add views
+        CreateContainerView(win, pcap);
         CreateBufferView(win, pcap);
 
         // add panels

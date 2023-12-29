@@ -2,8 +2,8 @@
 
 namespace GView::Type::MachO
 {
-MachOFile::MachOFile(Reference<GView::Utils::DataCache> file)
-    : header({}), fatHeader({}), isFat(false), isMacho(false), is64(false), shouldSwapEndianess(false), panelsMask(0)
+MachOFile::MachOFile(Reference<GView::Utils::DataCache>)
+: fatHeader({}), header({}), isMacho(false), isFat(false), shouldSwapEndianess(false), is64(false), panelsMask(0), currentItemIndex(0)
 {
 }
 
@@ -141,12 +141,12 @@ bool MachOFile::HasPanel(Panels::IDs id)
     return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
 }
 
-uint64_t MachOFile::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
+uint64_t MachOFile::TranslateToFileOffset(uint64 value, uint32)
 {
     return value;
 }
 
-uint64_t MachOFile::TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex)
+uint64_t MachOFile::TranslateFromFileOffset(uint64 value, uint32)
 {
     return value;
 }
@@ -701,7 +701,7 @@ bool MachOFile::SetCodeSignature()
 
             codeSignature->cdSlotsHashes.reserve(codeSignature->codeDirectory.nCodeSlots);
 
-            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
+            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0x1000U;
             auto remaining      = codeSignature->codeDirectory.codeLimit;
             auto processed      = 0ULL;
             for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
@@ -1004,7 +1004,7 @@ bool MachOFile::ParseGoBuild()
     constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
     constexpr std::string_view goBuildEnd{ "\"\n \xff" };
 
-    const auto fileViewBuildId = obj->GetData().CopyToBuffer(address, size, false);
+    const auto fileViewBuildId = obj->GetData().CopyToBuffer(address, static_cast<uint32>(size), false);
 
     // we should find go build id at the start of the file
     const std::string_view bufferBuildId{ reinterpret_cast<char*>(fileViewBuildId.GetData()), fileViewBuildId.GetLength() }; // force for find
@@ -1028,7 +1028,7 @@ inline static bool GetUVariantSizes(const std::string_view buf, uint64& x, uint3
     constexpr auto MaxVarintLen32 = 5;
     constexpr auto MaxVarintLen64 = 10;
 
-    for (auto i = 0; i < buf.size(); i++)
+    for (auto i = 0u; i < buf.size(); i++)
     {
         const auto b = static_cast<unsigned char>(buf.data()[i]);
         if (i == MaxVarintLen64)
@@ -1095,7 +1095,7 @@ bool MachOFile::ParseGoBuildInfo()
     constexpr uint16 buildInfoAlign{ 16 };
     constexpr uint16 buildInfoSize{ 32 };
 
-    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(address, size, false);
+    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(address, static_cast<uint32>(size), false);
     CHECK(fileViewBuildInfo.IsValid(), false, "");
     const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()), fileViewBuildInfo.GetLength() }; // force for find
     auto sPos = bufferBuildInfo.find(buildInfoMagic);
@@ -1182,12 +1182,12 @@ bool MachOFile::ParseGoBuildInfo()
     const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
     const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
 
-    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
+    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, static_cast<uint32>(strRuntimeBuildVersionLength), false);
     CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
     const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()), strRuntimeBuildVersionLength };
     pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
 
-    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
+    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
     std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
@@ -1276,7 +1276,7 @@ uint64 MachOFile::VAtoFA(uint64 addr)
     return -1;
 }
 
-bool MachOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+bool MachOFile::BeginIteration(std::u16string_view, AppCUI::Controls::TreeViewItem)
 {
     currentItemIndex = 0;
     return archs.size() > 0;
@@ -1310,7 +1310,7 @@ bool MachOFile::PopulateItem(TreeViewItem item)
     return currentItemIndex != archs.size();
 }
 
-void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
+void MachOFile::OnOpenItem(std::u16string_view, AppCUI::Controls::TreeViewItem item)
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
@@ -1414,7 +1414,7 @@ bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Bu
             {
                 if (buf.GetLength() >= 4)
                 {
-                    if (*(uint32*) p == MAC::MH_MAGIC || *(uint32*) p == MAC::MH_CIGAM)
+                    if (*reinterpret_cast<const uint32*>(p) == MAC::MH_MAGIC || *reinterpret_cast<const uint32*>(p) == MAC::MH_CIGAM)
                     {
                         result.start = offset;
                         result.end   = offset + 3;

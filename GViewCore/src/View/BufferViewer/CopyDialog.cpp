@@ -164,7 +164,7 @@ bool CopyDialog::Process()
 
             auto UpdateStringInfo = [this](uint64 offset, BufferView buf, Info& info) -> bool
             {
-                auto* s = (char16*) buf.GetData();
+                auto* s = reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData()));
                 auto* e = s + buf.GetLength() / 2;
                 if ((s < e) && ((*s) < 256) && (instance->GetStringInfo().AsciiMask[*s]))
                 {
@@ -173,11 +173,11 @@ bool CopyDialog::Process()
                         s++;
                     }
 
-                    if (s - (char16*) buf.GetData() >= instance->GetStringInfo().minCount)
+                    if (s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData())) >= instance->GetStringInfo().minCount)
                     {
                         info.start  = offset;
-                        info.middle = offset + (s - (char16*) buf.GetData());
-                        info.end    = offset + ((const uint8*) s - buf.GetData());
+                        info.middle = offset + (s - reinterpret_cast<char16*>(const_cast<uint8*>(buf.GetData())));
+                        info.end    = offset + (reinterpret_cast<const uint8*>(s) - buf.GetData());
                         return true;
                     }
                 }
@@ -193,9 +193,9 @@ bool CopyDialog::Process()
                     uint32 a;
                     for (a = 2ull, i += 1ull; i < info.middle; i++, a += 2)
                     {
-                        ((char*) bf.GetData())[i] = bf[info.start + a];
+                        reinterpret_cast<char*>(const_cast<uint8*>(bf.GetData()))[i] = bf[info.start + a];
                     }
-                    memset(((char*) bf.GetData() + i), 0, info.end - info.middle);
+                    memset(reinterpret_cast<char*>(const_cast<uint8*>(bf.GetData()) + i), 0, info.end - info.middle);
                     i = info.end;
                 }
             }

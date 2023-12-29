@@ -99,7 +99,7 @@ void DissasmDialog::Validate()
     Exit(Dialogs::Result::Ok);
 }
 
-bool DissasmDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
+bool DissasmDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::ButtonClicked)
     {

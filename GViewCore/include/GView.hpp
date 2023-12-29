@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.266.0"
+#define GVIEW_VERSION "0.301.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -31,7 +31,7 @@ namespace GView
 class CORE_EXPORT Object;
 struct CORE_EXPORT TypeInterface
 {
-    Object* obj;
+    Object* obj{ nullptr };
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
@@ -45,7 +45,7 @@ struct CORE_EXPORT TypeInterface
     {
         return 0;
     }
-    virtual SelectionZone GetSelectionZone(uint32 index)
+    virtual SelectionZone GetSelectionZone(uint32)
     {
         return { 0, 0 };
     }
@@ -302,7 +302,7 @@ namespace Hashes
 
       private:
         void* handle;
-        uint8 hash[64];
+        uint8 hash[64]{ 0 };
         uint32 size;
 
       private:
@@ -355,10 +355,10 @@ namespace DigitalSignature
         String issuer;
         String subject;
         int32 verify;
-        String errorVerify;
+        String errorVerify{};
 
-        int32 signerVerify; //  compares the certificate cert against the signer identifier si
-        String errorSignerVerify;
+        int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si
+        String errorSignerVerify{};
     };
 
     constexpr auto ERR_SIGNER            = -1;
@@ -366,26 +366,26 @@ namespace DigitalSignature
 
     struct CORE_EXPORT SignerAttributes
     {
-        String name;
-        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
-                                               // V_ASN1_SEQUENCE
-        String contentType;
-        String contentTypeData;
-        int32 count;
+        String name{};
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]{}; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
+                                                 // V_ASN1_SEQUENCE
+        String contentType{};
+        String contentTypeData{};
+        int32 count{ 0 };
 
         String CDHashes[MAX_SIZE_IN_CONTAINER]; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
     };
 
     struct CORE_EXPORT Signer
     {
-        int32 count;
-        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER];
-        uint32 attributesCount;
+        int32 count{ 0 };
+        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER]{};
+        uint32 attributesCount{ 0 };
     };
 
     struct CORE_EXPORT SignatureMachO
     {
-        int32 isDetached;
+        int32 isDetached{ 0 };
         String sn;
         Buffer snContent;
 
@@ -439,7 +439,7 @@ namespace DigitalSignature
         {
             struct Signature
             {
-                uint32 statusCode;
+                uint32 statusCode{ 0 };
                 String status;
 
                 struct Signer
@@ -565,7 +565,7 @@ namespace Golang
     struct CORE_EXPORT Function
     {
         char* name{ nullptr };
-        Func64 func;
+        Func64 func{};
         union FstEntry
         {
             FstEntry32* _32;
@@ -814,6 +814,31 @@ namespace View
 {
     typedef uint8 MethodID;
 
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
+
+    struct ViewData
+    {
+        uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
+        uint64 viewSize{ GView::Utils::INVALID_OFFSET };
+        uint64 cursorStartOffset{ GView::Utils::INVALID_OFFSET };
+        unsigned char byte{ 0 };
+    };
+
+    struct CORE_EXPORT BufferColorInterface
+    {
+        virtual bool GetColorForByteAt(uint64 offset, const ViewData& vd, ColorPair& cp) = 0;
+    };
+
+    struct CORE_EXPORT OnStartViewMoveInterface
+    {
+        virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
+    };
+
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
     {
       protected:
@@ -843,11 +868,34 @@ namespace View
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
+        virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
+
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
+        {
+            return false;
+        }
+
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
+        {
+            return false;
+        }
+
+        virtual bool GetViewData(ViewData&, uint64)
+        {
+            return false;
+        }
+
+        virtual bool AdvanceStartView(int64)
+        {
+            return false;
+        }
+
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {
         }
     };
+
     namespace BufferViewer
     {
         struct BufferColor
@@ -868,10 +916,12 @@ namespace View
                 return start == GView::Utils::INVALID_OFFSET;
             }
         };
+
         struct CORE_EXPORT PositionToColorInterface
         {
             virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
+
         struct CORE_EXPORT OffsetTranslateInterface
         {
             virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;
@@ -1381,6 +1431,12 @@ namespace View
             Utf32Z
         };
 
+        enum class MemoryMappingType
+        {
+            FunctionMapping,
+            TextMapping
+        };
+
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
         struct CORE_EXPORT Settings
@@ -1394,9 +1450,13 @@ namespace View
              * \param lang The DissasemblyLanguage to use when the Default option will be met.
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
-            void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+            void AddDisassemblyZone(
+                  uint64 zoneStart,
+                  uint64 zoneSize,
+                  uint64 zoneDissasmStartPoint,
+                  DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
-            void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
@@ -1409,6 +1469,7 @@ namespace View
              * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
+            void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<BufferViewer::OffsetTranslateInterface> cbk);
 
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);
@@ -1471,9 +1532,15 @@ namespace App
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenBuffer(
+          BufferView buf,
+          const ConstString& name,
+          const ConstString& path,
+          OpenMethod method,
+          std::string_view typeName = "",
+          Reference<Window> parent  = nullptr);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);

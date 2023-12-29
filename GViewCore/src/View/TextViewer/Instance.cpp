@@ -1376,7 +1376,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     }
 
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 void Instance::OnStart()
 {

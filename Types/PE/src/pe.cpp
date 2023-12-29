@@ -71,7 +71,7 @@ extern "C"
                 }
                 else
                 {
-                    const auto FA = pe->RVAtoFilePointer(dr->VirtualAddress);
+                    const auto FA = pe->RVAToFA(dr->VirtualAddress);
                     if (FA != PE_INVALID_ADDRESS)
                     {
                         settings.AddZone(FA, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
@@ -97,7 +97,7 @@ extern "C"
 
         // set entry point
         const uint32 addressOfEntryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
-        settings.SetEntryPointOffset(pe->RVAtoFilePointer(addressOfEntryPoint));
+        settings.SetEntryPointOffset(pe->RVAToFA(addressOfEntryPoint));
 
         const uint32 pointerToSymbolTable = pe->hdr64 ? pe->nth64.FileHeader.PointerToSymbolTable : pe->nth32.FileHeader.PointerToSymbolTable;
         if (pointerToSymbolTable > 0)
@@ -154,13 +154,20 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    const uint32 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    entryPoint        = pe->RVAToFA(entryPoint);
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
+                    DissasmViewer::DisassemblyLanguage language =
+                          pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
+
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
                     break;
                 }
             }
         }
+
+        // translation
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         uint32 typeImageDOSHeader = settings.AddType(
               "ImageDOSHeader",
@@ -193,6 +200,14 @@ UInt16 e_res[4];)");
         // UInt32 e_lfanew;)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
+
+        //LocalString<128> processedName;
+
+        for (const auto& [RVA, dllIndex, Name] : pe->impFunc)
+        {
+            //processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
+            settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        }
 
         win->CreateViewer(settings);
     }
@@ -244,6 +259,7 @@ UInt16 e_res[4];)");
         sect["Description"]              = "Portable executable format for Windows OS binaries";
         sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
         sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
+        sect["Command.AreaHighlighter"]  = Key::Alt | Key::F9;
     }
 }
 

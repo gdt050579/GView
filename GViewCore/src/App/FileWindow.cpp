@@ -11,7 +11,7 @@ using namespace GView::App;
 using namespace GView::View;
 using namespace AppCUI::Input;
 
-constexpr int HORIZONTA_PANEL_ID         = 100000;
+// constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
@@ -37,7 +37,7 @@ class CursorInformation : public UserControl
 };
 
 FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp, Reference<Type::Plugin> _typePlugin)
-    : Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), obj(std::move(_obj)), typePlugin(_typePlugin)
+: Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), typePlugin(_typePlugin), obj(std::move(_obj))
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -256,7 +256,7 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
         }
         if (((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START + 1000)) && (this->typePlugin.IsValid()))
         {
-            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[ID - CMD_FOR_TYPE_PLUGIN_START].name);
+            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[static_cast<size_t>(ID) - CMD_FOR_TYPE_PLUGIN_START].name);
             return true;
         }
         break;
