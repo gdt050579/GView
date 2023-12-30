@@ -18,8 +18,10 @@ namespace Type
           private:
             friend class Panels::Information;
 
-            std::multimap<std::u16string, std::u16string> headerFields;
+            std::vector<std::pair<std::u16string, std::u16string>> headerFields;
 
+            //void AddTreeElement();
+            void HandlePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end);
             void ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index);
             void ParseParts(GView::View::LexicalViewer::SyntaxManager& syntax, uint32& index, string_view boundary);
             uint32 ParseHeaderFieldBody(GView::View::LexicalViewer::TextParser text, uint32 index);
