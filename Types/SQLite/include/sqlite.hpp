@@ -2,104 +2,96 @@
 
 #include "GView.hpp"
 
-#include "../src/SQLiteDB.hpp"
+namespace GView::Type::SQLite
+{
+constexpr uint8_t SQLITE3_MAGIC[]      = "SQLite format 3";
+constexpr char BUFFER_VIEW_SEPARATOR[] = ",";
+constexpr char separator               = ',';
 
-namespace GView
+class SQLiteFile : public TypeInterface
 {
-namespace Type
+  public:
+    GView::SQLite3::DB db;
+    Buffer buf;
+
+  public:
+    SQLiteFile() = default;
+
+    bool Update();
+
+    std::string_view GetTypeName() override;
+
+    void OnListViewItemPressed(const std::string_view& tableName);
+    void OnButtonPressed(const std::string_view& statement);
+    virtual void RunCommand(std::string_view commandName) override;
+};
+
+namespace Panels
 {
-    namespace SQLite
+    class Information : public AppCUI::Controls::TabPage
     {
-        constexpr uint8_t SQLITE3_MAGIC[]      = "SQLite format 3";
-        constexpr char BUFFER_VIEW_SEPARATOR[] = ",";
-        constexpr char separator               = ',';
+        Reference<GView::Type::SQLite::SQLiteFile> sqlite;
+        Reference<AppCUI::Controls::ListView> tables;
+        Reference<AppCUI::Controls::ListView> general;
+        void RecomputePanelsPositions();
 
-        class SQLiteFile : public TypeInterface
+      public:
+        Information(Reference<GView::Type::SQLite::SQLiteFile> sqlite);
+
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
         {
-          public:
-            DB db;
-            Buffer buf;
+            RecomputePanelsPositions();
+        }
+        virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        void UpdateGeneralInfo();
+        void UpdateTablesInfo();
+    };
 
-          public:
-            SQLiteFile() = default;
+    class Count : public AppCUI::Controls::TabPage
+    {
+        Reference<GView::Type::SQLite::SQLiteFile> sqlite;
+        Reference<AppCUI::Controls::ListView> tables;
+        Reference<AppCUI::Controls::ListView> general;
+        inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+        inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+        void RecomputePanelsPositions();
 
-            bool Update();
+      public:
+        Count(Reference<GView::Type::SQLite::SQLiteFile> sqlite);
 
-            std::string_view GetTypeName() override;
-
-            void OnListViewItemPressed(const std::string_view& tableName);
-            void OnButtonPressed(const std::string_view& statement);
-            virtual void RunCommand(std::string_view commandName) override;
-        };
-        namespace Panels
+        void Update();
+        virtual void OnAfterResize(int newWidth, int newHeight) override
         {
-            class Information : public AppCUI::Controls::TabPage
-            {
-                Reference<GView::Type::SQLite::SQLiteFile> sqlite;
-                Reference<AppCUI::Controls::ListView> tables;
-                Reference<AppCUI::Controls::ListView> general;
-                void RecomputePanelsPositions();
+            RecomputePanelsPositions();
+        }
+        virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
+        void UpdateGeneralInfo();
+        void UpdateTablesInfo();
+    };
+}; // namespace Panels
 
-              public:
-                Information(Reference<GView::Type::SQLite::SQLiteFile> sqlite);
+namespace PluginDialogs
+{
+    class TablesDialog : public AppCUI::Controls::Window, public AppCUI::Controls::Handlers::OnListViewItemPressedInterface
+    {
+        Reference<GView::Type::SQLite::SQLiteFile> sqlite;
+        Reference<CanvasViewer> statementDescription;
+        Reference<TextArea> textArea;
+        Reference<ListView> general;
+        Reference<ListView> tables;
 
-                void Update();
-                virtual void OnAfterResize(int newWidth, int newHeight) override
-                {
-                    RecomputePanelsPositions();
-                }
-                virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-                void UpdateGeneralInfo();
-                void UpdateTablesInfo();
-            };
-
-            class Count : public AppCUI::Controls::TabPage
-            {
-                Reference<GView::Type::SQLite::SQLiteFile> sqlite;
-                Reference<AppCUI::Controls::ListView> tables;
-                Reference<AppCUI::Controls::ListView> general;
-                inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
-                inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
-                void RecomputePanelsPositions();
-
-              public:
-                Count(Reference<GView::Type::SQLite::SQLiteFile> sqlite);
-
-                void Update();
-                virtual void OnAfterResize(int newWidth, int newHeight) override
-                {
-                    RecomputePanelsPositions();
-                }
-                virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
-                void UpdateGeneralInfo();
-                void UpdateTablesInfo();
-            };
-        }; // namespace Panels
-        namespace PluginDialogs
-        {
-            class TablesDialog : public AppCUI::Controls::Window, public AppCUI::Controls::Handlers::OnListViewItemPressedInterface
-            {
-                Reference<GView::Type::SQLite::SQLiteFile> sqlite;
-                Reference<CanvasViewer> statementDescription;
-                Reference<TextArea> textArea;
-                Reference<ListView> general;
-                Reference<ListView> tables;
-
-              public:
-                TablesDialog(Reference<GView::Type::SQLite::SQLiteFile> _sqlite);
-                virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
-                virtual void OnFocus() override;
-                void OnCheck(Reference<Controls::Control> control, bool /* value */);
-                virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
-                bool ProcessInput();
-                void Update();
-                void UpdateTablesInformation();
-                virtual void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
-                void InitListView(Reference<Controls::ListView> lv);
-            };
-        } // namespace PluginDialogs
-
-        // namespace Panels
-    } // namespace SQLite
-} // namespace Type
-} // namespace GView
+      public:
+        TablesDialog(Reference<GView::Type::SQLite::SQLiteFile> _sqlite);
+        virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
+        virtual void OnFocus() override;
+        void OnCheck(Reference<Controls::Control> control, bool /* value */);
+        virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
+        bool ProcessInput();
+        void Update();
+        void UpdateTablesInformation();
+        virtual void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
+        void InitListView(Reference<Controls::ListView> lv);
+    };
+} // namespace PluginDialogs
+} // namespace GView::Type::SQLite
