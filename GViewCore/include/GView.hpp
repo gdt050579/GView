@@ -673,16 +673,6 @@ namespace Compression::LZXPRESS::Huffman
 
 namespace SQLite3
 {
-    class CORE_EXPORT Blob
-    {
-      public:
-        uint8* data{ nullptr };
-        int size;
-
-        Blob(const uint8* data, int size);
-        ~Blob();
-    };
-
     class CORE_EXPORT Column
     {
       public:
@@ -691,7 +681,7 @@ namespace SQLite3
 
         Type type;
         std::string name;
-        std::vector<std::variant<AppCUI::int64, double, std::string*, Blob*, void*>> values;
+        std::vector<std::variant<AppCUI::int64, double, std::string*, Buffer*, void*>> values;
 
         std::string ValueToString(uint32 index);
     };

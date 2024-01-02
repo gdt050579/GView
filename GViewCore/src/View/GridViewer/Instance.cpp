@@ -282,7 +282,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
     auto currentLine    = 0ULL;
 
     do {
-        const auto dataSize = oSizeProcessed >= oSize ? 0 : std::min<>(oSize - oSizeProcessed, cSize);
+        const auto dataSize = oSizeProcessed >= oSize ? 0 : std::min<uint64>(oSize - oSizeProcessed, cSize);
         const auto buf      = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(dataSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 

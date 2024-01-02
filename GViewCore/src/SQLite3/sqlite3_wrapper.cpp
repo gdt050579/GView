@@ -4,18 +4,6 @@
 
 namespace GView::SQLite3
 {
-Blob::Blob(const uint8* data, int size)
-{
-    this->data = new uint8_t[size];
-    memcpy(this->data, data, size);
-    this->size = size;
-}
-
-Blob::~Blob()
-{
-    delete[] data;
-}
-
 std::string Column::ValueToString(uint32 index)
 {
     if (type == Type::Null) {
@@ -46,14 +34,14 @@ std::string Column::ValueToString(uint32 index)
         }
 
         if (type == Type::Blob) {
-            auto blob = std::get<Blob*>(value);
-            if (blob->size == 4) {
+            auto blob = std::get<Buffer*>(value);
+            if (blob->GetLength() == 4) {
                 return "NULL";
             }
             std::string returnValue = "";
-            std::vector<uint8> blobVector(static_cast<uint8*>(blob->data), static_cast<uint8*>(blob->data) + blob->size);
 
-            for (auto& c : blobVector) {
+            for (auto i = 0u; i < blob->GetLength(); i++) {
+                const char c = (*blob)[i];
                 std::string data;
                 for (int i = 7; i >= 0; --i) {
                     data.push_back(((c & (1 << i)) ? '1' : '0'));
@@ -336,17 +324,19 @@ std::vector<Column> Database::ExecuteQuery(const char* query)
             case Column::Type::Blob: {
                 auto ptr  = sqlite3_column_blob(sHandle, i);
                 auto size = sqlite3_column_bytes(sHandle, i);
+                auto b    = new Buffer();
                 if (size == 0) {
-                    result[i].values.push_back(new Blob((const uint8*) "dest", 4));
-                    break;
+                    b->Add("dest");
+                } else {
+                    b->Add(std::string_view{ (char*) ptr, (uint32) size });
                 }
-                auto theContent = (const uint8*) ptr;
-
-                result[i].values.push_back(new Blob((const uint8*) ptr, size));
+                result[i].values.push_back(b);
                 break;
             }
             case Column::Type::Null: {
-                result[i].values.push_back(new Blob((const uint8*) "cest12", 4));
+                auto b = new Buffer();
+                b->Add("cest12");
+                result[i].values.push_back(b);
                 break;
             }
             }
