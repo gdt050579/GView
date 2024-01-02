@@ -14,7 +14,7 @@ using namespace AppCUI::Utils;
 
 GView::App::Instance* gviewAppInstance = nullptr;
 
-constexpr uint32 DEFAULT_CACHE_SIZE = 0xA00000000; // 10 MB // sync this with the one from App/Instance.cpp
+constexpr uint32 DEFAULT_CACHE_SIZE = 0xA00000; // 10 MB // sync this with the one from App/Instance.cpp
 
 bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
 {
