@@ -11,7 +11,7 @@ std::string_view SQLiteFile::GetTypeName()
 bool SQLiteFile::Update()
 {
     auto path = obj->GetPath();
-    db        = GView::SQLite3::DB(path);
+    db        = GView::SQLite3::Database(path);
     return true;
 }
 

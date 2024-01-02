@@ -41,7 +41,6 @@ std::string_view Objects::GetValue(NumericFormatter& n, uint64 value)
 {
     if (Base == 10)
     {
-        auto theValue = n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
         return n.ToString(value, { NumericFormatFlags::None, 10, 3, ',' });
     }
 

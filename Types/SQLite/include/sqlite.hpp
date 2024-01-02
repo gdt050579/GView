@@ -11,7 +11,7 @@ constexpr char separator               = ',';
 class SQLiteFile : public TypeInterface
 {
   public:
-    GView::SQLite3::DB db;
+    GView::SQLite3::Database db;
     Buffer buf;
 
   public:

@@ -2,8 +2,6 @@
 #include <fstream>
 #include <filesystem>
 
- //#include <windows.h>
-
 using namespace GView::View::GridViewer;
 using namespace AppCUI::Input;
 
@@ -14,8 +12,8 @@ constexpr uint32 PROP_ID_TOGGLE_VERTICAL_LINES       = 2;
 constexpr uint32 COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW = 0x1000;
 constexpr uint32 COMMAND_ID_TOGGLE_HORIZONTAL_LINES     = 0x1001;
 constexpr uint32 COMMAND_ID_TOGGLE_VERTICAL_LINES       = 0x1002;
-constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003; 
-constexpr uint32 COMMAND_ID_EXPORT_CELL_CONTENT         = 0x1004; 
+constexpr uint32 COMMAND_ID_VIEW_CELL_CONTENT           = 0x1003;
+constexpr uint32 COMMAND_ID_EXPORT_CELL_CONTENT         = 0x1004;
 constexpr uint32 COMMAND_ID_EXPORT_COLUMN_CONTENT       = 0x1005;
 
 Config Instance::config;
@@ -24,19 +22,15 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings
 {
     this->obj = obj;
     // settings
-    if ((_settings) && (_settings->data))
-    {
+    if ((_settings) && (_settings->data)) {
         // move settings data pointer
         settings.reset((SettingsData*) _settings->data);
         _settings->data = nullptr;
-    }
-    else
-    {
+    } else {
         // default setup
         settings.reset(new SettingsData());
     }
-    if (settings)
-    {
+    if (settings) {
         grid = AppCUI::Controls::Factory::Grid::Create(
               this,
               "d:c,w:100%,h:100%",
@@ -49,17 +43,19 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings) : settings
 
     if (config.loaded == false)
         config.Initialize();
+
     const auto count = GView::App::GetObjectsCount();
-    if (count == 0)
-    {
+    if (count == 0) {
         return;
     }
+
+    // TODO: make this cross-platform!!!
     auto path                   = GView::App::GetObject(0)->GetPath();
     auto lastSlash              = path.rfind(u".");
     std::u16string exportedPath = std::u16string(path.substr(0, lastSlash));
     exportedPath.append(u"_exported");
-    this->exportedPathUTF8 = { exportedPath.begin(), exportedPath.end() };
-    auto lastP = path.rfind(u"\\");
+    this->exportedPathUTF8           = { exportedPath.begin(), exportedPath.end() };
+    auto lastP                       = path.rfind(u"\\");
     std::u16string exportedPathSlash = std::u16string(path.substr(0, lastP));
     exportedPathSlash.append(u"\\");
 
@@ -100,13 +96,12 @@ bool Instance::ShowCopyDialog()
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsigned int width, unsigned int height)
 {
-    if (height == 1)
-    {
+    if (height == 1) {
         const uint32 x1 = 1;
         const uint32 x2 = x1 + config.cursorInformationCellSpace + 1;
         const uint32 x3 = x2 + config.cursorInformationCellSpace + 1;
         const uint32 x4 = x3 + config.cursorInformationCellSpace + 1;
-        const uint32 x5 = x4 + config.cursorInformationCellSpace + 1 ;
+        const uint32 x5 = x4 + config.cursorInformationCellSpace + 1;
         const uint32 x6 = x5 + config.cursorInformationCellSpace + 1;
         const uint32 y  = 0;
 
@@ -119,9 +114,7 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, unsi
         PaintCursorInformationCurrentLocation(renderer, x4, y);
         PaintCursorInformationSeparator(renderer, x5 - 1, y);
         PaintCursorInformationSelection(renderer, x5, y);
-    }
-    else if (height > 1)
-    {
+    } else if (height > 1) {
         const uint32 x1 = 1;
         const uint32 x2 = 1;
         const uint32 x3 = x1 + config.cursorInformationCellSpace + 1;
@@ -152,7 +145,8 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     return false;
 }
 
-vector<uint8_t> Instance::getHexCellContent(const std::string& content) {
+vector<uint8_t> Instance::getHexCellContent(const std::string& content)
+{
     constexpr uint32_t SIZE = 8;
     vector<uint8_t> hexData;
     for (auto chunkIndex = 0; chunkIndex < content.size() / SIZE; chunkIndex++) {
@@ -167,49 +161,36 @@ vector<uint8_t> Instance::getHexCellContent(const std::string& content) {
 
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
-    if (eventType == Event::Command)
-    {
-        if (ID == COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW)
-        {
+    if (eventType == Event::Command) {
+        if (ID == COMMAND_ID_REPLACE_HEADER_WITH_1ST_ROW) {
             settings->firstRowAsHeader = !settings->firstRowAsHeader;
             PopulateGrid();
             return true;
-        }
-        else if (ID == COMMAND_ID_TOGGLE_HORIZONTAL_LINES)
-        {
+        } else if (ID == COMMAND_ID_TOGGLE_HORIZONTAL_LINES) {
             grid->ToggleHorizontalLines();
             return true;
-        }
-        else if (ID == COMMAND_ID_TOGGLE_VERTICAL_LINES)
-        {
+        } else if (ID == COMMAND_ID_TOGGLE_VERTICAL_LINES) {
             grid->ToggleVerticalLines();
             return true;
-        }
-        else if (ID == COMMAND_ID_VIEW_CELL_CONTENT)
-        {
-            auto cellContent = grid->GetSelectedCellContent();
-            auto content = getHexCellContent(cellContent.value());
-            BufferView buffer(content.data(), content.size());
-            GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
-        }
-        else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT)
-        {
+        } else if (ID == COMMAND_ID_VIEW_CELL_CONTENT) {
             auto cellContent = grid->GetSelectedCellContent();
             auto content     = getHexCellContent(cellContent.value());
-            
-            std::time_t t = std::time(0);
+            BufferView buffer(content.data(), content.size());
+            GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
+        } else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT) {
+            auto cellContent = grid->GetSelectedCellContent();
+            auto content     = getHexCellContent(cellContent.value());
+
+            std::time_t t      = std::time(0);
             auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
 
             std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
             file.write(reinterpret_cast<const char*>(content.data()), content.size());
             file.close();
-            
 
             AppCUI::Dialogs::MessageBox::ShowNotification("File Export Result", std::string("File exported successfully at: ") + timestampPath);
-        }
-        else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT)
-        {
-            auto data = grid->GetSelectedColumnContent();
+        } else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT) {
+            auto data  = grid->GetSelectedColumnContent();
             auto index = 0;
 
             auto folderPath = this->exportedFolderPath + data.value().first + "_";
@@ -220,23 +201,20 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
                 std::filesystem::create_directory(folderPath);
             }
 
-
-            for (auto& content : data.value().second)
-            {
-                auto hexContent = getHexCellContent(content);
+            for (auto& content : data.value().second) {
+                auto hexContent     = getHexCellContent(content);
                 std::string newName = folderPath + "\\row_" + std::to_string(index);
                 std::ofstream file(newName.c_str(), std::ios::binary); // Open the file in binary mode
 
                 file.write(reinterpret_cast<const char*>(hexContent.data()), hexContent.size());
                 file.close();
-                
+
                 index++;
             }
 
             folderPath.pop_back();
             folderPath.pop_back();
             AppCUI::Dialogs::MessageBox::ShowNotification("Files Export Result", std::string("Files exported successfully at folder: ") + folderPath);
-
         }
     }
 
@@ -255,35 +233,28 @@ void Instance::PopulateGrid()
     const auto& content = settings->tokens;
     auto it             = content.begin();
 
-    if (settings->firstRowAsHeader)
-    {
+    if (settings->firstRowAsHeader) {
         const auto& header = it->second;
         std::vector<AppCUI::Utils::ConstString> headerCS;
-        for (const auto& [start, end] : header)
-        {
+        for (const auto& [start, end] : header) {
             const auto token = obj->GetData().Get(start, static_cast<uint32>(end - start), false);
             headerCS.push_back(token);
         }
         std::advance(it, 1);
         grid->UpdateHeaderValues(headerCS);
-    }
-    else
-    {
+    } else {
         grid->SetDefaultHeaderValues();
     }
 
     const auto dimensions = grid->GetGridDimensions();
-    if (static_cast<uint32>(settings->rows - settings->firstRowAsHeader) != dimensions.Height)
-    {
+    if (static_cast<uint32>(settings->rows - settings->firstRowAsHeader) != dimensions.Height) {
         grid->SetGridDimensions({ static_cast<uint32>(settings->cols), static_cast<uint32>(settings->rows - settings->firstRowAsHeader) });
     }
 
-    while (it != content.end())
-    {
+    while (it != content.end()) {
         const auto i    = it->first;
         const auto& row = it->second;
-        for (auto itRow = row.begin(); itRow != row.end(); itRow++)
-        {
+        for (auto itRow = row.begin(); itRow != row.end(); itRow++) {
             const auto j     = row.size() - std::abs(std::distance(row.end(), itRow));
             const auto token = obj->GetData().Get(itRow->first, static_cast<uint32>(itRow->second - itRow->first), false);
             const ConstString value{ token };
@@ -297,19 +268,22 @@ void Instance::PopulateGrid()
 
 void GView::View::GridViewer::Instance::ProcessContent()
 {
+    // TODO: this function should be a state machine with using cache as a stream-like structure!
+    // the implementation below is wrong if a "row" contains more bytes than the cache size!
+
     std::map<uint64, std::pair<uint64, uint64>> lines;
     std::map<uint64, std::vector<std::pair<uint64, uint64>>> tokens;
 
     const auto oSize = obj->GetData().GetSize();
-    const auto cSize = obj->GetData().GetCacheSize();
-    auto lines1 = settings->lines;
+    const auto cSize = static_cast<uint64>(obj->GetData().GetCacheSize());
+
     auto oSizeProcessed = 0ULL;
     auto lineStart      = 0ULL;
     auto currentLine    = 0ULL;
 
-    do
-    {
-        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+    do {
+        const auto dataSize = oSizeProcessed >= oSize ? 0 : std::min<>(oSize - oSizeProcessed, cSize);
+        const auto buf      = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(dataSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         auto nPos       = data.find_first_of('\n', 0);
@@ -317,32 +291,21 @@ void GView::View::GridViewer::Instance::ProcessContent()
 
         const auto oldOSizeProcessed = oSizeProcessed;
 
-        if (nPos < rPos)
-        {
-            if (nPos + 1 < data.size() && data[nPos + 1] == '\r')
-            {
+        if (nPos < rPos) {
+            if (nPos + 1 < data.size() && data[nPos + 1] == '\r') {
                 oSizeProcessed += nPos + 2;
-            }
-            else
-            {
+            } else {
                 oSizeProcessed += nPos + 1;
             }
-        }
-        else if (nPos > rPos)
-        {
-            if (rPos + 1 < data.size() && data[rPos + 1] == '\n')
-            {
+        } else if (nPos > rPos) {
+            if (rPos + 1 < data.size() && data[rPos + 1] == '\n') {
                 oSizeProcessed += rPos + 2;
-            }
-            else
-            {
+            } else {
                 oSizeProcessed += rPos + 1;
             }
-        }
-        else
-        {
-            nPos = oSize - oldOSizeProcessed;
-            oSizeProcessed += nPos;
+        } else if (nPos == rPos && nPos == std::string::npos) {
+            nPos = data.size();
+            oSizeProcessed += nPos + 1;
         }
 
         lines.insert({ currentLine, { lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed } });
@@ -351,37 +314,21 @@ void GView::View::GridViewer::Instance::ProcessContent()
         std::vector<uint64> separators;
         {
             size_t pos = line.find(settings->separator[0]);
-            while (pos < line.size())
-            {
+            while (pos != std::string::npos) {
                 separators.push_back(pos + oldOSizeProcessed);
-               /* auto value = line.size() > pos + 1;
-
-                auto distance = (int) (line.end() - line.begin() + pos - 1);
-                auto offset   = std::min<>(distance, 100);
-               */
-                auto new_pos = std::search(
-                      line.begin() + pos + 1, line.end(),
-                      settings->separator,
-                      settings->separator + 1,
-                      [](char a, char b) { return a == b ; });
-
-                pos          = new_pos - line.begin(); 
-                //pos        = line.find(settings->separator[0], pos + 1);
+                pos = line.find(settings->separator[0], pos + 1);
             }
-            separators.push_back(line.size() + oldOSizeProcessed);
         }
 
         std::vector<std::pair<uint64, uint64>> lTokens;
-        if (separators.size() == 0)
-        {
+        if (separators.size() == 0) {
             lTokens.push_back({ lineStart + oldOSizeProcessed, nPos + oldOSizeProcessed });
         }
 
         {
             auto tStart = oldOSizeProcessed;
             auto tEnd   = oldOSizeProcessed;
-            for (const auto& i : separators)
-            {
+            for (const auto& i : separators) {
                 tEnd = i;
                 lTokens.push_back({ tStart, tEnd });
                 tStart = tEnd + 1;
@@ -472,12 +419,9 @@ void GView::View::GridViewer::Instance::PaintCursorInformationCurrentLocation(Ap
     renderer.WriteText("Hovered:", params);
     params.Color = config.color.cursorInformation.value;
     params.X += 9;
-    if (location == Point{ -1, -1 })
-    {
+    if (location == Point{ -1, -1 }) {
         ls.Format("- | -");
-    }
-    else
-    {
+    } else {
         ls.Format("%d | %d", location.X, location.Y);
     }
     renderer.WriteText(ls, params);
@@ -499,12 +443,9 @@ void GView::View::GridViewer::Instance::PaintCursorInformationSelection(AppCUI::
     renderer.WriteText("Selection:", params);
     params.Color = config.color.cursorInformation.value;
     params.X += 10;
-    if (start == Point{ -1, -1 } || end == Point{ -1, -1 })
-    {
+    if (start == Point{ -1, -1 } || end == Point{ -1, -1 }) {
         ls.Format("- & - -> - & -");
-    }
-    else
-    {
+    } else {
         ls.Format("%d & %d -> %d & %d", start.X, start.Y, end.X, end.Y);
     }
     renderer.WriteText(ls, params);
@@ -515,15 +456,11 @@ void GView::View::GridViewer::Instance::PaintCursorInformationSeparator(AppCUI::
     renderer.DrawVerticalLine(x, y, y + 4, config.color.cursorInformation.value);
 }
 
-enum class PropertyID : uint32
-{
-    None
-};
+enum class PropertyID : uint32 { None };
 
 bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
-    switch (id)
-    {
+    switch (id) {
     case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
         value = config.keys.replaceHeaderWith1stRow;
         return true;
@@ -541,8 +478,7 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    switch (id)
-    {
+    switch (id) {
     case PROP_ID_REPLACE_HEADER_WITH_1ST_ROW:
         config.keys.replaceHeaderWith1stRow = std::get<Key>(value);
         return true;

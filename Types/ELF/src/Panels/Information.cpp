@@ -10,7 +10,7 @@ Information::Information(Reference<Object> _object, Reference<GView::Type::ELF::
     general = CreateChildControl<ListView>(
           "x:0,y:0,w:100%,h:10", std::initializer_list<ConstString>{ "n:Field,w:24", "n:Value,w:100" }, ListViewFlags::None);
     issues = Factory::ListView::Create(this, "x:0,y:21,w:100%,h:10", { "n:Info,w:200" }, ListViewFlags::HideColumns);
-    
+
     Update();
 }
 

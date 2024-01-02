@@ -696,25 +696,17 @@ namespace SQLite3
         std::string ValueToString(uint32 index);
     };
 
-    class CORE_EXPORT Statement
+    class CORE_EXPORT Database
     {
         void* handle{ nullptr };
+        String errorMessage;
 
       public:
-        const char* query{ nullptr };
+        Database() = default;
+        Database(const std::u16string_view& filePath);
+        Database& operator=(Database&& other) noexcept;
+        ~Database();
 
-        Statement(void* db, const char* query);
-        std::vector<Column> Exec();
-    };
-
-    class CORE_EXPORT DB
-    {
-        void* handle{ nullptr };
-
-      public:
-        DB() = default;
-        DB(const std::u16string_view& filePath);
-        DB& operator=(DB&& other) noexcept;
         std::vector<std::string> GetTables();
         std::vector<std::vector<std::string>> GetTableMetadata(std::string_view tableName);
         AppCUI::int64 GetTableCount(std::string_view tableName);
@@ -722,8 +714,7 @@ namespace SQLite3
         std::vector<std::pair<std::string, std::string>> GetTableInfo();
         std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> GetTableData(std::string_view name);
         std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> GetStatementData(const std::string_view& statement);
-        std::vector<Column> Exec(const char* query);
-        ~DB();
+        std::vector<Column> ExecuteQuery(const char* query);
     };
 } // namespace SQLite3
 
