@@ -18,6 +18,7 @@ PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::str
     }
 
     // Note that \0 is part of the magic
+    // https://www.sqlite.org/fileformat.html
     if (memcmp(buf.GetData(), SQLite::SQLITE3_MAGIC, sizeof(SQLite::SQLITE3_MAGIC)) != 0) {
         return false;
     }
@@ -46,8 +47,8 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["Description"]              = "Executable and Linkable Format (for UNIX systems)";
-    sect["Extension"]                = { "db" };
+    sect["Description"]              = "SQLite database format";
+    sect["Pattern"]                  = "magic:53 51 4C 69 74 65 20 66 6F 72 6D 61 74 20 33 00"; // UTF-8 string "SQLite format 3" including the null terminator
     sect["Command.ShowTablesDialog"] = AppCUI::Input::Key::Shift | AppCUI::Input::Key::F10;
     sect["Priority"]                 = 1;
 }
