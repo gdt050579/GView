@@ -1,6 +1,7 @@
 #pragma once
 
 #include "global.hpp"
+#include <unordered_map>
 
 namespace GView::Type::JClass
 {
