@@ -36,6 +36,10 @@ message(STATUS "MINIZIP_INCLUDE_DIR => ${MINIZIP_INCLUDE_DIR}")
 target_include_directories(${PROJECT_NAME} PRIVATE ${MINIZIP_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE MINIZIP::minizip-ng)
 
+message(STATUS "SQLITE3_INCLUDE_DIR => ${SQLITE3_INCLUDE_DIR}")
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::sqlite3::sqlite3)
+
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)

@@ -10,6 +10,5 @@ add_subdirectory(Go)
 add_subdirectory(ZLIB)
 add_subdirectory(Dissasembly)
 add_subdirectory(ZIP)
+add_subdirectory(SQLite3)
 target_sources(GViewCore PRIVATE main.cpp)
-
-
