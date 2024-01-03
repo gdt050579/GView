@@ -679,11 +679,18 @@ namespace SQLite3
         // enum class Type { Integer = SQLITE_INTEGER, Float = SQLITE_FLOAT, Text = SQLITE_TEXT, Blob = SQLITE_BLOB, Null = SQLITE_NULL }
         enum class Type { Integer = 1, Float = 2, Text = 3, Blob = 4, Null = 5 };
 
-        Type type;
+        Type type{ Type::Null };
         String name;
-        std::vector<Buffer> values;
+        void* values{ nullptr };
 
         String ValueToString(uint32 index);
+
+        Column();
+        Column(const Column& other);                // copy constructor
+        Column(Column&& other) noexcept;            // move constructor
+        Column& operator=(const Column& other);     // copy assignment
+        Column& operator=(Column&& other) noexcept; // move assignment
+        ~Column();
     };
 
     class CORE_EXPORT Database
