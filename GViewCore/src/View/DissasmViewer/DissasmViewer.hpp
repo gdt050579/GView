@@ -513,12 +513,6 @@ namespace View
                 bool hasMovedView;
             } Cursor;
 
-            struct OverridenKeys
-            {
-                bool is_ctrl_down;
-                bool is_alt_down;
-            };
-
             struct
             {
                 ColorPair Normal, Line, Highlighted;
@@ -563,7 +557,6 @@ namespace View
             AdvancedSelection selection;
             CodePage codePage;
             Menu rightClickMenu;
-            OverridenKeys overriden_keys;
             // uint64 rightClickOffset;
 
             AsmData asmData;
