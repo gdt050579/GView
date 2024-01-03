@@ -4,62 +4,49 @@
 
 namespace GView::SQLite3
 {
-std::string Column::ValueToString(uint32 index)
+static bool BinaryToHex(Buffer& b, String& s)
 {
-    if (type == Type::Null) {
-        return "NULL";
+    s.Create(b.GetLength() * 2);
+
+    for (auto i = 0u; i < b.GetLength(); i++) {
+        const auto byte = b[i];
+        char highNibble = (byte >> 4) & 0xF;
+        char lowNibble  = byte & 0xF;
+
+        s.AddChar((highNibble < 10) ? ('0' + highNibble) : ('A' + highNibble - 10));
+        s.AddChar((lowNibble < 10) ? ('0' + lowNibble) : ('A' + lowNibble - 10));
     }
 
+    return true;
+}
+
+String Column::ValueToString(uint32 index)
+{
     // TODO: out of bounds check?
     auto& value = values[index];
 
-    int intValue;
-    try {
-        if (type == Type::Integer) {
-            int64 newValue = std::get<int64>(value);
-            return std::to_string(newValue);
-        }
-
-        if (type == Type::Float) {
-            double floatValue = std::get<double>(value);
-            return std::to_string(floatValue);
-        }
-
-        if (type == Type::Text) {
-            auto strPtr = *std::get<std::string*>(value);
-            if (strPtr == "") {
-                return "NULL";
-            }
-            return strPtr;
-        }
-
-        if (type == Type::Blob) {
-            auto blob = std::get<Buffer*>(value);
-            if (blob->GetLength() == 4) {
-                return "NULL";
-            }
-            std::string returnValue = "";
-
-            for (auto i = 0u; i < blob->GetLength(); i++) {
-                const char c = (*blob)[i];
-                std::string data;
-                for (int i = 7; i >= 0; --i) {
-                    data.push_back(((c & (1 << i)) ? '1' : '0'));
-                }
-                returnValue.append(data);
-            }
-            returnValue.append("_BL");
-
-            return returnValue;
-        }
-    } catch (...) {
-        return "NULL";
-    }
-    if (type == Type::Null) {
-        return "NULL";
+    String result;
+    switch (type) {
+    case GView::SQLite3::Column::Type::Integer:
+        result.SetFormat("%lld", value.GetObject<int64>());
+        break;
+    case GView::SQLite3::Column::Type::Float:
+        result.SetFormat("%f", value.GetObject<double>());
+        break;
+    case GView::SQLite3::Column::Type::Text:
+        result.Set((const char*) value.GetData(), value.GetLength());
+        break;
+    case GView::SQLite3::Column::Type::Blob:
+        BinaryToHex(value, result);
+        break;
+    case GView::SQLite3::Column::Type::Null:
+        result.Set("NULL");
+        break;
+    default:
+        break;
     }
 
-    return "Should not reach";
+    return result;
 }
 
 Database::Database(const std::u16string_view& filePath)
@@ -84,26 +71,25 @@ Database& Database::operator=(Database&& other) noexcept
     return *this;
 }
 
-std::vector<std::string> Database::GetTables()
+std::vector<String> Database::GetTables()
 {
-    if (!handle) {
-        return {};
-    }
+    std::vector<String> result;
 
-    auto columns = ExecuteQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC;");
-    if (columns.size() == 0) {
-        return {};
-    }
-    std::vector<std::string> result;
-
-    for (auto& str : columns[0].values) {
-        result.push_back(std::move(*std::get<std::string*>(str)));
+    if (handle) {
+        auto columns = ExecuteQuery("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC;");
+        for (auto& column : columns) {
+            for (auto& str : column.values) {
+                auto& value = result.emplace_back();
+                value.Set((const char*) str.GetData(), str.GetLength());
+            }
+            break; // only the first (that contains the tables)
+        }
     }
 
     return result;
 }
 
-std::vector<std::vector<std::string>> Database::GetTableMetadata(std::string_view tableName)
+std::vector<std::vector<String>> Database::GetTableMetadata(std::string_view tableName)
 {
     if (!handle) {
         return {};
@@ -117,10 +103,10 @@ std::vector<std::vector<std::string>> Database::GetTableMetadata(std::string_vie
         return {};
     }
 
-    std::vector<std::vector<std::string>> results(columns[0].values.size());
+    std::vector<std::vector<String>> results(columns[0].values.size());
     for (auto valueIndex = 0; valueIndex < columns[0].values.size(); valueIndex++) {
         for (auto columnIndex = 1; columnIndex < columns.size(); columnIndex++) {
-            results[valueIndex].push_back((std::string) columns[columnIndex].ValueToString(valueIndex));
+            results[valueIndex].push_back((String) columns[columnIndex].ValueToString(valueIndex));
         }
     }
 
@@ -136,15 +122,15 @@ AppCUI::int64 Database::GetTableCount(std::string_view tableName)
     AppCUI::Utils::String query;
     query.SetFormat("SELECT COUNT(*) FROM %.*s;", tableName.size(), tableName.data());
     auto columns = ExecuteQuery(query.GetText());
-    return std::get<AppCUI::int64>(columns[0].values[0]);
+    return columns[0].values[0].GetObject<int64>();
 }
 
-std::string Database::GetLibraryVersion()
+String Database::GetLibraryVersion()
 {
-    return sqlite3_libversion();
+    return String(sqlite3_libversion());
 }
 
-std::vector<std::pair<std::string, std::string>> Database::GetTableInfo()
+std::vector<std::pair<String, String>> Database::GetTableInfo()
 {
     if (!handle) {
         return {};
@@ -156,26 +142,14 @@ std::vector<std::pair<std::string, std::string>> Database::GetTableInfo()
         return {};
     }
 
-    std::vector<std::pair<std::string, std::string>> result;
+    std::vector<std::pair<String, String>> result;
 
     for (int i = 0; i < columns[0].values.size(); ++i) {
-        auto namePtr = std::get<std::string*>(columns[0].values[i]);
-        auto sqlPtr  = std::get<std::string*>(columns[1].values[i]);
+        String name;
+        name.Set((const char*) columns[0].values[i].GetData(), columns[0].values[i].GetLength());
 
-        std::string name;
-        std::string sql;
-
-        if (!namePtr) {
-            name = "NULL";
-        } else {
-            name = std::move(*namePtr);
-        }
-
-        if (!sqlPtr) {
-            sql = "NULL";
-        } else {
-            sql = std::move(*sqlPtr);
-        }
+        String sql;
+        sql.Set((const char*) columns[1].values[i].GetData(), columns[1].values[i].GetLength());
 
         result.push_back(std::make_pair(name, sql));
     }
@@ -183,21 +157,21 @@ std::vector<std::pair<std::string, std::string>> Database::GetTableInfo()
     return result;
 }
 
-std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> Database::GetTableData(std::string_view name)
+std::pair<std::vector<String>, std::vector<std::vector<String>>> Database::GetTableData(std::string_view name)
 {
     AppCUI::Utils::String query;
     query.SetFormat("SELECT * FROM %.*s;", name.size(), name.data());
     return this->GetStatementData(query);
 }
 
-std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> Database::GetStatementData(const std::string_view& statement)
+std::pair<std::vector<String>, std::vector<std::vector<String>>> Database::GetStatementData(const std::string_view& statement)
 {
     if (!handle) {
         return {};
     }
 
     auto columns = ExecuteQuery(statement.data());
-    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> result;
+    std::pair<std::vector<String>, std::vector<std::vector<String>>> result;
 
     if (columns.empty()) {
         return result;
@@ -229,26 +203,26 @@ std::vector<Column> Database::ExecuteQuery(const char* query)
     std::vector<Column> result;
 
     for (int i = 0; i < columnCount; ++i) {
-        result.push_back({});
-        result[i].name = sqlite3_column_name(sHandle, i);
+        auto& entry = result.emplace_back();
+        entry.name  = sqlite3_column_name(sHandle, i);
 
         int type = sqlite3_column_type(sHandle, i);
 
         switch (type) {
         case SQLITE_INTEGER:
-            result[i].type = Column::Type::Integer;
+            entry.type = Column::Type::Integer;
             break;
         case SQLITE_FLOAT:
-            result[i].type = Column::Type::Float;
+            entry.type = Column::Type::Float;
             break;
         case SQLITE_TEXT:
-            result[i].type = Column::Type::Text;
+            entry.type = Column::Type::Text;
             break;
         case SQLITE_BLOB:
-            result[i].type = Column::Type::Blob;
+            entry.type = Column::Type::Blob;
             break;
         case SQLITE_NULL:
-            result[i].type = Column::Type::Null;
+            entry.type = Column::Type::Null;
             break;
         }
     }
@@ -264,55 +238,40 @@ std::vector<Column> Database::ExecuteQuery(const char* query)
             // If the column is null now, it may not be null in future rows.
             // Therefore, get the actual type. If the actual type is also null,
             // the column is null for every row.
+            auto b    = Buffer();
             auto type = sqlite3_column_type(sHandle, i);
             switch (type) {
-            case SQLITE_NULL: {
-                auto b = new Buffer();
-                b->Add("cest12");
-                result[i].values.push_back(b);
-            } break;
-            case SQLITE_INTEGER:
+            case SQLITE_NULL:
+                b.Add("cest12");
+                break;
+            case SQLITE_INTEGER: {
                 result[i].type = Column::Type::Integer;
-                result[i].values.push_back(sqlite3_column_int64(sHandle, i));
-                break;
-            case SQLITE_FLOAT:
+
+                const auto value = sqlite3_column_int64(sHandle, i);
+                auto bv          = BufferView{ (uint8*) &value, sizeof(value) };
+                b.Add(bv);
+            } break;
+            case SQLITE_FLOAT: {
                 result[i].type = Column::Type::Float;
-                result[i].values.push_back(sqlite3_column_double(sHandle, i));
-                break;
-            case SQLITE_TEXT:
+
+                const auto value = sqlite3_column_double(sHandle, i);
+                auto bv          = BufferView{ (uint8*) &value, sizeof(value) };
+                b.Add(bv);
+            } break;
+            case SQLITE_TEXT: {
                 result[i].type = Column::Type::Text;
-                {
-                    auto ptr  = sqlite3_column_text(sHandle, i);
-                    auto size = sqlite3_column_bytes(sHandle, i);
-                    // TODO: Don't forget to free this everywhere
-                    result[i].values.push_back(new std::string((const char*) ptr, (const char*) ptr + size));
-                }
-                break;
+                b.Add(BufferView{ (const char*) sqlite3_column_text(sHandle, i), (uint32) sqlite3_column_bytes(sHandle, i) });
+            } break;
             case SQLITE_BLOB:
                 result[i].type = Column::Type::Blob;
-                {
-                    auto ptr  = sqlite3_column_blob(sHandle, i);
-                    auto size = sqlite3_column_bytes(sHandle, i);
-                    auto b    = new Buffer();
-                    if (size == 0) {
-                        b->Add("dest");
-                    } else {
-                        b->Add(std::string_view{ (char*) ptr, (uint32) size });
-                    }
-                    result[i].values.push_back(b);
-                }
+                b.Add(BufferView{ (char*) sqlite3_column_blob(sHandle, i), (uint32) sqlite3_column_bytes(sHandle, i) });
                 break;
             }
+            result[i].values.push_back(b);
         }
 
         status = sqlite3_step(sHandle);
     } while (status == SQLITE_ROW);
-
-    for (int i = 0; i < columnCount; ++i) {
-        if (result[i].type == Column::Type::Null) {
-            result[i].values.clear();
-        }
-    }
 
     sqlite3_reset(sHandle);
 

@@ -30,7 +30,12 @@ void SQLiteFile::GetStatementResult(const std::string_view& entity, bool fromTab
             content.AddChar(separator);
         }
 
-        std::replace(column.begin(), column.end(), separator, ';');
+        for (auto i = 0u; i < column.Len(); i++) {
+            if (column.GetText()[i] == separator) {
+                column.SetChar(i, ';');
+            }
+        }
+
         content.Add(column);
     }
 
@@ -46,7 +51,11 @@ void SQLiteFile::GetStatementResult(const std::string_view& entity, bool fromTab
                 content.AddChar(separator);
             }
 
-            std::replace(entry.begin(), entry.end(), separator, ';');
+            for (auto i = 0u; i < entry.Len(); i++) {
+                if (entry.GetText()[i] == separator) {
+                    entry.SetChar(i, ';');
+                }
+            }
             content.Add(entry);
         }
 

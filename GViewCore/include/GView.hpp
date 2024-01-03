@@ -680,10 +680,10 @@ namespace SQLite3
         enum class Type { Integer = 1, Float = 2, Text = 3, Blob = 4, Null = 5 };
 
         Type type;
-        std::string name;
-        std::vector<std::variant<AppCUI::int64, double, std::string*, Buffer*, void*>> values;
+        String name;
+        std::vector<Buffer> values;
 
-        std::string ValueToString(uint32 index);
+        String ValueToString(uint32 index);
     };
 
     class CORE_EXPORT Database
@@ -697,13 +697,13 @@ namespace SQLite3
         Database& operator=(Database&& other) noexcept;
         ~Database();
 
-        std::vector<std::string> GetTables();
-        std::vector<std::vector<std::string>> GetTableMetadata(std::string_view tableName);
+        std::vector<String> GetTables();
+        std::vector<std::vector<String>> GetTableMetadata(std::string_view tableName);
         AppCUI::int64 GetTableCount(std::string_view tableName);
-        std::string GetLibraryVersion();
-        std::vector<std::pair<std::string, std::string>> GetTableInfo();
-        std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> GetTableData(std::string_view name);
-        std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>> GetStatementData(const std::string_view& statement);
+        String GetLibraryVersion();
+        std::vector<std::pair<String, String>> GetTableInfo();
+        std::pair<std::vector<String>, std::vector<std::vector<String>>> GetTableData(std::string_view name);
+        std::pair<std::vector<String>, std::vector<std::vector<String>>> GetStatementData(const std::string_view& statement);
         std::vector<Column> ExecuteQuery(const char* query);
     };
 } // namespace SQLite3
