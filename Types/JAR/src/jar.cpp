@@ -4,60 +4,57 @@ using namespace GView::View;
 using namespace GView::Utils;
 using namespace GView::Java;
 
-extern "C"
+extern "C" {
+PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
 {
-    PLUGIN_EXPORT bool Validate(const BufferView& buf, const string_view& extension)
-    {
-        AppCUI::Log::ToStdErr();
-        if (buf.GetLength() < sizeof(uint32))
-            return false;
+    AppCUI::Log::ToStdErr();
+    if (buf.GetLength() < sizeof(uint32))
+        return false;
 
-        uint32 magic;
-        memcpy(&magic, buf.GetData(), sizeof(magic));
-        return magic == Endian::NativeToBig(0xCAFEBABE);
+    uint32 magic;
+    memcpy(&magic, buf.GetData(), sizeof(magic));
+    return magic == Endian::NativeToBig(0xCAFEBABE);
+}
+
+PLUGIN_EXPORT TypeInterface* CreateInstance()
+{
+    return new ClassViewer();
+}
+
+PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
+{
+    auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
+    parse_class(plugin);
+
+    BufferViewer::Settings settings;
+    for (uint32 i = 0; i < plugin->areas.size(); ++i) {
+        auto& current = plugin->areas[i];
+        auto color    = i % 2 == 0 ? ColorPair{ Color::Yellow, Color::DarkBlue } : ColorPair{ Color::Green, Color::DarkBlue };
+
+        settings.AddZone(current.start, current.end - current.start, color, current.name);
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<FileCache> file)
-    {
-        auto buffer = file->GetEntireFile();
-        auto plugin = new JavaViewer;
-        FCHECKNULL(parse_class(*plugin, buffer));
-        return plugin;
-    }
+    FCHECK(win->CreateViewer(settings));
 
-    PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
-    {
-        auto plugin = win->GetObject()->type->To<JavaViewer>();
+    return true;
+}
 
-        BufferViewer::Settings bsettings;
-        for (uint32 i = 0; i < plugin->areas.size(); ++i)
-        {
-            auto& current = plugin->areas[i];
-            auto color    = i % 2 == 0 ? ColorPair{ Color::Yellow, Color::DarkBlue } : ColorPair{ Color::Green, Color::DarkBlue };
-
-            bsettings.AddZone(current.start, current.end - current.start, color, current.name);
-        }
-        FCHECK(win->CreateViewer("Buffer", bsettings));
-
-        // GView::App::OpenFile("");
-
-        return true;
-    }
-
-    PLUGIN_EXPORT void UpdateSettings(IniSection sect)
-    {
-        static const auto patterns = { "hex:'CA FE BA BE'" };
-
-        sect["Pattern"]  = patterns;
-        sect["Priority"] = 1;
-    }
+PLUGIN_EXPORT void UpdateSettings(IniSection sect)
+{
+    sect["Pattern"]  = "magic:CA FE BA BE";
+    sect["Priority"] = 1;
+}
 }
 
 namespace GView::Java
 {
-string_view JavaViewer::GetTypeName()
+string_view ClassViewer::GetTypeName()
 {
-    return "jar";
+    return "class";
+}
+
+void ClassViewer::RunCommand(std::string_view)
+{
 }
 } // namespace GView::Java
 

@@ -79,19 +79,20 @@ struct ConstPanel
     LocalString<256> data;
 };
 
-struct JavaViewer : public TypeInterface
+struct ClassViewer : public TypeInterface
 {
     vector<ColoredArea> areas;
     vector<ConstPanel> const_panel;
 
     string_view GetTypeName() override;
+    void RunCommand(std::string_view) override;
 };
 
 struct ClassFile
 {
 };
 
-bool parse_class(JavaViewer& self, BufferView buffer);
+bool parse_class(AppCUI::Utils::Reference<GView::Java::ClassViewer> self);
 
 struct Opcode
 {

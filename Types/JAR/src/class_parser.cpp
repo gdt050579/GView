@@ -206,14 +206,14 @@ struct MethodInfo
 
 struct ClassParser
 {
-    JavaViewer& self;
+    ClassViewer& self;
     BufferReader reader;
     vector<ConstantData> constant_data;
     vector<FieldInfo> fields;
     vector<MethodInfo> methods;
     vector<AttributeInfo> attributes;
 
-    ClassParser(JavaViewer& self, BufferReader reader);
+    ClassParser(ClassViewer& self, BufferReader reader);
 
     bool parse();
     bool parse_constant_pool();
@@ -225,7 +225,7 @@ struct ClassParser
     bool parse_attribute_code(BufferView buffer, CodeAttribute& code);
 };
 
-ClassParser::ClassParser(JavaViewer& self, BufferReader reader) : self(self), reader(reader)
+ClassParser::ClassParser(ClassViewer& self, BufferReader reader) : self(self), reader(reader)
 {
     constant_data.reserve(64);
     constant_data.push_back({ ConstantKind::Nothing });
@@ -766,9 +766,11 @@ void AstPrinter::print(const Class* clazz)
 
 // ---------------------------------------------------- parse_class ----------------------------------------------------
 
-bool parse_class(JavaViewer& self, BufferView buffer)
+bool parse_class(AppCUI::Utils::Reference<GView::Java::ClassViewer> plugin)
 {
-    ClassParser parser{ self, { buffer.GetData(), buffer.GetLength() } };
+    auto buffer = plugin->obj->GetData().GetEntireFile();
+
+    ClassParser parser{ plugin, { buffer.GetData(), buffer.GetLength() } };
     FCHECK(parser.parse());
 
     AstCreator creator{ parser };
