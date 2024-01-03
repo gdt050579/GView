@@ -74,15 +74,15 @@ extern "C"
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
-        auto lnk = win->GetObject()->GetContentType<JT::JTFile>();
-        lnk->Update();
+        auto jt = win->GetObject()->GetContentType<JT::JTFile>();
+        jt->Update();
 
         // add views
-        CreateBufferView(win, lnk);
+        CreateBufferView(win, jt);
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new JT::Panels::Information(win->GetObject(), lnk)), true);
-        win->AddPanel(Pointer<TabPage>(new JT::Panels::Segments(lnk, win)), false);
+        win->AddPanel(Pointer<TabPage>(new JT::Panels::Information(win->GetObject(), jt)), true);
+        win->AddPanel(Pointer<TabPage>(new JT::Panels::Segments(jt, win)), false);
 
         return true;
     }
