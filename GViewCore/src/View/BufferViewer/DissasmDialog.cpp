@@ -16,18 +16,18 @@ constexpr int32 GROUPD_ID_ARCHITECTURE_TYPE = 1;
 constexpr int32 GROUPD_ID_DESIGN_TYPE       = 2;
 constexpr int32 GROUPD_ID_ENDIANESS_TYPE    = 3;
 
-DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "d:c,w:60%,h:60%", WindowFlags::ProcessReturn), instance(instance)
+DissasmDialog::DissasmDialog(Reference<Instance> instance) : Window("Dissasm", "d:c,w:100%,h:60%", WindowFlags::ProcessReturn), instance(instance)
 {
     list = Factory::ListView::Create(
           this,
-          "x:5,y:1,w:85%,h:90%",
+          "x:5,y:1,w:85%,h:85%",
           { "n:FA,w:10%", "n:Bytes,w:30%", "n:Instructions,w:35%", "n:Groups,w:35%" },
           ListViewFlags::AllowMultipleItemsSelection | ListViewFlags::PopupSearchBar);
     list->SetFocus();
 
-    architecture             = Factory::Label::Create(this, "Architecture", "x:90%,y:2,w:10%,h:1");
-    x64                      = Factory::RadioBox::Create(this, "x&64", "x:90%,y:3,w:10%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X86);
-    x86                      = Factory::RadioBox::Create(this, "x&86", "x:90%,y:4,w:10%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X64);
+    architecture             = Factory::Label::Create(this, "Architecture", "x:90%,y:2,w:11%,h:1");
+    x64                      = Factory::RadioBox::Create(this, "x&64", "x:90%,y:3,w:11%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X86);
+    x86                      = Factory::RadioBox::Create(this, "x&86", "x:90%,y:4,w:11%,h:1", GROUPD_ID_ARCHITECTURE_TYPE, RADIOBOX_ID_ARCHITECTURE_X64);
     x64->Handlers()->OnCheck = this;
     x86->Handlers()->OnCheck = this;
 

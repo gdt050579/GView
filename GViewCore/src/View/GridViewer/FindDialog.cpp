@@ -44,7 +44,7 @@ constexpr uint32 DIALOG_HEIGHT_BINARY_FORMAT      = DIALOG_HEIGHT_TEXT_FORMAT + 
 constexpr uint32 DESCRIPTION_HEIGHT_BINARY_FORMAT = DESCRIPTION_HEIGHT_TEXT_FORMAT + (DIALOG_HEIGHT_BINARY_FORMAT - DIALOG_HEIGHT_TEXT_FORMAT);
 
 FindDialog::FindDialog()
-    : Window("Find", "d:c,w:30%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
+    : Window("Filter", "d:c,w:63%,h:18", WindowFlags::ProcessReturn | WindowFlags::Sizeable), currentPos(GView::Utils::INVALID_OFFSET),
       position(GView::Utils::INVALID_OFFSET), match({ GView::Utils::INVALID_OFFSET, 0 })
 {
     description = Factory::CanvasViewer::Create(
@@ -121,7 +121,7 @@ bool FindDialog::OnEvent(Reference<Control>, Event eventType, int ID)
     }
 
     switch (eventType)
-    {
+    { 
     case Event::WindowAccept:
         Exit(Dialogs::Result::Ok);
         newRequest = true;

@@ -2,7 +2,7 @@
 
 using namespace GView::Utils;
 
-constexpr uint32 MAX_CACHE_SIZE = 0x1000000U; // 16 M
+constexpr uint32 MAX_CACHE_SIZE = 0x20000000U; // 16 M
 
 DataCache::DataCache()
 {
