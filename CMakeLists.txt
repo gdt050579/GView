@@ -162,7 +162,7 @@ add_subdirectory(Types/JS)
 add_subdirectory(Types/PYEXTRACTOR)
 add_subdirectory(Types/ZIP)
 add_subdirectory(Types/SQLite)
-add_subdirectory(Types/JAR)
+add_subdirectory(Types/JCLASS)
 
 
 # Generic plugins supported by GView
