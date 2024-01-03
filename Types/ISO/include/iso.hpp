@@ -5,11 +5,9 @@
 
 namespace GView::Type::ISO
 {
-class ISOFile : public TypeInterface
+class ISOFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
 {
   public:
-    Reference<GView::Utils::FileCache> file;
-
     struct MyVolumeDescriptorHeader
     {
         ECMA_119_VolumeDescriptorHeader header;
@@ -19,8 +17,16 @@ class ISOFile : public TypeInterface
     std::vector<MyVolumeDescriptorHeader> headers;
     std::vector<ECMA_119_DirectoryRecord> records;
 
+    ECMA_119_PrimaryVolumeDescriptor pvd{};
+    ECMA_119_DirectoryRecord root{};
+    std::vector<ECMA_119_DirectoryRecord> objects;
+
+    std::map<uint64, ECMA_119_DirectoryRecord> itemsCache;
+
+    uint32 currentItemIndex;
+
   public:
-    ISOFile(Reference<GView::Utils::FileCache> file);
+    ISOFile();
     virtual ~ISOFile()
     {
     }
@@ -31,12 +37,38 @@ class ISOFile : public TypeInterface
     {
         return "ISO";
     }
+    void RunCommand(std::string_view) override
+    {
+    }
+
+    virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+    virtual bool PopulateItem(TreeViewItem item) override;
+    virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+
+  public:
+    Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+    uint32 GetSelectionZonesCount() override
+    {
+        CHECK(selectionZoneInterface.IsValid(), 0, "");
+        return selectionZoneInterface->GetSelectionZonesCount();
+    }
+
+    TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+    {
+        static auto d = TypeInterface::SelectionZone{ 0, 0 };
+        CHECK(selectionZoneInterface.IsValid(), d, "");
+        CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+        return selectionZoneInterface->GetSelectionZone(index);
+    }
 };
 
 namespace Panels
 {
     class Information : public AppCUI::Controls::TabPage
     {
+        Reference<Object> object;
         Reference<GView::Type::ISO::ISOFile> iso;
         Reference<AppCUI::Controls::ListView> general;
         Reference<AppCUI::Controls::ListView> issues;
@@ -112,7 +144,7 @@ namespace Panels
         }
 
       public:
-        Information(Reference<GView::Type::ISO::ISOFile> iso);
+        Information(Reference<Object> _object, Reference<GView::Type::ISO::ISOFile> _iso);
 
         void Update();
         virtual void OnAfterResize(int newWidth, int newHeight) override

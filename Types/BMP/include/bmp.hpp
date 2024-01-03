@@ -40,13 +40,13 @@ namespace Type
         class BMPFile : public TypeInterface, public View::ImageViewer::LoadImageInterface
         {
           public:
-            Reference<GView::Utils::FileCache> file;
-            Header header;
-            InfoHeader infoHeader;
-            
+            Header header{};
+            InfoHeader infoHeader{};
+
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
           public:
-            BMPFile(Reference<GView::Utils::FileCache> file);
+            BMPFile();
             virtual ~BMPFile()
             {
             }
@@ -57,8 +57,26 @@ namespace Type
             {
                 return "BMP";
             }
+            void RunCommand(std::string_view) override
+            {
+            }
 
             bool LoadImageToObject(Image& img, uint32 index) override;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
         namespace Panels
         {

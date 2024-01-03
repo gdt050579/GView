@@ -2,15 +2,15 @@
 
 namespace GView::App
 {
-ErrorDialog::ErrorDialog(const GView::Utils::ErrorList& errList) : Window("Errors", "d:c,w:80,h:16",WindowFlags::ErrorWindow)
+ErrorDialog::ErrorDialog(const GView::Utils::ErrorList& errList) : Window("Errors", "d:c,w:80,h:16", WindowFlags::ErrorWindow)
 {
-    auto lv = Factory::ListView::Create(
-          this, "l:1,t:1,r:1,b:3", { { "", TextAlignament::Left, 255 } }, ListViewFlags::HideSearchBar | ListViewFlags::HideColumns);
+    auto lv =
+          Factory::ListView::Create(this, "l:1,t:1,r:1,b:3", { "a:l,w:255" }, ListViewFlags::HideSearchBar | ListViewFlags::HideColumns);
     LocalString<64> tmp;
     lv->AddItem(tmp.Format("Errors   : %u", errList.GetErrorsCount()));
     lv->AddItem(tmp.Format("Warnings : %u", errList.GetWarningsCount()));
     // add items
-    if (errList.GetErrorsCount()>0)
+    if (errList.GetErrorsCount() > 0)
     {
         lv->AddItem("Errors").SetType(ListViewItem::Type::Category);
         auto cnt = errList.GetErrorsCount();
@@ -24,7 +24,7 @@ ErrorDialog::ErrorDialog(const GView::Utils::ErrorList& errList) : Window("Error
         for (auto i = 0U; i < cnt; i++)
             lv->AddItem(errList.GetWarning(i));
     }
-    Factory::Button::Create(this,"&Close", "d:b,w:10");
+    Factory::Button::Create(this, "&Close", "d:b,w:10");
 }
 bool ErrorDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
@@ -32,7 +32,7 @@ bool ErrorDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
         return true;
     if (eventType == Event::ButtonClicked)
     {
-        Exit(0);
+        Exit(Dialogs::Result::Ok);
         return true;
     }
     return false;

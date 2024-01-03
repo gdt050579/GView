@@ -18,7 +18,6 @@ OpenSSLHash::OpenSSLHash(OpenSSLHashKind kind)
     const EVP_MD* alg = nullptr;
     switch (kind)
     {
-        H(Md4, md4);
         H(Md5, md5);
         H(Blake2s256, blake2s256);
         H(Blake2b512, blake2b512);
@@ -36,8 +35,12 @@ OpenSSLHash::OpenSSLHash(OpenSSLHashKind kind)
         H(Shake128, shake128);
         H(Shake256, shake256);
     }
+
     auto ctx = EVP_MD_CTX_new();
-    assert(EVP_DigestInit_ex(ctx, alg, nullptr));
+    if (EVP_DigestInit_ex(ctx, alg, nullptr) == 0)
+    {
+        throw std::runtime_error("Failed to init EVP for OpenSSL!");
+    }
     handle = ctx;
     size   = 0;
 }
@@ -60,18 +63,21 @@ bool OpenSSLHash::Final()
     return EVP_DigestFinal_ex((EVP_MD_CTX*) handle, hash, &size);
 }
 
-std::string OpenSSLHash::GetHexValue()
+std::string_view OpenSSLHash::GetHexValue()
 {
     if (!Final())
     {
         return {};
     }
-    LocalString<256> ls;
+
+    LocalString<(sizeof(hash) / sizeof(hash[0])) * 2> ls;
     for (auto i = 0U; i < size; i++)
     {
         ls.AddFormat("%.2X", hash[i]);
     }
-    return std::string{ ls };
+    memcpy(hexDigest, ls.GetText(), size * 2ULL);
+
+    return { hexDigest, size * 2ULL };
 }
 
 const uint8* OpenSSLHash::Get() const

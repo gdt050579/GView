@@ -36,23 +36,23 @@ extern "C"
         return false;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new CSV::CSVFile(file);
+        return new CSV::CSVFile();
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto csv = reinterpret_cast<CSV::CSVFile*>(win->GetObject()->type);
+        auto csv = win->GetObject()->GetContentType<CSV::CSVFile>();
         csv->Update(win->GetObject());
 
         GView::View::GridViewer::Settings gridSettings;
         csv->UpdateGrid(gridSettings);
-        win->CreateViewer("Grid View", gridSettings);
+        win->CreateViewer(gridSettings);
 
         GView::View::BufferViewer::Settings bufferSettings;
         csv->UpdateBufferViewZones(bufferSettings);
-        win->CreateViewer("BufferView", bufferSettings);
+        csv->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(bufferSettings);
 
         // panels
         if (csv->HasPanel(CSV::Panels::IDs::Information))
@@ -65,8 +65,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Extension"] = { "csv", "tsv" };
-        sect["Priority"]  = 1;
+        sect["Extension"]   = { "csv", "tsv" };
+        sect["Priority"]    = 1;
+        sect["Description"] = "Comma or Tab separated values (*.csv, *.tsv)";
     }
 }
 

@@ -1,8 +1,10 @@
 #include "Internal.hpp"
 #include "BufferViewer.hpp"
+#include "TextViewer.hpp"
 #include "ImageViewer.hpp"
 #include "GridViewer.hpp"
 #include "DissasmViewer.hpp"
+#include "LexicalViewer.hpp"
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -11,6 +13,8 @@ using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
 GView::App::Instance* gviewAppInstance = nullptr;
+
+constexpr uint32 DEFAULT_CACHE_SIZE = 0xA00000; // 10 MB // sync this with the one from App/Instance.cpp
 
 bool UpdateSettingsForTypePlugin(AppCUI::Utils::IniObject& ini, const std::filesystem::path& pluginPath)
 {
@@ -64,10 +68,12 @@ bool GView::App::ResetConfiguration()
     // for AppCUI
     AppCUI::Application::UpdateAppCUISettings(ini, true);
     // for viewers
-    GView::View::BufferViewer::Config::Update(ini["BufferView"]);
-    GView::View::ImageViewer::Config::Update(ini["ImageView"]);
-    GView::View::GridViewer::Config::Update(ini["GridView"]);
+    GView::View::BufferViewer::Config::Update(ini["View.Buffer"]);
+    GView::View::TextViewer::Config::Update(ini["View.Text"]);
+    GView::View::ImageViewer::Config::Update(ini["View.Image"]);
+    GView::View::GridViewer::Config::Update(ini["View.Grid"]);
     GView::View::DissasmViewer::Config::Update(ini["DissasmView"]);
+    GView::View::LexicalViewer::Config::Update(ini["View.Lexical"]);
 
     // parse types and add specs
     auto typesPath = AppCUI::OS::GetCurrentApplicationPath();
@@ -90,30 +96,51 @@ bool GView::App::ResetConfiguration()
     }
 
     // generic GView settings
-    ini["GView"]["CacheSize"]    = 0x100000;
-    ini["GView"]["ChangeView"]   = Key::F4;
-    ini["GView"]["SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["CacheSize"]        = DEFAULT_CACHE_SIZE;
+    ini["GView"]["Key.ChangeView"]   = Key::F4;
+    ini["GView"]["Key.SwitchToView"] = Key::Alt | Key::F;
+    ini["GView"]["Key.GoTo"]         = Key::F5;
+    ini["GView"]["Key.Find"]         = Key::Alt | Key::F7;
+    ini["GView"]["Key.ChoseType"]    = Key::Alt | Key::F1;
 
     // all good (save config)
     return ini.Save(AppCUI::Application::GetAppSettingsFile());
 }
-void GView::App::OpenFile(const char* path)
+
+void GView::App::OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent)
+{
+    OpenFile(path, OpenMethod::ForceType, typeName, parent);
+}
+
+void GView::App::OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
 {
     if (gviewAppInstance)
-        gviewAppInstance->AddFileWindow(path);
+    {
+        try
+        {
+            if (path.is_absolute())
+            {
+                gviewAppInstance->AddFileWindow(path, method, typeName, parent);
+            }
+            else
+            {
+                const auto absPath = std::filesystem::canonical(path);
+                gviewAppInstance->AddFileWindow(absPath, method, typeName, parent);
+            }
+        }
+        catch (std::filesystem::filesystem_error /* e */)
+        {
+            gviewAppInstance->AddFileWindow(path, method, typeName, parent);
+        }
+    }
 }
-void GView::App::OpenItem(View::ExtractItem item, Reference<View::ViewControl> view, uint64 size, string_view name)
+void GView::App::OpenBuffer(
+      BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName, Reference<Window> parent)
 {
-    // simple form --> just write it to a file and open it
-    AppCUI::OS::File f;
-    if (!f.Create(name, true))
-        return;
-    if (view->ExtractTo(&f, item, size) == false)
-        return;
-    f.Close();
-    // API to OpenFile has to be changed (remove that cont char* path)
-    OpenFile(name.data());
+    if (gviewAppInstance)
+        gviewAppInstance->AddBufferWindow(buf, name, path, method, typeName, parent);
 }
+
 Reference<GView::Object> GView::App::GetObject(uint32 index)
 {
     CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
@@ -123,4 +150,19 @@ uint32 GView::App::GetObjectsCount()
 {
     CHECK(gviewAppInstance, 0U, "GView was not initialized !");
     return gviewAppInstance->GetObjectsCount();
+}
+std::string_view GView::App::GetTypePluginName(uint32 index)
+{
+    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginName(index);
+}
+std::string_view GView::App::GetTypePluginDescription(uint32 index)
+{
+    CHECK(gviewAppInstance, nullptr, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginDescription(index);
+}
+uint32 CORE_EXPORT GView::App::GetTypePluginsCount()
+{
+    CHECK(gviewAppInstance, 0, "GView was not initialized !");
+    return gviewAppInstance->GetTypePluginsCount();
 }

@@ -7,24 +7,40 @@ enum class CommandID
     Help,
     Open,
     Reset,
+    ListTypes,
     UpdateConfig
 };
 
 struct CommandInfo
 {
     CommandID ID;
+#ifdef BUILD_FOR_WINDOWS
+    std::u16string_view name;
+#else
     std::string_view name;
+#endif
 };
 
+// clang-format off
+#ifdef BUILD_FOR_WINDOWS
+#    define _U(x) (u##x)
+#    define _CHAR16_FROM_WCHAR(x) ((char16*)x)
+#else
+#    define _U(x) (x)
+#    define _CHAR16_FROM_WCHAR(x) (x)
+#endif
+// clang-format on
+
 CommandInfo commands[] = {
-    { CommandID::Help, "help" },
-    { CommandID::Open, "open" },
-    { CommandID::Reset, "reset" },
-    { CommandID::UpdateConfig, "updateconfig" },
+    { CommandID::Help, _U("help") },
+    { CommandID::Open, _U("open") },
+    { CommandID::Reset, _U("reset") },
+    { CommandID::ListTypes, _U("list-types") },
+    { CommandID::UpdateConfig, _U("updateconfig") },
 };
 
 std::string_view help = R"HELP(
-Use: GView <command> <options> [File|Files|Folder]
+Use: GView <command> [File|Files|Folder] <options> 
 Where <command> is on of:
    help                   Shows this help
                           Ex: 'GView help'
@@ -42,45 +58,112 @@ Where <command> is on of:
                           adding new plugins (if any). For old plugins new
                           configuration options will be added as well. 
                           Ex: 'GView updateConfig'                  
+
+   list-types             List all available types (as loaded from gview.ini).
+                          Ex: 'GView list-types' 
+And <options> are:
+   --type:<type>          Specify the type of the file (if knwon)
+                          Ex: 'GView open a.temp --type:PE'    
+   --selectType           Specify the type of the file should be manually selected
+                          Ex: 'GView open a.temp --selectType'   
 )HELP";
 
 void ShowHelp()
 {
     std::cout << "GView [A file/Process] viewer" << std::endl;
     std::cout << "Build on: " << __DATE__ << " " << __TIME__ << std::endl;
-    std::cout << "Version : " << "x.x.x" << std::endl;
+    std::cout << "Version : " << GVIEW_VERSION << std::endl;
     std::cout << help << std::endl;
 }
 
-CommandID GetCommandID(const char* name)
+template <typename T>
+CommandID GetCommandID(T name)
 {
     auto cnt = ARRAY_LEN(commands);
-    for (size_t idx = 0;idx<cnt;idx++)
+    for (size_t idx = 0; idx < cnt; idx++)
     {
-        if (AppCUI::Utils::String::Equals(name, commands[idx].name.data()))
+        if (commands[idx].name == _CHAR16_FROM_WCHAR(name))
             return commands[idx].ID;
     }
+
     // if nothing is recognize
     return CommandID::Unknown;
 }
 
-int ProcessOpenCommand(int argc, const char** argv, int start)
+bool ListTypes()
 {
-    if (!GView::App::Init())
-        return 1;
-    while (start<argc)
+    CHECK(GView::App::Init(), false, "");
+    auto cnt = GView::App::GetTypePluginsCount();
+    std::cout << "Types : " << cnt << std::endl;
+    for (auto index = 0U; index < cnt; index++)
     {
-        GView::App::OpenFile(argv[start]);
+        auto name = GView::App::GetTypePluginName(index);
+        auto desc = GView::App::GetTypePluginDescription(index);
+        std::cout << " " << std::left << std::setw(15) << name << desc << std::endl;
+    }
+    return true;
+}
+
+template <typename T>
+int ProcessOpenCommand(int argc, T** argv, int startIndex)
+{
+    CHECK(GView::App::Init(), 1, "");
+    auto start = startIndex;
+    LocalString<128> tempString;
+    LocalString<16> type;
+    auto method = GView::App::OpenMethod::FirstMatch;
+
+    // check options
+    for (; start < argc; start++)
+    {
+        if (argv[start][0] == '-')
+        {
+            // options are always in ASCII format
+            tempString.Clear();
+            const T* p = argv[start];
+            while ((*p))
+            {
+                tempString.AddChar(static_cast<char>(*p));
+                p++;
+            }
+            if (tempString.StartsWith("--type:", true))
+            {
+                method = GView::App::OpenMethod::ForceType;
+                type.Set(tempString.ToStringView().substr(7));
+                continue;
+            }
+            if (tempString.Equals("--selectType", true))
+            {
+                method = GView::App::OpenMethod::Select;
+                continue;
+            }
+            std::cout << "Unknwon option: " << tempString.ToStringView() << std::endl;
+            std::cout << "Type 'GView help' for a detailed list of available options" << std::endl;
+            return 1;
+        }
+    }
+    start = startIndex;
+    while (start < argc)
+    {
+        // skip options
+        if (argv[start][0] != '-')
+            GView::App::OpenFile(argv[start], method, type.ToStringView());
         start++;
     }
+
     AppCUI::Application::ArrangeWindows(AppCUI::Application::ArrangeWindowsMethod::Grid);
     GView::App::Run();
+
     return 0;
 }
 
-int main(int argc,const char **argv)
+#ifdef BUILD_FOR_WINDOWS
+int wmain(int argc, const wchar_t** argv)
+#else
+int main(int argc, const char** argv)
+#endif
 {
-    if (argc<2)
+    if (argc < 2)
     {
         ShowHelp();
         return 0;
@@ -95,14 +178,21 @@ int main(int argc,const char **argv)
     case CommandID::Reset:
         GView::App::ResetConfiguration();
         return 0;
+    case CommandID::ListTypes:
+        ListTypes();
+        return 0;
     case CommandID::Open:
         return ProcessOpenCommand(argc, argv, 2);
     case CommandID::Unknown:
         return ProcessOpenCommand(argc, argv, 1);
     default:
+#ifdef BUILD_FOR_WINDOWS
+        std::wcout << L"Unable to process command: " << argv[1] << std::endl;
+#else
         std::cout << "Unable to process command: " << argv[1] << std::endl;
+#endif
         return 1;
     }
-        
+
     return 0;
 }

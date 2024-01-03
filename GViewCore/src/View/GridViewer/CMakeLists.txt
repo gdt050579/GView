@@ -1,1 +1,1 @@
-target_sources(GViewCore PRIVATE GridViewer.hpp Config.cpp Instance.cpp Settings.cpp)
+target_sources(GViewCore PRIVATE GridViewer.hpp Config.cpp Instance.cpp Settings.cpp FindDialog.cpp)

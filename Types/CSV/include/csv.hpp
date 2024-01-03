@@ -27,18 +27,39 @@ namespace Type
             uint64_t panelsMask{ 0 };
 
           public:
-            Reference<GView::Object> obj;
-            Reference<GView::Utils::FileCache> file;
+            Reference<GView::Object> obj; // should not be here
+
 
           public:
-            CSVFile(Reference<GView::Utils::FileCache> fileCache);
+            CSVFile();
             virtual ~CSVFile() = default;
 
             std::string_view GetTypeName() override;
+            void RunCommand(std::string_view) override
+            {
+            }
             bool Update(Reference<GView::Object> obj);
             bool HasPanel(Panels::IDs id);
             void UpdateBufferViewZones(GView::View::BufferViewer::Settings& settings);
             void UpdateGrid(GView::View::GridViewer::Settings& settings);
+
+          public:
+            Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
+
+            uint32 GetSelectionZonesCount() override
+            {
+                CHECK(selectionZoneInterface.IsValid(), 0, "");
+                return selectionZoneInterface->GetSelectionZonesCount();
+            }
+
+            TypeInterface::SelectionZone GetSelectionZone(uint32 index) override
+            {
+                static auto d = TypeInterface::SelectionZone{ 0, 0 };
+                CHECK(selectionZoneInterface.IsValid(), d, "");
+                CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
+
+                return selectionZoneInterface->GetSelectionZone(index);
+            }
         };
 
         namespace Panels

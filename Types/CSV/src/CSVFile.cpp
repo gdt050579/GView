@@ -2,44 +2,33 @@
 
 using namespace GView::Type::CSV;
 
-CSVFile::CSVFile(Reference<GView::Utils::FileCache> fileCache) : file(fileCache), panelsMask(0)
+CSVFile::CSVFile() : panelsMask(0)
 {
     this->panelsMask |= (1ULL << (unsigned char) Panels::IDs::Information);
 }
 
 std::string_view CSVFile::CSVFile::GetTypeName()
 {
-    if (separator[0] == ',')
-    {
-        return "CSV";
-    }
-    else if (separator[0] == '\t')
-    {
-        return "TSV";
-    }
-
-    return "Unknown";
+    return "CSV/TSV";
 }
 
-bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> obj)
+bool GView::Type::CSV::CSVFile::Update(Reference<GView::Object> _obj)
 {
-    this->obj = obj;
-    std::string name{ this->obj->name };
+    this->obj = _obj;
 
-    if (name.ends_with(".tsv"))
+    if (this->obj->GetName().ends_with(u".tsv"))
     {
         separator[0] = '\t';
-    }
-    else if (name.ends_with(".csv"))
-    {
-        separator[0] = ',';
-    }
-    else
-    {
-        return false;
+        return true;
     }
 
-    return true;
+    if (this->obj->GetName().ends_with(u".csv"))
+    {
+        separator[0] = ',';
+        return true;
+    }
+
+    return false;
 }
 
 bool GView::Type::CSV::CSVFile::HasPanel(Panels::IDs id)
@@ -51,15 +40,15 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
 {
     const auto color = ColorPair{ Color::Gray, Color::Transparent };
 
-    const auto oSize = obj->cache.GetSize();
-    const auto cSize = obj->cache.GetCacheSize();
+    const auto oSize = obj->GetData().GetSize();
+    const auto cSize = obj->GetData().GetCacheSize();
 
     auto oSizeProcessed = 0ULL;
     auto currentLine    = 0ULL;
 
     do
     {
-        const auto buf = obj->cache.Get(oSizeProcessed, static_cast<uint32>(cSize), false);
+        const auto buf = obj->GetData().Get(oSizeProcessed, static_cast<uint32>(cSize), false);
         const std::string_view data{ reinterpret_cast<const char*>(buf.GetData()), buf.GetLength() };
 
         const auto nPos = data.find_first_of('\n', 0);
@@ -89,9 +78,11 @@ void GView::Type::CSV::CSVFile::UpdateBufferViewZones(GView::View::BufferViewer:
                 oSizeProcessed += rPos + 1;
             }
         }
-        else
+        else // last line EOF
         {
-            throw std::runtime_error("Not enough cache to read a line!");
+            settings.AddZone(oldOSizeProcessed, oSize - oldOSizeProcessed, color, std::to_string(currentLine));
+            currentLine++;
+            break;
         }
 
         settings.AddZone(oldOSizeProcessed, oSizeProcessed - oldOSizeProcessed, color, std::to_string(currentLine));

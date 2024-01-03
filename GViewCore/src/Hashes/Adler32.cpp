@@ -76,7 +76,13 @@ bool Adler32::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool Adler32::Update(Buffer buffer)
+bool Adler32::Update(const Buffer& buffer)
+{
+    CHECK(buffer.IsValid(), false, "");
+    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+}
+
+bool Adler32::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
@@ -96,10 +102,11 @@ std::string_view Adler32::GetName()
     return "Adler32";
 }
 
-const std::string Adler32::GetHexValue()
+const std::string_view Adler32::GetHexValue()
 {
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x%.8X", static_cast<uint32>((static_cast<uint32>(b) << 16) + (static_cast<uint32>(a))));
-    return std::string{ ls };
+    ls.Format("%.8X", static_cast<uint32>((static_cast<uint32>(b) << 16) + (static_cast<uint32>(a))));
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

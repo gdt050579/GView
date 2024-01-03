@@ -10,7 +10,7 @@ FileWindowProperties::FileWindowProperties(Reference<Tab> viewContainer) : Windo
 {
     auto t = Factory::Tab::Create(this, "l:1,t:1,r:1,b:3", TabFlags::LeftTabs | TabFlags::TabsBar);
 
-    auto tp1 = Factory::TabPage::Create(t, "General");
+    Factory::TabPage::Create(t, "General");
 
     // process all view modes
     for (uint32 idx = 0; idx < viewContainer->GetChildrenCount(); idx++)
@@ -34,13 +34,13 @@ bool FileWindowProperties::OnEvent(Reference<Control> control, Event eventType, 
     {
         if (ID == BUTTON_ID_CLOSE)
         {
-            this->Exit(0);
+            this->Exit(Dialogs::Result::Ok);
             return true;
         }
         if (ID == BUTTON_ID_GOTO)
         {
             //GDT: switch to that particular view
-            this->Exit(0);
+            this->Exit(Dialogs::Result::Ok);
             return true;
         }
     }

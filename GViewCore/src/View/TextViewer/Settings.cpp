@@ -5,24 +5,36 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
-    this->imgList.reserve(8);
-    this->loadImageCallback.Reset();
+    this->tabSize              = 4;
+    this->wrapMethod           = WrapMethod::Bullets;
+    this->highlightCurrentLine = true;
+    this->showTabCharacter     = false;
+    this->encoding             = CharacterEncoding::Encoding::Binary;
 }
 Settings::Settings()
 {
     this->data = new SettingsData();
 }
-void Settings::SetLoadImageCallback(Reference<LoadImageInterface> cbk)
+void Settings::SetWrapMethod(WrapMethod method)
 {
-    if (cbk != nullptr)
-        ((SettingsData*) (this->data))->loadImageCallback = cbk;
+    reinterpret_cast<SettingsData*>(this->data)->wrapMethod = method;
 }
-void Settings::AddImage(uint64 offset, uint64 size)
+void Settings::SetTabSize(uint32 tabSize)
 {
-    if ((size > 0) && (offset != GView::Utils::INVALID_OFFSET))
-    {
-        auto& elem = ((SettingsData*) (this->data))->imgList.emplace_back();
-        elem.start = offset;
-        elem.end   = offset + size;
-    }
+    tabSize                                              = std::min<>(1U, tabSize);
+    tabSize                                              = std::max<>(32U, tabSize);
+    reinterpret_cast<SettingsData*>(this->data)->tabSize = tabSize;
+}
+void Settings::ShowTabCharacter(bool show)
+{
+    reinterpret_cast<SettingsData*>(this->data)->showTabCharacter = show;
+}
+void Settings::HightlightCurrentLine(bool highlight)
+{
+    reinterpret_cast<SettingsData*>(this->data)->highlightCurrentLine = highlight;
+}
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
 }

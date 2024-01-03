@@ -21,10 +21,12 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new BMP::BMPFile(file);
+        return new BMP::BMPFile();
     }
+
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<BMP::BMPFile> bmp)
     {
         BufferViewer::Settings settings;
@@ -32,18 +34,20 @@ extern "C"
         settings.AddZone(0, sizeof(BMP::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         settings.AddZone(sizeof(BMP::Header), sizeof(BMP::InfoHeader), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
 
-        win->CreateViewer("BufferView", settings);
+        bmp->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
+
     void CreateImageView(Reference<GView::View::WindowInterface> win, Reference<BMP::BMPFile> bmp)
     {
         GView::View::ImageViewer::Settings settings;
         settings.SetLoadImageCallback(bmp.ToBase<View::ImageViewer::LoadImageInterface>());
-        settings.AddImage(0, bmp->file->GetSize());
-        win->CreateViewer("ImageView", settings);
+        settings.AddImage(0, bmp->obj->GetData().GetSize());
+        win->CreateViewer(settings);
     }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto bmp = win->GetObject()->type->To<BMP::BMPFile>();
+        auto bmp = win->GetObject()->GetContentType<BMP::BMPFile>();
         bmp->Update();
 
         // add viewer
@@ -55,10 +59,12 @@ extern "C"
 
         return true;
     }
+
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]  = "BM";
-        sect["Priority"] = 1;
+        sect["Pattern"]     = "magic:42 4D";
+        sect["Priority"]    = 1;
+        sect["Description"] = "Bitmap image file (*.bmp)";
     }
 }
 

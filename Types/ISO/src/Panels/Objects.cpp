@@ -21,17 +21,17 @@ Objects::Objects(Reference<ISOFile> _iso, Reference<GView::View::WindowInterface
     list = Factory::ListView::Create(
           this,
           "d:c",
-          { { "LEN-DR", TextAlignament::Right, 10 },
-            { "Attr Len", TextAlignament::Right, 10 },
-            { "Extent Location", TextAlignament::Right, 17 },
-            { "Data Length", TextAlignament::Right, 13 },
-            { "Date", TextAlignament::Right, 25 },
-            { "File Flags", TextAlignament::Right, 28 },
-            { "File Unit Size", TextAlignament::Right, 11 },
-            { "Interleave Gap Size", TextAlignament::Right, 21 },
-            { "Volume Sequence Number", TextAlignament::Right, 24 },
-            { "LEN-FI", TextAlignament::Right, 10 },
-            { "File Identifier", TextAlignament::Left, 100 } },
+          { "n:LEN-DR,a:r,w:10",
+            "n:Attr Len,a:r,w:10",
+            "n:Extent Location,a:r,w:17",
+            "n:Data Length,a:r,w:13",
+            "n:Date,a:r,w:25",
+            "n:File Flags,a:r,w:28",
+            "n:File Unit Size,a:r,w:11",
+            "n:Interleave Gap Size,a:r,w:21",
+            "n:Volume Sequence Number,a:r,w:24",
+            "n:LEN-FI,a:r,w:10",
+            "n:File Identifier,a:r,w:100" },
           ListViewFlags::None);
 
     Update();
@@ -78,24 +78,7 @@ void Panels::Objects::Update()
         item.SetText(1, tmp.Format("%s", GetValue(n, record.extendedAttributeRecordLength).data()));
         item.SetText(2, tmp.Format("%s", GetValue(n, record.locationOfExtent.LSB).data()));
         item.SetText(3, tmp.Format("%s", GetValue(n, record.dataLength.LSB).data()));
-
-        const auto gmt         = record.recordingDateAndTime[6];
-        const uint8 gmtHours   = gmt / 4;
-        const uint8 gmtMinutes = std::abs((gmt % 4) * 15);
-
-        item.SetText(
-              4,
-              tmp.Format(
-                    "%.4d-%.2d-%.2d %.2d:%.2d:%.2d %.2d:%.2d",
-                    1900 + record.recordingDateAndTime[0],
-                    record.recordingDateAndTime[1],
-                    record.recordingDateAndTime[2],
-                    record.recordingDateAndTime[3],
-                    record.recordingDateAndTime[4],
-                    record.recordingDateAndTime[5],
-                    gmtHours,
-                    gmtMinutes));
-
+        item.SetText(4, RecordingDateAndTimeToString(record.recordingDateAndTime).c_str());
         item.SetText(5, tmp.Format("[%s] %s", GetECMA_119_FileFlags(record.fileFlags).c_str(), GetValue(n, record.fileFlags).data()));
         item.SetText(6, tmp.Format("%s", GetValue(n, record.fileUnitSize).data()));
         item.SetText(7, tmp.Format("%s", GetValue(n, record.interleaveGapSize).data()));
@@ -120,7 +103,7 @@ bool Panels::Objects::OnEvent(Reference<Control> ctrl, Event evnt, int controlID
 {
     CHECK(TabPage::OnEvent(ctrl, evnt, controlID) == false, true, "");
 
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedSection();
         return true;

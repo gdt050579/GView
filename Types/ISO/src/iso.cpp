@@ -13,14 +13,31 @@ using namespace GView::View;
 static const std::map<std::string_view, ISO::Identifier> identifiers
 {
     { "CD001", ISO::Identifier::ECMA_119 },
-    { "NSR02", ISO::Identifier::ECMA_167_PREVIOUS },
-    { "NSR03", ISO::Identifier::ECMA_167 },
-    { "BEA01", ISO::Identifier::ECMA_167_EXTENDED },
-    { "BOOT2", ISO::Identifier::ECMA_167_BOOT },
-    { "TEA01", ISO::Identifier::ECMO_167_TERMINATOR },
-    { "CDW02", ISO::Identifier::ECMA_168 }
+    { "NSR02", ISO::Identifier::ECMA_167_PREVIOUS },    // This identifier is used by the El Torito bootable CD specification. It identifies the "No Emulation" system type, which specifies that the boot image is stored directly on the CD and does not require any emulation to be run.
+    { "NSR03", ISO::Identifier::ECMA_167 },             // This identifier is used by the El Torito bootable CD specification. It identifies the "1.2MB Floppy Emulation" system type, which specifies that the boot image is stored on the CD and requires 1.2 MB floppy disk emulation to be run.
+    { "BEA01", ISO::Identifier::ECMA_167_EXTENDED },    // This identifier is used by the ISO 9660:1999 standard and identifies the "Bootable Extension Area" volume descriptor type.
+    { "BOOT2", ISO::Identifier::ECMA_167_BOOT },        // This identifier is used by the ISO 9660:1999 standard and identifies the "Boot Record" volume descriptor type.
+    { "TEA01", ISO::Identifier::ECMO_167_TERMINATOR },  // This identifier is used by the ISO 9660:1999 standard and identifies the "Terminator" volume descriptor type.
+    { "CDW02", ISO::Identifier::ECMA_168 }              //  This identifier is not a part of the ISO 9660 standard and its use is unclear. It may have been used by some specific implementations, but it's not a part of the official standard and may not be recognized by all ISO 9660 compliant systems.
 };
 // clang-format on
+
+constexpr string_view ISO_ICON = "................"  // 1
+                                 "................"  // 2
+                                 "................"  // 3
+                                 "................"  // 4
+                                 "WW.WWWWW.WWWWWWW"  // 5
+                                 "WW.WWWWW.WWWWWWW"  // 6
+                                 "WW.WW....WW...WW"  // 7
+                                 "WW.WWWWW.WW...WW"  // 8
+                                 "WW....WW.WW...WW"  // 9
+                                 "WW.WWWWW.WWWWWWW"  // 10
+                                 "WW.WWWWW.WWWWWWW"  // 11
+                                 "................"  // 12
+                                 "................"  // 13
+                                 "................"  // 14
+                                 "................"  // 15
+                                 "................"; // 16
 
 extern "C"
 {
@@ -42,9 +59,9 @@ extern "C"
         return true;
     }
 
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ISO::ISOFile(file);
+        return new ISO::ISOFile();
     }
 
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
@@ -67,46 +84,31 @@ extern "C"
             if (entry.header.type == ISO::SectorType::BootRecord)
             {
                 settings.AddZone(
-                      offset,
-                      ISO::ECMA_119_SECTOR_SIZE,
-                      ColorPair{ Color::Magenta, Color::DarkBlue },
-                      ls.Format("#%d_BootRecordVolumeDescriptor", brvdi));
+                      offset, ISO::ECMA_119_SECTOR_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, ls.Format("#%d_BootRecordVolumeDescriptor", brvdi));
                 brvdi++;
             }
             else if (entry.header.type == ISO::SectorType::Partition)
             {
                 settings.AddZone(
-                      offset,
-                      ISO::ECMA_119_SECTOR_SIZE,
-                      ColorPair{ Color::Magenta, Color::DarkBlue },
-                      ls.Format("#%d_PartitionVolumeDescriptor", pvdi1));
+                      offset, ISO::ECMA_119_SECTOR_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, ls.Format("#%d_PartitionVolumeDescriptor", pvdi1));
                 pvdi1++;
             }
             else if (entry.header.type == ISO::SectorType::Primary)
             {
                 settings.AddZone(
-                      offset,
-                      ISO::ECMA_119_SECTOR_SIZE,
-                      ColorPair{ Color::Magenta, Color::DarkBlue },
-                      ls.Format("#%d_PrimaryVolumeDescriptor", pvdi2));
+                      offset, ISO::ECMA_119_SECTOR_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, ls.Format("#%d_PrimaryVolumeDescriptor", pvdi2));
                 pvdi2++;
             }
             else if (entry.header.type == ISO::SectorType::Supplementary)
             {
                 settings.AddZone(
-                      offset,
-                      ISO::ECMA_119_SECTOR_SIZE,
-                      ColorPair{ Color::Magenta, Color::DarkBlue },
-                      ls.Format("#%d_SupplementaryVolumeDescriptor", svdi));
+                      offset, ISO::ECMA_119_SECTOR_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, ls.Format("#%d_SupplementaryVolumeDescriptor", svdi));
                 svdi++;
             }
             else if (entry.header.type == ISO::SectorType::SetTerminator)
             {
                 settings.AddZone(
-                      offset,
-                      ISO::ECMA_119_SECTOR_SIZE,
-                      ColorPair{ Color::Magenta, Color::DarkBlue },
-                      ls.Format("#%d_SetTerminatorVolumeDescriptor", stvdi));
+                      offset, ISO::ECMA_119_SECTOR_SIZE, ColorPair{ Color::Magenta, Color::DarkBlue }, ls.Format("#%d_SetTerminatorVolumeDescriptor", stvdi));
                 stvdi++;
             }
 
@@ -123,7 +125,7 @@ extern "C"
             }
 
             ISO::ECMA_119_PrimaryVolumeDescriptor pvd{};
-            CHECKBK(iso->file->Copy<ISO::ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), "");
+            CHECKBK(iso->obj->GetData().Copy<ISO::ECMA_119_PrimaryVolumeDescriptor>(entry.offsetInFile, pvd), "");
             const auto blockSize   = pvd.vdd.logicalBlockSize.LSB;
             const auto ptrLocation = pvd.vdd.locationOfTypeLPathTable * blockSize;
             const auto ptrSize     = pvd.vdd.pathTableSize.LSB;
@@ -134,19 +136,39 @@ extern "C"
             break;
         }
 
-        win->CreateViewer("BufferView", settings);
+        iso->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
+    }
+
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<ISO::ISOFile> iso)
+    {
+        ContainerViewer::Settings settings;
+
+        settings.SetIcon(ISO_ICON);
+        settings.SetColumns({
+              "n:&Name,a:l,w:80",
+              "n:&Size,a:r,w:20",
+              "n:&Created,a:r,w:25",
+              "n:&OffsetInFile,a:r,w:20",
+              "n:&Flags,a:r,w:25",
+        });
+
+        settings.SetEnumerateCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+        settings.SetOpenItemCallback(win->GetObject()->GetContentType<ISO::ISOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto iso = win->GetObject()->type->To<ISO::ISOFile>();
+        auto iso = win->GetObject()->GetContentType<ISO::ISOFile>();
         iso->Update();
 
         // add views
+        CreateContainerView(win, iso);
         CreateBufferView(win, iso);
 
         // add panels
-        win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(iso)), true);
+        win->AddPanel(Pointer<TabPage>(new ISO::Panels::Information(win->GetObject(), iso)), true);
         win->AddPanel(Pointer<TabPage>(new ISO::Panels::Objects(iso, win)), false);
 
         return true;
@@ -154,8 +176,9 @@ extern "C"
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]   = "hex:'00 00 00 00 00 00 00 00'";
-        sect["Extension"] = "iso";
-        sect["Priority"]  = 1;
+        sect["Pattern"]     = "magic:00 00 00 00 00 00 00 00";
+        sect["Extension"]   = "iso";
+        sect["Priority"]    = 1;
+        sect["Description"] = "Optical disk image (*.iso)";
     }
 }

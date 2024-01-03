@@ -5,14 +5,20 @@
 #include "DissasmViewer.hpp"
 #include "TextViewer.hpp"
 #include "ContainerViewer.hpp"
+#include "LexicalViewer.hpp"
 
 using namespace GView::App;
 using namespace GView::View;
+using namespace AppCUI::Input;
 
-constexpr int HORIZONTA_PANEL_ID         = 100000;
+// constexpr int HORIZONTA_PANEL_ID         = 100000;
 constexpr int CMD_SHOW_VIEW_CONFIG_PANEL = 2000000;
 constexpr int CMD_SHOW_HORIZONTAL_PANEL  = 2001000;
 constexpr int CMD_NEXT_VIEW              = 30012345;
+constexpr int CMD_GOTO                   = 30012346;
+constexpr int CMD_FIND                   = 30012347;
+constexpr int CMD_CHOSE_NEW_TYPE         = 30012348;
+constexpr int CMD_FOR_TYPE_PLUGIN_START  = 50000000;
 
 class CursorInformation : public UserControl
 {
@@ -30,8 +36,8 @@ class CursorInformation : public UserControl
     }
 };
 
-FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::App::Instance> _gviewApp)
-    : Window(name, "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp)
+FileWindow::FileWindow(std::unique_ptr<GView::Object> _obj, Reference<GView::App::Instance> _gviewApp, Reference<Type::Plugin> _typePlugin)
+: Window("", "d:c", WindowFlags::Sizeable), gviewApp(_gviewApp), typePlugin(_typePlugin), obj(std::move(_obj))
 {
     cursorInfoHandle = ItemHandle{};
     // create splitters
@@ -39,7 +45,7 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     vertical   = horizontal->CreateChildControl<Splitter>("d:c", SplitterFlags::Vertical | SplitterFlags::AutoCollapsePanel2);
     horizontal->SetPanel2Bounderies(1); // minim size (1 line)
     horizontal->SetSecondPanelSize(1);
-    vertical->SetDefaultPanelSize(64); // default panel upon extension
+    vertical->SetDefaultPanelSize(64);   // default panel upon extension
     horizontal->SetDefaultPanelSize(10); // default h-splitter size upon extension
 
     // create tabs
@@ -66,15 +72,42 @@ FileWindow::FileWindow(const AppCUI::Utils::ConstString& name, Reference<GView::
     this->defaultVerticalPanelsSize   = 8;
     this->defaultHorizontalPanelsSize = 40;
 
-    UnicodeStringBuilder usb{ name };
-    const auto path     = std::filesystem::path(usb.ToStringView());
-    const auto filename = path.filename().u16string();
-    this->obj.name.Set(filename);
+    // set the name
+    this->SetText(obj->GetName());
+    this->SetTag(obj->GetContentType()->GetTypeName(), "");
 }
 Reference<GView::Object> FileWindow::GetObject()
 {
-    return Reference<GView::Object>(&this->obj);
+    return Reference<GView::Object>(this->obj.get());
 }
+
+void FileWindow::ShowFilePropertiesDialog()
+{
+    FileWindowProperties dlg(view);
+    dlg.Show();
+}
+void FileWindow::ShowGoToDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowGoToDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for GoTo command !");
+    }
+}
+void FileWindow::ShowFindDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowFindDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Find command !");
+    }
+}
+void FileWindow::ShowCopyDialog()
+{
+    if (this->view->GetCurrentTab().ToObjectRef<ViewControl>()->ShowCopyDialog() == false)
+    {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "This view has no implementation for Copy command !");
+    }
+}
+
 bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
 {
     if (verticalPosition)
@@ -92,40 +125,64 @@ bool FileWindow::AddPanel(Pointer<TabPage> page, bool verticalPosition)
         return false;
     }
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::BufferViewer::Settings& settings)
+
+bool FileWindow::CreateViewer(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::TextViewer::Settings& settings)
+
+Reference<GView::Utils::SelectionZoneInterface> FileWindow::GetSelectionZoneInterfaceFromViewerCreation(GView::View::BufferViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::BufferViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings)
+          .ToBase<GView::Utils::SelectionZoneInterface>();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::ImageViewer::Settings& settings)
+
+bool FileWindow::CreateViewer(GView::View::TextViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::TextViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, View::GridViewer::Settings& settings)
+bool FileWindow::CreateViewer(GView::View::ImageViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::ImageViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, View::ContainerViewer::Settings& settings)
+bool FileWindow::CreateViewer(View::GridViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::GridViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
-bool FileWindow::CreateViewer(const std::string_view& name, GView::View::DissasmViewer::Settings& settings)
+bool FileWindow::CreateViewer(View::ContainerViewer::Settings& settings)
 {
-    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(name, Reference<GView::Object>(&this->obj), &settings)
-          .IsValid();
+    return this->view->CreateChildControl<GView::View::ContainerViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
 }
+bool FileWindow::CreateViewer(GView::View::DissasmViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::DissasmViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+}
+bool FileWindow::CreateViewer(GView::View::LexicalViewer::Settings& settings)
+{
+    return this->view->CreateChildControl<GView::View::LexicalViewer::Instance>(Reference<GView::Object>(this->obj.get()), &settings).IsValid();
+}
+
 Reference<ViewControl> FileWindow::GetCurrentView()
 {
     return view->GetCurrentTab().ToObjectRef<ViewControl>();
 }
+
+uint32 FileWindow::GetViewsCount()
+{
+    return view->GetChildrenCount();
+}
+
+Reference<ViewControl> FileWindow::GetViewByIndex(uint32 index)
+{
+    return view->GetChild(index).ToObjectRef<ViewControl>();
+}
+
+bool FileWindow::SetViewByIndex(uint32 index)
+{
+    CHECK(index < view->GetChildrenCount(), false, "");
+    return view->SetCurrentTabPageByIndex(index, true);
+}
+
 bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
 {
     if (Window::OnKeyEvent(keyCode, unicode))
@@ -137,10 +194,24 @@ bool FileWindow::OnKeyEvent(AppCUI::Input::Key keyCode, char16_t unicode)
     if (horizontalPanels->OnKeyEvent(keyCode, unicode))
         return true;
     // if Alt+F is pressed --> enable view
-    if (keyCode == gviewApp->GetKeyToSwitchToView())
+    if (keyCode == gviewApp->GetSwitchToViewKey())
     {
         if (!view->HasFocus())
             view->SetFocus();
+        return true;
+    }
+    // finally --> check some hardcoded commands
+    switch (keyCode)
+    {
+    case Key::Ctrl | Key::G:
+        ShowGoToDialog();
+        return true;
+    case Key::Ctrl | Key::F:
+        ShowFindDialog();
+        return true;
+    case Key::Ctrl | Key::C:
+    case Key::Ctrl | Key::Insert:
+        ShowCopyDialog();
         return true;
     }
     return false;
@@ -152,21 +223,40 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
     switch (eventType)
     {
     case Event::Command:
-        if (ID == CMD_SHOW_VIEW_CONFIG_PANEL)
+        switch (ID)
         {
-            FileWindowProperties dlg(view);
-            dlg.Show();
+        case CMD_SHOW_VIEW_CONFIG_PANEL:
+            ShowFilePropertiesDialog();
             return true;
-        }
-        if (ID == CMD_NEXT_VIEW)
-        {
+        case CMD_NEXT_VIEW:
             this->view->GoToNextTabPage();
+            return true;
+        case CMD_GOTO:
+            ShowGoToDialog();
+            return true;
+        case CMD_FIND:
+            ShowFindDialog();
+            return true;
+        case CMD_CHOSE_NEW_TYPE:
+            if (this->obj->GetObjectType() == Object::Type::File)
+            {
+                GView::App::OpenFile(this->obj->GetPath(), OpenMethod::Select);
+            }
+            else
+            {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Not implemented yet for this type of object (buffer/PID/Folder)");
+            }
             return true;
         }
         if ((ID >= CMD_SHOW_HORIZONTAL_PANEL) && (ID <= CMD_SHOW_HORIZONTAL_PANEL + 100))
         {
-            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL,true);
+            horizontalPanels->SetCurrentTabPageByIndex(ID - CMD_SHOW_HORIZONTAL_PANEL, true);
             horizontalPanels->SetFocus();
+            return true;
+        }
+        if (((ID >= CMD_FOR_TYPE_PLUGIN_START) && (ID <= CMD_FOR_TYPE_PLUGIN_START + 1000)) && (this->typePlugin.IsValid()))
+        {
+            this->obj->GetContentType()->RunCommand(this->typePlugin->GetCommands()[static_cast<size_t>(ID) - CMD_FOR_TYPE_PLUGIN_START].name);
             return true;
         }
         break;
@@ -184,8 +274,20 @@ bool FileWindow::OnEvent(Reference<Control> ctrl, Event eventType, int ID)
 
 bool FileWindow::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    commandBar.SetCommand(
-          this->gviewApp->GetKeyToChangeViewes(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(this->gviewApp->GetChangeViewesKey(), this->view->GetCurrentTab().ToObjectRef<ViewControl>()->GetName(), CMD_NEXT_VIEW);
+    commandBar.SetCommand(this->gviewApp->GetGoToKey(), "GoTo", CMD_GOTO);
+    commandBar.SetCommand(this->gviewApp->GetFindKey(), "Find", CMD_FIND);
+    commandBar.SetCommand(this->gviewApp->GetChoseNewTypeKey(), "SelectType", CMD_CHOSE_NEW_TYPE);
+    // add commands from type plugin
+    if (this->typePlugin.IsValid())
+    {
+        auto idx = 0;
+        for (auto& cmd : typePlugin->GetCommands())
+        {
+            commandBar.SetCommand(cmd.key, cmd.name, CMD_FOR_TYPE_PLUGIN_START + idx);
+            idx++;
+        }
+    }
     // add all generic plugins
     this->gviewApp->UpdateCommandBar(commandBar);
     return true;

@@ -7,7 +7,9 @@ using namespace AppCUI::Input;
 
 SettingsData::SettingsData()
 {
-    this->columnsCount = 0;
+    this->columnsCount    = 0;
+    this->propertiesCount = 0;
+    this->pathSeparator   = char16_t(std::filesystem::path::preferred_separator);
 }
 Settings::Settings()
 {
@@ -17,22 +19,44 @@ bool Settings::SetIcon(string_view stringFormat16x16)
 {
     return SD->icon.Create(16, 16, stringFormat16x16);
 }
-bool Settings::AddProperty(string_view name, string_view value)
+bool Settings::SetPathSeparator(char16 separator)
 {
-    NOT_IMPLEMENTED(false);
+    if (separator > 0)
+    {
+        SD->pathSeparator = separator;
+        return true;
+    }
+    return false;
 }
-bool Settings::AddColumn(string_view name, TextAlignament align, uint32 width)
+bool Settings::AddProperty(string_view name, const ConstString& value, ListViewItem::Type itemType)
 {
-    CHECK(SD->columnsCount < SettingsData::MAX_COLUMNS, false, "");
-    SD->columns[SD->columnsCount].Name = name;
-    SD->columns[SD->columnsCount].Align = align;
-    SD->columns[SD->columnsCount].Width = std::max<>(4U,width);
-    SD->columnsCount++;
+    CHECK(SD->propertiesCount < SettingsData::MAX_PROPERTIES, false, "");
+    CHECK(SD->properties[SD->propertiesCount].key.Set(name), false, "");
+    CHECK(SD->properties[SD->propertiesCount].value.Set(value), false, "");
+    SD->properties[SD->propertiesCount].itemType = itemType;
+    SD->propertiesCount++;
     return true;
 }
-void Settings::SetListItemCallback(Reference<ListItemsInterface> callback)
+void Settings::SetColumns(std::initializer_list<ConstString> columns)
 {
-    SD->listItemsInterface = callback;
+    for (const auto& col : columns)
+    {
+        SD->columns[SD->columnsCount].layout.Set(col);
+        SD->columnsCount++;
+    }
+}
+void Settings::SetEnumerateCallback(Reference<EnumerateInterface> callback)
+{
+    SD->enumInterface = callback;
+}
+void Settings::SetOpenItemCallback(Reference<OpenItemInterface> callback)
+{
+    SD->openItemInterface = callback;
+}
+
+bool Settings::SetName(std::string_view name)
+{
+    return SD->name.Set(name);
 }
 
 #undef SD

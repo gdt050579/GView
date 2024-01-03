@@ -34,7 +34,7 @@ static const uint32 CRC32Table[] = {
 bool CRC32::Init(CRC32Type type)
 {
     this->type = type;
-    value      = static_cast<uint32>(this->type);
+    value      = ~0;
     init       = true;
 
     return true;
@@ -55,7 +55,13 @@ bool CRC32::Update(const unsigned char* input, uint32 length)
     return true;
 }
 
-bool CRC32::Update(Buffer buffer)
+bool CRC32::Update(const Buffer& buffer)
+{
+    CHECK(buffer.IsValid(), false, "");
+    return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
+}
+
+bool CRC32::Update(const BufferView& buffer)
 {
     CHECK(buffer.IsValid(), false, "");
     return Update(buffer.GetData(), static_cast<uint32>(buffer.GetLength()));
@@ -66,7 +72,7 @@ bool CRC32::Final(uint32& hash)
     CHECK(init, false, "");
 
     uint32 crc = value;
-    // crc ^= static_cast<uint32>(type);
+    crc ^= static_cast<uint32>(type);
     hash = crc;
 
     return true;
@@ -76,15 +82,16 @@ std::string_view CRC32::GetName(CRC32Type type)
 {
     if (type == CRC32Type::JAMCRC)
     {
-        return "CRC32 (JAMCRC)";
+        return "CRC32 (JAMCRC(-1))";
     }
     return "CRC32 (JAMCRC(0))";
 }
 
-const std::string CRC32::GetHexValue()
+const std::string_view CRC32::GetHexValue()
 {
     LocalString<ResultBytesLength * 2> ls;
-    ls.Format("0x%.8X", value);
-    return std::string{ ls };
+    ls.Format("%.8X", value ^ static_cast<uint32>(type));
+    memcpy(hexDigest, ls.GetText(), ResultBytesLength * 2ULL);
+    return { hexDigest, ResultBytesLength * 2 };
 }
 } // namespace GView::Hashes

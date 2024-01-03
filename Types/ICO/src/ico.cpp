@@ -23,9 +23,9 @@ extern "C"
         // all good
         return true;
     }
-    PLUGIN_EXPORT TypeInterface* CreateInstance(Reference<GView::Utils::FileCache> file)
+    PLUGIN_EXPORT TypeInterface* CreateInstance()
     {
-        return new ICO::ICOFile(file);
+        return new ICO::ICOFile();
     }
     void CreateBufferView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
     {
@@ -34,33 +34,37 @@ extern "C"
 
         settings.AddZone(0, sizeof(ICO::Header), ColorPair{ Color::Magenta, Color::DarkBlue }, "Header");
         settings.AddZone(
-              sizeof(ICO::Header), sizeof(ICO::DirectoryEntry) * ico->dirs.size(), ColorPair{ Color::Olive, Color::DarkBlue }, "Image entries");
+              sizeof(ICO::Header),
+              sizeof(ICO::DirectoryEntry) * ico->dirs.size(),
+              ColorPair{ Color::Olive, Color::DarkBlue },
+              "Image entries");
 
         uint8 idx = 1;
         for (auto& e : ico->dirs)
         {
             settings.AddZone(e.cursor.offset, e.cursor.size, ColorPair{ Color::Silver, Color::DarkBlue }, tempStr.Format("Img #%d", idx));
-            if (idx<10)
+            if (idx < 10)
                 settings.AddBookmark(idx, e.cursor.offset);
             idx++;
         }
-        win->CreateViewer("BufferView", settings);
+
+        ico->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
     void CreateImageView(Reference<GView::View::WindowInterface> win, Reference<ICO::ICOFile> ico)
     {
         GView::View::ImageViewer::Settings settings;
         settings.SetLoadImageCallback(ico.ToBase<View::ImageViewer::LoadImageInterface>());
-        
-        for (uint32 idx = 0; idx < ico->dirs.size();idx++)
+
+        for (uint32 idx = 0; idx < ico->dirs.size(); idx++)
         {
             settings.AddImage(ico->dirs[idx].ico.offset, ico->dirs[idx].ico.size);
         }
 
-        win->CreateViewer("ImageView", settings);
+        win->CreateViewer(settings);
     }
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
     {
-        auto ico = win->GetObject()->type->To<ICO::ICOFile>();
+        auto ico = win->GetObject()->GetContentType<ICO::ICOFile>();
         ico->Update();
 
         // add viewer
@@ -76,10 +80,11 @@ extern "C"
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
         sect["Pattern"] = {
-            "hex:'00 00 01 00'",
-            "hex:'00 00 02 00'",
+            "magic:00 00 01 00",
+            "magic:00 00 02 00",
         };
-        sect["Priority"] = 1;
+        sect["Priority"]    = 1;
+        sect["Description"] = "Icon/Cursor image file (*.ico, *.cur)";
     }
 }
 

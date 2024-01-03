@@ -10,12 +10,13 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Image View")
 {
     imgView = Factory::ImageView::Create(this, "d:c", ViewerFlags::None);
+    imgView->SetVScrollBarTopMargin(4);
+    imgView->SetHScrollBarLeftMarging(4);
 
     this->obj               = _obj;
-    this->name              = _name;
     this->currentImageIndex = 0;
     this->scale             = ImageScaleMethod::NoScale;
     // settings
@@ -115,7 +116,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
         return true;
     }
 
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
@@ -168,11 +169,28 @@ bool Instance::Select(uint64 offset, uint64 size)
 {
     return false; // no selection is possible in this mode
 }
-std::string_view Instance::GetName()
+bool Instance::ShowGoToDialog()
 {
-    return this->name;
+    GoToDialog dlg(this->settings.get(), this->currentImageIndex, this->obj->GetData().GetSize());
+    if (dlg.Show() == Dialogs::Result::Ok)
+    {
+        if (dlg.ShouldGoToImage())
+        {
+            this->currentImageIndex = dlg.GetSelectedImageIndex();
+            LoadImage();
+        }
+        else
+        {
+            GoTo(dlg.GetFileOffset());
+        }
+    }
+    return true;
 }
-bool Instance::ExtractTo(Reference<AppCUI::OS::IFile> output, ExtractItem item, uint64 size)
+bool Instance::ShowFindDialog()
+{
+    NOT_IMPLEMENTED(false);
+}
+bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
@@ -183,9 +201,8 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 widt
     LocalString<128> tmp;
 
     auto poz = this->WriteCursorInfo(r, 0, 0, 16, "Size:", tmp.Format("%u x %u", img.GetWidth(), img.GetHeight()));
-    poz      = this->WriteCursorInfo(
-          r, poz, 0, 16, "Image:", tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()));
-    poz = this->WriteCursorInfo(r, poz, 0, 16, "Zoom:", tmp.Format("%3u%%", 100U / (uint32) scale));
+    poz      = this->WriteCursorInfo(r, poz, 0, 16, "Image:", tmp.Format("%u/%u", this->currentImageIndex + 1, (uint32) this->settings->imgList.size()));
+    poz      = this->WriteCursorInfo(r, poz, 0, 16, "Zoom:", tmp.Format("%3u%%", 100U / (uint32) scale));
 }
 
 //======================================================================[PROPERTY]============================

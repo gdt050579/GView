@@ -3,7 +3,7 @@ def GetCharType(i):
 	if i>=ord('a') and i<=ord('z'): return "true"
 	if i>=ord('0') and i<=ord('9'): return "true"
 	if (i==32) or (i==ord('\t')): return "true"
-	if (chr(i) in " .\t\\,.():*-+=_/'\"%$!@#"): return "true"
+	if (chr(i) in " .\t\\,.():*-+=_/'\"%$!@#&[]{};|<>?!^~"): return "true"
 	return "false"
 
 

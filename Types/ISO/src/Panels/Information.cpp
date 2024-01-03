@@ -3,11 +3,12 @@
 using namespace GView::Type::ISO;
 using namespace AppCUI::Controls;
 
-Panels::Information::Information(Reference<GView::Type::ISO::ISOFile> _iso) : TabPage("Informa&tion")
+Panels::Information::Information(Reference<Object> _object, Reference<GView::Type::ISO::ISOFile> _iso) : TabPage("Informa&tion")
 {
     iso     = _iso;
+    object  = _object;
     general = CreateChildControl<ListView>(
-          "x:0,y:0,w:100%,h:10", std::initializer_list<ColumnBuilder>{ { "Field", TextAlignament::Left, 24 }, { "Value", TextAlignament::Left, 100 } }, ListViewFlags::None);
+          "x:0,y:0,w:100%,h:100%", std::initializer_list<ConstString>{ "n:Field,w:24", "n:Value,w:100" }, ListViewFlags::None);
 
     Update();
 }
@@ -20,10 +21,10 @@ void Panels::Information::UpdateGeneralInformation()
 
     general->AddItem("Info").SetType(ListViewItem::Type::Category);
 
-    general->AddItem({ "File", "NOT IMPLEMENTED" });
+    general->AddItem({ "File", object->GetName() });
 
-    const auto fileSize    = nf.ToString(iso->file->GetSize(), dec);
-    const auto hexfileSize = nf2.ToString(iso->file->GetSize(), hex);
+    const auto fileSize    = nf.ToString(iso->obj->GetData().GetSize(), dec);
+    const auto hexfileSize = nf2.ToString(iso->obj->GetData().GetSize(), hex);
     general->AddItem({ "Size", ls.Format("%-14s (%s)", fileSize.data(), hexfileSize.data()) });
 }
 
@@ -42,28 +43,28 @@ void Panels::Information::UpdateVolumeDescriptors()
         case SectorType::BootRecord:
         {
             ECMA_119_BootRecord br{};
-            iso->file->Copy<ECMA_119_BootRecord>(descriptor.offsetInFile, br);
+            iso->obj->GetData().Copy<ECMA_119_BootRecord>(descriptor.offsetInFile, br);
             UpdateBootRecord(br);
         }
         break;
         case SectorType::Primary:
         {
             ECMA_119_PrimaryVolumeDescriptor pvd{};
-            iso->file->Copy<ECMA_119_PrimaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
+            iso->obj->GetData().Copy<ECMA_119_PrimaryVolumeDescriptor>(descriptor.offsetInFile, pvd);
             UpdatePrimaryVolumeDescriptor(pvd);
         }
         break;
         case SectorType::Supplementary:
         {
             ECMA_119_SupplementaryVolumeDescriptor svd{};
-            iso->file->Copy<ECMA_119_SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
+            iso->obj->GetData().Copy<ECMA_119_SupplementaryVolumeDescriptor>(descriptor.offsetInFile, svd);
             UpdateSupplementaryVolumeDescriptor(svd);
         }
         break;
         case SectorType::Partition:
         {
             ECMA_119_VolumePartitionDescriptor vpd{};
-            iso->file->Copy<ECMA_119_VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
+            iso->obj->GetData().Copy<ECMA_119_VolumePartitionDescriptor>(descriptor.offsetInFile, vpd);
             UpdateVolumePartitionDescriptor(vpd);
         }
         break;
@@ -180,7 +181,7 @@ void Panels::Information::RecomputePanelsPositions()
 {
     CHECKRET(general.IsValid(), "");
 
-    general->Resize(GetWidth(), general->GetItemsCount());
+    general->Resize(GetWidth(), std::min<int32>(general->GetHeight(), (int32) general->GetItemsCount() + 3));
 
     // CHECKRET(general.IsValid() & issues.IsValid(), "");
     // issues->SetVisible(issues->GetItemsCount() > 0);

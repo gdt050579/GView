@@ -13,18 +13,17 @@ Panels::Directories::Directories(Reference<GView::Type::ICO::ICOFile> _ico, Refe
     ico = _ico;
     win = _win;
 
-    list = Factory::ListView::Create(
-          this, "d:c", { { "Image", TextAlignament::Left, 10 }, { "Pallette", TextAlignament::Right, 10 } }, ListViewFlags::None);
+    list = Factory::ListView::Create(this, "d:c", { "n:Image,w:10", "n:Pallette,w:10" }, ListViewFlags::None);
     // columns
     if (ico->isIcoFormat)
     {
-        list->AddColumns({ { "ColPln", TextAlignament::Right, 10 }, { "Bit/Pxl", TextAlignament::Right, 10 } });
+        list->AddColumns({ "n:ColPln,a:r,w:10", "n:Bit/Pxl,a:r,w:10" });
     }
     else
     {
-        list->AddColumn("Hotspot", TextAlignament::Left, 10);
+        list->AddColumn("n:Hotspot,w:10");
     }
-    list->AddColumns({ { "Size", TextAlignament::Left, 10 }, { "Offset", TextAlignament::Left, 10 } });
+    list->AddColumns({ "n:Size,w:10", "n:Offset,w:10" });
 
     Update();
 }
@@ -87,7 +86,7 @@ bool Panels::Directories::OnEvent(Reference<Control> ctrl, Event evnt, int contr
 {
     if (TabPage::OnEvent(ctrl, evnt, controlID))
         return true;
-    if (evnt == Event::ListViewItemClicked)
+    if (evnt == Event::ListViewItemPressed)
     {
         GoToSelectedDirectory();
         return true;
