@@ -22,7 +22,7 @@ AlwaysBreakTemplateDeclarations               : true
 BinPackArguments                              : false
 BinPackParameters                             : false
 BreakBeforeBinaryOperators                    : None
-BreakBeforeBraces                             : Allman
+BreakBeforeBraces                             : Linux
 BreakBeforeTernaryOperators                   : true
 BreakConstructorInitializersBeforeComma       : false
 BreakStringLiterals                           : true

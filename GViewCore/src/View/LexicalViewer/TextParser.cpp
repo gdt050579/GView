@@ -240,7 +240,7 @@ uint32 TextParser::ParseUntillText(uint32 index, string_view textToFind, bool ig
 
     if (ignoreCase)
     {
-        while (p < e)
+        while (p <= e)
         {
             if (((*p) < 128) && (lower_case_table[*p] == lower_case_table[*txt_start]))
             {
@@ -259,7 +259,7 @@ uint32 TextParser::ParseUntillText(uint32 index, string_view textToFind, bool ig
     }
     else
     {
-        while (p < e)
+        while (p <= e)
         {
             if ((*p) == (*txt_start))
             {
