@@ -1,237 +1,86 @@
-#include "global.hpp"
-#include "ast.hpp"
+#include "class_parser.hpp"
+#include "raw_opcodes.hpp"
 
-namespace GView::Java
+namespace GView::Type::JClass
 {
-
-// -------------------------------------------------------- Raw --------------------------------------------------------
-
-enum class ConstantKind : uint8
+bool CONSTANT_Field_Interface_Methodref_info::read(BufferReader& reader)
 {
-    Nothing            = 0,
-    Utf8               = 1,
-    Integer            = 3,
-    Float              = 4,
-    Long               = 5,
-    Double             = 6,
-    Class              = 7,
-    String             = 8,
-    FieldRef           = 9,
-    MethodRef          = 10,
-    InterfaceMethodRef = 11,
-    NameAndType        = 12,
-    MethodHandle       = 15,
-    MethodType         = 16,
-    InvokeDynamic      = 18
-};
+    READB(class_index);
+    READB(name_and_type_index);
+    return true;
+}
 
-struct CONSTANT_Field_Interface_Methodref_info
+bool CONSTANT_NameAndType_info::read(BufferReader& reader)
 {
-    uint16 class_index;
-    uint16 name_and_type_index;
+    READB(name_index);
+    READB(descriptor_index);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(class_index);
-        READB(name_and_type_index);
-        return true;
-    }
-};
-
-struct CONSTANT_NameAndType_info
+bool CONSTANT_Class_info::read(BufferReader& reader)
 {
-    uint16 name_index;
-    uint16 descriptor_index;
+    READB(name_index);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(name_index);
-        READB(descriptor_index);
-        return true;
-    }
-};
-
-struct CONSTANT_Class_info
+bool CONSTANT_Utf8_info::read(BufferReader& reader)
 {
-    uint16 name_index;
+    READB(length);
+    bytes = reinterpret_cast<const char*>(reader.get());
+    SKIP(length);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(name_index);
-        return true;
-    }
-};
-
-struct CONSTANT_Utf8_info
+bool CONSTANT_String_info::read(BufferReader& reader)
 {
-    uint16 length;
-    const char* bytes;
+    READB(string_index);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(length);
-        bytes = reinterpret_cast<const char*>(reader.get());
-        SKIP(length);
-        return true;
-    }
-};
-
-struct CONSTANT_String_info
+bool CONSTANT_InvokeDynamic_info::read(BufferReader& reader)
 {
-    uint16 string_index;
+    READB(bootstrap_method_attr_index);
+    READB(name_and_type_index);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(string_index);
-        return true;
-    }
-};
-
-struct CONSTANT_InvokeDynamic_info
+bool CONSTANT_Double_info::read(BufferReader& reader)
 {
-    uint16 bootstrap_method_attr_index;
-    uint16 name_and_type_index;
+    uint64 v;
+    READB(v);
+    value = *reinterpret_cast<double*>(&v);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(bootstrap_method_attr_index);
-        READB(name_and_type_index);
-        return true;
-    }
-};
-
-struct CONSTANT_Double_info
+bool CONSTANT_MethodHandle_info::read(BufferReader& reader)
 {
-    double value;
+    READB(reference_kind);
+    READB(reference_index);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        uint64 v;
-        READB(v);
-        value = *reinterpret_cast<double*>(&v);
-        return true;
-    }
-};
-
-struct CONSTANT_MethodHandle_info
+bool CONSTANT_MethodType_info::read(BufferReader& reader)
 {
-    uint8 reference_kind;
-    uint16 reference_index;
+    READB(descriptor_index);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(reference_kind);
-        READB(reference_index);
-        return true;
-    }
-};
-
-struct CONSTANT_MethodType_info
+bool ExceptionTable::read(BufferReader& reader)
 {
-    uint16 descriptor_index;
+    READB(start_pc);
+    READB(end_pc);
+    READB(handler_pc);
+    READB(catch_type);
+    return true;
+}
 
-    bool read(BufferReader& reader)
-    {
-        READB(descriptor_index);
-        return true;
-    }
-};
-
-struct ConstantData
-{
-    ConstantKind kind;
-    union
-    {
-        CONSTANT_Class_info clazz;
-        CONSTANT_NameAndType_info name_and_type;
-        CONSTANT_InvokeDynamic_info invoke_dynamic;
-        CONSTANT_Field_Interface_Methodref_info field_interface_method;
-        CONSTANT_MethodHandle_info method_handle;
-        CONSTANT_MethodType_info method_type;
-        CONSTANT_String_info string;
-        CONSTANT_Utf8_info utf8;
-        CONSTANT_Double_info double_;
-    };
-};
-
-struct ExceptionTable
-{
-    uint16 start_pc;
-    uint16 end_pc;
-    uint16 handler_pc;
-    uint16 catch_type;
-
-    bool read(BufferReader& reader)
-    {
-        READB(start_pc);
-        READB(end_pc);
-        READB(handler_pc);
-        READB(catch_type);
-        return true;
-    }
-};
-
-struct AttributeInfo
-{
-    uint16 attribute_name_index;
-    BufferView info;
-};
-
-struct CodeAttribute
-{
-    uint16 max_stack;
-    uint16 max_locals;
-    BufferView code;
-    vector<ExceptionTable> exception_table;
-    vector<AttributeInfo> attributes;
-};
-
-struct FieldInfo
-{
-    uint16 access_flags;
-    uint16 name_index;
-    uint16 descriptor_index;
-    vector<AttributeInfo> attributes;
-};
-
-struct MethodInfo
-{
-    uint16 access_flags;
-    uint16 name_index;
-    uint16 descriptor_index;
-    vector<AttributeInfo> attributes;
-};
-
-// ---------------------------------------------------- ClassParser ----------------------------------------------------
-
-struct ClassParser
-{
-    ClassViewer& self;
-    BufferReader reader;
-    vector<ConstantData> constant_data;
-    vector<FieldInfo> fields;
-    vector<MethodInfo> methods;
-    vector<AttributeInfo> attributes;
-
-    ClassParser(ClassViewer& self, BufferReader reader);
-
-    bool parse();
-    bool parse_constant_pool();
-    bool parse_field();
-    bool parse_method();
-
-    bool parse_attributes(vector<AttributeInfo>& out);
-    bool parse_attribute(AttributeInfo& out);
-    bool parse_attribute_code(BufferView buffer, CodeAttribute& code);
-};
-
-ClassParser::ClassParser(ClassViewer& self, BufferReader reader) : self(self), reader(reader)
+ClassParser::ClassParser()
 {
     constant_data.reserve(64);
     constant_data.push_back({ ConstantKind::Nothing });
 }
 
-bool ClassParser::parse()
+bool ClassParser::parse(BufferReader& reader, vector<ColoredArea>& areas)
 {
     auto offset = reader.offset();
     SKIPTYPE(uint32); // magic
@@ -239,14 +88,13 @@ bool ClassParser::parse()
     SKIPTYPE(uint16); // major version
     uint16 constant_pool_count;
     READB(constant_pool_count);
-    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "header" });
+    areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "header" });
 
     offset = reader.offset();
-    for (uint16 i = 0; i < constant_pool_count - 1; ++i)
-    {
-        FCHECK(parse_constant_pool());
+    for (uint16 i = 0; i < constant_pool_count - 1; ++i) {
+        FCHECK(parse_constant_pool(reader));
     }
-    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "const" });
+    areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "const" });
 
     uint16 access_flags;
     READB(access_flags);
@@ -261,42 +109,39 @@ bool ClassParser::parse()
 
     uint16 interfaces_count;
     READB(interfaces_count);
-    for (uint16 i = 0; i < interfaces_count; ++i)
-    {
+    for (uint16 i = 0; i < interfaces_count; ++i) {
         uint16 interface_id;
         READB(interface_id);
     }
-    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "interfaces" });
+    areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "interfaces" });
 
     offset = reader.offset();
 
     uint16 fields_count;
     READB(fields_count);
-    for (uint16 i = 0; i < fields_count; ++i)
-    {
-        FCHECK(parse_field());
+    for (uint16 i = 0; i < fields_count; ++i) {
+        FCHECK(parse_field(reader));
     }
-    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "fields" });
+    areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "fields" });
 
     offset = reader.offset();
 
     uint16 methods_count;
     READB(methods_count);
-    for (uint16 i = 0; i < methods_count; ++i)
-    {
-        FCHECK(parse_method());
+    for (uint16 i = 0; i < methods_count; ++i) {
+        FCHECK(parse_method(reader));
     }
-    self.areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "methods" });
+    areas.push_back({ static_cast<uint32>(offset), static_cast<uint32>(reader.offset()), "methods" });
 
     return true;
 }
 
-static bool is_valid_constant_pool_tag(uint8 tag)
+bool ClassParser::is_valid_constant_pool_tag(uint8 tag)
 {
     return 1 <= tag && tag <= 18 && tag != 2 && tag != 13 && tag != 14 && tag != 17;
 }
 
-bool ClassParser::parse_constant_pool()
+bool ClassParser::parse_constant_pool(BufferReader& reader)
 {
     uint8 tag;
     READB(tag);
@@ -306,8 +151,7 @@ bool ClassParser::parse_constant_pool()
     ConstantData data;
     data.kind         = static_cast<ConstantKind>(tag);
     bool double_entry = false;
-    switch (data.kind)
-    {
+    switch (data.kind) {
     case ConstantKind::MethodRef:
     case ConstantKind::FieldRef:
     case ConstantKind::InterfaceMethodRef:
@@ -348,45 +192,44 @@ bool ClassParser::parse_constant_pool()
     return true;
 }
 
-bool ClassParser::parse_field()
+bool ClassParser::parse_field(BufferReader& reader)
 {
     FieldInfo field;
     READB(field.access_flags);
     READB(field.name_index);
     READB(field.descriptor_index);
-    FCHECK(parse_attributes(field.attributes));
+    FCHECK(parse_attributes(reader, field.attributes));
 
     fields.push_back(field);
     return true;
 }
 
-bool ClassParser::parse_method()
+bool ClassParser::parse_method(BufferReader& reader)
 {
     MethodInfo method;
     READB(method.access_flags);
     READB(method.name_index);
     READB(method.descriptor_index);
-    FCHECK(parse_attributes(method.attributes));
+    FCHECK(parse_attributes(reader, method.attributes));
 
     methods.push_back(method);
     return true;
 }
 
-bool ClassParser::parse_attributes(vector<AttributeInfo>& out)
+bool ClassParser::parse_attributes(BufferReader& reader, vector<AttributeInfo>& out)
 {
     uint16 attributes_count;
     READB(attributes_count);
-    for (uint16 i = 0; i < attributes_count; ++i)
-    {
+    for (uint16 i = 0; i < attributes_count; ++i) {
         AttributeInfo attribute;
-        FCHECK(parse_attribute(attribute));
+        FCHECK(parse_attribute(reader, attribute));
         out.push_back(attribute);
     }
 
     return true;
 }
 
-bool ClassParser::parse_attribute(AttributeInfo& out)
+bool ClassParser::parse_attribute(BufferReader& reader, AttributeInfo& out)
 {
     READB(out.attribute_name_index);
     uint32 attribute_length;
@@ -399,7 +242,7 @@ bool ClassParser::parse_attribute(AttributeInfo& out)
 
 bool ClassParser::parse_attribute_code(BufferView buffer, CodeAttribute& code)
 {
-    reader = { buffer.GetData(), buffer.GetLength() };
+    BufferReader reader = { buffer.GetData(), buffer.GetLength() };
 
     READB(code.max_stack);
     READB(code.max_locals);
@@ -409,35 +252,16 @@ bool ClassParser::parse_attribute_code(BufferView buffer, CodeAttribute& code)
     SKIP(code_length);
     uint16 exception_table_length;
     READB(exception_table_length);
-    for (uint32 i = 0; i < exception_table_length; ++i)
-    {
+    for (uint32 i = 0; i < exception_table_length; ++i) {
         ExceptionTable exception;
         FCHECK(exception.read(reader));
         code.exception_table.push_back(exception);
     }
 
-    FCHECK(parse_attributes(code.attributes));
+    FCHECK(parse_attributes(reader, code.attributes));
 
     return true;
 }
-
-// ---------------------------------------------------- Demangler ----------------------------------------------------
-
-class Demangler
-{
-    AstContext& ctx;
-    const char* start;
-    const char* end;
-
-    Type* demangle_class_ref();
-    Type* demangle_array_ref();
-    Type* demangle();
-
-  public:
-    Demangler(AstContext& ctx);
-    Type* demangle_field(string_view in);
-    Type* demangle_method(string_view in);
-};
 
 Demangler::Demangler(AstContext& ctx) : ctx(ctx)
 {
@@ -457,8 +281,7 @@ Type* Demangler::demangle_class_ref()
     ++start;
 
     auto& result = ctx.class_references[name];
-    if (result == nullptr)
-    {
+    if (result == nullptr) {
         auto new_name = reinterpret_cast<char*>(ctx.alloc.alloc(name.size()));
         for (size_t i = 0; i < name.size(); ++i)
             new_name[i] = name[i] == '/' ? '.' : name[i];
@@ -482,12 +305,10 @@ Type* Demangler::demangle_array_ref()
 
 Type* Demangler::demangle()
 {
-    while (start < end)
-    {
+    while (start < end) {
         auto ch = *start;
         start++;
-        switch (ch)
-        {
+        switch (ch) {
         case 'B':
             return ctx.type_byte;
         case 'S':
@@ -534,8 +355,7 @@ Type* Demangler::demangle_method(string_view in)
 
     auto args    = ctx.alloc.alloc_array<Type*>(MAX_NUMBER_OF_ARGS);
     uint32 count = 0;
-    while (start < end && *start != ')')
-    {
+    while (start < end && *start != ')') {
         if (count == MAX_NUMBER_OF_ARGS)
             return nullptr;
 
@@ -555,30 +375,6 @@ Type* Demangler::demangle_method(string_view in)
     return ctx.alloc.alloc<MethodType>(return_type, args);
 }
 
-// ---------------------------------------------------- AstCreator ----------------------------------------------------
-
-struct AstCreator
-{
-    ClassParser& class_parser;
-    const vector<ConstantData>& constant_data;
-    const vector<FieldInfo>& fields;
-    const vector<MethodInfo>& methods;
-    const vector<AttributeInfo>& attributes;
-    AstContext ctx;
-    Demangler demangler;
-
-    AstCreator(ClassParser& class_parse);
-
-    Class* create();
-    Field* create_field(const FieldInfo& raw_field);
-    Method* create_method(const MethodInfo& raw_method);
-    bool create_code(BufferView buffer);
-
-    bool get_utf8(string_view& out, uint16 index);
-
-    const ConstantData* get_constant(uint16 index, ConstantKind expect);
-};
-
 AstCreator::AstCreator(ClassParser& class_parser)
     : class_parser(class_parser), constant_data(class_parser.constant_data), fields(class_parser.fields), methods(class_parser.methods),
       attributes(class_parser.attributes), demangler(ctx)
@@ -590,8 +386,7 @@ Class* AstCreator::create()
     auto clazz     = ctx.alloc.alloc<Class>();
     clazz->methods = ctx.alloc.alloc_array<Method*>(methods.size());
     uint32 count   = 0;
-    for (auto& i : methods)
-    {
+    for (auto& i : methods) {
         auto method = create_method(i);
         FCHECKNULL(method);
         clazz->methods[count++] = method;
@@ -599,8 +394,7 @@ Class* AstCreator::create()
 
     clazz->fields = ctx.alloc.alloc_array<Field*>(fields.size());
     count         = 0;
-    for (auto& i : fields)
-    {
+    for (auto& i : fields) {
         auto field = create_field(i);
         FCHECKNULL(field);
         clazz->fields[count++] = field;
@@ -641,8 +435,7 @@ Field* AstCreator::create_field(const FieldInfo& raw_field)
     FCHECKNULL(field->type);
 
     field->unknown_attributes = 0;
-    for (auto& i : raw_field.attributes)
-    {
+    for (auto& i : raw_field.attributes) {
         string_view name;
         FCHECKNULL(get_utf8(name, i.attribute_name_index));
 
@@ -690,23 +483,18 @@ Method* AstCreator::create_method(const MethodInfo& raw_method)
     FCHECKNULL(method->type);
 
     method->unknown_attributes = 0;
-    for (auto& i : raw_method.attributes)
-    {
+    for (auto& i : raw_method.attributes) {
         string_view name;
         FCHECKNULL(get_utf8(name, i.attribute_name_index));
 
-        if (name == "Code")
-        {
+        if (name == "Code") {
             FCHECKNULL(create_code(i.info));
-        }
-        else
+        } else
             method->unknown_attributes++;
     }
 
     return method;
 }
-
-bool get_opcode(BufferReader& reader, Opcode& out);
 
 bool AstCreator::create_code(BufferView buffer)
 {
@@ -715,15 +503,13 @@ bool AstCreator::create_code(BufferView buffer)
     BufferReader reader(code.code.GetData(), code.code.GetLength());
 
     LocalString<4096> string;
-    while (reader.has_more())
-    {
+    while (reader.has_more()) {
         auto offset = reader.offset();
         Opcode op;
         FCHECK(get_opcode(reader, op));
 
         string.AddFormat("%zu. %s", offset, op.get_name());
-        for (auto& i : op.args)
-        {
+        for (auto& i : op.args) {
             if (i.exists)
                 string.AddFormat(i.is_unsigned ? " %llu" : " %lld", i.value);
         }
@@ -750,35 +536,7 @@ const ConstantData* AstCreator::get_constant(uint16 index, ConstantKind expect)
     return &ret;
 }
 
-// ---------------------------------------------------- AstPrinter ----------------------------------------------------
-
-struct AstPrinter
-{
-    std::string output;
-
-    void print(const Class* clazz);
-};
-
 void AstPrinter::print(const Class* clazz)
 {
-    
 }
-
-// ---------------------------------------------------- parse_class ----------------------------------------------------
-
-bool parse_class(AppCUI::Utils::Reference<GView::Java::ClassViewer> plugin)
-{
-    auto buffer = plugin->obj->GetData().GetEntireFile();
-
-    ClassParser parser{ plugin, { buffer.GetData(), buffer.GetLength() } };
-    FCHECK(parser.parse());
-
-    AstCreator creator{ parser };
-
-    auto clazz = creator.create();
-    FCHECK(clazz);
-
-    return true;
-}
-
-} // namespace GView::Java
+} // namespace GView::Type::JClass

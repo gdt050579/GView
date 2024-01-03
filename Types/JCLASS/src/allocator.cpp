@@ -4,9 +4,8 @@
 using std::max;
 using std::swap;
 
-namespace GView::Java
+namespace GView::Type::JClass
 {
-
 static uint8* safe_malloc(size_t size)
 {
     auto ptr = malloc(size);
@@ -17,10 +16,8 @@ static uint8* safe_malloc(size_t size)
 
 void BumpPtrAlloc::fill_last_block(size_t size)
 {
-    for (size_t i = 0; i < blocks.size(); ++i)
-    {
-        if (blocks[i].size >= size)
-        {
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        if (blocks[i].size >= size) {
             last_block = i;
             break;
         }
@@ -35,8 +32,7 @@ void BumpPtrAlloc::fill_last_block(size_t size)
 
 BumpPtrAlloc::~BumpPtrAlloc()
 {
-    for (auto& i : blocks)
-    {
+    for (auto& i : blocks) {
         free(i.original);
     }
 }
@@ -44,8 +40,7 @@ BumpPtrAlloc::~BumpPtrAlloc()
 uint8* BumpPtrAlloc::alloc(size_t size)
 {
     size = (size + (ALIGNMENT - 1)) & (0 - ALIGNMENT);
-    if (last_block == static_cast<size_t>(-1) || blocks[last_block].size < size)
-    {
+    if (last_block == static_cast<size_t>(-1) || blocks[last_block].size < size) {
         fill_last_block(size);
     }
     auto& block = blocks[last_block];
@@ -53,8 +48,7 @@ uint8* BumpPtrAlloc::alloc(size_t size)
     block.ptr += size;
     block.size -= size;
 
-    if (block.size == 0)
-    {
+    if (block.size == 0) {
         swap(blocks[last_block], blocks.back());
         blocks.pop_back();
         last_block = static_cast<size_t>(-1);
@@ -70,4 +64,4 @@ string_view BumpPtrAlloc::alloc(string_view x)
     return { ptr, x.size() };
 }
 
-} // namespace GView::Java
+} // namespace GView::Type::JClass

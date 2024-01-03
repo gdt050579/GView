@@ -1,6 +1,8 @@
+#pragma once
+
 #include "global.hpp"
 
-namespace GView::Java
+namespace GView::Type::JClass
 {
 static const char* NAMES[256] = {
     "nop",           "aconst_null", "iconst_m1",     "iconst_0",      "iconst_1",     "iconst_2",
@@ -44,96 +46,78 @@ const char* Opcode::get_name() const
     return NAMES[opcode];
 }
 
-bool get_opcode(BufferReader& reader, Opcode& out)
+static bool get_opcode(BufferReader& reader, Opcode& out)
 {
     out         = {};
     auto offset = reader.offset();
 
     READB(out.opcode);
-    switch (out.opcode)
-    {
-    case 0:
-    {
+    switch (out.opcode) {
+    case 0: {
         // nop
         break;
     }
-    case 1:
-    {
+    case 1: {
         // aconst_null
         break;
     }
-    case 2:
-    {
+    case 2: {
         // iconst_m1
         break;
     }
-    case 3:
-    {
+    case 3: {
         // iconst_0
         break;
     }
-    case 4:
-    {
+    case 4: {
         // iconst_1
         break;
     }
-    case 5:
-    {
+    case 5: {
         // iconst_2
         break;
     }
-    case 6:
-    {
+    case 6: {
         // iconst_3
         break;
     }
-    case 7:
-    {
+    case 7: {
         // iconst_4
         break;
     }
-    case 8:
-    {
+    case 8: {
         // iconst_5
         break;
     }
-    case 9:
-    {
+    case 9: {
         // lconst_0
         break;
     }
-    case 10:
-    {
+    case 10: {
         // lconst_1
         break;
     }
-    case 11:
-    {
+    case 11: {
         // fconst_0
         break;
     }
-    case 12:
-    {
+    case 12: {
         // fconst_1
         break;
     }
-    case 13:
-    {
+    case 13: {
         // fconst_2
         break;
     }
-    case 14:
-    {
+    case 14: {
         // dconst_0
         break;
     }
-    case 15:
-    {
+    case 15: {
         // dconst_1
         break;
     }
-    case 16:
-    {
+    case 16: {
         // bipush
 
         int8 first;
@@ -143,8 +127,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 17:
-    {
+    case 17: {
         // sipush
 
         int16 first;
@@ -154,8 +137,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 18:
-    {
+    case 18: {
         // ldc
 
         uint8 first;
@@ -165,8 +147,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 19:
-    {
+    case 19: {
         // ldc_w
 
         uint16 first;
@@ -176,8 +157,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 20:
-    {
+    case 20: {
         // ldc2_w
 
         uint16 first;
@@ -187,8 +167,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 21:
-    {
+    case 21: {
         // iload
 
         uint8 first;
@@ -198,8 +177,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 22:
-    {
+    case 22: {
         // lload
 
         uint8 first;
@@ -209,8 +187,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 23:
-    {
+    case 23: {
         // fload
 
         uint8 first;
@@ -220,8 +197,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 24:
-    {
+    case 24: {
         // dload
 
         uint8 first;
@@ -231,8 +207,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 25:
-    {
+    case 25: {
         // aload
 
         uint8 first;
@@ -242,148 +217,119 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 26:
-    {
+    case 26: {
         // iload_0
         break;
     }
-    case 27:
-    {
+    case 27: {
         // iload_1
         break;
     }
-    case 28:
-    {
+    case 28: {
         // iload_2
         break;
     }
-    case 29:
-    {
+    case 29: {
         // iload_3
         break;
     }
-    case 30:
-    {
+    case 30: {
         // lload_0
         break;
     }
-    case 31:
-    {
+    case 31: {
         // lload_1
         break;
     }
-    case 32:
-    {
+    case 32: {
         // lload_2
         break;
     }
-    case 33:
-    {
+    case 33: {
         // lload_3
         break;
     }
-    case 34:
-    {
+    case 34: {
         // fload_0
         break;
     }
-    case 35:
-    {
+    case 35: {
         // fload_1
         break;
     }
-    case 36:
-    {
+    case 36: {
         // fload_2
         break;
     }
-    case 37:
-    {
+    case 37: {
         // fload_3
         break;
     }
-    case 38:
-    {
+    case 38: {
         // dload_0
         break;
     }
-    case 39:
-    {
+    case 39: {
         // dload_1
         break;
     }
-    case 40:
-    {
+    case 40: {
         // dload_2
         break;
     }
-    case 41:
-    {
+    case 41: {
         // dload_3
         break;
     }
-    case 42:
-    {
+    case 42: {
         // aload_0
         break;
     }
-    case 43:
-    {
+    case 43: {
         // aload_1
         break;
     }
-    case 44:
-    {
+    case 44: {
         // aload_2
         break;
     }
-    case 45:
-    {
+    case 45: {
         // aload_3
         break;
     }
-    case 46:
-    {
+    case 46: {
         // iaload
         break;
     }
-    case 47:
-    {
+    case 47: {
         // laload
         break;
     }
-    case 48:
-    {
+    case 48: {
         // faload
         break;
     }
-    case 49:
-    {
+    case 49: {
         // daload
         break;
     }
-    case 50:
-    {
+    case 50: {
         // aaload
         break;
     }
-    case 51:
-    {
+    case 51: {
         // baload
         break;
     }
-    case 52:
-    {
+    case 52: {
         // caload
         break;
     }
-    case 53:
-    {
+    case 53: {
         // saload
         break;
     }
-    case 54:
-    {
+    case 54: {
         // istore
 
         uint8 first;
@@ -393,8 +339,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 55:
-    {
+    case 55: {
         // lstore
 
         uint8 first;
@@ -404,8 +349,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 56:
-    {
+    case 56: {
         // fstore
 
         uint8 first;
@@ -415,8 +359,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 57:
-    {
+    case 57: {
         // dstore
 
         uint8 first;
@@ -426,8 +369,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 58:
-    {
+    case 58: {
         // astore
 
         uint8 first;
@@ -437,373 +379,299 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 59:
-    {
+    case 59: {
         // istore_0
         break;
     }
-    case 60:
-    {
+    case 60: {
         // istore_1
         break;
     }
-    case 61:
-    {
+    case 61: {
         // istore_2
         break;
     }
-    case 62:
-    {
+    case 62: {
         // istore_3
         break;
     }
-    case 63:
-    {
+    case 63: {
         // lstore_0
         break;
     }
-    case 64:
-    {
+    case 64: {
         // lstore_1
         break;
     }
-    case 65:
-    {
+    case 65: {
         // lstore_2
         break;
     }
-    case 66:
-    {
+    case 66: {
         // lstore_3
         break;
     }
-    case 67:
-    {
+    case 67: {
         // fstore_0
         break;
     }
-    case 68:
-    {
+    case 68: {
         // fstore_1
         break;
     }
-    case 69:
-    {
+    case 69: {
         // fstore_2
         break;
     }
-    case 70:
-    {
+    case 70: {
         // fstore_3
         break;
     }
-    case 71:
-    {
+    case 71: {
         // dstore_0
         break;
     }
-    case 72:
-    {
+    case 72: {
         // dstore_1
         break;
     }
-    case 73:
-    {
+    case 73: {
         // dstore_2
         break;
     }
-    case 74:
-    {
+    case 74: {
         // dstore_3
         break;
     }
-    case 75:
-    {
+    case 75: {
         // astore_0
         break;
     }
-    case 76:
-    {
+    case 76: {
         // astore_1
         break;
     }
-    case 77:
-    {
+    case 77: {
         // astore_2
         break;
     }
-    case 78:
-    {
+    case 78: {
         // astore_3
         break;
     }
-    case 79:
-    {
+    case 79: {
         // iastore
         break;
     }
-    case 80:
-    {
+    case 80: {
         // lastore
         break;
     }
-    case 81:
-    {
+    case 81: {
         // fastore
         break;
     }
-    case 82:
-    {
+    case 82: {
         // dastore
         break;
     }
-    case 83:
-    {
+    case 83: {
         // aastore
         break;
     }
-    case 84:
-    {
+    case 84: {
         // bastore
         break;
     }
-    case 85:
-    {
+    case 85: {
         // castore
         break;
     }
-    case 86:
-    {
+    case 86: {
         // sastore
         break;
     }
-    case 87:
-    {
+    case 87: {
         // pop
         break;
     }
-    case 88:
-    {
+    case 88: {
         // pop2
         break;
     }
-    case 89:
-    {
+    case 89: {
         // dup
         break;
     }
-    case 90:
-    {
+    case 90: {
         // dup_x1
         break;
     }
-    case 91:
-    {
+    case 91: {
         // dup_x2
         break;
     }
-    case 92:
-    {
+    case 92: {
         // dup2
         break;
     }
-    case 93:
-    {
+    case 93: {
         // dup2_x1
         break;
     }
-    case 94:
-    {
+    case 94: {
         // dup2_x2
         break;
     }
-    case 95:
-    {
+    case 95: {
         // swap
         break;
     }
-    case 96:
-    {
+    case 96: {
         // iadd
         break;
     }
-    case 97:
-    {
+    case 97: {
         // ladd
         break;
     }
-    case 98:
-    {
+    case 98: {
         // fadd
         break;
     }
-    case 99:
-    {
+    case 99: {
         // dadd
         break;
     }
-    case 100:
-    {
+    case 100: {
         // isub
         break;
     }
-    case 101:
-    {
+    case 101: {
         // lsub
         break;
     }
-    case 102:
-    {
+    case 102: {
         // fsub
         break;
     }
-    case 103:
-    {
+    case 103: {
         // dsub
         break;
     }
-    case 104:
-    {
+    case 104: {
         // imul
         break;
     }
-    case 105:
-    {
+    case 105: {
         // lmul
         break;
     }
-    case 106:
-    {
+    case 106: {
         // fmul
         break;
     }
-    case 107:
-    {
+    case 107: {
         // dmul
         break;
     }
-    case 108:
-    {
+    case 108: {
         // idiv
         break;
     }
-    case 109:
-    {
+    case 109: {
         // ldiv
         break;
     }
-    case 110:
-    {
+    case 110: {
         // fdiv
         break;
     }
-    case 111:
-    {
+    case 111: {
         // ddiv
         break;
     }
-    case 112:
-    {
+    case 112: {
         // irem
         break;
     }
-    case 113:
-    {
+    case 113: {
         // lrem
         break;
     }
-    case 114:
-    {
+    case 114: {
         // frem
         break;
     }
-    case 115:
-    {
+    case 115: {
         // drem
         break;
     }
-    case 116:
-    {
+    case 116: {
         // ineg
         break;
     }
-    case 117:
-    {
+    case 117: {
         // lneg
         break;
     }
-    case 118:
-    {
+    case 118: {
         // fneg
         break;
     }
-    case 119:
-    {
+    case 119: {
         // dneg
         break;
     }
-    case 120:
-    {
+    case 120: {
         // ishl
         break;
     }
-    case 121:
-    {
+    case 121: {
         // lshl
         break;
     }
-    case 122:
-    {
+    case 122: {
         // ishr
         break;
     }
-    case 123:
-    {
+    case 123: {
         // lshr
         break;
     }
-    case 124:
-    {
+    case 124: {
         // iushr
         break;
     }
-    case 125:
-    {
+    case 125: {
         // lushr
         break;
     }
-    case 126:
-    {
+    case 126: {
         // iand
         break;
     }
-    case 127:
-    {
+    case 127: {
         // land
         break;
     }
-    case 128:
-    {
+    case 128: {
         // ior
         break;
     }
-    case 129:
-    {
+    case 129: {
         // lor
         break;
     }
-    case 130:
-    {
+    case 130: {
         // ixor
         break;
     }
-    case 131:
-    {
+    case 131: {
         // lxor
         break;
     }
-    case 132:
-    {
+    case 132: {
         // iinc
 
         uint8 first;
@@ -819,108 +687,87 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[1].is_unsigned = false;
         break;
     }
-    case 133:
-    {
+    case 133: {
         // i2l
         break;
     }
-    case 134:
-    {
+    case 134: {
         // i2f
         break;
     }
-    case 135:
-    {
+    case 135: {
         // i2d
         break;
     }
-    case 136:
-    {
+    case 136: {
         // l2i
         break;
     }
-    case 137:
-    {
+    case 137: {
         // l2f
         break;
     }
-    case 138:
-    {
+    case 138: {
         // l2d
         break;
     }
-    case 139:
-    {
+    case 139: {
         // f2i
         break;
     }
-    case 140:
-    {
+    case 140: {
         // f2l
         break;
     }
-    case 141:
-    {
+    case 141: {
         // f2d
         break;
     }
-    case 142:
-    {
+    case 142: {
         // d2i
         break;
     }
-    case 143:
-    {
+    case 143: {
         // d2l
         break;
     }
-    case 144:
-    {
+    case 144: {
         // d2f
         break;
     }
-    case 145:
-    {
+    case 145: {
         // i2b
         break;
     }
-    case 146:
-    {
+    case 146: {
         // i2c
         break;
     }
-    case 147:
-    {
+    case 147: {
         // i2s
         break;
     }
-    case 148:
-    {
+    case 148: {
         // lcmp
         break;
     }
-    case 149:
-    {
+    case 149: {
         // fcmpl
         break;
     }
-    case 150:
-    {
+    case 150: {
         // fcmpg
         break;
     }
-    case 151:
-    {
+    case 151: {
         // dcmpl
         break;
     }
-    case 152:
-    {
+    case 152: {
         // dcmpg
         break;
     }
-    case 153:
-    {
+    case 153: {
         // ifeq
 
         uint16 first;
@@ -930,8 +777,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 154:
-    {
+    case 154: {
         // ifne
 
         uint16 first;
@@ -941,8 +787,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 155:
-    {
+    case 155: {
         // iflt
 
         uint16 first;
@@ -952,8 +797,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 156:
-    {
+    case 156: {
         // ifge
 
         uint16 first;
@@ -963,8 +807,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 157:
-    {
+    case 157: {
         // ifgt
 
         uint16 first;
@@ -974,8 +817,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 158:
-    {
+    case 158: {
         // ifle
 
         uint16 first;
@@ -985,8 +827,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 159:
-    {
+    case 159: {
         // if_icmpeq
 
         int16 first;
@@ -997,8 +838,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 160:
-    {
+    case 160: {
         // if_icmpne
 
         int16 first;
@@ -1009,8 +849,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 161:
-    {
+    case 161: {
         // if_icmplt
 
         int16 first;
@@ -1021,8 +860,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 162:
-    {
+    case 162: {
         // if_icmpge
 
         int16 first;
@@ -1033,8 +871,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 163:
-    {
+    case 163: {
         // if_icmpgt
 
         int16 first;
@@ -1045,8 +882,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 164:
-    {
+    case 164: {
         // if_icmple
 
         int16 first;
@@ -1057,8 +893,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 165:
-    {
+    case 165: {
         // if_acmpeq
 
         int16 first;
@@ -1069,8 +904,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 166:
-    {
+    case 166: {
         // if_acmpne
 
         int16 first;
@@ -1081,8 +915,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 167:
-    {
+    case 167: {
         // goto
 
         int16 first;
@@ -1093,8 +926,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 168:
-    {
+    case 168: {
         // jsr
 
         int16 first;
@@ -1104,8 +936,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 169:
-    {
+    case 169: {
         // ret
 
         uint8 first;
@@ -1115,50 +946,41 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 170:
-    {
+    case 170: {
         // tableswitch
         unimplemented;
         break;
     }
-    case 171:
-    {
+    case 171: {
         // lookupswitch
         unimplemented;
         break;
     }
-    case 172:
-    {
+    case 172: {
         // ireturn
         break;
     }
-    case 173:
-    {
+    case 173: {
         // lreturn
         break;
     }
-    case 174:
-    {
+    case 174: {
         // freturn
         break;
     }
-    case 175:
-    {
+    case 175: {
         // dreturn
         break;
     }
-    case 176:
-    {
+    case 176: {
         // areturn
         break;
     }
-    case 177:
-    {
+    case 177: {
         // return
         break;
     }
-    case 178:
-    {
+    case 178: {
         // getstatic
 
         uint16 first;
@@ -1168,8 +990,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 179:
-    {
+    case 179: {
         // putstatic
 
         uint16 first;
@@ -1179,8 +1000,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 180:
-    {
+    case 180: {
         // getfield
 
         uint16 first;
@@ -1190,8 +1010,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 181:
-    {
+    case 181: {
         // putfield
 
         uint16 first;
@@ -1201,8 +1020,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 182:
-    {
+    case 182: {
         // invokevirtual
 
         uint16 first;
@@ -1212,8 +1030,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 183:
-    {
+    case 183: {
         // invokespecial
 
         uint16 first;
@@ -1223,8 +1040,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 184:
-    {
+    case 184: {
         // invokestatic
 
         uint16 first;
@@ -1234,8 +1050,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 185:
-    {
+    case 185: {
         // invokeinterface
 
         uint16 first;
@@ -1257,8 +1072,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[2].is_unsigned = true;
         break;
     }
-    case 186:
-    {
+    case 186: {
         // invokedynamic
 
         uint16 first;
@@ -1280,8 +1094,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[2].is_unsigned = true;
         break;
     }
-    case 187:
-    {
+    case 187: {
         // new
 
         uint16 first;
@@ -1291,8 +1104,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 188:
-    {
+    case 188: {
         // newarray
 
         uint8 first;
@@ -1302,8 +1114,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 189:
-    {
+    case 189: {
         // anewarray
 
         uint16 first;
@@ -1313,18 +1124,15 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 190:
-    {
+    case 190: {
         // arraylength
         break;
     }
-    case 191:
-    {
+    case 191: {
         // athrow
         break;
     }
-    case 192:
-    {
+    case 192: {
         // checkcast
 
         uint16 first;
@@ -1334,8 +1142,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 193:
-    {
+    case 193: {
         // instanceof
 
         uint16 first;
@@ -1345,8 +1152,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 194:
-    {
+    case 194: {
         // monitorenter
 
         uint16 first;
@@ -1356,8 +1162,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 195:
-    {
+    case 195: {
         // monitorexit
 
         uint16 first;
@@ -1367,14 +1172,12 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = true;
         break;
     }
-    case 196:
-    {
+    case 196: {
         // wide
         unimplemented;
         break;
     }
-    case 197:
-    {
+    case 197: {
         // multianewarray
 
         int16 first;
@@ -1390,8 +1193,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[1].is_unsigned = true;
         break;
     }
-    case 198:
-    {
+    case 198: {
         // ifnull
 
         int16 first;
@@ -1402,8 +1204,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 199:
-    {
+    case 199: {
         // ifnonnull
 
         int16 first;
@@ -1414,8 +1215,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 200:
-    {
+    case 200: {
         // goto_w
 
         int32 first;
@@ -1426,8 +1226,7 @@ bool get_opcode(BufferReader& reader, Opcode& out)
         out.args[0].is_unsigned = false;
         break;
     }
-    case 201:
-    {
+    case 201: {
         // jsr_w
 
         int32 first;
@@ -1443,4 +1242,4 @@ bool get_opcode(BufferReader& reader, Opcode& out)
     }
     return true;
 }
-} // namespace GView::Java
+} // namespace GView::Type::JClass

@@ -1,8 +1,8 @@
-#include "global.hpp"
+#include "jclass.hpp"
 
 using namespace GView::View;
 using namespace GView::Utils;
-using namespace GView::Java;
+using namespace GView::Type::JClass;
 
 extern "C" {
 PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
@@ -24,7 +24,7 @@ PLUGIN_EXPORT TypeInterface* CreateInstance()
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
-    parse_class(plugin);
+    plugin->Parse();
 
     BufferViewer::Settings settings;
     for (uint32 i = 0; i < plugin->areas.size(); ++i) {
@@ -45,18 +45,6 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     sect["Priority"] = 1;
 }
 }
-
-namespace GView::Java
-{
-string_view ClassViewer::GetTypeName()
-{
-    return "class";
-}
-
-void ClassViewer::RunCommand(std::string_view)
-{
-}
-} // namespace GView::Java
 
 // https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-7.html
 // https://docs.oracle.com/javase/specs/jvms/se18/html/jvms-6.html

@@ -301,9 +301,11 @@ for i in range(0, len(OPCODES)):
     assert i == OPCODES[i].id, f"{i} -- {OPCODES[i].name}"
 
 output = '''
+#pragma once
+
 #include "global.hpp"
 
-namespace GView::Java{
+namespace GView::Type::JClass{
 static const char* NAMES[256] = {
 '''
 for i in OPCODES:
@@ -351,8 +353,8 @@ for op in OPCODES:
 output += "default:return false;}"
 output += '''return true;}}'''
 
-file_name = "raw_opcodes.cpp"
+file_name = "raw_opcodes.hpp"
 with open(file_name, "w") as f:
     f.write(output.strip())
 
-subprocess.run(["clang-format", "-i", "raw_opcodes.cpp"])
+subprocess.run(["clang-format", "-i", "raw_opcodes.hpp"])

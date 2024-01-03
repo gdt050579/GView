@@ -2,12 +2,11 @@
 
 #include "global.hpp"
 
-namespace GView::Java
+namespace GView::Type::JClass
 {
 class BumpPtrAlloc
 {
-    struct Block
-    {
+    struct Block {
         uint8* original;
         uint8* ptr;
         size_t size;
@@ -32,8 +31,7 @@ class BumpPtrAlloc
         static_assert(std::is_trivially_destructible_v<T>);
 
         auto ptr = reinterpret_cast<T*>(alloc(sizeof(T) * count));
-        for (size_t i = 0; i < count; ++i)
-        {
+        for (size_t i = 0; i < count; ++i) {
             new (ptr + i) T();
         }
 
@@ -52,54 +50,37 @@ class BumpPtrAlloc
     string_view alloc(string_view x);
 };
 
-struct Type
-{
+struct Type {
 };
 
-enum class BuiltinTypeKind : uint8
-{
-    Void,
-    Byte,
-    Short,
-    Int,
-    Long,
-    Float,
-    Double,
-    Bool,
-    Char
-};
+enum class BuiltinTypeKind : uint8 { Void, Byte, Short, Int, Long, Float, Double, Bool, Char };
 
-struct BuiltinType : Type
-{
+struct BuiltinType : Type {
     BuiltinTypeKind kind;
 
     BuiltinType(BuiltinTypeKind kind);
 };
 
-struct ArrayReferenceType : Type
-{
+struct ArrayReferenceType : Type {
     Type* subtype;
 
     ArrayReferenceType(Type* subtype);
 };
 
-struct ClassReferenceType : Type
-{
+struct ClassReferenceType : Type {
     string_view name;
 
     ClassReferenceType(string_view name);
 };
 
-struct MethodType : Type
-{
+struct MethodType : Type {
     Type* return_type;
     ArrayRefMut<Type*> args;
 
     MethodType(Type* return_type, ArrayRefMut<Type*> args);
 };
 
-struct FieldAccessFlags
-{
+struct FieldAccessFlags {
     bool acc_public : 1;
     bool acc_private : 1;
     bool acc_protected : 1;
@@ -111,16 +92,14 @@ struct FieldAccessFlags
     bool acc_enum : 1;
 };
 
-struct Field
-{
+struct Field {
     FieldAccessFlags access_flags;
     string_view name;
     Type* type;
     uint32_t unknown_attributes;
 };
 
-struct MethodAccessFlags
-{
+struct MethodAccessFlags {
     bool acc_public : 1;
     bool acc_private : 1;
     bool acc_protected : 1;
@@ -135,8 +114,7 @@ struct MethodAccessFlags
     bool acc_synthetic : 1;
 };
 
-struct Method
-{
+struct Method {
     MethodAccessFlags access_flags;
     string_view name;
     Type* type;
@@ -144,15 +122,13 @@ struct Method
     uint32_t unknown_attributes;
 };
 
-struct Class
-{
+struct Class {
     string_view name;
     ArrayRefMut<Field*> fields;
     ArrayRefMut<Method*> methods;
 };
 
-struct AstContext
-{
+struct AstContext {
     BumpPtrAlloc alloc;
     vector<Class*> classes;
     std::unordered_map<string_view, Type*> class_references;
@@ -171,4 +147,4 @@ struct AstContext
     AstContext();
 };
 
-} // namespace GView::Java
+} // namespace GView::Type::JClass

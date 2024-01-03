@@ -7,9 +7,8 @@ using namespace AppCUI;
 using namespace AppCUI::Utils;
 using namespace GView;
 
-namespace GView::Java
+namespace GView::Type::JClass
 {
-
 template <typename T>
 class ArrayRef
 {
@@ -67,37 +66,8 @@ class ArrayRefMut
     }
 };
 
-struct ColoredArea
-{
-    uint32 start;
-    uint32 end;
-    const char* name;
-};
-
-struct ConstPanel
-{
-    LocalString<256> data;
-};
-
-struct ClassViewer : public TypeInterface
-{
-    vector<ColoredArea> areas;
-    vector<ConstPanel> const_panel;
-
-    string_view GetTypeName() override;
-    void RunCommand(std::string_view) override;
-};
-
-struct ClassFile
-{
-};
-
-bool parse_class(AppCUI::Utils::Reference<GView::Java::ClassViewer> self);
-
-struct Opcode
-{
-    struct Arg
-    {
+struct Opcode {
+    struct Arg {
         bool exists;
         bool is_unsigned;
         uint32 value;
@@ -150,28 +120,38 @@ class BufferReader
     }
 };
 
-#define READL(x)                                                                                                                           \
-    if (!reader.read_little(x))                                                                                                            \
+struct ColoredArea {
+    uint32 start;
+    uint32 end;
+    const char* name;
+};
+
+struct ConstPanel {
+    LocalString<256> data;
+};
+
+#define READL(x)                                                                                                                                               \
+    if (!reader.read_little(x))                                                                                                                                \
     return false
 
-#define READB(x)                                                                                                                           \
-    if (!reader.read_big(x))                                                                                                               \
+#define READB(x)                                                                                                                                               \
+    if (!reader.read_big(x))                                                                                                                                   \
     return false
 
-#define SKIPTYPE(x)                                                                                                                        \
-    if (!reader.skip(sizeof(x)))                                                                                                           \
+#define SKIPTYPE(x)                                                                                                                                            \
+    if (!reader.skip(sizeof(x)))                                                                                                                               \
     return false
 
-#define SKIP(x)                                                                                                                            \
-    if (!reader.skip(x))                                                                                                                   \
+#define SKIP(x)                                                                                                                                                \
+    if (!reader.skip(x))                                                                                                                                       \
     return false
 
 #define FCHECK(x)     CHECK(x, false, #x)
 #define FCHECKNULL(x) CHECK(x, nullptr, #x)
 
-#define unreachable                                                                                                                        \
-    __debugbreak();                                                                                                                        \
+#define unreachable                                                                                                                                            \
+    __debugbreak();                                                                                                                                            \
     std::abort()
 
 #define unimplemented unreachable
-} // namespace GView::Java
+} // namespace GView::Type::JClass
