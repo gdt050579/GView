@@ -158,7 +158,7 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
     }*/
 }
 
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Key)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -193,7 +193,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     }
 }
 
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -213,7 +213,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     return false;
 }
 
-bool Instance::OnMouseWheel(int, int, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {
