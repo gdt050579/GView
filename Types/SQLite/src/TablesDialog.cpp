@@ -19,9 +19,10 @@ PluginDialogs::TablesDialog::TablesDialog(Reference<GView::Type::SQLite::SQLiteF
     textArea = Factory::TextArea::Create(statementDescription, "", "l:1,r:1,t:1,b:1");
     Factory::Button::Create(this, "&OK", "x:25%,y:9,a:b,w:12", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "x:75%,y:9,a:b,w:12", BTN_ID_CANCEL);
-    tables = Factory::ListView::Create(this, "x:0,y:10,w:100%,h:10", { "n:Name,w:20", "n:Original SQL,w:100" }, ListViewFlags::None);
 
-    InitListView(tables);
+    tables                            = Factory::ListView::Create(this, "x:0,y:10,w:100%,h:10", { "n:Name,w:20", "n:Original SQL,w:100" }, ListViewFlags::None);
+    tables->Handlers()->OnItemPressed = this;
+
     Update();
 }
 
@@ -56,11 +57,6 @@ void PluginDialogs::TablesDialog::OnFocus()
     return Window::OnFocus();
 }
 
-void PluginDialogs::TablesDialog::OnCheck(Reference<Controls::Control> control, bool /* value */)
-{
-    // To be implemented
-}
-
 bool PluginDialogs::TablesDialog::OnKeyEvent(Input::Key keyCode, char16 UnicodeChar)
 {
     if (keyCode == (Input::Key::Alt | Input::Key::I)) {
@@ -78,7 +74,7 @@ bool PluginDialogs::TablesDialog::ProcessInput()
         return false;
     }
 
-    sqlite->OnButtonPressed(content);
+    sqlite->GetStatementResult(content, false);
     return true;
 }
 
@@ -89,13 +85,9 @@ void PluginDialogs::TablesDialog::Update()
 
 void PluginDialogs::TablesDialog::UpdateTablesInformation()
 {
-    LocalString<256> tempStr;
-    NumericFormatter n;
-
     tables->DeleteAllItems();
 
     auto data = sqlite->db.GetTableInfo();
-
     for (auto& table : data) {
         tables->AddItem({ table.first, table.second });
     }
@@ -103,12 +95,6 @@ void PluginDialogs::TablesDialog::UpdateTablesInformation()
 
 void PluginDialogs::TablesDialog::OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item)
 {
-    auto table = (std::string) item.GetText(0);
+    sqlite->GetStatementResult((std::string) item.GetText(0), true);
     Exit(Dialogs::Result::Ok);
-    sqlite->OnListViewItemPressed(table);
-}
-
-void PluginDialogs::TablesDialog::InitListView(Reference<Controls::ListView> lv)
-{
-    lv->Handlers()->OnItemPressed = this;
 }

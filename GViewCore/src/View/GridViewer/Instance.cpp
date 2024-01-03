@@ -145,20 +145,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     return false;
 }
 
-vector<uint8_t> Instance::getHexCellContent(const std::string& content)
-{
-    constexpr uint32_t SIZE = 8;
-    vector<uint8_t> hexData;
-    for (auto chunkIndex = 0; chunkIndex < content.size() / SIZE; chunkIndex++) {
-        uint8_t value = 0;
-        for (auto valueIndex = chunkIndex * SIZE; valueIndex < (chunkIndex + 1) * SIZE; valueIndex++) {
-            value = value * 2 + content[valueIndex] - '0';
-        }
-        hexData.push_back(value);
-    }
-    return hexData;
-}
-
 bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
 {
     if (eventType == Event::Command) {
@@ -173,48 +159,58 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             grid->ToggleVerticalLines();
             return true;
         } else if (ID == COMMAND_ID_VIEW_CELL_CONTENT) {
-            auto cellContent = grid->GetSelectedCellContent();
-            auto content     = getHexCellContent(cellContent.value());
-            BufferView buffer(content.data(), content.size());
-            GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
-        } else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT) {
-            auto cellContent = grid->GetSelectedCellContent();
-            auto content     = getHexCellContent(cellContent.value());
-
-            std::time_t t      = std::time(0);
-            auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
-
-            std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
-            file.write(reinterpret_cast<const char*>(content.data()), content.size());
-            file.close();
-
-            AppCUI::Dialogs::MessageBox::ShowNotification("File Export Result", std::string("File exported successfully at: ") + timestampPath);
-        } else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT) {
-            auto data  = grid->GetSelectedColumnContent();
-            auto index = 0;
-
-            auto folderPath = this->exportedFolderPath + data.value().first + "_";
-            std::time_t t   = std::time(0);
-            folderPath += std::to_string(t);
-
-            if (!std::filesystem::exists(folderPath)) {
-                std::filesystem::create_directory(folderPath);
+            auto content = grid->GetSelectedCellContent();
+            if (content.has_value()) {
+                BufferView buffer(*content);
+                GView::App::OpenBuffer(buffer, "Cell Content", "", GView::App::OpenMethod::Select, "");
+            } else {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to view cell content!");
             }
 
-            for (auto& content : data.value().second) {
-                auto hexContent     = getHexCellContent(content);
-                std::string newName = folderPath + "\\row_" + std::to_string(index);
-                std::ofstream file(newName.c_str(), std::ios::binary); // Open the file in binary mode
+        } else if (ID == COMMAND_ID_EXPORT_CELL_CONTENT) {
+            auto content = grid->GetSelectedCellContent();
 
-                file.write(reinterpret_cast<const char*>(hexContent.data()), hexContent.size());
+            if (content.has_value()) {
+                std::time_t t      = std::time(0);
+                auto timestampPath = this->exportedPathUTF8 + "_" + std::to_string(t);
+
+                std::ofstream file(timestampPath.c_str(), std::ios::binary); // Open the file in binary mode
+                file.write(reinterpret_cast<const char*>((*content).data()), (*content).size());
                 file.close();
 
-                index++;
+                AppCUI::Dialogs::MessageBox::ShowNotification("File Export Result", std::string("File exported successfully at: ") + timestampPath);
+            } else {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to export cell content!");
             }
+        } else if (ID == COMMAND_ID_EXPORT_COLUMN_CONTENT) {
+            auto data = grid->GetSelectedColumnContent();
+            if (data.has_value()) {
+                auto index = 0;
 
-            folderPath.pop_back();
-            folderPath.pop_back();
-            AppCUI::Dialogs::MessageBox::ShowNotification("Files Export Result", std::string("Files exported successfully at folder: ") + folderPath);
+                auto folderPath = this->exportedFolderPath + data.value().first + "_";
+                std::time_t t   = std::time(0);
+                folderPath += std::to_string(t);
+
+                if (!std::filesystem::exists(folderPath)) {
+                    std::filesystem::create_directory(folderPath);
+                }
+
+                for (auto& content : data.value().second) {
+                    std::string newName = folderPath + "\\row_" + std::to_string(index);
+                    std::ofstream file(newName.c_str(), std::ios::binary); // Open the file in binary mode
+
+                    file.write(reinterpret_cast<const char*>(content.data()), content.size());
+                    file.close();
+
+                    index++;
+                }
+
+                folderPath.pop_back();
+                folderPath.pop_back();
+                AppCUI::Dialogs::MessageBox::ShowNotification("Files Export Result", std::string("Files exported successfully at folder: ") + folderPath);
+            } else {
+                AppCUI::Dialogs::MessageBox::ShowError("Error", "Failed to export column content!");
+            }
         }
     }
 
@@ -333,6 +329,7 @@ void GView::View::GridViewer::Instance::ProcessContent()
                 lTokens.push_back({ tStart, tEnd });
                 tStart = tEnd + 1;
             }
+            lTokens.push_back({ tEnd + 1, oSizeProcessed });
         }
 
         tokens.insert({ currentLine, std::move(lTokens) });

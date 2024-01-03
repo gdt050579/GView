@@ -21,8 +21,8 @@ class SQLiteFile : public TypeInterface
 
     std::string_view GetTypeName() override;
 
-    void OnListViewItemPressed(const std::string_view& tableName);
-    void OnButtonPressed(const std::string_view& statement);
+    void GetStatementResult(const std::string_view& entity, bool fromTable);
+
     virtual void RunCommand(std::string_view commandName) override;
 };
 
@@ -85,13 +85,11 @@ namespace PluginDialogs
         TablesDialog(Reference<GView::Type::SQLite::SQLiteFile> _sqlite);
         virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
         virtual void OnFocus() override;
-        void OnCheck(Reference<Controls::Control> control, bool /* value */);
         virtual bool OnKeyEvent(Input::Key keyCode, char16 UnicodeChar) override;
         bool ProcessInput();
         void Update();
         void UpdateTablesInformation();
         virtual void OnListViewItemPressed(Reference<Controls::ListView> lv, Controls::ListViewItem item) override;
-        void InitListView(Reference<Controls::ListView> lv);
     };
 } // namespace PluginDialogs
 } // namespace GView::Type::SQLite
