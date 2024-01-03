@@ -150,7 +150,6 @@ struct ConstPanel {
 #define FCHECKNULL(x) CHECK(x, nullptr, #x)
 
 #define unreachable                                                                                                                                            \
-    __debugbreak();                                                                                                                                            \
     std::abort()
 
 #define unimplemented unreachable
