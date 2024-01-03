@@ -11,4 +11,8 @@ target_sources(
 	DissasmKeyEvents.cpp
         DissasmX86.cpp
 	CommentDataWindow.cpp
+        AdvancedSelection.hpp
+	AdvancedSelection.cpp
+	DissasmDataTypes.hpp
+	DissasmDataTypes.cpp
 )

@@ -78,6 +78,8 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     if (config.Loaded == false)
         config.Initialize();
 
+    // this->selection.EnableMultiSelection(true);
+
     this->Cursor.lineInView    = 0;
     this->Cursor.startViewLine = 0;
     this->Cursor.offset        = 0;
@@ -208,41 +210,60 @@ int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator,
     return x + 5;
 }
 
+void Instance::OpenCurrentSelection()
+{
+    UnicodeStringBuilder usb{};
+    if (!ProcessSelectedDataToPrintable(usb))
+        return;
+    std::string out;
+    usb.ToString(out);
+
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(this->obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add("temp_dissasm");
+
+    BufferView buffer = { out.data(), out.size() };
+    GView::App::OpenBuffer(buffer, "temp_dissasm", fullPath, GView::App::OpenMethod::Select);
+}
+
 void Instance::AddNewCollapsibleZone()
 {
-    if (!selection.HasAnySelection())
-    {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
-        return;
-    }
+    Dialogs::MessageBox::ShowNotification("Error", "Reenable this!");
+    // TODO: reenable this!!
+    // if (!selection.HasAnySelection())
+    //{
+    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
+    //     return;
+    // }
 
-    const uint64 offsetStart = selection.GetSelectionStart(0);
-    const uint64 offsetEnd   = selection.GetSelectionEnd(0);
+    // const uint64 offsetStart = selection.GetSelectionStart(0);
+    // const uint64 offsetEnd   = selection.GetSelectionEnd(0);
 
-    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
-    if (zonesFound.empty() || zonesFound.size() != 1)
-    {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single text zone!");
-        return;
-    }
+    // const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    // if (zonesFound.empty() || zonesFound.size() != 1)
+    //{
+    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single text zone!");
+    //     return;
+    // }
 
-    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
-    if (zone->zoneType != DissasmParseZoneType::CollapsibleAndTextZone)
-    {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone!");
-        return;
-    }
+    // const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    // if (zone->zoneType != DissasmParseZoneType::CollapsibleAndTextZone)
+    //{
+    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone!");
+    //     return;
+    // }
 
-    auto data = static_cast<CollapsibleAndTextZone*>(zone.get());
-    if (data->data.canBeCollapsed)
-    {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone that cannot be collapsed!");
-        return;
-    }
+    // auto data = static_cast<CollapsibleAndTextZone*>(zone.get());
+    // if (data->data.canBeCollapsed)
+    //{
+    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone that cannot be collapsed!");
+    //     return;
+    // }
 
-    // TODO:
-    settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
-    RecomputeDissasmZones();
+    //// TODO:
+    // settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
+    // RecomputeDissasmZones();
 }
 
 void Instance::AddComment()
@@ -790,34 +811,45 @@ void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* f
 
 void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 maxLineLength, uint32 availableCharacters)
 {
-    if (selection.HasAnySelection())
+    for (uint32 i = 0; i < selection.GetCount(); i++)
     {
-        const uint64 selectionStart = selection.GetSelectionStart(0);
-        const uint64 selectionEnd   = selection.GetSelectionEnd(0);
-
-        const uint32 selectStartLine  = static_cast<uint32>(selectionStart / Layout.textSize);
-        const uint32 selectionEndLine = static_cast<uint32>(selectionEnd / Layout.textSize);
-        const uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startViewLine;
-
-        if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
+        if (selection.HasSelection(i))
         {
-            uint32 startingIndex = selectionStart % Layout.textSize;
-            if (selectStartLine < lineToDrawTo)
-                startingIndex = 0;
-            uint32 endIndex = selectionEnd % Layout.textSize + 1;
-            if (lineToDrawTo < selectionEndLine)
-                endIndex = static_cast<uint32>(maxLineLength);
-            // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
-            // TODO: variables can be skipped, use startingPointer < EndPointer
-            const auto savedChText = dli.chText;
-            dli.chText             = dli.chNameAndSize + startingIndex;
-            while (startingIndex < endIndex)
+            const auto selectionStart = selection.GetSelectionStart(i);
+            const auto selectionEnd   = selection.GetSelectionEnd(i);
+            auto selectionStorage     = selection.GetStorage(i);
+            bool isAltPressed         = selection.IsAltPressed(i);
+
+            const uint32 selectStartLine  = selectionStart.line;
+            const uint32 selectionEndLine = selectionEnd.line;
+            const uint32 lineToDrawTo     = dli.screenLineToDraw + Cursor.startViewLine;
+
+            if (selectStartLine <= lineToDrawTo && lineToDrawTo <= selectionEndLine)
             {
-                dli.chText->Color = Cfg.Selection.Editor;
-                dli.chText++;
-                startingIndex++;
+                uint32 startingIndex = selectionStart.offset; // % Layout.textSize;
+                uint32 endIndex      = selectionEnd.offset % Layout.textSize + 1;
+                if (!isAltPressed)
+                {
+                    if (selectStartLine < lineToDrawTo)
+                        startingIndex = 0;
+                    if (lineToDrawTo < selectionEndLine)
+                        endIndex = static_cast<uint32>(maxLineLength);
+                }
+                // uint32 endIndex      = (uint32) std::min(selectionEnd - selectionStart + startingIndex + 1, buf.GetLength());
+                // TODO: variables can be skipped, use startingPointer < EndPointer
+                const auto savedChText = dli.chText;
+                dli.chText             = dli.chNameAndSize + startingIndex;
+                while (startingIndex < endIndex)
+                {
+                    dli.chText->Color = Cfg.Selection.Editor;
+                    selectionStorage->push_back(dli.chText->Code);
+                    dli.chText++;
+                    startingIndex++;
+                    // TODO: improve this!
+                }
+                dli.chText = savedChText;
+                selectionStorage->push_back('\n');
             }
-            dli.chText = savedChText;
         }
     }
 
@@ -1057,6 +1089,41 @@ void Instance::UpdateLayoutTotalLines()
     Layout.totalLinesSize = settings->parseZones[settings->parseZones.size() - 1]->endingLineIndex - 1;
 }
 
+bool Instance::ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb)
+{
+    bool found_data = false;
+    AppCUI::Graphics::CodePage cp(AppCUI::Graphics::CodePageID::PrintableAscii);
+    for (uint32 i = 0; i < selection.GetCount(); i++)
+    {
+        if (selection.HasSelection(i))
+        {
+            found_data       = true;
+            auto storageData = selection.GetStorage(i);
+            for (const auto c : *storageData)
+            {
+                FixSizeString<1> cc;
+                if (c == '\n')
+                {
+                    CHECK(cc.AddChar((c & 0xFF)), false, "");
+                    CHECK(usb.Add(cc), false, "");
+                    continue;
+                }
+                CHECK(cc.AddChar((cp[c] & 0xFF)), false, "");
+                CHECK(usb.Add(cc), false, "");
+            }
+        }
+    }
+
+    if (!found_data)
+    {
+        LocalString<128> message;
+        CHECK(message.AddFormat("No selection", obj->GetData().GetSize()), false, "");
+        Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
+        return false;
+    }
+    return true;
+}
+
 LinePosition Instance::OffsetToLinePosition(uint64 offset) const
 {
     return { static_cast<uint32>(offset / Layout.textSize), static_cast<uint32>(offset % Layout.textSize) };
@@ -1073,9 +1140,14 @@ vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromPosition(uint64 star
         return {};
 
     const uint32 lineStart = OffsetToLinePosition(startingOffset).line;
-    uint32 lineEnd         = OffsetToLinePosition(endingOffset).line;
+    const uint32 lineEnd   = OffsetToLinePosition(endingOffset).line;
 
-    if (endingOffset < startingOffset)
+    return GetZonesIndexesFromLinePosition(lineStart, lineEnd);
+}
+
+vector<Instance::ZoneLocation> Instance::GetZonesIndexesFromLinePosition(uint32 lineStart, uint32 lineEnd) const
+{
+    if (lineEnd < lineStart)
         lineEnd = lineStart;
 
     const auto& zones     = settings->parseZones;
@@ -1206,6 +1278,9 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     }
 
     DrawLineInfo dli(renderer, Layout.startingTextLineOffset, config.Colors.Normal);
+
+    // TODO: improve this!!
+    selection.ClearStorages();
     for (uint32 tr = 0; tr < this->Layout.visibleRows; tr++)
     {
         dli.screenLineToDraw = tr;
@@ -1247,7 +1322,7 @@ bool Instance::ShowGoToDialog()
         if (lineToReach != currentLine)
         {
             jumps_holder.insert(Cursor.saveState());
-            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), false);
+            MoveTo(0, static_cast<int32>(lineToReach) - static_cast<int32>(currentLine), Key::None, false);
         }
     }
     /*const uint32 currentLine  = Cursor.lineInView + Cursor.startViewLine;
@@ -1261,7 +1336,19 @@ bool Instance::ShowFindDialog()
 }
 bool Instance::ShowCopyDialog()
 {
-    NOT_IMPLEMENTED(false);
+    UnicodeStringBuilder usb{};
+    if (!ProcessSelectedDataToPrintable(usb))
+        return false;
+
+    if (AppCUI::OS::Clipboard::SetText(usb) == false)
+    {
+        LocalString<128> message;
+        CHECK(message.AddFormat("File size %llu bytes, cache size %llu bytes!", obj->GetData().GetSize(), 100), false, "");
+        Dialogs::MessageBox::ShowError("Error copying to clipboard (postprocessing)!", message);
+        return false;
+    }
+
+    return true;
 }
 
 void Instance::OnAfterResize(int newWidth, int newHeight)
