@@ -513,12 +513,6 @@ namespace View
                 bool hasMovedView;
             } Cursor;
 
-            struct OverridenKeys
-            {
-                bool is_ctrl_down;
-                bool is_alt_down;
-            };
-
             struct
             {
                 ColorPair Normal, Line, Highlighted;
@@ -563,7 +557,6 @@ namespace View
             AdvancedSelection selection;
             CodePage codePage;
             Menu rightClickMenu;
-            OverridenKeys overriden_keys;
             // uint64 rightClickOffset;
 
             AsmData asmData;
@@ -638,9 +631,9 @@ namespace View
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // Mouse events
-            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button) override;
-            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            virtual void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseWheel(int x, int y, Input::MouseWheel direction, Input::Key) override;
 
             // Events
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;

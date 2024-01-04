@@ -95,9 +95,6 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->Layout.structuresInitialCollapsedState = true;
     this->Layout.totalLinesSize                  = 0;
 
-    overriden_keys.is_ctrl_down = false;
-    overriden_keys.is_alt_down  = true;
-
     this->CurrentSelection = {};
 
     this->codePage = CodePageID::DOS_437;

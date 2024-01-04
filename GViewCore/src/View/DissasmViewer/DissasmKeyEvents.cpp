@@ -8,9 +8,6 @@ constexpr uint32 COMMAND_JUMP_BACK              = 103;
 constexpr uint32 COMMAND_JUMP_FORWARD           = 104;
 constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
 
-constexpr uint32 COMMAND_CTRL_CLICK = 200;
-constexpr uint32 COMMAND_ALT_CLICK  = 201;
-
 // TODO: fix remove duplicate with Instance.cpp
 // constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
 // constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
@@ -158,7 +155,7 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
     }*/
 }
 
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -169,12 +166,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         {
             const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
             const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
-            Key key                = Key::None;
-            if (overriden_keys.is_alt_down)
-                key = key | Key::Alt;
-            if (overriden_keys.is_ctrl_down)
-                key = key | Key::Ctrl;
-            MoveTo(offsetDiff, linesDiff, key, false);
+            MoveTo(offsetDiff, linesDiff, keyCode, false);
         }
         else if (button == MouseButton::Right)
         {
@@ -193,7 +185,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     }
 }
 
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -202,18 +194,13 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     {
         const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
         const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
-        Key key                = Key::None;
-        if (overriden_keys.is_alt_down)
-            key = key | Key::Alt;
-        if (overriden_keys.is_ctrl_down)
-            key = key | Key::Ctrl;
-        MoveTo(offsetDiff, linesDiff, key, true);
+        MoveTo(offsetDiff, linesDiff, keyCode, true);
         return true;
     }
     return false;
 }
 
-bool Instance::OnMouseWheel(int, int, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {
@@ -321,13 +308,6 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.JumpForward, "Jump forward", COMMAND_JUMP_FORWARD);
     commandBar.SetCommand(config.Keys.DissasmGotoEntrypoint, "Entry point", COMMAND_DISSAM_GOTO_ENTRYPOINT);
 
-    // TODO: remove these
-    const char* ctrl_message = overriden_keys.is_ctrl_down ? "CTRL DOWN" : "CTRL UP";
-    commandBar.SetCommand(Key::Ctrl | Key::Z, ctrl_message, COMMAND_CTRL_CLICK);
-
-    // TODO: remove these
-    const char* alt_message = overriden_keys.is_alt_down ? "ALT DOWN" : "ALT UP";
-    commandBar.SetCommand(Key::Ctrl | Key::X, alt_message, COMMAND_ALT_CLICK);
     return false;
 }
 
@@ -377,16 +357,6 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
         case COMMAND_DISSAM_GOTO_ENTRYPOINT:
         {
             ProcessSpaceKey(true);
-            return true;
-        }
-        case COMMAND_CTRL_CLICK:
-        {
-            overriden_keys.is_ctrl_down = !overriden_keys.is_ctrl_down;
-            return true;
-        }
-        case COMMAND_ALT_CLICK:
-        {
-            overriden_keys.is_alt_down = !overriden_keys.is_alt_down;
             return true;
         }
         default:
