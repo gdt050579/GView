@@ -15,4 +15,6 @@ target_sources(
 	AdvancedSelection.cpp
 	DissasmDataTypes.hpp
 	DissasmDataTypes.cpp
+	DissasmKeys.hpp
+	DissasmKeys.cpp
 )

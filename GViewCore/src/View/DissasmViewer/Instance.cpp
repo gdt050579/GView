@@ -1,6 +1,7 @@
 #include <array>
 
 #include "DissasmViewer.hpp"
+#include "DissasmKeys.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -13,16 +14,6 @@ using namespace AppCUI::Input;
 Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
-
-// TODO: fix remove duplicate with DissasmKeyEvents.cpp
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
-constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
-constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
-constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE   = 3;
-constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
-constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
-constexpr int32 RIGHT_CLICK_DISSASM_ADD_ZONE    = 6;
-constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_ZONE = 7;
 
 const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
     { { "WriteFile",
