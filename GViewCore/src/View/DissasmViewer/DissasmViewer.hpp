@@ -9,6 +9,9 @@
 #include <cassert>
 #include <capstone/capstone.h>
 
+#include "AdvancedSelection.hpp"
+#include "DissasmDataTypes.hpp"
+
 namespace GView
 {
 namespace View
@@ -401,12 +404,6 @@ namespace View
             std::deque<DissasmCodeZone*> zonesToClear;
         };
 
-        struct LinePosition
-        {
-            uint32 line;
-            uint32 offset;
-        };
-
         struct DrawLineInfo
         {
             const uint8* start;
@@ -557,7 +554,7 @@ namespace View
             Pointer<SettingsData> settings;
             static Config config;
             CharacterBuffer chars;
-            Utils::Selection selection;
+            AdvancedSelection selection;
             CodePage codePage;
             Menu rightClickMenu;
             // uint64 rightClickOffset;
@@ -589,19 +586,23 @@ namespace View
             void UpdateLayoutTotalLines();
 
             // Utils
+            bool ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb);
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             // inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
+            [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromLinePosition(uint32 lineStart, uint32 lineEnd = 0) const;
 
             void AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
-            void MoveTo(int32 offset = 0, int32 lines = 0, bool select = false);
+            void MoveTo(int32 offset = 0, int32 lines = 0, AppCUI::Input::Key key = AppCUI::Input::Key::None, bool select = false);
             void MoveScrollTo(int32 offset, int32 lines);
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
+
+            void OpenCurrentSelection();
 
             // Operations
             void AddNewCollapsibleZone();
@@ -630,9 +631,9 @@ namespace View
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // Mouse events
-            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button) override;
-            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            virtual void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseWheel(int x, int y, Input::MouseWheel direction, Input::Key) override;
 
             // Events
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;

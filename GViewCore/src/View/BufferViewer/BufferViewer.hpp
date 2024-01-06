@@ -331,13 +331,13 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
     // mouse events
-    virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-    virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
-    virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
+    virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+    virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+    virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
     virtual bool OnMouseEnter() override;
     virtual bool OnMouseOver(int x, int y) override;
     virtual bool OnMouseLeave() override;
-    virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+    virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key) override;
 
     // scrollbar data
     virtual void OnUpdateScrollBars() override;

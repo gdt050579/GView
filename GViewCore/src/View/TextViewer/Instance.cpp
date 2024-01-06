@@ -1562,7 +1562,7 @@ void Instance::MousePosToTextOffset(int x, int y, uint32& lineNo, uint32& charIn
         }
     }
 }
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     uint32 lineNo, chIndex;
     MousePosToTextOffset(x, y, lineNo, chIndex);
@@ -1598,18 +1598,18 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         MoveTo(lineNo, chIndex, false);
     }
 }
-void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     this->mouseStatus = MouseStatus::None;
 }
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     uint32 lineNo, chIndex;
     MousePosToTextOffset(x, y, lineNo, chIndex);
     MoveTo(lineNo, chIndex, true);
     return true;
 }
-bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {

@@ -1993,7 +1993,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
             mpInfo.location = MouseLocation::Outside;
     }
 }
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -2003,10 +2003,10 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         MoveTo(mpInfo.bufferOffset, false);
     }
 }
-void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
 }
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -2030,7 +2030,7 @@ bool Instance::OnMouseLeave()
 {
     return false;
 }
-bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {

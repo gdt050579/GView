@@ -6,6 +6,8 @@
 #include <list>
 #include <algorithm>
 
+#pragma warning(disable : 4996) // The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name
+
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 
@@ -144,6 +146,9 @@ inline void DissasmAddColorsToInstruction(
     const MemoryMappingEntry* mappingPtr = (const MemoryMappingEntry*) insn.mapping;
     // cb.Clear();
 
+    //TODO: Unicode --> alt caracter
+    //AppCUI::Graphics:: GetCharacterCode
+    //TODO: in loc de label jmp_address:
     LocalString<128> string;
     string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
@@ -177,8 +182,11 @@ inline void DissasmAddColorsToInstruction(
             cb.Add(string, cfg.Colors.AsmDefaultColor);
             break;
         }
-        const uint8 byte = insn.bytes[i];
-        cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
+        if (i != textColumnTextLength - 1)
+        {
+            const uint8 byte = insn.bytes[i];
+            cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
+        }
     }
 
     string.Clear();
@@ -187,34 +195,38 @@ inline void DissasmAddColorsToInstruction(
 
     cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
 
+    string.Clear();
+    string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
+
+    if (insn.lineArrowToDraw && cfg.EnableDeepScanDissasmOnStart)
+    {
+        // string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
+        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1)
+            string[0] = '|';
+        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2)
+            string[1] = '|';
+        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3)
+            string[2] = '|';
+        if (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine ||
+            insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine)
+        {
+            for (int32 i = 0; i < static_cast<int32>(textColumnIndicatorArrowLinesSpace); i++)
+                if (string[i] == ' ')
+                    string[i] = '-';
+            const bool is_start = (insn.lineArrowToDraw & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine) > 0;
+            string[2]           = is_start ? '<' : '>';
+        }
+    }
+
+    cb.Add(string, cfg.Colors.AsmDefaultColor);
+
     if (insn.size > 0)
     {
         string.Clear();
         string.SetChars(' ', textPaddingLabelsSpace);
 
-        if (insn.flags && cfg.EnableDeepScanDissasmOnStart)
-        {
-            if (insn.flags & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine1)
-                string[0] = '|';
-            if (insn.flags & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine2)
-                string[1] = '|';
-            if (insn.flags & DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawLine3)
-                string[2] = '|';
-        }
-
         cb.Add(string, cfg.Colors.AsmDefaultColor);
     }
-
-    string.Clear();
-    string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
-
-    if (insn.lineArrowToDraw)
-    {
-        string.Clear();
-        string.SetChars('-', textColumnIndicatorArrowLinesSpace);
-    }
-
-    cb.Add(string, cfg.Colors.AsmDefaultColor);
 
     string.SetFormat("%-6s", insn.mnemonic);
     const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
@@ -914,7 +926,8 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
                 GView::Hashes::CRC32 crc32{};
                 uint32 hash    = 0;
                 const bool res = crc32.Init(GView::Hashes::CRC32Type::JAMCRC) &&
-                                 crc32.Update((const uint8*) mappingPtr->name.data(), mappingPtr->name.size()) && crc32.Final(hash);
+                                 crc32.Update(reinterpret_cast<const uint8*>(mappingPtr->name.data()), static_cast<uint32>(mappingPtr->name.size())) &&
+                                 crc32.Final(hash);
                 if (res)
                 {
                     const auto it = asmData.functions.find(hash);
@@ -1013,8 +1026,6 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
           startInstructions.end(),
           [](const DissasmAsmPreCacheLine* a, const DissasmAsmPreCacheLine* b) { return a->hexValue.value() < b->hexValue.value(); });
 
-    uint32 val = 0;
-
     std::vector<DissasmAsmPreCacheLine*> actualLabelsLines;
     actualLabelsLines.reserve(startInstructions.size());
 
@@ -1044,12 +1055,12 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     {
         const bool startOpIsSmaller       = (*startOpIt)->currentLine < (*endOpIt)->currentLine;
         DissasmAsmPreCacheLine* startLine = startOpIsSmaller ? *startOpIt : *endOpIt;
-        DissasmAsmPreCacheLine* endLine   = startOpIsSmaller ? *startOpIt : *endOpIt;
+        DissasmAsmPreCacheLine* endLine   = startOpIsSmaller ? *endOpIt : *startOpIt;
 
         startLine->lineArrowToDraw = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawStartingLine;
         endLine->lineArrowToDraw   = DissasmAsmPreCacheLine::LineArrowToDrawFlag::DrawEndingLine;
 
-        while (startLine < endLine)
+        while (startLine <= endLine)
         {
             startLine->lineArrowToDraw |= lineToDraw;
             ++startLine;
@@ -1535,13 +1546,17 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
 void Instance::CommandDissasmAddZone()
 {
+    return;
+
     uint64 offsetStart = 0;
     uint64 offsetEnd   = 0;
-    if (!selection.HasAnySelection() || !selection.GetSelection(0, offsetStart, offsetEnd))
+
+    //TODO: reenable this
+    /*if (!selection.HasAnySelection() || !selection.GetSelection(0, offsetStart, offsetEnd))
     {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
-    }
+    }*/
 
     const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
     if (zonesFound.empty() || zonesFound.size() != 1)
@@ -1564,6 +1579,8 @@ void Instance::CommandDissasmAddZone()
     }
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+
+    offsetStart = offsetStart;
 }
 
 void Instance::CommandDissasmRemoveZone()
