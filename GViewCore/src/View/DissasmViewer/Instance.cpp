@@ -277,7 +277,7 @@ void Instance::AddComment()
     convertedZone->comments.HasComment(startingLine, foundComment);
 
     selection.Clear();
-    CommentDataWindow dlg(foundComment);
+    SingleLineEditWindow dlg(foundComment,"Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
         convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
     }
@@ -310,6 +310,51 @@ void Instance::RemoveComment()
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     convertedZone->comments.RemoveComment(startingLine);
+}
+
+void Instance::RenameLabel()
+{
+    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
+    const uint64 offsetEnd   = offsetStart + 1;
+
+    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    if (zonesFound.empty() || zonesFound.size() != 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
+        return;
+    }
+
+    uint32 startingLine = zonesFound[0].startingLine;
+    if (startingLine == 0 || startingLine == 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+        return;
+    }
+    startingLine--;
+
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    startingLine             = startingLine - 1;
+
+    // TODO: improve, add searching function to search inside types for the current annotation
+    auto& annotations = convertedZone->types.back().get().annotations;
+    auto it           = annotations.find(startingLine);
+    if (it == annotations.end()) {
+        Dialogs::MessageBox::ShowNotification("Warning", "That line cannot pe renamed!");
+        return;
+    }
+
+    selection.Clear();
+    SingleLineEditWindow dlg(it->second.first, "Edit label");
+    if (dlg.Show() == Dialogs::Result::Ok) {
+        const auto res = dlg.GetResult();
+        if (!res.empty())
+            it->second.first = res;
+    }
+    convertedZone->asmPreCacheData.Clear();
 }
 
 bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)

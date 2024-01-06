@@ -88,8 +88,11 @@ namespace View
             // Other keys
             inline static DissasmCommand AddOrEditCommentCommand = { Input::Key::C, "AddOrEditComment", "Add or edit comments", COMMAND_ADD_OR_EDIT_COMMENT };
             inline static DissasmCommand RemoveCommentCommand    = { Input::Key::Delete, "RemoveComment", "Remove comment", COMMAND_REMOVE_COMMENT };
+            inline static DissasmCommand RenameLabelCommand      = { Input::Key::N, "RenameLabel", "Rename label or function", COMMAND_REMOVE_COMMENT };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 2> KeyDownCommands = { AddOrEditCommentCommand, RemoveCommentCommand };
+            inline static std::array<std::reference_wrapper<DissasmCommand>, 3> KeyDownCommands = { AddOrEditCommentCommand,
+                                                                                                    RemoveCommentCommand,
+                                                                                                    RenameLabelCommand };
 
             inline static std::array<std::reference_wrapper<DissasmCommand>, 8> AllKeyboardCommands = {
                 AddNewTypeCommand,  ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand,

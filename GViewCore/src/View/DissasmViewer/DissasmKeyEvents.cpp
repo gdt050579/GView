@@ -256,6 +256,11 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         return true;
     }
 
+    if (keyCode == Config::RenameLabelCommand.Key) {
+        RenameLabel();
+        return true;
+    }
+
     return ViewControl::OnKeyEvent(select ? (keyCode | Key::Shift) : keyCode, charCode);
 }
 

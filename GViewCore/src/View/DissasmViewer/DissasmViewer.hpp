@@ -513,6 +513,7 @@ namespace View
             void AddNewCollapsibleZone();
             void AddComment();
             void RemoveComment();
+            void RenameLabel();
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
             void CommandDissasmAddZone();
@@ -553,15 +554,15 @@ namespace View
             virtual const vector<Property> GetPropertiesList() override;
         }; // Instance
 
-        class CommentDataWindow : public Window
+        class SingleLineEditWindow : public Window
         {
             std::string data;
-            Reference<TextField> commentTextField;
+            Reference<TextField> textField;
 
             void Validate();
 
           public:
-            CommentDataWindow(std::string initialComment);
+            SingleLineEditWindow(std::string initialText,const char* title);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline std::string GetResult() const
             {
