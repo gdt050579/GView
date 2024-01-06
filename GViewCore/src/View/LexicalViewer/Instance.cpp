@@ -2028,7 +2028,7 @@ uint32 Instance::MousePositionToTokenID(int x, int y)
     }
     return Token::INVALID_INDEX;
 }
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     if (x == (this->lineNrWidth - 1))
     {
@@ -2054,10 +2054,10 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         }
     }
 }
-void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
 }
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     if (x >= this->lineNrWidth)
     {
@@ -2070,7 +2070,7 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     }
     return false;
 }
-bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {

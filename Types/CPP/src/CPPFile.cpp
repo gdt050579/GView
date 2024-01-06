@@ -1038,7 +1038,7 @@ void CPPFile::PreprocessText(GView::View::LexicalViewer::TextEditor& editor)
 }
 void CPPFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)
 {
-    switch (id & 0xFFFF)
+    switch (id & 0xFFFFFFFF)
     {
     case TokenType::None:
         str.Set("Unknwon/Error");

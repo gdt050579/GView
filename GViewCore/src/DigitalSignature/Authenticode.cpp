@@ -146,14 +146,14 @@ constexpr auto MAX_NESTED_COUNT = 16;
 static SpcIndirectDataContent* GetContent(PKCS7* content)
 {
     if (!content)
-        return NULL;
+        return nullptr;
 
     if (OBJ_obj2nid(content->type) != OBJ_txt2nid(NID_spc_indirect_data))
-        return NULL;
+        return nullptr;
 
     SpcIndirectDataContent* spcContent = SpcIndirectDataContent_new();
     if (!spcContent)
-        return NULL;
+        return nullptr;
 
     int len             = content->d.other->value.sequence->length;
     const uint8_t* data = content->d.other->value.sequence->data;
@@ -166,11 +166,11 @@ static SpcIndirectDataContent* GetContent(PKCS7* content)
 bool ParseOpusInfo(ASN1_TYPE* spcAttr, Signer signer)
 {
     const auto* sdata      = spcAttr->value.sequence->data;
-    SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(NULL, &sdata, spcAttr->value.sequence->length);
+    SpcSpOpusInfo* spcInfo = d2i_SpcSpOpusInfo(nullptr, &sdata, spcAttr->value.sequence->length);
     if (!spcInfo)
         return false;
 
-    uint8_t* dataRaw = NULL;
+    uint8_t* dataRaw = nullptr;
     OpenSSL_ptr data(dataRaw, My_OpenSSL_free);
 
     if (spcInfo->programName)
@@ -270,7 +270,7 @@ void AuthenticodeParser::ParseNestedAuthenticode(PKCS7_SIGNER_INFO* si, std::vec
     for (int i = 0; i < attrCount; ++i)
     {
         ASN1_TYPE* nested = X509_ATTRIBUTE_get0_type(attr, i);
-        if (nested == NULL)
+        if (nested == nullptr)
             break;
         int len             = nested->value.sequence->length;
         const uint8_t* data = nested->value.sequence->data;
@@ -301,7 +301,7 @@ static void ParsePKCS9Countersignature(PKCS7_ptr& p7, AuthenticodeSignature& aut
     for (int i = 0; i < attrCount; ++i)
     {
         ASN1_TYPE* nested = X509_ATTRIBUTE_get0_type(attr, i);
-        if (nested == NULL)
+        if (nested == nullptr)
             break;
         int len             = nested->value.sequence->length;
         const uint8_t* data = nested->value.sequence->data;
@@ -312,7 +312,7 @@ static void ParsePKCS9Countersignature(PKCS7_ptr& p7, AuthenticodeSignature& aut
 
 static void ExtractCertificatesFromMSCountersignature(const uint8_t* data, int len, std::vector<Certificate>& result)
 {
-    PKCS7_ptr p7(d2i_PKCS7(NULL, &data, len), PKCS7_free);
+    PKCS7_ptr p7(d2i_PKCS7(nullptr, &data, len), PKCS7_free);
     if (!p7)
         return;
 
@@ -341,7 +341,7 @@ static void ParseMSCountersignature(PKCS7_ptr& p7, AuthenticodeSignature& auth)
     for (int i = 0; i < attrCount; ++i)
     {
         ASN1_TYPE* nested = X509_ATTRIBUTE_get0_type(attr, i);
-        if (nested == NULL)
+        if (nested == nullptr)
             break;
         int len             = nested->value.sequence->length;
         const uint8_t* data = nested->value.sequence->data;
@@ -356,7 +356,7 @@ static void ParseMSCountersignature(PKCS7_ptr& p7, AuthenticodeSignature& auth)
 static bool AuthenticodeVerify(PKCS7_ptr& p7, PKCS7_SIGNER_INFO* si, X509* signCert)
 {
     const uint8_t* contentData = p7->d.sign->contents->d.other->value.sequence->data;
-    long contentLen            = p7->d.sign->contents->d.other->value.sequence->length;
+    long contentLen             = p7->d.sign->contents->d.other->value.sequence->length;
 
     uint64_t version = 0;
     ASN1_INTEGER_get_uint64(&version, p7->d.sign->version);
@@ -367,7 +367,7 @@ static bool AuthenticodeVerify(PKCS7_ptr& p7, PKCS7_SIGNER_INFO* si, X509* signC
         ASN1_get_object(&contentData, &contentLen, &ptag, &pclass, contentLen);
     }
 
-    BIO* contentBio = BIO_new_mem_buf(contentData, contentLen);
+    BIO* contentBio = BIO_new_mem_buf(contentData, static_cast<int>(contentLen));
     /* Create `digest` type BIO to calculate content digest for verification */
     BIO* p7bio = PKCS7_dataInit(p7.get(), contentBio);
 
@@ -400,7 +400,7 @@ bool AuthenticodeParser::AuthenticodeParseSignature(const uint8_t* data, long le
     AuthenticodeSignature auth{};
 
     /* Let openssl parse the PKCS7 structure */
-    PKCS7_ptr p7(d2i_PKCS7(NULL, &data, len), PKCS7_free);
+    PKCS7_ptr p7(d2i_PKCS7(nullptr, &data, len), PKCS7_free);
     if (!p7)
     {
         auth.verifyFlags = (int) AuthenticodeVFY::CantParse;
@@ -603,7 +603,7 @@ static bool AuthenticodeDigest(
         fpos += rlen;
     }
 
-    bool status = EVP_DigestFinal(mdctx, digest, NULL);
+    bool status = EVP_DigestFinal(mdctx, digest, nullptr);
 
     EVP_MD_CTX_free(mdctx);
     BIO_free_all(bio);
@@ -783,21 +783,21 @@ std::vector<Certificate> AuthenticodeParser::ParseSignerChain(X509* signCert, ST
 /* Taken from YARA for compatibility */
 static char* IntegerToSerial(ASN1_INTEGER* serial)
 {
-    int bytes = i2d_ASN1_INTEGER(serial, NULL);
+    int bytes = i2d_ASN1_INTEGER(serial, nullptr);
 
-    char* res = NULL;
+    char* res = nullptr;
     /* According to X.509 specification the maximum length for the
      * serial number is 20 octets. Add two bytes to account for
      * DER type and length information. */
     if (bytes < 2 || bytes > 22)
-        return NULL;
+        return nullptr;
 
     /* Now that we know the size of the serial number allocate enough
      * space to hold it, and use i2d_ASN1_INTEGER() one last time to
      * hold it in the allocated buffer. */
     uint8_t* serial_der = (uint8_t*) malloc(bytes);
     if (!serial_der)
-        return NULL;
+        return nullptr;
 
     uint8_t* serial_bytes;
 
@@ -839,17 +839,17 @@ static char* IntegerToSerial(ASN1_INTEGER* serial)
  * Base64 encoding of the DER representation */
 static char* PubkeyToPEM(EVP_PKEY* pubkey)
 {
-    uint8_t* der = NULL;
+    uint8_t* der = nullptr;
     int len      = i2d_PUBKEY(pubkey, &der); /* Convert to DER */
     if (len <= 0)
-        return NULL;
+        return nullptr;
 
     /* Approximate the result length (padding, newlines, 4 out bytes for every 3 in) */
     uint8_t* result = (uint8_t*) malloc(len * 3 / 2);
     if (!result)
     {
         OPENSSL_free(der);
-        return NULL;
+        return nullptr;
     }
 
     /* Base64 encode the DER data */
@@ -858,10 +858,10 @@ static char* PubkeyToPEM(EVP_PKEY* pubkey)
     {
         OPENSSL_free(der);
         free(result);
-        return NULL;
+        return nullptr;
     }
 
-    int resultLen = 0;
+    size_t resultLen = 0;
     int tmp       = 0;
     EVP_EncodeInit(ctx);
     EVP_EncodeUpdate(ctx, result, &tmp, der, len);
@@ -887,10 +887,10 @@ bool Certificate::Parse(X509* x509)
 {
     /* Calculate SHA1 and SHA256 digests of the X509 structure */
     sha1.resize(SHA_DIGEST_LENGTH);
-    X509_digest(x509, EVP_sha1(), sha1.data(), NULL);
+    X509_digest(x509, EVP_sha1(), sha1.data(), nullptr);
 
     sha256.resize(SHA256_DIGEST_LENGTH);
-    X509_digest(x509, EVP_sha256(), sha256.data(), NULL);
+    X509_digest(x509, EVP_sha256(), sha256.data(), nullptr);
 
     X509_NAME* issuerName  = X509_get_issuer_name(x509);
     X509_NAME* subjectName = X509_get_subject_name(x509);
@@ -953,7 +953,7 @@ static void ToHex(const unsigned char* v, char* b, int len)
     for (i = 0; i < len; i++)
     {
 #ifdef WIN32
-        int size = EVP_MAX_MD_SIZE * 2 + 1;
+        size_t size = EVP_MAX_MD_SIZE * 2 + 1;
         j += sprintf_s(b + j, size - j, "%02X", v[i]);
 #else
         j += sprintf(b + j, "%02X", v[i]);
@@ -970,7 +970,7 @@ static bool GetTimeFromCMS(CMS_ContentInfo* cms, time_t& time)
     }
 
     const unsigned char* p = (*pos)->data;
-    TimeStampToken* token  = d2i_TimeStampToken(NULL, &p, (*pos)->length);
+    TimeStampToken* token  = d2i_TimeStampToken(nullptr, &p, (*pos)->length);
     if (token == nullptr)
     {
         return false;
@@ -988,11 +988,11 @@ bool CounterSignature::ParsePKCS9(
 {
     this->type = CounterSignatureType::RFC3161;
 
-    PKCS7_SIGNER_INFO* si = d2i_PKCS7_SIGNER_INFO(NULL, &data, size);
+    PKCS7_SIGNER_INFO* si = d2i_PKCS7_SIGNER_INFO(nullptr, &data, size);
     if (!si)
     {
         BIO_ptr in(BIO_new(BIO_s_mem()), BIO_free);
-        BIO_write(in.get(), data, size);
+        BIO_write(in.get(), data, static_cast<int>(size));
 
         CMS_ContentInfo_ptr cms(d2i_CMS_bio(in.get(), nullptr), CMS_ContentInfo_free);
         if (cms.get() == nullptr)
@@ -1002,7 +1002,7 @@ bool CounterSignature::ParsePKCS9(
         }
 
         constexpr uint32_t flags = CMS_BINARY | CMS_NOCRL | CMS_NO_SIGNER_CERT_VERIFY;
-        if (CMS_verify(cms.get(), certs, NULL, NULL, NULL, flags) != 1)
+        if (CMS_verify(cms.get(), certs, nullptr, nullptr, nullptr, flags) != 1)
         {
             verifyFlags = (int) CountersignatureVFY::DoesntMatchSignature;
             return false;
@@ -1072,7 +1072,7 @@ bool CounterSignature::ParsePKCS9(
         }
 
         const unsigned char* p = (*pos)->data;
-        TimeStampToken* token  = d2i_TimeStampToken(NULL, &p, (*pos)->length);
+        TimeStampToken* token  = d2i_TimeStampToken(nullptr, &p, (*pos)->length);
         if (token == nullptr)
         {
             verifyFlags = (int) CountersignatureVFY::DigestMissing;
@@ -1094,7 +1094,7 @@ bool CounterSignature::ParsePKCS9(
 
         EVP_DigestUpdate(mdctx, counter->enc_digest->data, (size_t) counter->enc_digest->length);
         unsigned char mdbuf[EVP_MAX_MD_SIZE];
-        EVP_DigestFinal(mdctx, mdbuf, NULL);
+        EVP_DigestFinal(mdctx, mdbuf, nullptr);
         EVP_MD_CTX_free(mdctx);
 
         /* compare the provided hash against the computed hash */
@@ -1144,6 +1144,7 @@ bool CounterSignature::ParsePKCS9(
     if (!messageDigest)
     {
         verifyFlags = (int) CountersignatureVFY::DigestMissing;
+        return false;
     }
 
     size_t digestLen = messageDigest->value.octet_string->length;
@@ -1165,7 +1166,7 @@ bool CounterSignature::ParsePKCS9(
     /* By this point we all necessary things for verification
      * Get DER representation of the authenticated attributes to calculate its
      * digest that should correspond with the one encrypted in SignerInfo */
-    uint8_t* authAttrsData = NULL;
+    uint8_t* authAttrsData = nullptr;
     int authAttrsLen       = ASN1_item_i2d((ASN1_VALUE*) si->auth_attr, &authAttrsData, ASN1_ITEM_rptr(PKCS7_ATTR_VERIFY));
 
     uint8_t calc_digest[EVP_MAX_MD_SIZE];
@@ -1174,7 +1175,7 @@ bool CounterSignature::ParsePKCS9(
 
     /* Get public key to decrypt encrypted digest of auth attrs */
     EVP_PKEY* pkey    = X509_get0_pubkey(signCert);
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pkey, NULL);
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pkey, nullptr);
 
     /* TODO try to get rid of hardcoded length bound */
     size_t decLen = 65536;
@@ -1218,7 +1219,7 @@ bool CounterSignature::ParsePKCS9(
     else
     {
         const uint8_t* data = decData.get();
-        DigestInfo* info    = d2i_DigestInfo(NULL, &data, static_cast<uint32_t>(decLen));
+        DigestInfo* info    = d2i_DigestInfo(nullptr, &data, static_cast<uint32_t>(decLen));
         if (info)
         {
             isValid = !memcmp(info->digest->data, calc_digest, mdLen);
@@ -1253,7 +1254,7 @@ bool CounterSignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
 {
     this->type = CounterSignatureType::Authenticode;
 
-    PKCS7* p7 = d2i_PKCS7(NULL, &data, size);
+    PKCS7* p7 = d2i_PKCS7(nullptr, &data, size);
     if (!p7)
     {
         verifyFlags = (int) CountersignatureVFY::CantParse;
@@ -1357,7 +1358,7 @@ bool CounterSignature::ParseMS(const uint8_t* data, long size, ASN1_STRING* enc_
     /* Verify signature with PKCS7_signatureVerify
      because TS_RESP_verify_token would try to verify
      chain and without trust anchors it always fails */
-    BIO* p7bio = PKCS7_dataInit(p7, NULL);
+    BIO* p7bio = PKCS7_dataInit(p7, nullptr);
 
     char buf[4096];
     /* We now have to 'read' from p7bio to calculate digests etc. */
@@ -1398,7 +1399,7 @@ int CalculateDigest(const EVP_MD* md, const uint8_t* data, size_t len, uint8_t* 
     if (!mdCtx)
         goto end;
 
-    if (!EVP_DigestInit_ex(mdCtx, md, NULL) || !EVP_DigestUpdate(mdCtx, data, len) || !EVP_DigestFinal_ex(mdCtx, digest, &outLen))
+    if (!EVP_DigestInit_ex(mdCtx, md, nullptr) || !EVP_DigestUpdate(mdCtx, data, len) || !EVP_DigestFinal_ex(mdCtx, digest, &outLen))
         goto end;
 
 end:

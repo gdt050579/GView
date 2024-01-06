@@ -618,7 +618,7 @@ ColorPair Instance::OffsetToColor(uint64 offset)
     // color
     if (settings)
     {
-        if (showSyncCompare && settings->bufferColorCallback)
+        if ((showCodeExecution || showSyncCompare) && settings->bufferColorCallback)
         {
             if ((offset >= bufColor.start) && (offset <= bufColor.end))
                 return bufColor.color;
@@ -836,26 +836,19 @@ void Instance::WriteLineAddress(DrawLineInfo& dli)
     if (this->Layout.lineNameSize > 0)
     {
         auto e             = n + this->Layout.lineNameSize;
-        const char* nm     = nullptr;
-        const char* nm_end = nullptr;
+        const char* nm     = "--------------------------------------------------------------------------------------------------------------";
+        const char* nm_end = nm + 100;
 
-        if (auto z = this->settings->zList.OffsetToZone(dli.offset))
+        auto z = this->settings->zList.OffsetToZone(dli.offset);
+        if (z)
         {
             nm     = z->name.GetText();
             nm_end = nm + z->name.Len();
         }
-        else
-        {
-            nm     = "--------------------------------------------------------------------------------------------------------------";
-            nm_end = nm + 100;
-        }
 
         while (n < e)
         {
-            if (nm < nm_end)
-                n->Code = *nm;
-            else
-                n->Code = ' ';
+            n->Code = nm < nm_end ? *nm : ' ';
             n->Color = c;
             n++;
             nm++;
@@ -1604,6 +1597,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
     case VIEW_COMMAND_DEACTIVATE_SYNC:
         moveInSync = false;
         return true;
+
+    case VIEW_COMMAND_ACTIVATE_CODE_EXECUTION:
+        showCodeExecution = true;
+        return true;
+    case VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION:
+        showCodeExecution = false;
+        return true;
     }
     return false;
 }
@@ -1993,7 +1993,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
             mpInfo.location = MouseLocation::Outside;
     }
 }
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -2003,10 +2003,10 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         MoveTo(mpInfo.bufferOffset, false);
     }
 }
-void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
 }
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -2030,7 +2030,7 @@ bool Instance::OnMouseLeave()
 {
     return false;
 }
-bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {

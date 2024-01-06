@@ -1,22 +1,7 @@
 #include "DissasmViewer.hpp"
+#include "DissasmKeys.hpp"
 #include <cmath>
 
-constexpr uint32 COMMAND_ADD_NEW_TYPE           = 100;
-constexpr uint32 COMMAND_ADD_SHOW_FILE_CONTENT  = 101;
-constexpr uint32 COMMAND_EXPORT_ASM_FILE        = 102;
-constexpr uint32 COMMAND_JUMP_BACK              = 103;
-constexpr uint32 COMMAND_JUMP_FORWARD           = 104;
-constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
-
-// TODO: fix remove duplicate with Instance.cpp
-constexpr int32 RIGHT_CLICK_MENU_CMD_NEW        = 0;
-constexpr int32 RIGHT_CLICK_MENU_CMD_EDIT       = 1;
-constexpr int32 RIGHT_CLICK_MENU_CMD_DELETE     = 2;
-constexpr int32 RIGHT_CLICK_MENU_CMD_COLLAPSE   = 3;
-constexpr int32 RIGHT_CLICK_ADD_COMMENT         = 4;
-constexpr int32 RIGHT_CLICK_REMOVE_COMMENT      = 5;
-constexpr int32 RIGHT_CLICK_DISSASM_ADD_ZONE    = 6;
-constexpr int32 RIGHT_CLICK_DISSASM_REMOVE_ZONE = 7;
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
@@ -56,7 +41,7 @@ void Instance::AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo)
     }*/
 }
 
-void Instance::MoveTo(int32 offset, int32 lines, bool select)
+void Instance::MoveTo(int32 offset, int32 lines, AppCUI::Input::Key key, bool select)
 {
     // TODO-- HERE!!
     //  if (offset == this->Cursor.currentPos)
@@ -65,15 +50,19 @@ void Instance::MoveTo(int32 offset, int32 lines, bool select)
     //      return;
     //  }
 
+    const bool ctrl_down = ((key & Key::Ctrl) != Key::None);
+    const bool alt_down  = ((key & Key::Alt) != Key::None);
+
     auto zoneId = -1;
+
     if (select)
-        zoneId = this->selection.BeginSelection(Cursor.GetOffset(Layout.textSize));
+        zoneId = this->selection.BeginSelection(Cursor.ToLinePosition(), ctrl_down, alt_down);
 
     MoveScrollTo(offset, lines);
 
     if ((select) && (zoneId >= 0))
     {
-        this->selection.UpdateSelection(zoneId, Cursor.GetOffset(Layout.textSize));
+        this->selection.UpdateSelection(zoneId, Cursor.ToLinePosition(), ctrl_down, alt_down);
         // UpdateCurrentSelection();
     }
     // return;
@@ -107,6 +96,7 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
 {
     if (!Layout.totalLinesSize)
         return;
+    Cursor.hasMovedView = false;
 
     Cursor.offset += offset;
     // this->Cursor.startViewLine += lines;
@@ -117,7 +107,10 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
             lines += static_cast<int32>(Cursor.lineInView);
             Cursor.lineInView = 0;
             if (lines != 0)
+            {
                 Cursor.startViewLine += lines;
+                Cursor.hasMovedView = true;
+            }
         }
         else
         {
@@ -127,11 +120,12 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
     else
     {
         Cursor.lineInView += lines;
-        if (Cursor.lineInView >= Layout.visibleRows - 1)
+        if (Cursor.lineInView > Layout.visibleRows - 1)
         {
             const auto diff = abs(static_cast<int32>(Cursor.lineInView) - static_cast<int32>(Layout.visibleRows - 1));
             Cursor.startViewLine += diff;
             Cursor.lineInView -= diff;
+            Cursor.hasMovedView = true;
         }
     }
     /*if (this->Cursor.startViewLine > old)
@@ -146,7 +140,7 @@ void Instance::MoveScrollTo(int32 offset, int32 lines)
     }*/
 }
 
-void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
+void Instance::OnMousePressed(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -157,7 +151,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
         {
             const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
             const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
-            MoveTo(offsetDiff, linesDiff, false);
+            MoveTo(offsetDiff, linesDiff, keyCode, false);
         }
         else if (button == MouseButton::Right)
         {
@@ -176,7 +170,7 @@ void Instance::OnMousePressed(int x, int y, AppCUI::Input::MouseButton button)
     }
 }
 
-bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
+bool Instance::OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key keyCode)
 {
     MousePositionInfo mpInfo;
     AnalyzeMousePosition(x, y, mpInfo);
@@ -185,13 +179,13 @@ bool Instance::OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button)
     {
         const int32 linesDiff  = static_cast<int32>(mpInfo.lines) - Cursor.lineInView;
         const int32 offsetDiff = static_cast<int32>(mpInfo.offset) - Cursor.offset;
-        MoveTo(offsetDiff, linesDiff, true);
+        MoveTo(offsetDiff, linesDiff, keyCode, true);
         return true;
     }
     return false;
 }
 
-bool Instance::OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction)
+bool Instance::OnMouseWheel(int, int, Input::MouseWheel direction, Input::Key)
 {
     switch (direction)
     {
@@ -218,36 +212,36 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     {
     case Key::Down:
         if (Cursor.startViewLine + Cursor.lineInView + 1 <= Layout.totalLinesSize)
-            MoveTo(0, 1, select);
+            MoveTo(0, 1, keyCode, select);
         return true;
     case Key::Up:
         if (Cursor.startViewLine + Cursor.lineInView > 0)
-            MoveTo(0, -1, select);
+            MoveTo(0, -1, keyCode, select);
         else
-            MoveTo(-static_cast<int32>(Cursor.offset), 0, select);
+            MoveTo(-static_cast<int32>(Cursor.offset), 0, keyCode, select);
         return true;
     case Key::Left:
         if (this->Cursor.offset > 0)
-            MoveTo(-1, 0, select);
+            MoveTo(-1, 0, keyCode, select);
         return true;
     case Key::Right:
         if (this->Cursor.offset < this->Layout.textSize)
-            MoveTo(1, 0, select);
+            MoveTo(1, 0, keyCode, select);
         return true;
     case Key::PageDown:
         if (Cursor.startViewLine + Cursor.lineInView + this->Layout.visibleRows <= Layout.totalLinesSize)
-            MoveTo(0, this->Layout.visibleRows, select);
+            MoveTo(0, this->Layout.visibleRows, keyCode, select);
         else
-            MoveTo(0, Layout.totalLinesSize - Cursor.startViewLine - Cursor.lineInView, select);
+            MoveTo(0, Layout.totalLinesSize - Cursor.startViewLine - Cursor.lineInView, keyCode, select);
         return true;
     case Key::PageUp:
         if (Cursor.startViewLine + Cursor.lineInView >= this->Layout.visibleRows)
-            MoveTo(0, -static_cast<int32>(this->Layout.visibleRows), select);
+            MoveTo(0, -static_cast<int32>(this->Layout.visibleRows), keyCode, select);
         else
-            MoveTo(0, -static_cast<int32>(Cursor.startViewLine + Cursor.lineInView), select);
+            MoveTo(0, -static_cast<int32>(Cursor.startViewLine + Cursor.lineInView), keyCode, select);
         return true;
     case Key::Home:
-        MoveTo(-static_cast<int32>(Cursor.offset), 0, select);
+        MoveTo(-static_cast<int32>(Cursor.offset), 0, keyCode, select);
         return true;
     case Key::End:
         MoveTo(this->Layout.textSize - 1 - Cursor.offset, select);
@@ -276,6 +270,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Space:
         ProcessSpaceKey();
         return true;
+    case Key::Enter:
+        OpenCurrentSelection();
+        return true;
     }
     if (charCode == ';')
     {
@@ -295,6 +292,7 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
     commandBar.SetCommand(config.Keys.JumpBack, "Jump back", COMMAND_JUMP_BACK);
     commandBar.SetCommand(config.Keys.JumpForward, "Jump forward", COMMAND_JUMP_FORWARD);
     commandBar.SetCommand(config.Keys.DissasmGotoEntrypoint, "Entry point", COMMAND_DISSAM_GOTO_ENTRYPOINT);
+
     return false;
 }
 

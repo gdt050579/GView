@@ -71,7 +71,7 @@ extern "C"
                 }
                 else
                 {
-                    const auto FA = pe->RVAtoFilePointer(dr->VirtualAddress);
+                    const auto FA = pe->RVAToFA(dr->VirtualAddress);
                     if (FA != PE_INVALID_ADDRESS)
                     {
                         settings.AddZone(FA, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
@@ -97,7 +97,7 @@ extern "C"
 
         // set entry point
         const uint32 addressOfEntryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
-        settings.SetEntryPointOffset(pe->RVAtoFilePointer(addressOfEntryPoint));
+        settings.SetEntryPointOffset(pe->RVAToFA(addressOfEntryPoint));
 
         const uint32 pointerToSymbolTable = pe->hdr64 ? pe->nth64.FileHeader.PointerToSymbolTable : pe->nth32.FileHeader.PointerToSymbolTable;
         if (pointerToSymbolTable > 0)
@@ -155,12 +155,12 @@ extern "C"
                 if (temp.CompareWith(".text") == 0)
                 {
                     uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
-                    entryPoint        = pe->RVAtoFilePointer(entryPoint);
+                    entryPoint        = pe->RVAToFA(entryPoint);
 
-                    DissasmViewer::DissasmArchitecture architecture =
-                          pe->hdr64 ? DissasmViewer::DissasmArchitecture::x64 : DissasmViewer::DissasmArchitecture::x86;
+                    DissasmViewer::DisassemblyLanguage language =
+                          pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, architecture);
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
                     break;
                 }
             }
@@ -217,8 +217,8 @@ UInt16 e_res[4];)");
         auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
-        CreateBufferView(win, pe);
         CreateDissasmView(win, pe);
+        CreateBufferView(win, pe);
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(win->GetObject(), pe)), true);
@@ -259,6 +259,7 @@ UInt16 e_res[4];)");
         sect["Description"]              = "Portable executable format for Windows OS binaries";
         sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
         sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
+        sect["Command.AreaHighlighter"]  = Key::Alt | Key::F9;
     }
 }
 

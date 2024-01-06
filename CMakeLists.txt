@@ -128,6 +128,18 @@ add_subdirectory(AppCUI)
 add_subdirectory(GViewCore)
 add_subdirectory(GView)
 
+if (APPLE)
+    if (CMAKE_GENERATOR STREQUAL "Xcode")
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
+    endif()
+endif()
+
 # Types supported by GView
 add_subdirectory(Types/PE)
 add_subdirectory(Types/ICO)
@@ -149,6 +161,8 @@ add_subdirectory(Types/VBA)
 add_subdirectory(Types/JS)
 add_subdirectory(Types/PYEXTRACTOR)
 add_subdirectory(Types/ZIP)
+add_subdirectory(Types/SQLite)
+
 
 # Generic plugins supported by GView
 add_subdirectory(GenericPlugins/CharacterTable)

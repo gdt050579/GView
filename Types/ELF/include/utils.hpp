@@ -783,6 +783,8 @@ static std::string_view GetNameFromSectionType(uint32 sectionType)
         return "GROUP";
     case SHT_SYMTAB_SHNDX:
         return "SYMTAB_SHNDX";
+    case SHT_RELR:
+        return "RELR";
     case SHT_GNU_ATTRIBUTES:
         return "GNU_ATTRIBUTES";
     case SHT_GNU_HASH:

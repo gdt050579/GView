@@ -34,7 +34,7 @@ DeleteDialog::DeleteDialog(TokenObject& tok, const char16* text, bool hasSelecti
     Factory::Button::Create(this, "&Delete", "l:21,b:0,w:13", BTN_ID_OK)->SetFocus();
     Factory::Button::Create(this, "&Cancel", "l:36,b:0,w:13", BTN_ID_CANCEL);
 }
-bool DeleteDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
+bool DeleteDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     switch (eventType)
     {

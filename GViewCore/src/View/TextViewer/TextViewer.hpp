@@ -182,10 +182,10 @@ namespace View
             virtual bool ShowCopyDialog() override;
 
             // mouse events
-            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;            
+            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+            virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key) override;            
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

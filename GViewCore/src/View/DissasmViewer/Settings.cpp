@@ -16,9 +16,9 @@ void Settings::SetDefaultDisassemblyLanguage(DisassemblyLanguage lang)
     INTERNAL_SETTINGS->defaultLanguage = lang;
 }
 
-void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DissasmArchitecture architecture, DisassemblyLanguage lang)
+void Settings::AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang)
 {
-    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang, architecture };
+    INTERNAL_SETTINGS->disassemblyZones[zoneStart] = { zoneStart, zoneSize, zoneDissasmStartPoint, lang };
 }
 
 void Settings::AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType)

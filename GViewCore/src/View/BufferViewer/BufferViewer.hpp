@@ -36,6 +36,7 @@ struct SettingsData
     Reference<PositionToColorInterface> positionToColorCallback{ nullptr };
     Reference<BufferColorInterface> bufferColorCallback{ nullptr };
     Reference<OnStartViewMoveInterface> onStartViewMoveCallback{ nullptr };
+    Reference<BufferColorInterface> codeExecutionColorCallback{ nullptr };
     String name;
     SettingsData();
 
@@ -254,6 +255,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     bool showSyncCompare{ false };
     bool moveInSync{ false };
     bool showTypeObjects{ true };
+    bool showCodeExecution{ false };
     CodePage codePage{ CodePageID::DOS_437 };
     Pointer<SettingsData> settings;
     Reference<GView::Object> obj;
@@ -329,13 +331,13 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
     // mouse events
-    virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-    virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
-    virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
+    virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+    virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+    virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
     virtual bool OnMouseEnter() override;
     virtual bool OnMouseOver(int x, int y) override;
     virtual bool OnMouseLeave() override;
-    virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+    virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key) override;
 
     // scrollbar data
     virtual void OnUpdateScrollBars() override;

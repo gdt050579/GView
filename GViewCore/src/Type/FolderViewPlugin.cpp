@@ -25,7 +25,7 @@ constexpr string_view folderIcon = "................"  // 1
 class DefaultInformationPanel : public TabPage
 {
   public:
-    DefaultInformationPanel(Reference<Object> obj) : TabPage("&Information")
+    DefaultInformationPanel(Reference<Object>) : TabPage("&Information")
     {
         Factory::ListView::Create(this, "d:c", { "n:Field,a:l,w:10", "n:Value,a:l,w:100" }, ListViewFlags::None);
     }
@@ -41,7 +41,7 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     {
         return "Folder";
     }
-    void RunCommand(std::string_view commandName) override
+    void RunCommand(std::string_view) override
     {
     }
 
@@ -49,7 +49,7 @@ class FolderType : public TypeInterface, public View::ContainerViewer::Enumerate
     virtual bool PopulateItem(TreeViewItem item) override;
     virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
 };
-bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem parent)
+bool FolderType::BeginIteration(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem)
 {
     try
     {
@@ -105,7 +105,7 @@ bool FolderType::PopulateItem(TreeViewItem item)
 
     return dirIT != std::filesystem::directory_iterator();
 }
-void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem item)
+void FolderType::OnOpenItem(std::u16string_view relativePath, AppCUI::Controls::TreeViewItem)
 {
     std::filesystem::path path = root;
     path /= relativePath;
