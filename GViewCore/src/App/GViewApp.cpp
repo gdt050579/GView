@@ -63,7 +63,8 @@ void GView::App::Run()
 }
 bool GView::App::ResetConfiguration()
 {
-    IniObject ini;
+    IniObject ini = {};
+    ini.CreateFromFile(GetAppSettingsFile());
 
     // for AppCUI
     AppCUI::Application::UpdateAppCUISettings(ini, true);
