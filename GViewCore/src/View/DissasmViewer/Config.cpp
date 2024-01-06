@@ -3,6 +3,7 @@
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
 using namespace AppCUI::Graphics;
+using namespace AppCUI::Controls;
 using AppCUI::Graphics::Color;
 
 void Config::Update(AppCUI::Utils::IniSection sect)
@@ -59,4 +60,33 @@ void Config::Initialize()
     }
 
     this->Loaded = true;
+}
+
+KeyConfigDisplayWindow::KeyConfigDisplayWindow() : Window("Available keys", "d:c,w:160,h:30", Controls::WindowFlags::Sizeable)
+{
+    auto list =
+          Factory::ListView::Create(this, "x:1,y:1,w:99%,h:99%", { "n:Caption,w:30%", "n:Description,w:50%", "n:Key,w:20%" }, ListViewFlags::PopupSearchBar);
+
+    LocalString<32> buffer;
+
+    for (const auto& key : Config::AllKeyboardCommands) {
+        buffer.Clear();
+        if (!KeyUtils::ToString(key.get().Key, buffer))
+            buffer.SetFormat("Failed to convert key");
+        const std::initializer_list<ConstString> items = { key.get().Caption, key.get().Explanation, buffer.GetText() };
+        list->AddItem(items);
+    }
+}
+
+bool KeyConfigDisplayWindow::OnEvent(Utils::Reference<Control> reference, Controls::Event eventType, int ID)
+{
+    switch (eventType) {
+    case Event::ButtonClicked:
+    case Event::WindowAccept:
+    case Event::WindowClose:
+        Exit(Dialogs::Result::Cancel);
+        return true;
+    }
+
+    return false;
 }
