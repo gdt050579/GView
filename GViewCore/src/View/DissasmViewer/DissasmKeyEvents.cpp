@@ -1,5 +1,4 @@
 #include "DissasmViewer.hpp"
-#include "DissasmKeys.hpp"
 #include <cmath>
 
 
@@ -285,13 +284,8 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 
 bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
-    const AppCUI::Utils::ConstString ShowFileContentText = config.ShowFileContent ? "ShowFileContent" : "HideFileContent";
-    commandBar.SetCommand(config.Keys.AddNewType, "AddNewType", COMMAND_ADD_NEW_TYPE);
-    commandBar.SetCommand(config.Keys.ShowFileContentKey, ShowFileContentText, COMMAND_ADD_SHOW_FILE_CONTENT);
-    commandBar.SetCommand(config.Keys.ExportAsmToFile, "Export asm file", COMMAND_EXPORT_ASM_FILE);
-    commandBar.SetCommand(config.Keys.JumpBack, "Jump back", COMMAND_JUMP_BACK);
-    commandBar.SetCommand(config.Keys.JumpForward, "Jump forward", COMMAND_JUMP_FORWARD);
-    commandBar.SetCommand(config.Keys.DissasmGotoEntrypoint, "Entry point", COMMAND_DISSAM_GOTO_ENTRYPOINT);
+    for (const auto& cmd : config.CommandBarCommands)
+        commandBar.SetCommand(cmd.get().Key, cmd.get().Caption, cmd.get().CommandId);
 
     return false;
 }
