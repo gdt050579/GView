@@ -682,7 +682,7 @@ inline bool ExtractCallsToInsertFunctionNames(
             {
                 if (value < offsets[0].offset)
                     value += offsets[0].offset;
-                const char* prefix = isJump ? "jmp_0x" : "sub_0x";
+                const char* prefix = isJump ? "offset_0x" : "sub_0x";
                 auto callName      = FormatFunctionName(value, prefix);
                 callsFound.emplace_back(value, callName.GetText());
             }
