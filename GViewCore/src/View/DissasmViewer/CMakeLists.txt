@@ -1,6 +1,7 @@
 target_sources(
 	GViewCore PRIVATE 
 	DissasmViewer.hpp
+	Config.hpp
 	Config.cpp
 	GoToDialog.cpp
 	Instance.cpp
@@ -10,11 +11,9 @@ target_sources(
 	DissasmProperties.cpp
 	DissasmKeyEvents.cpp
         DissasmX86.cpp
-	CommentDataWindow.cpp
+	SingleSelectionDataWindow.cpp
         AdvancedSelection.hpp
 	AdvancedSelection.cpp
 	DissasmDataTypes.hpp
 	DissasmDataTypes.cpp
-	DissasmKeys.hpp
-	DissasmKeys.cpp
 )

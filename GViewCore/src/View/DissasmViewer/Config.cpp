@@ -1,14 +1,17 @@
-#include "DissasmViewer.hpp"
+#include "Config.hpp"
 
 using namespace GView::View::DissasmViewer;
 using namespace AppCUI::Input;
+using namespace AppCUI::Graphics;
+using AppCUI::Graphics::Color;
 
-void Config::Update(IniSection sect)
+void Config::Update(AppCUI::Utils::IniSection sect)
 {
-    sect.UpdateValue("AddNewType", Key::F5, true);
-    sect.UpdateValue("ShowFileContentKey", Key::F9, true);
+    for (const auto& cmd : AllKeyboardCommands) {
+        sect.UpdateValue(cmd.get().Caption, cmd.get().Key, true);
+    }
+
     sect.UpdateValue("ShowFileContent", true, true);
-    sect.UpdateValue("AsmExportToFile", Key::F8, true);
     sect.UpdateValue("DeepScanDissasmOnStart", false, true);
 }
 void Config::Initialize()
@@ -38,30 +41,19 @@ void Config::Initialize()
 
     bool foundSettings = false;
     auto ini           = AppCUI::Application::GetAppSettings();
-    if (ini)
-    {
+    if (ini) {
         auto sect = ini->GetSection("DissasmView");
-        if (sect.Exists())
-        {
-            this->Keys.AddNewType              = sect.GetValue("AddNewType").ToKey(Key::F6);
-            this->Keys.ShowFileContentKey      = sect.GetValue("ShowFileContentKey").ToKey(Key::F9);
-            this->Keys.ExportAsmToFile         = sect.GetValue("AsmExportToFile").ToKey(Key::F8);
-            this->Keys.JumpBack                = sect.GetValue("JumpBack").ToKey(Key::Ctrl | Key::Q);
-            this->Keys.JumpForward             = sect.GetValue("JumpForward").ToKey(Key::Ctrl | Key::E);
-            this->Keys.DissasmGotoEntrypoint   = sect.GetValue("Entrypoint").ToKey(Key::F2);
+        if (sect.Exists()) {
+            for (auto& cmd : AllKeyboardCommands) {
+                cmd.get().Key = sect.GetValue(cmd.get().Caption).ToKey(cmd.get().Key);
+            }
+
             this->ShowFileContent              = sect.GetValue("ShowFileContent").ToBool(true);
             this->EnableDeepScanDissasmOnStart = sect.GetValue("DeepScanDissasmOnStart").ToBool(false);
             foundSettings                      = true;
         }
     }
-    if (!foundSettings)
-    {
-        this->Keys.AddNewType              = Key::F6;
-        this->Keys.ShowFileContentKey      = Key::F9;
-        this->Keys.ExportAsmToFile         = Key::F8;
-        this->Keys.JumpBack                = Key::Ctrl | Key::Q;
-        this->Keys.JumpForward             = Key::Ctrl | Key::E;
-        this->Keys.DissasmGotoEntrypoint   = Key::F2;
+    if (!foundSettings) {
         this->ShowFileContent              = true;
         this->EnableDeepScanDissasmOnStart = false;
     }
