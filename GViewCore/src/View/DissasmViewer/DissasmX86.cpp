@@ -289,7 +289,7 @@ bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
     bool is_hex = false;
     while (ptr && *ptr != '\0') {
         if (!start) {
-            if (ptr && *ptr == '0') // not hex
+            if (*ptr == '0') // not hex
             {
                 ptr++;
                 if (!ptr || *ptr != 'x')
