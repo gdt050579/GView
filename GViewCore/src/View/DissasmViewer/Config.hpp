@@ -11,6 +11,7 @@ constexpr uint32 COMMAND_JUMP_FORWARD           = 104;
 constexpr uint32 COMMAND_DISSAM_GOTO_ENTRYPOINT = 105;
 constexpr uint32 COMMAND_ADD_OR_EDIT_COMMENT    = 106;
 constexpr uint32 COMMAND_REMOVE_COMMENT         = 107;
+constexpr uint32 COMMAND_AVAILABLE_KEYS         = 108;
 
 using AppCUI::int32;
 // TODO: reenable
@@ -80,9 +81,11 @@ namespace View
             inline static DissasmCommand GotoEntrypointCommand = {
                 Input::Key::F2, "GoToEntrypoint", "Go to the entry point of the dissasm zone", COMMAND_DISSAM_GOTO_ENTRYPOINT
             };
+            inline static DissasmCommand ShowKeysWindowCommand = { Input::Key::F1, "ShowKeys", "Show available keys in dissasm", COMMAND_AVAILABLE_KEYS };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 6> CommandBarCommands = {
-                AddNewTypeCommand, ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand, JumpForwardCommand, GotoEntrypointCommand
+            inline static std::array<std::reference_wrapper<DissasmCommand>, 7> CommandBarCommands = {
+                AddNewTypeCommand,  ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand,
+                JumpForwardCommand, GotoEntrypointCommand,        ShowKeysWindowCommand
             };
 
             // Other keys
@@ -94,9 +97,9 @@ namespace View
                                                                                                     RemoveCommentCommand,
                                                                                                     RenameLabelCommand };
 
-            inline static std::array<std::reference_wrapper<DissasmCommand>, 8> AllKeyboardCommands = {
-                AddNewTypeCommand,  ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand,
-                JumpForwardCommand, GotoEntrypointCommand,        AddOrEditCommentCommand,     RemoveCommentCommand
+            inline static std::array<std::reference_wrapper<DissasmCommand>, 9> AllKeyboardCommands = {
+                AddNewTypeCommand,     ShowOrHideFileContentCommand, AsmExportFileContentCommand, JumpBackCommand,      JumpForwardCommand,
+                GotoEntrypointCommand, AddOrEditCommentCommand,      RemoveCommentCommand,        ShowKeysWindowCommand
             };
             bool Loaded;
 
@@ -104,6 +107,13 @@ namespace View
             bool EnableDeepScanDissasmOnStart;
             static void Update(AppCUI::Utils::IniSection sect);
             void Initialize();
+        };
+
+        class KeyConfigDisplayWindow : public Controls::Window
+        {
+          public:
+            KeyConfigDisplayWindow();
+            virtual bool OnEvent(AppCUI::Utils::Reference<Control>, AppCUI::Controls::Event eventType, int ID) override;
         };
     } // namespace DissasmViewer
 } // namespace View

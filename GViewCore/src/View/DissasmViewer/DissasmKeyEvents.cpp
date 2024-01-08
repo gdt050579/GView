@@ -315,6 +315,13 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             ProcessSpaceKey(true);
             return true;
         }
+        case COMMAND_AVAILABLE_KEYS: {
+            {
+                KeyConfigDisplayWindow windows;
+                windows.Show();
+            }
+            return true;
+        }
         default:
             return false;
         }
