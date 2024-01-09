@@ -45,7 +45,18 @@ Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : setting
         imgView->SetImage(this->settings->icon, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
     this->propList = Factory::ListView::Create(this, "l:17,t:0,r:0,h:8", { "n:Field,w:20", "n:Value,w:200" }, ListViewFlags::HideColumns);
 
-    this->items = Factory::TreeView::Create(this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
+    auto parentSplit = Factory::Splitter::Create(this, "l:0,t:8,r:0,b:0", SplitterFlags::Horizontal);
+
+    this->items = Factory::TreeView::Create(parentSplit, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
+
+    auto middleSplit = Factory::Splitter::Create(parentSplit, "l:0,t:0,b:0", SplitterFlags::Vertical);
+    auto lPanel      = Factory::Panel::Create(middleSplit, "l:50%,t:0,b:0");
+
+    auto lLabel = Factory::Label::Create(lPanel, "lPanel","l:10,t:0,b:0,w:95%");
+
+    auto rPanel      = Factory::Panel::Create(middleSplit, "r:50%,t:0,b:0");
+    auto rLabel = Factory::Label::Create(rPanel, "rPanel", "l:10,t:0,b:0,w:95%");
+
     this->items->Handlers()->OnItemToggle         = this;
     this->items->Handlers()->OnItemPressed        = this;
     this->items->Handlers()->OnCurrentItemChanged = this;
