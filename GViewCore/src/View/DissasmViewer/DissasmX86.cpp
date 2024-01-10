@@ -968,8 +968,8 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
             if (cacheLineIt->address == (*labelIt)->hexValue.value()) {
                 actualLabelsLines.push_back(&(*cacheLineIt));
                 ++labelIt;
-            }
-            ++cacheLineIt;
+            } else
+                ++cacheLineIt;
             //++cacheLineIt;
         }
     }
