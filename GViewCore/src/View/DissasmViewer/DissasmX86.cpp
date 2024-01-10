@@ -676,9 +676,37 @@ inline bool ExtractCallsToInsertFunctionNames(
         }
     }
 
+    auto val = callsFound[0].first;
+
+    enum labelType { SUB, OFFSET, OTHER };
+    auto getLabelType = [](const std::string& s) -> labelType {
+        assert(!s.empty());
+        if (s.size() < 4)
+            return OTHER;
+        if (memcmp(s.c_str(), "sub_", 4) == 0)
+            return SUB;
+        if (s.size() < 7)
+            return OTHER;
+        if (memcmp(s.c_str(), "offset_", 7) == 0)
+            return OFFSET;
+        return OTHER;
+    };
+
+    // TODO: this can be extracted for the user to add / delete its own operations
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
-    std::sort(callsFound.begin(), callsFound.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-    callsFound.erase(std::unique(callsFound.begin(), callsFound.end()), callsFound.end());
+    std::sort(callsFound.begin(), callsFound.end(), [getLabelType](const auto& a, const auto& b) {
+        if (a.first < b.first)
+            return true;
+        if (a.first > b.first)
+            return false;
+        return getLabelType(a.second) < getLabelType(b.second);
+
+        // return a.second.compare(b.second) > 0; // move sub instructions first
+    });
+
+    // TODO: if there are missing called improve predicate to delele only sub and offset
+    callsFound.erase(
+          std::unique(callsFound.begin(), callsFound.end(), [](const auto& left, const auto& right) { return left.first == right.first; }), callsFound.end());
 
     // callsFound.push_back({ 1030, "call2" });
     // callsFound.push_back({ 1130, "call 3" });
