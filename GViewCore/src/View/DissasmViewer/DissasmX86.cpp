@@ -656,6 +656,7 @@ inline bool ExtractCallsToInsertFunctionNames(
 
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
     std::sort(callsFound.begin(), callsFound.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    callsFound.erase(std::unique(callsFound.begin(), callsFound.end()), callsFound.end());
 
     // callsFound.push_back({ 1030, "call2" });
     // callsFound.push_back({ 1130, "call 3" });
