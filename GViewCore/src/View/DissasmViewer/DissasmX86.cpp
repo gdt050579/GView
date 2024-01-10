@@ -963,13 +963,13 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     {
         auto cacheLineIt = cachedAsmLines.begin();
         auto labelIt     = startInstructions.begin();
-        while (labelIt != startInstructions.end()) {
+        while (labelIt != startInstructions.end() && cacheLineIt != cachedAsmLines.end()) {
             if (cacheLineIt->address == (*labelIt)->hexValue.value()) {
                 actualLabelsLines.push_back(&(*cacheLineIt));
                 ++labelIt;
-                ++cacheLineIt;
             }
             ++cacheLineIt;
+            //++cacheLineIt;
         }
     }
 
