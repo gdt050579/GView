@@ -18,6 +18,7 @@ constexpr size_t DISSASM_INSTRUCTION_OFFSET_MARGIN = 500;
 constexpr uint32 callOP                            = 1819042147u; //*(uint32*) "call";
 constexpr uint32 addOP                             = 6579297u;    //*((uint32*) "add");
 constexpr uint32 pushOP                            = 1752397168u; //*((uint32*) "push");
+constexpr uint32 movOP                             = 7761773u;    //*((uint32*) "mov");
 
 const uint8 HEX_MAPPER[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0, 0, 0,
@@ -638,6 +639,8 @@ inline bool ExtractCallsToInsertFunctionNames(
 
     std::vector<std::pair<uint64, std::string>> callsFound;
     callsFound.reserve(16);
+    bool foundCall     = false;
+    uint64 callAddress = 0;
     while (cs_disasm_iter(handle, &data, &size, &address, insn) && linesToDecode > 0) {
         linesToDecode--;
         const bool isJump = insn->mnemonic[0] == 'j';
@@ -650,6 +653,25 @@ inline bool ExtractCallsToInsertFunctionNames(
                 const char* prefix = isJump ? "offset_0x" : "sub_0x";
                 auto callName      = FormatFunctionName(value, prefix);
                 callsFound.emplace_back(value, callName.GetText());
+            }
+        } else {
+            const auto mnemonicVal = *(uint32*) insn->mnemonic;
+            if (foundCall) {
+                if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
+                    if (callAddress < offsets[0].offset)
+                        callAddress += offsets[0].offset;
+                    const char* prefix = "sub_0x";
+                    auto callName      = FormatFunctionName(callAddress, prefix);
+                    callsFound.emplace_back(callAddress, callName.GetText());
+                }
+                foundCall = false;
+            } else {
+                if (mnemonicVal == pushOP) {
+                    if (strcmp(insn->op_str, "ebp") == 0) {
+                        callAddress = insn->address;
+                        foundCall   = true;
+                    }
+                }
             }
         }
     }
