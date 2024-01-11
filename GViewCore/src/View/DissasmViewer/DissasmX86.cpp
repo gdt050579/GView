@@ -1440,6 +1440,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     if (computedValue == 0 || computedValue > zone->zoneDetails.startingZonePoint + zone->zoneDetails.size)
         return;
 
+    if (computedValue < zone->zoneDetails.startingZonePoint)
+        computedValue += zone->zoneDetails.startingZonePoint;
+
     // computedValue = 1064;
 
     diffLines = 0;

@@ -1426,10 +1426,9 @@ void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)
 {
-    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
-    const uint64 offsetEnd   = offsetStart + 1;
+    const auto linePos = Cursor.ToLinePosition();
 
-    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single zone!");
         return;
