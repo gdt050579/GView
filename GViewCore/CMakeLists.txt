@@ -4,7 +4,13 @@ cmake_minimum_required(VERSION 3.13)
 project(GViewCore VERSION 1.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-add_library(${PROJECT_NAME} SHARED)
+
+if(NOT DEFINED CMAKE_TESTING_ENABLED)
+    add_library(${PROJECT_NAME} SHARED)
+else()
+    add_executable(${PROJECT_NAME})
+endif()
+
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "lib")
 target_compile_definitions(${PROJECT_NAME} PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(${PROJECT_NAME} PRIVATE -DCORE_EXPORTABLE)
@@ -85,6 +91,7 @@ target_include_directories(GViewCore PUBLIC ../AppCUI)
 target_link_libraries(GViewCore PUBLIC AppCUI)
 
 include_directories(include)
+include_directories(src/3rdparty)
 include_directories(src/include)
 include_directories(src/View/BufferViewer)
 include_directories(src/View/ImageViewer)
@@ -93,6 +100,10 @@ include_directories(src/View/DissasmViewer)
 include_directories(src/View/TextViewer)
 include_directories(src/View/ContainerViewer)
 include_directories(src/View/LexicalViewer)
+if(DEFINED CMAKE_TESTING_ENABLED)
+    include_directories(src/3rdparty/catch)
+    target_sources(${PROJECT_NAME} PRIVATE src/3rdparty/catch/catch_amalgamated.hpp src/3rdparty/catch/catch_amalgamated.cpp)
+endif()
 add_subdirectory(src)
 
 

@@ -13,6 +13,8 @@
 #include "DissasmDataTypes.hpp"
 #include "Config.hpp"
 
+class DissasmTestInstance;
+
 namespace GView
 {
 namespace View
@@ -552,6 +554,8 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+
+            friend DissasmTestInstance;
         }; // Instance
 
         class SingleLineEditWindow : public Window

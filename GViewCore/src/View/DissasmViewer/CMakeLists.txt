@@ -17,3 +17,5 @@ target_sources(
 	DissasmDataTypes.hpp
 	DissasmDataTypes.cpp
 )
+
+add_testing_sources(GViewCore tests_dissasmviewer.cpp)
