@@ -245,6 +245,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Enter:
         OpenCurrentSelection();
         return true;
+    case Key::X:
+        CommandDissasmAddCollapsibleZone();
+        return true;
     }
 
     if (keyCode == Config::AddOrEditCommentCommand.Key) {
@@ -283,22 +286,25 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
             return true;
-        case RIGHT_CLICK_MENU_CMD_COLLAPSE:
-            AddNewCollapsibleZone();
-            return true;
+        //case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
+        //    AddNewCollapsibleTextZone();
+        //    return true;
         case RIGHT_CLICK_ADD_COMMENT:
             AddComment();
             return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();
             return true;
+        case RIGHT_CLICK_CLEAR_SELECTION:
+            selection.Clear();
+            return true;
         case COMMAND_EXPORT_ASM_FILE:
             CommandExportAsmFile();
             return true;
-        case RIGHT_CLICK_DISSASM_ADD_ZONE:
-            CommandDissasmAddZone();
+        case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
+            CommandDissasmAddCollapsibleZone();
             return true;
-        case RIGHT_CLICK_DISSASM_REMOVE_ZONE:
+        case RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE:
             CommandDissasmRemoveZone();
             return true;
         case COMMAND_JUMP_BACK: {

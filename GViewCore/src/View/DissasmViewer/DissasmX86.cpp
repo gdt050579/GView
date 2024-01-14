@@ -1486,40 +1486,175 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     Cursor.hasMovedView  = true;
 }
 
-void Instance::CommandDissasmAddZone()
+// void Instance::GoToDissasmCodeZoneLine(DissasmCodeZone* codeZone, uint32 levelToReach)
+//{
+//     if (codeZone->structureIndex == codeZone->extendedSize) {
+//         while (codeZone->levels.size() > 1) {
+//             codeZone->types.pop_back();
+//             codeZone->levels.pop_back();
+//         }
+//         codeZone->levels.pop_back();
+//         codeZone->levels.push_back(0);
+//         codeZone->structureIndex = 0;
+//         // codeZone->textFileOffset = codeZone->initialTextFileOffset;
+//     }
+//
+//     // uint32 levelToReach = dli.textLineToDraw;
+//     uint32& levelNow = codeZone->structureIndex;
+//
+//     // TODO: consider if this value can be bigger than int16
+//     // bool increaseOffset = levelNow < (int16) levelToReach;
+//
+//     // levelNow     = 0;
+//     // levelToReach = 47;
+//
+//     // TODO: consider optimization if the levelToReach > levelNow and levelToReach should reach close to 0 then it all should be reset to 0
+//     while (levelNow < levelToReach) {
+//         DissasmCodeInternalType& currentType = codeZone->types.back();
+//         uint32 currentLevel                  = codeZone->levels.back();
+//
+//         if (currentLevel < currentType.internalTypes.size()) {
+//             // UpdateCurrentZoneIndex(currentType.internalTypes[currentLevel], codeZone, true);
+//             codeZone->types.push_back(currentType.internalTypes[currentLevel]);
+//             codeZone->levels.push_back(0);
+//         } else {
+//             codeZone->types.pop_back();
+//             codeZone->levels.pop_back();
+//             currentLevel = codeZone->levels.back() + 1;
+//             codeZone->levels.pop_back();
+//             codeZone->levels.push_back(currentLevel);
+//             continue;
+//         }
+//
+//         levelNow++;
+//     }
+//
+//     // levelNow     = 47;
+//     // levelToReach = 0;
+//
+//     while (levelNow > levelToReach) {
+//         DissasmCodeInternalType& currentType = codeZone->types.back();
+//         uint32 currentLevel                  = codeZone->levels.back();
+//
+//         if (currentLevel > 0) {
+//             codeZone->levels.pop_back();
+//             currentLevel--;
+//             codeZone->levels.push_back(currentLevel);
+//             codeZone->types.push_back(currentType.internalTypes[currentLevel]);
+//             uint32 anteriorLevel = (uint32) currentType.internalTypes[currentLevel].internalTypes.size();
+//             if (anteriorLevel > 0)
+//                 anteriorLevel--;
+//             codeZone->levels.push_back(anteriorLevel);
+//         } else {
+//             // UpdateCurrentZoneIndex(codeZone->types.back(), codeZone, false);
+//             codeZone->types.pop_back();
+//             codeZone->levels.pop_back();
+//             continue;
+//         }
+//
+//         levelNow--;
+//     }
+// }
+
+void Instance::CommandDissasmAddCollapsibleZone()
 {
-    return;
+    // if (!selection.HasSelection(0)) {
+    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone!");
+    //     return;
+    // }
 
-    uint64 offsetStart = 0;
-    uint64 offsetEnd   = 0;
+    // const auto lineStart = selection.GetSelectionStart(0);
+    // const auto lineEnd   = selection.GetSelectionEnd(0);
 
-    // TODO: reenable this
-    /*if (!selection.HasAnySelection() || !selection.GetSelection(0, offsetStart, offsetEnd))
-    {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
-        return;
-    }*/
+    const LinePosition lineStart = { 8, 25 };
+    const LinePosition lineEnd   = { 11, 40 };
 
-    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart.line, lineEnd.line);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
     }
 
-    const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
-    if (zone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
+    const auto& parseZone = settings->parseZones[zonesFound[0].zoneIndex];
+    if (parseZone->zoneType != DissasmParseZoneType::DissasmCodeParseZone) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
     }
 
-    if (zonesFound[0].startingLine == 0) {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
+    if (zonesFound[0].startingLine <= 1) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please do not select the title in the collapsible zones!");
         return;
     }
 
-    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
 
-    offsetStart = offsetStart;
+    // uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
+    // uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
+    DissasmAddCollpasibleZone(zone, lineStart.line - 2, lineEnd.line - 2);
+
+    // if (zoneLineStart == 2)
+    //     zoneLineStart = 0;//the first zone is actually going from the left
+}
+
+void Instance::DissasmAddCollpasibleZone(DissasmCodeZone* zone, uint32 zoneLineStart, uint32 zoneLineEnd)
+{
+    // TODO: taken from process space, maybe extract it as function
+    uint32 diffLines = 0;
+    cs_insn* insn    = GetCurrentInstructionByLine(zoneLineStart, zone, obj, diffLines);
+    if (!insn) {
+        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+        return;
+    }
+    cs_free(insn, 1);
+
+    // diffLines++; // increased because of the menu bar
+
+    const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
+    decltype(DissasmCodeZone::types) types                = zone->types;
+    decltype(DissasmCodeZone::levels) levels              = zone->levels;
+
+    // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
+    const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
+    uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
+
+    auto& dissasmType      = zone->types.back().get();
+    const auto annotations = dissasmType.annotations;
+    for (const auto& entry : annotations) // no std::views::keys on mac
+    {
+        if (entry.first >= diffLines)
+            break;
+        actualLine++;
+    }
+
+    if (zoneLineStart < dissasmType.indexZoneStart || dissasmType.indexZoneEnd < zoneLineEnd) {
+        zone->structureIndex = index;
+        zone->types          = std::move(types);
+        zone->levels         = std::move(levels);
+
+        Dialogs::MessageBox::ShowNotification("Warning", "The selected zone is not valid!");
+        return;
+    }
+
+    DissasmCodeInternalType newZone;
+    newZone.beforeTextLines = dissasmType.beforeTextLines;
+    newZone.beforeAsmLines  = dissasmType.beforeAsmLines;
+    newZone.indexZoneStart  = zoneLineStart;
+    newZone.indexZoneEnd    = zoneLineEnd;
+
+    std::vector<uint32> indexesToRemove;
+    for (const auto& zoneVal : dissasmType.annotations) {
+        if (zoneVal.first >= zoneLineStart && zoneVal.first < zoneLineEnd) {
+            newZone.annotations.insert(zoneVal);
+            indexesToRemove.push_back(zoneVal.first);
+        } else if (zoneVal.first >= zoneLineEnd)
+            break;
+    }
+    for (const auto indexToRemove : indexesToRemove)
+        dissasmType.annotations.erase(indexToRemove);
+
+    dissasmType.internalTypes.emplace_back(std::move(newZone));
+
+    //diffLines = diffLines;
 }
 
 void Instance::CommandDissasmRemoveZone()

@@ -512,13 +512,14 @@ namespace View
             void OpenCurrentSelection();
 
             // Operations
-            void AddNewCollapsibleZone();
+            //void AddNewCollapsibleTextZone();
             void AddComment();
             void RemoveComment();
             void RenameLabel();
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
-            void CommandDissasmAddZone();
+            void CommandDissasmAddCollapsibleZone();
+            void DissasmAddCollpasibleZone(DissasmCodeZone* zone, uint32 zoneLineStart, uint32 zoneLineEnd);
             void CommandDissasmRemoveZone();
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
