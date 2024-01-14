@@ -9,6 +9,13 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_library(${PROJECT_NAME} SHARED)
 else()
     add_executable(${PROJECT_NAME})
+
+    find_package(Catch2 CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain) # Catch2::Catch2
+
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(${PROJECT_NAME})
 endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "lib")
@@ -100,10 +107,6 @@ include_directories(src/View/DissasmViewer)
 include_directories(src/View/TextViewer)
 include_directories(src/View/ContainerViewer)
 include_directories(src/View/LexicalViewer)
-if(DEFINED CMAKE_TESTING_ENABLED)
-    include_directories(src/3rdparty/catch)
-    target_sources(${PROJECT_NAME} PRIVATE src/3rdparty/catch/catch_amalgamated.hpp src/3rdparty/catch/catch_amalgamated.cpp)
-endif()
 add_subdirectory(src)
 
 

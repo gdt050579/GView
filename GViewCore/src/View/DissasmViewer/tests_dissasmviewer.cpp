@@ -1,4 +1,4 @@
-#include "catch_amalgamated.hpp"
+#include <catch.hpp>
 #include "DissasmViewer.hpp"
 
 using namespace GView::View::DissasmViewer;
