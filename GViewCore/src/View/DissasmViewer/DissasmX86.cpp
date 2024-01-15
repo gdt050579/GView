@@ -356,6 +356,11 @@ inline bool populateOffsetsVector(
 
     const auto instructionData = obj.GetData().Get(zoneDetails.startingZonePoint, static_cast<uint32>(zoneDetails.size), false);
 
+    if (offsets.empty()) {
+        offsets.reserve(256);
+        offsets.push_back({ zoneDetails.entryPoint, 0 });
+    }
+
     size_t minimalValue = offsets[0].offset;
 
     cs_insn* insn     = cs_malloc(handle);
@@ -1118,71 +1123,6 @@ bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
     return true;
 }
 
-bool Instance::InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
-{
-    // TODO: move this on init
-    if (!cs_support(CS_ARCH_X86)) {
-        dli.WriteErrorToScreen("Capstone does not support X86");
-        AdjustZoneExtendedSize(zone, 1);
-        return false;
-    }
-
-    switch (zone->zoneDetails.language) {
-    case DisassemblyLanguage::x86:
-        zone->internalArchitecture = CS_MODE_32;
-        break;
-    case DisassemblyLanguage::x64:
-        zone->internalArchitecture = CS_MODE_64;
-        break;
-    default: {
-        dli.WriteErrorToScreen("ERROR: unsupported language!");
-        return false;
-    }
-    }
-
-    uint32 totalLines = 0;
-    if (!populateOffsetsVector(zone->cachedCodeOffsets, zone->zoneDetails, obj, zone->internalArchitecture, totalLines)) {
-        dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
-        return false;
-    }
-    if (config.EnableDeepScanDissasmOnStart &&
-        !ExtractCallsToInsertFunctionNames(
-              zone->cachedCodeOffsets, zone, obj, zone->internalArchitecture, totalLines, settings->maxLocationMemoryMappingSize)) {
-        dli.WriteErrorToScreen("ERROR: failed to populate offsets vector!");
-        return false;
-    }
-    totalLines++; //+1 for title
-    AdjustZoneExtendedSize(zone, totalLines);
-    zone->lastDrawnLine    = 0;
-    const auto closestData = SearchForClosestAsmOffsetLineByLine(zone->cachedCodeOffsets, zone->lastDrawnLine);
-    zone->lastClosestLine  = closestData.line;
-    zone->isInit           = true;
-
-    zone->asmAddress = 0;
-    zone->asmSize    = zone->zoneDetails.size - zone->asmAddress;
-
-    const auto instructionData = obj->GetData().Get(zone->cachedCodeOffsets[0].offset + zone->asmAddress, static_cast<uint32>(zone->asmSize), false);
-    zone->lastData             = instructionData;
-    if (!instructionData.IsValid()) {
-        dli.WriteErrorToScreen("ERROR: extract valid data from file!");
-        return false;
-    }
-    zone->asmData = const_cast<uint8*>(instructionData.GetData());
-
-    const uint32 preReverseSize = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
-    zone->asmPreCacheData.cachedAsmLines.reserve(preReverseSize);
-
-    zone->structureIndex = 0;
-    zone->types.push_back(zone->dissasmType);
-    zone->levels.push_back(0);
-
-    zone->dissasmType.indexZoneStart = 0; //+1 for the title
-    zone->dissasmType.indexZoneEnd   = totalLines + 1;
-    // zone->dissasmType.annotations.insert({ 2, "loc fn" });
-
-    return true;
-}
-
 bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0) {
@@ -1212,8 +1152,19 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
 
         if (!zone->isInit) {
-            if (!InitDissasmZone(dli, zone))
-                return false;
+            {
+                DissasmCodeZoneInitData initData{};
+                initData.enableDeepScanDissasmOnStart = config.EnableDeepScanDissasmOnStart;
+                initData.obj                          = obj;
+                initData.dli                          = &dli;
+                initData.maxLocationMemoryMappingSize = settings->maxLocationMemoryMappingSize;
+                initData.visibleRows                  = Layout.visibleRows;
+
+                if (!zone->InitZone(initData))
+                    return false;
+                if (initData.hasAdjustedSize)
+                    AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+            }
         }
 
         return true;
@@ -1266,8 +1217,19 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         --currentLine;
 
     if (!zone->isInit) {
-        if (!InitDissasmZone(dli, zone))
-            return false;
+        {
+            DissasmCodeZoneInitData initData{};
+            initData.enableDeepScanDissasmOnStart = config.EnableDeepScanDissasmOnStart;
+            initData.obj                          = obj;
+            initData.dli                          = &dli;
+            initData.maxLocationMemoryMappingSize = settings->maxLocationMemoryMappingSize;
+            initData.visibleRows                  = Layout.visibleRows;
+
+            if (!zone->InitZone(initData))
+                return false;
+            if (initData.hasAdjustedSize)
+                AdjustZoneExtendedSize(zone, initData.adjustedZoneSize);
+        }
     }
 
     uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
@@ -1590,35 +1552,59 @@ void Instance::CommandDissasmAddCollapsibleZone()
 
     // uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
     // uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
-    DissasmAddCollpasibleZone(zone, lineStart.line - 2, lineEnd.line - 2);
+    // DissasmAddCollpasibleZone(zone, lineStart.line - 2, lineEnd.line - 2);
+
+    zone->AddCollapsibleZone(obj, 6, 10);
+    // zone->AddCollapsibleZone(obj, 2, 4);
 
     // if (zoneLineStart == 2)
     //     zoneLineStart = 0;//the first zone is actually going from the left
 }
 
-void Instance::DissasmAddCollpasibleZone(DissasmCodeZone* zone, uint32 zoneLineStart, uint32 zoneLineEnd)
+bool DissasmCodeZone::AddCollapsibleZone(Reference<GView::Object> obj, uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr)
 {
+    // AppCUI::Utils::UnicodeStringBuilder sb;
+    // sb.Add(obj->GetPath());
+    // LocalString<32> fileName;
+    // fileName.SetFormat("da.data");
+    // sb.Add(fileName);
+
+    // AppCUI::OS::File f;
+    // if (!f.Create(sb.ToStringView(), true)) {
+    //     return;
+    // }
+    // if (!f.OpenWrite(sb.ToStringView())) {
+    //     f.Close();
+    //     return;
+    // }
+
+    // auto objData = obj->GetData().CopyToBuffer(0,6144);
+    // f.Write(objData.GetData(), objData.GetLength());
+
+    // f.Close();
+
     // TODO: taken from process space, maybe extract it as function
     uint32 diffLines = 0;
-    cs_insn* insn    = GetCurrentInstructionByLine(zoneLineStart, zone, obj, diffLines);
+    cs_insn* insn    = GetCurrentInstructionByLine(zoneLineStart, this, obj, diffLines);
     if (!insn) {
-        Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
-        return;
+        if (showErr)
+            Dialogs::MessageBox::ShowNotification("Warning", "There was an error reaching that line!");
+        return false;
     }
     cs_free(insn, 1);
 
     // diffLines++; // increased because of the menu bar
 
-    const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
-    decltype(DissasmCodeZone::types) types                = zone->types;
-    decltype(DissasmCodeZone::levels) levels              = zone->levels;
+    const decltype(DissasmCodeZone::structureIndex) savedIndex = structureIndex;
+    decltype(DissasmCodeZone::types) savedTypes                = this->types;
+    decltype(DissasmCodeZone::levels) savedLevels              = this->levels;
 
     // TODO: can be improved by extracting the common part of the calculation of the actual line and to search for the closest zone directly
-    const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, diffLines);
-    uint32 actualLine       = zone->types.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
+    const auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(this, diffLines);
+    uint32 actualLine       = savedTypes.back().get().beforeTextLines + 2; //+1 for menu, +1 for title
 
-    auto& dissasmType      = zone->types.back().get();
-    const auto annotations = dissasmType.annotations;
+    auto& structDissasmType = savedTypes.back().get();
+    const auto annotations  = structDissasmType.annotations;
     for (const auto& entry : annotations) // no std::views::keys on mac
     {
         if (entry.first >= diffLines)
@@ -1626,35 +1612,139 @@ void Instance::DissasmAddCollpasibleZone(DissasmCodeZone* zone, uint32 zoneLineS
         actualLine++;
     }
 
-    if (zoneLineStart < dissasmType.indexZoneStart || dissasmType.indexZoneEnd < zoneLineEnd) {
-        zone->structureIndex = index;
-        zone->types          = std::move(types);
-        zone->levels         = std::move(levels);
+    if (zoneLineStart < structDissasmType.indexZoneStart || structDissasmType.indexZoneEnd < zoneLineEnd) {
+        this->structureIndex = savedIndex;
+        this->types          = std::move(savedTypes);
+        this->levels         = std::move(savedLevels);
 
-        Dialogs::MessageBox::ShowNotification("Warning", "The selected zone is not valid!");
-        return;
+        if (showErr)
+            Dialogs::MessageBox::ShowNotification("Warning", "The selected zone is not valid!");
+        return false;
     }
 
+    LocalString<128> zoneName;
+    zoneName.SetFormat("Zone-IndexStart %u -IndexEnd %u", zoneLineStart, zoneLineEnd);
+
     DissasmCodeInternalType newZone;
-    newZone.beforeTextLines = dissasmType.beforeTextLines;
-    newZone.beforeAsmLines  = dissasmType.beforeAsmLines;
+    newZone.name            = zoneName.GetText();
+    newZone.beforeTextLines = structDissasmType.beforeTextLines;
+    newZone.beforeAsmLines  = structDissasmType.beforeAsmLines;
     newZone.indexZoneStart  = zoneLineStart;
     newZone.indexZoneEnd    = zoneLineEnd;
 
-    std::vector<uint32> indexesToRemove;
-    for (const auto& zoneVal : dissasmType.annotations) {
-        if (zoneVal.first >= zoneLineStart && zoneVal.first < zoneLineEnd) {
-            newZone.annotations.insert(zoneVal);
-            indexesToRemove.push_back(zoneVal.first);
-        } else if (zoneVal.first >= zoneLineEnd)
-            break;
+    decltype(structDissasmType.annotations) annotationsBefore, annotationCurrent, annotationAfter;
+
+    for (const auto& zoneVal : structDissasmType.annotations) {
+        if (zoneVal.first < zoneLineStart)
+            annotationsBefore.insert(zoneVal);
+        else if (zoneVal.first >= zoneLineStart && zoneVal.first < zoneLineEnd)
+            annotationCurrent.insert(zoneVal);
+        else if (zoneVal.first >= zoneLineEnd)
+            annotationAfter.insert(zoneVal);
     }
-    for (const auto indexToRemove : indexesToRemove)
-        dissasmType.annotations.erase(indexToRemove);
 
-    dissasmType.internalTypes.emplace_back(std::move(newZone));
+    newZone.annotations = std::move(annotationCurrent);
 
-    //diffLines = diffLines;
+    DissasmCodeInternalType firstZone = {};
+    firstZone.indexZoneStart          = 0;
+    // firstZone.beforeTextLines = dissasmType.beforeTextLines;
+    // firstZone.beforeAsmLines  = dissasmType.beforeAsmLines;
+    firstZone.annotations = std::move(annotationsBefore);
+    bool insertMidZone    = false;
+    if (zoneLineStart == 0) { // first line
+        firstZone.indexZoneEnd = zoneLineEnd;
+        firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
+        structDissasmType.internalTypes.push_back(std::move(firstZone));
+    } else {
+        firstZone.indexZoneEnd = zoneLineStart;
+        insertMidZone          = true;
+        structDissasmType.internalTypes.push_back(std::move(firstZone));
+        structDissasmType.internalTypes.push_back(std::move(newZone));
+    }
+
+    DissasmCodeInternalType lastZone = {};
+    // lastZone.beforeTextLines = dissasmType.beforeTextLines;
+    // lastZone.beforeAsmLines  = dissasmType.beforeAsmLines;
+    lastZone.annotations  = std::move(annotationAfter);
+    lastZone.indexZoneEnd = structDissasmType.indexZoneEnd;
+    if (zoneLineEnd == structDissasmType.indexZoneEnd) {
+        lastZone.indexZoneStart = zoneLineStart;
+        if (!insertMidZone)
+            lastZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
+    } else {
+        lastZone.indexZoneStart = zoneLineEnd;
+        lastZone.indexZoneEnd   = structDissasmType.indexZoneEnd;
+    }
+    structDissasmType.internalTypes.push_back(std::move(lastZone));
+
+    return true;
+}
+
+bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
+{
+    // TODO: move this on init
+    if (!cs_support(CS_ARCH_X86)) {
+        initData.dli->WriteErrorToScreen("Capstone does not support X86");
+        initData.adjustedZoneSize = 1;
+        initData.hasAdjustedSize  = true;
+        return false;
+    }
+
+    switch (zoneDetails.language) {
+    case DisassemblyLanguage::x86:
+        internalArchitecture = CS_MODE_32;
+        break;
+    case DisassemblyLanguage::x64:
+        internalArchitecture = CS_MODE_64;
+        break;
+    default: {
+        initData.dli->WriteErrorToScreen("ERROR: unsupported language!");
+        return false;
+    }
+    }
+
+    uint32 totalLines = 0;
+    if (!populateOffsetsVector(cachedCodeOffsets, zoneDetails, initData.obj, internalArchitecture, totalLines)) {
+        initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        return false;
+    }
+    if (initData.enableDeepScanDissasmOnStart &&
+        !ExtractCallsToInsertFunctionNames(cachedCodeOffsets, this, initData.obj, internalArchitecture, totalLines, initData.maxLocationMemoryMappingSize)) {
+        initData.dli->WriteErrorToScreen("ERROR: failed to populate offsets vector!");
+        return false;
+    }
+    totalLines++; //+1 for title
+    initData.adjustedZoneSize = totalLines;
+    initData.hasAdjustedSize  = true;
+    // AdjustZoneExtendedSize(zone, totalLines);
+    lastDrawnLine          = 0;
+    const auto closestData = SearchForClosestAsmOffsetLineByLine(cachedCodeOffsets, lastDrawnLine);
+    lastClosestLine        = closestData.line;
+    isInit                 = true;
+
+    asmAddress = 0;
+    asmSize    = zoneDetails.size - asmAddress;
+
+    const auto instructionData = initData.obj->GetData().Get(cachedCodeOffsets[0].offset + asmAddress, static_cast<uint32>(asmSize), false);
+    lastData                   = instructionData;
+    if (!instructionData.IsValid()) {
+        initData.dli->WriteErrorToScreen("ERROR: extract valid data from file!");
+        return false;
+    }
+    asmData = const_cast<uint8*>(instructionData.GetData());
+
+    const uint32 preReverseSize = std::min<uint32>(initData.visibleRows, extendedSize);
+    asmPreCacheData.cachedAsmLines.reserve(preReverseSize);
+
+    structureIndex = 0;
+    types.push_back(dissasmType);
+    levels.push_back(0);
+
+    dissasmType.indexZoneStart = 0; //+1 for the title
+    dissasmType.indexZoneEnd   = totalLines + 1;
+    // dissasmType.annotations.insert({ 2, "loc fn" });
+
+    return true;
 }
 
 void Instance::CommandDissasmRemoveZone()

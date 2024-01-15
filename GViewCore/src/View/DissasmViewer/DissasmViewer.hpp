@@ -223,6 +223,7 @@ namespace View
         };
 
         struct DissasmCodeInternalType {
+            std::string name;
             uint32 indexZoneStart;
             uint32 indexZoneEnd;
 
@@ -260,6 +261,17 @@ namespace View
             void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
         };
 
+        struct DissasmCodeZoneInitData
+        {
+            Reference<DrawLineInfo> dli;
+            int32 adjustedZoneSize;
+            bool hasAdjustedSize;
+            bool enableDeepScanDissasmOnStart;
+            Reference<GView::Object> obj;
+            uint64 maxLocationMemoryMappingSize;
+            uint32 visibleRows;
+        };
+
         struct DissasmCodeZone : public ParseZone {
             uint32 lastDrawnLine; // optimization not to recompute buffer every time
             uint32 lastClosestLine;
@@ -281,6 +293,9 @@ namespace View
             DissasmComments comments;
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
+
+            bool AddCollapsibleZone(Reference<GView::Object> obj, uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr = true);
+            bool InitZone(DissasmCodeZoneInitData& initData);
         };
 
         struct MemoryMappingEntry {
@@ -476,7 +491,6 @@ namespace View
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
-            bool InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
@@ -512,14 +526,13 @@ namespace View
             void OpenCurrentSelection();
 
             // Operations
-            //void AddNewCollapsibleTextZone();
+            // void AddNewCollapsibleTextZone();
             void AddComment();
             void RemoveComment();
             void RenameLabel();
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
             void CommandDissasmAddCollapsibleZone();
-            void DissasmAddCollpasibleZone(DissasmCodeZone* zone, uint32 zoneLineStart, uint32 zoneLineEnd);
             void CommandDissasmRemoveZone();
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
@@ -567,7 +580,7 @@ namespace View
             void Validate();
 
           public:
-            SingleLineEditWindow(std::string initialText,const char* title);
+            SingleLineEditWindow(std::string initialText, const char* title);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline std::string GetResult() const
             {
