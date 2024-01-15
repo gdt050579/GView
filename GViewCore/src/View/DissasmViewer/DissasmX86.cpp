@@ -1527,7 +1527,7 @@ void Instance::CommandDissasmAddCollapsibleZone()
 
     // const auto lineStart = selection.GetSelectionStart(0);
     // const auto lineEnd   = selection.GetSelectionEnd(0);
-
+    return;//disabled for now
     const LinePosition lineStart = { 8, 25 };
     const LinePosition lineEnd   = { 11, 40 };
 
