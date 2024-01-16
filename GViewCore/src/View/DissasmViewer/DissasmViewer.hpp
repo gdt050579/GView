@@ -250,6 +250,9 @@ namespace View
             {
                 return beforeAsmLines + asmLinesPassed + beforeTextLines + textLinesPassed;
             }
+
+            bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
+            bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
         };
 
         struct DissasmComments {
@@ -261,8 +264,7 @@ namespace View
             void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
         };
 
-        struct DissasmCodeZoneInitData
-        {
+        struct DissasmCodeZoneInitData {
             Reference<DrawLineInfo> dli;
             int32 adjustedZoneSize;
             bool hasAdjustedSize;
@@ -295,6 +297,12 @@ namespace View
             bool isInit;
 
             bool AddCollapsibleZone(Reference<GView::Object> obj, uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr = true);
+            bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
+            {
+                if (zoneLineStart > zoneLineEnd || zoneLineEnd > dissasmType.indexZoneEnd)
+                    return false;
+                return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
+            }
             bool InitZone(DissasmCodeZoneInitData& initData);
         };
 

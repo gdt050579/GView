@@ -127,9 +127,19 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
     REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 4571 } }));
 
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
+    REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
+    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 4571 } }));
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
+    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 11 }, { 11, 4571 } }));
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
+    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 7 }, { 7, 9 }, { 9, 11 }, { 11, 4571 } }));
+
     // TODO: add functionality for this to work
-    // REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
-    // REQUIRE(!dissasmInstance.AddCollpasibleZone(0, 2));
     // REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 3));
 
     // REQUIRE(dissasmInstance.AddCollpasibleZone(3, 4));
