@@ -135,6 +135,41 @@ namespace View
             {
                 return size * 2 + op_str_size;
             }
+
+            DissasmAsmPreCacheLine() = default;
+            
+            DissasmAsmPreCacheLine(DissasmAsmPreCacheLine&& other) noexcept(true)
+            {
+                address         = other.address;
+                size            = other.size;
+                currentLine     = other.currentLine;
+                op_str_size     = other.op_str_size;
+                op_str          = other.op_str;
+                other.op_str    = nullptr;
+                flags           = other.flags;
+                lineArrowToDraw = other.lineArrowToDraw;
+                mapping         = other.mapping;
+                memcpy(bytes, other.bytes, 24);
+                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+            }
+            DissasmAsmPreCacheLine(const DissasmAsmPreCacheLine& other)
+            {
+                address         = other.address;
+                size            = other.size;
+                currentLine     = other.currentLine;
+                op_str_size     = other.op_str_size;
+                op_str          = strdup(other.op_str);
+                flags           = other.flags;
+                lineArrowToDraw = other.lineArrowToDraw;
+                mapping         = other.mapping;
+                memcpy(bytes, other.bytes, 24);
+                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+            }
+            ~DissasmAsmPreCacheLine()
+            {
+                if (op_str != nullptr)
+                    free(op_str);
+            }
         };
 
         struct AsmFunctionDetails {
@@ -190,8 +225,10 @@ namespace View
 
             void Clear()
             {
-                for (const auto& cachedLine : cachedAsmLines)
+                for (auto& cachedLine : cachedAsmLines) {
                     free(cachedLine.op_str);
+                    cachedLine.op_str = nullptr;
+                }
                 cachedAsmLines.clear();
                 index       = 0;
                 maxLineSize = 0;
@@ -296,7 +333,7 @@ namespace View
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
 
-            bool AddCollapsibleZone(Reference<GView::Object> obj, uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr = true);
+            bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr = true);
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
             {
                 if (zoneLineStart > zoneLineEnd || zoneLineEnd > dissasmType.indexZoneEnd)
@@ -304,6 +341,7 @@ namespace View
                 return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
             }
             bool InitZone(DissasmCodeZoneInitData& initData);
+            DissasmAsmPreCacheLine GetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine);
         };
 
         struct MemoryMappingEntry {

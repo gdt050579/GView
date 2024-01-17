@@ -877,7 +877,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
         } else {
             asmCacheLine.op_str      = strdup(insn->op_str);
             asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
-            zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
+            zone->asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
             cs_free(insn, 1);
             return true;
         }
@@ -956,7 +956,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
             asmCacheLine.flags       = 0;
             asmCacheLine.op_str      = strdup(insn->op_str);
             asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
-            zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
+            zone->asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
             cs_free(insn, 1);
             return true;
         }
@@ -977,7 +977,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
         asmCacheLine.op_str      = strdup(insn->op_str);
         asmCacheLine.op_str_size = (uint32) strlen(asmCacheLine.op_str);
     }
-    zone->asmPreCacheData.cachedAsmLines.push_back(asmCacheLine);
+    zone->asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
     cs_free(insn, 1);
     return true;
 }
@@ -1558,7 +1558,7 @@ bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
     return true;
 }
 
-bool DissasmCodeZone::AddCollapsibleZone(Reference<GView::Object> obj, uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr)
+bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr)
 {
     if (!this->CanAddNewZone(zoneLineStart, zoneLineEnd)) {
         if (showErr)
@@ -1611,11 +1611,11 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     zoneName.SetFormat("Zone-IndexStart %u -IndexEnd %u", zoneLineStart, zoneLineEnd);
 
     DissasmCodeInternalType newZone;
-    newZone.name = zoneName.GetText();
-    // newZone.beforeTextLines = parentZone->beforeTextLines;
-    // newZone.beforeAsmLines  = parentZone->beforeAsmLines;
-    newZone.indexZoneStart = zoneLineStart;
-    newZone.indexZoneEnd   = zoneLineEnd;
+    newZone.name            = zoneName.GetText();
+    newZone.beforeTextLines = 0;
+    newZone.beforeAsmLines  = 0;
+    newZone.indexZoneStart  = zoneLineStart;
+    newZone.indexZoneEnd    = zoneLineEnd;
 
     decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
 
@@ -1632,19 +1632,26 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
 
     DissasmCodeInternalType firstZone = {};
     firstZone.indexZoneStart          = std::min(parentZone->indexZoneStart, zoneLineStart);
-    // firstZone.beforeTextLines = dissasmType.beforeTextLines;
-    // firstZone.beforeAsmLines  = dissasmType.beforeAsmLines;
-    firstZone.annotations = std::move(annotationsBefore);
-    bool insertMidZone    = false;
+    firstZone.beforeTextLines         = 0;
+    firstZone.beforeAsmLines          = 0;
+    firstZone.annotations             = std::move(annotationsBefore);
+    bool insertMidZone                = false;
+
+    if (indexFound > 0) {
+        const auto& prevZone      = internalTypes[indexFound - 1];
+        firstZone.textLinesPassed = prevZone.textLinesPassed + (uint32) prevZone.annotations.size();
+    }
+
     if (zoneLineStart == parentZone->indexZoneStart) { // first line
         firstZone.indexZoneEnd = zoneLineEnd;
         firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
-        // internalTypes.push_back(std::move(firstZone));
         internalTypes.insert(internalTypes.begin() + indexFound++, std::move(firstZone));
     } else {
         firstZone.indexZoneEnd = zoneLineStart;
         insertMidZone          = true;
         internalTypes.insert(internalTypes.begin() + indexFound++, std::move(firstZone));
+
+        newZone.textLinesPassed = firstZone.textLinesPassed + (uint32) firstZone.annotations.size();
         internalTypes.insert(internalTypes.begin() + indexFound++, std::move(newZone));
     }
 
@@ -1666,6 +1673,11 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
             lastZone.indexZoneEnd = nextZone.indexZoneStart;
         }
     }
+    if (insertMidZone)
+        lastZone.textLinesPassed = newZone.textLinesPassed + (uint32) newZone.annotations.size();
+    else
+        lastZone.textLinesPassed = firstZone.textLinesPassed + (uint32) firstZone.annotations.size();
+
     internalTypes.insert(internalTypes.begin() + indexFound++, std::move(lastZone));
 
     if (indexFound < internalTypes.size() && !hadNoInternalTypes) {

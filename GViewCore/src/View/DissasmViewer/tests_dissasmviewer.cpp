@@ -96,7 +96,7 @@ class DissasmTestInstance
 
     bool AddCollpasibleZone(uint32 zoneListStart, uint32 zoneLineEnd)
     {
-        return zone->AddCollapsibleZone(&objects[0], zoneListStart, zoneLineEnd, false);
+        return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd, false);
     }
 
     bool CheckInternalZones(std::initializer_list<std::pair<uint32, uint32>> zones)
