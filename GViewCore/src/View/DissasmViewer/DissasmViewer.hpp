@@ -137,7 +137,7 @@ namespace View
             }
 
             DissasmAsmPreCacheLine() = default;
-            
+
             DissasmAsmPreCacheLine(DissasmAsmPreCacheLine&& other) noexcept(true)
             {
                 address         = other.address;
@@ -288,6 +288,25 @@ namespace View
                 return beforeAsmLines + asmLinesPassed + beforeTextLines + textLinesPassed;
             }
 
+            uint32 GetSize() const
+            {
+                return indexZoneEnd - indexZoneStart;
+            }
+
+            uint32 GetNewAsmBeforeLines() const
+            {
+                return GetSize() - beforeTextLines - (uint32) annotations.size();
+            }
+
+            void UpdateDataLineFromPrevious(const DissasmCodeInternalType& prev)
+            {
+                beforeTextLines = prev.beforeTextLines + (uint32) prev.annotations.size();
+                beforeAsmLines  = prev.beforeAsmLines + prev.GetNewAsmBeforeLines();
+            }
+            bool IsValidDataLine() const
+            {
+                return beforeTextLines + beforeAsmLines == indexZoneStart;
+            }
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
         };
@@ -341,7 +360,8 @@ namespace View
                 return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
             }
             bool InitZone(DissasmCodeZoneInitData& initData);
-            DissasmAsmPreCacheLine GetCurrentAsmLineAndPrepareCodeZone(DissasmCodeZone* zone, uint32 currentLine);
+            void ReachZoneLine(uint32 line);
+            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine);
         };
 
         struct MemoryMappingEntry {

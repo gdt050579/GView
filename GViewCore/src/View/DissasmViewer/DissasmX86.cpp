@@ -1558,6 +1558,69 @@ bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
     return true;
 }
 
+void DissasmCodeZone::ReachZoneLine(uint32 line)
+{
+    const uint32 levelToReach = line;
+    uint32& levelNow          = this->structureIndex;
+    bool reAdapt              = false;
+    while (true) {
+        const DissasmCodeInternalType& currentType = types.back();
+        if (currentType.indexZoneStart <= levelToReach && currentType.indexZoneEnd >= levelToReach)
+            break;
+        types.pop_back();
+        levels.pop_back();
+        reAdapt = true;
+    }
+
+    while (reAdapt && !types.back().get().internalTypes.empty()) {
+        DissasmCodeInternalType& currentType = types.back();
+        for (uint32 i = 0; i < currentType.internalTypes.size(); i++) {
+            auto& internalType = currentType.internalTypes[i];
+            if (internalType.indexZoneStart <= levelToReach && internalType.indexZoneEnd >= levelToReach) {
+                types.push_back(internalType);
+                levels.push_back(i);
+                break;
+            }
+        }
+    }
+
+    // DissasmCodeInternalType& currentType = zone->types.back();
+    //// TODO: do a faster search using a binary search using the annotations and start from there
+    //// TODO: maybe use some caching here?
+    // if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
+    //     currentType.textLinesPassed = 0;
+    //     currentType.asmLinesPassed  = 0;
+    //     for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
+    //         if (currentType.annotations.contains(i)) {
+    //             currentType.textLinesPassed++;
+    //             continue;
+    //         }
+    //         currentType.asmLinesPassed++;
+    //     }
+    // } else {
+    //     if (currentType.annotations.contains(levelToReach))
+    //         currentType.textLinesPassed++;
+    //     else
+    //         currentType.asmLinesPassed++;
+    // }
+
+    levelNow = levelToReach;
+
+    // if (currentType.annotations.contains(levelToReach))
+    //     return {};
+
+    // const uint32 value = currentType.GetCurrentAsmLine();
+    // if (value == 0)
+    //     return {};
+
+    // return value - 1u;
+}
+
+DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine)
+{
+    return {};
+}
+
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr)
 {
     if (!this->CanAddNewZone(zoneLineStart, zoneLineEnd)) {
@@ -1604,8 +1667,8 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
             }
             parentZone = &zone;
             if (!zone.name.empty()) {
-                zonesHolder = &zone.internalTypes;
-                indexFound  = 0;
+                zonesHolder        = &zone.internalTypes;
+                indexFound         = 0;
                 doNotDeleteOldZone = true;
             }
             break;
@@ -1616,12 +1679,10 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     LocalString<128> zoneName;
     zoneName.SetFormat("Zone-IndexStart %u -IndexEnd %u", zoneLineStart, zoneLineEnd);
 
-    DissasmCodeInternalType newZone;
-    newZone.name            = zoneName.GetText();
-    newZone.beforeTextLines = 0;
-    newZone.beforeAsmLines  = 0;
-    newZone.indexZoneStart  = zoneLineStart;
-    newZone.indexZoneEnd    = zoneLineEnd;
+    DissasmCodeInternalType newZone = {};
+    newZone.name                    = zoneName.GetText();
+    newZone.indexZoneStart          = zoneLineStart;
+    newZone.indexZoneEnd            = zoneLineEnd;
 
     decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
 
@@ -1638,39 +1699,38 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
 
     DissasmCodeInternalType firstZone = {};
     firstZone.indexZoneStart          = std::min(parentZone->indexZoneStart, zoneLineStart);
-    firstZone.beforeTextLines         = 0;
-    firstZone.beforeAsmLines          = 0;
     firstZone.annotations             = std::move(annotationsBefore);
     bool insertMidZone                = false;
 
+    DissasmCodeInternalType lastZone = {};
+
     if (indexFound > 0) {
-        const auto& prevZone      = internalTypes[indexFound - 1];
-        firstZone.beforeTextLines = prevZone.beforeTextLines + (uint32) prevZone.annotations.size();
+        const auto& prevZone = internalTypes[indexFound - 1];
+        firstZone.UpdateDataLineFromPrevious(prevZone);
     }
 
     if (zoneLineStart == parentZone->indexZoneStart) { // first line
         firstZone.name         = newZone.name;
         firstZone.indexZoneEnd = zoneLineEnd;
         firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
+        //newZone.UpdateDataLineFromPrevious(firstZone);
+        lastZone.UpdateDataLineFromPrevious(firstZone);
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
     } else {
         firstZone.indexZoneEnd = zoneLineStart;
         insertMidZone          = true;
-        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
 
-        newZone.beforeTextLines = firstZone.beforeTextLines + (uint32) firstZone.annotations.size();
+        newZone.UpdateDataLineFromPrevious(firstZone);
+        lastZone.UpdateDataLineFromPrevious(newZone);
+
+        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(newZone));
     }
 
-    DissasmCodeInternalType lastZone = {};
-    // lastZone.beforeTextLines = dissasmType.beforeTextLines;
-    // lastZone.beforeAsmLines  = dissasmType.beforeAsmLines;
-    lastZone.annotations  = std::move(annotationAfter);
-    lastZone.indexZoneEnd = indexZoneEnd;
+    lastZone.annotations             = std::move(annotationAfter);
+    lastZone.indexZoneEnd            = indexZoneEnd;
     if (zoneLineEnd == indexZoneEnd) {
         lastZone.indexZoneStart = zoneLineStart;
-        if (!insertMidZone)
-            lastZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
     } else {
         lastZone.indexZoneStart = zoneLineEnd;
         lastZone.indexZoneEnd   = indexZoneEnd;
@@ -1680,10 +1740,6 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
             lastZone.indexZoneEnd = nextZone.indexZoneStart;
         }
     }
-    if (insertMidZone)
-        lastZone.beforeTextLines = newZone.beforeTextLines + (uint32) newZone.annotations.size();
-    else
-        lastZone.beforeTextLines = firstZone.beforeTextLines + (uint32) firstZone.annotations.size();
 
     zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(lastZone));
 
