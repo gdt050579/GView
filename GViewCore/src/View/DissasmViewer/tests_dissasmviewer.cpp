@@ -35,6 +35,12 @@ class DummyType : public GView::TypeInterface
     }
 };
 
+struct ZoneCheckData {
+    uint32 indexZoneStart;
+    uint32 indexZoneEnd;
+    bool shouldHaveName;
+};
+
 class DissasmTestInstance
 {
   public:
@@ -99,19 +105,39 @@ class DissasmTestInstance
         return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd, false);
     }
 
-    bool CheckInternalZones(std::initializer_list<std::pair<uint32, uint32>> zones)
+    bool CheckInternalTypes(std::initializer_list<ZoneCheckData> zones, std::vector<DissasmCodeInternalType>* childrenToCheck = nullptr)
     {
-        auto& internalZones = zone->dissasmType.internalTypes;
-        if (internalZones.size() != zones.size())
+        if (!childrenToCheck)
+            childrenToCheck = &zone->dissasmType.internalTypes;
+        if (childrenToCheck->size() != zones.size())
             return false;
 
-        auto it = internalZones.begin();
+        auto it = childrenToCheck->begin();
         for (auto& z : zones) {
-            if (it->indexZoneStart != z.first || it->indexZoneEnd != z.second)
+            if (it->indexZoneStart != z.indexZoneStart || it->indexZoneEnd != z.indexZoneEnd || !it->name.empty() != z.shouldHaveName) {
+                printf(
+                      "ERROR: zone %d<->%d, %d<->%d, %d<->%d",
+                      it->indexZoneStart,
+                      z.indexZoneStart,
+                      it->indexZoneEnd,
+                      z.indexZoneEnd,
+                      !it->name.empty(),
+                      z.shouldHaveName);
                 return false;
+            }
             ++it;
         }
         return true;
+    }
+
+    bool CheckInternalTypesByIndex(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
+    {
+        if (zoneIndex >= zone->dissasmType.internalTypes.size()) {
+            printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
+            return false;
+        }
+
+        return CheckInternalTypes(zones, &zone->dissasmType.internalTypes[zoneIndex].internalTypes);
     }
 
     ~DissasmTestInstance()
@@ -125,19 +151,20 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     DissasmTestInstance dissasmInstance;
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2 }, { 2, 5, true }, { 5, 4571 } }));
 
     REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
     REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
-    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2, true }, { 2, 5, true }, { 5, 4571 } }));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
-    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 11 }, { 11, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 5 }, { 5, 7 }, { 7, 9 }, { 9, 11 }, { 11, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypesByIndex(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
 
     // TODO: add functionality for this to work
     // REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 3));
@@ -145,17 +172,5 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     // REQUIRE(dissasmInstance.AddCollpasibleZone(3, 4));
 
     //// TODO: need joining unnamed regions!
-    // REQUIRE(dissasmInstance.CheckInternalZones({ { 0, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 4571 } }));
-
-    // REQUIRE(fibonacci(20) == 6'765);
-    // BENCHMARK("fibonacci 20")
-    //{
-    //     return fibonacci(20);
-    // };
-
-    // REQUIRE(fibonacci(25) == 75'025);
-    // BENCHMARK("fibonacci 25")
-    //{
-    //     return fibonacci(25);
-    // };
+    // REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 4571 } }));
 }

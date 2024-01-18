@@ -1590,9 +1590,10 @@ bool DissasmCodeInternalType::CanAddNewZone(uint32 zoneLineStart, uint32 zoneLin
 
 bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd)
 {
-    Reference<DissasmCodeInternalType> parentZone = this;
-    uint32 indexFound                             = 0;
-    const bool hadNoInternalTypes                 = internalTypes.empty();
+    Reference<DissasmCodeInternalType> parentZone     = this;
+    uint32 indexFound                                 = 0;
+    bool doNotDeleteOldZone                           = internalTypes.empty();
+    std::vector<DissasmCodeInternalType>* zonesHolder = &internalTypes;
     for (auto& zone : internalTypes) {
         if (zone.indexZoneStart <= zoneLineStart && zoneLineEnd <= zone.indexZoneEnd) {
             if (zone.name.empty() && zone.indexZoneStart == zoneLineStart && zone.indexZoneEnd == zoneLineEnd) {
@@ -1602,6 +1603,11 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
                 return true;
             }
             parentZone = &zone;
+            if (!zone.name.empty()) {
+                zonesHolder = &zone.internalTypes;
+                indexFound  = 0;
+                doNotDeleteOldZone = true;
+            }
             break;
         }
         indexFound++;
@@ -1639,20 +1645,21 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
 
     if (indexFound > 0) {
         const auto& prevZone      = internalTypes[indexFound - 1];
-        firstZone.textLinesPassed = prevZone.textLinesPassed + (uint32) prevZone.annotations.size();
+        firstZone.beforeTextLines = prevZone.beforeTextLines + (uint32) prevZone.annotations.size();
     }
 
     if (zoneLineStart == parentZone->indexZoneStart) { // first line
+        firstZone.name         = newZone.name;
         firstZone.indexZoneEnd = zoneLineEnd;
         firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
-        internalTypes.insert(internalTypes.begin() + indexFound++, std::move(firstZone));
+        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
     } else {
         firstZone.indexZoneEnd = zoneLineStart;
         insertMidZone          = true;
-        internalTypes.insert(internalTypes.begin() + indexFound++, std::move(firstZone));
+        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
 
-        newZone.textLinesPassed = firstZone.textLinesPassed + (uint32) firstZone.annotations.size();
-        internalTypes.insert(internalTypes.begin() + indexFound++, std::move(newZone));
+        newZone.beforeTextLines = firstZone.beforeTextLines + (uint32) firstZone.annotations.size();
+        zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(newZone));
     }
 
     DissasmCodeInternalType lastZone = {};
@@ -1668,19 +1675,19 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         lastZone.indexZoneStart = zoneLineEnd;
         lastZone.indexZoneEnd   = indexZoneEnd;
 
-        if (indexFound + 1 < internalTypes.size() && !hadNoInternalTypes) {
+        if (indexFound + 1 < internalTypes.size()) {
             auto& nextZone        = internalTypes[indexFound + 1];
             lastZone.indexZoneEnd = nextZone.indexZoneStart;
         }
     }
     if (insertMidZone)
-        lastZone.textLinesPassed = newZone.textLinesPassed + (uint32) newZone.annotations.size();
+        lastZone.beforeTextLines = newZone.beforeTextLines + (uint32) newZone.annotations.size();
     else
-        lastZone.textLinesPassed = firstZone.textLinesPassed + (uint32) firstZone.annotations.size();
+        lastZone.beforeTextLines = firstZone.beforeTextLines + (uint32) firstZone.annotations.size();
 
-    internalTypes.insert(internalTypes.begin() + indexFound++, std::move(lastZone));
+    zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(lastZone));
 
-    if (indexFound < internalTypes.size() && !hadNoInternalTypes) {
+    if (indexFound < internalTypes.size() && !doNotDeleteOldZone) {
         internalTypes.erase(internalTypes.begin() + indexFound);
     }
     return true;
