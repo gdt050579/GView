@@ -111,12 +111,21 @@ class DissasmTestInstance
         return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd, false);
     }
 
-    bool CheckInternalTypes(std::initializer_list<ZoneCheckData> zones, std::vector<DissasmCodeInternalType>* childrenToCheck = nullptr)
+    bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
     {
-        if (!childrenToCheck)
-            childrenToCheck = &zone->dissasmType.internalTypes;
-        if (childrenToCheck->size() != zones.size())
+        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != -1u) {
+            printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
+        }
+
+        std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
+        if (zoneIndex != -1u)
+            childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
+
+        if (childrenToCheck->size() != zones.size()) {
+            printf("ERROR: invalid zone length %d >= %llu", zoneIndex, childrenToCheck->size());
+            return false;
+        }
 
         auto it = childrenToCheck->begin();
         for (auto& z : zones) {
@@ -135,20 +144,17 @@ class DissasmTestInstance
         }
         return true;
     }
-    bool CheckInternalTypesByIndex(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
+
+    bool CheckBeforeLinesData(uint32 zoneIndex, std::initializer_list<ZoneBeforeLines> zones)
     {
-        if (zoneIndex >= zone->dissasmType.internalTypes.size()) {
+        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != -1u) {
             printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
         }
 
-        return CheckInternalTypes(zones, &zone->dissasmType.internalTypes[zoneIndex].internalTypes);
-    }
-
-    bool CheckBeforeLinesData(std::initializer_list<ZoneBeforeLines> zones, std::vector<DissasmCodeInternalType>* childrenToCheck = nullptr)
-    {
-        if (!childrenToCheck)
-            childrenToCheck = &zone->dissasmType.internalTypes;
+        std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
+        if (zoneIndex != -1u)
+            childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
 
         for (auto& z : zones) {
             if (z.zoneIndex >= childrenToCheck->size()) {
@@ -181,22 +187,24 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     DissasmTestInstance dissasmInstance;
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2 }, { 2, 5, true }, { 5, 4571 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData({ { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, 4571 } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
 
     REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
     REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
-    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2, true }, { 2, 5, true }, { 5, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 4571 } }));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
-    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData({ { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 2, 9 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 2, 9 } }));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
-    REQUIRE(dissasmInstance.CheckInternalTypesByIndex(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 2, 9 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
 
     // TODO: add functionality for this to work
     // REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 3));

@@ -295,7 +295,7 @@ namespace View
 
             uint32 GetNewAsmBeforeLines() const
             {
-                return GetSize() - beforeTextLines - (uint32) annotations.size();
+                return GetSize() - (uint32) annotations.size();
             }
 
             void UpdateDataLineFromPrevious(const DissasmCodeInternalType& prev)

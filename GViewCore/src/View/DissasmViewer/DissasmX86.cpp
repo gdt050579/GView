@@ -1656,6 +1656,7 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     Reference<DissasmCodeInternalType> parentZone     = this;
     uint32 indexFound                                 = 0;
     bool doNotDeleteOldZone                           = internalTypes.empty();
+    bool hasParent                                    = false;
     std::vector<DissasmCodeInternalType>* zonesHolder = &internalTypes;
     for (auto& zone : internalTypes) {
         if (zone.indexZoneStart <= zoneLineStart && zoneLineEnd <= zone.indexZoneEnd) {
@@ -1670,6 +1671,7 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
                 zonesHolder        = &zone.internalTypes;
                 indexFound         = 0;
                 doNotDeleteOldZone = true;
+                hasParent          = true;
             }
             break;
         }
@@ -1708,12 +1710,16 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         const auto& prevZone = internalTypes[indexFound - 1];
         firstZone.UpdateDataLineFromPrevious(prevZone);
     }
+    if (hasParent) {
+        firstZone.beforeAsmLines  = parentZone->beforeAsmLines;
+        firstZone.beforeTextLines = parentZone->beforeTextLines;
+    }
 
     if (zoneLineStart == parentZone->indexZoneStart) { // first line
         firstZone.name         = newZone.name;
         firstZone.indexZoneEnd = zoneLineEnd;
         firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
-        //newZone.UpdateDataLineFromPrevious(firstZone);
+        // newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(firstZone);
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
     } else {
@@ -1727,8 +1733,8 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(newZone));
     }
 
-    lastZone.annotations             = std::move(annotationAfter);
-    lastZone.indexZoneEnd            = indexZoneEnd;
+    lastZone.annotations  = std::move(annotationAfter);
+    lastZone.indexZoneEnd = indexZoneEnd;
     if (zoneLineEnd == indexZoneEnd) {
         lastZone.indexZoneStart = zoneLineStart;
     } else {
