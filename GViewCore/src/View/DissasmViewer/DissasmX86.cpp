@@ -1565,8 +1565,11 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     bool reAdapt              = false;
     while (true) {
         const DissasmCodeInternalType& currentType = types.back();
-        if (currentType.indexZoneStart <= levelToReach && currentType.indexZoneEnd >= levelToReach)
+        if (currentType.indexZoneStart <= levelToReach && currentType.indexZoneEnd >= levelToReach) {
+            if (!currentType.internalTypes.empty())
+                reAdapt = true;
             break;
+        }
         types.pop_back();
         levels.pop_back();
         reAdapt = true;
@@ -1584,25 +1587,25 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
         }
     }
 
-    // DissasmCodeInternalType& currentType = zone->types.back();
-    //// TODO: do a faster search using a binary search using the annotations and start from there
-    //// TODO: maybe use some caching here?
-    // if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
-    //     currentType.textLinesPassed = 0;
-    //     currentType.asmLinesPassed  = 0;
-    //     for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
-    //         if (currentType.annotations.contains(i)) {
-    //             currentType.textLinesPassed++;
-    //             continue;
-    //         }
-    //         currentType.asmLinesPassed++;
-    //     }
-    // } else {
-    //     if (currentType.annotations.contains(levelToReach))
-    //         currentType.textLinesPassed++;
-    //     else
-    //         currentType.asmLinesPassed++;
-    // }
+    DissasmCodeInternalType& currentType = types.back();
+    // TODO: do a faster search using a binary search using the annotations and start from there
+    // TODO: maybe use some caching here?
+    if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
+        currentType.textLinesPassed = currentType.beforeTextLines;
+        currentType.asmLinesPassed  = currentType.beforeAsmLines;
+        for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
+            if (currentType.annotations.contains(i)) {
+                currentType.textLinesPassed++;
+                continue;
+            }
+            currentType.asmLinesPassed++;
+        }
+    } else {
+        if (currentType.annotations.contains(levelToReach))
+            currentType.textLinesPassed++;
+        else
+            currentType.asmLinesPassed++;
+    }
 
     levelNow = levelToReach;
 
@@ -1618,6 +1621,7 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
 
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine)
 {
+    ReachZoneLine(currentLine);
     return {};
 }
 

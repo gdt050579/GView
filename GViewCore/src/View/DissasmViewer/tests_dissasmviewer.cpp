@@ -176,6 +176,11 @@ class DissasmTestInstance
         return true;
     }
 
+    void ReachZoneLine(uint32 zoneLine)
+    {
+        zone->ReachZoneLine(zoneLine);
+    }
+
     ~DissasmTestInstance()
     {
         delete instance;
@@ -206,11 +211,5 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
 
-    // TODO: add functionality for this to work
-    // REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 3));
-
-    // REQUIRE(dissasmInstance.AddCollpasibleZone(3, 4));
-
-    //// TODO: need joining unnamed regions!
-    // REQUIRE(dissasmInstance.CheckInternalTypes({ { 0, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 4571 } }));
+    dissasmInstance.ReachZoneLine(0);
 }
