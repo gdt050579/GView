@@ -1560,6 +1560,9 @@ bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 
 void DissasmCodeZone::ReachZoneLine(uint32 line)
 {
+    if (lastReachedLine == line)
+        return;
+
     const uint32 levelToReach = line;
     uint32& levelNow          = this->structureIndex;
     bool reAdapt              = false;
@@ -1580,7 +1583,7 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
         for (uint32 i = 0; i < currentType.internalTypes.size(); i++) {
             auto& internalType = currentType.internalTypes[i];
             if (internalType.indexZoneStart <= levelToReach && internalType.indexZoneEnd >= levelToReach) {
-                types.push_back(internalType);
+                types.emplace_back(internalType);
                 levels.push_back(i);
                 break;
             }
@@ -1607,7 +1610,8 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
             currentType.asmLinesPassed++;
     }
 
-    levelNow = levelToReach;
+    levelNow        = levelToReach;
+    lastReachedLine = levelToReach;
 
     // if (currentType.annotations.contains(levelToReach))
     //     return {};
@@ -1619,10 +1623,48 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     // return value - 1u;
 }
 
-DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine)
+DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj)
 {
     ReachZoneLine(currentLine);
-    return {};
+
+    const DissasmCodeInternalType& currentType = types.back();
+
+    const auto foundAnnotation = currentType.annotations.find(currentLine);
+    if (foundAnnotation != currentType.annotations.end()) {
+        DissasmAsmPreCacheLine asmCacheLine{};
+        asmCacheLine.address = foundAnnotation->second.second;
+        strncpy(asmCacheLine.mnemonic, foundAnnotation->second.first.data(), sizeof(asmCacheLine.mnemonic));
+        // strncpy((char*) asmCacheLine.bytes, "------", sizeof(asmCacheLine.bytes));
+        // asmCacheLine.size        = static_cast<uint32>(strlen((char*) asmCacheLine.bytes));
+        asmCacheLine.size        = 0;
+        asmCacheLine.currentLine = currentLine;
+        asmCacheLine.op_str      = strdup("<--");
+        asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
+        return asmCacheLine;
+    }
+
+    const uint32 value = currentType.GetCurrentAsmLine();
+
+    uint32 difflines = 0;
+    auto insn        = GetCurrentInstructionByLine(value, this, obj, difflines);
+
+    DissasmAsmPreCacheLine asmCacheLine{};
+    asmCacheLine.address     = insn->address;
+    asmCacheLine.size        = insn->size;
+    asmCacheLine.currentLine = currentLine;
+    asmCacheLine.op_str      = strdup(insn->op_str);
+    asmCacheLine.op_str_size = (uint32) strlen(asmCacheLine.op_str);
+    strcpy(asmCacheLine.mnemonic, insn->mnemonic);
+
+    asmCacheLine.hexValue = insn->address; //??
+
+    cs_free(insn, 1);
+
+    assert(value != 0);
+    /*if (value == 0)
+        return {};*/
+
+    return asmCacheLine;
 }
 
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr)

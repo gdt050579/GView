@@ -335,6 +335,7 @@ namespace View
             uint32 lastClosestLine;
             uint32 offsetCacheMaxLine;
             BufferView lastData;
+            uint32 lastReachedLine = -1u;
 
             const uint8* asmData;
             uint64 asmSize, asmAddress;
@@ -361,7 +362,7 @@ namespace View
             }
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
-            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine);
+            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj);
         };
 
         struct MemoryMappingEntry {

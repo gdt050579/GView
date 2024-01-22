@@ -181,6 +181,19 @@ class DissasmTestInstance
         zone->ReachZoneLine(zoneLine);
     }
 
+    DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 line)
+    {
+        auto val = zone->GetCurrentAsmLine(line, &objects[0]);
+        return val;
+    }
+
+    bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
+    {
+        auto val = zone->GetCurrentAsmLine(line, &objects[0]);
+        printf("[%u]mnemonic: %s\n",line, val.mnemonic);
+        return val.mnemonic == mnemonic;
+    }
+
     ~DissasmTestInstance()
     {
         delete instance;
@@ -211,5 +224,12 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
 
-    dissasmInstance.ReachZoneLine(0);
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+
+    // dissasmInstance.ReachZoneLine(0);
+    // dissasmInstance.GetCurrentAsmLine(0);
 }
