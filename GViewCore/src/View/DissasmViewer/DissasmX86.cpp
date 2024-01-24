@@ -276,11 +276,11 @@ inline void DissasmAddColorsToInstruction(
 }
 
 // TODO: maybe add also minimum number?
-bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
+bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
 {
-    char* ptr   = insn.op_str;
-    char* start = nullptr;
-    uint32 size = 0;
+    const char* ptr   = op_str;
+    const char* start = nullptr;
+    uint32 size       = 0;
 
     if (ptr[0] == '0' && ptr[1] == '\0') {
         value = 0;
@@ -326,7 +326,7 @@ bool CheckExtractInsnHexValue(cs_insn& insn, uint64& value, uint64 maxSize)
         return false;
 
     if (size < 2) {
-        char* ptr = insn.op_str;
+        ptr = op_str;
         while (ptr && *ptr != '\0') {
             if (!(*ptr >= '0' && *ptr <= '9' || *ptr >= 'a' && *ptr <= 'f'))
                 return false;
@@ -651,7 +651,7 @@ inline bool ExtractCallsToInsertFunctionNames(
         const bool isJump = insn->mnemonic[0] == 'j';
         if (*(uint32*) insn->mnemonic == callOP || isJump) {
             uint64 value;
-            const bool foundValue = CheckExtractInsnHexValue(*insn, value, maxLocationMemoryMappingSize);
+            const bool foundValue = CheckExtractInsnHexValue(insn->op_str, value, maxLocationMemoryMappingSize);
             if (foundValue && value < zoneDetails.startingZonePoint + zoneDetails.size) {
                 if (value < offsets[0].offset)
                     value += offsets[0].offset;
@@ -847,13 +847,13 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
       Reference<GView::Object> obj,
       const Pointer<SettingsData>& settings,
       AsmData& asmData,
-      DrawLineInfo& dli,
+      DrawLineInfo* dli,
       DissasmCodeZone* zone,
       uint32 asmLine,
       uint32 actualLine)
 {
     uint32 diffLines = 0;
-    cs_insn* insn    = GetCurrentInstructionByLine(asmLine, zone, obj, diffLines, &dli);
+    cs_insn* insn    = GetCurrentInstructionByLine(asmLine, zone, obj, diffLines, dli);
     if (!insn)
         return false;
 
@@ -898,7 +898,7 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
 
     // TODO: improve efficiency by filtering instructions
     uint64 hexVal = 0;
-    if (CheckExtractInsnHexValue(*insn, hexVal, settings->maxLocationMemoryMappingSize)) {
+    if (CheckExtractInsnHexValue(insn->op_str, hexVal, settings->maxLocationMemoryMappingSize)) {
         asmCacheLine.hexValue = hexVal;
         if (hexVal == 0 && asmCacheLine.flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             asmCacheLine.hexValue = zone->cachedCodeOffsets[0].offset;
@@ -982,22 +982,24 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     return true;
 }
 
-bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType)
+bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, DrawLineInfo* dli)
 {
-    const auto foundAnnotation = currentType.annotations.find(currentLine);
-    if (foundAnnotation != currentType.annotations.end()) {
-        address = foundAnnotation->second.second;
-        strncpy(mnemonic, foundAnnotation->second.first.data(), sizeof(mnemonic));
-        // strncpy((char*) bytes, "------", sizeof(bytes));
-        // size        = static_cast<uint32>(strlen((char*) bytes));
-        size        = 0;
-        currentLine = currentLine;
-        op_str      = strdup("<--");
-        op_str_size = static_cast<uint32>(strlen(op_str));
-        return true;
+    const auto foundAnnotation = currentType.annotations.find(lineToSearch);
+    if (foundAnnotation == currentType.annotations.end()) {
+        if (dli)
+            dli->WriteErrorToScreen("ERROR: failed to find annotation for line!");
+        return false;
     }
 
-    return false;
+    address = foundAnnotation->second.second;
+    strncpy(mnemonic, foundAnnotation->second.first.data(), sizeof(mnemonic));
+    // strncpy((char*) bytes, "------", sizeof(bytes));
+    // size        = static_cast<uint32>(strlen((char*) bytes));
+    size        = 0;
+    currentLine = lineToSearch;
+    op_str      = strdup("<--");
+    op_str_size = static_cast<uint32>(strlen(op_str));
+    return true;
 }
 
 bool DissasmAsmPreCacheLine::TryGetDataFromInsn(cs_insn* insn, uint32 currentLine)
@@ -1124,29 +1126,17 @@ bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
     while (currentLine < endingLine) {
         auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine);
         if (adjustedLine.has_value()) {
-            if (!ExtractDissasmAsmPreCacheLineFromCsInsn(obj, settings, asmData, dli, zone, adjustedLine.value(), currentLine)) {
+            if (!ExtractDissasmAsmPreCacheLineFromCsInsn(obj, settings, asmData, &dli, zone, adjustedLine.value(), currentLine)) {
                 dli.WriteErrorToScreen("ERROR: failed to extract asm ExtractDissasmAsmPreCacheLineFromCsInsn line!");
                 return false;
             }
         } else // we have annotation
         {
             const DissasmCodeInternalType& currentType = zone->types.back();
-            const auto foundAnnotation                 = currentType.annotations.find(zone->structureIndex);
-            if (foundAnnotation == currentType.annotations.end()) {
-                dli.WriteErrorToScreen("ERROR: failed to find annotation for line!");
-                return false;
-            }
-
             DissasmAsmPreCacheLine asmCacheLine{};
-            asmCacheLine.address = foundAnnotation->second.second;
-            strncpy(asmCacheLine.mnemonic, foundAnnotation->second.first.data(), sizeof(asmCacheLine.mnemonic));
-            // strncpy((char*) asmCacheLine.bytes, "------", sizeof(asmCacheLine.bytes));
-            // asmCacheLine.size        = static_cast<uint32>(strlen((char*) asmCacheLine.bytes));
-            asmCacheLine.size        = 0;
-            asmCacheLine.currentLine = currentLine;
-            asmCacheLine.op_str      = strdup("<--");
-            asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
-            cachedAsmLines.push_back(asmCacheLine);
+            if(!asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine, &dli))
+                return false;
+            cachedAsmLines.push_back(std::move(asmCacheLine));
         }
         currentLine++;
     }
@@ -1663,7 +1653,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
-    if (asmCacheLine.TryGetDataFromAnnotations(currentType))
+    if (asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine))
         return asmCacheLine;
 
     const uint32 value = currentType.GetCurrentAsmLine();

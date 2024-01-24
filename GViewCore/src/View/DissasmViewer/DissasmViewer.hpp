@@ -166,10 +166,10 @@ namespace View
                 flags           = other.flags;
                 lineArrowToDraw = other.lineArrowToDraw;
                 mapping         = other.mapping;
-                memcpy(bytes, other.bytes, 24);
+                memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
             }
-            bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType);
+            bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
             bool TryGetDataFromInsn(cs_insn* insn, uint32 currentLine);
 
             ~DissasmAsmPreCacheLine()
