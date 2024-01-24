@@ -982,6 +982,39 @@ bool ExtractDissasmAsmPreCacheLineFromCsInsn(
     return true;
 }
 
+bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType)
+{
+    const auto foundAnnotation = currentType.annotations.find(currentLine);
+    if (foundAnnotation != currentType.annotations.end()) {
+        address = foundAnnotation->second.second;
+        strncpy(mnemonic, foundAnnotation->second.first.data(), sizeof(mnemonic));
+        // strncpy((char*) bytes, "------", sizeof(bytes));
+        // size        = static_cast<uint32>(strlen((char*) bytes));
+        size        = 0;
+        currentLine = currentLine;
+        op_str      = strdup("<--");
+        op_str_size = static_cast<uint32>(strlen(op_str));
+        return true;
+    }
+
+    return false;
+}
+
+bool DissasmAsmPreCacheLine::TryGetDataFromInsn(cs_insn* insn, uint32 currentLine)
+{
+    if (!insn)
+        return false;
+    this->address     = insn->address;
+    this->size        = insn->size;
+    this->currentLine = currentLine;
+    this->op_str      = strdup(insn->op_str);
+    this->op_str_size = (uint32) strlen(this->op_str);
+    strcpy(this->mnemonic, insn->mnemonic);
+
+    this->hexValue = currentLine; //??
+    return true;
+}
+
 void DissasmAsmPreCacheData::PrepareLabelArrows()
 {
     if (cachedAsmLines.empty())
@@ -1568,7 +1601,7 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     bool reAdapt              = false;
     while (true) {
         const DissasmCodeInternalType& currentType = types.back();
-        if (currentType.indexZoneStart <= levelToReach && currentType.indexZoneEnd >= levelToReach) {
+        if (currentType.indexZoneStart <= levelToReach && levelToReach < currentType.indexZoneEnd) {
             if (!currentType.internalTypes.empty())
                 reAdapt = true;
             break;
@@ -1582,7 +1615,7 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
         DissasmCodeInternalType& currentType = types.back();
         for (uint32 i = 0; i < currentType.internalTypes.size(); i++) {
             auto& internalType = currentType.internalTypes[i];
-            if (internalType.indexZoneStart <= levelToReach && internalType.indexZoneEnd >= levelToReach) {
+            if (internalType.indexZoneStart <= levelToReach && levelToReach < internalType.indexZoneEnd) {
                 types.emplace_back(internalType);
                 levels.push_back(i);
                 break;
@@ -1594,8 +1627,8 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     // TODO: do a faster search using a binary search using the annotations and start from there
     // TODO: maybe use some caching here?
     if (reAdapt || levelNow < levelToReach && levelNow + 1 != levelToReach || levelNow > levelToReach && levelNow - 1 != levelToReach) {
-        currentType.textLinesPassed = currentType.beforeTextLines;
-        currentType.asmLinesPassed  = currentType.beforeAsmLines;
+        currentType.textLinesPassed = 0;
+        currentType.asmLinesPassed  = 0;
         for (uint32 i = currentType.indexZoneStart; i <= levelToReach; i++) {
             if (currentType.annotations.contains(i)) {
                 currentType.textLinesPassed++;
@@ -1629,41 +1662,18 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
 
     const DissasmCodeInternalType& currentType = types.back();
 
-    const auto foundAnnotation = currentType.annotations.find(currentLine);
-    if (foundAnnotation != currentType.annotations.end()) {
-        DissasmAsmPreCacheLine asmCacheLine{};
-        asmCacheLine.address = foundAnnotation->second.second;
-        strncpy(asmCacheLine.mnemonic, foundAnnotation->second.first.data(), sizeof(asmCacheLine.mnemonic));
-        // strncpy((char*) asmCacheLine.bytes, "------", sizeof(asmCacheLine.bytes));
-        // asmCacheLine.size        = static_cast<uint32>(strlen((char*) asmCacheLine.bytes));
-        asmCacheLine.size        = 0;
-        asmCacheLine.currentLine = currentLine;
-        asmCacheLine.op_str      = strdup("<--");
-        asmCacheLine.op_str_size = static_cast<uint32>(strlen(asmCacheLine.op_str));
+    DissasmAsmPreCacheLine asmCacheLine{};
+    if (asmCacheLine.TryGetDataFromAnnotations(currentType))
         return asmCacheLine;
-    }
 
     const uint32 value = currentType.GetCurrentAsmLine();
+    assert(value != 0);
 
     uint32 difflines = 0;
-    auto insn        = GetCurrentInstructionByLine(value, this, obj, difflines);
+    auto insn        = GetCurrentInstructionByLine(value - 1, this, obj, difflines);
 
-    DissasmAsmPreCacheLine asmCacheLine{};
-    asmCacheLine.address     = insn->address;
-    asmCacheLine.size        = insn->size;
-    asmCacheLine.currentLine = currentLine;
-    asmCacheLine.op_str      = strdup(insn->op_str);
-    asmCacheLine.op_str_size = (uint32) strlen(asmCacheLine.op_str);
-    strcpy(asmCacheLine.mnemonic, insn->mnemonic);
-
-    asmCacheLine.hexValue = insn->address; //??
-
+    assert(asmCacheLine.TryGetDataFromInsn(insn, currentLine));
     cs_free(insn, 1);
-
-    assert(value != 0);
-    /*if (value == 0)
-        return {};*/
-
     return asmCacheLine;
 }
 

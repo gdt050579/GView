@@ -190,7 +190,7 @@ class DissasmTestInstance
     bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0]);
-        printf("[%u]mnemonic: %s\n",line, val.mnemonic);
+        printf("[%u]mnemonic: %s\n", line, val.mnemonic);
         return val.mnemonic == mnemonic;
     }
 

@@ -29,6 +29,9 @@ namespace View
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 90;
 
+        using AnnotationDetails = std::pair<std::string, uint64>;
+        using AnnotationContainer = std::map<uint32, AnnotationDetails>;
+
         struct DisassemblyZone {
             uint64 startingZonePoint;
             uint64 size;
@@ -104,6 +107,7 @@ namespace View
             uint32 line;
         };
 
+        struct DissasmCodeInternalType;
         struct DissasmAsmPreCacheLine {
             enum InstructionFlag : uint8 { NoneFlag = 0x00, CallFlag = 0x1, PushFlag = 0x2, JmpFlag = 0x4 };
 
@@ -165,6 +169,9 @@ namespace View
                 memcpy(bytes, other.bytes, 24);
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
             }
+            bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType);
+            bool TryGetDataFromInsn(cs_insn* insn, uint32 currentLine);
+
             ~DissasmAsmPreCacheLine()
             {
                 if (op_str != nullptr)
@@ -269,7 +276,7 @@ namespace View
 
             uint32 textLinesPassed;
             uint32 asmLinesPassed;
-            std::map<uint32, std::pair<std::string, uint64>> annotations;
+            AnnotationContainer annotations;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
 
