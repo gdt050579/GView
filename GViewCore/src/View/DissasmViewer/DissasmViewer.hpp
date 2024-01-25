@@ -29,7 +29,7 @@ namespace View
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 90;
 
-        using AnnotationDetails = std::pair<std::string, uint64>;
+        using AnnotationDetails   = std::pair<std::string, uint64>;
         using AnnotationContainer = std::map<uint32, AnnotationDetails>;
 
         struct DisassemblyZone {
@@ -107,6 +107,16 @@ namespace View
             uint32 line;
         };
 
+        struct DissasmInsnExtractLineParams {
+            Reference<GView::Object> obj;
+            uint32 asmLine;
+            uint32 actualLine;
+            struct DissasmCodeZone* zone;
+            struct DrawLineInfo* dli;
+            struct SettingsData* settings;
+            struct AsmData* asmData;
+        };
+
         struct DissasmCodeInternalType;
         struct DissasmAsmPreCacheLine {
             enum InstructionFlag : uint8 { NoneFlag = 0x00, CallFlag = 0x1, PushFlag = 0x2, JmpFlag = 0x4 };
@@ -153,7 +163,7 @@ namespace View
                 flags           = other.flags;
                 lineArrowToDraw = other.lineArrowToDraw;
                 mapping         = other.mapping;
-                memcpy(bytes, other.bytes, 24);
+                memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
             }
             DissasmAsmPreCacheLine(const DissasmAsmPreCacheLine& other)
@@ -170,11 +180,11 @@ namespace View
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
             }
             bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
-            bool TryGetDataFromInsn(cs_insn* insn, uint32 currentLine);
+            bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
 
             ~DissasmAsmPreCacheLine()
             {
-                if (op_str != nullptr)
+                if (op_str)
                     free(op_str);
             }
         };
