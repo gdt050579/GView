@@ -1,4 +1,5 @@
 #include "DissasmViewer.hpp"
+#include "DissasmX86.hpp"
 #include <capstone/capstone.h>
 #include <cassert>
 #include <ranges>

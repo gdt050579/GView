@@ -10,7 +10,8 @@ target_sources(
 	UserDefinedTypes.cpp
 	DissasmProperties.cpp
 	DissasmKeyEvents.cpp
-        DissasmX86.cpp
+	DissasmX86.hpp        
+	DissasmX86.cpp
 	SingleSelectionDataWindow.cpp
         AdvancedSelection.hpp
 	AdvancedSelection.cpp

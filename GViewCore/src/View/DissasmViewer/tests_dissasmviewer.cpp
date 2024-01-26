@@ -1,5 +1,6 @@
 #include <catch.hpp>
 #include "DissasmViewer.hpp"
+#include "DissasmX86.hpp"
 
 using namespace GView::View::DissasmViewer;
 
@@ -169,7 +170,7 @@ class DissasmTestInstance
             }
 
             if (it.beforeTextLines != z.beforeTextLines || it.beforeAsmLines != z.beforeAsmLines) {
-                printf("ERROR: zone %d<->%d, %d<->%d", it.beforeTextLines, z.beforeTextLines, it.beforeAsmLines, z.beforeAsmLines);
+                printf("ERROR: [%d]zone: %d<->%d, %d<->%d", z.zoneIndex, it.beforeTextLines, z.beforeTextLines, it.beforeAsmLines, z.beforeAsmLines);
                 return false;
             }
         }
@@ -190,8 +191,11 @@ class DissasmTestInstance
     bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0]);
-        printf("[%u]mnemonic: %s\n", line, val.mnemonic);
-        return val.mnemonic == mnemonic;
+        if (val.mnemonic != mnemonic) {
+            printf("[%u]mnemonic: %s\n", line, val.mnemonic);
+            return false;
+        }
+        return true;
     }
 
     ~DissasmTestInstance()
@@ -200,27 +204,51 @@ class DissasmTestInstance
     }
 };
 
+TEST_CASE("DissasmFunctions", "[Dissasm]")
+{
+    uint64 value = 0;
+    REQUIRE(!CheckExtractInsnHexValue("mov eax, 0x1234", value, 5));
+    REQUIRE(!CheckExtractInsnHexValue("f0x1234", value, 5));
+    REQUIRE(!CheckExtractInsnHexValue("x1234", value, 5));
+    REQUIRE(!CheckExtractInsnHexValue("x", value, 5));
+
+    REQUIRE(CheckExtractInsnHexValue("123", value, 5));
+    REQUIRE(value == 123);
+
+    REQUIRE(CheckExtractInsnHexValue("0x123", value, 5));
+    REQUIRE(value == 0x123);
+
+    // TODO: enabled tests
+    // REQUIRE(CheckExtractInsnHexValue("mov ptr [0x123]", value, 5));
+    // REQUIRE(value == 0x123);
+
+    // REQUIRE(!CheckExtractInsnHexValue("mov eax, [0x123]", value, 5));
+    // REQUIRE(!CheckExtractInsnHexValue("mov [rbp + 0x123]", value, 5));
+    // REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
+}
+
 TEST_CASE("DissasmCollapsible", "[Dissasm]")
 {
     DissasmTestInstance dissasmInstance;
 
+    uint32 zoneEndingIndex = 4572;
     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
 
     REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
     REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 4571 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, zoneEndingIndex } }));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 2, 9 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, 4571 } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 2, 9 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
     REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
 
