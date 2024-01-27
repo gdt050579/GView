@@ -219,6 +219,7 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
     REQUIRE(value == 0x123);
 
     // TODO: enabled tests
+    // REQUIRE(CheckExtractInsnHexValue("  123", value, 5));
     // REQUIRE(CheckExtractInsnHexValue("mov ptr [0x123]", value, 5));
     // REQUIRE(value == 0x123);
 
