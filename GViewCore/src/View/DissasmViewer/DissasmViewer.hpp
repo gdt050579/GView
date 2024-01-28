@@ -280,6 +280,8 @@ namespace View
             std::string name;
             uint32 indexZoneStart;
             uint32 indexZoneEnd;
+            uint32 workingIndexZoneStart;
+            uint32 workingIndexZoneEnd;
 
             uint32 beforeTextLines;
             uint32 beforeAsmLines;
@@ -377,6 +379,7 @@ namespace View
                     return false;
                 return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
             }
+            bool CollapseOrExtendZone(uint32 zoneLine, bool collapse);
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj);

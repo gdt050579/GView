@@ -50,6 +50,29 @@ struct ZoneBeforeLines {
 
 class DissasmTestInstance
 {
+    bool CheckLinesWorkingIndexesSameAsZonesRecursive(std::vector<DissasmCodeInternalType>* childrenToCheck)
+    {
+        if (!childrenToCheck)
+            return true;
+
+        for (auto& z : *childrenToCheck) {
+            if (z.indexZoneStart != z.workingIndexZoneStart || z.indexZoneEnd != z.workingIndexZoneEnd) {
+                printf(
+                      "CheckLinesWorkingIndexesSameAsZonesRecursive ERROR: zone %d<->%d, %d<->%d",
+                      z.indexZoneStart,
+                      z.workingIndexZoneStart,
+                      z.indexZoneEnd,
+                      z.workingIndexZoneEnd);
+                return false;
+            }
+            if (!z.internalTypes.empty())
+                if (!CheckLinesWorkingIndexesSameAsZonesRecursive(&z.internalTypes))
+                    return false;
+        }
+
+        return true;
+    }
+
   public:
     Instance* instance;
     std::vector<GView::Object> objects;
@@ -198,6 +221,16 @@ class DissasmTestInstance
         return true;
     }
 
+    bool CheckLinesWorkingIndexesSameAsZones()
+    {
+        return CheckLinesWorkingIndexesSameAsZonesRecursive(&zone->dissasmType.internalTypes);
+    }
+
+    bool CheckCollapseOrExtendZone(uint32 zoneLine, bool collapse)
+    {
+        return zone->CollapseOrExtendZone(zoneLine, collapse);
+    }
+
     ~DissasmTestInstance()
     {
         delete instance;
@@ -229,7 +262,6 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
     REQUIRE(CheckExtractInsnHexValue("0x0", value, 5));
     REQUIRE(value == 0);
 
-    // TODO: enabled tests
     REQUIRE(CheckExtractInsnHexValue("  123", value, 5));
     REQUIRE(value == 123);
 
@@ -274,6 +306,8 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
 
+    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
+
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
@@ -283,6 +317,11 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
 
-    // dissasmInstance.ReachZoneLine(0);
-    // dissasmInstance.GetCurrentAsmLine(0);
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, true));
+    REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
+    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(7, true));
+    REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, true));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, true));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
 }

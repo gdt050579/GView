@@ -1569,6 +1569,42 @@ void Instance::CommandDissasmAddCollapsibleZone()
     //     zoneLineStart = 0;//the first zone is actually going from the left
 }
 
+bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, bool collapse, int32& difference)
+{
+    for (auto& zone : parent.internalTypes) {
+        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
+            if (GetRecursiveZoneByLine(zone, line, collapse, difference)) {
+                zone.indexZoneEnd += difference;
+                continue;
+            }
+
+            if (!zone.internalTypes.empty() || zone.name.empty())
+                return false;
+
+            if (collapse && zone.isCollapsed || !collapse && !zone.isCollapsed)
+                return false;
+
+            difference = static_cast<int32>(zone.indexZoneEnd - zone.indexZoneStart - 1);
+            if (collapse)
+                difference = -difference;
+            zone.isCollapsed = collapse;
+            zone.indexZoneEnd += difference;
+            continue;
+        }
+        if (difference && line < zone.indexZoneStart) {
+            zone.indexZoneStart += difference;
+            zone.indexZoneEnd += difference;
+        }
+    }
+    return difference != 0;
+}
+
+bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, bool collapse)
+{
+    int32 difference = 0;
+    return GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference);
+}
+
 bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
     // TODO: move this on init
@@ -1797,7 +1833,9 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     DissasmCodeInternalType newZone = {};
     newZone.name                    = zoneName.GetText();
     newZone.indexZoneStart          = zoneLineStart;
+    newZone.workingIndexZoneStart   = newZone.indexZoneStart;
     newZone.indexZoneEnd            = zoneLineEnd;
+    newZone.workingIndexZoneEnd     = newZone.indexZoneEnd;
 
     decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
 
@@ -1814,6 +1852,7 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
 
     DissasmCodeInternalType firstZone = {};
     firstZone.indexZoneStart          = std::min(parentZone->indexZoneStart, zoneLineStart);
+    firstZone.workingIndexZoneStart   = firstZone.indexZoneStart;
     firstZone.annotations             = std::move(annotationsBefore);
     bool insertMidZone                = false;
 
@@ -1829,15 +1868,17 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     }
 
     if (zoneLineStart == parentZone->indexZoneStart) { // first line
-        firstZone.name         = newZone.name;
-        firstZone.indexZoneEnd = zoneLineEnd;
+        firstZone.name                = newZone.name;
+        firstZone.indexZoneEnd        = zoneLineEnd;
+        firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
         firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
         // newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(firstZone);
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
     } else {
-        firstZone.indexZoneEnd = zoneLineStart;
-        insertMidZone          = true;
+        firstZone.indexZoneEnd        = zoneLineStart;
+        firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
+        insertMidZone                 = true;
 
         newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(newZone);
@@ -1846,17 +1887,22 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(newZone));
     }
 
-    lastZone.annotations  = std::move(annotationAfter);
-    lastZone.indexZoneEnd = indexZoneEnd;
+    lastZone.annotations         = std::move(annotationAfter);
+    lastZone.indexZoneEnd        = indexZoneEnd;
+    lastZone.workingIndexZoneEnd = lastZone.indexZoneEnd;
     if (zoneLineEnd == indexZoneEnd) {
-        lastZone.indexZoneStart = zoneLineStart;
+        lastZone.indexZoneStart        = zoneLineStart;
+        lastZone.workingIndexZoneStart = lastZone.indexZoneStart;
     } else {
-        lastZone.indexZoneStart = zoneLineEnd;
-        lastZone.indexZoneEnd   = indexZoneEnd;
+        lastZone.indexZoneStart        = zoneLineEnd;
+        lastZone.workingIndexZoneStart = lastZone.indexZoneStart;
+        lastZone.indexZoneEnd          = indexZoneEnd;
+        lastZone.workingIndexZoneEnd   = lastZone.indexZoneEnd;
 
         if (indexFound + 1 < internalTypes.size()) {
-            auto& nextZone        = internalTypes[indexFound + 1];
-            lastZone.indexZoneEnd = nextZone.indexZoneStart;
+            auto& nextZone               = internalTypes[indexFound + 1];
+            lastZone.indexZoneEnd        = nextZone.indexZoneStart;
+            lastZone.workingIndexZoneEnd = lastZone.indexZoneEnd;
         }
     }
 
