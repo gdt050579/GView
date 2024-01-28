@@ -208,8 +208,13 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
 {
     uint64 value = 0;
     REQUIRE(!CheckExtractInsnHexValue("mov eax, 0x1234", value, 5));
-    REQUIRE(!CheckExtractInsnHexValue("f0x1234", value, 5));
-    REQUIRE(!CheckExtractInsnHexValue("x1234", value, 5));
+
+    REQUIRE(CheckExtractInsnHexValue("f0x1234", value, 5));
+    REQUIRE(value == 0x1234);
+
+    REQUIRE(CheckExtractInsnHexValue("x1234", value, 5));
+    REQUIRE(value == 1234);
+
     REQUIRE(!CheckExtractInsnHexValue("x", value, 5));
 
     REQUIRE(CheckExtractInsnHexValue("123", value, 5));
@@ -218,14 +223,22 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
     REQUIRE(CheckExtractInsnHexValue("0x123", value, 5));
     REQUIRE(value == 0x123);
 
-    // TODO: enabled tests
-    // REQUIRE(CheckExtractInsnHexValue("  123", value, 5));
-    // REQUIRE(CheckExtractInsnHexValue("mov ptr [0x123]", value, 5));
-    // REQUIRE(value == 0x123);
+    REQUIRE(CheckExtractInsnHexValue("0", value, 5));
+    REQUIRE(value == 0);
 
-    // REQUIRE(!CheckExtractInsnHexValue("mov eax, [0x123]", value, 5));
-    // REQUIRE(!CheckExtractInsnHexValue("mov [rbp + 0x123]", value, 5));
-    // REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
+    REQUIRE(CheckExtractInsnHexValue("0x0", value, 5));
+    REQUIRE(value == 0);
+
+    // TODO: enabled tests
+    REQUIRE(CheckExtractInsnHexValue("  123", value, 5));
+    REQUIRE(value == 123);
+
+    REQUIRE(CheckExtractInsnHexValue("mov ptr [0x123]", value, 5));
+    REQUIRE(value == 0x123);
+
+    REQUIRE(!CheckExtractInsnHexValue("mov eax, [0x123]", value, 5));
+    REQUIRE(!CheckExtractInsnHexValue("mov [rbp + 0x123]", value, 5));
+    REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
 }
 
 TEST_CASE("DissasmCollapsible", "[Dissasm]")

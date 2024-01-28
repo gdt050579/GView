@@ -279,14 +279,48 @@ inline void DissasmAddColorsToInstruction(
 // TODO: maybe add also minimum number?
 bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
 {
-    const char* ptr   = op_str;
-    const char* start = nullptr;
-    uint32 size       = 0;
+    const char* ptr     = op_str;
+    const char* start   = nullptr;
+    uint32 size         = 0;
+    bool insideBrackets = false;
 
-    if (ptr[0] == '0' && ptr[1] == '\0') {
-        value = 0;
+    auto checkValidSequence = [&ptr, &insideBrackets]() -> bool {
+        while (ptr && *ptr != '\0') {
+            if (*ptr == ' ' || *ptr == '[' || *ptr >= 'a' && *ptr <= 'z' || *ptr >= 'A' && *ptr <= 'Z') {
+                if (*ptr == '[') {
+                    if (insideBrackets)
+                        return false;
+                    insideBrackets = true;
+                }
+                ptr++;
+                continue;
+            }
+            if (*ptr >= '0' && *ptr <= '9') {
+                break;
+            }
+            return false;
+        }
         return true;
-    }
+    };
+
+    if (!checkValidSequence())
+        return false;
+
+    // while (ptr && *ptr != '\0') {
+    //     if (*ptr == ' ' || *ptr == '[' || *ptr >= 'a' && *ptr <= 'z' || *ptr >= 'A' && *ptr <= 'Z') {
+    //         if (*ptr == '[') {
+    //             if (insideBrackets)
+    //                 return false;
+    //             insideBrackets = true;
+    //         }
+    //         ptr++;
+    //         continue;
+    //     }
+    //     if (*ptr >= '0' && *ptr <= '9') {
+    //         break;
+    //     }
+    //     return false;
+    // }
 
     bool is_hex = false;
     while (ptr && *ptr != '\0') {
@@ -294,8 +328,11 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
             if (*ptr == '0') // not hex
             {
                 ptr++;
-                if (!ptr || *ptr != 'x')
-                    return false;
+                if (!ptr || *ptr != 'x') {
+                    start = ptr - 1;
+                    size  = 1;
+                    continue;
+                }
                 ptr++;
                 start  = ptr;
                 is_hex = true;
@@ -317,13 +354,21 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
         ptr++;
     }
 
+    if (insideBrackets) {
+        if (!ptr)
+            return false;
+        if (*ptr != ']')
+            return false;
+        ptr++;
+    }
+
     if (maxSize < size) {
         const uint32 diff = size - static_cast<uint32>(maxSize);
         size -= diff;
         start += diff;
     }
 
-    if (!size || !start || !ptr)
+    if (!size || !start)
         return false;
 
     if (size < 2) {
@@ -334,6 +379,10 @@ bool CheckExtractInsnHexValue(const char* op_str, uint64& value, uint64 maxSize)
             ptr++;
         }
     }
+
+    if (!checkValidSequence())
+        return false;
+
     const NumberParseFlags numberFlags = is_hex ? NumberParseFlags::Base16 : NumberParseFlags::Base10;
     const auto sv                      = std::string_view(start, size);
     const auto converted               = Number::ToUInt64(sv, numberFlags);
