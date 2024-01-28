@@ -1708,8 +1708,9 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
-    if (asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine))
+    if (asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine)) {
         return asmCacheLine;
+    }
 
     const uint32 value = currentType.GetCurrentAsmLine();
     assert(value != 0);
@@ -1723,6 +1724,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     params.zone       = this;
 
     assert(asmCacheLine.TryGetDataFromInsn(params));
+    lastDrawnLine = asmLine;
 
     // uint32 difflines = 0;
     // auto insn        = GetCurrentInstructionByLine(value - 1, this, obj, difflines);
