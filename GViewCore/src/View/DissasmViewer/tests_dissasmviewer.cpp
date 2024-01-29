@@ -132,7 +132,7 @@ class DissasmTestInstance
 
     bool AddCollpasibleZone(uint32 zoneListStart, uint32 zoneLineEnd)
     {
-        return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd, false);
+        return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd);
     }
 
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
@@ -207,15 +207,25 @@ class DissasmTestInstance
 
     DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 line)
     {
-        auto val = zone->GetCurrentAsmLine(line, &objects[0]);
+        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
         return val;
     }
 
     bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
     {
-        auto val = zone->GetCurrentAsmLine(line, &objects[0]);
+        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
         if (val.mnemonic != mnemonic) {
             printf("[%u]mnemonic: %s\n", line, val.mnemonic);
+            return false;
+        }
+        return true;
+    }
+
+    bool CheckLineOpStr(uint32 line, std::string_view startWithStr)
+    {
+        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
+        if (!std::string_view(val.op_str, val.op_str_size).starts_with(startWithStr)) {
+            printf("[%u]op_str: %s\n", line, val.op_str);
             return false;
         }
         return true;
@@ -273,7 +283,7 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
     REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
 }
 
-TEST_CASE("DissasmCollapsible", "[Dissasm]")
+TEST_CASE("DissasmCollapsible1", "[Dissasm]")
 {
     DissasmTestInstance dissasmInstance;
 
@@ -324,4 +334,24 @@ TEST_CASE("DissasmCollapsible", "[Dissasm]")
     REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, true));
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, true));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
+}
+
+TEST_CASE("DissasmCollapsible2", "[Dissasm]")
+{
+    DissasmTestInstance dissasmInstance;
+
+    uint32 zoneEndingIndex = 4572;
+
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
+
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, true));
+    REQUIRE(dissasmInstance.CheckLineOpStr(0, "Zone"));
 }

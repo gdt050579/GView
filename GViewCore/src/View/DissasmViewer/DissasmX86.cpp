@@ -908,6 +908,13 @@ bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternal
     // size        = static_cast<uint32>(strlen((char*) bytes));
     size        = 0;
     currentLine = lineToSearch;
+
+    if (currentType.isCollapsed) {
+        op_str      = strdup(currentType.name.c_str());
+        op_str_size = static_cast<uint32>(currentType.name.size());
+        return true;
+    }
+
     op_str      = strdup("<--");
     op_str_size = static_cast<uint32>(strlen(op_str));
     return true;
@@ -925,6 +932,13 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
     size = insn->size;
     memcpy(mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
     currentLine = params.actualLine;
+
+    if (params.isCollapsed && params.zoneName) {
+        op_str      = strdup(params.zoneName->c_str());
+        op_str_size = static_cast<uint32>(params.zoneName->size());
+        cs_free(insn, 1);
+        return true;
+    }
 
     if (!params.settings || !params.asmData)
         return true;
@@ -1166,35 +1180,50 @@ bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
 
     uint32 currentLine      = startingLine;
     const uint32 endingLine = currentLine + linesToPrepare;
+
+    DissasmInsnExtractLineParams params{};
+    params.obj      = obj;
+    params.settings = settings.get();
+    params.asmData  = &asmData;
+    params.dli      = &dli;
+    params.zone     = zone;
+
     while (currentLine < endingLine) {
-        auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine);
-        if (adjustedLine.has_value()) {
-            DissasmInsnExtractLineParams params{};
-            params.obj        = obj;
-            params.settings   = settings.get();
-            params.asmData    = &asmData;
-            params.dli        = &dli;
-            params.zone       = zone;
-            params.asmLine    = adjustedLine.value();
-            params.actualLine = currentLine;
-
-            DissasmAsmPreCacheLine asmCacheLine{};
-            if (!asmCacheLine.TryGetDataFromInsn(params)) {
-                dli.WriteErrorToScreen("ERROR: failed to extract asm ExtractDissasmAsmPreCacheLineFromCsInsn line!");
-                return false;
-            }
-
-            cachedAsmLines.push_back(std::move(asmCacheLine));
-        } else // we have annotation
-        {
-            const DissasmCodeInternalType& currentType = zone->types.back();
-            DissasmAsmPreCacheLine asmCacheLine{};
-            if (!asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine, &dli))
-                return false;
-            cachedAsmLines.push_back(std::move(asmCacheLine));
-        }
+        auto asmCacheLine = zone->GetCurrentAsmLine(currentLine, obj, &params);
+        cachedAsmLines.push_back(std::move(asmCacheLine));
         currentLine++;
     }
+
+    // while (currentLine < endingLine) {
+    //     auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine);
+    //     if (adjustedLine.has_value()) {
+    //         DissasmInsnExtractLineParams params{};
+    //         params.obj        = obj;
+    //         params.settings   = settings.get();
+    //         params.asmData    = &asmData;
+    //         params.dli        = &dli;
+    //         params.zone       = zone;
+    //         params.asmLine    = adjustedLine.value();
+    //         params.actualLine = currentLine;
+
+    //        DissasmAsmPreCacheLine asmCacheLine{};
+    //        if (!asmCacheLine.TryGetDataFromInsn(params)) {
+    //            dli.WriteErrorToScreen("ERROR: failed to extract asm ExtractDissasmAsmPreCacheLineFromCsInsn line!");
+    //            return false;
+    //        }
+
+    //        cachedAsmLines.push_back(std::move(asmCacheLine));
+    //    } else // we have annotation
+    //    {
+    //        const DissasmCodeInternalType& currentType = zone->types.back();
+    //        DissasmAsmPreCacheLine asmCacheLine{};
+    //        if (!asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine, &dli))
+    //            return false;
+    //        cachedAsmLines.push_back(std::move(asmCacheLine));
+    //    }
+    //    currentLine++;
+    //}
+
     ComputeMaxLine();
     if (config.EnableDeepScanDissasmOnStart)
         PrepareLabelArrows();
@@ -1526,18 +1555,15 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     Cursor.hasMovedView  = true;
 }
 
-void Instance::CommandDissasmAddCollapsibleZone()
+void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation)
 {
-    // if (!selection.HasSelection(0)) {
-    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone!");
-    //     return;
-    // }
+    if (!selection.HasSelection(0)) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone!");
+        return;
+    }
 
-    // const auto lineStart = selection.GetSelectionStart(0);
-    // const auto lineEnd   = selection.GetSelectionEnd(0);
-    return; // disabled for now
-    const LinePosition lineStart = { 8, 25 };
-    const LinePosition lineEnd   = { 11, 40 };
+    const auto lineStart = selection.GetSelectionStart(0);
+    const auto lineEnd   = selection.GetSelectionEnd(0);
 
     const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart.line, lineEnd.line);
     if (zonesFound.empty() || zonesFound.size() != 1) {
@@ -1558,12 +1584,41 @@ void Instance::CommandDissasmAddCollapsibleZone()
 
     auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
 
-    // uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
-    // uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
-    // DissasmAddCollpasibleZone(zone, lineStart.line - 2, lineEnd.line - 2);
+    const uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
+    const uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
+    const uint32 zoneLineEnd    = zoneLineStart + zoneLinesCount;
 
-    zone->AddCollapsibleZone(obj, 6, 10);
-    // zone->AddCollapsibleZone(obj, 2, 4);
+    const char* operationName = nullptr;
+    switch (operation) {
+    case CollapsibleZoneOperation::Add:
+        if (!zone->AddCollapsibleZone(zoneLineStart, zoneLineEnd))
+            operationName = "Add";
+        break;
+    case CollapsibleZoneOperation::Expand:
+        if (!zone->CollapseOrExtendZone(zoneLineStart, false))
+            operationName = "Expand";
+        else
+            zone->asmPreCacheData.Clear();
+        break;
+    case CollapsibleZoneOperation::Collapse:
+        if (!zone->CollapseOrExtendZone(zoneLineStart, true))
+            operationName = "Collapse";
+        else
+            zone->asmPreCacheData.Clear();
+        break;
+    default:
+        Dialogs::MessageBox::ShowNotification("Warning", "Unimplemented!");
+        break;
+    }
+
+    if (operationName) {
+        LocalString<64> message;
+        message.SetFormat("Failed to %s to zone!", operationName);
+        Dialogs::MessageBox::ShowNotification("Error", message);
+    }
+
+    // zone->AddCollapsibleZone(obj, 6, 10);
+    //  zone->AddCollapsibleZone(obj, 2, 4);
 
     // if (zoneLineStart == 2)
     //     zoneLineStart = 0;//the first zone is actually going from the left
@@ -1737,13 +1792,18 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     // return value - 1u;
 }
 
-DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj)
+DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
 {
     ReachZoneLine(currentLine);
 
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
+
+    if (currentType.isCollapsed) {
+        assert(!currentType.name.empty());
+    }
+
     if (asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine)) {
         return asmCacheLine;
     }
@@ -1753,13 +1813,19 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
 
     uint32 asmLine = value - 1u;
 
-    DissasmInsnExtractLineParams params{};
-    params.asmLine    = asmLine;
-    params.obj        = obj;
-    params.actualLine = currentLine;
-    params.zone       = this;
+    DissasmInsnExtractLineParams* paramsPtr = params;
+    DissasmInsnExtractLineParams newParams{};
+    if (paramsPtr == nullptr) {
+        paramsPtr = &newParams;
+    }
+    paramsPtr->asmLine     = asmLine;
+    paramsPtr->obj         = obj;
+    paramsPtr->actualLine  = currentLine;
+    paramsPtr->zone        = this;
+    paramsPtr->isCollapsed = currentType.isCollapsed;
+    paramsPtr->zoneName    = &currentType.name;
 
-    assert(asmCacheLine.TryGetDataFromInsn(params));
+    assert(asmCacheLine.TryGetDataFromInsn(*paramsPtr));
     lastDrawnLine = asmLine;
 
     // uint32 difflines = 0;
@@ -1770,19 +1836,13 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     return asmCacheLine;
 }
 
-bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr)
+bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
 {
     if (!this->CanAddNewZone(zoneLineStart, zoneLineEnd)) {
-        if (showErr)
-            Dialogs::MessageBox::ShowNotification("Warning", "The selected zone is not valid!");
         return false;
     }
 
     return dissasmType.AddNewZone(zoneLineStart, zoneLineEnd);
-}
-
-void Instance::CommandDissasmRemoveZone()
-{
 }
 
 bool DissasmCodeInternalType::CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const

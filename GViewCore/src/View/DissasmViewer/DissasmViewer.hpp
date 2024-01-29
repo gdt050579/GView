@@ -115,6 +115,8 @@ namespace View
             struct DrawLineInfo* dli;
             struct SettingsData* settings;
             struct AsmData* asmData;
+            bool isCollapsed;
+            const std::string* zoneName;
         };
 
         struct DissasmCodeInternalType;
@@ -372,7 +374,7 @@ namespace View
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
 
-            bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd, bool showErr = true);
+            bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
             {
                 if (zoneLineStart > zoneLineEnd || zoneLineEnd > dissasmType.indexZoneEnd)
@@ -382,7 +384,7 @@ namespace View
             bool CollapseOrExtendZone(uint32 zoneLine, bool collapse);
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
-            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj);
+            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 
         struct MemoryMappingEntry {
@@ -502,6 +504,8 @@ namespace View
             }
         };
 
+        enum class CollapsibleZoneOperation : uint8 { Add, Expand, Collapse, Remove };
+
         class Instance : public View::ViewControl
         {
             enum class MouseLocation : uint8 { OnView, OnHeader, Outside };
@@ -619,8 +623,7 @@ namespace View
             void RenameLabel();
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
-            void CommandDissasmAddCollapsibleZone();
-            void CommandDissasmRemoveZone();
+            void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
           public:

@@ -246,7 +246,7 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
         OpenCurrentSelection();
         return true;
     case Key::X:
-        CommandDissasmAddCollapsibleZone();
+        CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Add);
         return true;
     }
 
@@ -286,9 +286,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
             return true;
-        //case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
-        //    AddNewCollapsibleTextZone();
-        //    return true;
+        // case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
+        //     AddNewCollapsibleTextZone();
+        //     return true;
         case RIGHT_CLICK_ADD_COMMENT:
             AddComment();
             return true;
@@ -302,10 +302,16 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             CommandExportAsmFile();
             return true;
         case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
-            CommandDissasmAddCollapsibleZone();
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Add);
             return true;
         case RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE:
-            CommandDissasmRemoveZone();
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Remove);
+            return true;
+        case RIGHT_CLICK_DISSASM_EXPAND_ZONE:
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Expand);
+            return true;
+        case RIGHT_CLICK_DISSASM_COLLAPSE_ZONE:
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Collapse);
             return true;
         case COMMAND_JUMP_BACK: {
             if (const auto [canJump, location] = jumps_holder.JumpBack(); canJump)
