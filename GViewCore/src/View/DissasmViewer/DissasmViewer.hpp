@@ -311,6 +311,8 @@ namespace View
 
             uint32 GetSize() const
             {
+                if (isCollapsed)
+                    return workingIndexZoneEnd - workingIndexZoneStart;
                 return indexZoneEnd - indexZoneStart;
             }
 
@@ -326,7 +328,7 @@ namespace View
             }
             bool IsValidDataLine() const
             {
-                return beforeTextLines + beforeAsmLines == indexZoneStart;
+                return beforeTextLines + beforeAsmLines == workingIndexZoneStart;
             }
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
@@ -384,6 +386,7 @@ namespace View
             bool CollapseOrExtendZone(uint32 zoneLine, bool collapse);
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
+            bool ResetTypesReferenceList();
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 

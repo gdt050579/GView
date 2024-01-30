@@ -902,18 +902,20 @@ bool DissasmAsmPreCacheLine::TryGetDataFromAnnotations(const DissasmCodeInternal
         return false;
     }
 
-    address = foundAnnotation->second.second;
-    strncpy(mnemonic, foundAnnotation->second.first.data(), sizeof(mnemonic));
-    // strncpy((char*) bytes, "------", sizeof(bytes));
-    // size        = static_cast<uint32>(strlen((char*) bytes));
     size        = 0;
     currentLine = lineToSearch;
+    address     = foundAnnotation->second.second;
 
     if (currentType.isCollapsed) {
         op_str      = strdup(currentType.name.c_str());
         op_str_size = static_cast<uint32>(currentType.name.size());
+        strncpy(mnemonic, "collapsed", std::min<uint32>(sizeof(mnemonic), 9));
         return true;
     }
+
+    strncpy(mnemonic, foundAnnotation->second.first.data(), sizeof(mnemonic));
+    // strncpy((char*) bytes, "------", sizeof(bytes));
+    // size        = static_cast<uint32>(strlen((char*) bytes));
 
     op_str      = strdup("<--");
     op_str_size = static_cast<uint32>(strlen(op_str));
@@ -929,16 +931,18 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     address = insn->address;
     memcpy(bytes, insn->bytes, std::min<uint32>(sizeof(bytes), sizeof(insn->bytes)));
-    size = insn->size;
-    memcpy(mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
+    size        = insn->size;
     currentLine = params.actualLine;
 
     if (params.isCollapsed && params.zoneName) {
         op_str      = strdup(params.zoneName->c_str());
         op_str_size = static_cast<uint32>(params.zoneName->size());
+        strncpy(mnemonic, "collapsed", std::min<uint32>(sizeof(mnemonic), 9));
         cs_free(insn, 1);
         return true;
     }
+
+    memcpy(mnemonic, insn->mnemonic, CS_MNEMONIC_SIZE);
 
     if (!params.settings || !params.asmData)
         return true;
@@ -1639,7 +1643,7 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, bool c
             if (collapse && zone.isCollapsed || !collapse && !zone.isCollapsed)
                 return false;
 
-            difference = static_cast<int32>(zone.indexZoneEnd - zone.indexZoneStart - 1);
+            difference = static_cast<int32>(zone.workingIndexZoneEnd - zone.workingIndexZoneStart - 1);
             if (collapse)
                 difference = -difference;
             zone.isCollapsed = collapse;
@@ -1649,6 +1653,12 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, bool c
         if (difference && line < zone.indexZoneStart) {
             zone.indexZoneStart += difference;
             zone.indexZoneEnd += difference;
+
+            AnnotationContainer zoneAnnotations = std::move(zone.annotations);
+            zone.annotations                    = {};
+            for (auto& annotation : zoneAnnotations) {
+                zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
+            }
         }
     }
     return difference != 0;
@@ -1792,6 +1802,17 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
     // return value - 1u;
 }
 
+bool DissasmCodeZone::ResetTypesReferenceList()
+{
+    types.clear();
+    levels.clear();
+    structureIndex  = 0;
+    lastReachedLine = static_cast<uint32>(-1);
+    types.emplace_back(dissasmType);
+    levels.push_back(0);
+    return true;
+}
+
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
 {
     ReachZoneLine(currentLine);
@@ -1842,7 +1863,10 @@ bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEn
         return false;
     }
 
-    return dissasmType.AddNewZone(zoneLineStart, zoneLineEnd);
+    if (!dissasmType.AddNewZone(zoneLineStart, zoneLineEnd))
+        return false;
+    ResetTypesReferenceList();
+    return true;
 }
 
 bool DissasmCodeInternalType::CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
@@ -1914,7 +1938,6 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     firstZone.indexZoneStart          = std::min(parentZone->indexZoneStart, zoneLineStart);
     firstZone.workingIndexZoneStart   = firstZone.indexZoneStart;
     firstZone.annotations             = std::move(annotationsBefore);
-    bool insertMidZone                = false;
 
     DissasmCodeInternalType lastZone = {};
 
@@ -1938,7 +1961,6 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     } else {
         firstZone.indexZoneEnd        = zoneLineStart;
         firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
-        insertMidZone                 = true;
 
         newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(newZone);
