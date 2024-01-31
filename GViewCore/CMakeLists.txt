@@ -98,7 +98,6 @@ target_include_directories(GViewCore PUBLIC ../AppCUI)
 target_link_libraries(GViewCore PUBLIC AppCUI)
 
 include_directories(include)
-include_directories(src/3rdparty)
 include_directories(src/include)
 include_directories(src/View/BufferViewer)
 include_directories(src/View/ImageViewer)
