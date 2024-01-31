@@ -33,21 +33,6 @@ const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
       { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } } }
 };
 
-struct {
-    int commandID;
-    string_view text;
-    // Input::Key shortcutKey = Input::Key::None;
-    ItemHandle handle = InvalidItemHandle;
-} RIGHT_CLICK_MENU_COMMANDS[] = { /*{ RIGHT_CLICK_MENU_CMD_NEW, "New structure" },
-                                  { RIGHT_CLICK_MENU_CMD_EDIT, "Edit zone" },
-                                  { RIGHT_CLICK_MENU_CMD_DELETE, "Delete zone" },
-                                  { RIGHT_CLICK_MENU_CMD_COLLAPSE, "Collapse zone" },*/
-                                  { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
-                                  { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
-                                  { RIGHT_CLICK_DISSASM_ADD_ZONE, "Collapse dissasm zone" },
-                                  { RIGHT_CLICK_DISSASM_REMOVE_ZONE, "Remove dissasm zone" }
-};
-
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
 {
@@ -207,44 +192,46 @@ void Instance::OpenCurrentSelection()
     GView::App::OpenBuffer(buffer, "temp_dissasm", fullPath, GView::App::OpenMethod::Select);
 }
 
-void Instance::AddNewCollapsibleZone()
-{
-    Dialogs::MessageBox::ShowNotification("Error", "Reenable this!");
-    // TODO: reenable this!!
-    // if (!selection.HasAnySelection())
-    //{
-    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
-    //     return;
-    // }
-
-    // const uint64 offsetStart = selection.GetSelectionStart(0);
-    // const uint64 offsetEnd   = selection.GetSelectionEnd(0);
-
-    // const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
-    // if (zonesFound.empty() || zonesFound.size() != 1)
-    //{
-    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single text zone!");
-    //     return;
-    // }
-
-    // const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
-    // if (zone->zoneType != DissasmParseZoneType::CollapsibleAndTextZone)
-    //{
-    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone!");
-    //     return;
-    // }
-
-    // auto data = static_cast<CollapsibleAndTextZone*>(zone.get());
-    // if (data->data.canBeCollapsed)
-    //{
-    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone that cannot be collapsed!");
-    //     return;
-    // }
-
-    //// TODO:
-    // settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
-    // RecomputeDissasmZones();
-}
+// TODO:Collaasible zone for text --> valid code, don't delete
+// TODO: reenable this!!
+// void Instance::AddNewCollapsibleTextZone()
+//{
+//    Dialogs::MessageBox::ShowNotification("Error", "Reenable this!");
+//    // TODO: reenable this!!
+//    // if (!selection.HasAnySelection())
+//    //{
+//    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection first!");
+//    //     return;
+//    // }
+//
+//    // const uint64 offsetStart = selection.GetSelectionStart(0);
+//    // const uint64 offsetEnd   = selection.GetSelectionEnd(0);
+//
+//    // const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+//    // if (zonesFound.empty() || zonesFound.size() != 1)
+//    //{
+//    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single text zone!");
+//    //     return;
+//    // }
+//
+//    // const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
+//    // if (zone->zoneType != DissasmParseZoneType::CollapsibleAndTextZone)
+//    //{
+//    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone!");
+//    //     return;
+//    // }
+//
+//    // auto data = static_cast<CollapsibleAndTextZone*>(zone.get());
+//    // if (data->data.canBeCollapsed)
+//    //{
+//    //     Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a text zone that cannot be collapsed!");
+//    //     return;
+//    // }
+//
+//    //// TODO:
+//    // settings->collapsibleAndTextZones[offsetStart] = { offsetStart, offsetEnd - offsetStart + 1, true };
+//    // RecomputeDissasmZones();
+//}
 
 void Instance::AddComment()
 {
@@ -277,7 +264,7 @@ void Instance::AddComment()
     convertedZone->comments.HasComment(startingLine, foundComment);
 
     selection.Clear();
-    SingleLineEditWindow dlg(foundComment,"Add Comment");
+    SingleLineEditWindow dlg(foundComment, "Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
         convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
     }
@@ -441,7 +428,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     uint32 levelToReach = dli.textLineToDraw;
     int16& levelNow     = structureZone->structureIndex;
 
-    // TODO: consider if this value can be biffer than int16
+    // TODO: consider if this value can be bigger than int16
     // bool increaseOffset = levelNow < (int16) levelToReach;
 
     // levelNow     = 0;
@@ -499,10 +486,10 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
                 currentLevel--;
                 structureZone->levels.push_back(currentLevel);
                 structureZone->types.push_back(currentType.internalTypes[currentLevel]);
-                int32 anteiorLevel = (int32) currentType.internalTypes[currentLevel].internalTypes.size();
-                if (anteiorLevel > 0)
-                    anteiorLevel--;
-                structureZone->levels.push_back(anteiorLevel);
+                int32 anteriorLevel = (int32) currentType.internalTypes[currentLevel].internalTypes.size();
+                if (anteriorLevel > 0)
+                    anteriorLevel--;
+                structureZone->levels.push_back(anteriorLevel);
                 isFromBreak = false;
             } else {
                 if (isFromBreak) {
@@ -529,13 +516,6 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
     }
 
     WriteStructureToScreen(dli, structureZone->types.back(), (uint32) (structureZone->levels.size() - 1) * 4, structureZone);
-    // if (increaseOffset)
-    //    UpdateCurrentZoneIndex(structureZone->types.back(), zone, true);
-
-    // assert(structureZone->levels.size() == 1);
-    // assert(structureZone->levels.back() == 0);
-    // assert(structureZone->textFileOffset == structureZone->initialTextFileOffset);
-
     return true;
 }
 
@@ -1426,10 +1406,9 @@ void DissasmComments::AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine
 
 void Instance::ProcessSpaceKey(bool goToEntryPoint)
 {
-    const uint64 offsetStart = Cursor.GetOffset(Layout.textSize);
-    const uint64 offsetEnd   = offsetStart + 1;
+    const auto linePos = Cursor.ToLinePosition();
 
-    const auto zonesFound = GetZonesIndexesFromPosition(offsetStart, offsetEnd);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(linePos.line);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a single zone!");
         return;

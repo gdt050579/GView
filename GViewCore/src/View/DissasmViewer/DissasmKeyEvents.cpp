@@ -245,6 +245,9 @@ bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
     case Key::Enter:
         OpenCurrentSelection();
         return true;
+    case Key::X:
+        CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Add);
+        return true;
     }
 
     if (keyCode == Config::AddOrEditCommentCommand.Key) {
@@ -283,23 +286,32 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
             return true;
-        case RIGHT_CLICK_MENU_CMD_COLLAPSE:
-            AddNewCollapsibleZone();
-            return true;
+        // case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
+        //     AddNewCollapsibleTextZone();
+        //     return true;
         case RIGHT_CLICK_ADD_COMMENT:
             AddComment();
             return true;
         case RIGHT_CLICK_REMOVE_COMMENT:
             RemoveComment();
             return true;
+        case RIGHT_CLICK_CLEAR_SELECTION:
+            selection.Clear();
+            return true;
         case COMMAND_EXPORT_ASM_FILE:
             CommandExportAsmFile();
             return true;
-        case RIGHT_CLICK_DISSASM_ADD_ZONE:
-            CommandDissasmAddZone();
+        case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Add);
             return true;
-        case RIGHT_CLICK_DISSASM_REMOVE_ZONE:
-            CommandDissasmRemoveZone();
+        case RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE:
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Remove);
+            return true;
+        case RIGHT_CLICK_DISSASM_EXPAND_ZONE:
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Expand);
+            return true;
+        case RIGHT_CLICK_DISSASM_COLLAPSE_ZONE:
+            CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation::Collapse);
             return true;
         case COMMAND_JUMP_BACK: {
             if (const auto [canJump, location] = jumps_holder.JumpBack(); canJump)
