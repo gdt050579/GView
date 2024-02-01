@@ -13,3 +13,4 @@ cmake-build-*/
 vcpkg_installed/
 .DS_Store
 *.db
+CMakeUserPresets.json
