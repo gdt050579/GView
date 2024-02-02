@@ -1592,6 +1592,7 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     const uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
     const uint32 zoneLineEnd    = zoneLineStart + zoneLinesCount;
 
+    int32 difference          = 0;
     const char* operationName = nullptr;
     switch (operation) {
     case CollapsibleZoneOperation::Add:
@@ -1599,13 +1600,13 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
             operationName = "Add";
         break;
     case CollapsibleZoneOperation::Expand:
-        if (!zone->CollapseOrExtendZone(zoneLineStart, false))
+        if (!zone->CollapseOrExtendZone(zoneLineStart, false, difference))
             operationName = "Expand";
         else
             zone->asmPreCacheData.Clear();
         break;
     case CollapsibleZoneOperation::Collapse:
-        if (!zone->CollapseOrExtendZone(zoneLineStart, true))
+        if (!zone->CollapseOrExtendZone(zoneLineStart, true, difference))
             operationName = "Collapse";
         else
             zone->asmPreCacheData.Clear();
@@ -1619,6 +1620,8 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
         LocalString<64> message;
         message.SetFormat("Failed to %s to zone!", operationName);
         Dialogs::MessageBox::ShowNotification("Error", message);
+    } else if (difference) {
+        AdjustZoneExtendedSize(zone, difference);
     }
 
     // zone->AddCollapsibleZone(obj, 6, 10);
@@ -1664,10 +1667,17 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, bool c
     return difference != 0;
 }
 
-bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, bool collapse)
+bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, bool collapse, int32& difference)
 {
-    int32 difference = 0;
-    return GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference);
+    difference = 0;
+    if (!GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference))
+        return false;
+
+    if (difference) {
+        difference += (int32) this->dissasmType.indexZoneEnd - 1;
+    }
+
+    return true;
 }
 
 bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)

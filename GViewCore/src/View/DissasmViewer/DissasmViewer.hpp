@@ -383,7 +383,7 @@ namespace View
                     return false;
                 return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
             }
-            bool CollapseOrExtendZone(uint32 zoneLine, bool collapse);
+            bool CollapseOrExtendZone(uint32 zoneLine, bool collapse,int32& difference);
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
             bool ResetTypesReferenceList();
