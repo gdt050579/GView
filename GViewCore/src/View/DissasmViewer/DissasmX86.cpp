@@ -1823,6 +1823,51 @@ bool DissasmCodeZone::ResetTypesReferenceList()
     return true;
 }
 
+DissasmCodeInternalType* GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
+{
+    for (auto& zone : parent.internalTypes) {
+        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
+            auto child = GetRecursiveCollpasedZoneByLine(zone, line);
+            if (child)
+                return child;
+            if (zone.isCollapsed)
+                return &zone;
+            return nullptr;
+        }
+    }
+
+    return nullptr;
+}
+
+bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
+{
+    // TODO: improve, add searching function to search inside types for the current annotation
+    auto& annotations = dissasmType.annotations;
+    auto it           = annotations.find(line);
+    if (it != annotations.end()) {
+        SingleLineEditWindow dlg(it->second.first, "Edit label");
+        if (dlg.Show() == Dialogs::Result::Ok) {
+            const auto res = dlg.GetResult();
+            if (!res.empty())
+                it->second.first = res;
+        }
+        return true;
+    }
+
+    auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+    if (collapsedZone) {
+        SingleLineEditWindow dlg(collapsedZone->name, "Edit collapsed zone label");
+        if (dlg.Show() == Dialogs::Result::Ok) {
+            const auto res = dlg.GetResult();
+            if (!res.empty())
+                collapsedZone->name = res;
+        }
+        return true;
+    }
+
+    return false;
+}
+
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
 {
     ReachZoneLine(currentLine);

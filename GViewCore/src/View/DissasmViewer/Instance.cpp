@@ -326,21 +326,11 @@ void Instance::RenameLabel()
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     startingLine             = startingLine - 1;
 
-    // TODO: improve, add searching function to search inside types for the current annotation
-    auto& annotations = convertedZone->types.back().get().annotations;
-    auto it           = annotations.find(startingLine);
-    if (it == annotations.end()) {
+    if (!convertedZone->TryRenameLine(startingLine)) {
         Dialogs::MessageBox::ShowNotification("Warning", "That line cannot pe renamed!");
         return;
     }
-
     selection.Clear();
-    SingleLineEditWindow dlg(it->second.first, "Edit label");
-    if (dlg.Show() == Dialogs::Result::Ok) {
-        const auto res = dlg.GetResult();
-        if (!res.empty())
-            it->second.first = res;
-    }
     convertedZone->asmPreCacheData.Clear();
 }
 

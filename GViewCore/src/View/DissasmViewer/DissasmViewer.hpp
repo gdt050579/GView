@@ -387,6 +387,7 @@ namespace View
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
             bool ResetTypesReferenceList();
+            bool TryRenameLine(uint32 line);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 
