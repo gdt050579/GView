@@ -1169,71 +1169,6 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     }
 }
 
-bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
-      Config& config,
-      Reference<GView::Object> obj,
-      const Pointer<SettingsData>& settings,
-      AsmData& asmData,
-      DrawLineInfo& dli,
-      DissasmCodeZone* zone,
-      uint32 startingLine,
-      uint32 linesToPrepare)
-{
-    if (!cachedAsmLines.empty())
-        return true;
-
-    uint32 currentLine      = startingLine;
-    const uint32 endingLine = currentLine + linesToPrepare;
-
-    DissasmInsnExtractLineParams params{};
-    params.obj      = obj;
-    params.settings = settings.get();
-    params.asmData  = &asmData;
-    params.dli      = &dli;
-    params.zone     = zone;
-
-    while (currentLine < endingLine) {
-        auto asmCacheLine = zone->GetCurrentAsmLine(currentLine, obj, &params);
-        cachedAsmLines.push_back(std::move(asmCacheLine));
-        currentLine++;
-    }
-
-    // while (currentLine < endingLine) {
-    //     auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine);
-    //     if (adjustedLine.has_value()) {
-    //         DissasmInsnExtractLineParams params{};
-    //         params.obj        = obj;
-    //         params.settings   = settings.get();
-    //         params.asmData    = &asmData;
-    //         params.dli        = &dli;
-    //         params.zone       = zone;
-    //         params.asmLine    = adjustedLine.value();
-    //         params.actualLine = currentLine;
-
-    //        DissasmAsmPreCacheLine asmCacheLine{};
-    //        if (!asmCacheLine.TryGetDataFromInsn(params)) {
-    //            dli.WriteErrorToScreen("ERROR: failed to extract asm ExtractDissasmAsmPreCacheLineFromCsInsn line!");
-    //            return false;
-    //        }
-
-    //        cachedAsmLines.push_back(std::move(asmCacheLine));
-    //    } else // we have annotation
-    //    {
-    //        const DissasmCodeInternalType& currentType = zone->types.back();
-    //        DissasmAsmPreCacheLine asmCacheLine{};
-    //        if (!asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine, &dli))
-    //            return false;
-    //        cachedAsmLines.push_back(std::move(asmCacheLine));
-    //    }
-    //    currentLine++;
-    //}
-
-    ComputeMaxLine();
-    if (config.EnableDeepScanDissasmOnStart)
-        PrepareLabelArrows();
-    return true;
-}
-
 bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0) {
@@ -1260,7 +1195,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
-        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+        RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
 
         if (!zone->isInit) {
             {
@@ -1343,12 +1278,30 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         }
     }
 
-    uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
-    const uint32 remainingLines = zone->extendedSize - currentLine + 1;
-    linesToPrepare              = std::min<uint32>(linesToPrepare, remainingLines);
+    auto& asmPreCacheData = zone->asmPreCacheData;
+    if (asmPreCacheData.cachedAsmLines.empty()) {
+        uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
+        const uint32 remainingLines = zone->extendedSize - currentLine + 1;
+        linesToPrepare              = std::min<uint32>(linesToPrepare, remainingLines);
+        const uint32 endingLine     = currentLine + linesToPrepare;
 
-    if (!zone->asmPreCacheData.PopulateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare))
-        return false;
+        DissasmInsnExtractLineParams params{};
+        params.obj      = obj;
+        params.settings = settings.get();
+        params.asmData  = &asmData;
+        params.dli      = &dli;
+        params.zone     = zone;
+
+        while (currentLine < endingLine) {
+            auto asmCacheLine = zone->GetCurrentAsmLine(currentLine, obj, &params);
+            asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
+            currentLine++;
+        }
+
+        asmPreCacheData.ComputeMaxLine();
+        if (config.EnableDeepScanDissasmOnStart)
+            asmPreCacheData.PrepareLabelArrows();
+    }
 
     const auto asmCacheLine = zone->asmPreCacheData.GetLine();
     if (!asmCacheLine)
