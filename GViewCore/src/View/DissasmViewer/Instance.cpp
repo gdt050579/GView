@@ -584,7 +584,8 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
         AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
         AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
-        RegisterStructureCollapseButton(dli, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
+        RegisterStructureCollapseButton(
+              dli.screenLineToDraw + 1, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
         break;
     default:
         return false;
@@ -644,7 +645,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
     if (zone->data.canBeCollapsed && dli.textLineToDraw == 0) {
         AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%llu] ", zone->data.size);
-        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+        RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
     } else {
         if (!zone->isCollapsed) {
             // TODO: hack-ish, maybe find another alternative or reset it down
@@ -720,9 +721,9 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     return DrawDissasmX86AndX64CodeZone(dli, zone);
 }
 
-void Instance::RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone)
+void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone)
 {
-    ButtonsData bData = { 3, (int) (dli.screenLineToDraw + 1), c, config.Colors.DataTypeColor, 3, zone };
+    const ButtonsData bData = { 3, static_cast<int>(screenLine), c, config.Colors.DataTypeColor, 3, zone };
     MyLine.buttons.push_back(bData);
 }
 
@@ -1301,8 +1302,6 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
     int32 sizeToAdjust = static_cast<int32>(zoneToChange->extendedSize);
     if (!zoneToChange->isCollapsed)
         sizeToAdjust *= -1;
-    zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
-    zoneToChange->endingLineIndex += sizeToAdjust;
 
     bool foundZone = false;
     for (auto& zone : settings->parseZones) {
@@ -1310,11 +1309,16 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
             zone->startLineIndex += sizeToAdjust;
             zone->endingLineIndex += sizeToAdjust;
         }
-        if (zoneToChange->zoneID == zone->zoneID)
+        if (zoneToChange->zoneID == zone->zoneID) {
             foundZone = true;
+        }
     }
-    UpdateLayoutTotalLines();
-    // TODO: search for following zones and update their size
+
+    if (foundZone) {
+        zoneToChange->isCollapsed = !zoneToChange->isCollapsed;
+        zoneToChange->endingLineIndex += sizeToAdjust;
+        UpdateLayoutTotalLines();
+    }
 }
 
 Instance::~Instance()

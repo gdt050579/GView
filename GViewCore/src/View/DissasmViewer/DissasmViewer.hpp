@@ -266,16 +266,6 @@ namespace View
             }
 
             void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
-
-            bool PopulateAsmPreCacheData(
-                  Config& config,
-                  Reference<GView::Object> obj,
-                  const Pointer<struct SettingsData>& settings,
-                  struct AsmData& asmData,
-                  struct DrawLineInfo& dli,
-                  DissasmCodeZone* zone,
-                  uint32 startingLine,
-                  uint32 linesToPrepare);
         };
 
         struct DissasmCodeInternalType {
@@ -590,7 +580,7 @@ namespace View
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
-            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
+            void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone);
             void ChangeZoneCollapseState(ParseZone* zoneToChange);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
