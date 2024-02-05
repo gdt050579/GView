@@ -1194,21 +1194,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
         dli.screenLineToDraw = tr;
         if (!PrepareDrawLineInfo(dli))
             break;
-
-        // uint64 val2 = ((uint64) tr - 1) * Layout.charactersPerLine;
-        // if (dli.viewOffset <= Cursor.currentPos && Cursor.currentPos < nextOffset)
-        //{
-        //    uint64 val                   = this->Cursor.currentPos % dli.textSize + dli.offset;
-        //    chars.GetBuffer()[val].Color = config.Colors.Cursor;
-        //}
-        // auto asdasdasd = CharacterView{ chars.GetBuffer(), 10 };
-        // srenderer.WriteSingleLineText(0, tr + 1, asdasdasd, DefaultColorPair);
-
-        // chars.Resize(10);
-        // renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
-
-    // asmData.bufferPool.Draw(renderer, config);
 
     if (!MyLine.buttons.empty()) {
         for (const auto& btn : MyLine.buttons)
@@ -1296,7 +1282,7 @@ void Instance::RecomputeDissasmLayout()
     Layout.textSize = std::max(this->Layout.totalCharactersPerLine, this->Layout.startingTextLineOffset) - this->Layout.startingTextLineOffset;
 }
 
-void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
+void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line)
 {
     selection.Clear();
     int32 sizeToAdjust = static_cast<int32>(zoneToChange->extendedSize);
@@ -1310,7 +1296,20 @@ void Instance::ChangeZoneCollapseState(ParseZone* zoneToChange)
             zone->endingLineIndex += sizeToAdjust;
         }
         if (zoneToChange->zoneID == zone->zoneID) {
-            foundZone = true;
+            {
+                if (zoneToChange->zoneType == DissasmParseZoneType::DissasmCodeParseZone && zone->startLineIndex != line) {
+                    auto codeZone     = static_cast<DissasmCodeZone*>(zone.get());
+                    uint32 insideLine = line - zone->startLineIndex - 2;
+                    int32 difference  = 0;
+                    if (!codeZone->CollapseOrExtendZone(insideLine, DissasmCodeZone::CollapseExpandType::NegateCurrentState, difference)) {
+                        Dialogs::MessageBox::ShowError("Error", "Could not process ChangeZoneCollapseState!");
+                        return;
+                    }
+                    codeZone->asmPreCacheData.Clear();
+                    break;
+                }
+                foundZone = true;
+            }
         }
     }
 
@@ -1410,11 +1409,11 @@ void Instance::ProcessSpaceKey(bool goToEntryPoint)
 
     const auto& zone = settings->parseZones[zonesFound[0].zoneIndex];
     if (goToEntryPoint && zone->isCollapsed) {
-        ChangeZoneCollapseState(zone.get());
+        ChangeZoneCollapseState(zone.get(), linePos.line);
     }
     if (!goToEntryPoint && zonesFound[0].startingLine == 0) // extending zone
     {
-        ChangeZoneCollapseState(zone.get());
+        ChangeZoneCollapseState(zone.get(), linePos.line);
         return;
     }
 
