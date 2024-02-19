@@ -188,10 +188,10 @@ class DissasmTestInstance
             }
             const auto& it = (*childrenToCheck)[z.zoneIndex];
 
-            //if (!it.IsValidDataLine()) {
-            //    printf("ERROR: !IsValidDataLine for zone %d, %d<->%d != %d", z.zoneIndex, it.beforeTextLines, it.beforeAsmLines, it.indexZoneStart);
-            //    return false;
-            //}
+            // if (!it.IsValidDataLine()) {
+            //     printf("ERROR: !IsValidDataLine for zone %d, %d<->%d != %d", z.zoneIndex, it.beforeTextLines, it.beforeAsmLines, it.indexZoneStart);
+            //     return false;
+            // }
 
             if (it.beforeTextLines != z.beforeTextLines || it.beforeAsmLines != z.beforeAsmLines) {
                 printf("ERROR: [%d]zone: %d<->%d, %d<->%d", z.zoneIndex, it.beforeTextLines, z.beforeTextLines, it.beforeAsmLines, z.beforeAsmLines);
@@ -237,9 +237,10 @@ class DissasmTestInstance
         return CheckLinesWorkingIndexesSameAsZonesRecursive(&zone->dissasmType.internalTypes);
     }
 
-    bool CheckCollapseOrExtendZone(uint32 zoneLine, bool collapse)
+    bool CheckCollapseOrExtendZone(uint32 zoneLine, DissasmCodeZone::CollapseExpandType collapse)
     {
-        return zone->CollapseOrExtendZone(zoneLine, collapse);
+        int32 difference = 0;
+        return zone->CollapseOrExtendZone(zoneLine, collapse, difference);
     }
 
     void PrintInstructions(uint32 count)
@@ -304,60 +305,60 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
     REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
 }
 
-TEST_CASE("DissasmCollapsible1", "[Dissasm]")
+TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]")
 {
     DissasmTestInstance dissasmInstance;
 
     uint32 zoneEndingIndex = 4572;
 
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
 
-    //REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, zoneEndingIndex } }));
-    //REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
+     REQUIRE(dissasmInstance.AddCollpasibleZone(2, 5));
+     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2 }, { 2, 5, true }, { 5, zoneEndingIndex } }));
+     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 } }));
 
-    //REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
-    //REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
+     REQUIRE(!dissasmInstance.AddCollpasibleZone(2, 5));
+     REQUIRE(!dissasmInstance.AddCollpasibleZone(1, 4));
 
-    //REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, zoneEndingIndex } }));
+     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 2));
+     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, zoneEndingIndex } }));
 
-    //REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    //REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
+     REQUIRE(dissasmInstance.AddCollpasibleZone(5, 11));
+     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
+     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
 
-    //REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
-    //REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
-    //REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
+     REQUIRE(dissasmInstance.AddCollpasibleZone(7, 9));
+     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 11, true }, { 11, zoneEndingIndex } }));
+     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 2 }, { 2, 0, 5 }, { 3, 3, 8 } }));
+     REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 9, true }, { 9, 11 } }));
+     REQUIRE(dissasmInstance.CheckBeforeLinesData(2, { { 0, 0, 5 }, { 1, 1, 6 }, { 2, 2, 7 } }));
 
-    //REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
+     REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
-    //REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
 
-    //REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, true));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
-    //REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(7, true));
-    //REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, true));
-    //REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, true));
-    //REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
+     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+     REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
+     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
+     REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(7, DissasmCodeZone::CollapseExpandType::Collapse));
+     REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
+     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
 }
 
-TEST_CASE("DissasmCollapsible2", "[Dissasm]")
+TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]")
 {
     DissasmTestInstance dissasmInstance;
 
@@ -390,11 +391,11 @@ TEST_CASE("DissasmCollapsible2", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, mnemonicArrayStart.size(), mnemonicArrayStart.data()));
     REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }}));
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, true));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
 
-    //dissasmInstance.PrintInstructions(50);
+    // dissasmInstance.PrintInstructions(50);
     std::array<const char*, 43> mnemonicArrayCollapse1 = { "collapsed", "sub_0x000000405",
                                                            "jmp",       "EntryPoint",
                                                            "jmp",       "sub_0x00000040F",
@@ -423,7 +424,7 @@ TEST_CASE("DissasmCollapsible2", "[Dissasm]")
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 31));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 8 }, { 8, 31, true }, { 31, zoneEndingIndex } }));
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, true));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
 
     std::array<const char*, 21> mnemonicArrayCollapse2 = { "collapsed", "sub_0x000000405",
                                                            "jmp",       "EntryPoint",
@@ -436,7 +437,7 @@ TEST_CASE("DissasmCollapsible2", "[Dissasm]")
                                                            "mov",       "call",
                                                            "cmp",       "jle",
                                                            "cmp" };
-    //dissasmInstance.PrintInstructions(50);
+    // dissasmInstance.PrintInstructions(50);
     REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, mnemonicArrayCollapse2.size(), mnemonicArrayCollapse2.data()));
-    //dissasmInstance.PrintInstructions(50);
+    // dissasmInstance.PrintInstructions(50);
 }
