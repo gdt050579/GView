@@ -317,7 +317,7 @@ class DissasmTestInstance
             return false;
         }
 
-        if (!cache.Init(std::move(memoryFile), memoryFile->GetSize())) {
+        if (!cache.Init(std::move(memoryFile), static_cast<uint32>(memoryFile->GetSize()))) {
             printf("ERROR: creating cache!");
             return false;
         }
@@ -354,13 +354,13 @@ class DissasmTestInstance
 
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
     {
-        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != -1u) {
+        if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
             printf("ERROR: invalid zone index %d >= %llu", zoneIndex, zone->dissasmType.internalTypes.size());
             return false;
         }
 
         std::vector<DissasmCodeInternalType>* childrenToCheck = &zone->dissasmType.internalTypes;
-        if (zoneIndex != -1u)
+        if (zoneIndex != UINT32_MAX)
             childrenToCheck = &zone->dissasmType.internalTypes[zoneIndex].internalTypes;
 
         if (childrenToCheck->size() != zones.size()) {
@@ -655,4 +655,50 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]")
     // dissasmInstance.PrintInstructions(50);
     REQUIRE(dissasmInstance.CheckLineMnemonicArray(0, mnemonicArrayCollapse2.size(), mnemonicArrayCollapse2.data()));
     // dissasmInstance.PrintInstructions(50);
+}
+
+TEST_CASE("AddAndRemoveCollapsibleZone", "[Dissasm]")
+{
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+
+    uint32 zoneEndingIndex = 4572;
+    // dissasmInstance.PrintInstructions(50);
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(0, 5));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
+
+    REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
+
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
+
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand));
+
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
+
+    // REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
+    // REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
+    // REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(7, DissasmCodeZone::CollapseExpandType::Collapse));
+    // REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(8, DissasmCodeZone::CollapseExpandType::Collapse));
+    // REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(1, DissasmCodeZone::CollapseExpandType::Collapse));
+    // REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
 }
