@@ -1633,6 +1633,14 @@ bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType c
     return true;
 }
 
+bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
+{
+    if (!dissasmType.RemoveCollapsibleZone(zoneLine))
+        return false;
+    ResetTypesReferenceList();
+    return true;
+}
+
 bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
     // TODO: move this on init
@@ -2010,4 +2018,9 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         internalTypes.erase(internalTypes.begin() + indexFound);
     }
     return true;
+}
+
+bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine)
+{
+    return false;
 }

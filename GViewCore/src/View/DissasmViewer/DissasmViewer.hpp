@@ -329,6 +329,7 @@ namespace View
             }
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
+            bool RemoveCollapsibleZone(uint32 zoneLine);
         };
 
         struct DissasmComments {
@@ -389,6 +390,7 @@ namespace View
                 return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
             }
             bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
+            bool RemoveCollapsibleZone(uint32 zoneLine);
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
             bool ResetTypesReferenceList();
