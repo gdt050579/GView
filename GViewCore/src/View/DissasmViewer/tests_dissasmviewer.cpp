@@ -459,6 +459,11 @@ class DissasmTestInstance
         return zone->CollapseOrExtendZone(zoneLine, collapse, difference);
     }
 
+    bool RemoveCollapsibleZone(uint32 zoneLine)
+    {
+        return zone->RemoveCollapsibleZone(zoneLine);
+    }
+
     void PrintInstructions(uint32 count)
     {
         for (uint32 i = 0; i < count; i++) {
@@ -691,9 +696,12 @@ TEST_CASE("AddAndRemoveCollapsibleZone", "[Dissasm]")
 
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand));
 
-    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
-    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
+    REQUIRE(dissasmInstance.RemoveCollapsibleZone(0));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, zoneEndingIndex } }));
+
+    //REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
+    //REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
+    //REQUIRE(dissasmInstance.CheckLineMnemonic(2, "jmp"));
 
     // REQUIRE(dissasmInstance.CheckInternalTypes(2, { { 5, 7 }, { 7, 8, true }, { 8, 10 } }));
     // REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 2, true }, { 2, 5, true }, { 5, 10, true }, { 10, zoneEndingIndex - 1 } }));
