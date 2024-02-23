@@ -35,11 +35,16 @@ uint32 EMLFile::ParseHeaderFieldBody(TextParser text, uint32 start)
 
 void EMLFile::HandlePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end)
 {
-    syntax.tokens.Add(1, start, end, TokenColor::String, TokenAlignament::StartsOnNewLine);
+    Buffer buffer;
+    buffer.Add(syntax.text.GetSubString(start, end));
+    // TODO: change child to something else
+    GView::App::OpenBuffer(buffer, obj->GetName(), "child", GView::App::OpenMethod::BestMatch);
+
+    //syntax.tokens.Add(1, start, end, TokenColor::String, TokenAlignament::StartsOnNewLine);
 }
 
 
-void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index)
+void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index, std::vector<std::pair<std::u16string, std::u16string>>& headersContainer)
 {
     uint32 start = index, end = index;
 
@@ -47,10 +52,10 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
     {
         if (text.GetSubString(start, start + 2) == u"\r\n") // end of headers
         {
-            start += 2; // skip the bytes
+            start += 2; // skip CRLF
             break;
         }
-        
+
         // header-field name
         end = text.ParseUntillText(start, ":", false);
 
@@ -64,13 +69,13 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
 
         std::u16string fieldBody(text.GetSubString(start, end));
 
-        // remove \r\n
+        // remove CRLF
         size_t pos = 0;
-        while ((pos = fieldBody.find(u"\r\n", pos)) != std::string::npos)
+        while ((pos = fieldBody.find(u"\r\n", pos)) != std::u16string::npos)
             fieldBody.replace(pos, 2, u"");
 
         // the field index is there to preserve the order of insertion
-        headerFields.push_back({ fieldName, fieldBody });
+        headersContainer.push_back({ fieldName, fieldBody });
 
         start = end + 2;
     }
@@ -78,94 +83,83 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
     index = start;
 }
 
-void EMLFile::ParseParts(GView::View::LexicalViewer::SyntaxManager& syntax, uint32& index, string_view boundary)
+// TODO: put these function into the EMLFile class
+void EMLFile::ParsePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end)
 {
-    uint32 start = index, end;
+    std::vector<std::pair<std::u16string, std::u16string>> headers;
 
-    start = syntax.text.ParseUntillText(start, boundary, false);
-    end   = start + boundary.size();
+    ParseHeaders(syntax.text, start, headers);
 
-    // boundary
-    syntax.tokens.Add(1, start, end, TokenColor::Comment, TokenAlignament::StartsOnNewLine);
-    start = end;
+    const auto& found = std::find_if(headers.begin(), headers.end(), [](const auto& item) { return item.first == u"Content-Type"; });
+    CHECKRET(found != headers.end(), "");
 
-    while (start < syntax.text.Len())
-    {
-        end = syntax.text.ParseUntillText(start, boundary, false);
-
-        if (end == syntax.text.Len())
-            break;
-
-        // content
-        HandlePart(syntax, start, end);
-
-        start = syntax.text.ParseUntillText(start, boundary, false);
-        end   = start + boundary.size();
-
-        // boundary
-        syntax.tokens.Add(1, start, end, TokenColor::Comment, TokenAlignament::StartsOnNewLine);
-
-        start = end;
-    }
-
-    index = start;
-}
-
-void EMLFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
-{
-    uint32 index = 0;
-    
-    ParseHeaders(syntax.text, index);
-
-    const auto& it = std::find_if(headerFields.begin(), headerFields.end(), 
-        [](const auto& item) { return item.first == u"Content-Type"; });
-    CHECKRET(it != headerFields.end(), "");
-
-    TextParser contentTypeParser(it->second);
+    TextParser contentTypeParser(found->second);
 
     uint32 typeEnd = contentTypeParser.ParseUntillText(0, "/", false);
     CHECKRET(typeEnd != contentTypeParser.Len(), "");
 
     u16string_view type = contentTypeParser.GetSubString(0, typeEnd);
-    
-    if (type == u"multipart")
+
+    // TODO: handle message/rfc822
+
+    if (type != u"multipart") {
+        // base case
+        // simple type (text|application|...)
+        HandlePart(syntax, start, end);
+        return;
+    }
+
+    // TODO: ar merge un tree view pentru eml-urile care au mai multe multiparts
+    // imbricate (fiecare element din treeview sa fie deschis de un alt plugin)
+
+    // get the boundary for the parts
+    std::string boundary;
+
+    uint32 boundaryStart = contentTypeParser.ParseUntilNextCharacterAfterText(typeEnd, "boundary=", true);
+    CHECKRET(boundaryStart != contentTypeParser.Len(), "");
+
+    uint32 boundaryEnd;
+
+    if (contentTypeParser[boundaryStart] == '"')
     {
-        // get the boundary for the parts
-        std::string boundary;
-    
-        // TODO: ar merge un tree view pentru eml-urile care au mai multe multiparts 
-        // imbricate (fiecare element din treeview sa fie deschis de un alt plugin)
-        
-        uint32 boundaryStart = contentTypeParser.ParseUntilNextCharacterAfterText(typeEnd, "boundary=", true);
-        CHECKRET(boundaryStart != contentTypeParser.Len(), "");
-
-        uint32 boundaryEnd;
-
-        if (contentTypeParser[boundaryStart] == '"')
-        {
-            // the boundary is enclosed in quotes
-            boundaryStart++;
-            // TODO: remove workaround after I get a solution for the ParseUntillText bug
-            boundaryEnd = contentTypeParser.Parse(boundaryStart, [](char16 ch) { return ch != '"'; });
-            // boundaryEnd = contentTypeParser.ParseUntillText(boundaryStart, "\"", false);
-        }
-        else
-        {
-            boundaryEnd = contentTypeParser.Parse(boundaryStart, [](char16 ch) { return ch != ';'; });
-            // boundaryEnd = contentTypeParser.ParseUntillText(boundaryStart, ";", false);
-        }
-
-        boundary = "--";
-        for (char16_t ch : contentTypeParser.GetSubString(boundaryStart, boundaryEnd))
-            boundary.push_back(ch);
-
-        ParseParts(syntax, index, boundary);
+        // the boundary is enclosed in quotes
+        boundaryStart++;
+        boundaryEnd = contentTypeParser.ParseUntillText(boundaryStart, "\"", false);
     }
     else
     {
-        // simple type (text|application|...)
-        HandlePart(syntax, index, syntax.text.Len());
+        boundaryEnd = contentTypeParser.ParseUntillText(boundaryStart, ";", false);
     }
+
+    boundary = "--";
+    for (char16 ch : contentTypeParser.GetSubString(boundaryStart, boundaryEnd))
+        boundary.push_back((char) ch);
+
+    // get the start and end for each subpart
+    uint32 partStart = start;
+    uint32 partEnd;
+
+    do 
+    {
+        partStart = syntax.text.ParseUntilNextCharacterAfterText(partStart, boundary, false);
+        partStart = syntax.text.ParseSpace(partStart, SpaceType::All);
+
+        if (syntax.text.ParseUntillText(partStart, "--", false) == partStart)
+        {
+            // end of part
+            break;
+        }
+        
+        partEnd   = syntax.text.ParseUntillText(partStart, boundary, false);
+        ParsePart(syntax, partStart, partEnd);
+
+        partStart = partEnd;
+    } while (partEnd < end);
+}
+
+void EMLFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
+{
+    ParsePart(syntax, 0, syntax.text.Len());
 }
 
 bool EMLFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)

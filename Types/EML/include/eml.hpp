@@ -20,10 +20,11 @@ namespace Type
 
             std::vector<std::pair<std::u16string, std::u16string>> headerFields;
 
+            void ParsePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end);
             //void AddTreeElement();
             void HandlePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end);
-            void ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index);
-            void ParseParts(GView::View::LexicalViewer::SyntaxManager& syntax, uint32& index, string_view boundary);
+            void ParseHeaders(
+                  GView::View::LexicalViewer::TextParser text, uint32& index, std::vector<std::pair<std::u16string, std::u16string>>& headersContainer);
             uint32 ParseHeaderFieldBody(GView::View::LexicalViewer::TextParser text, uint32 index);
 
           public:
