@@ -1580,67 +1580,6 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     }
 }
 
-bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, DissasmCodeZone::CollapseExpandType collapse, int32& difference)
-{
-    for (auto& zone : parent.internalTypes) {
-        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
-            if (GetRecursiveZoneByLine(zone, line, collapse, difference)) {
-                zone.indexZoneEnd += difference;
-                continue;
-            }
-
-            if (!zone.internalTypes.empty() || zone.name.empty())
-                return false;
-
-            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed ||
-                collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed)
-                return false;
-
-            if(collapse == DissasmCodeZone::CollapseExpandType::NegateCurrentState)
-                collapse = zone.isCollapsed ? DissasmCodeZone::CollapseExpandType::Expand : DissasmCodeZone::CollapseExpandType::Collapse;
-
-            difference = static_cast<int32>(zone.workingIndexZoneEnd - zone.workingIndexZoneStart - 1);
-            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse)
-                difference = -difference;
-            zone.isCollapsed = collapse == DissasmCodeZone::CollapseExpandType::Collapse;
-            zone.indexZoneEnd += difference;
-            continue;
-        }
-        if (difference && line < zone.indexZoneStart) {
-            zone.indexZoneStart += difference;
-            zone.indexZoneEnd += difference;
-
-            AnnotationContainer zoneAnnotations = std::move(zone.annotations);
-            zone.annotations                    = {};
-            for (auto& annotation : zoneAnnotations) {
-                zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
-            }
-        }
-    }
-    return difference != 0;
-}
-
-bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference)
-{
-    difference = 0;
-    if (!GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference))
-        return false;
-
-    if (difference) {
-        difference += (int32) this->dissasmType.indexZoneEnd - 1;
-    }
-
-    return true;
-}
-
-bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
-{
-    if (!dissasmType.RemoveCollapsibleZone(zoneLine))
-        return false;
-    ResetTypesReferenceList();
-    return true;
-}
-
 bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 {
     // TODO: move this on init
@@ -1881,6 +1820,72 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     return asmCacheLine;
 }
 
+#pragma region CollapsibleZoneOperations
+
+bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, DissasmCodeZone::CollapseExpandType collapse, int32& difference)
+{
+    for (auto& zone : parent.internalTypes) {
+        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
+            if (GetRecursiveZoneByLine(zone, line, collapse, difference)) {
+                zone.indexZoneEnd += difference;
+                continue;
+            }
+
+            if (!zone.internalTypes.empty() || zone.name.empty())
+                return false;
+
+            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed ||
+                collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed)
+                return false;
+
+            if (collapse == DissasmCodeZone::CollapseExpandType::NegateCurrentState)
+                collapse = zone.isCollapsed ? DissasmCodeZone::CollapseExpandType::Expand : DissasmCodeZone::CollapseExpandType::Collapse;
+
+            difference = static_cast<int32>(zone.workingIndexZoneEnd - zone.workingIndexZoneStart - 1);
+            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse)
+                difference = -difference;
+            zone.isCollapsed = collapse == DissasmCodeZone::CollapseExpandType::Collapse;
+            zone.indexZoneEnd += difference;
+            continue;
+        }
+        if (difference && line < zone.indexZoneStart) {
+            zone.indexZoneStart += difference;
+            zone.indexZoneEnd += difference;
+
+            AnnotationContainer zoneAnnotations = std::move(zone.annotations);
+            zone.annotations                    = {};
+            for (auto& annotation : zoneAnnotations) {
+                zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
+            }
+        }
+    }
+    return difference != 0;
+}
+
+bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference)
+{
+    difference = 0;
+    if (!GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference))
+        return false;
+
+    if (difference) {
+        difference += (int32) this->dissasmType.indexZoneEnd - 1;
+    }
+
+    return true;
+}
+
+bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
+{
+    const auto zoneDetailsData = dissasmType.GetRemoveZoneCollapsibleDetails(zoneLine);
+    if (!zoneDetailsData.zone)
+        return false;
+    if (!dissasmType.RemoveCollapsibleZone(zoneLine, zoneDetailsData))
+        return false;
+    ResetTypesReferenceList();
+    return true;
+}
+
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
 {
     if (!this->CanAddNewZone(zoneLineStart, zoneLineEnd)) {
@@ -1895,6 +1900,7 @@ bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEn
 
 bool DissasmCodeInternalType::CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
 {
+    // TODO: add similar optimization like GetRemoveZoneCollapsibleDetails to end when too big interval is given
     for (const auto& zone : internalTypes) {
         if (zone.indexZoneStart <= zoneLineStart && zoneLineStart < zone.indexZoneEnd) {
             if (zone.indexZoneStart <= zoneLineStart && zoneLineEnd <= zone.indexZoneEnd) {
@@ -2020,7 +2026,87 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     return true;
 }
 
-bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine)
+DissasmCodeRemovableZoneDetails DissasmCodeInternalType::GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel)
 {
-    return false;
+    if (internalTypes.empty())
+        return {};
+    if (zoneLine > internalTypes.back().indexZoneEnd)
+        return {};
+    uint32 zoneIndex = 0;
+    for (auto& zone : internalTypes) {
+        if (zone.indexZoneStart <= zoneLine && zoneLine < zone.indexZoneEnd) {
+            if (!zone.name.empty() && !zone.isCollapsed) {
+                return { &zone, depthLevel == 0 ? this : nullptr, zoneIndex };
+            }
+            const auto result = zone.GetRemoveZoneCollapsibleDetails(zoneLine, depthLevel + 1);
+            if (!result.zone)
+                return {};
+            if (result.parent)
+                return result;
+            return { result.zone, &zone, result.zoneIndex };
+        }
+        zoneIndex++;
+    }
+    return {};
 }
+
+bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails)
+{
+    if (internalTypes.size() == 2) { // last two zone, we clear them
+        for (const auto& zone : internalTypes) {
+            if (zone.isCollapsed)
+                return false; // TODO: remove special case for the last two zones when one of them is collapsed
+        }
+        internalTypes.clear();
+        return true;
+    }
+
+    // special case: when we have 3 zones and only the middle one is collpasible
+    // after we remove it, we need to merge the first and the last one since they are not collapsible
+    // so having only 3 zones => we can remove all since we never have only one zone
+    auto& parentInternalTypes = removableDetails.parent->internalTypes;
+    if (parentInternalTypes.size() == 3 && removableDetails.zoneIndex == 1) {
+        if (!parentInternalTypes[0].name.empty() && !parentInternalTypes[2].name.empty()) {
+            parentInternalTypes.clear();
+            return true;
+        }
+    }
+
+    // TODO: optimize this
+    std::vector<uint32> indexesToRemove;
+    indexesToRemove.reserve(2);
+
+    DissasmCodeInternalType* zoneToUpdate = removableDetails.zone;
+    if (removableDetails.zoneIndex > 0)
+        zoneToUpdate = &parentInternalTypes[removableDetails.zoneIndex - 1];
+
+    if (removableDetails.zoneIndex < static_cast<uint32>(parentInternalTypes.size()) - 1) {
+        const auto& nextZone = parentInternalTypes[removableDetails.zoneIndex + 1];
+        if (nextZone.name.empty()) {
+            {
+                indexesToRemove.push_back(removableDetails.zoneIndex + 1);
+                zoneToUpdate->indexZoneEnd        = nextZone.indexZoneEnd;
+                zoneToUpdate->workingIndexZoneEnd = zoneToUpdate->indexZoneEnd;
+            }
+        }
+    }
+    if (removableDetails.zoneIndex > 0) {
+        const auto& prevZone = parentInternalTypes[removableDetails.zoneIndex - 1];
+        if (prevZone.name.empty()) {
+            {
+                indexesToRemove.push_back(removableDetails.zoneIndex);
+                zoneToUpdate->indexZoneStart        = prevZone.indexZoneStart;
+                zoneToUpdate->workingIndexZoneStart = zoneToUpdate->indexZoneStart;
+            }
+        }
+    }
+    for (const auto index : indexesToRemove) {
+        parentInternalTypes.erase(parentInternalTypes.begin() + index);
+    }
+
+    zoneToUpdate->name.clear();
+
+    return true;
+}
+
+#pragma endregion

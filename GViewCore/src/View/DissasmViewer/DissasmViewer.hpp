@@ -274,7 +274,12 @@ namespace View
 
             void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
         };
-
+        struct DissasmCodeRemovableZoneDetails
+        {
+            DissasmCodeInternalType* zone;
+            DissasmCodeInternalType* parent;
+            uint32 zoneIndex;
+        };
         struct DissasmCodeInternalType {
             std::string name;
             uint32 indexZoneStart;
@@ -329,7 +334,8 @@ namespace View
             }
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
-            bool RemoveCollapsibleZone(uint32 zoneLine);
+            DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine,uint32 depthLevel = 0);
+            bool RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails);
         };
 
         struct DissasmComments {
