@@ -26,6 +26,8 @@ constexpr _MenuCommand_ menuFileList[] = {
     { "", 0, Key::None },
     { "E&xit", MenuCommands::EXIT_GVIEW, Key::Shift | Key::Escape },
 };
+constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
+
 constexpr _MenuCommand_ menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
     { "Arrange &Horizontally", MenuCommands::ARRANGE_HORIZONTALLY, Key::None },
@@ -129,6 +131,9 @@ bool Instance::BuildMainMenus()
 {
     CHECK(mnuFile = AppCUI::Application::AddMenu("File"), false, "Unable to create 'File' menu");
     CHECK(AddMenuCommands(mnuFile, menuFileList, ARRAY_LEN(menuFileList)), false, "");
+    for (auto itemHandle : menuFileDisabledCommandsList) {
+        CHECK(mnuFile->SetEnable(itemHandle, false), false, "Fail to disable menu item");
+    }
     CHECK(mnuWindow = AppCUI::Application::AddMenu("&Windows"), false, "Unable to create 'Windows' menu");
     CHECK(AddMenuCommands(mnuWindow, menuWindowList, ARRAY_LEN(menuWindowList)), false, "");
     CHECK(mnuHelp = AppCUI::Application::AddMenu("&Help"), false, "Unable to create 'Help' menu");
@@ -495,6 +500,14 @@ void Instance::OpenFile()
             ShowErrors();
     }
 }
+void Instance::OpenFolder()
+{
+    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "GVIEW:IGNORE-EVERYTHING", ".");
+    if (res.has_value()) {
+        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
+            ShowErrors();
+    }
+}
 void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     auto idx = GENERIC_PLUGINS_CMDID;
@@ -566,6 +579,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_FILE:
             OpenFile();
+            return true;
+        case MenuCommands::OPEN_FOLDER:
+            OpenFolder();
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000))
