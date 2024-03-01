@@ -125,3 +125,8 @@ if (APPLE)
             RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
     endif()
 endif()
+
+if(DEFINED GVIEW_RESOURCE_FILES)
+    message("Adding resource files to project: ${PROJECT_NAME}")
+    target_sources(${PROJECT_NAME} PRIVATE ${GVIEW_RESOURCE_FILES})
+endif()

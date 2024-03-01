@@ -39,6 +39,12 @@ string(REGEX MATCH "#define GVIEW_VERSION \"([0-9]+.[0-9]+.[0-9]+)\"" _ ${GView_
 set(GVIEW_VERSION ${CMAKE_MATCH_1})
 message("${PROJECT_NAME} version: ${GVIEW_VERSION}")
 
+if (MSVC)
+    set(GVIEW_RESOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows.rc")
+    message("Setting version to ${GVIEW_RESOURCE_FILES}")
+    configure_file("cmake/windows.rc.in" ${GVIEW_RESOURCE_FILES} @ONLY)
+endif()
+
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(core_testing)
 
