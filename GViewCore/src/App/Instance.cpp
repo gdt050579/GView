@@ -500,6 +500,14 @@ void Instance::OpenFile()
             ShowErrors();
     }
 }
+void Instance::OpenFolder()
+{
+    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "GVIEW:IGNORE-EVERYTHING", ".");
+    if (res.has_value()) {
+        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
+            ShowErrors();
+    }
+}
 void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     auto idx = GENERIC_PLUGINS_CMDID;
@@ -571,6 +579,9 @@ bool Instance::OnEvent(Reference<Control> control, Event eventType, int ID)
             return true;
         case MenuCommands::OPEN_FILE:
             OpenFile();
+            return true;
+        case MenuCommands::OPEN_FOLDER:
+            OpenFolder();
             return true;
         }
         if ((ID >= GENERIC_PLUGINS_CMDID) && (ID < GENERIC_PLUGINS_CMDID + GENERIC_PLUGINS_FRAME * 1000))
