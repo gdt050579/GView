@@ -388,6 +388,7 @@ namespace View
             bool changedLevel;
             InternalTypeNewLevelChangeData newLevelChangeData;
 
+            void ResetZoneCaching();
             bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
             {

@@ -1563,6 +1563,10 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
         if (!zone->CollapseOrExtendZone(zoneLineStart, DissasmCodeZone::CollapseExpandType::Collapse, difference))
             operationName = "Collapse";
         break;
+    case CollapsibleZoneOperation::Remove:
+        if (!zone->RemoveCollapsibleZone(zoneLineStart))
+            operationName = "Collapse";
+        break;
     default:
         Dialogs::MessageBox::ShowNotification("Warning", "Unimplemented!");
         break;
@@ -1573,7 +1577,7 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
         message.SetFormat("Failed to %s to zone!", operationName);
         Dialogs::MessageBox::ShowNotification("Error", message);
     } else {
-        zone->asmPreCacheData.Clear();
+        zone->ResetZoneCaching();
         if (difference) {
             AdjustZoneExtendedSize(zone, difference);
         }
@@ -1884,6 +1888,15 @@ bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
         return false;
     ResetTypesReferenceList();
     return true;
+}
+
+void DissasmCodeZone::ResetZoneCaching()
+{
+    asmPreCacheData.Clear();
+    for (auto& type : types) {
+        type.get().asmLinesPassed  = 0;
+        type.get().textLinesPassed = 0;
+    }
 }
 
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
