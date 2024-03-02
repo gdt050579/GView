@@ -1728,6 +1728,7 @@ bool DissasmCodeZone::ResetTypesReferenceList()
     lastReachedLine = static_cast<uint32>(-1);
     types.emplace_back(dissasmType);
     levels.push_back(0);
+    ResetZoneCaching();
     return true;
 }
 
@@ -2065,21 +2066,25 @@ DissasmCodeRemovableZoneDetails DissasmCodeInternalType::GetRemoveZoneCollapsibl
 
 bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails)
 {
-    if (internalTypes.size() == 2) { // last two zone, we clear them
-        for (const auto& zone : internalTypes) {
+    auto& parentInternalTypes = removableDetails.parent->internalTypes;
+    if (parentInternalTypes.size() == 2) { // last two zone, we clear them
+        for (const auto& zone : parentInternalTypes) {
             if (zone.isCollapsed)
                 return false; // TODO: remove special case for the last two zones when one of them is collapsed
         }
-        internalTypes.clear();
+        parentInternalTypes.clear();
         return true;
     }
 
     // special case: when we have 3 zones and only the middle one is collpasible
     // after we remove it, we need to merge the first and the last one since they are not collapsible
     // so having only 3 zones => we can remove all since we never have only one zone
-    auto& parentInternalTypes = removableDetails.parent->internalTypes;
     if (parentInternalTypes.size() == 3 && removableDetails.zoneIndex == 1) {
-        if (!parentInternalTypes[0].name.empty() && !parentInternalTypes[2].name.empty()) {
+        for (const auto& zone : parentInternalTypes) {
+            if (zone.isCollapsed)
+                return false; // TODO: remove special case when we have 3 zones and only the middle one is collapsible and some of them are collapsed
+        }
+        if (parentInternalTypes[0].name.empty() && parentInternalTypes[2].name.empty()) {
             parentInternalTypes.clear();
             return true;
         }
