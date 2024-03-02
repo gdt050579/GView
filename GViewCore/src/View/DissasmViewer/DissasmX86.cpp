@@ -2086,7 +2086,8 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, DissasmCode
             {
                 indexesToRemove.push_back(removableDetails.zoneIndex + 1);
                 zoneToUpdate->indexZoneEnd        = nextZone.indexZoneEnd;
-                zoneToUpdate->workingIndexZoneEnd = zoneToUpdate->indexZoneEnd;
+                zoneToUpdate->workingIndexZoneEnd = nextZone.workingIndexZoneEnd;
+                zoneToUpdate->annotations.insert(nextZone.annotations.begin(), nextZone.annotations.end());
             }
         }
     }
@@ -2096,7 +2097,8 @@ bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, DissasmCode
             {
                 indexesToRemove.push_back(removableDetails.zoneIndex);
                 zoneToUpdate->indexZoneStart        = prevZone.indexZoneStart;
-                zoneToUpdate->workingIndexZoneStart = zoneToUpdate->indexZoneStart;
+                zoneToUpdate->workingIndexZoneStart = prevZone.workingIndexZoneStart;
+                zoneToUpdate->annotations.insert(prevZone.annotations.begin(), prevZone.annotations.end());
             }
         }
     }

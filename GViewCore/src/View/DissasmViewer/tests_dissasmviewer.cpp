@@ -694,6 +694,7 @@ TEST_CASE("AddAndRemoveCollapsibleZone", "[Dissasm]")
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }, { 2, 2, 6 }, { 3, 3, 7 } }));
+    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
     REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Collapse));
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "collapsed"));
@@ -707,6 +708,7 @@ TEST_CASE("AddAndRemoveCollapsibleZone", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
     REQUIRE(!dissasmInstance.CheckCollapseOrExtendZone(0, DissasmCodeZone::CollapseExpandType::Expand)); // already expanded
 
@@ -714,19 +716,21 @@ TEST_CASE("AddAndRemoveCollapsibleZone", "[Dissasm]")
     // same as before, after dissasmInstance.AddCollpasibleZone(0, 5)
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
     REQUIRE(dissasmInstance.AddCollpasibleZone(8, 10));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
     REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 }, { 2, 2, 6 }, { 3, 2, 8 } }));
+    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(5));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(6));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(7));
     REQUIRE(!dissasmInstance.RemoveCollapsibleZone(10));
 
-    dissasmInstance.PrintInstructions(12);
+    //dissasmInstance.PrintInstructions(12);
     REQUIRE(dissasmInstance.RemoveCollapsibleZone(4));
-    dissasmInstance.PrintInstructions(12);
+    //dissasmInstance.PrintInstructions(12);
 
     REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
@@ -735,7 +739,6 @@ TEST_CASE("AddAndRemoveCollapsibleZone", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
     REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 8 }, { 8, 10, true }, { 10, zoneEndingIndex } }));
-
-    // REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 5, true }, { 5, zoneEndingIndex } }));
-    // REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 0, 5 } }));
+    REQUIRE(dissasmInstance.CheckBeforeLinesData(-1, { { 0, 0, 0 }, { 1, 2, 6 }, { 2, 2, 8 }}));
+    REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 }
