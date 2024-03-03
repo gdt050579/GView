@@ -54,6 +54,10 @@
     {
       "name": "sqlite3",
       "platform": "windows | linux | osx"
+    },
+    {
+      "name": "catch2",
+      "platform": "windows | linux | osx"
     }
   ]
 }

@@ -4,7 +4,20 @@ cmake_minimum_required(VERSION 3.13)
 project(GViewCore VERSION 1.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-add_library(${PROJECT_NAME} SHARED)
+
+if(NOT DEFINED CMAKE_TESTING_ENABLED)
+    add_library(${PROJECT_NAME} SHARED)
+else()
+    add_executable(${PROJECT_NAME})
+
+    find_package(Catch2 CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain) # Catch2::Catch2
+
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(${PROJECT_NAME})
+endif()
+
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "lib")
 target_compile_definitions(${PROJECT_NAME} PRIVATE -DBUILD_AS_DYNAMIC_LIB)
 target_compile_definitions(${PROJECT_NAME} PRIVATE -DCORE_EXPORTABLE)
@@ -111,4 +124,9 @@ if (APPLE)
             LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
             RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
     endif()
+endif()
+
+if(DEFINED GVIEW_RESOURCE_FILES)
+    message("Adding resource files to project: ${PROJECT_NAME}")
+    target_sources(${PROJECT_NAME} PRIVATE ${GVIEW_RESOURCE_FILES})
 endif()

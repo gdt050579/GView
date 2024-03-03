@@ -499,6 +499,7 @@ namespace App
         bool BuildMainMenus();
         bool LoadSettings();
         void OpenFile();
+        void OpenFolder();
         void ShowErrors();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
