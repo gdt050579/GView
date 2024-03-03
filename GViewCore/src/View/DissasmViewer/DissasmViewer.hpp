@@ -147,6 +147,9 @@ namespace View
             uint8 lineArrowToDraw;
             const void* mapping;
 
+            bool shouldAddButton;
+            bool isZoneCollapsed;
+
             uint32 GetLineSize() const
             {
                 return size * 2 + op_str_size;
@@ -167,6 +170,8 @@ namespace View
                 mapping         = other.mapping;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                shouldAddButton = other.shouldAddButton;
+                isZoneCollapsed = false;
             }
             DissasmAsmPreCacheLine(const DissasmAsmPreCacheLine& other)
             {
@@ -180,6 +185,8 @@ namespace View
                 mapping         = other.mapping;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                shouldAddButton = other.shouldAddButton;
+                isZoneCollapsed = false;
             }
             bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
             bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
@@ -266,18 +273,13 @@ namespace View
             }
 
             void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
-
-            bool PopulateAsmPreCacheData(
-                  Config& config,
-                  Reference<GView::Object> obj,
-                  const Pointer<struct SettingsData>& settings,
-                  struct AsmData& asmData,
-                  struct DrawLineInfo& dli,
-                  DissasmCodeZone* zone,
-                  uint32 startingLine,
-                  uint32 linesToPrepare);
         };
-
+        struct DissasmCodeRemovableZoneDetails
+        {
+            DissasmCodeInternalType* zone;
+            DissasmCodeInternalType* parent;
+            uint32 zoneIndex;
+        };
         struct DissasmCodeInternalType {
             std::string name;
             uint32 indexZoneStart;
@@ -332,6 +334,8 @@ namespace View
             }
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
+            DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine,uint32 depthLevel = 0);
+            bool RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails);
         };
 
         struct DissasmComments {
@@ -353,7 +357,13 @@ namespace View
             uint32 visibleRows;
         };
 
+        struct InternalTypeNewLevelChangeData {
+            bool hasName;
+            bool isCollapsed;
+        };
+
         struct DissasmCodeZone : public ParseZone {
+            enum class CollapseExpandType : uint8 { Collapse, Expand, NegateCurrentState };
             uint32 lastDrawnLine; // optimization not to recompute buffer every time
             uint32 lastClosestLine;
             uint32 offsetCacheMaxLine;
@@ -375,7 +385,10 @@ namespace View
             DissasmComments comments;
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
+            bool changedLevel;
+            InternalTypeNewLevelChangeData newLevelChangeData;
 
+            void ResetZoneCaching();
             bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
             {
@@ -383,10 +396,12 @@ namespace View
                     return false;
                 return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
             }
-            bool CollapseOrExtendZone(uint32 zoneLine, bool collapse);
+            bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
+            bool RemoveCollapsibleZone(uint32 zoneLine);
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
             bool ResetTypesReferenceList();
+            bool TryRenameLine(uint32 line);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 
@@ -589,8 +604,8 @@ namespace View
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
-            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
-            void ChangeZoneCollapseState(ParseZone* zoneToChange);
+            void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone);
+            void ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);

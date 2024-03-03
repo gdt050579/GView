@@ -1169,71 +1169,6 @@ void DissasmAsmPreCacheData::PrepareLabelArrows()
     }
 }
 
-bool DissasmAsmPreCacheData::PopulateAsmPreCacheData(
-      Config& config,
-      Reference<GView::Object> obj,
-      const Pointer<SettingsData>& settings,
-      AsmData& asmData,
-      DrawLineInfo& dli,
-      DissasmCodeZone* zone,
-      uint32 startingLine,
-      uint32 linesToPrepare)
-{
-    if (!cachedAsmLines.empty())
-        return true;
-
-    uint32 currentLine      = startingLine;
-    const uint32 endingLine = currentLine + linesToPrepare;
-
-    DissasmInsnExtractLineParams params{};
-    params.obj      = obj;
-    params.settings = settings.get();
-    params.asmData  = &asmData;
-    params.dli      = &dli;
-    params.zone     = zone;
-
-    while (currentLine < endingLine) {
-        auto asmCacheLine = zone->GetCurrentAsmLine(currentLine, obj, &params);
-        cachedAsmLines.push_back(std::move(asmCacheLine));
-        currentLine++;
-    }
-
-    // while (currentLine < endingLine) {
-    //     auto adjustedLine = DissasmGetCurrentAsmLineAndPrepareCodeZone(zone, currentLine);
-    //     if (adjustedLine.has_value()) {
-    //         DissasmInsnExtractLineParams params{};
-    //         params.obj        = obj;
-    //         params.settings   = settings.get();
-    //         params.asmData    = &asmData;
-    //         params.dli        = &dli;
-    //         params.zone       = zone;
-    //         params.asmLine    = adjustedLine.value();
-    //         params.actualLine = currentLine;
-
-    //        DissasmAsmPreCacheLine asmCacheLine{};
-    //        if (!asmCacheLine.TryGetDataFromInsn(params)) {
-    //            dli.WriteErrorToScreen("ERROR: failed to extract asm ExtractDissasmAsmPreCacheLineFromCsInsn line!");
-    //            return false;
-    //        }
-
-    //        cachedAsmLines.push_back(std::move(asmCacheLine));
-    //    } else // we have annotation
-    //    {
-    //        const DissasmCodeInternalType& currentType = zone->types.back();
-    //        DissasmAsmPreCacheLine asmCacheLine{};
-    //        if (!asmCacheLine.TryGetDataFromAnnotations(currentType, currentLine, &dli))
-    //            return false;
-    //        cachedAsmLines.push_back(std::move(asmCacheLine));
-    //    }
-    //    currentLine++;
-    //}
-
-    ComputeMaxLine();
-    if (config.EnableDeepScanDissasmOnStart)
-        PrepareLabelArrows();
-    return true;
-}
-
 bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (obj->GetData().GetSize() == 0) {
@@ -1260,7 +1195,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
         dli.renderer.WriteSingleLineCharacterBuffer(0, dli.screenLineToDraw + 1u, chars, false);
 
-        RegisterStructureCollapseButton(dli, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+        RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
 
         if (!zone->isInit) {
             {
@@ -1343,16 +1278,37 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         }
     }
 
-    uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
-    const uint32 remainingLines = zone->extendedSize - currentLine + 1;
-    linesToPrepare              = std::min<uint32>(linesToPrepare, remainingLines);
+    auto& asmPreCacheData = zone->asmPreCacheData;
+    if (asmPreCacheData.cachedAsmLines.empty()) {
+        uint32 linesToPrepare       = std::min<uint32>(Layout.visibleRows, zone->extendedSize);
+        const uint32 remainingLines = zone->extendedSize - currentLine + 1;
+        linesToPrepare              = std::min<uint32>(linesToPrepare, remainingLines);
+        const uint32 endingLine     = currentLine + linesToPrepare;
 
-    if (!zone->asmPreCacheData.PopulateAsmPreCacheData(config, obj, settings, asmData, dli, zone, currentLine, linesToPrepare))
-        return false;
+        DissasmInsnExtractLineParams params{};
+        params.obj      = obj;
+        params.settings = settings.get();
+        params.asmData  = &asmData;
+        params.dli      = &dli;
+        params.zone     = zone;
+
+        while (currentLine < endingLine) {
+            auto asmCacheLine = zone->GetCurrentAsmLine(currentLine, obj, &params);
+            asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
+            currentLine++;
+        }
+
+        asmPreCacheData.ComputeMaxLine();
+        if (config.EnableDeepScanDissasmOnStart)
+            asmPreCacheData.PrepareLabelArrows();
+    }
 
     const auto asmCacheLine = zone->asmPreCacheData.GetLine();
     if (!asmCacheLine)
         return false;
+    if (asmCacheLine->shouldAddButton)
+        RegisterStructureCollapseButton(
+              dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
 
     zone->lastDrawnLine = currentLine;
@@ -1592,6 +1548,7 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     const uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
     const uint32 zoneLineEnd    = zoneLineStart + zoneLinesCount;
 
+    int32 difference          = 0;
     const char* operationName = nullptr;
     switch (operation) {
     case CollapsibleZoneOperation::Add:
@@ -1599,16 +1556,16 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
             operationName = "Add";
         break;
     case CollapsibleZoneOperation::Expand:
-        if (!zone->CollapseOrExtendZone(zoneLineStart, false))
+        if (!zone->CollapseOrExtendZone(zoneLineStart, DissasmCodeZone::CollapseExpandType::Expand, difference))
             operationName = "Expand";
-        else
-            zone->asmPreCacheData.Clear();
         break;
     case CollapsibleZoneOperation::Collapse:
-        if (!zone->CollapseOrExtendZone(zoneLineStart, true))
+        if (!zone->CollapseOrExtendZone(zoneLineStart, DissasmCodeZone::CollapseExpandType::Collapse, difference))
             operationName = "Collapse";
-        else
-            zone->asmPreCacheData.Clear();
+        break;
+    case CollapsibleZoneOperation::Remove:
+        if (!zone->RemoveCollapsibleZone(zoneLineStart))
+            operationName = "Collapse";
         break;
     default:
         Dialogs::MessageBox::ShowNotification("Warning", "Unimplemented!");
@@ -1619,55 +1576,12 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
         LocalString<64> message;
         message.SetFormat("Failed to %s to zone!", operationName);
         Dialogs::MessageBox::ShowNotification("Error", message);
-    }
-
-    // zone->AddCollapsibleZone(obj, 6, 10);
-    //  zone->AddCollapsibleZone(obj, 2, 4);
-
-    // if (zoneLineStart == 2)
-    //     zoneLineStart = 0;//the first zone is actually going from the left
-}
-
-bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, bool collapse, int32& difference)
-{
-    for (auto& zone : parent.internalTypes) {
-        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
-            if (GetRecursiveZoneByLine(zone, line, collapse, difference)) {
-                zone.indexZoneEnd += difference;
-                continue;
-            }
-
-            if (!zone.internalTypes.empty() || zone.name.empty())
-                return false;
-
-            if (collapse && zone.isCollapsed || !collapse && !zone.isCollapsed)
-                return false;
-
-            difference = static_cast<int32>(zone.workingIndexZoneEnd - zone.workingIndexZoneStart - 1);
-            if (collapse)
-                difference = -difference;
-            zone.isCollapsed = collapse;
-            zone.indexZoneEnd += difference;
-            continue;
-        }
-        if (difference && line < zone.indexZoneStart) {
-            zone.indexZoneStart += difference;
-            zone.indexZoneEnd += difference;
-
-            AnnotationContainer zoneAnnotations = std::move(zone.annotations);
-            zone.annotations                    = {};
-            for (auto& annotation : zoneAnnotations) {
-                zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
-            }
+    } else {
+        zone->ResetZoneCaching();
+        if (difference) {
+            AdjustZoneExtendedSize(zone, difference);
         }
     }
-    return difference != 0;
-}
-
-bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, bool collapse)
-{
-    int32 difference = 0;
-    return GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference);
 }
 
 bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
@@ -1739,6 +1653,7 @@ bool DissasmCodeZone::InitZone(DissasmCodeZoneInitData& initData)
 
 void DissasmCodeZone::ReachZoneLine(uint32 line)
 {
+    changedLevel = false;
     if (lastReachedLine == line)
         return;
 
@@ -1764,6 +1679,9 @@ void DissasmCodeZone::ReachZoneLine(uint32 line)
             if (internalType.indexZoneStart <= levelToReach && levelToReach < internalType.indexZoneEnd) {
                 types.emplace_back(internalType);
                 levels.push_back(i);
+                changedLevel                   = true;
+                newLevelChangeData.hasName     = !internalType.name.empty();
+                newLevelChangeData.isCollapsed = internalType.isCollapsed;
                 break;
             }
         }
@@ -1810,7 +1728,53 @@ bool DissasmCodeZone::ResetTypesReferenceList()
     lastReachedLine = static_cast<uint32>(-1);
     types.emplace_back(dissasmType);
     levels.push_back(0);
+    ResetZoneCaching();
     return true;
+}
+
+DissasmCodeInternalType* GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
+{
+    for (auto& zone : parent.internalTypes) {
+        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
+            auto child = GetRecursiveCollpasedZoneByLine(zone, line);
+            if (child)
+                return child;
+            if (zone.isCollapsed)
+                return &zone;
+            return nullptr;
+        }
+    }
+
+    return nullptr;
+}
+
+bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
+{
+    // TODO: improve, add searching function to search inside types for the current annotation
+    auto& annotations = dissasmType.annotations;
+    auto it           = annotations.find(line);
+    if (it != annotations.end()) {
+        SingleLineEditWindow dlg(it->second.first, "Edit label");
+        if (dlg.Show() == Dialogs::Result::Ok) {
+            const auto res = dlg.GetResult();
+            if (!res.empty())
+                it->second.first = res;
+        }
+        return true;
+    }
+
+    auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+    if (collapsedZone) {
+        SingleLineEditWindow dlg(collapsedZone->name, "Edit collapsed zone label");
+        if (dlg.Show() == Dialogs::Result::Ok) {
+            const auto res = dlg.GetResult();
+            if (!res.empty())
+                collapsedZone->name = res;
+        }
+        return true;
+    }
+
+    return false;
 }
 
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
@@ -1820,6 +1784,10 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
+    if (changedLevel && newLevelChangeData.hasName) {
+        asmCacheLine.shouldAddButton = true;
+        asmCacheLine.isZoneCollapsed = newLevelChangeData.isCollapsed;
+    }
 
     if (currentType.isCollapsed) {
         assert(!currentType.name.empty());
@@ -1857,6 +1825,81 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     return asmCacheLine;
 }
 
+#pragma region CollapsibleZoneOperations
+
+bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, DissasmCodeZone::CollapseExpandType collapse, int32& difference)
+{
+    for (auto& zone : parent.internalTypes) {
+        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
+            if (GetRecursiveZoneByLine(zone, line, collapse, difference)) {
+                zone.indexZoneEnd += difference;
+                continue;
+            }
+
+            if (!zone.internalTypes.empty() || zone.name.empty())
+                return false;
+
+            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse && zone.isCollapsed ||
+                collapse == DissasmCodeZone::CollapseExpandType::Expand && !zone.isCollapsed)
+                return false;
+
+            if (collapse == DissasmCodeZone::CollapseExpandType::NegateCurrentState)
+                collapse = zone.isCollapsed ? DissasmCodeZone::CollapseExpandType::Expand : DissasmCodeZone::CollapseExpandType::Collapse;
+
+            difference = static_cast<int32>(zone.workingIndexZoneEnd - zone.workingIndexZoneStart - 1);
+            if (collapse == DissasmCodeZone::CollapseExpandType::Collapse)
+                difference = -difference;
+            zone.isCollapsed = collapse == DissasmCodeZone::CollapseExpandType::Collapse;
+            zone.indexZoneEnd += difference;
+            continue;
+        }
+        if (difference && line < zone.indexZoneStart) {
+            zone.indexZoneStart += difference;
+            zone.indexZoneEnd += difference;
+
+            AnnotationContainer zoneAnnotations = std::move(zone.annotations);
+            zone.annotations                    = {};
+            for (auto& annotation : zoneAnnotations) {
+                zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
+            }
+        }
+    }
+    return difference != 0;
+}
+
+bool DissasmCodeZone::CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference)
+{
+    difference = 0;
+    if (!GetRecursiveZoneByLine(dissasmType, zoneLine, collapse, difference))
+        return false;
+
+    if (difference) {
+        difference += (int32) this->dissasmType.indexZoneEnd - 1;
+    }
+
+    return true;
+}
+
+bool DissasmCodeZone::RemoveCollapsibleZone(uint32 zoneLine)
+{
+    const auto zoneDetailsData = dissasmType.GetRemoveZoneCollapsibleDetails(zoneLine);
+    if (!zoneDetailsData.zone)
+        return false;
+    if (!dissasmType.RemoveCollapsibleZone(zoneLine, zoneDetailsData))
+        return false;
+    ResetTypesReferenceList();
+    return true;
+}
+
+void DissasmCodeZone::ResetZoneCaching()
+{
+    asmPreCacheData.Clear();
+    for (auto& type : types) {
+        type.get().asmLinesPassed  = 0;
+        type.get().textLinesPassed = 0;
+    }
+}
+
 bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd)
 {
     if (!this->CanAddNewZone(zoneLineStart, zoneLineEnd)) {
@@ -1871,6 +1914,7 @@ bool DissasmCodeZone::AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEn
 
 bool DissasmCodeInternalType::CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
 {
+    // TODO: add similar optimization like GetRemoveZoneCollapsibleDetails to end when too big interval is given
     for (const auto& zone : internalTypes) {
         if (zone.indexZoneStart <= zoneLineStart && zoneLineStart < zone.indexZoneEnd) {
             if (zone.indexZoneStart <= zoneLineStart && zoneLineEnd <= zone.indexZoneEnd) {
@@ -1995,3 +2039,94 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     }
     return true;
 }
+
+DissasmCodeRemovableZoneDetails DissasmCodeInternalType::GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel)
+{
+    if (internalTypes.empty())
+        return {};
+    if (zoneLine > internalTypes.back().indexZoneEnd)
+        return {};
+    uint32 zoneIndex = 0;
+    for (auto& zone : internalTypes) {
+        if (zone.indexZoneStart <= zoneLine && zoneLine < zone.indexZoneEnd) {
+            if (!zone.name.empty() && !zone.isCollapsed) {
+                return { &zone, depthLevel == 0 ? this : nullptr, zoneIndex };
+            }
+            const auto result = zone.GetRemoveZoneCollapsibleDetails(zoneLine, depthLevel + 1);
+            if (!result.zone)
+                return {};
+            if (result.parent)
+                return result;
+            return { result.zone, &zone, result.zoneIndex };
+        }
+        zoneIndex++;
+    }
+    return {};
+}
+
+bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails)
+{
+    auto& parentInternalTypes = removableDetails.parent->internalTypes;
+    if (parentInternalTypes.size() == 2) { // last two zone, we clear them
+        for (const auto& zone : parentInternalTypes) {
+            if (zone.isCollapsed)
+                return false; // TODO: remove special case for the last two zones when one of them is collapsed
+        }
+        parentInternalTypes.clear();
+        return true;
+    }
+
+    // special case: when we have 3 zones and only the middle one is collpasible
+    // after we remove it, we need to merge the first and the last one since they are not collapsible
+    // so having only 3 zones => we can remove all since we never have only one zone
+    if (parentInternalTypes.size() == 3 && removableDetails.zoneIndex == 1) {
+        for (const auto& zone : parentInternalTypes) {
+            if (zone.isCollapsed)
+                return false; // TODO: remove special case when we have 3 zones and only the middle one is collapsible and some of them are collapsed
+        }
+        if (parentInternalTypes[0].name.empty() && parentInternalTypes[2].name.empty()) {
+            parentInternalTypes.clear();
+            return true;
+        }
+    }
+
+    // TODO: optimize this
+    std::vector<uint32> indexesToRemove;
+    indexesToRemove.reserve(2);
+
+    DissasmCodeInternalType* zoneToUpdate = removableDetails.zone;
+    if (removableDetails.zoneIndex > 0)
+        zoneToUpdate = &parentInternalTypes[removableDetails.zoneIndex - 1];
+
+    if (removableDetails.zoneIndex < static_cast<uint32>(parentInternalTypes.size()) - 1) {
+        const auto& nextZone = parentInternalTypes[removableDetails.zoneIndex + 1];
+        if (nextZone.name.empty()) {
+            {
+                indexesToRemove.push_back(removableDetails.zoneIndex + 1);
+                zoneToUpdate->indexZoneEnd        = nextZone.indexZoneEnd;
+                zoneToUpdate->workingIndexZoneEnd = nextZone.workingIndexZoneEnd;
+                zoneToUpdate->annotations.insert(nextZone.annotations.begin(), nextZone.annotations.end());
+            }
+        }
+    }
+    if (removableDetails.zoneIndex > 0) {
+        const auto& prevZone = parentInternalTypes[removableDetails.zoneIndex - 1];
+        if (prevZone.name.empty()) {
+            {
+                indexesToRemove.push_back(removableDetails.zoneIndex);
+                zoneToUpdate->indexZoneStart        = prevZone.indexZoneStart;
+                zoneToUpdate->workingIndexZoneStart = prevZone.workingIndexZoneStart;
+                zoneToUpdate->annotations.insert(prevZone.annotations.begin(), prevZone.annotations.end());
+            }
+        }
+    }
+    for (const auto index : indexesToRemove) {
+        parentInternalTypes.erase(parentInternalTypes.begin() + index);
+    }
+
+    zoneToUpdate->name.clear();
+
+    return true;
+}
+
+#pragma endregion
