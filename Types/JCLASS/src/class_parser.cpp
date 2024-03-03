@@ -65,6 +65,12 @@ bool CONSTANT_MethodType_info::read(BufferReader& reader)
     return true;
 }
 
+bool CONSTANT_Integer_info::read(BufferReader& reader)
+{
+    READB(value);
+    return true;
+}
+
 bool ExceptionTable::read(BufferReader& reader)
 {
     READB(start_pc);
@@ -154,6 +160,9 @@ bool ClassParser::parse_constant_pool(BufferReader& reader)
     switch (data.kind) {
     case ConstantKind::Utf8:
         FCHECK(data.utf8.read(reader));
+        break;
+    case ConstantKind::Integer:
+        FCHECK(data.integer.read(reader));
         break;
     case ConstantKind::Double:
         FCHECK(data.double_.read(reader));
@@ -516,7 +525,7 @@ bool AstCreator::create_code(BufferView buffer)
         string.AddChar('\n');
     }
 
-    printf("%.*s\n\n\n", string.Len(), string.GetText());
+    //printf("%.*s\n\n\n", string.Len(), string.GetText());
     return true;
 }
 

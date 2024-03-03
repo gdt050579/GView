@@ -81,6 +81,12 @@ struct CONSTANT_MethodType_info {
     bool read(BufferReader& reader);
 };
 
+struct CONSTANT_Integer_info {
+    uint32 value;
+
+    bool read(BufferReader& reader);
+};
+
 struct ConstantData {
     ConstantKind kind;
     union {
@@ -93,6 +99,7 @@ struct ConstantData {
         CONSTANT_String_info string;
         CONSTANT_Utf8_info utf8;
         CONSTANT_Double_info double_;
+        CONSTANT_Integer_info integer;
     };
 };
 
