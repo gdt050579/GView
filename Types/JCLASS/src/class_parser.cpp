@@ -152,35 +152,35 @@ bool ClassParser::parse_constant_pool(BufferReader& reader)
     data.kind         = static_cast<ConstantKind>(tag);
     bool double_entry = false;
     switch (data.kind) {
-    case ConstantKind::MethodRef:
-    case ConstantKind::FieldRef:
-    case ConstantKind::InterfaceMethodRef:
-        FCHECK(data.field_interface_method.read(reader));
-        break;
-    case ConstantKind::Class:
-        FCHECK(data.clazz.read(reader));
-        break;
-    case ConstantKind::NameAndType:
-        FCHECK(data.name_and_type.read(reader));
-        break;
     case ConstantKind::Utf8:
         FCHECK(data.utf8.read(reader));
-        break;
-    case ConstantKind::String:
-        FCHECK(data.string.read(reader));
-        break;
-    case ConstantKind::InvokeDynamic:
-        FCHECK(data.invoke_dynamic.read(reader));
         break;
     case ConstantKind::Double:
         FCHECK(data.double_.read(reader));
         double_entry = true;
+        break;
+    case ConstantKind::Class:
+        FCHECK(data.clazz.read(reader));
+        break;
+    case ConstantKind::String:
+        FCHECK(data.string.read(reader));
+        break;
+    case ConstantKind::FieldRef:
+    case ConstantKind::MethodRef:
+    case ConstantKind::InterfaceMethodRef:
+        FCHECK(data.field_interface_method.read(reader));
+        break;
+    case ConstantKind::NameAndType:
+        FCHECK(data.name_and_type.read(reader));
         break;
     case ConstantKind::MethodHandle:
         FCHECK(data.method_handle.read(reader));
         break;
     case ConstantKind::MethodType:
         FCHECK(data.method_type.read(reader));
+        break;
+    case ConstantKind::InvokeDynamic:
+        FCHECK(data.invoke_dynamic.read(reader));
         break;
     default:
         unimplemented;
