@@ -14,4 +14,7 @@ vcpkg_installed/
 .DS_Store
 *.db
 CMakeUserPresets.json
-cmake/windows.rc
+GView/GView.rc
+GView/GView.aps
+GViewCore/GViewCore.rc
+GViewCore/GViewCore.aps
