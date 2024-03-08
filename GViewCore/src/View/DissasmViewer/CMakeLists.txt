@@ -30,3 +30,4 @@ target_sources(
 )
 
 add_testing_sources(GViewCore tests_dissasmviewer.cpp)
+target_sources(GViewCore PRIVATE jclass/GViewJClass.natvis)

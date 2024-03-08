@@ -3,13 +3,12 @@
 #include <cassert>
 #include <GView.hpp>
 
-// TODO: remove this!!
+namespace GView::View::DissasmViewer::JClass
+{
 using namespace AppCUI;
 using namespace AppCUI::Utils;
 using namespace GView;
 
-namespace GView::View::DissasmViewer::JClass
-{
 template <typename T>
 class ArrayRef
 {
