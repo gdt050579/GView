@@ -1308,9 +1308,10 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     const auto asmCacheLine = zone->asmPreCacheData.GetLine();
     if (!asmCacheLine)
         return false;
-    if (asmCacheLine->shouldAddButton)
+    if (asmCacheLine->shouldAddButton) {
         RegisterStructureCollapseButton(
-              dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
+              dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
+    }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
 
     const auto it = zone->comments.comments.find(currentLine);

@@ -724,10 +724,13 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     return DrawDissasmX86AndX64CodeZone(dli, zone);
 }
 
-void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone)
+void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet)
 {
     const ButtonsData bData = { 3, static_cast<int>(screenLine), c, config.Colors.DataTypeColor, 3, zone };
-    MyLine.buttons.push_back(bData);
+    if (isBullet)
+        MyLine.bullets.push_back(bData);
+    else
+        MyLine.buttons.push_back(bData);
 }
 
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd)
@@ -1206,6 +1209,8 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 {
     if (!MyLine.buttons.empty())
         MyLine.buttons.clear();
+    if (!MyLine.bullets.empty())
+        MyLine.bullets.clear();
     // if (HasFocus())
     //     renderer.Clear(' ', config.Colors.Normal);
     // else
@@ -1235,6 +1240,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     if (!MyLine.buttons.empty()) {
         for (const auto& btn : MyLine.buttons)
             renderer.WriteSpecialCharacter(btn.x, btn.y, btn.c, btn.color);
+    }
+    if (!MyLine.bullets.empty()) {
+        for (const auto& bullet : MyLine.bullets)
+            renderer.WriteSpecialCharacter(bullet.x, bullet.y, SpecialChars::CircleFilled, bullet.color);
     }
 }
 

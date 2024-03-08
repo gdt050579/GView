@@ -102,7 +102,7 @@ namespace View
             CollapsibleAndTextData data;
         };
 
-        //JClass code
+        // JClass code
         struct JavaBytecodeZone : public ParseZone {
             DisassemblyZone zoneDetails;
             bool isInit;
@@ -281,8 +281,7 @@ namespace View
 
             void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
         };
-        struct DissasmCodeRemovableZoneDetails
-        {
+        struct DissasmCodeRemovableZoneDetails {
             DissasmCodeInternalType* zone;
             DissasmCodeInternalType* parent;
             uint32 zoneIndex;
@@ -341,7 +340,7 @@ namespace View
             }
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
-            DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine,uint32 depthLevel = 0);
+            DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel = 0);
             bool RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails);
         };
 
@@ -580,6 +579,8 @@ namespace View
 
             struct {
                 std::vector<ButtonsData> buttons;
+                // used for collpasible zones until buttons are fixed, TODO: remove
+                std::vector<ButtonsData> bullets;
             } MyLine;
 
             struct ZoneLocation {
@@ -612,7 +613,7 @@ namespace View
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
-            void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone);
+            void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet = false);
             void ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
