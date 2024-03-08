@@ -3,11 +3,12 @@
 #include <cassert>
 #include <GView.hpp>
 
+// TODO: remove this!!
 using namespace AppCUI;
 using namespace AppCUI::Utils;
 using namespace GView;
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 template <typename T>
 class ArrayRef
@@ -149,8 +150,7 @@ struct ConstPanel {
 #define FCHECK(x)     CHECK(x, false, #x)
 #define FCHECKNULL(x) CHECK(x, nullptr, #x)
 
-#define unreachable                                                                                                                                            \
-    std::abort()
+#define unreachable std::abort()
 
 #define unimplemented unreachable
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

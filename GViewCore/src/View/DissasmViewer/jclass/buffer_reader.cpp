@@ -1,6 +1,6 @@
 #include "global.hpp"
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 
 BufferReader::BufferReader(const uint8* ptr_start, size_t size)
@@ -52,4 +52,4 @@ const uint8* BufferReader::get() const
     return ptr_current;
 }
 
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

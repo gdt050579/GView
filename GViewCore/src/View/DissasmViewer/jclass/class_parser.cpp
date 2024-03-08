@@ -1,7 +1,7 @@
 #include "class_parser.hpp"
 #include "raw_opcodes.hpp"
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 bool CONSTANT_Field_Interface_Methodref_info::read(BufferReader& reader)
 {
@@ -548,4 +548,4 @@ const ConstantData* AstCreator::get_constant(uint16 index, ConstantKind expect)
 void AstPrinter::print(const Class* clazz)
 {
 }
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

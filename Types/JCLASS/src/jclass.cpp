@@ -4,6 +4,8 @@ using namespace GView::View;
 using namespace GView::Utils;
 using namespace GView::Type::JClass;
 
+#define FCHECK(x) CHECK(x, false, #x)
+
 extern "C" {
 PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
 {
@@ -16,7 +18,7 @@ PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& exten
     return magic == Endian::NativeToBig(0xCAFEBABE);
 }
 
-PLUGIN_EXPORT TypeInterface* CreateInstance()
+PLUGIN_EXPORT GView::TypeInterface* CreateInstance()
 {
     return new ClassViewer();
 }
@@ -24,17 +26,20 @@ PLUGIN_EXPORT TypeInterface* CreateInstance()
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto plugin = win->GetObject()->GetContentType()->To<ClassViewer>();
-    plugin->Parse();
 
-    BufferViewer::Settings settings;
-    for (uint32 i = 0; i < plugin->areas.size(); ++i) {
-        auto& current = plugin->areas[i];
-        auto color    = i % 2 == 0 ? ColorPair{ Color::Yellow, Color::DarkBlue } : ColorPair{ Color::Green, Color::DarkBlue };
+    BufferViewer::Settings bufferViewerSettings;
+    bufferViewerSettings.SetName("BufferViewer");
 
-        settings.AddZone(current.start, current.end - current.start, color, current.name);
-    }
+    DissasmViewer::Settings disasmViewerSettings;
+    disasmViewerSettings.AddDisassemblyZone(0, win->GetObject()->GetData().GetSize(), 0, DissasmViewer::DisassemblyLanguage::JavaByteCode);
 
-    FCHECK(win->CreateViewer(settings));
+#ifndef DISSASM_DEV
+    FCHECK(win->CreateViewer(bufferViewerSettings));
+    FCHECK(win->CreateViewer(disasmViewerSettings));
+#else
+    FCHECK(win->CreateViewer(disasmViewerSettings));
+    FCHECK(win->CreateViewer(bufferViewerSettings));
+#endif
 
     return true;
 }

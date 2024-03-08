@@ -2,7 +2,7 @@
 
 #include "ast.hpp"
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 enum class ConstantKind : uint8 {
     Nothing            = 0,
@@ -202,4 +202,4 @@ struct AstPrinter {
     std::string output;
     void print(const Class* clazz);
 };
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

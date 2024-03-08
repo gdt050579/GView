@@ -2,7 +2,7 @@
 
 #include "global.hpp"
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 static const char* NAMES[256] = {
     "nop",           "aconst_null", "iconst_m1",     "iconst_0",      "iconst_1",     "iconst_2",
@@ -1242,4 +1242,4 @@ static bool get_opcode(BufferReader& reader, Opcode& out)
     }
     return true;
 }
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

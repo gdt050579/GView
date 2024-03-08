@@ -1,6 +1,6 @@
 #include "ast.hpp"
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 
 BuiltinType::BuiltinType(BuiltinTypeKind kind)
@@ -37,4 +37,4 @@ MethodType::MethodType(Type* return_type, ArrayRefMut<Type*> args)
     this->args        = args;
 }
 
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

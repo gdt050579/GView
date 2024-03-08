@@ -18,6 +18,15 @@ target_sources(
 
 	x86_x64/DissasmX86.hpp        
 	x86_x64/DissasmX86.cpp
+
+	jclass/allocator.cpp
+	jclass/ast.cpp
+	jclass/ast.hpp
+	jclass/buffer_reader.cpp
+	jclass/class_parser.cpp
+	jclass/class_parser.hpp
+	jclass/global.hpp
+	jclass/raw_opcodes.hpp
 )
 
 add_testing_sources(GViewCore tests_dissasmviewer.cpp)

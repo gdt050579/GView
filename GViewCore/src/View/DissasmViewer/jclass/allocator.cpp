@@ -4,7 +4,7 @@
 using std::max;
 using std::swap;
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 static uint8* safe_malloc(size_t size)
 {
@@ -64,4 +64,4 @@ string_view BumpPtrAlloc::alloc(string_view x)
     return { ptr, x.size() };
 }
 
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass

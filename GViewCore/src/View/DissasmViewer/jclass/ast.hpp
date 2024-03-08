@@ -3,7 +3,7 @@
 #include "global.hpp"
 #include <unordered_map>
 
-namespace GView::Type::JClass
+namespace GView::View::DissasmViewer::JClass
 {
 class BumpPtrAlloc
 {
@@ -148,4 +148,4 @@ struct AstContext {
     AstContext();
 };
 
-} // namespace GView::Type::JClass
+} // namespace GView::View::DissasmViewer::JClass
