@@ -10,13 +10,14 @@ target_sources(
 	UserDefinedTypes.cpp
 	DissasmProperties.cpp
 	DissasmKeyEvents.cpp
-	DissasmX86.hpp        
-	DissasmX86.cpp
 	SingleSelectionDataWindow.cpp
         AdvancedSelection.hpp
 	AdvancedSelection.cpp
 	DissasmDataTypes.hpp
 	DissasmDataTypes.cpp
+
+	x86_x64/DissasmX86.hpp        
+	x86_x64/DissasmX86.cpp
 )
 
 add_testing_sources(GViewCore tests_dissasmviewer.cpp)
