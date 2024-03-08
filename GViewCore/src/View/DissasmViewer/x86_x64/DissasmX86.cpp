@@ -1291,10 +1291,11 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         params.dli      = &dli;
         params.zone     = zone;
 
-        while (currentLine < endingLine) {
-            auto asmCacheLine = zone->GetCurrentAsmLine(currentLine, obj, &params);
+        uint32 currentLineAux = currentLine;
+        while (currentLineAux < endingLine) {
+            auto asmCacheLine = zone->GetCurrentAsmLine(currentLineAux, obj, &params);
             asmPreCacheData.cachedAsmLines.push_back(std::move(asmCacheLine));
-            currentLine++;
+            currentLineAux++;
         }
 
         asmPreCacheData.ComputeMaxLine();
