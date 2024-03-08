@@ -147,27 +147,26 @@ bool Instance::Init()
     initData.Flags =
           InitializationFlags::Menu | InitializationFlags::CommandBar | InitializationFlags::LoadSettingsFile | InitializationFlags::AutoHotKeyForWindow;
 
+    const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
+    AppCUI::OS::File settingsFile;
+    if (!settingsFile.OpenRead(settingsPath)) {
+        CHECK(GView::App::ResetConfiguration(), false, "");
+    }
+    settingsFile.Close();
+
     CHECK(AppCUI::Application::Init(initData), false, "Fail to initialize AppCUI framework !");
     // reserve some space fo type
     this->typePlugins.reserve(128);
-    if (!LoadSettings())
-    {
-        const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
-        AppCUI::OS::File oldSettingsFile;
-        if (!oldSettingsFile.OpenRead(settingsPath))
-        {
-            CHECK(GView::App::ResetConfiguration(), false, "");
-        }
-        else
-        {
-            oldSettingsFile.Close();
-            auto preservedSettingsNewPath = settingsPath;
-            preservedSettingsNewPath.replace_extension(".ini.bak");
-            std::filesystem::rename(settingsPath, preservedSettingsNewPath);
-            AppCUI::Log::Report(
-                  AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
-            CHECK(GView::App::ResetConfiguration(), false, "");
-        }
+    if (!LoadSettings()) {
+        auto preservedSettingsNewPath = settingsPath;
+        preservedSettingsNewPath.replace_extension(".ini.bak");
+        std::filesystem::rename(settingsPath, preservedSettingsNewPath);
+        AppCUI::Log::Report(
+              AppCUI::Log::Severity::Warning, __FILE__, __FUNCTION__, "!LoadSettings()", __LINE__, "found an invalid ini file, will generate a new one");
+        CHECK(GView::App::ResetConfiguration(), false, "");
+
+        AppCUI::Dialogs::MessageBox::ShowError(
+              "Erorr reading configuration", "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
