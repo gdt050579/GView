@@ -188,6 +188,7 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/PYEXTRACTOR)
     add_subdirectory(Types/ZIP)
     add_subdirectory(Types/SQLite)
+    add_subdirectory(Types/JCLASS)
 
 
     # Generic plugins supported by GView
