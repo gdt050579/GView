@@ -1246,7 +1246,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
         constexpr std::string_view dissasmTitle = "Dissasm";
         chars.Add(dissasmTitle.data(), config.Colors.AsmTitleColor);
-        const uint32 titleColorRemaining = Layout.totalCharactersPerLine - chars.Len();
+        uint32 titleColorRemaining = Layout.totalCharactersPerLine - chars.Len();
+        if (chars.Len() > Layout.totalCharactersPerLine)
+            titleColorRemaining = 0;
         spaces.Clear();
         spaces.SetChars(' ', titleColorRemaining);
         chars.Add(spaces, config.Colors.AsmTitleColor);
