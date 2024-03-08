@@ -11,7 +11,7 @@ target_sources(
 	DissasmProperties.cpp
 	DissasmKeyEvents.cpp
 	SingleSelectionDataWindow.cpp
-        AdvancedSelection.hpp
+	AdvancedSelection.hpp
 	AdvancedSelection.cpp
 	DissasmDataTypes.hpp
 	DissasmDataTypes.cpp
@@ -27,6 +27,7 @@ target_sources(
 	jclass/class_parser.hpp
 	jclass/global.hpp
 	jclass/raw_opcodes.hpp
+	jclass/DissasmJClass.cpp
 )
 
 add_testing_sources(GViewCore tests_dissasmviewer.cpp)

@@ -9,21 +9,6 @@ using namespace GView::View;
 
 namespace GView::Type::JClass
 {
-//bool ClassViewer::Parse()
-//{
-//    auto buffer = this->obj->GetData().GetEntireFile();
-//
-//    ClassParser parser;
-//    BufferReader reader{ buffer.GetData(), buffer.GetLength() };
-//    FCHECK(parser.parse(reader, this->areas));
-//
-//    AstCreator creator{ parser };
-//
-//    auto clazz = creator.create();
-//    FCHECK(clazz);
-//
-//    return true;
-//}
 
 string_view ClassViewer::GetTypeName()
 {

@@ -22,6 +22,28 @@ enum class ConstantKind : uint8 {
     InvokeDynamic      = 18
 };
 
+inline const char* ConstantKindNames[] = {
+    "Nothing",            //  = 0,
+    "Utf8",               //  = 1,
+    "InvalidKind2",       //  = 2,
+    "Integer",            //  = 3,
+    "Float",              //  = 4,
+    "Long",               //  = 5,
+    "Double",             //  = 6,
+    "Class",              //  = 7,
+    "String",             //  = 8,
+    "FieldRef",           //  = 9,
+    "MethodRef",          // = 10,
+    "InterfaceMethodRef", // = 11,
+    "NameAndType",        // = 12,
+    "InvalidKind13",      // = 13,
+    "InvalidKind14",      // = 14,
+    "MethodHandle",       // = 15,
+    "MethodType",         // = 16,
+    "InvalidKind14",      // = 17,
+    "InvokeDynamic",      // = 18
+};
+
 struct CONSTANT_Field_Interface_Methodref_info {
     uint16 class_index;
     uint16 name_and_type_index;
