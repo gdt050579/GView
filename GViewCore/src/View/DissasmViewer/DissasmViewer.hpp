@@ -219,7 +219,10 @@ namespace View
             std::map<uint32, std::string> comments;
 
             void AddOrUpdateComment(uint32 line, std::string comment);
+
+            //TODO: update this
             bool HasComment(uint32 line, std::string& comment) const;
+            bool HasComment(uint32 line) const;
             void RemoveComment(uint32 line);
             void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
         };
@@ -309,7 +312,7 @@ namespace View
             uint32 textLinesPassed;
             uint32 asmLinesPassed;
             AnnotationContainer annotations;
-            DissasmComments comments;
+            DissasmComments commentsData;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
 
@@ -409,7 +412,9 @@ namespace View
             void ReachZoneLine(uint32 line);
             bool ResetTypesReferenceList();
             bool TryRenameLine(uint32 line);
-            bool GetComment(uint32 line, std::string** comment, bool insertIfINotFound = false);
+            bool GetComment(uint32 line, std::string& comment);
+            void AddOrUpdateComment(uint32 line, const std::string& comment);
+            void RemoveComment(uint32 line);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 

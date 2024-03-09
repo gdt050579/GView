@@ -259,16 +259,14 @@ void Instance::AddComment()
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
 
-    // TODO:comments
-    std::string* foundComment = nullptr;
-    // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
-    convertedZone->GetComment(startingLine, &foundComment, true);
+    std::string comment = {};
+    convertedZone->GetComment(startingLine, comment);
 
     selection.Clear();
-    SingleLineEditWindow dlg(*foundComment, "Add Comment");
+    SingleLineEditWindow dlg(comment, "Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
-        *foundComment = dlg.GetResult();
-        // convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
+        comment = dlg.GetResult();
+        convertedZone->AddOrUpdateComment(startingLine, dlg.GetResult());
     }
 }
 
@@ -297,9 +295,8 @@ void Instance::RemoveComment()
     }
     startingLine--;
 
-    // TODO:comments
-    // const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    // convertedZone->comments.RemoveComment(startingLine);
+    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    convertedZone->RemoveComment(startingLine);
 }
 
 void Instance::RenameLabel()
@@ -1418,6 +1415,11 @@ bool DissasmComments::HasComment(uint32 line, std::string& comment) const
         return true;
     }
     return false;
+}
+
+bool DissasmComments::HasComment(uint32 line) const
+{
+    return comments.contains(line - 1);
 }
 
 void DissasmComments::RemoveComment(uint32 line)

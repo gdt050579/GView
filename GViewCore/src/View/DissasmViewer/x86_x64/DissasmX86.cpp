@@ -1004,7 +1004,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 if (res) {
                     const auto it = params.asmData->functions.find(hash);
                     if (it != params.asmData->functions.end()) {
-                        params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.comments);
+                        params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.commentsData);
                         params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
                     }
                 }
@@ -1013,7 +1013,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             shouldConsiderCall = true;
         }
     } else if (flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
-        if (!alreadyInitComment && !lastZone.comments.comments.contains(params.actualLine)) {
+        if (!alreadyInitComment && !lastZone.commentsData.comments.contains(params.actualLine)) {
             const auto offset = params.settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
             if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < params.obj->GetData().GetSize()) {
                 const auto textFoundOption = TryExtractPushText(params.obj, offset);
@@ -1021,7 +1021,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                     const auto& textFound = textFoundOption.value();
                     if (textFound.size() > 3) {
                         // TODO: add functions zone->comments to adjust comments instead of manually doing it
-                        lastZone.comments.comments.insert({ params.actualLine, (const char*) textFound.data() });
+                        lastZone.commentsData.comments.insert({ params.actualLine, (const char*) textFound.data() });
                         params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::PushFlag);
                     }
                 }
@@ -1314,8 +1314,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
     auto& lastZone = zone->types.back().get();
-    const auto it  = lastZone.comments.comments.find(currentLine);
-    if (it != lastZone.comments.comments.end()) {
+    const auto it  = lastZone.commentsData.comments.find(currentLine);
+    if (it != lastZone.commentsData.comments.end()) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (chars.Len() > diffLine)
             diffLine = commentPaddingLength;
@@ -1733,11 +1733,38 @@ bool DissasmCodeZone::ResetTypesReferenceList()
     return true;
 }
 
-DissasmCodeInternalType* GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
+using ValidChildCallback = bool(DissasmCodeInternalType*, void*);
+
+DissasmCodeInternalType* SearchBottomWithFnUpCollapsibleZoneRecursive(
+      DissasmCodeInternalType& parent, uint32 line, ValidChildCallback isValidChild, void* context = nullptr)
 {
     for (auto& zone : parent.internalTypes) {
         if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
-            auto child = GetRecursiveCollpasedZoneByLine(zone, line);
+            auto child = SearchBottomWithFnUpCollapsibleZoneRecursive(zone, line, isValidChild, context);
+            if (child && isValidChild(child, context))
+                return child;
+        }
+    }
+
+    return nullptr;
+}
+
+DissasmCodeInternalType* SearchBottomWithFnUpCollapsibleZone(
+      DissasmCodeInternalType& parent, uint32 line, ValidChildCallback isValidChild, void* context = nullptr)
+{
+    if (parent.internalTypes.empty()) {
+        if (isValidChild(&parent, context))
+            return &parent;
+        return nullptr;
+    }
+    return SearchBottomWithFnUpCollapsibleZoneRecursive(parent, line, isValidChild, context);
+}
+
+DissasmCodeInternalType* GetRecursiveCollpasedZoneByLineRecursive(DissasmCodeInternalType& parent, uint32 line)
+{
+    for (auto& zone : parent.internalTypes) {
+        if (zone.indexZoneStart <= line && line < zone.indexZoneEnd) {
+            auto child = GetRecursiveCollpasedZoneByLineRecursive(zone, line);
             if (child)
                 return child;
             if (zone.isCollapsed)
@@ -1747,6 +1774,13 @@ DissasmCodeInternalType* GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType
     }
 
     return nullptr;
+}
+
+DissasmCodeInternalType* GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
+{
+    if (parent.internalTypes.empty())
+        return &parent;
+    return GetRecursiveCollpasedZoneByLineRecursive(parent, line);
 }
 
 bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
@@ -1778,28 +1812,48 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
     return false;
 }
 
-bool DissasmCodeZone::GetComment(uint32 line, std::string** comment, bool insertIfINotFound)
+bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
 {
-    auto& annotations = dissasmType.annotations;
-    auto it           = annotations.find(line);
-    if (it != annotations.end()) {
-        *comment = &it->second;
+    line               = line - 1;
+    auto& commentsData = dissasmType.commentsData;
+    auto it            = commentsData.comments.find(line);
+    if (it != commentsData.comments.end()) {
+        comment = it->second;
         return true;
     }
 
-    auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
     if (collapsedZone) {
-        *comment = &collapsedZone->name;
-        return true;
-    }
-
-    if (insertIfINotFound) {
-        annotations.insert({ line, "" });
-        *comment = &annotations.find(line)->second;
+        comment = collapsedZone->name;
         return true;
     }
 
     return false;
+}
+
+void DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment)
+{
+    const auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+
+    if (!collapsedZone) {
+        Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
+        return;
+    }
+
+    collapsedZone->commentsData.AddOrUpdateComment(line, comment);
+}
+
+void DissasmCodeZone::RemoveComment(uint32 line)
+{
+    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
+    if (!collapsedZone) {
+        Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
+        return;
+    }
+
+    collapsedZone->commentsData.RemoveComment(line);
 }
 
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
