@@ -415,8 +415,8 @@ namespace View
             bool TryRenameLine(uint32 line);
 
             bool GetComment(uint32 line, std::string& comment);
-            void AddOrUpdateComment(uint32 line, const std::string& comment);
-            void RemoveComment(uint32 line);
+            bool AddOrUpdateComment(uint32 line, const std::string& comment,bool showErr = true);
+            bool RemoveComment(uint32 line, bool showErr = true);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 

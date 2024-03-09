@@ -1767,9 +1767,7 @@ DissasmCodeInternalType* GetRecursiveCollpasedZoneByLineRecursive(DissasmCodeInt
             auto child = GetRecursiveCollpasedZoneByLineRecursive(zone, line);
             if (child)
                 return child;
-            if (zone.isCollapsed)
-                return &zone;
-            return nullptr;
+            return &zone;
         }
     }
 
@@ -1798,7 +1796,8 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
         return true;
     }
 
-    auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+    auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->isCollapsed; };
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
     if (collapsedZone) {
         SingleLineEditWindow dlg(collapsedZone->name, "Edit collapsed zone label");
         if (dlg.Show() == Dialogs::Result::Ok) {
@@ -1815,9 +1814,9 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
 bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
 {
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line - 1, fnHasComments, &line);
     if (collapsedZone) {
-        if (!collapsedZone->commentsData.GetComment(line,comment)) {
+        if (!collapsedZone->commentsData.GetComment(line, comment)) {
             Dialogs::MessageBox::ShowError("Error processing comments", "Invalid behaviour");
             return false;
         }
@@ -1827,28 +1826,32 @@ bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
     return false;
 }
 
-void DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment)
+bool DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr)
 {
     const auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
 
     if (!collapsedZone) {
-        Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
-        return;
+        if (showErr)
+            Dialogs::MessageBox::ShowError("Error at processing comments", "Failed to find the required line!");
+        return false;
     }
 
     collapsedZone->commentsData.AddOrUpdateComment(line, comment);
+    return true;
 }
 
-void DissasmCodeZone::RemoveComment(uint32 line)
+bool DissasmCodeZone::RemoveComment(uint32 line, bool showErr)
 {
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line - 1, fnHasComments, &line);
     if (!collapsedZone) {
-        Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
-        return;
+        if (showErr)
+            Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
+        return false;
     }
 
     collapsedZone->commentsData.RemoveComment(line);
+    return true;
 }
 
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
@@ -2039,8 +2042,8 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     newZone.indexZoneEnd            = zoneLineEnd;
     newZone.workingIndexZoneEnd     = newZone.indexZoneEnd;
 
+    // TODO: improve annotations moving
     decltype(annotations) annotationsBefore, annotationCurrent, annotationAfter;
-
     for (const auto& zoneVal : parentZone->annotations) {
         if (zoneVal.first < zoneLineStart)
             annotationsBefore.insert(zoneVal);
@@ -2050,12 +2053,25 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
             annotationAfter.insert(zoneVal);
     }
 
-    newZone.annotations = std::move(annotationCurrent);
+    // TODO: improve annotations moving
+    decltype(commentsData.comments) commentsBefore, commentsCurrent, commentsAfter;
+    for (const auto& commentsVal : parentZone->commentsData.comments) {
+        if (commentsVal.first < zoneLineStart)
+            commentsBefore.insert(commentsVal);
+        else if (commentsVal.first >= zoneLineStart && commentsVal.first < zoneLineEnd)
+            commentsCurrent.insert(commentsVal);
+        else if (commentsVal.first >= zoneLineEnd)
+            commentsAfter.insert(commentsVal);
+    }
+
+    newZone.annotations           = std::move(annotationCurrent);
+    newZone.commentsData.comments = std::move(commentsCurrent);
 
     DissasmCodeInternalType firstZone = {};
     firstZone.indexZoneStart          = std::min(parentZone->indexZoneStart, zoneLineStart);
     firstZone.workingIndexZoneStart   = firstZone.indexZoneStart;
     firstZone.annotations             = std::move(annotationsBefore);
+    firstZone.commentsData.comments   = std::move(commentsBefore);
 
     DissasmCodeInternalType lastZone = {};
 
@@ -2073,6 +2089,7 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         firstZone.indexZoneEnd        = zoneLineEnd;
         firstZone.workingIndexZoneEnd = firstZone.indexZoneEnd;
         firstZone.annotations.insert(newZone.annotations.begin(), newZone.annotations.end());
+        firstZone.commentsData.comments.insert(newZone.commentsData.comments.begin(), newZone.commentsData.comments.end());
         // newZone.UpdateDataLineFromPrevious(firstZone);
         lastZone.UpdateDataLineFromPrevious(firstZone);
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(firstZone));
@@ -2087,9 +2104,10 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
         zonesHolder->insert(zonesHolder->begin() + indexFound++, std::move(newZone));
     }
 
-    lastZone.annotations         = std::move(annotationAfter);
-    lastZone.indexZoneEnd        = indexZoneEnd;
-    lastZone.workingIndexZoneEnd = lastZone.indexZoneEnd;
+    lastZone.annotations           = std::move(annotationAfter);
+    lastZone.commentsData.comments = std::move(commentsAfter);
+    lastZone.indexZoneEnd          = indexZoneEnd;
+    lastZone.workingIndexZoneEnd   = lastZone.indexZoneEnd;
     if (zoneLineEnd == indexZoneEnd) {
         lastZone.indexZoneStart        = zoneLineStart;
         lastZone.workingIndexZoneStart = lastZone.indexZoneStart;
