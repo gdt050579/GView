@@ -259,14 +259,16 @@ void Instance::AddComment()
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
 
-    std::string foundComment;
+    // TODO:comments
+    std::string* foundComment = nullptr;
     // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
-    convertedZone->comments.HasComment(startingLine, foundComment);
+    convertedZone->GetComment(startingLine, &foundComment, true);
 
     selection.Clear();
-    SingleLineEditWindow dlg(foundComment, "Add Comment");
+    SingleLineEditWindow dlg(*foundComment, "Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
-        convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
+        *foundComment = dlg.GetResult();
+        // convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
     }
 }
 
@@ -295,8 +297,9 @@ void Instance::RemoveComment()
     }
     startingLine--;
 
-    const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    convertedZone->comments.RemoveComment(startingLine);
+    // TODO:comments
+    // const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
+    // convertedZone->comments.RemoveComment(startingLine);
 }
 
 void Instance::RenameLabel()
@@ -1374,7 +1377,7 @@ Instance::~Instance()
     }
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails)
+void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments)
 {
     if (cachedAsmLines.empty())
         return;
@@ -1391,11 +1394,11 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
 
         // TODO: improve performance, remove string concatenation as much as possible
         auto param           = std::string(functionDetails->params[pushIndex].name);
-        const auto commentIt = zone->comments.comments.find(it->currentLine);
-        if (commentIt != zone->comments.comments.end()) {
+        const auto commentIt = comments.comments.find(it->currentLine);
+        if (commentIt != comments.comments.end()) {
             commentIt->second = param + " " + commentIt->second;
         } else {
-            zone->comments.comments.insert({ it->currentLine, param });
+            comments.comments.insert({ it->currentLine, param });
         }
         pushesRemaining--;
         pushIndex++;

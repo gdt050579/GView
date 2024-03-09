@@ -215,6 +215,15 @@ namespace View
             std::vector<NameType> params;
         };
 
+        struct DissasmComments {
+            std::map<uint32, std::string> comments;
+
+            void AddOrUpdateComment(uint32 line, std::string comment);
+            bool HasComment(uint32 line, std::string& comment) const;
+            void RemoveComment(uint32 line);
+            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+        };
+
         struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
             std::unordered_map<uint32, uint8> instructionFlags;
@@ -279,8 +288,9 @@ namespace View
                 Clear();
             }
 
-            void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
+            void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments);
         };
+
         struct DissasmCodeRemovableZoneDetails {
             DissasmCodeInternalType* zone;
             DissasmCodeInternalType* parent;
@@ -299,6 +309,7 @@ namespace View
             uint32 textLinesPassed;
             uint32 asmLinesPassed;
             AnnotationContainer annotations;
+            DissasmComments comments;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
 
@@ -341,16 +352,7 @@ namespace View
             bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
             bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
             DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel = 0);
-            bool RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails);
-        };
-
-        struct DissasmComments {
-            std::unordered_map<uint32, std::string> comments;
-
-            void AddOrUpdateComment(uint32 line, std::string comment);
-            bool HasComment(uint32 line, std::string& comment) const;
-            void RemoveComment(uint32 line);
-            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+            bool RemoveCollapsibleZone(uint32 zoneLine, const DissasmCodeRemovableZoneDetails& removableDetails);
         };
 
         struct DissasmCodeZoneInitData {
@@ -388,7 +390,6 @@ namespace View
 
             std::vector<AsmOffsetLine> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
-            DissasmComments comments;
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
             bool changedLevel;
@@ -408,6 +409,7 @@ namespace View
             void ReachZoneLine(uint32 line);
             bool ResetTypesReferenceList();
             bool TryRenameLine(uint32 line);
+            bool GetComment(uint32 line, std::string** comment, bool insertIfINotFound = false);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 

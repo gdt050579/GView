@@ -979,7 +979,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
 
     const uint64 finalIndex = params.zone->asmAddress + params.settings->offsetTranslateCallback->TranslateFromFileOffset(
                                                               params.zone->zoneDetails.entryPoint, (uint32) DissasmPEConversionType::RVA);
-
+    auto& lastZone          = params.zone->types.back().get();
     bool shouldConsiderCall = false;
     if (flags == DissasmAsmPreCacheLine::InstructionFlag::CallFlag) {
         const MemoryMappingEntry* mappingPtr = nullptr; // TryExtractMemoryMapping(params.settings, hexVal, finalIndex);
@@ -1004,7 +1004,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 if (res) {
                     const auto it = params.asmData->functions.find(hash);
                     if (it != params.asmData->functions.end()) {
-                        params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second);
+                        params.zone->asmPreCacheData.AnnounceCallInstruction(params.zone, it->second, lastZone.comments);
                         params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::CallFlag);
                     }
                 }
@@ -1013,7 +1013,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
             shouldConsiderCall = true;
         }
     } else if (flags == DissasmAsmPreCacheLine::InstructionFlag::PushFlag) {
-        if (!alreadyInitComment && !params.zone->comments.comments.contains(params.actualLine)) {
+        if (!alreadyInitComment && !lastZone.comments.comments.contains(params.actualLine)) {
             const auto offset = params.settings->offsetTranslateCallback->TranslateToFileOffset(hexVal, (uint32) DissasmPEConversionType::RVA);
             if (offset != static_cast<uint64>(-1) && offset + DISSAM_MAXIMUM_STRING_PREVIEW < params.obj->GetData().GetSize()) {
                 const auto textFoundOption = TryExtractPushText(params.obj, offset);
@@ -1021,7 +1021,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                     const auto& textFound = textFoundOption.value();
                     if (textFound.size() > 3) {
                         // TODO: add functions zone->comments to adjust comments instead of manually doing it
-                        params.zone->comments.comments.insert({ params.actualLine, (const char*) textFound.data() });
+                        lastZone.comments.comments.insert({ params.actualLine, (const char*) textFound.data() });
                         params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::PushFlag);
                     }
                 }
@@ -1313,9 +1313,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
-
-    const auto it = zone->comments.comments.find(currentLine);
-    if (it != zone->comments.comments.end()) {
+    auto& lastZone = zone->types.back().get();
+    const auto it  = lastZone.comments.comments.find(currentLine);
+    if (it != lastZone.comments.comments.end()) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (chars.Len() > diffLine)
             diffLine = commentPaddingLength;
@@ -1778,6 +1778,30 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
     return false;
 }
 
+bool DissasmCodeZone::GetComment(uint32 line, std::string** comment, bool insertIfINotFound)
+{
+    auto& annotations = dissasmType.annotations;
+    auto it           = annotations.find(line);
+    if (it != annotations.end()) {
+        *comment = &it->second;
+        return true;
+    }
+
+    auto collapsedZone = GetRecursiveCollpasedZoneByLine(dissasmType, line);
+    if (collapsedZone) {
+        *comment = &collapsedZone->name;
+        return true;
+    }
+
+    if (insertIfINotFound) {
+        annotations.insert({ line, "" });
+        *comment = &annotations.find(line)->second;
+        return true;
+    }
+
+    return false;
+}
+
 DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params)
 {
     ReachZoneLine(currentLine);
@@ -2065,7 +2089,7 @@ DissasmCodeRemovableZoneDetails DissasmCodeInternalType::GetRemoveZoneCollapsibl
     return {};
 }
 
-bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, DissasmCodeRemovableZoneDetails removableDetails)
+bool DissasmCodeInternalType::RemoveCollapsibleZone(uint32 zoneLine, const DissasmCodeRemovableZoneDetails& removableDetails)
 {
     auto& parentInternalTypes = removableDetails.parent->internalTypes;
     if (parentInternalTypes.size() == 2) { // last two zone, we clear them
