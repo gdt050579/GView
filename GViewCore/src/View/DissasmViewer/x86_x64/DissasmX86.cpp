@@ -1814,17 +1814,13 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
 
 bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
 {
-    line               = line - 1;
-    auto& commentsData = dissasmType.commentsData;
-    auto it            = commentsData.comments.find(line);
-    if (it != commentsData.comments.end()) {
-        comment = it->second;
-        return true;
-    }
-
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
     const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
     if (collapsedZone) {
+        if (!collapsedZone->commentsData.GetComment(line,comment)) {
+            Dialogs::MessageBox::ShowError("Error processing comments", "Invalid behaviour");
+            return false;
+        }
         comment = collapsedZone->name;
         return true;
     }

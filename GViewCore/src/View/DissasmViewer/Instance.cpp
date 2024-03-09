@@ -1407,7 +1407,7 @@ void DissasmComments::AddOrUpdateComment(uint32 line, std::string comment)
     comments[line - 1] = std::move(comment);
 }
 
-bool DissasmComments::HasComment(uint32 line, std::string& comment) const
+bool DissasmComments::GetComment(uint32 line, std::string& comment) const
 {
     const auto it = comments.find(line - 1);
     if (it != comments.end()) {

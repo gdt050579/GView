@@ -220,8 +220,7 @@ namespace View
 
             void AddOrUpdateComment(uint32 line, std::string comment);
 
-            //TODO: update this
-            bool HasComment(uint32 line, std::string& comment) const;
+            bool GetComment(uint32 line, std::string& comment) const;
             bool HasComment(uint32 line) const;
             void RemoveComment(uint32 line);
             void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
@@ -408,10 +407,13 @@ namespace View
             }
             bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
             bool RemoveCollapsibleZone(uint32 zoneLine);
+
             bool InitZone(DissasmCodeZoneInitData& initData);
             void ReachZoneLine(uint32 line);
+
             bool ResetTypesReferenceList();
             bool TryRenameLine(uint32 line);
+
             bool GetComment(uint32 line, std::string& comment);
             void AddOrUpdateComment(uint32 line, const std::string& comment);
             void RemoveComment(uint32 line);
