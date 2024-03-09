@@ -1821,7 +1821,6 @@ bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
             Dialogs::MessageBox::ShowError("Error processing comments", "Invalid behaviour");
             return false;
         }
-        comment = collapsedZone->name;
         return true;
     }
 
