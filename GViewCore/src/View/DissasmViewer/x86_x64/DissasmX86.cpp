@@ -1743,6 +1743,9 @@ DissasmCodeInternalType* SearchBottomWithFnUpCollapsibleZoneRecursive(
             auto child = SearchBottomWithFnUpCollapsibleZoneRecursive(zone, line, isValidChild, context);
             if (child && isValidChild(child, context))
                 return child;
+            if (isValidChild(&zone, context))
+                return &zone;
+            return nullptr;
         }
     }
 
@@ -1774,7 +1777,7 @@ DissasmCodeInternalType* GetRecursiveCollpasedZoneByLineRecursive(DissasmCodeInt
     return nullptr;
 }
 
-DissasmCodeInternalType* GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
+DissasmCodeInternalType* GView::View::DissasmViewer::GetRecursiveCollpasedZoneByLine(DissasmCodeInternalType& parent, uint32 line)
 {
     if (parent.internalTypes.empty())
         return &parent;
@@ -1814,7 +1817,7 @@ bool GView::View::DissasmViewer::DissasmCodeZone::TryRenameLine(uint32 line)
 bool DissasmCodeZone::GetComment(uint32 line, std::string& comment)
 {
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line - 1, fnHasComments, &line);
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
     if (collapsedZone) {
         if (!collapsedZone->commentsData.GetComment(line, comment)) {
             Dialogs::MessageBox::ShowError("Error processing comments", "Invalid behaviour");
@@ -1843,7 +1846,7 @@ bool DissasmCodeZone::AddOrUpdateComment(uint32 line, const std::string& comment
 bool DissasmCodeZone::RemoveComment(uint32 line, bool showErr)
 {
     auto fnHasComments       = [](DissasmCodeInternalType* child, void* ctx) { return child->commentsData.HasComment(*((uint32*) ctx)); };
-    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line - 1, fnHasComments, &line);
+    const auto collapsedZone = SearchBottomWithFnUpCollapsibleZone(dissasmType, line, fnHasComments, &line);
     if (!collapsedZone) {
         if (showErr)
             Dialogs::MessageBox::ShowError("Error at processing comments", "Could not find the comment!");
@@ -1938,6 +1941,12 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, Dissas
             zone.annotations                    = {};
             for (auto& annotation : zoneAnnotations) {
                 zone.annotations.insert({ annotation.first + difference, std::move(annotation.second) });
+            }
+
+            DissasmComments odlComments = std::move(zone.commentsData);
+            zone.commentsData        = {};
+            for (auto& comment : odlComments.comments) {
+                zone.commentsData.comments.insert({ comment.first + difference, std::move(comment.second) });
             }
         }
     }
@@ -2056,11 +2065,11 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     // TODO: improve annotations moving
     decltype(commentsData.comments) commentsBefore, commentsCurrent, commentsAfter;
     for (const auto& commentsVal : parentZone->commentsData.comments) {
-        if (commentsVal.first < zoneLineStart)
+        if (commentsVal.first < zoneLineStart - 1)
             commentsBefore.insert(commentsVal);
-        else if (commentsVal.first >= zoneLineStart && commentsVal.first < zoneLineEnd)
+        else if (commentsVal.first >= zoneLineStart - 1 && commentsVal.first < zoneLineEnd - 1)
             commentsCurrent.insert(commentsVal);
-        else if (commentsVal.first >= zoneLineEnd)
+        else if (commentsVal.first >= zoneLineEnd - 1)
             commentsAfter.insert(commentsVal);
     }
 

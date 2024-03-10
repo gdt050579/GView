@@ -15,7 +15,7 @@ class DummyType : public GView::TypeInterface
     void RunCommand(std::string_view) override
     {
     }
-    ~DummyType()
+    ~DummyType() override
     {
     }
 
@@ -444,15 +444,21 @@ class DissasmTestInstance
         return true;
     }
 
-    bool AddComment(uint32 line, std::string comment)
+    bool AddOrUpdateComment(uint32 line, std::string comment)
     {
-        return zone->AddOrUpdateComment(line, comment);
+        return zone->AddOrUpdateComment(line, comment, false);
     }
     bool HasComment(uint32 line)
     {
         std::string temp;
         return zone->GetComment(line, temp);
     }
+
+    DissasmCodeInternalType* GetDissasmCodeInternalTypeByLine(uint32 line)
+    {
+        return GetRecursiveCollpasedZoneByLine(zone->dissasmType, line);
+    }
+
     bool CheckComment(uint32 line, std::string expectedValue)
     {
         std::string temp = {};
@@ -466,7 +472,7 @@ class DissasmTestInstance
     }
     bool RemoveComment(uint32 line)
     {
-        return zone->RemoveComment(line);
+        return zone->RemoveComment(line, false);
     }
 
     void ReachZoneLine(uint32 zoneLine)
@@ -495,6 +501,7 @@ class DissasmTestInstance
 
     void PrintInstructions(uint32 count)
     {
+        std::string comment = {};
         for (uint32 i = 0; i < count; i++) {
             auto val = zone->GetCurrentAsmLine(i, &objects[0], nullptr);
             printf("[%u] %s %s ", i, val.mnemonic, val.op_str);
@@ -504,6 +511,11 @@ class DissasmTestInstance
                     continue;
                 printf("%s ", type.get().name.c_str());
             }
+
+            if (zone->GetComment(i, comment)) {
+                printf("\tComment: \"%s\"", comment.c_str());
+            }
+
             printf("\n");
         }
     }
@@ -516,7 +528,6 @@ class DissasmTestInstance
 
 TEST_CASE("DissasmFunctions", "[Dissasm]Functions")
 {
-    return;
     uint64 value = 0;
     REQUIRE(!CheckExtractInsnHexValue("mov eax, 0x1234", value, 5));
 
@@ -553,7 +564,6 @@ TEST_CASE("DissasmFunctions", "[Dissasm]Functions")
 
 TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
 {
-    return;
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
     uint32 zoneEndingIndex = 4572;
@@ -607,7 +617,6 @@ TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
 
 TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
 {
-    return;
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
     uint32 zoneEndingIndex = 4572;
 
@@ -691,7 +700,6 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
 
 TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
 {
-    return;
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
     uint32 zoneEndingIndex = 4572;
@@ -763,7 +771,6 @@ TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
 
 TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
 {
-    return;
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
     uint32 zoneEndingIndex = 4572;
@@ -845,23 +852,55 @@ TEST_CASE("ValidatingComments", "[Dissasm]Comments")
     REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
 
-    REQUIRE(dissasmInstance.AddComment(20, "c0"));
-    REQUIRE(dissasmInstance.AddComment(2, "c2"));
-    REQUIRE(dissasmInstance.AddComment(5, "c5"));
-    REQUIRE(dissasmInstance.AddComment(10, "c10"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(2, "c2"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(5, "c5"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(10, "c10"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(20, "c0"));
 
     REQUIRE(dissasmInstance.HasComment(20));
+    REQUIRE(dissasmInstance.CheckComment(20, "c0"));
+
     REQUIRE(!dissasmInstance.HasComment(1));
     REQUIRE(dissasmInstance.HasComment(2));
+    REQUIRE(dissasmInstance.CheckComment(2, "c2"));
+
     REQUIRE(!dissasmInstance.HasComment(4));
     REQUIRE(dissasmInstance.HasComment(5));
-    REQUIRE(!dissasmInstance.HasComment(9));
+    REQUIRE(dissasmInstance.CheckComment(5, "c5"));
 
-    //SECTION("adding comments")
-    //{
-    //    REQUIRE(dissasmInstance.AddComment(0, "c00"));
-    //    REQUIRE(dissasmInstance.AddComment(2, "c2"));
-    //    REQUIRE(dissasmInstance.AddComment(5, "c5"));
-    //    REQUIRE(dissasmInstance.AddComment(10, "c10"));
-    //}
+    REQUIRE(!dissasmInstance.HasComment(9));
+    REQUIRE(dissasmInstance.HasComment(10));
+    REQUIRE(dissasmInstance.CheckComment(10, "c10"));
+
+    // SECTION("collapsible zones")
+    REQUIRE(dissasmInstance.AddCollpasibleZone(5, 12)); // comments on lines 5 and 10 should be inside
+    auto internalZone = dissasmInstance.GetDissasmCodeInternalTypeByLine(10);
+    REQUIRE(internalZone);
+    REQUIRE(internalZone->commentsData.HasComment(5));
+    REQUIRE(internalZone->commentsData.HasComment(10));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(10, DissasmCodeZone::CollapseExpandType::Collapse));
+
+    REQUIRE(internalZone->commentsData.HasComment(5));  // available, but not visible
+    REQUIRE(dissasmInstance.HasComment(5));
+    REQUIRE(internalZone->commentsData.HasComment(10)); // available, but not visible
+    REQUIRE(!dissasmInstance.HasComment(20));           // it has been moved due to collapse of the zone
+    REQUIRE(dissasmInstance.HasComment(14));
+    REQUIRE(dissasmInstance.CheckComment(14, "c0"));
+
+    //dissasmInstance.PrintInstructions(30);
+
+    SECTION("updating and remove")
+    {
+        REQUIRE(dissasmInstance.AddOrUpdateComment(10, "c1010"));
+        REQUIRE(dissasmInstance.HasComment(10));
+        REQUIRE(dissasmInstance.CheckComment(10, "c1010"));
+
+        REQUIRE(dissasmInstance.HasComment(10));
+        REQUIRE(dissasmInstance.RemoveComment(10));
+        REQUIRE(!dissasmInstance.HasComment(10));
+
+        REQUIRE(dissasmInstance.HasComment(5));
+        REQUIRE(dissasmInstance.RemoveComment(5));
+        REQUIRE(!dissasmInstance.HasComment(5));
+    }
 }
