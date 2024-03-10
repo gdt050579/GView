@@ -1389,14 +1389,13 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             continue;
 
-        // TODO: improve performance, remove string concatenation as much as possible
-        auto param           = std::string(functionDetails->params[pushIndex].name);
-        const auto commentIt = comments.comments.find(it->currentLine);
-        if (commentIt != comments.comments.end()) {
-            commentIt->second = param + " " + commentIt->second;
-        } else {
-            comments.comments.insert({ it->currentLine, param });
+        LocalString<128> commentResult;
+        commentResult.SetFormat("%s", functionDetails->params[pushIndex].name);
+        std::string foundComment;
+        if (comments.GetComment(it->currentLine, foundComment)) {
+            commentResult.AddFormat(" %s", foundComment.c_str());
         }
+        comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
         pushesRemaining--;
         pushIndex++;
     }

@@ -1020,8 +1020,7 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
                 if (textFoundOption.has_value()) {
                     const auto& textFound = textFoundOption.value();
                     if (textFound.size() > 3) {
-                        // TODO: add functions zone->comments to adjust comments instead of manually doing it
-                        lastZone.commentsData.comments.insert({ params.actualLine, (const char*) textFound.data() });
+                        lastZone.commentsData.AddOrUpdateComment(params.actualLine, (const char*) textFound.data());
                         params.zone->asmPreCacheData.AddInstructionFlag(params.asmLine, DissasmAsmPreCacheLine::PushFlag);
                     }
                 }
