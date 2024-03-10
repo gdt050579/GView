@@ -5,32 +5,32 @@ using namespace GView::View::DissasmViewer;
 constexpr int32 BTN_ID_OK     = 1;
 constexpr int32 BTN_ID_CANCEL = 2;
 
-void CommentDataWindow::Validate()
+void SingleLineEditWindow::Validate()
 {
     LocalString<128> tmp;
-    if (commentTextField->GetText().IsEmpty())
+    if (textField->GetText().IsEmpty())
     {
         Dialogs::MessageBox::ShowError("Error", "Please write something in the comment section !");
-        commentTextField->SetFocus();
+        textField->SetFocus();
     }
-    data = commentTextField->GetText();
+    data = textField->GetText();
     Exit(Dialogs::Result::Ok);
 }
 
-CommentDataWindow::CommentDataWindow(std::string initialComment) : Window("Add comment", "d:c,w:60,h:7", WindowFlags::ProcessReturn)
+SingleLineEditWindow::SingleLineEditWindow(std::string initialText, const char* title) : Window(title, "d:c,w:60,h:7", WindowFlags::ProcessReturn)
 {
-    data = initialComment;
-    Factory::Label::Create(this, "&Comment", "x:1,y:1,w:8");
-    commentTextField = Factory::TextField::Create(this, initialComment, "x:10,y:1,w:46");
-    commentTextField->SetHotKey('C');
+    data = initialText;
+    Factory::Label::Create(this, "&Text", "x:1,y:1,w:8");
+    textField = Factory::TextField::Create(this, initialText, "x:10,y:1,w:46");
+    textField->SetHotKey('T');
 
     Factory::Button::Create(this, "&OK", "l:16,b:0,w:13", BTN_ID_OK);
     Factory::Button::Create(this, "&Cancel", "l:31,b:0,w:13", BTN_ID_CANCEL);
 
-    commentTextField->SetFocus();
+    textField->SetFocus();
 }
 
-bool CommentDataWindow::OnEvent(Reference<Control>, Event eventType, int ID)
+bool SingleLineEditWindow::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     if (eventType == Event::ButtonClicked)
     {

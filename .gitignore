@@ -13,3 +13,8 @@ cmake-build-*/
 vcpkg_installed/
 .DS_Store
 *.db
+CMakeUserPresets.json
+GView/GView.rc
+GView/GView.aps
+GViewCore/GViewCore.rc
+GViewCore/GViewCore.aps

@@ -1,0 +1,38 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 22,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "debug",
+            "displayName": "Debug config",
+            "description": "debug",
+            "binaryDir": "${sourceDir}/build/debug",
+            "cacheVariables": {
+                "DCMAKE_BUILD_TYPE": {
+                    "type": "STRING",
+                    "value": "DEBUG"
+                }
+            }
+        },
+        {
+            "name": "testing",
+            "displayName": "Testing config",
+            "description": "Testing config",
+            "binaryDir": "${sourceDir}/build/testing",
+            "cacheVariables": {
+                "DCMAKE_BUILD_TYPE": {
+                    "type": "STRING",
+                    "value": "DEBUG"
+                },
+                "ENABLE_TESTS": {
+                    "type": "BOOL",
+                    "value": true
+                }
+            }
+        }
+    ]
+}
