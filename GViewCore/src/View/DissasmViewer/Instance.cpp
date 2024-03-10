@@ -259,14 +259,14 @@ void Instance::AddComment()
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
 
-    std::string foundComment;
-    // TODO: refactor function HasComment to return the comment or empty string for avoiding double initialization
-    convertedZone->comments.HasComment(startingLine, foundComment);
+    std::string comment = {};
+    convertedZone->GetComment(startingLine, comment);
 
     selection.Clear();
-    SingleLineEditWindow dlg(foundComment, "Add Comment");
+    SingleLineEditWindow dlg(comment, "Add Comment");
     if (dlg.Show() == Dialogs::Result::Ok) {
-        convertedZone->comments.AddOrUpdateComment(startingLine, dlg.GetResult());
+        comment = dlg.GetResult();
+        convertedZone->AddOrUpdateComment(startingLine, dlg.GetResult());
     }
 }
 
@@ -296,7 +296,7 @@ void Instance::RemoveComment()
     startingLine--;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
-    convertedZone->comments.RemoveComment(startingLine);
+    convertedZone->RemoveComment(startingLine);
 }
 
 void Instance::RenameLabel()
@@ -724,10 +724,13 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
     return DrawDissasmX86AndX64CodeZone(dli, zone);
 }
 
-void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone)
+void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet)
 {
     const ButtonsData bData = { 3, static_cast<int>(screenLine), c, config.Colors.DataTypeColor, 3, zone };
-    MyLine.buttons.push_back(bData);
+    if (isBullet)
+        MyLine.bullets.push_back(bData);
+    else
+        MyLine.buttons.push_back(bData);
 }
 
 void Instance::AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd)
@@ -1206,6 +1209,8 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
 {
     if (!MyLine.buttons.empty())
         MyLine.buttons.clear();
+    if (!MyLine.bullets.empty())
+        MyLine.bullets.clear();
     // if (HasFocus())
     //     renderer.Clear(' ', config.Colors.Normal);
     // else
@@ -1235,6 +1240,10 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
     if (!MyLine.buttons.empty()) {
         for (const auto& btn : MyLine.buttons)
             renderer.WriteSpecialCharacter(btn.x, btn.y, btn.c, btn.color);
+    }
+    if (!MyLine.bullets.empty()) {
+        for (const auto& bullet : MyLine.bullets)
+            renderer.WriteSpecialCharacter(bullet.x, bullet.y, SpecialChars::CircleFilled, bullet.color);
     }
 }
 
@@ -1365,7 +1374,7 @@ Instance::~Instance()
     }
 }
 
-void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails)
+void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments)
 {
     if (cachedAsmLines.empty())
         return;
@@ -1380,14 +1389,13 @@ void DissasmAsmPreCacheData::AnnounceCallInstruction(struct DissasmCodeZone* zon
         if (it->flags != DissasmAsmPreCacheLine::InstructionFlag::PushFlag)
             continue;
 
-        // TODO: improve performance, remove string concatenation as much as possible
-        auto param           = std::string(functionDetails->params[pushIndex].name);
-        const auto commentIt = zone->comments.comments.find(it->currentLine);
-        if (commentIt != zone->comments.comments.end()) {
-            commentIt->second = param + " " + commentIt->second;
-        } else {
-            zone->comments.comments.insert({ it->currentLine, param });
+        LocalString<128> commentResult;
+        commentResult.SetFormat("%s", functionDetails->params[pushIndex].name);
+        std::string foundComment;
+        if (comments.GetComment(it->currentLine, foundComment)) {
+            commentResult.AddFormat(" %s", foundComment.c_str());
         }
+        comments.AddOrUpdateComment(it->currentLine, commentResult.GetText());
         pushesRemaining--;
         pushIndex++;
     }
@@ -1398,7 +1406,7 @@ void DissasmComments::AddOrUpdateComment(uint32 line, std::string comment)
     comments[line - 1] = std::move(comment);
 }
 
-bool DissasmComments::HasComment(uint32 line, std::string& comment) const
+bool DissasmComments::GetComment(uint32 line, std::string& comment) const
 {
     const auto it = comments.find(line - 1);
     if (it != comments.end()) {
@@ -1406,6 +1414,11 @@ bool DissasmComments::HasComment(uint32 line, std::string& comment) const
         return true;
     }
     return false;
+}
+
+bool DissasmComments::HasComment(uint32 line) const
+{
+    return comments.contains(line - 1);
 }
 
 void DissasmComments::RemoveComment(uint32 line)

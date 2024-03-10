@@ -1,6 +1,6 @@
 #include <catch.hpp>
 #include "DissasmViewer.hpp"
-#include "DissasmX86.hpp"
+#include "x86_x64/DissasmX86.hpp"
 #include <array>
 
 using namespace GView::View::DissasmViewer;
@@ -15,7 +15,7 @@ class DummyType : public GView::TypeInterface
     void RunCommand(std::string_view) override
     {
     }
-    ~DummyType()
+    ~DummyType() override
     {
     }
 
@@ -347,11 +347,6 @@ class DissasmTestInstance
         assert(zone->InitZone(initData));
     }
 
-    bool AddCollpasibleZone(uint32 zoneListStart, uint32 zoneLineEnd)
-    {
-        return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd);
-    }
-
     bool CheckInternalTypes(uint32 zoneIndex, std::initializer_list<ZoneCheckData> zones)
     {
         if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
@@ -385,7 +380,6 @@ class DissasmTestInstance
         }
         return true;
     }
-
     bool CheckBeforeLinesData(uint32 zoneIndex, std::initializer_list<ZoneBeforeLines> zones)
     {
         if (zoneIndex >= zone->dissasmType.internalTypes.size() && zoneIndex != UINT32_MAX) {
@@ -416,28 +410,6 @@ class DissasmTestInstance
         }
         return true;
     }
-
-    void ReachZoneLine(uint32 zoneLine)
-    {
-        zone->ReachZoneLine(zoneLine);
-    }
-
-    DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 line)
-    {
-        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
-        return val;
-    }
-
-    bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
-    {
-        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
-        if (val.mnemonic != mnemonic) {
-            printf("[%u]mnemonic: %s\n", line, val.mnemonic);
-            return false;
-        }
-        return true;
-    }
-
     bool CheckLineOpStr(uint32 line, std::string_view startWithStr)
     {
         auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
@@ -447,38 +419,19 @@ class DissasmTestInstance
         }
         return true;
     }
-
     bool CheckLinesWorkingIndexesSameAsZones()
     {
         return CheckLinesWorkingIndexesSameAsZonesRecursive(&zone->dissasmType.internalTypes);
     }
-
-    bool CheckCollapseOrExtendZone(uint32 zoneLine, DissasmCodeZone::CollapseExpandType collapse)
+    bool CheckLineMnemonic(uint32 line, std::string_view mnemonic)
     {
-        int32 difference = 0;
-        return zone->CollapseOrExtendZone(zoneLine, collapse, difference);
-    }
-
-    bool RemoveCollapsibleZone(uint32 zoneLine)
-    {
-        return zone->RemoveCollapsibleZone(zoneLine);
-    }
-
-    void PrintInstructions(uint32 count)
-    {
-        for (uint32 i = 0; i < count; i++) {
-            auto val = zone->GetCurrentAsmLine(i, &objects[0], nullptr);
-            printf("[%u] %s %s ", i, val.mnemonic, val.op_str);
-
-            for (const auto& type : zone->types) {
-                if (type.get().name.empty())
-                    continue;
-                printf("%s ", type.get().name.c_str());
-            }
-            printf("\n");
+        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
+        if (val.mnemonic != mnemonic) {
+            printf("[%u]mnemonic: %s\n", line, val.mnemonic);
+            return false;
         }
+        return true;
     }
-
     bool CheckLineMnemonicArray(uint32 startingLine, uint32 count, const char** mnemonicArray)
     {
         for (uint32 i = 0; i < count; i++) {
@@ -491,13 +444,89 @@ class DissasmTestInstance
         return true;
     }
 
+    bool AddOrUpdateComment(uint32 line, std::string comment)
+    {
+        return zone->AddOrUpdateComment(line, comment, false);
+    }
+    bool HasComment(uint32 line)
+    {
+        std::string temp;
+        return zone->GetComment(line, temp);
+    }
+
+    DissasmCodeInternalType* GetDissasmCodeInternalTypeByLine(uint32 line)
+    {
+        return GetRecursiveCollpasedZoneByLine(zone->dissasmType, line);
+    }
+
+    bool CheckComment(uint32 line, std::string expectedValue)
+    {
+        std::string temp = {};
+        if (!zone->GetComment(line, temp))
+            return false;
+        if (temp != expectedValue) {
+            printf("Expected comment: \"%s\" and got: \"%s\"", expectedValue.c_str(), temp.c_str());
+            return false;
+        }
+        return true;
+    }
+    bool RemoveComment(uint32 line)
+    {
+        return zone->RemoveComment(line, false);
+    }
+
+    void ReachZoneLine(uint32 zoneLine)
+    {
+        zone->ReachZoneLine(zoneLine);
+    }
+    DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 line)
+    {
+        auto val = zone->GetCurrentAsmLine(line, &objects[0], nullptr);
+        return val;
+    }
+
+    bool AddCollpasibleZone(uint32 zoneListStart, uint32 zoneLineEnd)
+    {
+        return zone->AddCollapsibleZone(zoneListStart, zoneLineEnd);
+    }
+    bool CheckCollapseOrExtendZone(uint32 zoneLine, DissasmCodeZone::CollapseExpandType collapse)
+    {
+        int32 difference = 0;
+        return zone->CollapseOrExtendZone(zoneLine, collapse, difference);
+    }
+    bool RemoveCollapsibleZone(uint32 zoneLine)
+    {
+        return zone->RemoveCollapsibleZone(zoneLine);
+    }
+
+    void PrintInstructions(uint32 count)
+    {
+        std::string comment = {};
+        for (uint32 i = 0; i < count; i++) {
+            auto val = zone->GetCurrentAsmLine(i, &objects[0], nullptr);
+            printf("[%u] %s %s ", i, val.mnemonic, val.op_str);
+
+            for (const auto& type : zone->types) {
+                if (type.get().name.empty())
+                    continue;
+                printf("%s ", type.get().name.c_str());
+            }
+
+            if (zone->GetComment(i, comment)) {
+                printf("\tComment: \"%s\"", comment.c_str());
+            }
+
+            printf("\n");
+        }
+    }
+
     ~DissasmTestInstance()
     {
         delete instance;
     }
 };
 
-TEST_CASE("DissasmFunctions", "[Dissasm]")
+TEST_CASE("DissasmFunctions", "[Dissasm]Functions")
 {
     uint64 value = 0;
     REQUIRE(!CheckExtractInsnHexValue("mov eax, 0x1234", value, 5));
@@ -533,7 +562,7 @@ TEST_CASE("DissasmFunctions", "[Dissasm]")
     REQUIRE(!CheckExtractInsnHexValue("mov [0x123], eax", value, 5));
 }
 
-TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]")
+TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
@@ -586,7 +615,7 @@ TEST_CASE("AddAndCollapseCollapsibleZones", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckInternalTypes(-1, { { 0, 1, true }, { 1, 4, true }, { 4, 9, true }, { 9, zoneEndingIndex - 2 } }));
 }
 
-TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]")
+TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
     uint32 zoneEndingIndex = 4572;
@@ -669,9 +698,8 @@ TEST_CASE("AddAndCollapseCollapsibleZones2", "[Dissasm]")
     // dissasmInstance.PrintInstructions(50);
 }
 
-TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]")
+TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]CollapsibleZones")
 {
-    return;
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
     uint32 zoneEndingIndex = 4572;
@@ -741,7 +769,7 @@ TEST_CASE("GenricRemoveCollapsibleZone", "[Dissasm]")
     REQUIRE(dissasmInstance.CheckLinesWorkingIndexesSameAsZones());
 }
 
-TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]")
+TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]CollapsibleZones")
 {
     DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
 
@@ -801,5 +829,78 @@ TEST_CASE("RemoveCollapsibleZoneSpecialCases", "[Dissasm]")
         REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
         REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
+    }
+}
+
+TEST_CASE("ValidatingComments", "[Dissasm]Comments")
+{
+    DissasmTestInstance dissasmInstance(exampleTest1BinaryCode, exampleTest1BinaryCodeSize);
+
+    uint32 zoneEndingIndex = 4572;
+    // dissasmInstance.PrintInstructions(20);
+    REQUIRE(dissasmInstance.CheckLineMnemonic(0, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(1, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(2, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(3, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(4, "int3"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(5, "sub_0x000000005"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(6, "jmp"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(7, "EntryPoint"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(8, "jmp"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(9, "sub_0x00000000F"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(10, "jmp"));
+    REQUIRE(dissasmInstance.CheckLineMnemonic(11, "jmp"));
+    REQUIRE(dissasmInstance.CheckInternalTypes(-1, {}));
+
+    REQUIRE(dissasmInstance.AddOrUpdateComment(2, "c2"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(5, "c5"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(10, "c10"));
+    REQUIRE(dissasmInstance.AddOrUpdateComment(20, "c0"));
+
+    REQUIRE(dissasmInstance.HasComment(20));
+    REQUIRE(dissasmInstance.CheckComment(20, "c0"));
+
+    REQUIRE(!dissasmInstance.HasComment(1));
+    REQUIRE(dissasmInstance.HasComment(2));
+    REQUIRE(dissasmInstance.CheckComment(2, "c2"));
+
+    REQUIRE(!dissasmInstance.HasComment(4));
+    REQUIRE(dissasmInstance.HasComment(5));
+    REQUIRE(dissasmInstance.CheckComment(5, "c5"));
+
+    REQUIRE(!dissasmInstance.HasComment(9));
+    REQUIRE(dissasmInstance.HasComment(10));
+    REQUIRE(dissasmInstance.CheckComment(10, "c10"));
+
+    // SECTION("collapsible zones")
+    REQUIRE(dissasmInstance.AddCollpasibleZone(5, 12)); // comments on lines 5 and 10 should be inside
+    auto internalZone = dissasmInstance.GetDissasmCodeInternalTypeByLine(10);
+    REQUIRE(internalZone);
+    REQUIRE(internalZone->commentsData.HasComment(5));
+    REQUIRE(internalZone->commentsData.HasComment(10));
+    REQUIRE(dissasmInstance.CheckCollapseOrExtendZone(10, DissasmCodeZone::CollapseExpandType::Collapse));
+
+    REQUIRE(internalZone->commentsData.HasComment(5));  // available, but not visible
+    REQUIRE(dissasmInstance.HasComment(5));
+    REQUIRE(internalZone->commentsData.HasComment(10)); // available, but not visible
+    REQUIRE(!dissasmInstance.HasComment(20));           // it has been moved due to collapse of the zone
+    REQUIRE(dissasmInstance.HasComment(14));
+    REQUIRE(dissasmInstance.CheckComment(14, "c0"));
+
+    //dissasmInstance.PrintInstructions(30);
+
+    SECTION("updating and remove")
+    {
+        REQUIRE(dissasmInstance.AddOrUpdateComment(10, "c1010"));
+        REQUIRE(dissasmInstance.HasComment(10));
+        REQUIRE(dissasmInstance.CheckComment(10, "c1010"));
+
+        REQUIRE(dissasmInstance.HasComment(10));
+        REQUIRE(dissasmInstance.RemoveComment(10));
+        REQUIRE(!dissasmInstance.HasComment(10));
+
+        REQUIRE(dissasmInstance.HasComment(5));
+        REQUIRE(dissasmInstance.RemoveComment(5));
+        REQUIRE(!dissasmInstance.HasComment(5));
     }
 }

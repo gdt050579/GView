@@ -1,0 +1,55 @@
+name: unit testing
+
+on:
+  push:
+    branches: [ release, main, dev ]
+  workflow_dispatch:
+  pull_request:
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Debug
+
+jobs:
+  testing-win:
+    runs-on: [windows-latest]
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+        
+    - name: Configure CMake testing
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DENABLE_TESTS=true
+      
+    - name: Build testing
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Run tests
+      run: ctest --test-dir ${{github.workspace}}/build --output-on-failure
+  # testing-ubuntu:
+  #   runs-on: [ubuntu-latest]
+  #   env:
+  #     CC: gcc-10
+  #     CXX: g++-10
+  #   steps:
+  #   - uses: actions/checkout@v2
+  #     with:
+  #       submodules: recursive
+
+  #   - name: Update
+  #     run: sudo apt-get update
+        
+  #   - name: Install libx11-dev
+  #     run: sudo apt-get install libx11-dev
+        
+  #   - name: GCC & G++ multilib
+  #     run: sudo apt-get install g++-multilib gcc-multilib -y
+        
+  #   - name: Configure CMake testing
+  #     run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DENABLE_TESTS=true
+      
+  #   - name: Build testing
+  #     run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+    
+  #   - name: Run tests
+  #     run: ctest --test-dir ${{github.workspace}}/build --output-on-failure
