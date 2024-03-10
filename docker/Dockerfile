@@ -1,3 +1,4 @@
+# This not yet functional!
 FROM ubuntu:latest
 
 RUN apt-get update -y && apt-get install wget jq unzip libx11-dev libxext6 -y && mkdir /GView
@@ -12,4 +13,4 @@ RUN wget -O releases.json https://api.github.com/repos/gdt050579/GView/releases 
     ./GView reset && \
     sed -i 's/Frontend = default/Frontend = SDL/' GView.ini
 
-CMD ["./GView", "GView"]
+CMD ["./GView"]
