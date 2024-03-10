@@ -23,6 +23,10 @@
 			- [Linux (ARM (M1))](#linux-arm-m1)
 	- [CI/CD](#cicd)
 	- [Documentation](#documentation)
+	- [First run](#first-run)
+		- [Windows](#windows-1)
+		- [Linux](#linux)
+		- [MacOS / OSX](#macos--osx)
 	- [Start contributing](#start-contributing)
 
 ## General description 
@@ -147,6 +151,28 @@ For static analysis, we are using `CodeQL` & `Microsoft C++ Code Analysis`.
 The project uses Sphinx as the main documentation engine. Sphinx sources can be located under `docs` folder.
 
 On every commit to `main`, a compiled version of the Sphinx documentation is published to `gh-pages` and then to docs.
+
+## First run
+
+There's currently a pre-release/beta Github CI/CD pipeline that creates an archive for each supported operating system.
+The archive can be downloaded and the package can be run (via main binary - `GView` - but there's a catch depending on the platform).
+
+### Windows
+
+-
+
+### Linux
+
+-
+
+### MacOS / OSX
+
+You'll get this warning for each GView binary from the package you're downloading:
+```
+macOS cannot verify that this app is free from malware.
+Chrome downloaded this file today at 22:31.
+```
+Unfortunately, unless you entirely temporarely disable `Gatekeeper` (which would put your computer to a risk) you need to manually allow all the binaries, one by one, to run. This process cannot be avoided until we digitally sign the binaries (MacOS signing and notarization). 
 
 ## Start contributing
 - Clone this repository using recurse submodules: 
