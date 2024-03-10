@@ -1314,8 +1314,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
     auto& lastZone = zone->types.back().get();
-    const auto it  = lastZone.commentsData.comments.find(currentLine);
-    if (it != lastZone.commentsData.comments.end()) {
+    std::string comment;
+    if (lastZone.commentsData.GetComment(currentLine, comment)) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (chars.Len() > diffLine)
             diffLine = commentPaddingLength;
@@ -1325,7 +1325,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         spaces.AddChars(' ', diffLine);
         spaces.AddChars(';', 1);
         chars.Add(spaces, config.Colors.AsmComment);
-        chars.Add(it->second, config.Colors.AsmComment);
+        chars.Add(comment, config.Colors.AsmComment);
     }
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
@@ -1944,7 +1944,7 @@ bool GetRecursiveZoneByLine(DissasmCodeInternalType& parent, uint32 line, Dissas
             }
 
             DissasmComments odlComments = std::move(zone.commentsData);
-            zone.commentsData        = {};
+            zone.commentsData           = {};
             for (auto& comment : odlComments.comments) {
                 zone.commentsData.comments.insert({ comment.first + difference, std::move(comment.second) });
             }
@@ -2063,13 +2063,17 @@ bool DissasmCodeInternalType::AddNewZone(uint32 zoneLineStart, uint32 zoneLineEn
     }
 
     // TODO: improve annotations moving
+    uint32 commentsZoneLineStart = zoneLineStart - 1;
+    if (zoneLineStart == 0)
+        commentsZoneLineStart = 0;
+    uint32 commentsZoneLineEnd = zoneLineEnd - 1;
     decltype(commentsData.comments) commentsBefore, commentsCurrent, commentsAfter;
     for (const auto& commentsVal : parentZone->commentsData.comments) {
-        if (commentsVal.first < zoneLineStart - 1)
+        if (commentsVal.first < commentsZoneLineStart)
             commentsBefore.insert(commentsVal);
-        else if (commentsVal.first >= zoneLineStart - 1 && commentsVal.first < zoneLineEnd - 1)
+        else if (commentsVal.first >= commentsZoneLineStart && commentsVal.first < commentsZoneLineEnd)
             commentsCurrent.insert(commentsVal);
-        else if (commentsVal.first >= zoneLineEnd - 1)
+        else if (commentsVal.first >= commentsZoneLineEnd)
             commentsAfter.insert(commentsVal);
     }
 
