@@ -154,16 +154,19 @@ On every commit to `main`, a compiled version of the Sphinx documentation is pub
 
 ## First run
 
-There's currently a pre-release/beta Github CI/CD pipeline that creates an archive for each supported operating system.
-The archive can be downloaded and the package can be run (via main binary - `GView` - but there's a catch depending on the platform).
+There's currently a pre-release/beta GitHub CI/CD pipeline that creates an archive for each supported operating system.
+It can be downloaded and the package can be run (via main binary - `GView` - but there's a catch depending on the platform).
+The supported process architecture (via GitHub Actions) is Intel but it can be built for ARM as well.
 
 ### Windows
 
-Runs out of the box, just unzip the release archive and run `GView.exe`. (tested on Windows 10 x64)
+Runs out of the box (tested on Windows 10 x64), just unzip the release archive and run `GView.exe`.
 
 ### Linux
 
--
+Ubuntu 18.04 is [deprecated](https://github.blog/changelog/2022-08-09-github-actions-the-ubuntu-18-04-actions-runner-image-is-being-deprecated-and-will-be-removed-by-12-1-22) in GitHub actions. Our precompiled binaries doesn't work there (GLIBC version is too old).
+
+We are currently building on Ubuntu 20.04 (Intel) and this allows us to run `GView` on Ubuntu 20.04 and Ubuntu 22.04.
 
 ### MacOS / OSX
 
