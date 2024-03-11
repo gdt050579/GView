@@ -159,7 +159,7 @@ The archive can be downloaded and the package can be run (via main binary - `GVi
 
 ### Windows
 
--
+Runs out of the box, just unzip the release archive and run `GView.exe`. (tested on Windows 10 x64)
 
 ### Linux
 
