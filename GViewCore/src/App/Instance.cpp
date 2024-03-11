@@ -149,8 +149,12 @@ bool Instance::Init()
 
     const auto settingsPath = AppCUI::Application::GetAppSettingsFile();
     AppCUI::OS::File settingsFile;
+
+    bool showTutorial = false;
+    // no .ini file found
     if (!settingsFile.OpenRead(settingsPath)) {
         CHECK(GView::App::ResetConfiguration(), false, "");
+        showTutorial = true;
     }
     settingsFile.Close();
 
@@ -168,8 +172,15 @@ bool Instance::Init()
         AppCUI::Dialogs::MessageBox::ShowError(
               "Erorr reading configuration", "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
+
+    if (showTutorial) {
+        // here add tutorial Dialog
+        //auto dlg = AppCUI::Dialogs::MessageBox::ShowOkCancel("ExampleTitle", "ExampleText");
+    }
+
     CHECK(BuildMainMenus(), false, "Fail to create bundle menus !");
     this->defaultPlugin.Init();
+
     // set up handlers
     auto dsk                 = AppCUI::Application::GetDesktop();
     dsk->Handlers()->OnEvent = this;
