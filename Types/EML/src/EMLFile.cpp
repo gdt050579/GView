@@ -83,17 +83,17 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
     index = start;
 }
 
-// TODO: put these function into the EMLFile class
+
 void EMLFile::ParsePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end)
 {
     std::vector<std::pair<std::u16string, std::u16string>> headers;
 
     ParseHeaders(syntax.text, start, headers);
 
-    const auto& found = std::find_if(headers.begin(), headers.end(), [](const auto& item) { return item.first == u"Content-Type"; });
-    CHECKRET(found != headers.end(), "");
+    const auto& contentTypeHeader = std::find_if(headers.begin(), headers.end(), [](const auto& item) { return item.first == u"Content-Type"; });
+    CHECKRET(contentTypeHeader != headers.end(), "");
 
-    TextParser contentTypeParser(found->second);
+    TextParser contentTypeParser(contentTypeHeader->second);
 
     uint32 typeEnd = contentTypeParser.ParseUntillText(0, "/", false);
     CHECKRET(typeEnd != contentTypeParser.Len(), "");
@@ -105,7 +105,34 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint3
     if (type != u"multipart") {
         // base case
         // simple type (text|application|...)
-        HandlePart(syntax, start, end);
+
+        // TODO: remove later
+        {
+            const auto& encodingHeader =
+                  std::find_if(headers.begin(), headers.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
+            
+            if (encodingHeader != headers.end() && encodingHeader->second == u"base64")
+            {
+                const auto& view = syntax.text.GetSubString(start, end);
+                BufferView bufferView(view.data(), view.size() * 2);
+                Buffer output;
+
+                //if (Base64Decode(bufferView, output))
+                //{
+                //    // TODO: change child to something else
+                //    GView::App::OpenBuffer(output, obj->GetName(), "child", GView::App::OpenMethod::BestMatch);
+                //}
+                //else
+                //{
+                //    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
+                //}
+            }
+            else
+            {
+                HandlePart(syntax, start, end);
+            }
+        }
+
         return;
     }
 
