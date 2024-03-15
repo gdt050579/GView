@@ -2,6 +2,13 @@
 
 #include "GView.hpp"
 
+struct EML_Item_Record
+{
+    uint32 startIndex;
+    uint32 dataLength;
+    bool leafNode;
+};
+
 namespace GView
 {
 namespace Type
@@ -13,25 +20,24 @@ namespace Type
             class Information;
         }
 
-        class EMLFile : public TypeInterface, public GView::View::LexicalViewer::ParseInterface
+        class EMLFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
         {
+          private:
+            std::vector<EML_Item_Record> items{};
+            uint32 itemsIndex = 0;
+
           private:
             friend class Panels::Information;
 
             std::vector<std::pair<std::u16string, std::u16string>> headerFields;
 
-            void ParsePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end);
-            //void AddTreeElement();
-            void HandlePart(GView::View::LexicalViewer::SyntaxManager& syntax, uint32 start, uint32 end);
-            void ParseHeaders(
-                  GView::View::LexicalViewer::TextParser text, uint32& index, std::vector<std::pair<std::u16string, std::u16string>>& headersContainer);
+            void ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end);
+            void ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index);
             uint32 ParseHeaderFieldBody(GView::View::LexicalViewer::TextParser text, uint32 index);
 
           public:
             EMLFile();
-            virtual ~EMLFile()
-            {
-            }
+            virtual ~EMLFile() override {}
 
             virtual std::string_view GetTypeName() override
             {
@@ -41,12 +47,6 @@ namespace Type
             {
                 // here
             }
-            virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str) override;
-            virtual void PreprocessText(GView::View::LexicalViewer::TextEditor& editor) override;
-            virtual void AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax) override;
-            virtual bool StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result) override;
-            virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result) override;
-
           public:
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
@@ -64,6 +64,14 @@ namespace Type
 
                 return selectionZoneInterface->GetSelectionZone(index);
             }
+
+            // View::ContainerViewer::EnumerateInterface
+            virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) override;
+            virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item) override;
+
+            // View::ContainerViewer::OpenItemInterface
+            virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) override;
+
         };
 
         namespace Panels

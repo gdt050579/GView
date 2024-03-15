@@ -9,6 +9,25 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
+void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)
+{
+    ContainerViewer::Settings settings;
+
+    //settings.SetIcon(ISO_ICON);
+    settings.SetColumns({
+          "n:&Name,a:l,w:80",
+          "n:&Size,a:r,w:20",
+          "n:&Created,a:r,w:25",
+          "n:&OffsetInFile,a:r,w:20",
+          "n:&Flags,a:r,w:25",
+    });
+
+    settings.SetEnumerateCallback(win->GetObject()->GetContentType<EML::EMLFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
+    settings.SetOpenItemCallback(win->GetObject()->GetContentType<EML::EMLFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
+
+    win->CreateViewer(settings);
+}
+
 extern "C"
 {
     PLUGIN_EXPORT bool Validate(const AppCUI::Utils::BufferView& buf, const std::string_view& extension)
@@ -20,23 +39,25 @@ extern "C"
     {
         return new EML::EMLFile();
     }
+
     PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
     {
         auto eml = win->GetObject()->GetContentType<EML::EMLFile>();
-        // ini->Update();
 
-        LexicalViewer::Settings settings;
-        settings.SetParser(eml.ToObjectRef<LexicalViewer::ParseInterface>());
+        CreateContainerView(win, eml);
 
-        win->CreateViewer(settings);
+        //LexicalViewer::Settings settings;
+        //settings.SetParser(eml.ToObjectRef<LexicalViewer::ParseInterface>());
 
-        win->CreateViewer<TextViewer::Settings>();
+        //win->CreateViewer(settings);
 
-        BufferViewer::Settings s{};
-        eml->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
+        //win->CreateViewer<TextViewer::Settings>();
 
-        // add panels
-        win->AddPanel(Pointer<TabPage>(new EML::Panels::Information(eml)), true);
+        //BufferViewer::Settings s{};
+        //eml->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
+
+        //// add panels
+        //win->AddPanel(Pointer<TabPage>(new EML::Panels::Information(eml)), true);
 
         return true;
     }
