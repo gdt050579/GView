@@ -10,6 +10,8 @@ add_subdirectory(Go)
 add_subdirectory(ZLIB)
 add_subdirectory(Dissasembly)
 add_subdirectory(ZIP)
-target_sources(GViewCore PRIVATE main.cpp)
+add_subdirectory(SQLite3)
 
-
+if(NOT DEFINED CMAKE_TESTING_ENABLED)
+    target_sources(GViewCore PRIVATE main.cpp)
+endif()

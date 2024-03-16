@@ -13,7 +13,7 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
     switch (propertyID)
     {
     case PROP_ID_ADD_NEW_TYPE:
-        value = config.Keys.AddNewType;
+        value = config.AddNewTypeCommand.Key;
         return true;
     case PROP_ID_DISSASM_LANGUAGE:
         value = static_cast<uint64>(settings->defaultLanguage);
@@ -22,7 +22,7 @@ bool Instance::GetPropertyValue(uint32 propertyID, PropertyValue& value)
         value = config.ShowFileContent;
         return true;
     case PROP_ID_SHOW_FILE_CONTENT_KEY:
-        value = config.Keys.ShowFileContentKey;
+        value = config.ShowOrHideFileContentCommand.Key;
         return true;
     }
     return false;
@@ -32,7 +32,7 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
     switch (propertyID)
     {
     case PROP_ID_ADD_NEW_TYPE:
-        config.Keys.AddNewType = std::get<Key>(value);
+        config.AddNewTypeCommand.Key = std::get<Key>(value);
         return true;
     case PROP_ID_DISSASM_LANGUAGE:
         settings->defaultLanguage = static_cast<DisassemblyLanguage>(std::get<uint64>(value));
@@ -41,7 +41,7 @@ bool Instance::SetPropertyValue(uint32 propertyID, const PropertyValue& value, S
         config.ShowFileContent = std::get<bool>(value);
         return true;
     case PROP_ID_SHOW_FILE_CONTENT_KEY:
-        config.Keys.ShowFileContentKey = std::get<Key>(value);
+        config.ShowOrHideFileContentCommand.Key= std::get<Key>(value);
         return true;
     }
     return false;

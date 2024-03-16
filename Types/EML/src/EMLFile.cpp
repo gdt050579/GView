@@ -38,7 +38,8 @@ bool EMLFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
 
     string_view itemName((char*) bufferView.GetData() + itemData.startIndex, 32);
 
-    item.SetText(itemName);
+    item.SetText(1, itemName);
+    item.SetText()
     item.SetData<EML_Item_Record>(&itemData);
 
     itemsIndex++;
@@ -109,6 +110,11 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
         while ((pos = fieldBody.find(u"\r\n", pos)) != std::u16string::npos)
             fieldBody.replace(pos, 2, u"");
 
+        if (fieldName == u"Content-Type")
+        {
+            contentType = fieldBody;
+        }
+
         // the field index is there to preserve the order of insertion
         headerFields.push_back({ fieldName, fieldBody });
 
@@ -122,17 +128,15 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
 {
     ParseHeaders(text, start);
 
-    const auto& contentTypeHeader = std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Type"; });
-    CHECKRET(contentTypeHeader != headerFields.end(), "");
+    //const auto& contentTypeHeader = std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Type"; });
+    //CHECKRET(contentTypeHeader != headerFields.end(), "");
 
-    TextParser contentTypeParser(contentTypeHeader->second);
+    TextParser contentTypeParser(contentType);
 
     uint32 typeEnd = contentTypeParser.ParseUntillText(0, "/", false);
     CHECKRET(typeEnd != contentTypeParser.Len(), "");
 
     u16string_view type = contentTypeParser.GetSubString(0, typeEnd);
-
-    // TODO: handle message/rfc822
 
     if (type == u"multipart")
     {

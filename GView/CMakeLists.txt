@@ -32,3 +32,8 @@ if (APPLE)
             RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
     endif()
 endif()
+
+if (MSVC)
+    include(windows_resource)
+    add_windows_resource("GView.exe" "GView.rc")
+endif()

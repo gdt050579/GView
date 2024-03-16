@@ -217,8 +217,13 @@ UInt16 e_res[4];)");
         auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
+#ifdef DISSASM_DEV
+        CreateDissasmView(win, pe);
+        CreateBufferView(win, pe);
+#else
         CreateBufferView(win, pe);
         CreateDissasmView(win, pe);
+#endif
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
             win->AddPanel(Pointer<TabPage>(new PE::Panels::Information(win->GetObject(), pe)), true);

@@ -9,6 +9,12 @@
 #include <cassert>
 #include <capstone/capstone.h>
 
+#include "AdvancedSelection.hpp"
+#include "DissasmDataTypes.hpp"
+#include "Config.hpp"
+
+class DissasmTestInstance;
+
 namespace GView
 {
 namespace View
@@ -23,60 +29,17 @@ namespace View
         static constexpr size_t DISSAM_MINIMUM_COMMENTS_X     = 50;
         static constexpr size_t DISSAM_MAXIMUM_STRING_PREVIEW = 90;
 
-        struct Config
-        {
-            struct
-            {
-                ColorPair Normal;
-                ColorPair Highlight;
-                ColorPair HighlightCursorLine;
-                ColorPair Inactive;
-                ColorPair Cursor;
-                ColorPair Line;
-                ColorPair Selection;
-                ColorPair OutsideZone;
-                ColorPair StructureColor;
-                ColorPair DataTypeColor;
-                ColorPair AsmOffsetColor;                // 0xsomthing
-                ColorPair AsmIrrelevantInstructionColor; // int3
-                ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
-                ColorPair AsmStackRegisterColor;         // ebp, edi, esi
-                ColorPair AsmCompareInstructionColor;    // test, cmp
-                ColorPair AsmFunctionColor;              // ret call
-                ColorPair AsmLocationInstruction;        // dword ptr[ ]
-                ColorPair AsmJumpInstruction;            // jmp
-                ColorPair AsmComment;                    // comments added by user
-                ColorPair AsmDefaultColor;               // rest of things
-                ColorPair AsmTitleColor;
-                ColorPair AsmTitleColumnColor;
-            } Colors;
-            struct
-            {
-                AppCUI::Input::Key AddNewType;
-                AppCUI::Input::Key ShowFileContentKey;
-                AppCUI::Input::Key ExportAsmToFile;
-                AppCUI::Input::Key JumpBack;
-                AppCUI::Input::Key JumpForward;
-                AppCUI::Input::Key DissasmGotoEntrypoint;
-            } Keys;
-            bool Loaded;
+        using AnnotationDetails   = std::pair<std::string, uint64>;
+        using AnnotationContainer = std::map<uint32, AnnotationDetails>;
 
-            bool ShowFileContent;
-            bool EnableDeepScanDissasmOnStart;
-            static void Update(IniSection sect);
-            void Initialize();
-        };
-
-        struct DisassemblyZone
-        {
+        struct DisassemblyZone {
             uint64 startingZonePoint;
             uint64 size;
             uint64 entryPoint;
             DisassemblyLanguage language;
         };
 
-        enum class InternalDissasmType : uint8
-        {
+        enum class InternalDissasmType : uint8 {
             UInt8,
             UInt16,
             UInt32,
@@ -94,8 +57,7 @@ namespace View
             CustomTypesStartingId
         };
 
-        struct DissasmStructureType
-        {
+        struct DissasmStructureType {
             InternalDissasmType primaryType;
             std::string_view name;
 
@@ -107,15 +69,9 @@ namespace View
             uint32 GetExpandedSize() const;
         };
 
-        enum class DissasmParseZoneType : uint8
-        {
-            StructureParseZone,
-            DissasmCodeParseZone,
-            CollapsibleAndTextZone
-        };
+        enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone, JavaBytecodeZone };
 
-        struct ParseZone
-        {
+        struct ParseZone {
             uint32 startLineIndex;
             uint32 endingLineIndex;
             uint32 extendedSize;
@@ -126,8 +82,7 @@ namespace View
             DissasmParseZoneType zoneType;
         };
 
-        struct DissasmParseStructureZone : public ParseZone
-        {
+        struct DissasmParseStructureZone : public ParseZone {
             int16 structureIndex;
             DissasmStructureType dissasmType;
             std::list<std::reference_wrapper<const DissasmStructureType>> types;
@@ -136,37 +91,46 @@ namespace View
             uint64 initialTextFileOffset;
         };
 
-        struct CollapsibleAndTextData
-        {
+        struct CollapsibleAndTextData {
             uint64 startingOffset;
             uint64 size;
 
             bool canBeCollapsed;
         };
 
-        struct CollapsibleAndTextZone : public ParseZone
-        {
+        struct CollapsibleAndTextZone : public ParseZone {
             CollapsibleAndTextData data;
         };
 
-        struct AsmOffsetLine
-        {
+        // JClass code
+        struct JavaBytecodeZone : public ParseZone {
+            DisassemblyZone zoneDetails;
+            bool isInit;
+            std::vector<std::string> bytecodeLines;
+        };
+
+        struct AsmOffsetLine {
             uint64 offset;
             uint32 line;
         };
 
-        struct DissasmAsmPreCacheLine
-        {
-            enum InstructionFlag : uint8
-            {
-                NoneFlag = 0x00,
-                CallFlag = 0x1,
-                PushFlag = 0x2,
-                JmpFlag  = 0x4
-            };
+        struct DissasmInsnExtractLineParams {
+            Reference<GView::Object> obj;
+            uint32 asmLine;
+            uint32 actualLine;
+            struct DissasmCodeZone* zone;
+            struct DrawLineInfo* dli;
+            struct SettingsData* settings;
+            struct AsmData* asmData;
+            bool isCollapsed;
+            const std::string* zoneName;
+        };
 
-            enum LineArrowToDrawFlag : uint8
-            {
+        struct DissasmCodeInternalType;
+        struct DissasmAsmPreCacheLine {
+            enum InstructionFlag : uint8 { NoneFlag = 0x00, CallFlag = 0x1, PushFlag = 0x2, JmpFlag = 0x4 };
+
+            enum LineArrowToDrawFlag : uint8 {
                 NoLines   = 0x00,
                 DrawLine1 = 0x1,
                 DrawLine2 = 0x2,
@@ -190,16 +154,59 @@ namespace View
             uint8 lineArrowToDraw;
             const void* mapping;
 
+            bool shouldAddButton;
+            bool isZoneCollapsed;
+
             uint32 GetLineSize() const
             {
                 return size * 2 + op_str_size;
             }
+
+            DissasmAsmPreCacheLine() = default;
+
+            DissasmAsmPreCacheLine(DissasmAsmPreCacheLine&& other) noexcept(true)
+            {
+                address         = other.address;
+                size            = other.size;
+                currentLine     = other.currentLine;
+                op_str_size     = other.op_str_size;
+                op_str          = other.op_str;
+                other.op_str    = nullptr;
+                flags           = other.flags;
+                lineArrowToDraw = other.lineArrowToDraw;
+                mapping         = other.mapping;
+                memcpy(bytes, other.bytes, sizeof(bytes));
+                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                shouldAddButton = other.shouldAddButton;
+                isZoneCollapsed = false;
+            }
+            DissasmAsmPreCacheLine(const DissasmAsmPreCacheLine& other)
+            {
+                address         = other.address;
+                size            = other.size;
+                currentLine     = other.currentLine;
+                op_str_size     = other.op_str_size;
+                op_str          = strdup(other.op_str);
+                flags           = other.flags;
+                lineArrowToDraw = other.lineArrowToDraw;
+                mapping         = other.mapping;
+                memcpy(bytes, other.bytes, sizeof(bytes));
+                memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                shouldAddButton = other.shouldAddButton;
+                isZoneCollapsed = false;
+            }
+            bool TryGetDataFromAnnotations(const DissasmCodeInternalType& currentType, uint32 lineToSearch, struct DrawLineInfo* dli = nullptr);
+            bool TryGetDataFromInsn(DissasmInsnExtractLineParams& params);
+
+            ~DissasmAsmPreCacheLine()
+            {
+                if (op_str)
+                    free(op_str);
+            }
         };
 
-        struct AsmFunctionDetails
-        {
-            struct NameType
-            {
+        struct AsmFunctionDetails {
+            struct NameType {
                 const char* name;
                 const char* type;
             };
@@ -208,8 +215,18 @@ namespace View
             std::vector<NameType> params;
         };
 
-        struct DissasmAsmPreCacheData
-        {
+        struct DissasmComments {
+            std::map<uint32, std::string> comments;
+
+            void AddOrUpdateComment(uint32 line, std::string comment);
+
+            bool GetComment(uint32 line, std::string& comment) const;
+            bool HasComment(uint32 line) const;
+            void RemoveComment(uint32 line);
+            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+        };
+
+        struct DissasmAsmPreCacheData {
             std::vector<DissasmAsmPreCacheLine> cachedAsmLines;
             std::unordered_map<uint32, uint8> instructionFlags;
             uint16 index;
@@ -242,8 +259,7 @@ namespace View
             void ComputeMaxLine()
             {
                 maxLineSize = 0;
-                for (const auto& cachedLine : cachedAsmLines)
-                {
+                for (const auto& cachedLine : cachedAsmLines) {
                     const auto lineSize = cachedLine.GetLineSize();
                     if (lineSize > maxLineSize)
                         maxLineSize = lineSize;
@@ -253,8 +269,10 @@ namespace View
 
             void Clear()
             {
-                for (const auto& cachedLine : cachedAsmLines)
+                for (auto& cachedLine : cachedAsmLines) {
                     free(cachedLine.op_str);
+                    cachedLine.op_str = nullptr;
+                }
                 cachedAsmLines.clear();
                 index       = 0;
                 maxLineSize = 0;
@@ -272,30 +290,28 @@ namespace View
                 Clear();
             }
 
-            void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails);
-
-            bool PopulateAsmPreCacheData(
-                  Config& config,
-                  Reference<GView::Object> obj,
-                  const Pointer<struct SettingsData>& settings,
-                  struct AsmData& asmData,
-                  struct DrawLineInfo& dli,
-                  DissasmCodeZone* zone,
-                  uint32 startingLine,
-                  uint32 linesToPrepare);
+            void AnnounceCallInstruction(struct DissasmCodeZone* zone, const AsmFunctionDetails* functionDetails, DissasmComments& comments);
         };
 
-        struct DissasmCodeInternalType
-        {
+        struct DissasmCodeRemovableZoneDetails {
+            DissasmCodeInternalType* zone;
+            DissasmCodeInternalType* parent;
+            uint32 zoneIndex;
+        };
+        struct DissasmCodeInternalType {
+            std::string name;
             uint32 indexZoneStart;
             uint32 indexZoneEnd;
+            uint32 workingIndexZoneStart;
+            uint32 workingIndexZoneEnd;
 
             uint32 beforeTextLines;
             uint32 beforeAsmLines;
 
             uint32 textLinesPassed;
             uint32 asmLinesPassed;
-            std::map<uint32, std::pair<std::string, uint64>> annotations;
+            AnnotationContainer annotations;
+            DissasmComments commentsData;
             bool isCollapsed;
             std::vector<DissasmCodeInternalType> internalTypes;
 
@@ -313,24 +329,56 @@ namespace View
             {
                 return beforeAsmLines + asmLinesPassed + beforeTextLines + textLinesPassed;
             }
+
+            uint32 GetSize() const
+            {
+                if (isCollapsed)
+                    return workingIndexZoneEnd - workingIndexZoneStart;
+                return indexZoneEnd - indexZoneStart;
+            }
+
+            uint32 GetNewAsmBeforeLines() const
+            {
+                return GetSize() - (uint32) annotations.size();
+            }
+
+            void UpdateDataLineFromPrevious(const DissasmCodeInternalType& prev)
+            {
+                beforeTextLines = prev.beforeTextLines + (uint32) prev.annotations.size();
+                beforeAsmLines  = prev.beforeAsmLines + prev.GetNewAsmBeforeLines();
+            }
+            bool IsValidDataLine() const
+            {
+                return beforeTextLines + beforeAsmLines == workingIndexZoneStart;
+            }
+            bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const;
+            bool AddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd);
+            DissasmCodeRemovableZoneDetails GetRemoveZoneCollapsibleDetails(uint32 zoneLine, uint32 depthLevel = 0);
+            bool RemoveCollapsibleZone(uint32 zoneLine, const DissasmCodeRemovableZoneDetails& removableDetails);
         };
 
-        struct DissasmComments
-        {
-            std::unordered_map<uint32, std::string> comments;
-
-            void AddOrUpdateComment(uint32 line, std::string comment);
-            bool HasComment(uint32 line, std::string& comment) const;
-            void RemoveComment(uint32 line);
-            void AdjustCommentsOffsets(uint32 changedLine, bool isAddedLine);
+        struct DissasmCodeZoneInitData {
+            Reference<DrawLineInfo> dli;
+            int32 adjustedZoneSize;
+            bool hasAdjustedSize;
+            bool enableDeepScanDissasmOnStart;
+            Reference<GView::Object> obj;
+            uint64 maxLocationMemoryMappingSize;
+            uint32 visibleRows;
         };
 
-        struct DissasmCodeZone : public ParseZone
-        {
+        struct InternalTypeNewLevelChangeData {
+            bool hasName;
+            bool isCollapsed;
+        };
+
+        struct DissasmCodeZone : public ParseZone {
+            enum class CollapseExpandType : uint8 { Collapse, Expand, NegateCurrentState };
             uint32 lastDrawnLine; // optimization not to recompute buffer every time
             uint32 lastClosestLine;
             uint32 offsetCacheMaxLine;
             BufferView lastData;
+            uint32 lastReachedLine = -1u;
 
             const uint8* asmData;
             uint64 asmSize, asmAddress;
@@ -344,27 +392,43 @@ namespace View
 
             std::vector<AsmOffsetLine> cachedCodeOffsets;
             DisassemblyZone zoneDetails;
-            DissasmComments comments;
             int internalArchitecture; // used for dissasm libraries
             bool isInit;
+            bool changedLevel;
+            InternalTypeNewLevelChangeData newLevelChangeData;
+
+            void ResetZoneCaching();
+            bool AddCollapsibleZone(uint32 zoneLineStart, uint32 zoneLineEnd);
+            bool CanAddNewZone(uint32 zoneLineStart, uint32 zoneLineEnd) const
+            {
+                if (zoneLineStart > zoneLineEnd || zoneLineEnd > dissasmType.indexZoneEnd)
+                    return false;
+                return dissasmType.CanAddNewZone(zoneLineStart, zoneLineEnd);
+            }
+            bool CollapseOrExtendZone(uint32 zoneLine, CollapseExpandType collapse, int32& difference);
+            bool RemoveCollapsibleZone(uint32 zoneLine);
+
+            bool InitZone(DissasmCodeZoneInitData& initData);
+            void ReachZoneLine(uint32 line);
+
+            bool ResetTypesReferenceList();
+            bool TryRenameLine(uint32 line);
+
+            bool GetComment(uint32 line, std::string& comment);
+            bool AddOrUpdateComment(uint32 line, const std::string& comment,bool showErr = true);
+            bool RemoveComment(uint32 line, bool showErr = true);
+            DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
 
-        struct MemoryMappingEntry
-        {
+        struct MemoryMappingEntry {
             std::string name;
             MemoryMappingType type;
         };
 
         // TODO: improve to be more generic!
-        enum class DissasmPEConversionType : uint8
-        {
-            FileOffset = 0,
-            RVA        = 1,
-            VA         = 2
-        };
+        enum class DissasmPEConversionType : uint8 { FileOffset = 0, RVA = 1, VA = 2 };
 
-        struct SettingsData
-        {
+        struct SettingsData {
             String name;
 
             DisassemblyLanguage defaultLanguage;
@@ -383,8 +447,7 @@ namespace View
             SettingsData();
         };
 
-        struct LayoutDissasm
-        {
+        struct LayoutDissasm {
             uint32 visibleRows;
             uint32 totalCharactersPerLine;
             uint32 textSize; // charactersPerLine minus the left parts
@@ -394,21 +457,13 @@ namespace View
             uint32 totalLinesSize;
         };
 
-        struct AsmData
-        {
+        struct AsmData {
             std::map<uint32, ColorPair> instructionToColor;
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
             std::deque<DissasmCodeZone*> zonesToClear;
         };
 
-        struct LinePosition
-        {
-            uint32 line;
-            uint32 offset;
-        };
-
-        struct DrawLineInfo
-        {
+        struct DrawLineInfo {
             const uint8* start;
             const uint8* end;
             Character* chLineStart;
@@ -433,8 +488,7 @@ namespace View
             void WriteErrorToScreen(std::string_view error) const;
         };
 
-        struct CursorState
-        {
+        struct CursorState {
             uint32 startViewLine, lineInView;
 
             bool operator==(const CursorState& other) const
@@ -458,8 +512,7 @@ namespace View
             void insert(CursorState&& newState)
             {
                 for (uint32 i = 0u; i < jumps.size(); i++)
-                    if (jumps[i] == newState)
-                    {
+                    if (jumps[i] == newState) {
                         current_index = i;
                         return;
                     }
@@ -484,23 +537,18 @@ namespace View
             }
         };
 
+        enum class CollapsibleZoneOperation : uint8 { Add, Expand, Collapse, Remove };
+
         class Instance : public View::ViewControl
         {
-            enum class MouseLocation : uint8
-            {
-                OnView,
-                OnHeader,
-                Outside
-            };
-            struct MousePositionInfo
-            {
+            enum class MouseLocation : uint8 { OnView, OnHeader, Outside };
+            struct MousePositionInfo {
                 MouseLocation location;
                 uint32 lines;
                 uint32 offset;
             };
 
-            struct CursorDissasm
-            {
+            struct CursorDissasm {
                 uint32 startViewLine, lineInView, offset;
                 [[nodiscard]] LinePosition ToLinePosition() const;
                 uint64 GetOffset(uint32 textSize) const;
@@ -516,23 +564,20 @@ namespace View
                 bool hasMovedView;
             } Cursor;
 
-            struct
-            {
+            struct {
                 ColorPair Normal, Line, Highlighted;
             } CursorColors;
 
             LayoutDissasm Layout;
 
-            struct
-            {
+            struct {
                 // uint8 buffer[256];
                 uint32 size;
                 uint64 start, end;
                 // bool highlight;
             } CurrentSelection;
 
-            struct ButtonsData
-            {
+            struct ButtonsData {
                 int x;
                 int y;
                 SpecialChars c;
@@ -541,13 +586,13 @@ namespace View
                 ParseZone* zone;
             };
 
-            struct
-            {
+            struct {
                 std::vector<ButtonsData> buttons;
+                // used for collpasible zones until buttons are fixed, TODO: remove
+                std::vector<ButtonsData> bullets;
             } MyLine;
 
-            struct ZoneLocation
-            {
+            struct ZoneLocation {
                 uint32 zoneIndex;
                 uint32 startingLine;
                 uint32 endingLine;
@@ -557,7 +602,7 @@ namespace View
             Pointer<SettingsData> settings;
             static Config config;
             CharacterBuffer chars;
-            Utils::Selection selection;
+            AdvancedSelection selection;
             CodePage codePage;
             Menu rightClickMenu;
             // uint64 rightClickOffset;
@@ -572,13 +617,13 @@ namespace View
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
-            bool InitDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
+            bool DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
-            void RegisterStructureCollapseButton(DrawLineInfo& dli, SpecialChars c, ParseZone* zone);
-            void ChangeZoneCollapseState(ParseZone* zoneToChange);
+            void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet = false);
+            void ChangeZoneCollapseState(ParseZone* zoneToChange, uint32 line);
 
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, const char* fmt, ...);
             void AddStringToChars(DrawLineInfo& dli, ColorPair pair, string_view stringToAdd);
@@ -589,28 +634,32 @@ namespace View
             void UpdateLayoutTotalLines();
 
             // Utils
+            bool ProcessSelectedDataToPrintable(UnicodeStringBuilder& usb);
             inline LinePosition OffsetToLinePosition(uint64 offset) const;
             // inline uint64 LinePositionToOffset(LinePosition linePosition) const;
             [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromPosition(uint64 startingOffset, uint64 endingOffset = 0) const;
+            [[nodiscard]] vector<ZoneLocation> GetZonesIndexesFromLinePosition(uint32 lineStart, uint32 lineEnd = 0) const;
 
             void AdjustZoneExtendedSize(ParseZone* zone, uint32 newExtendedSize);
 
             void AnalyzeMousePosition(int x, int y, MousePositionInfo& mpInfo);
 
-            void MoveTo(int32 offset = 0, int32 lines = 0, bool select = false);
+            void MoveTo(int32 offset = 0, int32 lines = 0, AppCUI::Input::Key key = AppCUI::Input::Key::None, bool select = false);
             void MoveScrollTo(int32 offset, int32 lines);
 
             int PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
             int PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r);
 
+            void OpenCurrentSelection();
+
             // Operations
-            void AddNewCollapsibleZone();
+            // void AddNewCollapsibleTextZone();
             void AddComment();
             void RemoveComment();
+            void RenameLabel();
             void CommandExportAsmFile();
             void ProcessSpaceKey(bool goToEntryPoint = false);
-            void CommandDissasmAddZone();
-            void CommandDissasmRemoveZone();
+            void CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation);
             void DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, uint64* offsetToReach = nullptr);
 
           public:
@@ -630,9 +679,9 @@ namespace View
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 
             // Mouse events
-            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button) override;
-            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            virtual void OnMousePressed(int x, int y, Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseDrag(int x, int y, Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseWheel(int x, int y, Input::MouseWheel direction, Input::Key) override;
 
             // Events
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
@@ -645,17 +694,19 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+
+            friend DissasmTestInstance;
         }; // Instance
 
-        class CommentDataWindow : public Window
+        class SingleLineEditWindow : public Window
         {
             std::string data;
-            Reference<TextField> commentTextField;
+            Reference<TextField> textField;
 
             void Validate();
 
           public:
-            CommentDataWindow(std::string initialComment);
+            SingleLineEditWindow(std::string initialText, const char* title);
             virtual bool OnEvent(Reference<Control>, Event eventType, int ID) override;
             inline std::string GetResult() const
             {

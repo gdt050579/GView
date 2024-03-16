@@ -25,6 +25,7 @@ namespace Type
           private:
             std::vector<EML_Item_Record> items{};
             uint32 itemsIndex = 0;
+            std::u16string contentType;
 
           private:
             friend class Panels::Information;
