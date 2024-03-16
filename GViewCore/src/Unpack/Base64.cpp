@@ -27,7 +27,6 @@ void Encode(BufferView view, Buffer& output)
         if (sequenceIndex % 3 == 0) {
             // get 4 encoded components out of this one
             // 0x3f -> 0b00111111
-
             char buffer[] = {
                 BASE64_ENCODE_TABLE[(sequence >> 26) & 0x3f],
                 BASE64_ENCODE_TABLE[(sequence >> 20) & 0x3f],
