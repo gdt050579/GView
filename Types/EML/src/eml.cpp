@@ -15,8 +15,7 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 
     //settings.SetIcon(ISO_ICON);
     settings.SetColumns({
-          "n:&Name,a:l,w:80",
-          "n:&Content-Type,a:r,w:25",
+          "n:&Content-Type,a:r,w:50",
           "n:&Size,a:r,w:20",
           "n:&OffsetInFile,a:r,w:20",
     });
@@ -44,19 +43,7 @@ extern "C"
         auto eml = win->GetObject()->GetContentType<EML::EMLFile>();
 
         CreateContainerView(win, eml);
-
-        //LexicalViewer::Settings settings;
-        //settings.SetParser(eml.ToObjectRef<LexicalViewer::ParseInterface>());
-
-        //win->CreateViewer(settings);
-
-        //win->CreateViewer<TextViewer::Settings>();
-
-        //BufferViewer::Settings s{};
-        //eml->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
-
-        //// add panels
-        //win->AddPanel(Pointer<TabPage>(new EML::Panels::Information(eml)), true);
+        win->AddPanel(Pointer<TabPage>(new EML::Panels::Information(eml)), true);
 
         return true;
     }

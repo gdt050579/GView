@@ -4,6 +4,7 @@
 
 struct EML_Item_Record
 {
+    uint32 parentStartIndex;
     uint32 startIndex;
     uint32 dataLength;
     bool leafNode;
@@ -26,6 +27,7 @@ namespace Type
             std::vector<EML_Item_Record> items{};
             uint32 itemsIndex = 0;
             std::u16string contentType;
+            UnicodeStringBuilder unicodeString;
 
           private:
             friend class Panels::Information;
@@ -35,6 +37,7 @@ namespace Type
             void ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end);
             void ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& index);
             uint32 ParseHeaderFieldBody(GView::View::LexicalViewer::TextParser text, uint32 index);
+            std::u16string ExtractContentType(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end);
 
           public:
             EMLFile();
