@@ -104,10 +104,10 @@ class TutorialWindow : public Window, public Handlers::OnButtonPressedInterface
     Reference<Label> label;
 
   public:
-    TutorialWindow() : Window("GView tutorial", "t:1,l:1,w:90,h:20", WindowFlags::Sizeable)
+    TutorialWindow() : Window("GView tutorial", "t:1,l:1,w:90,h:20", WindowFlags::Sizeable)//TODO: remove sizeable flag
     {
         constexpr uint32 initialCanvasHeight = 15;
-        constexpr uint32 initialCanvasWidth  = 82;
+        constexpr uint32 initialCanvasWidth  = 82;//TODO: 70
         constexpr bool canvasHasBorders      = true;
 
         label = Factory::Label::Create(this, "Welcome to the GView tutorial", "t:1,l:5,w:50");
