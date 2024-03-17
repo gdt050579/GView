@@ -2,6 +2,10 @@
 
 ![Build icon](https://github.com/gdt050579/AppCUI/actions/workflows/ci.yml/badge.svg)
 
+GView framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones.
+
+![Logo](./docs/source/_static/logo.png)
+
 - [GView](#gview)
 	- [General description](#general-description)
 	- [Smart Viewers](#smart-viewers)

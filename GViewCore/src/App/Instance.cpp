@@ -495,7 +495,7 @@ void Instance::OpenFile()
     auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", ".");
     if (res.has_value())
     {
-        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
+        if (AddFileWindow(res.value(), OpenMethod::FirstMatch, "") == false)
             ShowErrors();
     }
 }
