@@ -21,8 +21,7 @@ bool Settings::SetIcon(string_view stringFormat16x16)
 }
 bool Settings::SetPathSeparator(char16 separator)
 {
-    if (separator > 0)
-    {
+    if (separator > 0) {
         SD->pathSeparator = separator;
         return true;
     }
@@ -39,8 +38,7 @@ bool Settings::AddProperty(string_view name, const ConstString& value, ListViewI
 }
 void Settings::SetColumns(std::initializer_list<ConstString> columns)
 {
-    for (const auto& col : columns)
-    {
+    for (const auto& col : columns) {
         SD->columns[SD->columnsCount].layout.Set(col);
         SD->columnsCount++;
     }
