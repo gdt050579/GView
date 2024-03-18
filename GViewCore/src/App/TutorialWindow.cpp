@@ -1,4 +1,5 @@
 #include "Internal.hpp"
+#include <array>
 
 using namespace GView::App;
 using namespace AppCUI::Application;
@@ -6,7 +7,11 @@ using namespace AppCUI::Controls;
 using namespace AppCUI::Input;
 using namespace AppCUI::Utils;
 
-std::vector<uint32> step1 = {
+constexpr uint32 canvasWidth  = 82; // 70d
+constexpr uint32 canvasHeight = 15;
+
+using TutorialStepData = std::vector<uint32>;
+TutorialStepData step1 = {
     252117024, 252117062, 252117097, 252117100, 252117093, 252117024, 252117024, 252117061, 252117092, 252117097, 252117108, 252117024, 252117024, 252117068,
     252117089, 252117102, 252117095, 252117109, 252117089, 252117095, 252117093, 252117024, 252117024, 252117064, 252117093, 252117100, 252117104, 252117024,
     252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024, 252117024,
@@ -101,30 +106,38 @@ class TutorialWindow : public Window, public Handlers::OnButtonPressedInterface
 {
     Reference<AppCUI::Controls::ImageView> imgView;
     Reference<CanvasViewer> canvasViewer;
-    Reference<Label> label;
+    Reference<Label> label1, label2;
+    Reference<Button> backButton, nextButton;
+    uint32 currentTutorialStep;
+    std::vector<std::reference_wrapper<TutorialStepData>> tutorialSteps = { step1 };
 
   public:
-    TutorialWindow() : Window("GView tutorial", "t:1,l:1,w:90,h:20", WindowFlags::Sizeable)//TODO: remove sizeable flag
+    TutorialWindow() : Window("GView tutorial", "t:1,l:0,w:90,h:24", WindowFlags::Sizeable) // TODO: remove sizeable flag
     {
-        constexpr uint32 initialCanvasHeight = 15;
-        constexpr uint32 initialCanvasWidth  = 82;//TODO: 70
-        constexpr bool canvasHasBorders      = true;
+        currentTutorialStep = 0;
 
-        label = Factory::Label::Create(this, "Welcome to the GView tutorial", "t:1,l:5,w:50");
+        label1 = Factory::Label::Create(this, "Welcome to the GView tutorial", "t:1,l:5,w:50");
+        label2 = Factory::Label::Create(this, "You can follow the tutorial using the buttons bellow", "t:2,l:5,w:54");
 
-        constexpr uint32 canvasWidth  = initialCanvasWidth;
-        constexpr uint32 canvasHeight = initialCanvasHeight + (canvasHasBorders ? 2 : 0);
+        Factory::Button::Create(this, "PreviousStep", "t:4,l:10,w:13", 0, ButtonFlags::Flat);
+        Factory::Button::Create(this, "NextStep", "t:4,l:30,w:10", 0, ButtonFlags::Flat);
+
+        Factory::Label::Create(this, "------------------------------------------------------------", "t:5,l:5,w:54");
 
         LocalString<32> canvasLayout;
-        canvasLayout.SetFormat("t:2,l:1,w:%u,h:%u", canvasWidth, canvasHeight);
+        canvasLayout.SetFormat("t:6,l:1,w:%u,h:%u", canvasWidth, canvasHeight);
 
-        canvasViewer = Factory::CanvasViewer::Create(this, canvasLayout.GetText(), canvasWidth, canvasHeight, ViewerFlags::Border | ViewerFlags::HideScrollBar);
-        auto canvas = canvasViewer->GetCanvas();
+        canvasViewer = Factory::CanvasViewer::Create(this, canvasLayout.GetText(), canvasWidth, canvasHeight, ViewerFlags::HideScrollBar);
+        PrintCurrentStep();
+    }
 
-        Graphics::Character* c = canvas->GetCharactersBuffer();
-        Graphics::Character* e = c + ((size_t) canvasWidth * (size_t) initialCanvasHeight);
+    void PrintCurrentStep()
+    {
+        auto stepVal = tutorialSteps[currentTutorialStep].get().begin();
 
-        auto stepVal = step1.begin();
+        auto canvas  = canvasViewer->GetCanvas();
+        Character* c = canvas->GetCharactersBuffer();
+        Character* e = c + ((size_t) canvasWidth * (size_t) canvasHeight);
 
         while (c < e) {
             c->PackedValue = *stepVal;
