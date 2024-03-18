@@ -286,6 +286,9 @@ bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
             config.ShowFileContent = !config.ShowFileContent;
             this->RecomputeDissasmZones();
             return true;
+        case COMMAND_SHOW_ONLY_DISSASM:
+            config.ShowOnlyDissasm = !config.ShowOnlyDissasm;
+            return true;
         // case RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE:
         //     AddNewCollapsibleTextZone();
         //     return true;
