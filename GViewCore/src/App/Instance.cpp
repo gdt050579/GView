@@ -160,7 +160,7 @@ bool Instance::Init()
               "Found an invalid configuration, it will be renamed as \".ini.bak\". Will generated a new one! Please restart GView.");
     }
 
-    if (true || showTutorial) {
+    if (showTutorial) {
         ShowTutorial();
     }
 
