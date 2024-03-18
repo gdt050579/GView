@@ -1,6 +1,12 @@
 # GView
 
 ![Build icon](https://github.com/gdt050579/AppCUI/actions/workflows/ci.yml/badge.svg)
+[![Unit testing](https://github.com/gdt050579/GView/actions/workflows/testing.yml/badge.svg)](https://github.com/gdt050579/GView/actions/workflows/testing.yml)
+[![Deploy release](https://github.com/gdt050579/GView/actions/workflows/deploy_release.yml/badge.svg)](https://github.com/gdt050579/GView/actions/workflows/deploy_release.yml)
+
+GView framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones.
+
+![Logo](./docs/source/_static/logo.png)
 
 - [GView](#gview)
 	- [General description](#general-description)
@@ -60,12 +66,12 @@ Visualize graphical representation of different image formats.
 ![Image Viewer](./docs/source/_static/ImageView.gif)
 
 ### Table Viewer
-Represents data that has a tabelar format in an organized manner (CSV, TSV, SQL databases).
+Represents data that has a tabular format in an organized manner (CSV, TSV, SQL databases).
 
 ![Table Viewer](./docs/source/_static/GridView.gif)
 
 ### Dissasm Viewer
-Presents the content of binary files through a disassembly process that examines the code and deduces relevant details like imported function names, parameter names, and string pointers. This disassembly process relies on the Capstone library. In addition, the **data identifier plugin** plays a crucial role by providing essential information such as the required decoding method (e.g., x86, x64) and the code's entrypoint offset.
+Presents the content of binary files through a disassembly process that examines the code and deduces relevant details like imported function names, parameter names, and string pointers. This disassembly process relies on the Capstone library. In addition, the **data identifier plugin** plays a crucial role by providing essential information such as the required decoding method (e.g., x86, x64) and the code's entry point offset.
 
 ![Dissasm Viewer](./docs/source/_static/DissasmView.gif)
 
@@ -112,9 +118,9 @@ The architecture flow can be summarized as it follows:
 
 4. Repeat steps 1 to 3 for the extracted components. This iterative process relies on artifacts obtained in previous steps to drive subsequent analysis and extraction.
 
-As for the actual code components involved in the project, here are a high level view and a core view:
+As for the actual code components involved in the project, here are a high-level view and a core view:
 
-![alt text for screen readers](/docs/source/_static/GView.svg "High level architecture at the current moment.")
+![alt text for screen readers](/docs/source/_static/GView.svg "High-level architecture at the current moment.")
 
 ![alt text for screen readers](/docs/source/_static/GViewCore.svg "Core architecture at the current moment.")
 
@@ -144,7 +150,7 @@ This will require manual installation of ninja (ninja-build).
 # set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
 ```
 ## CI/CD
-At the moment we are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artefacts, storing them and eventually building a release flow.
+We are using `Github Actions` ensuring that the project builds on `Windows`, `OSX` & `Linux` and we are working towards creating artifacts, storing them and eventually building a release flow.
 For static analysis, we are using `CodeQL` & `Microsoft C++ Code Analysis`.
 
 ## Documentation 
@@ -156,7 +162,7 @@ On every commit to `main`, a compiled version of the Sphinx documentation is pub
 
 There's currently a pre-release/beta GitHub CI/CD pipeline that creates an archive for each supported operating system.
 It can be downloaded and the package can be run (via main binary - `GView` - but there's a catch depending on the platform).
-The supported process architecture (via GitHub Actions) is Intel but it can be built for ARM as well.
+The supported process architecture (via GitHub Actions) is Intel, but it can be built for ARM as well.
 
 ### Windows
 
@@ -175,12 +181,12 @@ You'll get this warning for each GView binary from the package you're downloadin
 macOS cannot verify that this app is free from malware.
 Chrome downloaded this file today at 22:31.
 ```
-Unfortunately, unless you entirely temporarely disable `Gatekeeper` (which would put your computer to a risk) you need to manually allow all the binaries, one by one, to run. This process cannot be avoided until we digitally sign the binaries (MacOS signing and notarization). 
+Unfortunately, unless you entirely temporarily disable `Gatekeeper` (which would put your computer to a risk) you need to manually allow all the binaries, one by one, to run. This process cannot be avoided until we digitally sign the binaries (MacOS signing and notarization). 
 
 ## Start contributing
 - Clone this repository using recurse submodules: 
 ```bash
-	git clone --recurse-submodules <your-repo-link/GView.git>
+    git clone --recurse-submodules <your-repo-link/GView.git>
 ```
 
 Contributors can install sphinx using `pip install -r requirements.txt`, this will install Sphinx tooling and `sphinx_rtd_theme`. Local building is done with `make html`
