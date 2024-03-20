@@ -11,12 +11,12 @@ constexpr uint32 MIN_CACHE_SIZE        = 0x10000;  // 64 K
 constexpr uint32 GENERIC_PLUGINS_CMDID = 40000000;
 constexpr uint32 GENERIC_PLUGINS_FRAME = 100;
 
-struct _MenuCommand_ {
+struct GViewMenuCommand {
     std::string_view name;
     int commandID;
     Key shortCutKey;
 };
-constexpr _MenuCommand_ menuFileList[] = {
+constexpr GViewMenuCommand menuFileList[] = {
     { "&Open file", MenuCommands::OPEN_FILE, Key::None },
     { "Open &folder", MenuCommands::OPEN_FOLDER, Key::None },
     { "", 0, Key::None },
@@ -27,7 +27,7 @@ constexpr _MenuCommand_ menuFileList[] = {
 };
 constexpr ItemHandle menuFileDisabledCommandsList[] = { 3, 4 };
 
-constexpr _MenuCommand_ menuWindowList[] = {
+constexpr GViewMenuCommand menuWindowList[] = {
     { "Arrange &Vertically", MenuCommands::ARRANGE_VERTICALLY, Key::None },
     { "Arrange &Horizontally", MenuCommands::ARRANGE_HORIZONTALLY, Key::None },
     { "&Cascade mode", MenuCommands::ARRANGE_CASCADE, Key::None },
@@ -39,12 +39,12 @@ constexpr _MenuCommand_ menuWindowList[] = {
     { "", 0, Key::None },
     { "&Windows manager", MenuCommands::SHOW_WINDOW_MANAGER, Key::Alt | Key::N0 },
 };
-constexpr _MenuCommand_ menuHelpList[] = {
+constexpr GViewMenuCommand menuHelpList[] = {
     { "Check for &updates", MenuCommands::CHECK_FOR_UPDATES, Key::None },
     { "&About", MenuCommands::ABOUT, Key::None },
 };
 
-bool AddMenuCommands(Menu* mnu, const _MenuCommand_* list, size_t count)
+bool AddMenuCommands(Menu* mnu, const GViewMenuCommand* list, size_t count)
 {
     while (count > 0) {
         if (list->name.empty()) {
