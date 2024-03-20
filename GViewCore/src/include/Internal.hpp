@@ -501,6 +501,7 @@ namespace App
         void OpenFile();
         void OpenFolder();
         void ShowErrors();
+        void ShowTutorial();
 
         Reference<Type::Plugin> IdentifyTypePlugin_FirstMatch(
               const std::string_view& extension,
