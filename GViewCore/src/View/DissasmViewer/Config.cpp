@@ -13,6 +13,7 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     }
 
     sect.UpdateValue("ShowFileContent", true, true);
+    sect.UpdateValue("ShowOnlyDissasm", false, true);
     sect.UpdateValue("DeepScanDissasmOnStart", false, true);
 }
 void Config::Initialize()
@@ -50,12 +51,14 @@ void Config::Initialize()
             }
 
             this->ShowFileContent              = sect.GetValue("ShowFileContent").ToBool(true);
+            this->ShowOnlyDissasm              = sect.GetValue("ShowOnlyDissasm").ToBool(false);
             this->EnableDeepScanDissasmOnStart = sect.GetValue("DeepScanDissasmOnStart").ToBool(false);
             foundSettings                      = true;
         }
     }
     if (!foundSettings) {
         this->ShowFileContent              = true;
+        this->ShowOnlyDissasm              = false;
         this->EnableDeepScanDissasmOnStart = false;
     }
 

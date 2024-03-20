@@ -33,6 +33,7 @@ constexpr uint32 textColumnTextLength               = opCodesGroupsShown;
 constexpr uint32 textColumnSpacesLength             = 4;
 constexpr uint32 textColumnTotalLength              = textColumnTextLength + textColumnSpacesLength;
 constexpr uint32 textColumnIndicatorArrowLinesSpace = 3;
+constexpr uint32 textAndOpCodesTotalLength          = opCodesTotalLength + textColumnTotalLength;
 constexpr uint32 textTotalColumnLength =
       addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength + textColumnIndicatorArrowLinesSpace;
 constexpr uint32 commentPaddingLength   = 10;
@@ -147,41 +148,44 @@ inline void DissasmAddColorsToInstruction(
     LocalString<128> string;
     string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
     cb.Add(string, cfg.Colors.AsmOffsetColor);
-    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
 
-    for (uint32 i = 0; i < opCodesGroupsShown; i++) {
-        if (i >= insn.size) {
-            string.Clear();
-            const uint32 remaining = opCodesGroupsShown - i;
-            // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
-            string.SetChars(' ', remaining * 3);
+    if (!cfg.ShowOnlyDissasm) {
+        cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
+
+        for (uint32 i = 0; i < opCodesGroupsShown; i++) {
+            if (i >= insn.size) {
+                string.Clear();
+                const uint32 remaining = opCodesGroupsShown - i;
+                // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
+                string.SetChars(' ', remaining * 3);
+                cb.Add(string, cfg.Colors.AsmDefaultColor);
+                break;
+            }
+            const uint8 byte = insn.bytes[i];
+            string.SetFormat("%02x ", byte);
             cb.Add(string, cfg.Colors.AsmDefaultColor);
-            break;
         }
-        const uint8 byte = insn.bytes[i];
-        string.SetFormat("%02x ", byte);
+
+        cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
+
+        for (uint32 i = 0; i < textColumnTextLength; i++) {
+            if (i >= insn.size) {
+                string.Clear();
+                const uint32 remaining = textColumnTextLength - i - 1;
+                string.SetChars(' ', remaining);
+                cb.Add(string, cfg.Colors.AsmDefaultColor);
+                break;
+            }
+            if (i != textColumnTextLength - 1) {
+                const uint8 byte = insn.bytes[i];
+                cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
+            }
+        }
+
+        string.Clear();
+        string.SetChars(' ', textColumnSpacesLength);
         cb.Add(string, cfg.Colors.AsmDefaultColor);
     }
-
-    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
-
-    for (uint32 i = 0; i < textColumnTextLength; i++) {
-        if (i >= insn.size) {
-            string.Clear();
-            const uint32 remaining = textColumnTextLength - i - 1;
-            string.SetChars(' ', remaining);
-            cb.Add(string, cfg.Colors.AsmDefaultColor);
-            break;
-        }
-        if (i != textColumnTextLength - 1) {
-            const uint8 byte = insn.bytes[i];
-            cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
-        }
-    }
-
-    string.Clear();
-    string.SetChars(' ', textColumnSpacesLength);
-    cb.Add(string, cfg.Colors.AsmDefaultColor);
 
     cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
 
@@ -1227,21 +1231,23 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
         chars.InsertChar('|', chars.Len(), titleColumnColor);
 
-        constexpr std::string_view opCodes = "Op Codes";
-        chars.Add(opCodes.data(), config.Colors.AsmTitleColor);
-        spaces.Clear();
-        spaces.SetChars(' ', opCodesTotalLength - static_cast<uint32>(opCodes.size()) - 1u);
-        chars.Add(spaces, config.Colors.AsmTitleColor);
+        if (!config.ShowOnlyDissasm) {
+            constexpr std::string_view opCodes = "Op Codes";
+            chars.Add(opCodes.data(), config.Colors.AsmTitleColor);
+            spaces.Clear();
+            spaces.SetChars(' ', opCodesTotalLength - static_cast<uint32>(opCodes.size()) - 1u);
+            chars.Add(spaces, config.Colors.AsmTitleColor);
 
-        chars.InsertChar('|', chars.Len(), titleColumnColor);
+            chars.InsertChar('|', chars.Len(), titleColumnColor);
 
-        constexpr std::string_view textTitle = "Text";
-        chars.Add(textTitle.data(), config.Colors.AsmTitleColor);
-        spaces.Clear();
-        spaces.SetChars(' ', textColumnTotalLength - static_cast<uint32>(textTitle.size()) - 1u);
-        chars.Add(spaces, config.Colors.AsmTitleColor);
+            constexpr std::string_view textTitle = "Text";
+            chars.Add(textTitle.data(), config.Colors.AsmTitleColor);
+            spaces.Clear();
+            spaces.SetChars(' ', textColumnTotalLength - static_cast<uint32>(textTitle.size()) - 1u);
+            chars.Add(spaces, config.Colors.AsmTitleColor);
 
-        chars.InsertChar('|', chars.Len(), titleColumnColor);
+            chars.InsertChar('|', chars.Len(), titleColumnColor);
+        }
 
         constexpr std::string_view dissasmTitle = "Dissasm";
         chars.Add(dissasmTitle.data(), config.Colors.AsmTitleColor);
@@ -1316,6 +1322,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
     std::string comment;
     if (lastZone.commentsData.GetComment(currentLine, comment)) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
+        if (config.ShowOnlyDissasm)
+            diffLine -= textAndOpCodesTotalLength;
         if (chars.Len() > diffLine)
             diffLine = commentPaddingLength;
         else

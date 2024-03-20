@@ -10,17 +10,14 @@ namespace View
     {
         using namespace AppCUI;
 
-        struct SettingsData
-        {
+        struct SettingsData {
             static constexpr uint32 MAX_COLUMNS    = 32;
             static constexpr uint32 MAX_PROPERTIES = 32;
-            struct
-            {
+            struct {
                 LocalUnicodeStringBuilder<256> layout;
             } columns[MAX_COLUMNS];
             uint32 columnsCount;
-            struct
-            {
+            struct {
                 AppCUI::Utils::String key;
                 AppCUI::Utils::UnicodeStringBuilder value;
                 ListViewItem::Type itemType;
@@ -34,8 +31,7 @@ namespace View
             SettingsData();
         };
 
-        struct Config
-        {
+        struct Config {
             bool Loaded;
 
             static void Update(IniSection sect);
