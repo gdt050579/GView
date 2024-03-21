@@ -149,7 +149,11 @@ struct ConstPanel {
 #define FCHECK(x)     CHECK(x, false, #x)
 #define FCHECKNULL(x) CHECK(x, nullptr, #x)
 
+#ifndef DISSASM_JCLASS_DEV
+#    define unreachable return false;
+#    define unimplemented unreachable
+#else
 #define unreachable std::abort()
-
 #define unimplemented unreachable
+#endif
 } // namespace GView::View::DissasmViewer::JClass
