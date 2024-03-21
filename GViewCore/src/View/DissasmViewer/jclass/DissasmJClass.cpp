@@ -50,7 +50,7 @@ bool Instance::DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone)
 
     if (dli.textLineToDraw == 0) {
         constexpr std::string_view zoneName = "[JClass] JavaBytecode";
-        chars.Add(zoneName.data(), config.Colors.StructureColor);
+        chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
 
         HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(zoneName.size()), static_cast<uint32>(zoneName.size()) + Layout.startingTextLineOffset);
 
@@ -62,7 +62,7 @@ bool Instance::DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone)
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
 
-    chars.Add(zone->bytecodeLines[currentLine].c_str(), config.Colors.AsmJumpInstruction);
+    chars.Add(zone->bytecodeLines[currentLine].c_str(), ColorMan.Colors.AsmJumpInstruction);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));

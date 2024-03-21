@@ -36,7 +36,7 @@ const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
 {
-    this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::DarkBlue });
+    this->chars.Fill('*', 1024, ColorPair{ Color::Black, Color::Transparent });
     // settings
     if ((_settings) && (_settings->data)) {
         // move settings data pointer
@@ -48,16 +48,14 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
 
     if (config.Loaded == false)
         config.Initialize();
-
+    this->ColorMan.InitFromConfigColors(config.ConfigColors);
+    if (!HasFocus())
+        this->ColorMan.OnLostFocus();
     // this->selection.EnableMultiSelection(true);
 
     this->Cursor.lineInView    = 0;
     this->Cursor.startViewLine = 0;
     this->Cursor.offset        = 0;
-
-    this->CursorColors.Normal      = config.Colors.Normal;
-    this->CursorColors.Highlighted = config.Colors.Highlight;
-    this->CursorColors.Line        = config.Colors.Line;
 
     this->Layout.visibleRows                     = 1;
     this->Layout.textSize                        = 1;
@@ -77,15 +75,15 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
 
     // TODO: to be moved inside plugin for some sort of API for token<->color
     asmData.instructionToColor = {
-        { *((uint32*) "int3"), config.Colors.AsmIrrelevantInstructionColor },
-        { *((uint32*) "ret"), config.Colors.AsmFunctionColor },
-        { *((uint32*) "call"), config.Colors.AsmFunctionColor },
-        { *((uint32*) "cmp"), config.Colors.AsmCompareInstructionColor },
-        { *((uint32*) "test"), config.Colors.AsmCompareInstructionColor },
-        { *((uint32*) "word"), config.Colors.AsmLocationInstruction },
-        { *((uint32*) "dwor"), config.Colors.AsmLocationInstruction },
-        { *((uint32*) "qwor"), config.Colors.AsmLocationInstruction },
-        { *((uint32*) "ptr"), config.Colors.AsmLocationInstruction },
+        { *((uint32*) "int3"), ColorMan.Colors.AsmIrrelevantInstructionColor },
+        { *((uint32*) "ret"), ColorMan.Colors.AsmFunctionColor },
+        { *((uint32*) "call"), ColorMan.Colors.AsmFunctionColor },
+        { *((uint32*) "cmp"), ColorMan.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "test"), ColorMan.Colors.AsmCompareInstructionColor },
+        { *((uint32*) "word"), ColorMan.Colors.AsmLocationInstruction },
+        { *((uint32*) "dwor"), ColorMan.Colors.AsmLocationInstruction },
+        { *((uint32*) "qwor"), ColorMan.Colors.AsmLocationInstruction },
+        { *((uint32*) "ptr"), ColorMan.Colors.AsmLocationInstruction },
     };
 }
 
@@ -111,14 +109,7 @@ bool Instance::Select(uint64 offset, uint64 size)
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height)
 {
-    this->CursorColors.Normal      = config.Colors.Normal;
-    this->CursorColors.Highlighted = config.Colors.Highlight;
-    if (!this->HasFocus()) {
-        this->CursorColors.Normal      = config.Colors.Inactive;
-        this->CursorColors.Highlighted = config.Colors.Inactive;
-    }
-
-    renderer.Clear(' ', this->CursorColors.Normal);
+    renderer.Clear(' ', this->ColorMan.Colors.CursorNormal);
 
     if (Layout.textSize == 0)
         return;
@@ -141,21 +132,21 @@ void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint
 int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
-    r.WriteSingleLineText(x, y, "Pos:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.offset, 10), this->CursorColors.Normal);
+    r.WriteSingleLineText(x, y, "Pos:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(x + 4, y, width - 4, n.ToBase(this->Cursor.offset, 10), this->ColorMan.Colors.CursorNormal);
     x += width;
 
     if (addSeparator)
-        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->ColorMan.Colors.CursorLine);
 
     if (Layout.totalLinesSize > 0) {
         LocalString<32> tmp;
         tmp.Format("%3u%%", (static_cast<uint64>(Cursor.startViewLine) + Cursor.lineInView) * 100ULL / Layout.totalLinesSize);
-        r.WriteSingleLineText(x, y, tmp.GetText(), this->CursorColors.Normal);
+        r.WriteSingleLineText(x, y, tmp.GetText(), this->ColorMan.Colors.CursorNormal);
     } else {
-        r.WriteSingleLineText(x, y, "  0%", this->CursorColors.Line);
+        r.WriteSingleLineText(x, y, "  0%", this->ColorMan.Colors.CursorLine);
     }
-    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->ColorMan.Colors.CursorLine);
 
     return x + 5;
 }
@@ -163,14 +154,15 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 int Instance::PrintCursorLineInfo(int x, int y, uint32 width, bool addSeparator, Renderer& r)
 {
     NumericFormatter n;
-    r.WriteSingleLineText(x, y, "Line:", this->CursorColors.Highlighted);
-    r.WriteSingleLineText(x + 5, y, width - 4, n.ToString(Cursor.lineInView + Cursor.startViewLine, NumericFormatFlags::None), this->CursorColors.Normal);
+    r.WriteSingleLineText(x, y, "Line:", this->ColorMan.Colors.CursorHighlighted);
+    r.WriteSingleLineText(
+          x + 5, y, width - 4, n.ToString(Cursor.lineInView + Cursor.startViewLine, NumericFormatFlags::None), this->ColorMan.Colors.CursorNormal);
     x += width;
 
     if (addSeparator)
-        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+        r.WriteSpecialCharacter(x++, y, SpecialChars::BoxVerticalSingleLine, this->ColorMan.Colors.CursorLine);
 
-    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
+    r.WriteSpecialCharacter(x + 4, y, SpecialChars::BoxVerticalSingleLine, this->ColorMan.Colors.CursorLine);
 
     return x + 5;
 }
@@ -379,7 +371,7 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
     } else {
         if (!config.ShowFileContent) {
             dli.renderer.WriteSingleLineText(
-                  Layout.startingTextLineOffset, 1, "No structures found an File content is hidden. No content to show.", config.Colors.Normal);
+                  Layout.startingTextLineOffset, 1, "No structures found an File content is hidden. No content to show.", ColorMan.Colors.Normal);
             return true;
         }
 
@@ -513,7 +505,7 @@ bool Instance::DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* s
 
 bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone)
 {
-    ColorPair normalColor = config.Colors.Normal;
+    ColorPair normalColor = ColorMan.Colors.Normal;
 
     dli.chLineStart   = this->chars.GetBuffer();
     dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
@@ -521,7 +513,7 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
     auto clearChar = this->chars.GetBuffer();
     for (uint32 i = 0; i < Layout.startingTextLineOffset; i++) {
         clearChar->Code  = codePage[' '];
-        clearChar->Color = config.Colors.Normal;
+        clearChar->Color = ColorMan.Colors.Normal;
         clearChar++;
     }
 
@@ -578,14 +570,14 @@ bool Instance::WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureT
     case GView::View::DissasmViewer::InternalDissasmType::Utf32Z:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UnidimnsionalArray:
-        AddStringToChars(dli, config.Colors.StructureColor, "Array[%u] ", currentType.width);
-        AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Array[%u] ", currentType.width);
+        AddStringToChars(dli, ColorMan.Colors.Normal, "%s", currentType.name.data());
         break;
     case GView::View::DissasmViewer::InternalDissasmType::BidimensionalArray:
         break;
     case GView::View::DissasmViewer::InternalDissasmType::UserDefined:
-        AddStringToChars(dli, config.Colors.StructureColor, "Structure ");
-        AddStringToChars(dli, config.Colors.Normal, "%s", currentType.name.data());
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Structure ");
+        AddStringToChars(dli, ColorMan.Colors.Normal, "%s", currentType.name.data());
         RegisterStructureCollapseButton(
               dli.screenLineToDraw + 1, structureZone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, structureZone);
         break;
@@ -640,13 +632,13 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
     auto clearChar = dli.chLineStart;
     for (uint32 i = 0; i < Layout.startingTextLineOffset; i++) {
         clearChar->Code  = codePage[' '];
-        clearChar->Color = config.Colors.Normal;
+        clearChar->Color = ColorMan.Colors.Normal;
         clearChar++;
     }
     dli.chText = dli.chNameAndSize;
 
     if (zone->data.canBeCollapsed && dli.textLineToDraw == 0) {
-        AddStringToChars(dli, config.Colors.StructureColor, "Collapsible zone [%llu] ", zone->data.size);
+        AddStringToChars(dli, ColorMan.Colors.StructureColor, "Collapsible zone [%llu] ", zone->data.size);
         RegisterStructureCollapseButton(dli.screenLineToDraw + 1, zone->isCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone);
     } else {
         if (!zone->isCollapsed) {
@@ -663,7 +655,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
             if (startingOffset + dataNeeded <= this->obj->GetData().GetSize()) {
                 const auto buf = this->obj->GetData().Get(startingOffset, static_cast<uint32>(dataNeeded), false);
                 if (!buf.IsValid()) {
-                    AddStringToChars(dli, config.Colors.StructureColor, "\tInvalid buff at position: %llu", zone->data.startingOffset + zone->data.size);
+                    AddStringToChars(dli, ColorMan.Colors.StructureColor, "\tInvalid buff at position: %llu", zone->data.startingOffset + zone->data.size);
 
                     const size_t buffer_size = dli.chText - this->chars.GetBuffer();
                     const auto bufferToDraw  = CharacterView{ chars.GetBuffer(), buffer_size };
@@ -679,10 +671,9 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 dli.chNameAndSize = dli.chLineStart + Layout.startingTextLineOffset;
                 dli.chText        = dli.chNameAndSize;
 
-                const bool activeColor = this->HasFocus();
-                auto textColor         = activeColor ? config.Colors.Line : config.Colors.Inactive;
+                auto textColor = ColorMan.Colors.Line;
                 if (!zone->data.canBeCollapsed)
-                    textColor = config.Colors.Normal;
+                    textColor = ColorMan.Colors.Normal;
 
                 while (dli.start < dli.end) {
                     dli.chText->Code  = codePage[*dli.start];
@@ -700,7 +691,7 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
                 //     dli.chNameAndSize[index].Color = config.Colors.Selection;
                 // }
             } else {
-                AddStringToChars(dli, config.Colors.StructureColor, "\tNot enough data for offset: %llu", zone->data.startingOffset + zone->data.size);
+                AddStringToChars(dli, ColorMan.Colors.StructureColor, "\tNot enough data for offset: %llu", zone->data.startingOffset + zone->data.size);
             }
         }
     }
@@ -726,7 +717,7 @@ bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 
 void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet)
 {
-    const ButtonsData bData = { 3, static_cast<int>(screenLine), c, config.Colors.DataTypeColor, 3, zone };
+    const ButtonsData bData = { 3, static_cast<int>(screenLine), c, ColorMan.Colors.DataTypeColor, 3, zone };
     if (isBullet)
         MyLine.bullets.push_back(bData);
     else
@@ -803,19 +794,19 @@ void Instance::HighlightSelectionAndDrawCursorText(DrawLineInfo& dli, uint32 max
     if (Cursor.lineInView == dli.screenLineToDraw) {
         uint32 index = this->Cursor.offset;
         if (index < availableCharacters - Layout.startingTextLineOffset)
-            dli.chNameAndSize[index].Color = config.Colors.Selection;
+            dli.chNameAndSize[index].Color = ColorMan.Colors.Selection;
         else
-            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], config.Colors.Selection);
+            dli.renderer.WriteCharacter(Layout.startingTextLineOffset + index, Cursor.lineInView + 1, codePage[' '], ColorMan.Colors.Selection);
 
         auto ch   = dli.chLineStart;
         ch->Code  = codePage['-'];
-        ch->Color = config.Colors.Highlight;
+        ch->Color = ColorMan.Colors.Highlight;
         ch++;
         ch->Code  = codePage['-'];
-        ch->Color = config.Colors.Highlight;
+        ch->Color = ColorMan.Colors.Highlight;
         ch++;
         ch->Code  = codePage['>'];
-        ch->Color = config.Colors.Highlight;
+        ch->Color = ColorMan.Colors.Highlight;
     }
 }
 
@@ -1170,7 +1161,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
     auto clearChar = this->chars.GetBuffer();
     for (uint32 i = 0; i < Layout.startingTextLineOffset; i++) {
         clearChar->Code  = codePage[' '];
-        clearChar->Color = config.Colors.Normal;
+        clearChar->Color = ColorMan.Colors.Normal;
         clearChar++;
     }
 
@@ -1183,7 +1174,7 @@ bool Instance::WriteTextLineToChars(DrawLineInfo& dli)
     dli.chText        = dli.chNameAndSize;
 
     bool activ     = this->HasFocus();
-    auto textColor = activ ? config.Colors.Normal : config.Colors.Inactive;
+    auto textColor = activ ? ColorMan.Colors.Normal : ColorMan.Colors.Inactive;
 
     while (dli.start < dli.end) {
         dli.chText->Code  = codePage[*dli.start];
@@ -1227,7 +1218,7 @@ void Instance::Paint(AppCUI::Graphics::Renderer& renderer)
             zone->asmPreCacheData.Reset();
     }
 
-    DrawLineInfo dli(renderer, Layout.startingTextLineOffset, config.Colors.Normal);
+    DrawLineInfo dli(renderer, Layout.startingTextLineOffset, ColorMan.Colors.Normal);
 
     // TODO: improve this!!
     selection.ClearStorages();
@@ -1487,4 +1478,14 @@ void DrawLineInfo::WriteErrorToScreen(std::string_view error) const
 LinePosition Instance::CursorDissasm::ToLinePosition() const
 {
     return LinePosition{ startViewLine + lineInView, offset };
+}
+
+void Instance::OnFocus()
+{
+    ColorMan.OnGainedFocus();
+}
+
+void Instance::OnLoseFocus()
+{
+    ColorMan.OnLostFocus();
 }

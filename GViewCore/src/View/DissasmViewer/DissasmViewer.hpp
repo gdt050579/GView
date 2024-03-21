@@ -458,7 +458,7 @@ namespace View
         };
 
         struct AsmData {
-            std::map<uint32, ColorPair> instructionToColor;
+            std::map<uint32, std::reference_wrapper<ColorPair>> instructionToColor;
             std::unordered_map<uint32, const AsmFunctionDetails*> functions;
             std::deque<DissasmCodeZone*> zonesToClear;
         };
@@ -564,11 +564,8 @@ namespace View
                 bool hasMovedView;
             } Cursor;
 
-            struct {
-                ColorPair Normal, Line, Highlighted;
-            } CursorColors;
-
             LayoutDissasm Layout;
+            ColorManager ColorMan;
 
             struct {
                 // uint8 buffer[256];
@@ -694,6 +691,9 @@ namespace View
             virtual void SetCustomPropertyValue(uint32 propertyID) override;
             virtual bool IsPropertyValueReadOnly(uint32 propertyID) override;
             virtual const vector<Property> GetPropertiesList() override;
+
+            void OnFocus() override;
+            void OnLoseFocus() override;
 
             friend DissasmTestInstance;
         }; // Instance
