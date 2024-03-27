@@ -54,31 +54,45 @@ namespace View
     {
         using namespace AppCUI;
 
+        struct DissasmColors {
+            Graphics::ColorPair Normal;
+            Graphics::ColorPair Highlight;
+            Graphics::ColorPair HighlightCursorLine;
+            Graphics::ColorPair Inactive;
+            Graphics::ColorPair Cursor;
+            Graphics::ColorPair Line;
+            Graphics::ColorPair Selection;
+            Graphics::ColorPair OutsideZone;
+            Graphics::ColorPair StructureColor;
+            Graphics::ColorPair DataTypeColor;
+            Graphics::ColorPair AsmOffsetColor;                // 0x something
+            Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
+            Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
+            Graphics::ColorPair AsmStackRegisterColor;         // ebp, edi, esi
+            Graphics::ColorPair AsmCompareInstructionColor;    // test, cmp
+            Graphics::ColorPair AsmFunctionColor;              // ret call
+            Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
+            Graphics::ColorPair AsmJumpInstruction;            // jmp
+            Graphics::ColorPair AsmComment;                    // comments added by user
+            Graphics::ColorPair AsmDefaultColor;               // rest of things
+            Graphics::ColorPair AsmTitleColor;
+            Graphics::ColorPair AsmTitleColumnColor;
+
+            Graphics::ColorPair CursorNormal, CursorLine, CursorHighlighted;
+        };
+
+        struct ColorManager {
+            DissasmColors Colors;
+            DissasmColors SavedColors;
+
+            void InitFromConfigColors(DissasmColors& configColors);
+            void OnLostFocus();
+            void SetAllColorsInactive();
+            void OnGainedFocus();
+        };
+
         struct Config {
-            struct {
-                Graphics::ColorPair Normal;
-                Graphics::ColorPair Highlight;
-                Graphics::ColorPair HighlightCursorLine;
-                Graphics::ColorPair Inactive;
-                Graphics::ColorPair Cursor;
-                Graphics::ColorPair Line;
-                Graphics::ColorPair Selection;
-                Graphics::ColorPair OutsideZone;
-                Graphics::ColorPair StructureColor;
-                Graphics::ColorPair DataTypeColor;
-                Graphics::ColorPair AsmOffsetColor;                // 0xsomthing
-                Graphics::ColorPair AsmIrrelevantInstructionColor; // int3
-                Graphics::ColorPair AsmWorkRegisterColor;          // eax, ebx,ecx, edx
-                Graphics::ColorPair AsmStackRegisterColor;         // ebp, edi, esi
-                Graphics::ColorPair AsmCompareInstructionColor;    // test, cmp
-                Graphics::ColorPair AsmFunctionColor;              // ret call
-                Graphics::ColorPair AsmLocationInstruction;        // dword ptr[ ]
-                Graphics::ColorPair AsmJumpInstruction;            // jmp
-                Graphics::ColorPair AsmComment;                    // comments added by user
-                Graphics::ColorPair AsmDefaultColor;               // rest of things
-                Graphics::ColorPair AsmTitleColor;
-                Graphics::ColorPair AsmTitleColumnColor;
-            } Colors;
+            DissasmColors ConfigColors;
 
             struct DissasmCommand {
                 Input::Key Key;
