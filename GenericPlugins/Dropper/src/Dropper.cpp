@@ -18,7 +18,9 @@ extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Dropper") {
-        // TODO: implementation
+        auto instance = Instance();
+        CHECK(instance.Init(), false, "");
+        CHECK(instance.Process(), false, "");
         return true;
     }
     return false;
