@@ -94,37 +94,6 @@ namespace Utils
         void CopySetTo(bool ascii[256]);
     };
 
-    // Structure to represent an interval
-    struct Zone
-    {
-        struct Interval
-        {
-            uint64 low{ INVALID_OFFSET }, high{ INVALID_OFFSET };
-        } interval{};
-
-        AppCUI::Graphics::ColorPair color{ NoColorPair };
-        AppCUI::Utils::FixSizeString<25> name{};
-
-        Zone(uint64 low, uint64 high) : interval{ low, high }
-        {
-        }
-        Zone(uint64 low, uint64 high, ColorPair cp, std::string_view name) : interval{ low, high }, color(cp), name(name)
-        {
-        }
-        Zone() : interval{ INVALID_OFFSET, INVALID_OFFSET }, color(NoColorPair), name(){};
-    };
-
-    class ZonesList
-    {
-        std::vector<Zone> zones{};
-        std::vector<Zone> cache{};
-
-      public:
-        void Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
-        const std::optional<Zone> OffsetToZone(uint64 offset) const;
-        void SetCache(const Zone::Interval& interval);
-    };
-
     struct UnicodeString
     {
         char16* text;
