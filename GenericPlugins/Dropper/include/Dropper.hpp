@@ -19,7 +19,7 @@ class Instance
     bool Init()
     {
         // dummy init for now
-        std::unique_ptr<IDrop> a = std::make_unique<IpAddress>();
+        std::unique_ptr<IDrop> a = std::make_unique<IpAddress>(false, true);
         droppers.push_back(std::move(a));
 
         return true;
