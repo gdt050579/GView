@@ -1,20 +1,14 @@
 #pragma once
 
 #include "IDrop.hpp"
-#include <string>
-#include <regex>
 
-namespace GView::GenericPlugins::Droppper::SpecialStrings
+namespace GView::GenericPlugins::Droppper::Executables
 {
-class IpAddress : public IDrop
+class MZPE : public IDrop
 {
   private:
-    std::regex pattern_ascii;
-    std::wregex pattern_unicode;
-    bool unicode{ false };
-
   public:
-    IpAddress(bool caseSensitive, bool unicode);
+    MZPE() = default;
 
     virtual const char* GetName() override;
     virtual ObjectCategory GetGroup() override;
@@ -24,4 +18,4 @@ class IpAddress : public IDrop
 
     virtual Result Check(uint64 offset, DataCache& file, unsigned char* prechachedBuffer, uint32 prechachedBufferSize, uint64& start, uint64& end) override;
 };
-} // namespace GView::GenericPlugins::Droppper::SpecialStrings
+} // namespace GView::GenericPlugins::Droppper::Executables

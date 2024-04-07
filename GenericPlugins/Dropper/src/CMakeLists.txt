@@ -1,1 +1,4 @@
-target_sources(Dropper PRIVATE Dropper.cpp SpecialStrings/IpAddress.cpp)
+target_sources(Dropper PRIVATE 
+	Dropper.cpp 
+	SpecialStrings/IpAddress.cpp
+	Executables/MZPE.cpp)
