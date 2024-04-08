@@ -11,8 +11,8 @@ static const uint8 MAX_PRECACHED_BUFFER_SIZE = 8;
 enum class Result : uint32 {
     NotFound = 0, // -> nothing found
     Buffer,       // -> artefact found -> drop it as a buffer
-    Unicode,      // -> artefact found -> drop it as unicode (skip 0)
     Ascii,        // -> artefact found -> drop it as ascii
+    Unicode,      // -> artefact found -> drop it as unicode (skip 0)
 };
 
 enum class Priority : uint32 { Binary = 0, Text = 1, Count = 2 };
@@ -39,27 +39,33 @@ class IDrop
     virtual bool ShouldGroupInOneFile()      = 0; // URLs, IPs, etc
 
     // prechachedBufferSize -> max 8
-    virtual Result Check(uint64 offset, DataCache& file, unsigned char* prechachedBuffer, uint32 prechachedBufferSize, uint64& start, uint64& end) = 0;
+    virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) = 0;
 
     // functii deja existente
-    inline bool IsMagicU16(unsigned char* prechachedBuffer, uint32 prechachedBufferSize, uint16 magic)
+    inline bool IsMagicU16(BufferView precachedBuffer, uint16 magic)
     {
-        if (prechachedBufferSize >= 2) {
-            return *(uint16*) prechachedBuffer == magic;
+        if (precachedBuffer.GetLength() >= 2) {
+            return *reinterpret_cast<const uint16*>(precachedBuffer.GetData()) == magic;
         }
         return false;
     }
 
-    inline bool IsMagicU32(unsigned char* prechachedBuffer, uint32 prechachedBufferSize, uint32 magic)
+    inline bool IsMagicU32(BufferView precachedBuffer, uint32 magic)
     {
-        if (prechachedBufferSize >= 4) {
-            return *(uint32*) prechachedBuffer == magic;
+        if (precachedBuffer.GetLength() >= 4) {
+            return *reinterpret_cast<const uint32*>(precachedBuffer.GetData()) == magic;
         }
         return false;
     }
 
-    inline bool IsBuffer(uint64 offset, DataCache& file, unsigned char* buffer, uint32 bufferSize)
+    // TODO: isn't this a memcmp..?
+    inline bool IsBuffer(uint64 offset, DataCache& file, BufferView bv)
     {
+        CHECK(bv.IsValid(), false, "");
+
+        auto bufferSize = bv.GetLength();
+        auto buffer     = bv.GetData();
+
         while (bufferSize) {
             if (file.GetFromCache(offset) != *buffer) {
                 return false;
@@ -68,9 +74,11 @@ class IDrop
             offset++;
             bufferSize--;
         }
+
         return true;
     }
 
+    // TODO: is this a valid/required callback?
     inline uint64 ParseAscii(uint64 offset, DataCache& file, bool (*isValidChar)(char ch))
     {
         // dummy body
@@ -78,6 +86,7 @@ class IDrop
         return isValidChar(*(char*) a.GetData());
     }
 
+    // TODO: is this a valid/required callback?
     inline uint64 ParseUnicode(uint64 offset, DataCache& file, bool (*isValidChar)(uint16 ch))
     {
         // dummy body

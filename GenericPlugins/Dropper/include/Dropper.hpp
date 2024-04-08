@@ -29,30 +29,60 @@ class Instance
         return true;
     }
 
+    BufferView GetPrecachedBuffer(uint64 offset, DataCache& cache)
+    {
+        return cache.Get(offset, MAX_PRECACHED_BUFFER_SIZE, true);
+    }
+
     bool Process(Reference<GView::Object> object)
     {
         CHECK(object.IsValid(), false, "");
 
-        DataCache& cache = object->GetData();
-        uint64 offset    = 1;
+        DataCache& cache  = object->GetData();
+        uint64 offset     = 1;
+        uint64 nextOffset = 1;
 
-        // TODO: replace these
-        unsigned char* buffer = nullptr;
-        uint32 bufferSize     = 0;
+        const auto objectSize = object->GetData().GetSize();
 
-        for (uint32 i = 0; i < static_cast<uint32>(Priority::Count); i++) {
-            const auto priority = static_cast<Priority>(i);
-            for (auto& dropper : droppers) {
-                if (dropper->GetPriority() != priority) {
-                    continue;
-                }
+        while (offset < objectSize) {
+            auto buffer = GetPrecachedBuffer(offset, cache);
+            nextOffset  = offset + 1;
 
-                uint64 start = 0;
-                uint64 end   = 0;
-                if (dropper->Check(offset, cache, buffer, bufferSize, start, end) != Result::NotFound) {
-                    // TODO:
+            for (uint32 i = 0; i < static_cast<uint32>(Priority::Count); i++) {
+                const auto priority = static_cast<Priority>(i);
+                auto found          = false;
+                for (auto& dropper : droppers) {
+                    if (dropper->GetPriority() != priority) {
+                        continue;
+                    }
+
+                    uint64 start      = 0;
+                    uint64 end        = 0;
+                    const auto result = dropper->Check(offset, cache, buffer, start, end);
+                    found             = result != Result::NotFound;
+
+                    switch (result) {
+                    case Result::Buffer:
+                        nextOffset = end + 1;
+                        break;
+                    case Result::Ascii:
+                        nextOffset = end + 1;
+                        break;
+                    case Result::Unicode:
+                        nextOffset = end + 1;
+                        break;
+                    case Result::NotFound:
+                    default:
+                        break;
+                    }
+
+                    if (found) {
+                        break;
+                    }
                 }
             }
+
+            offset = nextOffset;
         }
 
         return true;

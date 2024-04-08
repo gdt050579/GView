@@ -22,6 +22,6 @@ class IpAddress : public IDrop
     virtual Priority GetPriority() override;
     virtual bool ShouldGroupInOneFile() override;
 
-    virtual Result Check(uint64 offset, DataCache& file, unsigned char* prechachedBuffer, uint32 prechachedBufferSize, uint64& start, uint64& end) override;
+    virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
 } // namespace GView::GenericPlugins::Droppper::SpecialStrings

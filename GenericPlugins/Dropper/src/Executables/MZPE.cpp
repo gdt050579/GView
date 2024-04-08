@@ -130,9 +130,9 @@ bool MZPE::ShouldGroupInOneFile()
     return false;
 }
 
-Result MZPE::Check(uint64 offset, DataCache& file, unsigned char* prechachedBuffer, uint32 prechachedBufferSize, uint64& start, uint64& end)
+Result MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
-    CHECK(IsMagicU16(prechachedBuffer, prechachedBufferSize, IMAGE_DOS_SIGNATURE), Result::NotFound, "");
+    CHECK(IsMagicU16(precachedBuffer, IMAGE_DOS_SIGNATURE), Result::NotFound, "");
 
     auto buffer = file.CopyToBuffer(offset, 0x200, true);
     CHECK(buffer.IsValid(), Result::NotFound, "");
