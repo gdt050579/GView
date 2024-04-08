@@ -58,6 +58,14 @@ class IDrop
         return false;
     }
 
+    inline bool IsMagicU64(BufferView precachedBuffer, uint64 magic)
+    {
+        if (precachedBuffer.GetLength() >= 8) {
+            return *reinterpret_cast<const uint64*>(precachedBuffer.GetData()) == magic;
+        }
+        return false;
+    }
+
     // TODO: isn't this a memcmp..?
     inline bool IsBuffer(uint64 offset, DataCache& file, BufferView bv)
     {

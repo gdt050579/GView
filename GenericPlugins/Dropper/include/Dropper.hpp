@@ -5,10 +5,12 @@
 
 #include "SpecialStrings.hpp"
 #include "Executables.hpp"
+#include "Multimedia.hpp"
 
 using namespace GView::Utils;
 using namespace GView::GenericPlugins::Droppper::SpecialStrings;
 using namespace GView::GenericPlugins::Droppper::Executables;
+using namespace GView::GenericPlugins::Droppper::Multimedia;
 
 namespace GView::GenericPlugins::Droppper
 {
@@ -23,8 +25,10 @@ class Instance
         // dummy init for now
         std::unique_ptr<IDrop> a = std::make_unique<IpAddress>(false, true);
         std::unique_ptr<IDrop> b = std::make_unique<MZPE>();
+        std::unique_ptr<IDrop> c = std::make_unique<PNG>();
         droppers.push_back(std::move(a));
         droppers.push_back(std::move(b));
+        droppers.push_back(std::move(c));
 
         return true;
     }
