@@ -29,10 +29,30 @@ class Instance
         return true;
     }
 
-    bool Process()
+    bool Process(Reference<GView::Object> object)
     {
-        for (auto& dropper : droppers) {
-            // TODO: something
+        CHECK(object.IsValid(), false, "");
+
+        DataCache& cache = object->GetData();
+        uint64 offset    = 1;
+
+        // TODO: replace these
+        unsigned char* buffer = nullptr;
+        uint32 bufferSize     = 0;
+
+        for (uint32 i = 0; i < static_cast<uint32>(Priority::Count); i++) {
+            const auto priority = static_cast<Priority>(i);
+            for (auto& dropper : droppers) {
+                if (dropper->GetPriority() != priority) {
+                    continue;
+                }
+
+                uint64 start = 0;
+                uint64 end   = 0;
+                if (dropper->Check(offset, cache, buffer, bufferSize, start, end) != Result::NotFound) {
+                    // TODO:
+                }
+            }
         }
 
         return true;

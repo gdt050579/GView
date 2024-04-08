@@ -20,7 +20,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
     if (command == "Dropper") {
         auto instance = Instance();
         CHECK(instance.Init(), false, "");
-        CHECK(instance.Process(), false, "");
+        CHECK(instance.Process(object), false, "");
         return true;
     }
     return false;

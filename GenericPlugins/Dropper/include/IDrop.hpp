@@ -6,6 +6,8 @@ using namespace GView::Utils;
 
 namespace GView::GenericPlugins::Droppper
 {
+static const uint8 MAX_PRECACHED_BUFFER_SIZE = 8;
+
 enum class Result : uint32 {
     NotFound = 0, // -> nothing found
     Buffer,       // -> artefact found -> drop it as a buffer
@@ -13,7 +15,7 @@ enum class Result : uint32 {
     Ascii,        // -> artefact found -> drop it as ascii
 };
 
-enum class Priority : uint32 { Binary = 0, Text = 1 };
+enum class Priority : uint32 { Binary = 0, Text = 1, Count = 2 };
 
 enum class ObjectCategory : uint32 {
     Archive        = 0,
