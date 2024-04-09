@@ -19,7 +19,6 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 {
     if (command == "Dropper") {
         auto instance = Instance();
-        CHECK(instance.Init(), false, "");
         CHECK(instance.Process(object), false, "");
         return true;
     }
@@ -28,7 +27,7 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
-    sect["command.Dropper"] = Input::Key::Alt | Input::Key::F10;
+    sect["command.Dropper"] = Input::Key::F10;
 }
 }
 } // namespace GView::GenericPlugins::Droppper

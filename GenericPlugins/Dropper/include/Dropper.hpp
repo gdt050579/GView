@@ -2,6 +2,9 @@
 
 #include <vector>
 #include <memory>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
 
 #include "SpecialStrings.hpp"
 #include "Executables.hpp"
@@ -17,25 +20,72 @@ namespace GView::GenericPlugins::Droppper
 class Instance
 {
   private:
-    std::vector<std::unique_ptr<IDrop>> droppers;
+    inline static struct Context {
+        std::vector<std::unique_ptr<IDrop>> droppers;
+        bool initialized{ false };
+    } context;
+
+    std::ofstream logFile;
 
   public:
-    bool Init()
+    Instance()
     {
-        // dummy init for now
-        std::unique_ptr<IDrop> a = std::make_unique<IpAddress>(false, true);
-        std::unique_ptr<IDrop> b = std::make_unique<MZPE>();
-        std::unique_ptr<IDrop> c = std::make_unique<PNG>();
-        droppers.push_back(std::move(a));
-        droppers.push_back(std::move(b));
-        droppers.push_back(std::move(c));
+        if (!context.initialized) {
+            context.droppers.emplace_back(std::make_unique<IpAddress>(false, true));
+            context.droppers.emplace_back(std::make_unique<MZPE>());
+            context.droppers.emplace_back(std::make_unique<PNG>());
+        }
+    }
 
-        return true;
+    ~Instance()
+    {
+        logFile.close();
     }
 
     BufferView GetPrecachedBuffer(uint64 offset, DataCache& cache)
     {
         return cache.Get(offset, MAX_PRECACHED_BUFFER_SIZE, true);
+    }
+
+    bool InitLogFile(Reference<GView::Object> object, uint64 start, uint64 end)
+    {
+        LocalUnicodeStringBuilder<4096> logFilename;
+        logFilename.Add(object->GetPath());
+        logFilename.Add(".dropper.log");
+
+        std::string logFilenameUTF8;
+        logFilename.ToString(logFilenameUTF8);
+
+        logFile.open(logFilenameUTF8, std::ios::out);
+
+        CHECK(logFile.is_open(), false, "");
+
+        std::ostringstream stream;
+        stream << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << std::endl;
+        stream << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << end << std::endl;
+        stream << std::setfill('-') << std::setw(49) << '-' << std::endl;
+
+        logFile << stream.str();
+        CHECK(logFile.good(), false, "");
+
+        return true;
+    }
+
+    bool WriteToLog(uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper)
+    {
+        CHECK(logFile.is_open(), false, "");
+
+        std::ostringstream stream;
+        stream << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
+        stream << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> ";
+        stream << std::setfill(' ') << std::setw(8) << dropper->GetName() << " ";
+        stream << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << " ";
+        stream << std::setfill(' ') << std::setw(8) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << std::endl;
+
+        logFile << stream.str();
+        CHECK(logFile.good(), false, "");
+
+        return true;
     }
 
     bool Process(Reference<GView::Object> object)
@@ -45,6 +95,9 @@ class Instance
         DataCache& cache  = object->GetData();
         uint64 offset     = 1;
         uint64 nextOffset = 1;
+        uint64 objectId   = 0;
+
+        CHECK(InitLogFile(object, 0, cache.GetSize()), false, "");
 
         const auto objectSize = object->GetData().GetSize();
 
@@ -55,7 +108,7 @@ class Instance
             for (uint32 i = 0; i < static_cast<uint32>(Priority::Count); i++) {
                 const auto priority = static_cast<Priority>(i);
                 auto found          = false;
-                for (auto& dropper : droppers) {
+                for (auto& dropper : context.droppers) {
                     if (dropper->GetPriority() != priority) {
                         continue;
                     }
@@ -67,12 +120,15 @@ class Instance
 
                     switch (result) {
                     case Result::Buffer:
+                        CHECK(WriteToLog(start, end, result, dropper), false, "");
                         nextOffset = end + 1;
                         break;
                     case Result::Ascii:
+                        CHECK(WriteToLog(start, end, result, dropper), false, "");
                         nextOffset = end + 1;
                         break;
                     case Result::Unicode:
+                        CHECK(WriteToLog(start, end, result, dropper), false, "");
                         nextOffset = end + 1;
                         break;
                     case Result::NotFound:

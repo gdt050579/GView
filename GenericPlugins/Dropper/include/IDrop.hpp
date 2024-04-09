@@ -15,6 +15,13 @@ enum class Result : uint32 {
     Unicode,      // -> artefact found -> drop it as unicode (skip 0)
 };
 
+static const std::map<Result, std::string_view> RESULT_MAP{
+    { Result::NotFound, "Not Found" },
+    { Result::Buffer, "Buffer" },
+    { Result::Ascii, "Ascii" },
+    { Result::Unicode, "Unicode" },
+};
+
 enum class Priority : uint32 { Binary = 0, Text = 1, Count = 2 };
 
 enum class ObjectCategory : uint32 {
@@ -26,6 +33,12 @@ enum class ObjectCategory : uint32 {
     Image          = 5,
     Multimedia     = 6,
     SpecialStrings = 7,
+};
+
+static const std::map<ObjectCategory, std::string_view> OBJECT_CATEGORY_MAP{
+    { ObjectCategory::Archive, "Archive" },         { ObjectCategory::AVStrings, "AV Strings" },           { ObjectCategory::Cryptographic, "Cryptographic" },
+    { ObjectCategory::Executables, "Executables" }, { ObjectCategory::HtmlObjects, "HtmlObjects" },        { ObjectCategory::Image, "Image" },
+    { ObjectCategory::Multimedia, "Multimedia" },   { ObjectCategory::SpecialStrings, "Special Strings" },
 };
 
 class IDrop
