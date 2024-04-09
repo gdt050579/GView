@@ -26,6 +26,7 @@ class Instance
     } context;
 
     std::ofstream logFile;
+    uint64 objectId{ 0 };
 
   public:
     Instance()
@@ -47,7 +48,7 @@ class Instance
         return cache.Get(offset, MAX_PRECACHED_BUFFER_SIZE, true);
     }
 
-    bool InitLogFile(Reference<GView::Object> object, uint64 start, uint64 end)
+    bool InitLogFile(Reference<GView::Object> object, const std::vector<std::pair<uint64, uint64>>& areas)
     {
         LocalUnicodeStringBuilder<4096> logFilename;
         logFilename.Add(object->GetPath());
@@ -61,9 +62,12 @@ class Instance
         CHECK(logFile.is_open(), false, "");
 
         std::ostringstream stream;
-        stream << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << std::endl;
-        stream << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << end << std::endl;
-        stream << std::setfill('-') << std::setw(49) << '-' << std::endl;
+
+        for (const auto& area : areas) {
+            stream << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.first << std::endl;
+            stream << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.second << std::endl;
+        }
+        stream << std::setfill('-') << std::setw(59) << '-' << std::endl;
 
         logFile << stream.str();
         CHECK(logFile.good(), false, "");
@@ -92,16 +96,40 @@ class Instance
     {
         CHECK(object.IsValid(), false, "");
 
+        std::vector<std::pair<uint64, uint64>> areas;
+
+        std::vector<GView::TypeInterface::SelectionZone> selectedZones;
+        for (auto i = 0U; i < object->GetContentType()->GetSelectionZonesCount(); i++) {
+            const auto zone = object->GetContentType()->GetSelectionZone(i);
+            selectedZones.emplace_back(zone);
+            areas.push_back({ zone.start, zone.end });
+        }
+        const auto computeForFile = selectedZones.empty();
+
+        DataCache& cache = object->GetData();
+        if (computeForFile) {
+            areas.push_back({ 0, cache.GetSize() });
+        }
+
+        CHECK(InitLogFile(object, areas), false, "");
+
+        if (computeForFile) {
+            CHECK(__Process(object, 1, cache.GetSize()), false, "");
+        } else {
+            for (const auto& zone : selectedZones) {
+                CHECK(__Process(object, zone.start, zone.end), false, "");
+            }
+        }
+
+        return true;
+    }
+
+    bool __Process(Reference<GView::Object> object, uint64 offset, uint64 size)
+    {
         DataCache& cache  = object->GetData();
-        uint64 offset     = 1;
-        uint64 nextOffset = 1;
-        uint64 objectId   = 0;
+        uint64 nextOffset = offset;
 
-        CHECK(InitLogFile(object, 0, cache.GetSize()), false, "");
-
-        const auto objectSize = object->GetData().GetSize();
-
-        while (offset < objectSize) {
+        while (offset < size) {
             auto buffer = GetPrecachedBuffer(offset, cache);
             nextOffset  = offset + 1;
 
