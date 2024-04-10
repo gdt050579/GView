@@ -19,7 +19,10 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
 {
     if (command == "Dropper") {
         auto instance = Instance();
-        CHECK(instance.Process(object), false, "");
+        if (!instance.Process(object)) {
+            Dialogs::MessageBox::ShowError("Dropper", "Failed extracting objects!");
+        }
+        Dialogs::MessageBox::ShowNotification("Dropper", "Objects extracted.");
         return true;
     }
     return false;

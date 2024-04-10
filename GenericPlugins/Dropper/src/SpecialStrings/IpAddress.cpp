@@ -1,5 +1,7 @@
 #include "SpecialStrings.hpp"
 
+#include <regex>
+
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
 inline static const std::string_view IPS_REGEX_ASCII{ R"(([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(\:[0-9]{1,5})*))" };
@@ -47,6 +49,36 @@ bool IpAddress::ShouldGroupInOneFile()
 
 Result IpAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
+    CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");
+    CHECK(IsAsciiPrintable(precachedBuffer.GetData()[0]), Result::NotFound, "");
+
+    auto buffer = file.Get(offset, 39 * 2, false);         // IPv6 length in Unicode
+    CHECK(buffer.GetLength() >= 14, Result::NotFound, ""); // not enough for IPv4 => length in ASCII
+
+    // https://stackoverflow.com/questions/26696250/difference-between-stdregex-match-stdregex-search
+
+    auto bStart     = reinterpret_cast<char const*>(buffer.GetData());
+    const auto bEnd = reinterpret_cast<char const*>(bStart + buffer.GetLength());
+
+    std::cmatch acm{};
+    if (std::regex_search(bStart, bEnd, acm, this->pattern_ascii)) {
+        start = offset + acm.position();
+        end   = start + acm.length();
+        return Result::Ascii;
+    }
+
+    CHECK(unicode, Result::NotFound, "");
+    CHECK(precachedBuffer.GetData()[1] == 0, Result::NotFound, ""); // we already checked ascii printable
+
+    auto b2Start     = reinterpret_cast<wchar_t const*>(buffer.GetData());
+    const auto b2End = reinterpret_cast<wchar_t const*>(buffer.GetData() + buffer.GetLength());
+    std::wcmatch wcm{};
+    if (std::regex_search(b2Start, b2End, wcm, this->pattern_unicode)) {
+        start = offset + wcm.position();
+        end   = start + wcm.length();
+        return Result::Unicode;
+    }
+
     return Result::NotFound;
 }
 

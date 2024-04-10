@@ -16,10 +16,10 @@ enum class Result : uint32 {
 };
 
 static const std::map<Result, std::string_view> RESULT_MAP{
-    { Result::NotFound, "Not Found" },
-    { Result::Buffer, "Buffer" },
-    { Result::Ascii, "Ascii" },
-    { Result::Unicode, "Unicode" },
+    { Result::NotFound, "[Not Found]" },
+    { Result::Buffer, "[Buffer]" },
+    { Result::Ascii, "[Ascii]" },
+    { Result::Unicode, "[Unicode]" },
 };
 
 enum class Priority : uint32 { Binary = 0, Text = 1, Count = 2 };
@@ -36,9 +36,14 @@ enum class ObjectCategory : uint32 {
 };
 
 static const std::map<ObjectCategory, std::string_view> OBJECT_CATEGORY_MAP{
-    { ObjectCategory::Archive, "Archive" },         { ObjectCategory::AVStrings, "AV Strings" },           { ObjectCategory::Cryptographic, "Cryptographic" },
-    { ObjectCategory::Executables, "Executables" }, { ObjectCategory::HtmlObjects, "HtmlObjects" },        { ObjectCategory::Image, "Image" },
-    { ObjectCategory::Multimedia, "Multimedia" },   { ObjectCategory::SpecialStrings, "Special Strings" },
+    { ObjectCategory::Archive, "[Archive]" },
+    { ObjectCategory::AVStrings, "[AV Strings]" },
+    { ObjectCategory::Cryptographic, "[Cryptographic]" },
+    { ObjectCategory::Executables, "[Executables]" },
+    { ObjectCategory::HtmlObjects, "[HtmlObjects]" },
+    { ObjectCategory::Image, "[Image]" },
+    { ObjectCategory::Multimedia, "[Multimedia]" },
+    { ObjectCategory::SpecialStrings, "[Special Strings]" },
 };
 
 class IDrop
@@ -79,40 +84,9 @@ class IDrop
         return false;
     }
 
-    // TODO: isn't this a memcmp..?
-    inline bool IsBuffer(uint64 offset, DataCache& file, BufferView bv)
+    inline static bool IsAsciiPrintable(char c)
     {
-        CHECK(bv.IsValid(), false, "");
-
-        auto bufferSize = bv.GetLength();
-        auto buffer     = bv.GetData();
-
-        while (bufferSize) {
-            if (file.GetFromCache(offset) != *buffer) {
-                return false;
-            }
-            buffer++;
-            offset++;
-            bufferSize--;
-        }
-
-        return true;
-    }
-
-    // TODO: is this a valid/required callback?
-    inline uint64 ParseAscii(uint64 offset, DataCache& file, bool (*isValidChar)(char ch))
-    {
-        // dummy body
-        const auto a = file.Get(offset, 1, true);
-        return isValidChar(*(char*) a.GetData());
-    }
-
-    // TODO: is this a valid/required callback?
-    inline uint64 ParseUnicode(uint64 offset, DataCache& file, bool (*isValidChar)(uint16 ch))
-    {
-        // dummy body
-        const auto a = file.Get(offset, 2, true);
-        return isValidChar(*(uint16*) a.GetData());
+        return 0x20 <= c && c <= 0x7e;
     }
 };
 } // namespace GView::GenericPlugins::Droppper

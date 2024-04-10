@@ -81,8 +81,8 @@ class Instance
 
         std::ostringstream stream;
         stream << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
-        stream << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> ";
-        stream << std::setfill(' ') << std::setw(8) << dropper->GetName() << " ";
+        stream << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
+        stream << std::setfill(' ') << std::setw(8) << dropper->GetName() << "] ";
         stream << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << " ";
         stream << std::setfill(' ') << std::setw(8) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << std::endl;
 
