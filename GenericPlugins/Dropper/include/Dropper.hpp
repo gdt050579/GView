@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <filesystem>
 
 #include "SpecialStrings.hpp"
 #include "Executables.hpp"
@@ -28,19 +29,28 @@ class Instance
     std::ofstream logFile;
     uint64 objectId{ 0 };
 
+    std::map<std::string_view, std::unique_ptr<std::ofstream>> singleFiles;
+
   public:
     Instance()
     {
         if (!context.initialized) {
-            context.droppers.emplace_back(std::make_unique<IpAddress>(false, true));
+            // binary
             context.droppers.emplace_back(std::make_unique<MZPE>());
             context.droppers.emplace_back(std::make_unique<PNG>());
+
+            // strings
+            context.droppers.emplace_back(std::make_unique<IpAddress>(false, true));
         }
     }
 
     ~Instance()
     {
         logFile.close();
+
+        for (auto& [_, f] : singleFiles) {
+            f->close();
+        }
     }
 
     BufferView GetPrecachedBuffer(uint64 offset, DataCache& cache)
@@ -82,12 +92,69 @@ class Instance
         std::ostringstream stream;
         stream << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
         stream << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
-        stream << std::setfill(' ') << std::setw(8) << dropper->GetName() << "] ";
-        stream << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << " ";
-        stream << std::setfill(' ') << std::setw(8) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << std::endl;
+        stream << std::setfill(' ') << std::setw(16) << dropper->GetName() << "] [";
+        stream << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << "] [";
+        stream << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << "]" << std::endl;
 
         logFile << stream.str();
         CHECK(logFile.good(), false, "");
+
+        return true;
+    }
+
+    bool WriteToFile(Reference<GView::Object> object, uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result)
+    {
+        auto bv = object->GetData().Get(start, static_cast<uint32>(end - start), true);
+        CHECK(bv.IsValid(), false, "");
+
+        LocalUnicodeStringBuilder<4096> filename;
+
+        std::string_view name = dropper->GetName();
+        if (dropper->ShouldGroupInOneFile()) {
+            if (!singleFiles.contains(name)) {
+                filename.Add(object->GetPath());
+                filename.Add(".");
+                filename.Add(dropper->GetOutputExtension());
+
+                std::string filenameUTF8;
+                filename.ToString(filenameUTF8);
+
+                auto f = std::make_unique<std::ofstream>();
+                f->open(filenameUTF8, std::ios::out | std::ios::app | std::ios::binary);
+                CHECK(f->is_open(), false, "");
+
+                std::filesystem::resize_file(filenameUTF8, 0);
+                f->seekp(0);
+
+                singleFiles[name] = std::move(f);
+            }
+
+            auto& f = singleFiles.at(name);
+
+            if (result != Result::Unicode) {
+                f->write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
+            } else {
+                for (uint32 i = 0; i < bv.GetLength(); i += 2) {
+                    f->write(reinterpret_cast<const char*>(bv.GetData() + 1), 1);
+                }
+            }
+            f->write("\n", 1);
+        } else {
+            filename.Add(object->GetPath());
+            filename.Add(".obj.");
+            filename.Add(std::to_string(objectId++));
+            filename.Add(".");
+            filename.Add(dropper->GetOutputExtension());
+
+            std::string filenameUTF8;
+            filename.ToString(filenameUTF8);
+
+            std::ofstream f;
+            f.open(filenameUTF8, std::ios::out | std::ios::binary);
+            CHECK(f.is_open(), false, "");
+            f.write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
+            f.close();
+        }
 
         return true;
     }
@@ -149,14 +216,17 @@ class Instance
                     switch (result) {
                     case Result::Buffer:
                         CHECK(WriteToLog(start, end, result, dropper), false, "");
+                        CHECK(WriteToFile(object, start, end, dropper, result), false, "");
                         nextOffset = end + 1;
                         break;
                     case Result::Ascii:
                         CHECK(WriteToLog(start, end, result, dropper), false, "");
+                        CHECK(WriteToFile(object, start, end, dropper, result), false, "");
                         nextOffset = end + 1;
                         break;
                     case Result::Unicode:
                         CHECK(WriteToLog(start, end, result, dropper), false, "");
+                        CHECK(WriteToFile(object, start, end, dropper, result), false, "");
                         nextOffset = end + 1;
                         break;
                     case Result::NotFound:
