@@ -10,6 +10,7 @@ GView framework is a powerful tool for examining files or any data with a define
 
 - [GView](#gview)
 	- [General description](#general-description)
+	- [Motivation](#motivation)
 	- [Smart Viewers](#smart-viewers)
 		- [Buffer Viewer](#buffer-viewer)
 		- [Text Viewer](#text-viewer)
@@ -39,6 +40,30 @@ GView framework is a powerful tool for examining files or any data with a define
 **GView** framework is a powerful tool for examining files or any data with a defined structure, such as buffers or memory zones. Users can leverage the diverse range of available visualization options to effectively analyze and interpret the information.
 
 On the other hand, from the perspective of developers, **GView** offers a flexible platform to create plugins that can parse various data structures. Developers can harness this capability to develop customized views and enhance the analysis capabilities of **GView**. By creating plugins, developers can extend the framework's functionality and tailor it to specific data formats or requirements, enabling more efficient and insightful data analysis.
+
+## Motivation
+
+These days, a cyber-security attack is represented by a combination of files, payloads, and network operations that are carried out at every stage of the kill-chain rather than by a single file. Because of this, assessing an attack of this nature is a difficult undertaking requiring a thorough comprehension of the different file formats, payloads, and network protocols that may be employed in these situations. The file types listed in the following table are either directly used in an attack or are extra files or security logs that a security researcher needs.
+
+| File type                  	| Description                                                                                                                                                                         	|
+|----------------------------	|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	|
+| Binary file (.exe, .dll)   	| Used by the attacker to execute code on the targeted machine                                                                                                                        	|
+| Archives (.zip, .rar)      	| Used either as a transportation method for exfiltrated data                                                                                                                         	|
+| Documents (.docx, .pdf)    	| Used for initial access (either as a scam or as an exploit or part of a file-less attack)                                                                                           	|
+| Macros (.vba)              	| Used as a stage for cases where the initial access relies on Office documents that will execute a second payload                                                                    	|
+| Scrips (.js, .ps1)         	| Used for various type of file-less attacks                                                                                                                                          	|
+| Bash (.bat, .sh)           	| Used as part of execution flow or file-less attacks                                                                                                                                 	|
+| Images (.png, .jpg)        	| Used to convey information from the attacker that should not be easily readable pragmatically (such as a ransom note or a password to open an archive, etc.)                        	|
+| Links (.pif, .lnk)         	| Used for lateral movement (e.g. powershell-based attacks) or partial persistence (e.g. links on desktop)                                                                            	|
+
+
+| Log type                  	| Description                                                                                                                                                                         	|
+|----------------------------	|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	|
+| Packet captures (.pcap)    	| Used to analyze the network packet data                                                                                                                                             	|
+| Config files (.json, .ini) 	| Used to analyze configuration for various tools (they may contain indicators of miss-configurations or for malicious programs may contain C\&C addresses, passwords, wallets, etc.) 	|
+| Registry hives             	| Used to evaluate things like persistence, debug settings, etc.                                                                                                                      	|
+| Memory dumps               	| Useful to identify vulnerabilities or credential access                                                                                                                             	|
+| System logs                	| Used to identify various actions that happened on a system (login/logout information, etc.)       
 
 ## Smart Viewers
 
