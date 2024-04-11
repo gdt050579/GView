@@ -58,6 +58,10 @@
     {
       "name": "catch2",
       "platform": "windows | linux | osx"
+    },
+    {
+      "name": "re2",
+      "platform": "windows | linux | osx"
     }
   ]
 }

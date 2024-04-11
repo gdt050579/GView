@@ -746,6 +746,21 @@ namespace SQLite3
     };
 } // namespace SQLite3
 
+namespace Regex
+{
+    struct CORE_EXPORT Matcher {
+      private:
+        void* context{ nullptr };
+
+      public:
+        bool Init(std::string_view expression, bool isUnicode, bool isCaseSensitive);
+        Matcher() = default;
+        ~Matcher();
+
+        bool Match(BufferView buffer, uint64& start, uint64& end);
+    };
+} // namespace Regex
+
 /*
  * Object can be:
  *   - a file

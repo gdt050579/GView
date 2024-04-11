@@ -1,19 +1,18 @@
 #pragma once
 
 #include "IDrop.hpp"
+
 #include <string>
-#include <regex>
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
 class IpAddress : public IDrop
 {
   private:
-    std::regex pattern_ascii;
-    std::wregex pattern_unicode;
     bool unicode{ false };
     bool caseSensitive{ false };
-    std::regex_constants::syntax_option_type regexConstants{ std::regex_constants::ECMAScript | std::regex_constants::optimize };
+    GView::Regex::Matcher matcherAscii{};
+    GView::Regex::Matcher matcherUnicode{};
 
   public:
     IpAddress(bool caseSensitive, bool unicode);
