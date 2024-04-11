@@ -135,7 +135,7 @@ class Instance
                 f->write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
             } else {
                 for (uint32 i = 0; i < bv.GetLength(); i += 2) {
-                    f->write(reinterpret_cast<const char*>(bv.GetData() + 1), 1);
+                    f->write(reinterpret_cast<const char*>(bv.GetData() + i), 1);
                 }
             }
             f->write("\n", 1);

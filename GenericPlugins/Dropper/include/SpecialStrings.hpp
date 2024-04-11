@@ -12,6 +12,8 @@ class IpAddress : public IDrop
     std::regex pattern_ascii;
     std::wregex pattern_unicode;
     bool unicode{ false };
+    bool caseSensitive{ false };
+    std::regex_constants::syntax_option_type regexConstants{ std::regex_constants::ECMAScript | std::regex_constants::optimize };
 
   public:
     IpAddress(bool caseSensitive, bool unicode);

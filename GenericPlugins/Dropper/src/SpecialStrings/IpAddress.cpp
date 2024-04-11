@@ -9,17 +9,13 @@ inline static const std::u16string_view IPS_REGEX_UNICODE{ uR"(([0-9]{1,3}\.[0-9
 
 IpAddress::IpAddress(bool caseSensitive, bool unicode)
 {
-    this->pattern_ascii = std::regex(
-          IPS_REGEX_ASCII.data(),
-          caseSensitive ? std::regex_constants::ECMAScript | std::regex_constants::optimize
-                        : std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize);
-
-    if (unicode) {
-        this->pattern_unicode = std::wregex(
-              reinterpret_cast<wchar_t const* const>(IPS_REGEX_UNICODE.data()),
-              caseSensitive ? std::regex_constants::ECMAScript | std::regex_constants::optimize
-                            : std::regex_constants::icase | std::regex_constants::ECMAScript | std::regex_constants::optimize);
+    this->unicode       = unicode;
+    this->caseSensitive = caseSensitive;
+    if (this->caseSensitive) {
+        this->regexConstants |= std::regex_constants::icase;
     }
+    this->pattern_ascii   = std::regex(IPS_REGEX_ASCII.data(), this->regexConstants);
+    this->pattern_unicode = std::wregex(reinterpret_cast<wchar_t const* const>(IPS_REGEX_UNICODE.data()), this->regexConstants);
 }
 
 const char* IpAddress::GetName()
@@ -74,8 +70,8 @@ Result IpAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuff
     const auto b2End = reinterpret_cast<wchar_t const*>(buffer.GetData() + buffer.GetLength());
     std::wcmatch wcm{};
     if (std::regex_search(b2Start, b2End, wcm, this->pattern_unicode)) {
-        start = offset + wcm.position();
-        end   = start + wcm.length();
+        start = offset + wcm.position() * sizeof(wchar_t);
+        end   = start + (wcm.length() + 1) * sizeof(wchar_t);
         return Result::Unicode;
     }
 
