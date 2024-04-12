@@ -229,12 +229,19 @@ class Instance
         DataCache& cache  = object->GetData();
         uint64 nextOffset = offset;
 
-        ProgressStatus::Init("Searching...", size, ProgressStatus::Flags::None);
+        ProgressStatus::Init("Searching...", size);
         LocalString<512> ls;
-        const char* format = "Found [%d] objects...";
+        const char* format          = "[%llu/%llu] bytes... Found [%llu] objects.";
+        constexpr uint64 CHUNK_SIZE = 10000;
+        uint64 chunks               = offset / CHUNK_SIZE;
+        uint64 toUpdate             = chunks * CHUNK_SIZE;
         while (offset < size) {
-            if (offset % 1000 == 0) {
-                CHECKBK(ProgressStatus::Update(offset, ls.Format(format, occurences.size())) == false, "");
+            if (offset >= toUpdate) {
+                CHECKBK(ProgressStatus::Update(offset, ls.Format(format, offset, size, occurences.size())) == false, "");
+                chunks += 1;
+                toUpdate = chunks * CHUNK_SIZE;
+
+                cache.Get(offset, cache.GetCacheSize(), false); // optimization
             }
 
             auto buffer = GetPrecachedBuffer(offset, cache);
@@ -263,6 +270,7 @@ class Instance
 
             offset = nextOffset;
         }
+        ProgressStatus::Update(size, ls.Format(format, size, size, occurences.size()));
 
         WriteSummaryToLog(occurences);
         for (const auto& f : findings) {
