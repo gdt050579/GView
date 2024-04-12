@@ -14,8 +14,8 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
-    { { "WriteFile",
+const std::array<AsmFunctionDetails, 8> KNOWN_FUNCTIONS = { {
+      { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
           { "nNumberOfBytesToWrite", "DWORD" },
@@ -30,8 +30,18 @@ const std::array<AsmFunctionDetails, 4> KNOWN_FUNCTIONS = {
           { "dwCreationDisposition", "DWORD" },
           { "dwFlagsAndAttributes", "DWORD" },
           { "hTemplateFile", "HANDLE" } } },
-      { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } } }
-};
+      { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } },
+      { "RegOpenKeyExW", { { "hKey", "HKEY" }, { "lpSubKey", "LPCWSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
+      { "RegSetValueExW",
+        { { "hKey", "HKEY" },
+          { "lpValueName", "LPCWSTR" },
+          { "lpReserved", "DWORD" },
+          { "dwType", "DWORD" },
+          { "lpData", "const BYTE*" },
+          { "cbData", "DWORD" } } },
+      { "GetKeyboardLayout", { { "idThread", "DWORD" } } },
+      { "GetKeyboardState", { { "lpKeyState", "PBYTE" } } },
+} };
 
 Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     : ViewControl("Dissasm View"), obj(obj), settings(nullptr), jumps_holder(DISSASM_MAX_STORED_JUMPS)
