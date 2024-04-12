@@ -48,6 +48,7 @@ class Instance
             context.droppers.emplace_back(std::make_unique<IpAddress>(isCaseSensitive, useUnicode));
             context.droppers.emplace_back(std::make_unique<EmailAddress>(isCaseSensitive, useUnicode));
             context.droppers.emplace_back(std::make_unique<URL>(isCaseSensitive, useUnicode));
+            context.droppers.emplace_back(std::make_unique<Wallet>(isCaseSensitive, useUnicode));
             context.droppers.emplace_back(std::make_unique<Filepath>(isCaseSensitive, useUnicode));
         }
     }
