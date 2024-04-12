@@ -45,17 +45,17 @@ class IDrop
 {
   public:
     // virtual methods
-    virtual const char* GetName()            = 0; // specific dropper mini-plugin name
-    virtual ObjectCategory GetGroup()        = 0; // archive type recognizer, executables type, etc
-    virtual const char* GetOutputExtension() = 0; // dropped file extension
-    virtual Priority GetPriority()           = 0; // get plugin priority
-    virtual bool ShouldGroupInOneFile()      = 0; // URLs, IPs, etc
+    virtual const std::string_view GetName() const            = 0; // specific dropper mini-plugin name
+    virtual ObjectCategory GetGroup() const                   = 0; // archive type recognizer, executables type, etc
+    virtual const std::string_view GetOutputExtension() const = 0; // dropped file extension
+    virtual Priority GetPriority() const                      = 0; // get plugin priority
+    virtual bool ShouldGroupInOneFile() const                 = 0; // URLs, IPs, etc
 
     // prechachedBufferSize -> max 8
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) = 0;
 
     // functii deja existente
-    inline bool IsMagicU16(BufferView precachedBuffer, uint16 magic)
+    inline bool IsMagicU16(BufferView precachedBuffer, uint16 magic) const
     {
         if (precachedBuffer.GetLength() >= 2) {
             return *reinterpret_cast<const uint16*>(precachedBuffer.GetData()) == magic;
@@ -63,7 +63,7 @@ class IDrop
         return false;
     }
 
-    inline bool IsMagicU32(BufferView precachedBuffer, uint32 magic)
+    inline bool IsMagicU32(BufferView precachedBuffer, uint32 magic) const
     {
         if (precachedBuffer.GetLength() >= 4) {
             return *reinterpret_cast<const uint32*>(precachedBuffer.GetData()) == magic;
@@ -71,7 +71,7 @@ class IDrop
         return false;
     }
 
-    inline bool IsMagicU64(BufferView precachedBuffer, uint64 magic)
+    inline bool IsMagicU64(BufferView precachedBuffer, uint64 magic) const
     {
         if (precachedBuffer.GetLength() >= 8) {
             return *reinterpret_cast<const uint64*>(precachedBuffer.GetData()) == magic;

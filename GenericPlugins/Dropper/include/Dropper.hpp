@@ -31,6 +31,8 @@ class Instance
 
     std::map<std::string_view, std::unique_ptr<std::ofstream>> singleFiles;
 
+    inline static constexpr uint32 SEPARATOR_LENGTH = 80;
+
   public:
     Instance()
     {
@@ -82,7 +84,23 @@ class Instance
             stream << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.first << std::endl;
             stream << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.second << std::endl;
         }
-        stream << std::setfill('-') << std::setw(59) << '-' << std::endl;
+        stream << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
+
+        logFile << stream.str();
+        CHECK(logFile.good(), false, "");
+
+        return true;
+    }
+
+    bool WriteSummaryToLog(std::map<std::string_view, uint32>& occurences)
+    {
+        CHECK(logFile.is_open(), false, "");
+
+        std::ostringstream stream;
+        for (const auto& [k, v] : occurences) {
+            stream << std::setfill(' ') << std::left << std::setw(16) << k << ": " << std::right << std::setw(16) << std::dec << v << std::endl;
+        }
+        stream << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
 
         logFile << stream.str();
         CHECK(logFile.good(), false, "");
@@ -198,16 +216,32 @@ class Instance
 
     bool __Process(Reference<GView::Object> object, uint64 offset, uint64 size)
     {
+        struct Data {
+            uint64 start;
+            uint64 end;
+            Result result;
+            std::string_view dropperName;
+        };
+
+        std::vector<Data> findings;
+        std::map<std::string_view, uint32> occurences;
+
         DataCache& cache  = object->GetData();
         uint64 nextOffset = offset;
 
+        ProgressStatus::Init("Searching...", size, ProgressStatus::Flags::None);
+        LocalString<512> ls;
+        const char* format = "Found [%d] objects...";
         while (offset < size) {
+            if (offset % 1000 == 0) {
+                CHECKBK(ProgressStatus::Update(offset, ls.Format(format, occurences.size())) == false, "");
+            }
+
             auto buffer = GetPrecachedBuffer(offset, cache);
             nextOffset  = offset + 1;
 
             for (uint32 i = 0; i < static_cast<uint32>(Priority::Count); i++) {
                 const auto priority = static_cast<Priority>(i);
-                auto found          = false;
                 for (auto& dropper : context.droppers) {
                     if (dropper->GetPriority() != priority) {
                         continue;
@@ -216,36 +250,29 @@ class Instance
                     uint64 start      = 0;
                     uint64 end        = 0;
                     const auto result = dropper->Check(offset, cache, buffer, start, end);
-                    found             = result != Result::NotFound;
 
-                    switch (result) {
-                    case Result::Buffer:
-                        CHECK(WriteToLog(start, end, result, dropper), false, "");
-                        CHECK(WriteToFile(object, start, end, dropper, result), false, "");
+                    if (result != Result::NotFound) {
+                        const auto name = dropper->GetName();
+                        occurences[name] += 1;
+                        findings.push_back({ start, end, result, name });
                         nextOffset = end + 1;
-                        break;
-                    case Result::Ascii:
-                        CHECK(WriteToLog(start, end, result, dropper), false, "");
-                        CHECK(WriteToFile(object, start, end, dropper, result), false, "");
-                        nextOffset = end + 1;
-                        break;
-                    case Result::Unicode:
-                        CHECK(WriteToLog(start, end, result, dropper), false, "");
-                        CHECK(WriteToFile(object, start, end, dropper, result), false, "");
-                        nextOffset = end + 1;
-                        break;
-                    case Result::NotFound:
-                    default:
-                        break;
-                    }
-
-                    if (found) {
                         break;
                     }
                 }
             }
 
             offset = nextOffset;
+        }
+
+        WriteSummaryToLog(occurences);
+        for (const auto& f : findings) {
+            for (auto& dropper : context.droppers) {
+                if (dropper->GetName() == f.dropperName) {
+                    CHECK(WriteToLog(f.start, f.end, f.result, dropper), false, "");
+                    CHECK(WriteToFile(object, f.start, f.end, dropper, f.result), false, "");
+                    break;
+                }
+            }
         }
 
         return true;

@@ -15,12 +15,12 @@ EmailAddress::EmailAddress(bool caseSensitive, bool unicode)
     this->matcherUnicode.Init(EMAIL_REGEX_UNICODE, unicode, caseSensitive);
 }
 
-const char* EmailAddress::GetName()
+const std::string_view EmailAddress::GetName() const
 {
     return "Email Address";
 }
 
-const char* EmailAddress::GetOutputExtension()
+const std::string_view EmailAddress::GetOutputExtension() const
 {
     return "email";
 }

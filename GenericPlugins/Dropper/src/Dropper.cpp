@@ -21,8 +21,9 @@ PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> objec
         auto instance = Instance();
         if (!instance.Process(object)) {
             Dialogs::MessageBox::ShowError("Dropper", "Failed extracting objects!");
+        } else {
+            Dialogs::MessageBox::ShowNotification("Dropper", "Objects extracted.");
         }
-        Dialogs::MessageBox::ShowNotification("Dropper", "Objects extracted.");
         return true;
     }
     return false;

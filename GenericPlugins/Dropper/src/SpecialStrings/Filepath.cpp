@@ -17,12 +17,12 @@ Filepath::Filepath(bool caseSensitive, bool unicode)
     this->matcherUnicode.Init(PATH_REGEX_UNICODE, unicode, caseSensitive);
 }
 
-const char* Filepath::GetName()
+const std::string_view Filepath::GetName() const
 {
     return "Filepath";
 }
 
-const char* Filepath::GetOutputExtension()
+const std::string_view Filepath::GetOutputExtension() const
 {
     return "filepath";
 }

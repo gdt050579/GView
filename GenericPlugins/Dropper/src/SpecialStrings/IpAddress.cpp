@@ -17,12 +17,12 @@ IpAddress::IpAddress(bool caseSensitive, bool unicode)
     this->matcherUnicode.Init(IPS_REGEX_UNICODE, unicode, caseSensitive);
 }
 
-const char* IpAddress::GetName()
+const std::string_view IpAddress::GetName() const
 {
     return "IP Address";
 }
 
-const char* IpAddress::GetOutputExtension()
+const std::string_view IpAddress::GetOutputExtension() const
 {
     return "ip";
 }

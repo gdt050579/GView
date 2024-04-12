@@ -169,27 +169,27 @@ enum class DirectoryType : uint8 {
     COMDescriptor = 14
 };
 
-const char* MZPE::GetName()
+const std::string_view MZPE::GetName() const
 {
     return "MZPE";
 }
 
-ObjectCategory MZPE::GetGroup()
+ObjectCategory MZPE::GetGroup() const
 {
     return ObjectCategory::Executables;
 }
 
-const char* MZPE::GetOutputExtension()
+const std::string_view MZPE::GetOutputExtension() const
 {
     return "mzpe";
 }
 
-Priority MZPE::GetPriority()
+Priority MZPE::GetPriority() const
 {
     return Priority::Binary;
 }
 
-bool MZPE::ShouldGroupInOneFile()
+bool MZPE::ShouldGroupInOneFile() const
 {
     return false;
 }
