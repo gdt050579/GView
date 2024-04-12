@@ -6,6 +6,53 @@ using namespace AppCUI::Graphics;
 using namespace AppCUI::Controls;
 using AppCUI::Graphics::Color;
 
+void ColorManager::InitFromConfigColors(DissasmColors& configColors)
+{
+    this->Colors      = configColors;
+    this->SavedColors = configColors;
+}
+
+void ColorManager::OnLostFocus()
+{
+    SavedColors = Colors;
+    SetAllColorsInactive();
+}
+
+void ColorManager::SetAllColorsInactive()
+{
+    this->Colors.Normal                        = this->Colors.Inactive;
+    this->Colors.Highlight                     = this->Colors.Inactive;
+    this->Colors.HighlightCursorLine           = this->Colors.Inactive;
+    this->Colors.Cursor                        = this->Colors.Inactive;
+    this->Colors.Line                          = this->Colors.Inactive;
+    this->Colors.Selection                     = this->Colors.Inactive;
+    this->Colors.OutsideZone                   = this->Colors.Inactive;
+    this->Colors.StructureColor                = this->Colors.Inactive;
+    this->Colors.DataTypeColor                 = this->Colors.Inactive;
+    this->Colors.AsmOffsetColor                = this->Colors.Inactive;
+    this->Colors.AsmIrrelevantInstructionColor = this->Colors.Inactive;
+    this->Colors.AsmWorkRegisterColor          = this->Colors.Inactive;
+    this->Colors.AsmStackRegisterColor         = this->Colors.Inactive;
+    this->Colors.AsmCompareInstructionColor    = this->Colors.Inactive;
+    this->Colors.AsmFunctionColor              = this->Colors.Inactive;
+    this->Colors.AsmLocationInstruction        = this->Colors.Inactive;
+    this->Colors.AsmJumpInstruction            = this->Colors.Inactive;
+    this->Colors.AsmComment                    = this->Colors.Inactive;
+    this->Colors.AsmDefaultColor               = this->Colors.Inactive;
+    this->Colors.AsmTitleColumnColor           = this->Colors.Inactive;
+
+    this->Colors.CursorNormal      = this->Colors.Inactive;
+    this->Colors.CursorHighlighted = this->Colors.Inactive;
+    this->Colors.CursorLine        = this->Colors.Inactive;
+
+    this->Colors.AsmTitleColor.Foreground = this->Colors.Inactive.Foreground;
+}
+
+void ColorManager::OnGainedFocus()
+{
+    Colors = SavedColors;
+}
+
 void Config::Update(AppCUI::Utils::IniSection sect)
 {
     for (const auto& cmd : AllKeyboardCommands) {
@@ -13,32 +60,37 @@ void Config::Update(AppCUI::Utils::IniSection sect)
     }
 
     sect.UpdateValue("ShowFileContent", true, true);
+    sect.UpdateValue("ShowOnlyDissasm", false, true);
     sect.UpdateValue("DeepScanDissasmOnStart", false, true);
 }
 void Config::Initialize()
 {
-    this->Colors.Inactive                      = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->Colors.Cursor                        = ColorPair{ Color::Black, Color::Yellow };
-    this->Colors.Line                          = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->Colors.Normal                        = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->Colors.Highlight                     = ColorPair{ Color::Yellow, Color::DarkBlue };
-    this->Colors.HighlightCursorLine           = ColorPair{ Color::Teal, Color::Gray };
-    this->Colors.Selection                     = ColorPair{ Color::Black, Color::White };
-    this->Colors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->Colors.StructureColor                = ColorPair{ Color::Magenta, Color::DarkBlue };
-    this->Colors.DataTypeColor                 = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmOffsetColor                = ColorPair{ Color::White, Color::DarkBlue };
-    this->Colors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::DarkBlue };
-    this->Colors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::DarkBlue };
-    this->Colors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::DarkBlue };
-    this->Colors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::DarkBlue };
-    this->Colors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
-    this->Colors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
-    this->Colors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->Colors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
-    this->Colors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
-    this->Colors.AsmTitleColor                 = ColorPair{ Color::Silver, Color::Magenta };
-    this->Colors.AsmTitleColumnColor           = ColorPair{ Color::Yellow, Color::DarkBlue };
+    this->ConfigColors.Inactive                      = ColorPair{ Color::Gray, Color::Transparent };
+    this->ConfigColors.Cursor                        = ColorPair{ Color::Black, Color::Yellow };
+    this->ConfigColors.Line                          = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->ConfigColors.Normal                        = ColorPair{ Color::Silver, Color::DarkBlue };
+    this->ConfigColors.Highlight                     = ColorPair{ Color::Yellow, Color::DarkBlue };
+    this->ConfigColors.HighlightCursorLine           = ColorPair{ Color::Teal, Color::Gray };
+    this->ConfigColors.Selection                     = ColorPair{ Color::Black, Color::White };
+    this->ConfigColors.OutsideZone                   = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->ConfigColors.StructureColor                = ColorPair{ Color::Magenta, Color::DarkBlue };
+    this->ConfigColors.DataTypeColor                 = ColorPair{ Color::Green, Color::DarkBlue };
+    this->ConfigColors.AsmOffsetColor                = ColorPair{ Color::White, Color::DarkBlue };
+    this->ConfigColors.AsmIrrelevantInstructionColor = ColorPair{ Color::Gray, Color::DarkBlue };
+    this->ConfigColors.AsmWorkRegisterColor          = ColorPair{ Color::Aqua, Color::DarkBlue };
+    this->ConfigColors.AsmStackRegisterColor         = ColorPair{ Color::Magenta, Color::DarkBlue };
+    this->ConfigColors.AsmCompareInstructionColor    = ColorPair{ Color::Olive, Color::DarkBlue };
+    this->ConfigColors.AsmFunctionColor              = ColorPair{ Color::Pink, Color::DarkBlue };
+    this->ConfigColors.AsmLocationInstruction        = ColorPair{ Color::Teal, Color::DarkBlue };
+    this->ConfigColors.AsmJumpInstruction            = ColorPair{ Color::Silver, Color::DarkBlue };
+    this->ConfigColors.AsmComment                    = ColorPair{ Color::Silver, Color::DarkBlue };
+    this->ConfigColors.AsmDefaultColor               = ColorPair{ Color::Green, Color::DarkBlue };
+    this->ConfigColors.AsmTitleColor                 = ColorPair{ Color::Silver, Color::Magenta };
+    this->ConfigColors.AsmTitleColumnColor           = ColorPair{ Color::Yellow, Color::DarkBlue };
+
+    this->ConfigColors.CursorNormal      = ConfigColors.Normal;
+    this->ConfigColors.CursorHighlighted = ConfigColors.Highlight;
+    this->ConfigColors.CursorLine        = ConfigColors.Line;
 
     bool foundSettings = false;
     auto ini           = AppCUI::Application::GetAppSettings();
@@ -50,12 +102,14 @@ void Config::Initialize()
             }
 
             this->ShowFileContent              = sect.GetValue("ShowFileContent").ToBool(true);
+            this->ShowOnlyDissasm              = sect.GetValue("ShowOnlyDissasm").ToBool(false);
             this->EnableDeepScanDissasmOnStart = sect.GetValue("DeepScanDissasmOnStart").ToBool(false);
             foundSettings                      = true;
         }
     }
     if (!foundSettings) {
         this->ShowFileContent              = true;
+        this->ShowOnlyDissasm              = false;
         this->EnableDeepScanDissasmOnStart = false;
     }
 

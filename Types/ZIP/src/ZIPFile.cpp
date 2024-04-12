@@ -20,8 +20,7 @@ bool ZIPFile::Update()
     if (isTopContainer) // top container (exists on disk)
     {
         CHECK(GView::ZIP::GetInfo(obj->GetPath(), this->info), false, "");
-    }
-    else // child container (does not exist on disk)
+    } else // child container (does not exist on disk)
     {
         CHECK(GView::ZIP::GetInfo(obj->GetData(), this->info), false, "");
     }
@@ -37,10 +36,8 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
     currentItemIndex = 0;
     curentChildIndexes.clear();
 
-    if (path.empty())
-    {
-        for (uint32 i = 0; i < count; i++)
-        {
+    if (path.empty()) {
+        for (uint32 i = 0; i < count; i++) {
             GView::ZIP::Entry entry{ 0 };
             CHECK(this->info.GetEntry(i, entry), false, "");
 
@@ -50,8 +47,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
             const auto f = filename.find_first_of('/');
 
             if ((entryType == GView::ZIP::EntryType::Directory && f == filename.size() - 1) ||
-                (entryType != GView::ZIP::EntryType::Directory && f == std::string::npos))
-            {
+                (entryType != GView::ZIP::EntryType::Directory && f == std::string::npos)) {
                 curentChildIndexes.push_back(i);
             }
         }
@@ -60,58 +56,24 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
     }
 
     UnicodeStringBuilder usb;
-    for (uint32 i = 0; i < count; i++)
-    {
+    for (uint32 i = 0; i < count; i++) {
         GView::ZIP::Entry entry{ 0 };
         CHECK(this->info.GetEntry(i, entry), false, "");
 
         auto filename        = entry.GetFilename();
         const auto entryType = entry.GetType();
 
-        if (entryType == GView::ZIP::EntryType::Directory)
-        {
-            if (filename[filename.size() - 1] == '/')
-            {
+        if (entryType == GView::ZIP::EntryType::Directory) {
+            if (filename[filename.size() - 1] == '/') {
                 filename = { filename.data(), filename.size() - 1 };
             }
-
-            CHECK(usb.Set(filename), false, "");
-
-            const auto sv = usb.ToStringView();
-            if (sv.size() != path.size() && sv.starts_with(path))
-            {
-                const auto tmpSV = std::u16string_view{ sv.data() + path.size(), sv.size() - path.size() };
-                if (tmpSV.find_first_of('/') == tmpSV.find_last_of('/'))
-                {
-                    curentChildIndexes.push_back(i);
-                }
-            }
         }
-    }
+        CHECK(usb.Set(filename), false, "");
 
-    if (curentChildIndexes.empty())
-    {
-        for (uint32 i = 0; i < count; i++)
-        {
-            GView::ZIP::Entry entry{ 0 };
-            CHECK(this->info.GetEntry(i, entry), false, "");
-
-            auto filename        = entry.GetFilename();
-            const auto entryType = entry.GetType();
-
-            if (entryType == GView::ZIP::EntryType::Directory)
-            {
-                if (filename[filename.size() - 1] == '/')
-                {
-                    filename = { filename.data(), filename.size() - 1 };
-                }
-            }
-
-            CHECK(usb.Set(filename), false, "");
-
-            const auto sv = usb.ToStringView();
-            if (sv != path && usb.ToStringView().starts_with(path))
-            {
+        const auto sv = usb.ToStringView();
+        if (sv.size() != path.size() && sv.starts_with(path)) {
+            const auto tmpSV = std::u16string_view{ sv.data() + path.size(), sv.size() - path.size() };
+            if (tmpSV.find_first_of('/') == tmpSV.find_last_of('/')) {
                 curentChildIndexes.push_back(i);
             }
         }
@@ -137,17 +99,14 @@ bool ZIPFile::PopulateItem(TreeViewItem item)
     item.SetPriority(entryType == GView::ZIP::EntryType::Directory);
     item.SetExpandable(entryType == GView::ZIP::EntryType::Directory);
 
-    if (entryType == GView::ZIP::EntryType::Directory)
-    {
-        if (filename[filename.size() - 1] == '/')
-        {
+    if (entryType == GView::ZIP::EntryType::Directory) {
+        if (filename[filename.size() - 1] == '/') {
             filename = { filename.data(), filename.size() - 1 };
         }
     }
 
     const auto f = filename.find_last_of('/');
-    if (f != std::string::npos)
-    {
+    if (f != std::string::npos) {
         filename = { filename.data() + f + 1, filename.size() - f - 1 };
     }
 
@@ -203,14 +162,12 @@ class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
 
     void OnButtonPressed(Reference<Button> b) override
     {
-        if (b->GetControlID() == CMD_BUTTON_CLOSE || b->GetControlID() == CMD_BUTTON_CANCEL)
-        {
+        if (b->GetControlID() == CMD_BUTTON_CLOSE || b->GetControlID() == CMD_BUTTON_CANCEL) {
             Exit(Dialogs::Result::Cancel);
             return;
         }
 
-        if (b->GetControlID() == CMD_BUTTON_OK)
-        {
+        if (b->GetControlID() == CMD_BUTTON_OK) {
             CHECKRET(input.IsValid(), "");
             CHECKRET(input->GetText().ToString(password), "");
 
@@ -223,13 +180,11 @@ class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
 
     bool OnEvent(Reference<Control> c, Event eventType, int id) override
     {
-        if (Window::OnEvent(c, eventType, id))
-        {
+        if (Window::OnEvent(c, eventType, id)) {
             return true;
         }
 
-        if (eventType == Event::WindowAccept || eventType == Event::PasswordValidate)
-        {
+        if (eventType == Event::WindowAccept || eventType == Event::PasswordValidate) {
             OnButtonPressed(ok);
             return true;
         }
@@ -263,12 +218,10 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         auto desktop         = AppCUI::Application::GetDesktop();
         auto focusedChild    = desktop->GetFocusedChild();
         const auto windowsNo = desktop->GetChildrenCount();
-        for (uint32 i = 0; i < windowsNo; i++)
-        {
+        for (uint32 i = 0; i < windowsNo; i++) {
             auto window = desktop->GetChild(i);
 
-            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window)))
-            {
+            if (window == focusedChild || (focusedChild.IsValid() && focusedChild->HasDistantParent(window))) {
                 parentWindow = window.ToObjectRef<Window>();
                 break;
             }
@@ -278,23 +231,17 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     Buffer buffer{};
     bool decompressed{ false };
 
-    if (entry.IsEncrypted() == false || password.empty() == false)
-    {
-        if (isTopContainer)
-        {
+    if (entry.IsEncrypted() == false || password.empty() == false) {
+        if (isTopContainer) {
             decompressed = this->info.Decompress(buffer, (uint32) index, password);
-        }
-        else
-        {
+        } else {
             const auto cache = obj->GetData().GetEntireFile();
-            if (cache.IsValid())
-            {
+            if (cache.IsValid()) {
                 decompressed = this->info.Decompress(cache, buffer, (uint32) index, password);
             }
         }
 
-        if (decompressed)
-        {
+        if (decompressed) {
             std::u16string path{ obj->GetPath() };
             path.append(u".drop");
             path.push_back((char16_t) std::filesystem::path::preferred_separator);
@@ -314,37 +261,27 @@ void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
             return;
         }
 
-        if (entry.IsEncrypted())
-        {
+        if (entry.IsEncrypted()) {
             Dialogs::MessageBox::ShowError("Error!", "Wrong default password!");
-        }
-        else
-        {
+        } else {
             Dialogs::MessageBox::ShowError("Error!", "Failed to decompress!");
             return;
         }
     }
 
     PasswordDialog pd;
-    while (pd.Show() == Dialogs::Result::Ok)
-    {
-        if (isTopContainer)
-        {
+    while (pd.Show() == Dialogs::Result::Ok) {
+        if (isTopContainer) {
             decompressed = this->info.Decompress(buffer, (uint32) index, pd.GetPassword());
-        }
-        else
-        {
+        } else {
             const auto cache = obj->GetData().GetEntireFile();
-            if (cache.IsValid())
-            {
+            if (cache.IsValid()) {
                 decompressed = this->info.Decompress(cache, buffer, (uint32) index, pd.GetPassword());
             }
         }
 
-        if (decompressed)
-        {
-            if (pd.SavePasswordAsDefault())
-            {
+        if (decompressed) {
+            if (pd.SavePasswordAsDefault()) {
                 this->password = pd.GetPassword();
             }
 
