@@ -8,6 +8,11 @@ constexpr uint32 IMAGE_NT_SIGNATURE  = 0x00004550;
 #define __IMAGE_NUMBEROF_DIRECTORY_ENTRIES 16
 #define __IMAGE_SIZEOF_SHORT_NAME          8
 
+#define __IMAGE_NT_OPTIONAL_HDR32_MAGIC 0x10b
+#define __IMAGE_NT_OPTIONAL_HDR64_MAGIC 0x20b
+
+#pragma pack(push, 4)
+
 #pragma pack(push, 2)
 
 struct ImageDOSHeader {
@@ -89,6 +94,45 @@ struct ImageNTHeaders32 {
     ImageOptionalHeader32 OptionalHeader;
 };
 
+struct ImageOptionalHeader64 {
+    uint16 Magic;
+    uint8 MajorLinkerVersion;
+    uint8 MinorLinkerVersion;
+    uint32 SizeOfCode;
+    uint32 SizeOfInitializedData;
+    uint32 SizeOfUninitializedData;
+    uint32 AddressOfEntryPoint;
+    uint32 BaseOfCode;
+    uint64 ImageBase;
+    uint32 SectionAlignment;
+    uint32 FileAlignment;
+    uint16 MajorOperatingSystemVersion;
+    uint16 MinorOperatingSystemVersion;
+    uint16 MajorImageVersion;
+    uint16 MinorImageVersion;
+    uint16 MajorSubsystemVersion;
+    uint16 MinorSubsystemVersion;
+    uint32 Win32VersionValue;
+    uint32 SizeOfImage;
+    uint32 SizeOfHeaders;
+    uint32 CheckSum;
+    uint16 Subsystem;
+    uint16 DllCharacteristics;
+    uint64 SizeOfStackReserve;
+    uint64 SizeOfStackCommit;
+    uint64 SizeOfHeapReserve;
+    uint64 SizeOfHeapCommit;
+    uint32 LoaderFlags;
+    uint32 NumberOfRvaAndSizes;
+    ImageDataDirectory DataDirectory[__IMAGE_NUMBEROF_DIRECTORY_ENTRIES];
+};
+
+struct ImageNTHeaders64 {
+    uint32 Signature;
+    ImageFileHeader FileHeader;
+    ImageOptionalHeader64 OptionalHeader;
+};
+
 struct ImageSectionHeader {
     uint8 Name[__IMAGE_SIZEOF_SHORT_NAME];
     union {
@@ -103,6 +147,26 @@ struct ImageSectionHeader {
     uint16 NumberOfRelocations;
     uint16 NumberOfLinenumbers;
     uint32 Characteristics;
+};
+
+#pragma pack(pop)
+
+enum class DirectoryType : uint8 {
+    Export        = 0,
+    Import        = 1,
+    Resource      = 2,
+    Exception     = 3,
+    Security      = 4,
+    BaseRelloc    = 5,
+    Debug         = 6,
+    Architecture  = 7,
+    GlobalPTR     = 8,
+    TLS           = 9,
+    Config        = 10,
+    BoundImport   = 11,
+    IAT           = 12,
+    DelayImport   = 13,
+    COMDescriptor = 14
 };
 
 const char* MZPE::GetName()
@@ -145,18 +209,28 @@ Result MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, u
     CHECK(nth32, Result::NotFound, "");
     CHECK(nth32->Signature == IMAGE_NT_SIGNATURE, Result::NotFound, "");
 
-    const auto count    = nth32->FileHeader.NumberOfSections;
-    const auto position = static_cast<uint64>(dos->e_lfanew) + nth32->FileHeader.SizeOfOptionalHeader + sizeof(nth32->Signature) + sizeof(ImageFileHeader);
+    const uint64 count   = nth32->FileHeader.NumberOfSections;
+    const auto position  = static_cast<uint64>(dos->e_lfanew) + nth32->FileHeader.SizeOfOptionalHeader + sizeof(nth32->Signature) + sizeof(ImageFileHeader);
+    auto dataDirectories = &nth32->OptionalHeader.DataDirectory[0];
 
-    const auto b = file.Get(position + count * sizeof(ImageSectionHeader) - 1, sizeof(ImageSectionHeader), true);
-    auto obj     = b.GetObject<ImageSectionHeader>(0);
+    if (nth32->OptionalHeader.Magic == __IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+        auto nth64 = buffer.GetObject<ImageNTHeaders64>(dos->e_lfanew);
+        CHECK(nth64, Result::NotFound, "");
+        CHECK(nth64->Signature == IMAGE_NT_SIGNATURE, Result::NotFound, "");
+        dataDirectories = &nth64->OptionalHeader.DataDirectory[0];
+    }
+    CHECK(dataDirectories, Result::NotFound, "");
 
-    const auto computedSize = obj->PointerToRawData + obj->SizeOfRawData;
+    auto b   = file.Get(offset + position + (count - 1) * sizeof(ImageSectionHeader), sizeof(ImageSectionHeader), true);
+    auto obj = b.GetObject<ImageSectionHeader>(0);
+
+    const auto sec = dataDirectories[(uint8) DirectoryType::Security];
+    const auto computedSize =
+          std::max<uint64>(static_cast<uint64>(obj->PointerToRawData) + obj->SizeOfRawData, static_cast<uint64>(sec.VirtualAddress) + sec.Size);
 
     start = offset;
     end   = offset + computedSize;
 
     return Result::Buffer;
 }
-
 } // namespace GView::GenericPlugins::Droppper::Executables
