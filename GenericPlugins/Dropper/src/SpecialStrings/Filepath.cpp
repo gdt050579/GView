@@ -4,28 +4,30 @@
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
-static constexpr std::string_view EMAIL_REGEX_ASCII{ R"(^([a-z0-9\_\.]+@[a-z\_]+\.[a-z]{2,5}))" };
-static constexpr std::string_view EMAIL_REGEX_UNICODE{ R"(^(([a-z0-9\_\.]\x00)+@\x00([a-z\_]\x00)+\.\x00([a-z]\x00){2,5}))" };
+static constexpr std::string_view PATH_REGEX_ASCII{ R"(^(([a-zA-Z]{1}\:\\[a-zA-Z0-9\\_\. ]+)|(((\/|\.\.)[a-zA-Z\/\.0-9]+\/[a-zA-Z\/\.0-9]+))))" };
+static constexpr std::string_view PATH_REGEX_UNICODE{
+    R"(^((([a-zA-Z]\x00){1}\\x00:\x00\\x00\\x00([a-zA-Z0-9\\_\. ]\x00)+)|((((\/\x00)|\.\x00\.\x00)([a-zA-Z\/\.0-9]\x00)+\/\x00([a-zA-Z\/\.0-9]\x00)+))))"
+};
 
-EmailAddress::EmailAddress(bool caseSensitive, bool unicode)
+Filepath::Filepath(bool caseSensitive, bool unicode)
 {
     this->unicode       = unicode;
     this->caseSensitive = caseSensitive;
-    this->matcherAscii.Init(EMAIL_REGEX_ASCII, unicode, caseSensitive);
-    this->matcherUnicode.Init(EMAIL_REGEX_UNICODE, unicode, caseSensitive);
+    this->matcherAscii.Init(PATH_REGEX_ASCII, unicode, caseSensitive);
+    this->matcherUnicode.Init(PATH_REGEX_UNICODE, unicode, caseSensitive);
 }
 
-const char* EmailAddress::GetName()
+const char* Filepath::GetName()
 {
-    return "Email Address";
+    return "Filepath";
 }
 
-const char* EmailAddress::GetOutputExtension()
+const char* Filepath::GetOutputExtension()
 {
-    return "email";
+    return "filepath";
 }
 
-Result EmailAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+Result Filepath::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
     CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");
     CHECK(IsAsciiPrintable(precachedBuffer.GetData()[0]), Result::NotFound, "");

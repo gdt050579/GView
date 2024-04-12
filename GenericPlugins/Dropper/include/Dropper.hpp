@@ -39,9 +39,13 @@ class Instance
             context.droppers.emplace_back(std::make_unique<MZPE>());
             context.droppers.emplace_back(std::make_unique<PNG>());
 
+            bool isCaseSensitive = false;
+            bool useUnicode      = true;
+
             // strings
-            context.droppers.emplace_back(std::make_unique<IpAddress>(false, true));
-            context.droppers.emplace_back(std::make_unique<EmailAddress>(false, true));
+            context.droppers.emplace_back(std::make_unique<IpAddress>(isCaseSensitive, useUnicode));
+            context.droppers.emplace_back(std::make_unique<EmailAddress>(isCaseSensitive, useUnicode));
+            context.droppers.emplace_back(std::make_unique<Filepath>(isCaseSensitive, useUnicode));
         }
     }
 

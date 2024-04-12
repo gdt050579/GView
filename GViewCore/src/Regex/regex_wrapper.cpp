@@ -17,7 +17,7 @@ bool Matcher::Init(std::string_view expression, bool isUnicode, bool isCaseSensi
 
     RE2::Options options;
     options.set_case_sensitive(isCaseSensitive);
-    options.set_longest_match(true);
+    options.set_longest_match(false);
 
     absl::string_view asv{ expression.data(), expression.size() };
 
@@ -28,6 +28,8 @@ bool Matcher::Init(std::string_view expression, bool isUnicode, bool isCaseSensi
     };
 
     this->context = c;
+
+    return true;
 }
 
 Matcher::~Matcher()
