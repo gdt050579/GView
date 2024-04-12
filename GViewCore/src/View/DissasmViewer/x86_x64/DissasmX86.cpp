@@ -691,6 +691,7 @@ inline bool ExtractCallsToInsertFunctionNames(
     auto data            = instructionData.GetData() + address;
 
     std::vector<std::pair<uint64, std::string>> callsFound;
+    std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
     callsFound.reserve(16);
     bool foundCall     = false;
     uint64 callAddress = 0;
@@ -704,8 +705,14 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (value < offsets[0].offset)
                     value += offsets[0].offset;
                 const char* prefix = isJump ? "offset_0x" : "sub_0x";
-                auto callName      = FormatFunctionName(value, prefix);
+                const auto it      = callsMap.find(value);
+                if (it != callsMap.end()) {
+                    if (isJump == it->second)
+                        continue;
+                }
+                auto callName = FormatFunctionName(value, prefix);
                 callsFound.emplace_back(value, callName.GetText());
+                callsMap.insert({ value, isJump });
             }
         } else {
             const auto mnemonicVal = *(uint32*) insn->mnemonic;
@@ -713,9 +720,15 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
                     if (callAddress < offsets[0].offset)
                         callAddress += offsets[0].offset;
+                    const auto it = callsMap.find(callAddress);
+                    if (it != callsMap.end()) {
+                        if (it->second)
+                            continue;
+                    }
                     const char* prefix = "sub_0x";
                     auto callName      = FormatFunctionName(callAddress, prefix);
                     callsFound.emplace_back(callAddress, callName.GetText());
+                    callsMap.insert({ callAddress, true });
                 }
                 foundCall = false;
             } else {
@@ -745,8 +758,19 @@ inline bool ExtractCallsToInsertFunctionNames(
         return OTHER;
     };
 
-    // TODO: this can be extracted for the user to add / delete its own operations
+    std::vector<uint32> indexesToErase;
+    for (int32 i = static_cast<int32>(callsFound.size()) - 1; i >= 0; i--) {
+        const auto& call = callsFound[i];
+        if (call.first == zone->zoneDetails.entryPoint) {
+            indexesToErase.push_back(i);
+            break;
+        }
+    }
+    for (const auto indexToErase : indexesToErase)
+        callsFound.erase(callsFound.begin() + indexToErase);
+
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+    // TODO: this can be extracted for the user to add / delete its own operations
     std::sort(callsFound.begin(), callsFound.end(), [getLabelType](const auto& a, const auto& b) {
         if (a.first < b.first)
             return true;
@@ -985,9 +1009,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto& mapping_ptr = params.settings->memoryMappings.find(hexVal);
         if (mapping_ptr != params.settings->memoryMappings.end())
             mappingPtr = &mapping_ptr->second;
-        const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
-        if (mapping2 != params.settings->memoryMappings.end())
-            mappingPtr = &mapping2->second;
+        else {
+            const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
+            if (mapping2 != params.settings->memoryMappings.end())
+                mappingPtr = &mapping2->second;
+        }
 
         if (mappingPtr) {
             mapping     = mappingPtr;
@@ -1454,8 +1480,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
                     }
                     val++;
                 }
-            } else if (insn->op_str[0] == '0' && insn->op_str[1] == '\0') {
-                computedValue = zone->cachedCodeOffsets[0].offset;
+            } else if (insn->op_str[0] >= '0' && insn->op_str[0] <= '9' && insn->op_str[1] == '\0') {
+                computedValue = zone->cachedCodeOffsets[0].offset + (insn->op_str[0] - '0');
             } else {
                 cs_free(insn, 1);
                 return;
