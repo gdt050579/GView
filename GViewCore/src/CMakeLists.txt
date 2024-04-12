@@ -11,7 +11,6 @@ add_subdirectory(ZLIB)
 add_subdirectory(Dissasembly)
 add_subdirectory(ZIP)
 add_subdirectory(SQLite3)
-add_subdirectory(Unpack)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     target_sources(GViewCore PRIVATE main.cpp)

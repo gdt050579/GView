@@ -197,18 +197,17 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/ZIP)
     add_subdirectory(Types/SQLite)
     add_subdirectory(Types/JCLASS)
-    add_subdirectory(Types/EML)
+
 
     # Generic plugins supported by GView
     add_subdirectory(GenericPlugins/CharacterTable)
     add_subdirectory(GenericPlugins/Hashes)
     add_subdirectory(GenericPlugins/SyncCompare)
     add_subdirectory(GenericPlugins/DropperStrings)
-    add_subdirectory(GenericPlugins/Unpackers)
-                                                                    
+
     if (APPLE)
-            set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
+        set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
     elseif (UNIX)
-        set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
+	    set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
     endif()
 endif()
