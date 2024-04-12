@@ -12,8 +12,7 @@ std::u16string EMLFile::ExtractContentType(TextParser text, uint32 start, uint32
 {
     start = text.ParseUntillText(start, "content-type", true);
 
-    if (start >= text.Len())
-    {
+    if (start >= text.Len()) {
         return u"";
     }
 
@@ -49,15 +48,12 @@ bool EMLFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
     EML_Item_Record& itemData = items[itemsIndex];
     TextParser text(unicodeString.ToStringView());
 
-    if (itemData.leafNode) 
-    {
+    if (itemData.leafNode) {
         item.SetText(0, contentType);
-    } 
-    else
-    {
+    } else {
         item.SetText(0, ExtractContentType(text, itemData.startIndex, itemData.startIndex + itemData.dataLength));
     }
-    
+
     item.SetText(1, String().Format("%u", itemData.dataLength));
     item.SetText(2, String().Format("%u", itemData.startIndex + itemData.parentStartIndex));
 
@@ -71,29 +67,30 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 {
     auto itemData = item.GetData<EML_Item_Record>();
 
+    TextParser text(unicodeString.ToStringView());
+    auto contentType = ExtractContentType(text, itemData->startIndex, itemData->startIndex + itemData->dataLength);
+
     auto bufferView = obj->GetData().GetEntireFile();
     BufferView itemBufferView(bufferView.GetData() + itemData->startIndex, itemData->dataLength);
 
-    if (!itemData->leafNode)
-    {
-        GView::App::OpenBuffer(itemBufferView, obj->GetName(), path, GView::App::OpenMethod::ForceType, "eml");
-    }
-    else
-    {
+    if (!itemData->leafNode) {
+        GView::App::OpenBuffer(itemBufferView, contentType, path, GView::App::OpenMethod::ForceType, "eml");
+    } else {
         const auto& encodingHeader =
-                std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
+              std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
 
         if (encodingHeader != headerFields.end() && encodingHeader->second == u"base64") {
             Buffer output;
-
             if (GView::Unpack::Base64::Decode(itemBufferView, output)) {
-                GView::App::OpenBuffer(output, obj->GetName(), path, GView::App::OpenMethod::BestMatch);
+                auto bufferName = GetBufferNameFromHeaderFields();
+                GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
             } else {
                 AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
             }
 
         } else {
-            GView::App::OpenBuffer(itemBufferView, obj->GetName(), path, GView::App::OpenMethod::BestMatch);
+            auto bufferName = GetBufferNameFromHeaderFields();
+            GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
         }
     }
 }
@@ -101,9 +98,8 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 uint32 EMLFile::ParseHeaderFieldBody(TextParser text, uint32 start)
 {
     uint32 end = text.ParseUntillText(start, "\r\n", false);
-    
-    while (end + 2 < text.Len())
-    {
+
+    while (end + 2 < text.Len()) {
         auto ch = text[end + 2];
         if (ch != ' ' && ch != '\t')
             break;
@@ -118,8 +114,7 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
 {
     uint32 start = index, end = index;
 
-    while (start < text.Len())
-    {
+    while (start < text.Len()) {
         if (text.GetSubString(start, start + 2) == u"\r\n") // end of headers
         {
             start += 2; // skip CRLF
@@ -144,8 +139,7 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
         while ((pos = fieldBody.find(u"\r\n", pos)) != std::u16string::npos)
             fieldBody.replace(pos, 2, u"");
 
-        if (fieldName == u"Content-Type")
-        {
+        if (fieldName == u"Content-Type") {
             contentType = fieldBody;
         }
 
@@ -156,6 +150,22 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
     }
 
     index = start;
+}
+
+std::u16string EMLFile::GetBufferNameFromHeaderFields()
+{
+    for (const auto& header : headerFields) {
+        auto name_it = header.second.find(u"name=");
+        if (name_it == std::u16string::npos)
+            continue;
+        if (name_it + 5 /*strlen("name=")*/ + 2 /* 2* '"' */ >= header.second.size())
+            continue;
+        name_it += 5;
+        auto actual_name = header.second.substr(name_it + 1, header.second.size() - name_it - 2);
+        return actual_name;
+    }
+
+    return std::u16string(obj->GetName());
 }
 
 void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end)
@@ -169,8 +179,7 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
 
     u16string_view type = contentTypeParser.GetSubString(0, typeEnd);
 
-    if (type == u"multipart")
-    {
+    if (type == u"multipart") {
         // get the boundary for the parts
         std::string boundary;
 
@@ -179,14 +188,11 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
 
         uint32 boundaryEnd;
 
-        if (contentTypeParser[boundaryStart] == '"')
-        {
+        if (contentTypeParser[boundaryStart] == '"') {
             // the boundary is enclosed in quotes
             boundaryStart++;
             boundaryEnd = contentTypeParser.ParseUntillText(boundaryStart, "\"", false);
-        }
-        else
-        {
+        } else {
             boundaryEnd = contentTypeParser.ParseUntillText(boundaryStart, ";", false);
         }
 
@@ -198,13 +204,11 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
         uint32 partStart = start;
         uint32 partEnd;
 
-        do
-        {
+        do {
             partStart = text.ParseUntilNextCharacterAfterText(partStart, boundary, false);
             partStart = text.ParseSpace(partStart, SpaceType::All);
 
-            if (text.ParseUntillText(partStart, "--", false) == partStart)
-            {
+            if (text.ParseUntillText(partStart, "--", false) == partStart) {
                 // end of part
                 break;
             }
@@ -220,8 +224,7 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
         return;
     }
 
-    if (type == u"message")
-    {
+    if (type == u"message") {
         items.emplace_back(EML_Item_Record{ .parentStartIndex = 0, .startIndex = start, .dataLength = end - start, .leafNode = false });
         return;
     }

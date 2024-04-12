@@ -32,6 +32,7 @@ namespace Type
           private:
             friend class Panels::Information;
 
+            std::u16string GetBufferNameFromHeaderFields();
             std::vector<std::pair<std::u16string, std::u16string>> headerFields;
 
             void ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end);
