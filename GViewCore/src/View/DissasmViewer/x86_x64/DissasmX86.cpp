@@ -1895,7 +1895,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     paramsPtr->isCollapsed = currentType.isCollapsed;
     paramsPtr->zoneName    = &currentType.name;
 
-    assert(asmCacheLine.TryGetDataFromInsn(*paramsPtr));
+    const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
+    assert(isValidData);
     lastDrawnLine = asmLine;
 
     // uint32 difflines = 0;
