@@ -1297,7 +1297,7 @@ void Instance::OnStart()
         settings->maxLocationMemoryMappingSize /= 10;
     }
     // TODO: do a research! this is an imperative setting
-    settings->maxLocationMemoryMappingSize = maxSize + 1;
+    settings->maxLocationMemoryMappingSize = maxSize;
 
     GView::Hashes::CRC32 crc32{};
     uint32 hashVal = 0;

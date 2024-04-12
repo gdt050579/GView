@@ -745,8 +745,19 @@ inline bool ExtractCallsToInsertFunctionNames(
         return OTHER;
     };
 
-    // TODO: this can be extracted for the user to add / delete its own operations
+    std::vector<uint32> indexesToErase;
+    for (int32 i = static_cast<int32>(callsFound.size()) - 1; i >= 0; i--) {
+        const auto& call = callsFound[i];
+        if (call.first == zone->zoneDetails.entryPoint) {
+            indexesToErase.push_back(i);
+            break;
+        }
+    }
+    for (const auto indexToErase : indexesToErase)
+        callsFound.erase(callsFound.begin() + indexToErase);
+
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+    // TODO: this can be extracted for the user to add / delete its own operations
     std::sort(callsFound.begin(), callsFound.end(), [getLabelType](const auto& a, const auto& b) {
         if (a.first < b.first)
             return true;
