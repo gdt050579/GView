@@ -41,6 +41,7 @@ class Instance
 
             // strings
             context.droppers.emplace_back(std::make_unique<IpAddress>(false, true));
+            context.droppers.emplace_back(std::make_unique<EmailAddress>(false, true));
         }
     }
 

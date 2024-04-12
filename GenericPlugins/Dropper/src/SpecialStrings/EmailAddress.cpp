@@ -4,45 +4,43 @@
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
-static const std::string_view IPS_REGEX_ASCII{ R"(^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(\:[0-9]{1,5})*))" };
-static const std::string_view IPS_REGEX_UNICODE{
-    R"(^(([0-9]\x00){1,3}\.\x00([0-9]\x00){1,3}\.\x00([0-9]\x00){1,3}\.\x00([0-9]\x00){1,3}(\:\x00([0-9]\x00){1,5})*))"
-};
+static constexpr std::string_view EMAIL_REGEX_ASCII{ R"(([a-z0-9\_\.]+@[a-z\_]+\.[a-z]{2,5}))" };
+static constexpr std::string_view EMAIL_REGEX_UNICODE{ R"(^(([a-z0-9\_\.]\x00)+@\x00([a-z\_]\x00)+\.\x00([a-z]\x00){2,5}))" };
 
-IpAddress::IpAddress(bool caseSensitive, bool unicode)
+EmailAddress::EmailAddress(bool caseSensitive, bool unicode)
 {
     this->unicode       = unicode;
     this->caseSensitive = caseSensitive;
-    this->matcherAscii.Init(IPS_REGEX_ASCII, unicode, caseSensitive);
-    this->matcherUnicode.Init(IPS_REGEX_UNICODE, unicode, caseSensitive);
+    this->matcherAscii.Init(EMAIL_REGEX_ASCII, unicode, caseSensitive);
+    this->matcherUnicode.Init(EMAIL_REGEX_UNICODE, unicode, caseSensitive);
 }
 
-const char* IpAddress::GetName()
+const char* EmailAddress::GetName()
 {
-    return "IP Address";
+    return "Email Address";
 }
 
-ObjectCategory IpAddress::GetGroup()
+ObjectCategory EmailAddress::GetGroup()
 {
     return ObjectCategory::SpecialStrings;
 }
 
-const char* IpAddress::GetOutputExtension()
+const char* EmailAddress::GetOutputExtension()
 {
-    return "ip";
+    return "email";
 }
 
-Priority IpAddress::GetPriority()
+Priority EmailAddress::GetPriority()
 {
     return Priority::Text;
 }
 
-bool IpAddress::ShouldGroupInOneFile()
+bool EmailAddress::ShouldGroupInOneFile()
 {
     return true;
 }
 
-Result IpAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+Result EmailAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
     CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");
     CHECK(IsAsciiPrintable(precachedBuffer.GetData()[0]), Result::NotFound, "");
