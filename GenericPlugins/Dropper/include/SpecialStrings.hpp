@@ -80,4 +80,14 @@ class Registry : public SpecialStrings
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
+class Text : public SpecialStrings
+{
+  public:
+    Text(bool caseSensitive, bool unicode);
+
+    virtual const std::string_view GetName() const override;
+    virtual const std::string_view GetOutputExtension() const override;
+
+    virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
+};
 } // namespace GView::GenericPlugins::Droppper::SpecialStrings

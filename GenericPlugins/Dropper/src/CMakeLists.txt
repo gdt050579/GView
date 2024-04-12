@@ -5,6 +5,7 @@ target_sources(Dropper PRIVATE
 	SpecialStrings/Filepath.cpp
 	SpecialStrings/IpAddress.cpp
 	SpecialStrings/Registry.cpp
+	SpecialStrings/Text.cpp
 	SpecialStrings/URL.cpp
 	SpecialStrings/Wallet.cpp
 	Executables/MZPE.cpp

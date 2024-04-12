@@ -41,7 +41,7 @@ class Instance
             context.droppers.emplace_back(std::make_unique<MZPE>());
             context.droppers.emplace_back(std::make_unique<PNG>());
 
-            bool isCaseSensitive = false;
+            bool isCaseSensitive = true;
             bool useUnicode      = true;
 
             // strings
@@ -51,6 +51,7 @@ class Instance
             context.droppers.emplace_back(std::make_unique<Registry>(isCaseSensitive, useUnicode));
             context.droppers.emplace_back(std::make_unique<Wallet>(isCaseSensitive, useUnicode));
             context.droppers.emplace_back(std::make_unique<Filepath>(isCaseSensitive, useUnicode));
+            context.droppers.emplace_back(std::make_unique<Text>(isCaseSensitive, useUnicode));
         }
     }
 

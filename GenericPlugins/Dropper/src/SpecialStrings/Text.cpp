@@ -4,38 +4,34 @@
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
-// bitcoin + ethereum + stellar
+static const std::string_view TEXT_REGEX_ASCII{ R"(^([a-zA-Z .0-9\_\<\>\(\)@]{10,}))" };
+static const std::string_view TEXT_REGEX_UNICODE{ R"(^(([a-zA-Z .0-9\_\<\>\(\)@]\x00){10,}))" };
 
-static const std::string_view WALLET_REGEX_ASCII{ R"(^(((bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39})|(0x[a-fA-F0-9]{40})|(G[a-zA-Z0-9]{55})))" };
-static const std::string_view WALLET_REGEX_UNICODE{
-    R"(^(((b\x00c\x001\x00|([13]\x00))([a-zA-HJ-NP-Z0-9]\x00){25,39})|(0x\x00([a-fA-F0-9]\x00){40})|(G\x00([a-zA-Z0-9]\x00){55})))"
-};
-
-Wallet::Wallet(bool caseSensitive, bool unicode)
+Text::Text(bool caseSensitive, bool unicode)
 {
     this->unicode       = unicode;
     this->caseSensitive = caseSensitive;
-    this->matcherAscii.Init(WALLET_REGEX_ASCII, unicode, caseSensitive);
-    this->matcherUnicode.Init(WALLET_REGEX_UNICODE, unicode, caseSensitive);
+    this->matcherAscii.Init(TEXT_REGEX_ASCII, unicode, caseSensitive);
+    this->matcherUnicode.Init(TEXT_REGEX_UNICODE, unicode, caseSensitive);
 }
 
-const std::string_view Wallet::GetName() const
+const std::string_view Text::GetName() const
 {
-    return "Wallet";
+    return "Text";
 }
 
-const std::string_view Wallet::GetOutputExtension() const
+const std::string_view Text::GetOutputExtension() const
 {
-    return "wallet";
+    return "text";
 }
 
-Result Wallet::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+Result Text::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
     CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");
     CHECK(IsAsciiPrintable(precachedBuffer.GetData()[0]), Result::NotFound, "");
 
     auto buffer = file.Get(offset, file.GetCacheSize() / 12, false);
-    CHECK(buffer.GetLength() >= 16, Result::NotFound, "");
+    CHECK(buffer.GetLength() >= 10, Result::NotFound, "");
 
     if (this->matcherAscii.Match(buffer, start, end)) {
         start += offset;
