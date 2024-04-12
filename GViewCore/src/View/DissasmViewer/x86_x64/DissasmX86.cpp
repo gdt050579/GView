@@ -722,7 +722,7 @@ inline bool ExtractCallsToInsertFunctionNames(
                         callAddress += offsets[0].offset;
                     const auto it = callsMap.find(callAddress);
                     if (it != callsMap.end()) {
-                        if (it->second)
+                        if (!it->second)
                             continue;
                     }
                     const char* prefix = "sub_0x";
