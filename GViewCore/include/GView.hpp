@@ -1436,6 +1436,12 @@ namespace App
     uint32 CORE_EXPORT GetTypePluginsCount();
 
 }; // namespace App
+
+namespace Unpack::Base64
+{
+    CORE_EXPORT void Encode(BufferView view, Buffer& output);
+    CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+}
 }; // namespace GView
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);
