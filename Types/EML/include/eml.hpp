@@ -7,6 +7,8 @@ struct EML_Item_Record
     uint32 parentStartIndex;
     uint32 startIndex;
     uint32 dataLength;
+    std::u16string contentType;
+    std::u16string identifier;
     bool leafNode;
 };
 
@@ -32,6 +34,9 @@ namespace Type
           private:
             friend class Panels::Information;
 
+            //getting strings of format that start with "name=" and get the string between the quotes
+            std::optional<std::u16string> TryGetNameQuotes(std::u16string& contentTypeToSearch, bool removeIfFound = false);
+            std::u16string GetIdentifierFromContentType(std::u16string& contentTypeToChange);
             std::u16string GetBufferNameFromHeaderFields();
             std::vector<std::pair<std::u16string, std::u16string>> headerFields;
 

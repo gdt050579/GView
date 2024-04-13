@@ -39,8 +39,35 @@ bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
     items.clear();
 
     ParsePart(text, 0, text.Len());
+    if (items.empty())
+        return false;
 
-    return items.size() > 0;
+    uint32 modeNr = 1, attachmentsNr = 1;
+    for (auto& itemData : items) {
+        itemData.contentType = itemData.leafNode ? contentType : ExtractContentType(text, itemData.startIndex, itemData.startIndex + itemData.dataLength);
+        itemData.identifier  = GetIdentifierFromContentType(itemData.contentType);
+        if (!itemData.identifier.empty())
+            continue;
+        if (itemData.contentType.starts_with(u"multipart")) {
+            itemData.identifier = u"body message";
+        } else if (itemData.contentType.starts_with(u"application")) {
+            LocalString<32> attachment = {};
+            attachment.SetFormat("attachment %u", attachmentsNr);
+            LocalUnicodeStringBuilder<32> sb = {};
+            sb.Set(attachment.GetText());
+            itemData.identifier = sb.ToStringView();
+            attachmentsNr++;
+        } else {
+            LocalString<32> mode = {};
+            mode.SetFormat("mode %u", modeNr);
+            LocalUnicodeStringBuilder<32> sb = {};
+            sb.Set(mode.GetText());
+            itemData.identifier = sb.ToStringView();
+            modeNr++;
+        }
+    }
+
+    return true;
 }
 
 bool EMLFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
@@ -48,14 +75,12 @@ bool EMLFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
     EML_Item_Record& itemData = items[itemsIndex];
     TextParser text(unicodeString.ToStringView());
 
-    if (itemData.leafNode) {
-        item.SetText(0, contentType);
-    } else {
-        item.SetText(0, ExtractContentType(text, itemData.startIndex, itemData.startIndex + itemData.dataLength));
-    }
+    std::u16string contentTypeNode = itemData.leafNode ? contentType : ExtractContentType(text, itemData.startIndex, itemData.startIndex + itemData.dataLength);
 
-    item.SetText(1, String().Format("%u", itemData.dataLength));
-    item.SetText(2, String().Format("%u", itemData.startIndex + itemData.parentStartIndex));
+    item.SetText(0, itemData.identifier);
+    item.SetText(1, itemData.contentType);
+    item.SetText(2, String().Format("%u", itemData.dataLength));
+    item.SetText(3, String().Format("%u", itemData.startIndex + itemData.parentStartIndex));
 
     item.SetData<EML_Item_Record>(&itemData);
 
@@ -68,13 +93,13 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     auto itemData = item.GetData<EML_Item_Record>();
 
     TextParser text(unicodeString.ToStringView());
-    auto contentType = ExtractContentType(text, itemData->startIndex, itemData->startIndex + itemData->dataLength);
+    auto currentContentType = ExtractContentType(text, itemData->startIndex, itemData->startIndex + itemData->dataLength);
 
     auto bufferView = obj->GetData().GetEntireFile();
     BufferView itemBufferView(bufferView.GetData() + itemData->startIndex, itemData->dataLength);
 
     if (!itemData->leafNode) {
-        GView::App::OpenBuffer(itemBufferView, contentType, path, GView::App::OpenMethod::ForceType, "eml");
+        GView::App::OpenBuffer(itemBufferView, currentContentType, path, GView::App::OpenMethod::ForceType, "eml");
     } else {
         const auto& encodingHeader =
               std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
@@ -152,17 +177,41 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
     index = start;
 }
 
+std::optional<std::u16string> EMLFile::TryGetNameQuotes(std::u16string& contentTypeToSearch, bool removeIfFound)
+{
+    auto name_it = contentTypeToSearch.find(u"name=");
+    if (name_it == std::u16string::npos)
+        return { std::nullopt };
+    if (name_it + 5 /*strlen("name=")*/ + 2 /* 2* '"' */ >= contentTypeToSearch.size())
+        return {};
+    name_it += 5; // strlen("name=")
+    const auto actual_name = contentTypeToSearch.substr(name_it + 1, contentTypeToSearch.size() - name_it - 2);
+    auto name_string       = std::u16string(actual_name);
+    if (removeIfFound) {
+        contentTypeToSearch.erase(name_it - 5, 5 + 2 + actual_name.size()); // strlen("name="
+        if (contentTypeToSearch[contentTypeToSearch.size() - 1] == u' ')
+            contentTypeToSearch.erase(contentTypeToSearch.size() - 1, 1);
+        if (contentTypeToSearch[contentTypeToSearch.size() - 1] == u';')
+            contentTypeToSearch.erase(contentTypeToSearch.size() - 1, 1);
+    }
+    return name_string;
+}
+
+std::u16string EMLFile::GetIdentifierFromContentType(std::u16string& contentTypeToChange)
+{
+    auto name_value = TryGetNameQuotes(contentTypeToChange, true);
+    if (name_value.has_value())
+        return name_value.value();
+
+    return u"";
+}
+
 std::u16string EMLFile::GetBufferNameFromHeaderFields()
 {
-    for (const auto& header : headerFields) {
-        auto name_it = header.second.find(u"name=");
-        if (name_it == std::u16string::npos)
-            continue;
-        if (name_it + 5 /*strlen("name=")*/ + 2 /* 2* '"' */ >= header.second.size())
-            continue;
-        name_it += 5;
-        auto actual_name = header.second.substr(name_it + 1, header.second.size() - name_it - 2);
-        return actual_name;
+    for (auto& header : headerFields) {
+        auto name_value = TryGetNameQuotes(header.second);
+        if (name_value.has_value())
+            return name_value.value();
     }
 
     return std::u16string(obj->GetName());
