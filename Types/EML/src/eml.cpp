@@ -9,22 +9,22 @@ using namespace GView::Type;
 using namespace GView;
 using namespace GView::View;
 
-constexpr string_view EML_ICON = ".....WWWWWW....."  // 1
-                                 ".....W.........."  // 2
-                                 ".....WWWWWW....."  // 3
-                                 ".....W.........."  // 4
-                                 ".....WWWWWW....."  // 5
-                                 "................"  // 6
-                                 ".....WW...WW...."  // 7
-                                 ".....W.W.W.W...."  // 8
-                                 ".....W..W..W...."  // 9
-                                 ".....W.....W...."  // 10
-                                 "................"  // 11
-                                 ".....W.........."  // 12
-                                 ".....W.........."  // 13
-                                 ".....W.........."  // 14
-                                 ".....W.........."  // 15
-                                 ".....WWWWW......"; // 16
+constexpr string_view EML_ICON = "1111111111111111"  // 1
+                                 "1111111111111111"  // 2
+                                 "1111111111111111"  // 3
+                                 "1111111111111111"  // 4
+                                 "wwwwwwwwwwwwwwww"  // 5
+                                 "ww111111111111ww"  // 6
+                                 "w1ww11111111ww1w"  // 7
+                                 "w111ww1111ww111w"  // 8
+                                 "w11111wwww11111w"  // 9
+                                 "w11111111111111w"  // 10
+                                 "w11111111111111w"  // 11
+                                 "wwwwwwwwwwwwwwww"  // 12
+                                 "1111111111111111"  // 13
+                                 "1111111111111111"  // 14
+                                 "1111111111111111"  // 15
+                                 "1111111111111111"; // 16
 
 void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)
 {
