@@ -1,4 +1,7 @@
 #include "eml.hpp"
+#include <string>
+#include <locale>
+#include <codecvt>
 
 using namespace AppCUI;
 using namespace AppCUI::Utils;
@@ -26,9 +29,29 @@ constexpr string_view EML_ICON = "1111111111111111"  // 1
                                  "1111111111111111"  // 15
                                  "1111111111111111"; // 16
 
+template <typename T>
+std::string toUTF8(const std::basic_string<T>& source)
+{
+    std::string result;
+
+    std::wstring_convert<std::codecvt_utf8_utf16<T>, T> convertor;
+    result = convertor.to_bytes(source);
+
+    return result;
+}
+
 void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<EML::EMLFile> eml)
 {
     ContainerViewer::Settings settings;
+
+    const auto& headers = eml->GetHeaders();
+    for (const auto& [name, value] : headers) {
+        if (name == u"Cc") // TODO: to be removed when issues https://github.com/gdt050579/GView/issues/301 is fixed
+            continue;
+
+        std::string nameStr = toUTF8(name);
+        settings.AddProperty(nameStr, value);
+    }
 
     settings.SetIcon(EML_ICON);
     settings.SetColumns({
@@ -58,6 +81,9 @@ PLUGIN_EXPORT TypeInterface* CreateInstance()
 PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto eml = win->GetObject()->GetContentType<EML::EMLFile>();
+
+    // TODO: consider check??
+    eml->ProcessData();
 
     CreateContainerView(win, eml);
     win->AddPanel(Pointer<TabPage>(new EML::Panels::Information(eml)), true);

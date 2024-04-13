@@ -58,6 +58,8 @@ namespace Type
                 // here
             }
           public:
+
+            bool ProcessData();
             Reference<GView::Utils::SelectionZoneInterface> selectionZoneInterface;
 
             uint32 GetSelectionZonesCount() override
@@ -73,6 +75,10 @@ namespace Type
                 CHECK(index < selectionZoneInterface->GetSelectionZonesCount(), d, "");
 
                 return selectionZoneInterface->GetSelectionZone(index);
+            }
+            const std::vector<std::pair<std::u16string, std::u16string>>& GetHeaders()
+            {
+                return headerFields;
             }
 
             // View::ContainerViewer::EnumerateInterface

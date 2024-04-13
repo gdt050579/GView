@@ -8,31 +8,9 @@ EMLFile::EMLFile()
 {
 }
 
-std::u16string EMLFile::ExtractContentType(TextParser text, uint32 start, uint32 end)
+bool EMLFile::ProcessData()
 {
-    start = text.ParseUntillText(start, "content-type", true);
-
-    if (start >= text.Len()) {
-        return u"";
-    }
-
-    // TODO: make a function that extracts both the header and the field body
-    start = text.ParseUntillText(start, ":", false);
-    start = text.ParseSpace(start + 1, SpaceType::All);
-    end   = ParseHeaderFieldBody(text, start);
-
-    std::u16string fieldBody(text.GetSubString(start, end));
-
-    size_t pos = 0;
-    while ((pos = fieldBody.find(u"\r\n", pos)) != std::u16string::npos)
-        fieldBody.replace(pos, 2, u"");
-
-    return fieldBody.substr(0, fieldBody.find(u';'));
-}
-
-bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
-{
-    unicodeString.Add(obj->GetData().GetEntireFile());
+    unicodeString.Set(obj->GetData().GetEntireFile());
     TextParser text(unicodeString.ToStringView());
 
     itemsIndex = 0;
@@ -67,6 +45,34 @@ bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
         }
     }
 
+    return true;
+}
+
+std::u16string EMLFile::ExtractContentType(TextParser text, uint32 start, uint32 end)
+{
+    start = text.ParseUntillText(start, "content-type", true);
+
+    if (start >= text.Len()) {
+        return u"";
+    }
+
+    // TODO: make a function that extracts both the header and the field body
+    start = text.ParseUntillText(start, ":", false);
+    start = text.ParseSpace(start + 1, SpaceType::All);
+    end   = ParseHeaderFieldBody(text, start);
+
+    std::u16string fieldBody(text.GetSubString(start, end));
+
+    size_t pos = 0;
+    while ((pos = fieldBody.find(u"\r\n", pos)) != std::u16string::npos)
+        fieldBody.replace(pos, 2, u"");
+
+    return fieldBody.substr(0, fieldBody.find(u';'));
+}
+
+bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+{
+    itemsIndex = 0;
     return true;
 }
 
