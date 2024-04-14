@@ -14,7 +14,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 8> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -30,8 +30,19 @@ const std::array<AsmFunctionDetails, 8> KNOWN_FUNCTIONS = { {
           { "dwCreationDisposition", "DWORD" },
           { "dwFlagsAndAttributes", "DWORD" },
           { "hTemplateFile", "HANDLE" } } },
+      { "CreateFileA",
+        {
+              { "lpFileName", "LPCSTR" },
+              { "dwDesiredAccess", "DWORD" },
+              { "dwShareMode", "DWORD" },
+              { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
+              { "dwCreationDisposition", "DWORD" },
+              { "dwFlagsAndAttributes", "DWORD" },
+              { "hTemplateFile", "HANDLE" },
+        } },
       { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } },
       { "RegOpenKeyExW", { { "hKey", "HKEY" }, { "lpSubKey", "LPCWSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
+      { "RegOpenKeyExA", { { "hKey", "HKEY" }, { "lpSubKey", "LPCSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
       { "RegSetValueExW",
         { { "hKey", "HKEY" },
           { "lpValueName", "LPCWSTR" },
