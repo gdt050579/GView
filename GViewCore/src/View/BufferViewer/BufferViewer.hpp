@@ -6,8 +6,7 @@ namespace GView::View::BufferViewer
 {
 using namespace AppCUI;
 
-enum class CharacterFormatMode : uint8
-{
+enum class CharacterFormatMode : uint8 {
     Hex,
     Octal,
     SignedDecimal,
@@ -15,19 +14,13 @@ enum class CharacterFormatMode : uint8
 
     Count // Must be the last
 };
-enum class StringType : uint8
-{
-    None,
-    Ascii,
-    Unicode
-};
-struct OffsetTranslationMethod
-{
+enum class StringType : uint8 { None, Ascii, Unicode };
+struct OffsetTranslationMethod {
     FixSizeString<17> name;
 };
-struct SettingsData
-{
+struct SettingsData {
     GView::Utils::ZonesList zList;
+    GView::Utils::ZonesList zListObjects;
     uint64 bookmarks[10];
     uint64 entryPointOffset;
     OffsetTranslationMethod translationMethods[16];
@@ -45,26 +38,17 @@ struct SettingsData
     GView::Dissasembly::Design design{ GView::Dissasembly::Design::Invalid };
     GView::Dissasembly::Endianess endianess{ GView::Dissasembly::Endianess::Invalid };
 };
-enum class MouseLocation : uint8
-{
-    OnView,
-    OnHeader,
-    Outside
-};
-struct MousePositionInfo
-{
+enum class MouseLocation : uint8 { OnView, OnHeader, Outside };
+struct MousePositionInfo {
     MouseLocation location;
     uint64 bufferOffset;
 };
-struct Config
-{
-    struct
-    {
+struct Config {
+    struct {
         ColorPair Ascii;
         ColorPair Unicode;
     } Colors;
-    struct
-    {
+    struct {
         AppCUI::Input::Key ChangeColumnsNumber;
         AppCUI::Input::Key ChangeValueFormatOrCP;
         AppCUI::Input::Key ChangeAddressMode;
@@ -148,10 +132,9 @@ class FindDialog : public Window, public Handlers::OnCheckInterface
     }
 };
 
-class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface
+class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInterface, public GView::Utils::ObjectHighlightingZonesInterface
 {
-    struct DrawLineInfo
-    {
+    struct DrawLineInfo {
         uint64 offset{ 0 };
         uint32 offsetAndNameSize{ 0 };
         uint32 numbersSize{ 0 };
@@ -165,8 +148,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         DrawLineInfo() = default;
     };
 
-    struct
-    {
+    struct {
         CharacterFormatMode charFormatMode{ CharacterFormatMode::Hex };
         uint32 nrCols{ 0 };
         uint32 lineAddressSize{ 8 };
@@ -179,8 +161,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         uint32 xText{ 0 };
     } Layout;
 
-    struct
-    {
+    struct {
       private:
         uint64 startView{ 0 };
         uint64 currentPos{ 0 };
@@ -220,8 +201,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         }
     } cursor;
 
-    struct
-    {
+    struct {
         uint64 start, end, middle;
         uint32 minCount{ 4 };
         bool AsciiMask[256];
@@ -231,13 +211,11 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         bool showUnicode{ true };
     } StringInfo;
 
-    struct
-    {
+    struct {
         ColorPair Normal, Line, Highlighted;
     } CursorColors;
 
-    struct
-    {
+    struct {
         uint8 buffer[256]{ 0 };
         uint32 size{ 0 };
         uint64 start{ GView::Utils::INVALID_OFFSET };
@@ -256,6 +234,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     bool moveInSync{ false };
     bool showTypeObjects{ true };
     bool showCodeExecution{ false };
+    bool showObjectsHighlighting{ false };
     CodePage codePage{ CodePageID::DOS_437 };
     Pointer<SettingsData> settings;
     Reference<GView::Object> obj;
@@ -352,8 +331,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     uint32 GetSelectionZonesCount() const override
     {
         uint32 count = 0;
-        for (; count < selection.GetCount(); count++)
-        {
+        for (; count < selection.GetCount(); count++) {
             CHECKBK(selection.HasSelection(count), "");
         }
 
@@ -366,6 +344,29 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
         CHECK(index < selection.GetCount(), z, "");
 
         return GView::TypeInterface::SelectionZone{ .start = selection.GetSelectionStart(index), .end = selection.GetSelectionEnd(index) };
+    }
+
+    virtual uint32 GetObjectsZonesCount() const
+    {
+        return static_cast<uint32>(this->settings->zListObjects.GetCount());
+    }
+
+    virtual std::optional<GView::Utils::Zone> GetObjectsZone(uint32 index) const
+    {
+        return this->settings->zListObjects.GetZone(index);
+    }
+
+    bool SetZones(const GView::Utils::ZonesList& zones) override
+    {
+        this->settings->zListObjects.Clear();
+
+        for (uint32 i = 0; zones.GetCount(); i++) {
+            const auto zone = zones.GetZone(i);
+            CHECK(zone.has_value(), false, "");
+            CHECK(this->settings->zListObjects.Add(*zone), false, "");
+        }
+
+        return true;
     }
 
     Reference<GView::Object> GetObject() const

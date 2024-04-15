@@ -287,6 +287,26 @@ class Instance
             }
         }
 
+        CHECK(ToggleSync(true), false, "");
+
+        return true;
+    }
+
+    bool ToggleSync(bool value)
+    {
+        auto desktop         = AppCUI::Application::GetDesktop();
+        const auto windowsNo = desktop->GetChildrenCount();
+        for (uint32 i = 0; i < windowsNo; i++) {
+            auto window    = desktop->GetChild(i);
+            auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+            auto view      = interface->GetCurrentView();
+
+            view->OnEvent(
+                  nullptr,
+                  AppCUI::Controls::Event::Command,
+                  value ? View::VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING : View::VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING);
+        }
+
         return true;
     }
 };

@@ -28,7 +28,15 @@ bool ZonesList::Add(uint64 s, uint64 e, ColorPair c, std::string_view txt)
     return true;
 }
 
-const std::optional<Zone> ZonesList::OffsetToZone(uint64 position) const
+bool ZonesList::Add(const Zone& zone)
+{
+    CHECK(context != nullptr, false, "");
+    auto ctx = reinterpret_cast<ZonesListContext*>(this->context);
+    ctx->zones.emplace_back(zone);
+    return true;
+}
+
+std::optional<Zone> ZonesList::OffsetToZone(uint64 position) const
 {
     CHECK(context != nullptr, std::nullopt, "");
     auto ctx = reinterpret_cast<ZonesListContext*>(this->context);
@@ -64,4 +72,28 @@ bool ZonesList::SetCache(const Zone::Interval& interval)
     });
 
     return true;
+}
+
+void ZonesList::Clear()
+{
+    CHECKRET(context != nullptr, "");
+    auto ctx = reinterpret_cast<ZonesListContext*>(this->context);
+
+    ctx->zones.clear();
+    ctx->cache.clear();
+}
+
+uint32 ZonesList::GetCount() const
+{
+    CHECK(context != nullptr, 0, "");
+    auto ctx = reinterpret_cast<ZonesListContext*>(this->context);
+    return static_cast<uint32>(ctx->zones.size());
+}
+
+std::optional<Zone> ZonesList::GetZone(uint32 index) const
+{
+    CHECK(context != nullptr, std::nullopt, "");
+    auto ctx = reinterpret_cast<ZonesListContext*>(this->context);
+    CHECK(index < ctx->zones.size(), std::nullopt, "");
+    return ctx->zones.at(index);
 }

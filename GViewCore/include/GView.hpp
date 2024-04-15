@@ -179,8 +179,18 @@ namespace Utils
         ~ZonesList();
 
         bool Add(uint64 start, uint64 end, AppCUI::Graphics::ColorPair c, std::string_view txt);
-        const std::optional<Zone> OffsetToZone(uint64 offset) const;
+        bool Add(const Zone& zone);
+        std::optional<Zone> OffsetToZone(uint64 offset) const;
         bool SetCache(const Zone::Interval& interval);
+        void Clear();
+        uint32 GetCount() const;
+        std::optional<Zone> GetZone(uint32 index) const;
+    };
+
+    struct CORE_EXPORT ObjectHighlightingZonesInterface {
+        virtual uint32 GetObjectsZonesCount() const                    = 0;
+        virtual std::optional<Zone> GetObjectsZone(uint32 index) const = 0;
+        virtual bool SetZones(const ZonesList& zones)                  = 0;
     };
 } // namespace Utils
 
@@ -829,6 +839,8 @@ namespace View
     constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
     constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
     constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING{ 0xBF16 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING{ 0xBF17 };
 
     struct ViewData {
         uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
@@ -843,6 +855,10 @@ namespace View
 
     struct CORE_EXPORT OnStartViewMoveInterface {
         virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
+    };
+
+    struct CORE_EXPORT WriteObjectsHighlightingZonesListInterface {
+        virtual bool WriteObjectsHighlightingZonesList(const GView::Utils::ZonesList& zones) = 0;
     };
 
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface {
@@ -875,25 +891,11 @@ namespace View
 
         virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
 
-        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
-        {
-            return false;
-        }
-
-        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
-        {
-            return false;
-        }
-
-        virtual bool GetViewData(ViewData&, uint64)
-        {
-            return false;
-        }
-
-        virtual bool AdvanceStartView(int64)
-        {
-            return false;
-        }
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>);
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>);
+        virtual bool GetViewData(ViewData&, uint64);
+        virtual bool AdvanceStartView(int64);
+        virtual bool SetWriteObjectsHighlightingZonesListCallback(Reference<WriteObjectsHighlightingZonesListInterface>);
 
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
@@ -936,6 +938,7 @@ namespace View
             Settings();
             ~Settings();
             void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
+            void SetZonesListForObjectHighlighting(const GView::Utils::ZonesList& zones);
             void AddBookmark(uint8 bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
