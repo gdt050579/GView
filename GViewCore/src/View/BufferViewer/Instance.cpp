@@ -117,6 +117,11 @@ bool Instance::AdvanceStartView(int64 offset)
     return true;
 }
 
+bool Instance::SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones)
+{
+    return this->SetZones(zones);
+}
+
 void Instance::OpenCurrentSelection()
 {
     uint64 start, end;
@@ -1032,19 +1037,25 @@ void Instance::Paint(Renderer& renderer)
     WriteHeaders(renderer);
 
     const auto& startView = cursor.GetStartView();
-    settings->zList.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
+    if (showObjectsHighlighting) {
+        settings->zListObjects.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
+    } else {
+        settings->zList.SetCache({ startView, ((uint64) Layout.charactersPerLine) * (Layout.visibleRows - 1ull) + startView });
+    }
 
     DrawLineInfo dli;
     for (uint32 tr = 0; tr < Layout.visibleRows; tr++) {
         dli.offset = ((uint64) Layout.charactersPerLine) * tr + startView;
-        if (dli.offset >= obj->GetData().GetSize())
+        if (dli.offset >= obj->GetData().GetSize()) {
             break;
+        }
         PrepareDrawLineInfo(dli);
         WriteLineAddress(dli);
-        if (Layout.nrCols == 0)
+        if (Layout.nrCols == 0) {
             WriteLineTextToChars(dli);
-        else
+        } else {
             WriteLineNumbersToChars(dli);
+        }
         renderer.WriteSingleLineCharacterBuffer(0, tr + 1, chars, false);
     }
 }
@@ -1507,9 +1518,19 @@ int Instance::PrintCursorPosInfo(int x, int y, uint32 width, bool addSeparator, 
 }
 int Instance::PrintCursorZone(int x, int y, uint32 width, Renderer& r)
 {
-    if (auto z = this->settings->zList.OffsetToZone(this->cursor.GetCurrentPosition())) {
+    std::optional<GView::Utils::Zone> z;
+    if (showObjectsHighlighting) {
+        z = this->settings->zListObjects.OffsetToZone(this->cursor.GetCurrentPosition());
+    }
+
+    if (!z) {
+        z = this->settings->zList.OffsetToZone(this->cursor.GetCurrentPosition());
+    }
+
+    if (z) {
         r.WriteSingleLineText(x, y, width, z->name, this->CursorColors.Highlighted);
     }
+
     r.WriteSpecialCharacter(x + width, y, SpecialChars::BoxVerticalSingleLine, this->CursorColors.Line);
     return x + width + 1;
 }

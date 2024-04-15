@@ -229,6 +229,7 @@ class Instance
 
         std::vector<Data> findings;
         std::map<std::string_view, uint32> occurences;
+        GView::Utils::ZonesList zones;
 
         DataCache& cache  = object->GetData();
         uint64 nextOffset = offset;
@@ -266,6 +267,7 @@ class Instance
                         const auto name = dropper->GetName();
                         occurences[name] += 1;
                         findings.push_back({ start, end, result, name });
+                        zones.Add(start, end, AppCUI::Graphics::DefaultColorPair, dropper->GetName());
                         nextOffset = end + 1;
                         break;
                     }
@@ -287,12 +289,12 @@ class Instance
             }
         }
 
-        CHECK(ToggleSync(true), false, "");
+        CHECK(ToggleSync(true, zones), false, "");
 
         return true;
     }
 
-    bool ToggleSync(bool value)
+    bool ToggleSync(bool value, GView::Utils::ZonesList& zones)
     {
         auto desktop         = AppCUI::Application::GetDesktop();
         const auto windowsNo = desktop->GetChildrenCount();
@@ -301,10 +303,15 @@ class Instance
             auto interface = window.ToObjectRef<GView::View::WindowInterface>();
             auto view      = interface->GetCurrentView();
 
-            view->OnEvent(
-                  nullptr,
-                  AppCUI::Controls::Event::Command,
-                  value ? View::VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING : View::VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING);
+            if (value) {
+                CHECK(view->SetObjectsHighlightingZonesList(zones), false, "");
+            }
+            CHECK(view->OnEvent(
+                        nullptr,
+                        AppCUI::Controls::Event::Command,
+                        value ? View::VIEW_COMMAND_ACTIVATE_OBJECT_HIGHLIGHTING : View::VIEW_COMMAND_DEACTIVATE_OBJECT_HIGHLIGHTING),
+                  false,
+                  "");
         }
 
         return true;

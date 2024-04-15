@@ -288,6 +288,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>) override;
     virtual bool GetViewData(ViewData&, uint64) override;
     virtual bool AdvanceStartView(int64) override;
+    virtual bool SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones) override;
 
   public:
     Instance(Reference<GView::Object> obj, Settings* settings);
@@ -360,7 +361,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     {
         this->settings->zListObjects.Clear();
 
-        for (uint32 i = 0; zones.GetCount(); i++) {
+        for (uint32 i = 0; i < zones.GetCount(); i++) {
             const auto zone = zones.GetZone(i);
             CHECK(zone.has_value(), false, "");
             CHECK(this->settings->zListObjects.Add(*zone), false, "");

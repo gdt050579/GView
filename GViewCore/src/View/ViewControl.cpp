@@ -61,7 +61,7 @@ bool ViewControl::AdvanceStartView(int64)
     return false;
 }
 
-bool ViewControl::SetWriteObjectsHighlightingZonesListCallback(Reference<WriteObjectsHighlightingZonesListInterface>)
+bool ViewControl::SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones)
 {
     return false;
 }

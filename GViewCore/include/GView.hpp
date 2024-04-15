@@ -857,10 +857,6 @@ namespace View
         virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
     };
 
-    struct CORE_EXPORT WriteObjectsHighlightingZonesListInterface {
-        virtual bool WriteObjectsHighlightingZonesList(const GView::Utils::ZonesList& zones) = 0;
-    };
-
     struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface {
       protected:
         const AppCUI::Application::Config& Cfg;
@@ -895,7 +891,7 @@ namespace View
         virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>);
         virtual bool GetViewData(ViewData&, uint64);
         virtual bool AdvanceStartView(int64);
-        virtual bool SetWriteObjectsHighlightingZonesListCallback(Reference<WriteObjectsHighlightingZonesListInterface>);
+        virtual bool SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones);
 
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
