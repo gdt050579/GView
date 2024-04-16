@@ -306,7 +306,7 @@ void Instance::RemoveComment()
         Dialogs::MessageBox::ShowNotification("Warning", "Please remove comment inside the region, not on the title!");
         return;
     }
-    startingLine--;
+    startingLine -= 2;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     convertedZone->RemoveComment(startingLine);
