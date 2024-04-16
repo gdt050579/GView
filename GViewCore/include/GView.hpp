@@ -1448,7 +1448,7 @@ namespace Unpack
     {
         CORE_EXPORT void Encode(BufferView view, Buffer& output);
         CORE_EXPORT bool Decode(BufferView view, Buffer& output);
-    } // namespace Hex
+    } // namespace QuotedPrintable
 } // namespace Unpack
 }; // namespace GView
 
