@@ -111,19 +111,28 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         const auto& encodingHeader =
               std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
 
-        if (encodingHeader != headerFields.end() && encodingHeader->second == u"base64") {
+        const auto headerValueName = GetBufferNameFromHeaderFields();
+        const auto bufferName      = GetGViewFileName(headerValueName, itemData->identifier);
+
+        if (encodingHeader != headerFields.end()) {
             Buffer output;
-            if (GView::Unpack::Base64::Decode(itemBufferView, output)) {
-                const auto headerValueName = GetBufferNameFromHeaderFields();
-                const auto bufferName      = GetGViewFileName(headerValueName, itemData->identifier);
-                GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
+            if (encodingHeader->second == u"base64") {
+                if (GView::Unpack::Base64::Decode(itemBufferView, output)) {
+                    GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
+                } else {
+                    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
+                }
+            } else if (encodingHeader->second == u"quoted-printable") {
+                if (GView::Unpack::QuotedPrintable::Decode(itemBufferView, output)) {
+                    GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
+                } else {
+                    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed quoted-printable buffer!");
+                }
             } else {
-                AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
+                GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
             }
 
         } else {
-            const auto headerValueName = GetBufferNameFromHeaderFields();
-            const auto bufferName      = GetGViewFileName(headerValueName, itemData->identifier);
             GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
         }
     }
