@@ -1548,15 +1548,22 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
 void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation)
 {
-    if (!selection.HasSelection(0)) {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone!");
+    if (operation == CollapsibleZoneOperation::Add && !selection.HasSelection(0)) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to add a zone!");
         return;
     }
 
-    const auto lineStart = selection.GetSelectionStart(0);
-    const auto lineEnd   = selection.GetSelectionEnd(0);
+    uint32 lineStart;
+    uint32 lineEnd;
+    if (selection.HasSelection(0)) {
+        lineStart = selection.GetSelectionStart(0).line;
+        lineEnd   = selection.GetSelectionEnd(0).line;
+    } else {
+        lineStart = Cursor.lineInView + Cursor.startViewLine;
+        lineEnd   = lineStart + 1;
+    }
 
-    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart.line, lineEnd.line);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart, lineEnd);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
@@ -1576,7 +1583,7 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
 
     const uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
-    const uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
+    const uint32 zoneLinesCount = lineEnd - lineStart + 1u;
     const uint32 zoneLineEnd    = zoneLineStart + zoneLinesCount;
 
     int32 difference          = 0;
