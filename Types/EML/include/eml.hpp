@@ -38,6 +38,7 @@ namespace Type
             std::optional<std::u16string> TryGetNameQuotes(std::u16string& contentTypeToSearch, bool removeIfFound = false);
             std::u16string GetIdentifierFromContentType(std::u16string& contentTypeToChange);
             std::u16string GetBufferNameFromHeaderFields();
+            std::u16string GetGViewFileName(const std::u16string& value, const std::u16string& prefix);
             std::vector<std::pair<std::u16string, std::u16string>> headerFields;
 
             void ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end);

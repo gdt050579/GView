@@ -105,7 +105,8 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     BufferView itemBufferView(bufferView.GetData() + itemData->startIndex, itemData->dataLength);
 
     if (!itemData->leafNode) {
-        GView::App::OpenBuffer(itemBufferView, currentContentType, path, GView::App::OpenMethod::ForceType, "eml");
+        auto bufferName = GetGViewFileName(currentContentType, itemData->identifier);
+        GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::ForceType, "eml");
     } else {
         const auto& encodingHeader =
               std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
@@ -113,14 +114,16 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         if (encodingHeader != headerFields.end() && encodingHeader->second == u"base64") {
             Buffer output;
             if (GView::Unpack::Base64::Decode(itemBufferView, output)) {
-                auto bufferName = GetBufferNameFromHeaderFields();
+                const auto headerValueName = GetBufferNameFromHeaderFields();
+                const auto bufferName      = GetGViewFileName(headerValueName, itemData->identifier);
                 GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
             } else {
                 AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
             }
 
         } else {
-            auto bufferName = GetBufferNameFromHeaderFields();
+            const auto headerValueName = GetBufferNameFromHeaderFields();
+            const auto bufferName      = GetGViewFileName(headerValueName, itemData->identifier);
             GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
         }
     }
@@ -221,6 +224,20 @@ std::u16string EMLFile::GetBufferNameFromHeaderFields()
     }
 
     return std::u16string(obj->GetName());
+}
+
+std::u16string EMLFile::GetGViewFileName(const std::u16string& value, const std::u16string& prefix)
+{
+    LocalUnicodeStringBuilder<64> sb = {};
+    if (!prefix.empty()) {
+        sb.Add(prefix);
+        sb.AddChar(':');
+        sb.AddChar(' ');
+    }
+    sb.Add(value);
+    std::u16string output;
+    sb.ToString(output);
+    return output;
 }
 
 void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end)
