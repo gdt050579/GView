@@ -1446,6 +1446,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint64 computedValue = 0;
     cs_insn* insn;
     if (!offsetToReach) {
+        if (line <= 1)
+            return;
+
         const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
         decltype(DissasmCodeZone::types) types                = zone->types;
         decltype(DissasmCodeZone::levels) levels              = zone->levels;
