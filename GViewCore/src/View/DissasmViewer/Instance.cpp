@@ -268,7 +268,7 @@ void Instance::AddComment()
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }
-    startingLine--;
+    startingLine -= 2;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
 
