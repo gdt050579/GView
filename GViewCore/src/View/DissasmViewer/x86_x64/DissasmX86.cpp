@@ -1338,9 +1338,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset);
-    auto& lastZone = zone->types.back().get();
     std::string comment;
-    if (lastZone.commentsData.GetComment(currentLine, comment)) {
+    assert(asmCacheLine->parent);
+    if (asmCacheLine->parent && !asmCacheLine->parent->isCollapsed && asmCacheLine->parent->commentsData.GetComment(currentLine, comment)) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (config.ShowOnlyDissasm)
             diffLine -= textAndOpCodesTotalLength;
@@ -1901,6 +1901,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
+    asmCacheLine.parent = &currentType;
     if (changedLevel && newLevelChangeData.hasName) {
         asmCacheLine.shouldAddButton = true;
         asmCacheLine.isZoneCollapsed = newLevelChangeData.isCollapsed;

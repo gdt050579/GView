@@ -153,6 +153,7 @@ namespace View
             uint8 flags;
             uint8 lineArrowToDraw;
             const void* mapping;
+            const DissasmCodeInternalType* parent;
 
             bool shouldAddButton;
             bool isZoneCollapsed;
@@ -177,6 +178,7 @@ namespace View
                 mapping         = other.mapping;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                parent          = other.parent;
                 shouldAddButton = other.shouldAddButton;
                 isZoneCollapsed = false;
             }
@@ -192,6 +194,7 @@ namespace View
                 mapping         = other.mapping;
                 memcpy(bytes, other.bytes, sizeof(bytes));
                 memcpy(mnemonic, other.mnemonic, CS_MNEMONIC_SIZE);
+                parent          = other.parent;
                 shouldAddButton = other.shouldAddButton;
                 isZoneCollapsed = false;
             }
@@ -415,7 +418,7 @@ namespace View
             bool TryRenameLine(uint32 line);
 
             bool GetComment(uint32 line, std::string& comment);
-            bool AddOrUpdateComment(uint32 line, const std::string& comment,bool showErr = true);
+            bool AddOrUpdateComment(uint32 line, const std::string& comment, bool showErr = true);
             bool RemoveComment(uint32 line, bool showErr = true);
             DissasmAsmPreCacheLine GetCurrentAsmLine(uint32 currentLine, Reference<GView::Object> obj, DissasmInsnExtractLineParams* params);
         };
