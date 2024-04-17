@@ -10,11 +10,13 @@
 #include "SpecialStrings.hpp"
 #include "Executables.hpp"
 #include "Multimedia.hpp"
+#include "HtmlObjects.hpp"
 
 using namespace GView::Utils;
 using namespace GView::GenericPlugins::Droppper::SpecialStrings;
 using namespace GView::GenericPlugins::Droppper::Executables;
 using namespace GView::GenericPlugins::Droppper::Multimedia;
+using namespace GView::GenericPlugins::Droppper::HtmlObjects;
 
 namespace GView::GenericPlugins::Droppper
 {
@@ -40,6 +42,11 @@ class Instance
             // binary
             context.droppers.emplace_back(std::make_unique<MZPE>());
             context.droppers.emplace_back(std::make_unique<PNG>());
+
+            // html objects
+            context.droppers.emplace_back(std::make_unique<IFrame>());
+            context.droppers.emplace_back(std::make_unique<Script>());
+            context.droppers.emplace_back(std::make_unique<XML>());
 
             bool isCaseSensitive = true;
             bool useUnicode      = true;
@@ -236,13 +243,18 @@ class Instance
 
         ProgressStatus::Init("Searching...", size);
         LocalString<512> ls;
-        const char* format          = "[%llu/%llu] bytes... Found [%llu] objects.";
+        const char* format          = "[%llu/%llu] bytes... Found [%u] objects.";
         constexpr uint64 CHUNK_SIZE = 10000;
         uint64 chunks               = offset / CHUNK_SIZE;
         uint64 toUpdate             = chunks * CHUNK_SIZE;
         while (offset < size) {
             if (offset >= toUpdate) {
-                CHECKBK(ProgressStatus::Update(offset, ls.Format(format, offset, size, occurences.size())) == false, "");
+                uint32 objectsCount = 0;
+                for (const auto& [_, v] : occurences) {
+                    objectsCount += v;
+                }
+
+                CHECKBK(ProgressStatus::Update(offset, ls.Format(format, offset, size, objectsCount)) == false, "");
                 chunks += 1;
                 toUpdate = chunks * CHUNK_SIZE;
 
@@ -250,10 +262,17 @@ class Instance
             }
 
             auto buffer = GetPrecachedBuffer(offset, cache);
-            nextOffset  = offset + 1;
+            CHECKBK(buffer.GetLength() > 0, "");
+            nextOffset = offset + 1;
 
             for (uint32 i = 0; i < static_cast<uint32>(Priority::Count); i++) {
                 const auto priority = static_cast<Priority>(i);
+                if (priority == Priority::Text) {
+                    if (!IDrop::IsAsciiPrintable(buffer.GetData()[0])) {
+                        continue;
+                    }
+                }
+
                 for (auto& dropper : context.droppers) {
                     if (dropper->GetPriority() != priority) {
                         continue;
@@ -267,8 +286,16 @@ class Instance
                         const auto name = dropper->GetName();
                         occurences[name] += 1;
                         findings.push_back({ start, end, result, name });
-                        zones.Add(start, end, AppCUI::Graphics::DefaultColorPair, dropper->GetName());
                         nextOffset = end + 1;
+
+                        // adjust for zones
+                        if (result == Result::Unicode) {
+                            end -= 2;
+                        } else if (result == Result::Ascii) {
+                            end -= 1;
+                        }
+                        zones.Add(start, end, OBJECT_CATEGORY_COLOR_MAP.at(dropper->GetGroup()), dropper->GetName());
+
                         break;
                     }
                 }
@@ -276,7 +303,12 @@ class Instance
 
             offset = nextOffset;
         }
-        ProgressStatus::Update(size, ls.Format(format, size, size, occurences.size()));
+
+        uint32 objectsCount = 0;
+        for (const auto& [_, v] : occurences) {
+            objectsCount += v;
+        }
+        ProgressStatus::Update(size, ls.Format(format, size, size, objectsCount));
 
         WriteSummaryToLog(occurences);
         for (const auto& f : findings) {

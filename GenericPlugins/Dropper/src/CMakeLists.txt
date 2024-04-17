@@ -9,4 +9,7 @@ target_sources(Dropper PRIVATE
 	SpecialStrings/URL.cpp
 	SpecialStrings/Wallet.cpp
 	Executables/MZPE.cpp
+	HtmlObjects/IFrame.cpp
+	HtmlObjects/Script.cpp
+	HtmlObjects/XML.cpp
 	Multimedia/PNG.cpp)

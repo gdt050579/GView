@@ -82,6 +82,10 @@ class Registry : public SpecialStrings
 };
 class Text : public SpecialStrings
 {
+  private:
+    uint32 minLength{ 8 };
+    uint32 maxLength{ 128 };
+
   public:
     Text(bool caseSensitive, bool unicode);
 
@@ -89,5 +93,8 @@ class Text : public SpecialStrings
     virtual const std::string_view GetOutputExtension() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
+    
+    bool SetMinLength(uint32 minLength);
+    bool SetMaxLength(uint32 maxLength);
 };
 } // namespace GView::GenericPlugins::Droppper::SpecialStrings

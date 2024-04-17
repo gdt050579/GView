@@ -41,6 +41,17 @@ static const std::map<ObjectCategory, std::string_view> OBJECT_CATEGORY_MAP{
     { ObjectCategory::Multimedia, "Multimedia" },   { ObjectCategory::SpecialStrings, "Special Strings" },
 };
 
+static const std::map<ObjectCategory, ColorPair> OBJECT_CATEGORY_COLOR_MAP{
+    { ObjectCategory::Archive, ColorPair{ .Foreground = Color::White, .Background = Color::Black } },
+    { ObjectCategory::AVStrings, ColorPair{ .Foreground = Color::White, .Background = Color::DarkBlue } },
+    { ObjectCategory::Cryptographic, ColorPair{ .Foreground = Color::White, .Background = Color::DarkGreen } },
+    { ObjectCategory::Executables, ColorPair{ .Foreground = Color::White, .Background = Color::Teal } },
+    { ObjectCategory::HtmlObjects, ColorPair{ .Foreground = Color::White, .Background = Color::DarkRed } },
+    { ObjectCategory::Image, ColorPair{ .Foreground = Color::White, .Background = Color::Magenta } },
+    { ObjectCategory::Multimedia, ColorPair{ .Foreground = Color::White, .Background = Color::Olive } },
+    { ObjectCategory::SpecialStrings, ColorPair{ .Foreground = Color::Black, .Background = Color::Silver } },
+};
+
 class IDrop
 {
   public:
