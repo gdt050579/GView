@@ -377,6 +377,7 @@ namespace View
             BufferView lastData;
             uint32 lastReachedLine = -1u;
 
+            //fields only for dissasmx86/x64
             const uint8* asmData;
             uint64 asmSize, asmAddress;
 
