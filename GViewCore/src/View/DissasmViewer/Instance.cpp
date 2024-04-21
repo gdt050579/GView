@@ -386,8 +386,6 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                     return DrawDissasmZone(dli, (DissasmCodeZone*) zones[i].get());
                 case DissasmParseZoneType::CollapsibleAndTextZone:
                     return DrawCollapsibleAndTextZone(dli, (CollapsibleAndTextZone*) zones[i].get());
-                case DissasmParseZoneType::JavaBytecodeZone:
-                    return DrawJavaBytecodeZone(dli, (JavaBytecodeZone*) zones[i].get());
                 default:
                     return false;
                 }
@@ -734,14 +732,17 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
 bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
-    // TODO: extend java bytecode struct to be drawn here!!
-    if (zone->zoneDetails.language != DisassemblyLanguage::x86 && zone->zoneDetails.language != DisassemblyLanguage::x64) {
+    switch (zone->zoneDetails.language) {
+    case DisassemblyLanguage::x86:
+    case DisassemblyLanguage::x64:
+        return DrawDissasmX86AndX64CodeZone(dli, zone);
+    case DisassemblyLanguage::JavaByteCode:
+        return DrawDissasmJavaByteCodeZone(dli, zone);
+    default:
         dli.WriteErrorToScreen("Not yet supported language!");
         AdjustZoneExtendedSize(zone, 1);
         return true;
     }
-
-    return DrawDissasmX86AndX64CodeZone(dli, zone);
 }
 
 void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet)
@@ -851,21 +852,7 @@ void Instance::RecomputeDissasmZones()
         mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
     }
     for (auto& dissasmZone : settings->disassemblyZones) {
-        // TODO: improve this
-        DissasmParseZoneType zoneType;
-        switch (dissasmZone.second.language) {
-        case DisassemblyLanguage::x86:
-        case DisassemblyLanguage::x64:
-            zoneType = DissasmParseZoneType::DissasmCodeParseZone;
-            break;
-        case DisassemblyLanguage::JavaByteCode:
-            zoneType = DissasmParseZoneType::JavaBytecodeZone;
-            break;
-        default:
-            // unimplemented
-            abort();
-        }
-        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, zoneType });
+        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
     }
     for (auto& zone : settings->collapsibleAndTextZones) {
         mappingData[OffsetToLinePosition(zone.first).line].push_back({ &zone.second, DissasmParseZoneType::CollapsibleAndTextZone });
@@ -975,24 +962,6 @@ void Instance::RecomputeDissasmZones()
                 // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
                 lastZoneEndingIndex = collapsibleZone->endingLineIndex;
                 settings->parseZones.push_back(std::move(collapsibleZone));
-            } break;
-            case DissasmParseZoneType::JavaBytecodeZone: {
-                const auto convertedData          = static_cast<DisassemblyZone*>(entry.data);
-                auto javaByteCodeZone             = std::make_unique<JavaBytecodeZone>();
-                javaByteCodeZone->zoneDetails     = *convertedData;
-                javaByteCodeZone->startLineIndex  = zoneStartingLine;
-                javaByteCodeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
-                javaByteCodeZone->endingLineIndex = javaByteCodeZone->startLineIndex + 1;
-                javaByteCodeZone->zoneID          = currentIndex++;
-                javaByteCodeZone->zoneType        = DissasmParseZoneType::JavaBytecodeZone;
-                javaByteCodeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
-
-                if (!javaByteCodeZone->isCollapsed)
-                    javaByteCodeZone->endingLineIndex += javaByteCodeZone->extendedSize;
-
-                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
-                lastZoneEndingIndex = javaByteCodeZone->endingLineIndex;
-                settings->parseZones.push_back(std::move(javaByteCodeZone));
             } break;
             }
         }
