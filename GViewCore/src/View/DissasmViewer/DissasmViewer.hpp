@@ -69,7 +69,7 @@ namespace View
             uint32 GetExpandedSize() const;
         };
 
-        enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone, JavaBytecodeZone };
+        enum class DissasmParseZoneType : uint8 { StructureParseZone, DissasmCodeParseZone, CollapsibleAndTextZone };
 
         struct ParseZone {
             uint32 startLineIndex;
@@ -100,13 +100,6 @@ namespace View
 
         struct CollapsibleAndTextZone : public ParseZone {
             CollapsibleAndTextData data;
-        };
-
-        // JClass code
-        struct JavaBytecodeZone : public ParseZone {
-            DisassemblyZone zoneDetails;
-            bool isInit;
-            std::vector<std::string> bytecodeLines;
         };
 
         struct AsmOffsetLine {
@@ -285,8 +278,9 @@ namespace View
                 index = 0;
             }
 
-            DissasmAsmPreCacheData() : index(0), maxLineSize(0)
+            DissasmAsmPreCacheData(size_t initial_size = 128) : index(0), maxLineSize(0)
             {
+                cachedAsmLines.reserve(initial_size);
             }
             ~DissasmAsmPreCacheData()
             {
@@ -617,9 +611,9 @@ namespace View
             bool WriteStructureToScreen(DrawLineInfo& dli, const DissasmStructureType& currentType, uint32 spaces, DissasmParseStructureZone* structureZone);
             bool DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZone* zone);
             bool DrawStructureZone(DrawLineInfo& dli, DissasmParseStructureZone* structureZone);
-            bool DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone);
             bool DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
+            bool DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone);
             bool PrepareDrawLineInfo(DrawLineInfo& dli);
 
             void RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet = false);
