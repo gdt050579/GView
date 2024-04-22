@@ -130,10 +130,12 @@ extern "C"
             settings.SetArchitecture(GView::Dissasembly::Architecture::x86);
             settings.SetDesign(GView::Dissasembly::Design::ARM);
             settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
         case PE::MachineType::ARM64:
             settings.SetArchitecture(GView::Dissasembly::Architecture::x64);
             settings.SetDesign(GView::Dissasembly::Design::ARM);
             settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
         default:
             break;
         }

@@ -1338,9 +1338,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset);
-    auto& lastZone = zone->types.back().get();
     std::string comment;
-    if (lastZone.commentsData.GetComment(currentLine, comment)) {
+    assert(asmCacheLine->parent);
+    if (asmCacheLine->parent && !asmCacheLine->parent->isCollapsed && asmCacheLine->parent->commentsData.GetComment(currentLine, comment)) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (config.ShowOnlyDissasm)
             diffLine -= textAndOpCodesTotalLength;
@@ -1446,6 +1446,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint64 computedValue = 0;
     cs_insn* insn;
     if (!offsetToReach) {
+        if (line <= 1)
+            return;
+
         const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
         decltype(DissasmCodeZone::types) types                = zone->types;
         decltype(DissasmCodeZone::levels) levels              = zone->levels;
@@ -1545,15 +1548,22 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
 void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation)
 {
-    if (!selection.HasSelection(0)) {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone!");
+    if (operation == CollapsibleZoneOperation::Add && !selection.HasSelection(0)) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to add a zone!");
         return;
     }
 
-    const auto lineStart = selection.GetSelectionStart(0);
-    const auto lineEnd   = selection.GetSelectionEnd(0);
+    uint32 lineStart;
+    uint32 lineEnd;
+    if (selection.HasSelection(0)) {
+        lineStart = selection.GetSelectionStart(0).line;
+        lineEnd   = selection.GetSelectionEnd(0).line;
+    } else {
+        lineStart = Cursor.lineInView + Cursor.startViewLine;
+        lineEnd   = lineStart + 1;
+    }
 
-    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart.line, lineEnd.line);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart, lineEnd);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
@@ -1573,7 +1583,7 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
 
     const uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
-    const uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
+    const uint32 zoneLinesCount = lineEnd - lineStart + 1u;
     const uint32 zoneLineEnd    = zoneLineStart + zoneLinesCount;
 
     int32 difference          = 0;
@@ -1891,6 +1901,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
+    asmCacheLine.parent = &currentType;
     if (changedLevel && newLevelChangeData.hasName) {
         asmCacheLine.shouldAddButton = true;
         asmCacheLine.isZoneCollapsed = newLevelChangeData.isCollapsed;

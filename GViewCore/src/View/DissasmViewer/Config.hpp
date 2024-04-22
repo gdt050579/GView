@@ -28,23 +28,38 @@ constexpr int32 RIGHT_CLICK_CLEAR_SELECTION              = 7;
 constexpr int32 RIGHT_CLICK_DISSASM_COLLAPSE_ZONE        = 8;
 constexpr int32 RIGHT_CLICK_DISSASM_EXPAND_ZONE          = 9;
 
-static struct {
+struct RightClickCommand {
     int commandID;
     std::string_view text;
     // Input::Key shortcutKey = Input::Key::None;
     AppCUI::Controls::ItemHandle handle = AppCUI::Controls::InvalidItemHandle;
-} RIGHT_CLICK_MENU_COMMANDS[] = {
+};
+
+inline RightClickCommand RIGHT_CLICK_MENU_COMMANDS[] = {
     /*{ RIGHT_CLICK_MENU_CMD_NEW_STRUCTURE, "New structure" },
     { RIGHT_CLICK_MENU_CMD_EDIT_STRUCTURE, "Edit structure" },
     { RIGHT_CLICK_MENU_CMD_DELETE_STRUCTURE, "Delete structure" },*/
-    { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
-    { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
-    { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
-    { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" },
-    { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
-    { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
     { RIGHT_CLICK_CLEAR_SELECTION, "Clear selections" },
 };
+
+struct RightClickSubMenus {
+    const char* name;
+    std::vector<RightClickCommand> commands;
+    AppCUI::Controls::ItemHandle handle;
+};
+
+inline RightClickSubMenus RIGHT_CLICK_SUB_MENUS_COMMANDS[] = { { "CollapsibleZone",
+                                                             {
+                                                                   { RIGHT_CLICK_MENU_CMD_NEW_COLLAPSE_ZONE, "Add collapse zone" },
+                                                                   { RIGHT_CLICK_DISSASM_REMOVE_COLLAPSE_ZONE, "Remove collapse zone" },
+                                                                   { RIGHT_CLICK_DISSASM_COLLAPSE_ZONE, "Collapse zone" },
+                                                                   { RIGHT_CLICK_DISSASM_EXPAND_ZONE, "Expand zone" },
+                                                             } },
+                                                           { "Comment",
+                                                             {
+                                                                   { RIGHT_CLICK_ADD_COMMENT, "Add comment" },
+                                                                   { RIGHT_CLICK_REMOVE_COMMENT, "Remove comment" },
+                                                             } } };
 
 namespace GView
 {

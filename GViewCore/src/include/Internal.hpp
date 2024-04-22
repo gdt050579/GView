@@ -487,6 +487,7 @@ namespace App
         GView::Type::Plugin defaultPlugin;
         GView::Utils::ErrorList errList;
         uint32 defaultCacheSize;
+        std::filesystem::path lastOpenedFolderLocation;
         struct
         {
             AppCUI::Input::Key changeViews;
