@@ -1,6 +1,7 @@
 #include <array>
 
 #include "DissasmViewer.hpp"
+#include "DissasmCodeZone.hpp"
 
 #include <stdarg.h>
 #include <stdio.h>
