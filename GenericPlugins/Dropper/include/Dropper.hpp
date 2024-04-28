@@ -286,13 +286,16 @@ class Instance
                         const auto name = dropper->GetName();
                         occurences[name] += 1;
                         findings.push_back({ start, end, result, name });
-                        nextOffset = end + 1;
+                        nextOffset = end;
 
                         // adjust for zones
                         if (result == Result::Unicode) {
                             end -= 2;
                         } else if (result == Result::Ascii) {
                             end -= 1;
+                        }
+                        else {
+                            end += 1;
                         }
                         zones.Add(start, end, OBJECT_CATEGORY_COLOR_MAP.at(dropper->GetGroup()), dropper->GetName());
 
