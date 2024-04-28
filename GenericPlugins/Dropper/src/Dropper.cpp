@@ -1,4 +1,4 @@
-#include "Dropper.hpp"
+#include "DropperUI.hpp"
 
 #include <array>
 #include <regex>
@@ -18,12 +18,20 @@ extern "C" {
 PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> object)
 {
     if (command == "Dropper") {
-        auto instance = Instance();
-        if (!instance.Process(object)) {
-            Dialogs::MessageBox::ShowError("Dropper", "Failed extracting objects!");
-        } else {
-            Dialogs::MessageBox::ShowNotification("Dropper", "Objects extracted.");
+        auto ui = DropperUI(object);
+
+        switch (ui.Show()) {
+        case Dialogs::Result::Ok:
+        case Dialogs::Result::Cancel:
+            break;
+        case Dialogs::Result::None:
+        case Dialogs::Result::Yes:
+        case Dialogs::Result::No:
+        default:
+            Dialogs::MessageBox::ShowError("Dropper", "Operation not recognized!");
+            break;
         }
+
         return true;
     }
     return false;

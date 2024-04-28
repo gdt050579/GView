@@ -1,5 +1,6 @@
 target_sources(Dropper PRIVATE 
 	Dropper.cpp
+	DropperUI.cpp
 	SpecialStrings/SpecialStrings.cpp 
 	SpecialStrings/EmailAddress.cpp
 	SpecialStrings/Filepath.cpp
