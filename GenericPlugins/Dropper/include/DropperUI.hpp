@@ -11,6 +11,11 @@ class DropperUI : public Window
     Instance instance;
     Reference<Tab> tab;
 
+    Reference<RadioBox> computeForFile;
+    Reference<RadioBox> computeForSelection;
+
+    Reference<TextField> binaryFilename;
+
   public:
     DropperUI(Reference<GView::Object> object);
 
