@@ -7,6 +7,8 @@ namespace GView::GenericPlugins::Droppper
 class DropperUI : public Window
 {
   private:
+    Reference<Window> parentWindow{ nullptr };
+
     Reference<GView::Object> object;
     Instance instance;
     Reference<Tab> tab;
@@ -19,12 +21,16 @@ class DropperUI : public Window
     Reference<TextField> excludedCharset;
 
     Reference<CheckBox> checkboxOpenDroppedFile;
-    Reference<CheckBox> checkboxOverwriteFile;
-    Reference<CheckBox> checkboxAppendToFile;
+    Reference<RadioBox> overwriteFile;
+    Reference<RadioBox> appendToFile;
+
+    private:
+    bool DropBinary();
 
   public:
     DropperUI(Reference<GView::Object> object);
 
-    bool OnEvent(Reference<Control>, Event eventType, int32) override;
+    bool OnEvent(Reference<Control> control, Event eventType, int32 id) override;
+    bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
 };
 } // namespace GView::GenericPlugins::Droppper

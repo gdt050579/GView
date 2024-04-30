@@ -403,4 +403,186 @@ bool Instance::SetComputingFile(bool value)
 
     return true;
 }
+
+bool Instance::DropBinaryData(
+      std::string_view filename,
+      bool overwriteFile,
+      bool openFile,
+      std::string_view includedCharSet,
+      std::string_view excludedCharSet,
+      Reference<Window> parentWindow)
+{
+    CHECK(ProcessBinaryDataCharset(includedCharSet, excludedCharSet), false, "");
+
+    std::u16string_view fp = object->GetPath();
+
+    LocalUnicodeStringBuilder<4096> lusb;
+    CHECK(lusb.Add(object->GetPath()), false, "");
+
+    auto fullPath = static_cast<std::filesystem::path>(lusb).parent_path();
+    fullPath /= filename;
+
+    std::ofstream droppedFile;
+    const auto flags = overwriteFile ? std::ios::binary : std::ios::binary | std::ios::app;
+    droppedFile.open(fullPath, flags);
+
+    CHECK(droppedFile.is_open(), false, "");
+
+    struct Defer {
+        std::ofstream& o;
+        ~Defer()
+        {
+            o.close();
+        }
+    } _{ .o = droppedFile };
+
+    auto& cache          = this->object->GetData();
+    const auto cacheSize = cache.GetCacheSize();
+
+    for (const auto& area : areas) {
+        const auto size = area.second - area.first;
+        if (size < cacheSize) {
+            auto bf = cache.Get(area.first, static_cast<int32>(size), true);
+            CHECK(bf.IsValid(), false, "");
+
+            for (int32 i = 0; i < bf.GetLength(); i++) {
+                const auto c = bf[i];
+                if (context.textMatrix[c]) {
+                    droppedFile << c;
+                }
+            }
+        } else {
+            auto sizeLeft = size - cacheSize;
+            auto offset   = area.first;
+            auto bf       = cache.Get(offset, cacheSize, true);
+            offset += cacheSize;
+
+            while (bf.IsValid() && !bf.Empty()) {
+                for (int32 i = 0; i < bf.GetLength(); i++) {
+                    const auto c = bf[i];
+                    if (context.textMatrix[c]) {
+                        droppedFile << c;
+                    }
+                }
+
+                const auto sizeToRead = std::min<int64>(sizeLeft, cacheSize);
+                sizeLeft -= sizeToRead;
+
+                bf = cache.Get(offset, static_cast<int32>(sizeToRead), true);
+                offset += sizeToRead;
+            }
+        }
+    }
+
+    CHECK(droppedFile.good(), false, "");
+
+    if (openFile) {
+        GView::App::OpenFile(fullPath, GView::App::OpenMethod::BestMatch, "", parentWindow);
+    }
+
+    return true;
+}
+
+static std::optional<int32> HexToByte(std::string_view s)
+{
+    CHECK(s.size() == 2, std::nullopt, "");
+
+    char nibbles[2]{ 0 };
+    for (int32 i = 0; i < 2; i++) {
+        if ((s[i] >= '0') && (s[i] <= '9')) {
+            nibbles[i] = s[i] - '0';
+        } else if ((s[i] >= 'A') && (s[i] <= 'F')) {
+            nibbles[i] = (s[i] - 'A') + 10;
+        } else if ((s[i] >= 'a') && (s[i] <= 'f')) {
+            nibbles[i] = (s[i] - 'a') + 10;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    return (nibbles[0] << 4) | nibbles[1];
+}
+
+bool Instance::ProcessBinaryDataCharset(std::string_view include, std::string_view exclude)
+{
+    if (include == DEFAULT_INCLUDE_CHARSET && exclude == DEFAULT_EXCLUDE_CHARSET) {
+        memset(context.textMatrix, true, CHARSET_MATRIX_SIZE);
+        return true;
+    }
+
+    memset(context.textMatrix, false, CHARSET_MATRIX_SIZE);
+
+    const auto ValidateHex = [](std::string_view s) -> bool {
+        CHECK(s[0] == '\\', false, "");
+        CHECK(s[1] == 'x', false, "");
+        CHECK(s[2] >= '0' && s[2] <= '9' || s[2] >= 'a' && s[2] <= 'z' || s[2] >= 'A' && s[2] <= 'Z', false, "");
+        CHECK(s[3] >= '0' && s[3] <= '9' || s[3] >= 'a' && s[3] <= 'z' || s[3] >= 'A' && s[3] <= 'Z', false, "");
+        return true;
+    };
+
+    const auto FillMatrix = [ValidateHex](std::string_view s, bool value) -> bool {
+        const auto includeSize = static_cast<int32>(s.size());
+        for (int32 i = 0; i < includeSize; i++) {
+            switch (s[i]) {
+            case '\\': {
+                const auto delta = includeSize - i;
+                CHECK(delta >= HEX_NUMBER_SIZE, false, "");
+
+                CHECK(ValidateHex(std::string_view{ s.data() + i, HEX_NUMBER_SIZE }), false, "");
+                const auto v1 = HexToByte(std::string_view{ s.data() + i + 2, HEX_NUMBER_SIZE - 2 });
+                CHECK(v1.has_value(), false, "");
+
+                std::optional<int32> v2 = v1;
+
+                i = static_cast<int32>(i + HEX_NUMBER_SIZE);
+
+                if (delta > HEX_NUMBER_SIZE) {
+                    auto sep = s[i];
+
+                    if (sep == ',') {
+                        // nothing
+                    } else if (sep == '-') {
+                        CHECK(ValidateHex(std::string_view{ s.data() + i + 1, HEX_NUMBER_SIZE }), false, "");
+                        v2 = HexToByte(std::string_view{ s.data() + i + 1 + 2, HEX_NUMBER_SIZE - 2 });
+                        CHECK(v2.has_value(), false, "");
+                        CHECK(*v1 <= *v2, false, "");
+                        i = static_cast<int32>(i + HEX_NUMBER_SIZE + 1ULL);
+                    } else {
+                        return false;
+                    }
+                }
+
+                memset(context.textMatrix + *v1, value, static_cast<uint64>(*v2) - *v1 + 1);
+            } break;
+            default: {
+                const auto v1 = s[i] - '0';
+                auto v2       = v1;
+
+                if (i < includeSize - 1) {
+                    const auto sep = s[i + 1ULL];
+
+                    if (sep == ',') {
+                        i = static_cast<int32>(i + 1ULL);
+                    } else if (sep == '-') {
+                        v2 = s[i + 2ULL];
+                        CHECK(v1 <= v2, false, "");
+                        i = static_cast<int32>(i + 2ULL);
+                    } else {
+                        return false;
+                    }
+                }
+
+                memset(context.textMatrix + v1, value, static_cast<uint64>(v2) - v1 + 1);
+            } break;
+            }
+        }
+
+        return true;
+    };
+
+    CHECK(FillMatrix(include, true), false, "");
+    CHECK(FillMatrix(exclude, false), false, "");
+
+    return true;
+}
 } // namespace GView::GenericPlugins::Droppper

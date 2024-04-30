@@ -20,6 +20,11 @@ using namespace GView::GenericPlugins::Droppper::HtmlObjects;
 
 namespace GView::GenericPlugins::Droppper
 {
+constexpr std::string_view DEFAULT_INCLUDE_CHARSET{ "\\x00-\\xff" };
+constexpr std::string_view DEFAULT_EXCLUDE_CHARSET{ "" };
+constexpr int32 CHARSET_MATRIX_SIZE{ 256 };
+constexpr int8 HEX_NUMBER_SIZE{ 4 };
+
 class Instance
 {
   private:
@@ -29,6 +34,8 @@ class Instance
         std::vector<std::unique_ptr<IDrop>> objectDroppers;
         std::unique_ptr<IDrop> textDropper{ nullptr };
         bool initialized{ false };
+
+        bool textMatrix[CHARSET_MATRIX_SIZE]{ true };
     } context;
 
     std::ofstream logFile;
@@ -41,6 +48,9 @@ class Instance
     bool computeForFile{ true };
 
     inline static constexpr uint32 SEPARATOR_LENGTH = 80;
+
+  private:
+    bool ProcessBinaryDataCharset(std::string_view include, std::string_view exclude);
 
   public:
     Instance() = default;
@@ -61,5 +71,13 @@ class Instance
     bool HandleComputationAreas();
     bool IsComputingFile() const;
     bool SetComputingFile(bool value);
+
+    bool DropBinaryData(
+          std::string_view filename,
+          bool overwriteFile,
+          bool openFile,
+          std::string_view includedCharSet,
+          std::string_view excludedCharSet,
+          Reference<Window> parentWindow);
 };
 } // namespace GView::GenericPlugins::Droppper
