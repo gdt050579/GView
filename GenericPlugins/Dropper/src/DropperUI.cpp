@@ -14,6 +14,10 @@ constexpr int32 RADIO_GROUP_COMPUTATION = 1;
 constexpr int32 RADIO_ID_FILE           = 1;
 constexpr int32 RADIO_ID_SELECTION      = 2;
 
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE = 1;
+constexpr int32 CHECKBOX_ID_OVERWRITE_FILE    = 2;
+constexpr int32 CHECKBOX_ID_APPEND_TO_FILE    = 3;
+
 using namespace AppCUI::Controls;
 
 namespace GView::GenericPlugins::Droppper
@@ -26,7 +30,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
         this->Exit(Dialogs::Result::Cancel);
     }
 
-    this->tab = Factory::Tab::Create(this, "l:1,t:1,r:1,b:6", TabFlags::LeftTabs | TabFlags::TabsBar);
+    this->tab = Factory::Tab::Create(this, "l:1,t:1,r:1,b:6", TabFlags::TopTabs | TabFlags::TabsBar);
     auto tpb  = Factory::TabPage::Create(this->tab, BINARY_PAGE_NAME);
     auto tpo  = Factory::TabPage::Create(this->tab, OBJECTS_PAGE_NAME);
     auto tps  = Factory::TabPage::Create(this->tab, STRINGS_PAGE_NAME);
@@ -35,11 +39,26 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     LocalUnicodeStringBuilder<1024> lusb;
 
     /* init binary tab page area */
+
     lusb.Set(object->GetName());
     lusb.Add(".drop");
 
-    Factory::Label::Create(tpb, "Filename", "x:2%,y:1,w:13%");
-    this->binaryFilename = Factory::TextField::Create(tpb, lusb, "x:15%,y:1,w:83%");
+    Factory::Label::Create(tpb, "Description: drop selection(s) to a file (overwrite or append)", "x:2%,y:1,w:97%");
+
+    Factory::Label::Create(tpb, "Filename", "x:2%,y:3,w:13%");
+    this->binaryFilename = Factory::TextField::Create(tpb, lusb, "x:15%,y:3,w:84%");
+
+    Factory::Label::Create(tpb, "CharSet to include (a-z,\\x01-\\x05)", "x:2%,y:5,w:97%");
+    this->includedCharset = Factory::TextField::Create(tpb, "\\x00-\\xff", "x:2%,y:6,w:97%");
+
+    Factory::Label::Create(tpb, "CharSet to exclude (a-z,\\x01-\\x05)", "x:2%,y:8,w:97%");
+    this->excludedCharset = Factory::TextField::Create(tpb, "", "x:2%,y:9,w:97%");
+
+    this->checkboxOpenDroppedFile = Factory::CheckBox::Create(tpb, "Open &dropped file", "x:2%,y:11,w:96%", CHECKBOX_ID_OPEN_DROPPED_FILE);
+    this->checkboxOverwriteFile   = Factory::CheckBox::Create(tpb, "Over&write file", "x:2%,y:13,w:96%", CHECKBOX_ID_OVERWRITE_FILE);
+    this->checkboxAppendToFile    = Factory::CheckBox::Create(tpb, "&Append to file", "x:2%,y:15,w:96%", CHECKBOX_ID_APPEND_TO_FILE);
+
+    this->checkboxOverwriteFile->SetChecked(true);
 
     /* end binary tab page area */
 

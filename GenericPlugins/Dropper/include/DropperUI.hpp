@@ -15,6 +15,12 @@ class DropperUI : public Window
     Reference<RadioBox> computeForSelection;
 
     Reference<TextField> binaryFilename;
+    Reference<TextField> includedCharset;
+    Reference<TextField> excludedCharset;
+
+    Reference<CheckBox> checkboxOpenDroppedFile;
+    Reference<CheckBox> checkboxOverwriteFile;
+    Reference<CheckBox> checkboxAppendToFile;
 
   public:
     DropperUI(Reference<GView::Object> object);
