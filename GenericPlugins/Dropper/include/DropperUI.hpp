@@ -34,6 +34,11 @@ class DropperUI : public Window
     Reference<ListView> objectsPlugins;
     std::vector<ItemMetadata> objectsMetadata;
     Reference<Label> currentObjectDescription;
+    Reference<TextField> objectsFilename;
+    Reference<CheckBox> checkRecursiveInObjects;
+    Reference<CheckBox> writeObjectsLog;
+    Reference<CheckBox> openLogInView;
+    Reference<CheckBox> openDroppedObjects;
 
   private:
     bool DropBinary();

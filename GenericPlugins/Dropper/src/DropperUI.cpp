@@ -12,14 +12,20 @@ constexpr int32 TAB_ID_OBJECTS            = 2;
 constexpr int32 TAB_ID_STRINGS            = 3;
 constexpr int32 TAB_ID_FORMAT_INFORMATION = 4;
 
-constexpr int32 BUTTON_ID_CANCEL = 1;
-constexpr int32 BUTTON_ID_RUN    = 2;
+constexpr int32 BUTTON_ID_CANCEL               = 1;
+constexpr int32 BUTTON_ID_RUN                  = 2;
+constexpr int32 BUTTON_ID_SELECT_ALL_OBJECTS   = 3;
+constexpr int32 BUTTON_ID_DESELECT_ALL_OBJECTS = 4;
 
 constexpr int32 RADIO_GROUP_COMPUTATION = 1;
 constexpr int32 RADIO_ID_FILE           = 1;
 constexpr int32 RADIO_ID_SELECTION      = 2;
 
-constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE = 1;
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE    = 1;
+constexpr int32 CHECKBOX_ID_RECURSIVE_OBJECTS    = 2;
+constexpr int32 CHECKBOX_ID_WRITE_LOG_OBJECTS    = 3;
+constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS     = 4;
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_OBJECTS = 5;
 
 constexpr int32 RADIO_GROUP_BINARY_DATA_FILE = 2;
 constexpr int32 RADIO_ID_OVERWRITE_FILE      = 1;
@@ -92,6 +98,19 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     this->objectsPlugins->GetColumn(0).SetWidth(100.0);
 
     this->currentObjectDescription = Factory::Label::Create(tpo, "Object description", "x:42%,y:4,w:56%,h:4");
+    Factory::Label::Create(tpo, "Objects name prefix", "x:42%,y:6,w:20%");
+    this->objectsFilename = Factory::TextField::Create(tpo, lusb, "x:64%,y:6,w:30%");
+
+    this->checkRecursiveInObjects = Factory::CheckBox::Create(tpo, "Check recursive&ly in objects", "x:42%,y:8,w:56%", CHECKBOX_ID_RECURSIVE_OBJECTS);
+    this->writeObjectsLog         = Factory::CheckBox::Create(tpo, "Write objec&ts log", "x:42%,y:9,w:56%", CHECKBOX_ID_WRITE_LOG_OBJECTS);
+    this->openLogInView           = Factory::CheckBox::Create(tpo, "Open log as list &view", "x:42%,y:10,w:56%", CHECKBOX_ID_WRITE_LOG_OBJECTS);
+    this->openDroppedObjects      = Factory::CheckBox::Create(tpo, "Open &dropped objects", "x:42%,y:11,w:56%", CHECKBOX_ID_OPEN_DROPPED_OBJECTS);
+
+    this->checkRecursiveInObjects->SetChecked(true);
+    this->writeObjectsLog->SetChecked(true);
+
+    Factory::Button::Create(tpo, "&Select all objects", "x:42%,y:17,w:25%", BUTTON_ID_SELECT_ALL_OBJECTS);
+    Factory::Button::Create(tpo, "&Deselect all objects", "x:69%,y:17,w:25%", BUTTON_ID_DESELECT_ALL_OBJECTS);
 
     const auto AddSubItem = [this](ListViewItem parent, ObjectCategory category, uint32 subcategory, const Metadata& md) {
         LocalUnicodeStringBuilder<1024> lusb;
@@ -120,7 +139,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
         switch (k) {
         case ObjectCategory::Archives:
             for (const auto& [kk, vv] : Archives::TYPES_MAP) {
-                auto _ = AddSubItem(item, k, static_cast<uint32>(kk), vv);
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
             }
             break;
         case ObjectCategory::Cryptographic:
@@ -266,6 +285,20 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
 
             return true;
         }
+        if (ID == BUTTON_ID_SELECT_ALL_OBJECTS) {
+            const auto count = this->objectsPlugins->GetItemsCount();
+            for (uint32 i = 0; i < count; i++) {
+                this->objectsPlugins->GetItem(i).SetCheck(true);
+            }
+            return true;
+        }
+        if (ID == BUTTON_ID_DESELECT_ALL_OBJECTS) {
+            const auto count = this->objectsPlugins->GetItemsCount();
+            for (uint32 i = 0; i < count; i++) {
+                this->objectsPlugins->GetItem(i).SetCheck(false);
+            }
+            return true;
+        }
         break;
 
     case AppCUI::Controls::Event::CheckedStatusChanged:
@@ -305,8 +338,56 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         auto data = item.GetData<ItemMetadata>();
 
         if (eventType == Event::ListViewItemChecked) {
+            if (data->parent.has_value()) {
+                data->parent->SetCheck(false);
+                for (auto& c : data->parent->GetData<ItemMetadata>()->children) {
+                    if (c.IsChecked()) {
+                        data->parent->SetCheck(true);
+                        break;
+                    }
+                }
+            } else {
+                for (auto& c : data->children) {
+                    c.SetCheck(item.IsChecked());
+                }
+            }
+
+            return true;
         }
+
         if (eventType == Event::ListViewCurrentItemChanged) {
+            if (data->parent.has_value()) {
+                switch (data->category) {
+                case ObjectCategory::Archives:
+                    this->currentObjectDescription->SetText(Archives::TYPES_MAP.at(static_cast<Archives::Types>(data->subcategory)).description);
+                    break;
+                case ObjectCategory::Cryptographic:
+                    this->currentObjectDescription->SetText(Cryptographic::TYPES_MAP.at(static_cast<Cryptographic::Types>(data->subcategory)).description);
+                    break;
+                case ObjectCategory::Executables:
+                    this->currentObjectDescription->SetText(Executables::TYPES_MAP.at(static_cast<Executables::Types>(data->subcategory)).description);
+                    break;
+                case ObjectCategory::HtmlObjects:
+                    this->currentObjectDescription->SetText(HtmlObjects::TYPES_MAP.at(static_cast<HtmlObjects::Types>(data->subcategory)).description);
+                    break;
+                case ObjectCategory::Image:
+                    this->currentObjectDescription->SetText(Images::TYPES_MAP.at(static_cast<Images::Types>(data->subcategory)).description);
+                    break;
+                case ObjectCategory::Multimedia:
+                    this->currentObjectDescription->SetText(Multimedia::TYPES_MAP.at(static_cast<Multimedia::Types>(data->subcategory)).description);
+                    break;
+                case ObjectCategory::SpecialStrings:
+                    this->currentObjectDescription->SetText(SpecialStrings::TYPES_MAP.at(static_cast<SpecialStrings::Types>(data->subcategory)).description);
+                    break;
+                default:
+                    this->currentObjectDescription->SetText("NO DESCRIPTION");
+                    break;
+                }
+            } else {
+                const auto& description = OBJECT_DECRIPTION_MAP.at(this->objectsPlugins->GetCurrentItem().GetData<ItemMetadata>()->category);
+                this->currentObjectDescription->SetText(description);
+            }
+            return true;
         }
     } break;
 
