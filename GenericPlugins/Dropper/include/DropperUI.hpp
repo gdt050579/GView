@@ -4,6 +4,13 @@
 
 namespace GView::GenericPlugins::Droppper
 {
+struct ItemMetadata {
+    std::optional<ListViewItem> parent;
+    std::vector<ListViewItem> children;
+    ObjectCategory category{ ObjectCategory::Archives };
+    uint32 subcategory{ 0 };
+};
+
 class DropperUI : public Window
 {
   private:
@@ -24,7 +31,11 @@ class DropperUI : public Window
     Reference<RadioBox> overwriteFile;
     Reference<RadioBox> appendToFile;
 
-    private:
+    Reference<ListView> objectsPlugins;
+    std::vector<ItemMetadata> objectsMetadata;
+    Reference<Label> currentObjectDescription;
+
+  private:
     bool DropBinary();
 
   public:

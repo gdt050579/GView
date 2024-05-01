@@ -81,6 +81,98 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 
     /* end binary tab page area */
 
+    /* init objects tab page area*/
+
+    this->objectsMetadata.reserve(1000); // these will be used for list view item data
+
+    Factory::Label::Create(tpo, "Description: drop objects found in file or selection (recursive or not)", "x:2%,y:1,w:97%");
+
+    this->objectsPlugins = Factory::ListView::Create(
+          tpo, "x:2%,y:3,w:38%,h:16", { "" }, AppCUI::Controls::ListViewFlags::CheckBoxes | AppCUI::Controls::ListViewFlags::HideColumns);
+    this->objectsPlugins->GetColumn(0).SetWidth(100.0);
+
+    this->currentObjectDescription = Factory::Label::Create(tpo, "Object description", "x:42%,y:4,w:56%,h:4");
+
+    const auto AddSubItem = [this](ListViewItem parent, ObjectCategory category, uint32 subcategory, const Metadata& md) {
+        LocalUnicodeStringBuilder<1024> lusb;
+        lusb.Set("  ");
+        lusb.Add(md.name);
+
+        auto i = this->objectsPlugins->AddItem(lusb);
+        i.SetCheck(md.availability);
+        if (!md.availability) {
+            i.SetType(ListViewItem::Type::GrayedOut);
+        }
+
+        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = parent, .category = category, .subcategory = subcategory });
+        i.SetData<ItemMetadata>(&metadata);
+
+        return i;
+    };
+
+    for (const auto& [k, v] : OBJECT_CATEGORY_MAP) {
+        auto item = this->objectsPlugins->AddItem(v);
+        item.SetCheck(true);
+
+        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = std::nullopt, .category = k, .subcategory = 0 });
+        item.SetData<ItemMetadata>(&metadata);
+
+        switch (k) {
+        case ObjectCategory::Archives:
+            for (const auto& [kk, vv] : Archives::TYPES_MAP) {
+                auto _ = AddSubItem(item, k, static_cast<uint32>(kk), vv);
+            }
+            break;
+        case ObjectCategory::Cryptographic:
+            for (const auto& [kk, vv] : Cryptographic::TYPES_MAP) {
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
+            }
+            break;
+        case ObjectCategory::Executables:
+            for (const auto& [kk, vv] : Executables::TYPES_MAP) {
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
+            }
+            break;
+        case ObjectCategory::HtmlObjects:
+            for (const auto& [kk, vv] : HtmlObjects::TYPES_MAP) {
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
+            }
+            break;
+        case ObjectCategory::Image:
+            for (const auto& [kk, vv] : Images::TYPES_MAP) {
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
+            }
+            break;
+        case ObjectCategory::Multimedia:
+            for (const auto& [kk, vv] : Multimedia::TYPES_MAP) {
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
+            }
+            break;
+        case ObjectCategory::SpecialStrings:
+            for (const auto& [kk, vv] : SpecialStrings::TYPES_MAP) {
+                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // we always assume that we have at least one item and it's from a main cateogry
+    this->objectsPlugins->SetCurrentItem(this->objectsPlugins->GetItem(0));
+    const auto& description = OBJECT_DECRIPTION_MAP.at(this->objectsPlugins->GetCurrentItem().GetData<ItemMetadata>()->category);
+    this->currentObjectDescription->SetText(description);
+
+    /* end objects tab page area*/
+
+    /* init type info tab page area */
+
+    // TODO: (optional?) callbacks in tyoe plugins
+    Factory::Label::Create(tpf, "Description: dump information about a particular file format (text, JSON, etc)", "x:2%,y:1,w:97%");
+    Factory::Label::Create(tpf, "Not available at the moment (WIP)!", "x:2%,y:2,w:97%");
+
+    /* end type info tab page area */
+
     computeForFile      = Factory::RadioBox::Create(this, "Compute for the &entire file", "x:1,y:23,w:31", RADIO_GROUP_COMPUTATION, RADIO_ID_FILE);
     computeForSelection = Factory::RadioBox::Create(this, "Compute for the &selection", "x:1,y:24,w:31", RADIO_GROUP_COMPUTATION, RADIO_ID_SELECTION);
 
@@ -135,17 +227,18 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         return true;
     }
 
-    if (eventType == Event::Command) {
+    switch (eventType) {
+    case AppCUI::Controls::Event::Command:
         if (ID == CMD_BINARY_DATA_DROP) {
             CHECK(DropBinary(), false, "");
             return true;
         }
-    }
+        break;
 
-    switch (eventType) {
     case AppCUI::Controls::Event::WindowClose:
         this->Exit(Dialogs::Result::Cancel);
         return true;
+
     case AppCUI::Controls::Event::ButtonClicked:
         if (ID == BUTTON_ID_CANCEL) {
             this->Exit(Dialogs::Result::Cancel);
@@ -174,6 +267,7 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
             return true;
         }
         break;
+
     case AppCUI::Controls::Event::CheckedStatusChanged:
         if (control->GetGroup() == RADIO_GROUP_COMPUTATION) {
             if (ID == RADIO_ID_FILE) {
@@ -188,6 +282,34 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
             // nothing
         }
         break;
+
+    case AppCUI::Controls::Event::TabChanged:
+        switch (this->tab->GetCurrentTab()->GetControlID()) {
+        case TAB_ID_BINARY:
+            break;
+        case TAB_ID_OBJECTS:
+            this->objectsPlugins->SetFocus();
+            break;
+        case TAB_ID_STRINGS:
+            break;
+        case TAB_ID_FORMAT_INFORMATION:
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case AppCUI::Controls::Event::ListViewItemChecked:
+    case AppCUI::Controls::Event::ListViewCurrentItemChanged: {
+        auto item = this->objectsPlugins->GetCurrentItem();
+        auto data = item.GetData<ItemMetadata>();
+
+        if (eventType == Event::ListViewItemChecked) {
+        }
+        if (eventType == Event::ListViewCurrentItemChanged) {
+        }
+    } break;
+
     default:
         break;
     }

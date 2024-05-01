@@ -11,12 +11,18 @@
 #include "Executables.hpp"
 #include "Multimedia.hpp"
 #include "HtmlObjects.hpp"
+#include "Images.hpp"
+#include "Archives.hpp"
+#include "Cryptographic.hpp"
 
 using namespace GView::Utils;
 using namespace GView::GenericPlugins::Droppper::SpecialStrings;
 using namespace GView::GenericPlugins::Droppper::Executables;
 using namespace GView::GenericPlugins::Droppper::Multimedia;
 using namespace GView::GenericPlugins::Droppper::HtmlObjects;
+using namespace GView::GenericPlugins::Droppper::Images;
+using namespace GView::GenericPlugins::Droppper::Archives;
+using namespace GView::GenericPlugins::Droppper::Cryptographic;
 
 namespace GView::GenericPlugins::Droppper
 {

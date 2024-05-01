@@ -25,31 +25,49 @@ static const std::map<Result, std::string_view> RESULT_MAP{
 enum class Priority : uint32 { Binary = 0, Text = 1, Count = 2 };
 
 enum class ObjectCategory : uint32 {
-    Archive        = 0,
-    AVStrings      = 1,
-    Cryptographic  = 2,
-    Executables    = 3,
-    HtmlObjects    = 4,
-    Image          = 5,
-    Multimedia     = 6,
-    SpecialStrings = 7,
+    Archives       = 0,
+    Cryptographic  = 1,
+    Executables    = 2,
+    HtmlObjects    = 3,
+    Image          = 4,
+    Multimedia     = 5,
+    SpecialStrings = 6,
 };
 
 static const std::map<ObjectCategory, std::string_view> OBJECT_CATEGORY_MAP{
-    { ObjectCategory::Archive, "Archive" },         { ObjectCategory::AVStrings, "AV Strings" },           { ObjectCategory::Cryptographic, "Cryptographic" },
-    { ObjectCategory::Executables, "Executables" }, { ObjectCategory::HtmlObjects, "HtmlObjects" },        { ObjectCategory::Image, "Image" },
-    { ObjectCategory::Multimedia, "Multimedia" },   { ObjectCategory::SpecialStrings, "Special Strings" },
+    { ObjectCategory::Archives, "Archives" },
+    { ObjectCategory::Cryptographic, "Cryptographic" },
+    { ObjectCategory::Executables, "Executables" },
+    { ObjectCategory::HtmlObjects, "HtmlObjects" },
+    { ObjectCategory::Image, "Image" },
+    { ObjectCategory::Multimedia, "Multimedia" },
+    { ObjectCategory::SpecialStrings, "Special Strings" },
+};
+
+static const std::map<ObjectCategory, std::string_view> OBJECT_DECRIPTION_MAP{
+    { ObjectCategory::Archives, "Identifies various archive formats." },
+    { ObjectCategory::Cryptographic, "Identifies various cryptographic tables or magics." },
+    { ObjectCategory::Executables, "Identifies various executables formats." },
+    { ObjectCategory::HtmlObjects, "Identifies various objects usually embedded into HTMLs files." },
+    { ObjectCategory::Image, "Indentifies various image file formats." },
+    { ObjectCategory::Multimedia, "Identifies various multimedia formats." },
+    { ObjectCategory::SpecialStrings, "Identifies special string classes (IPs, URLs, etc.)." },
 };
 
 static const std::map<ObjectCategory, ColorPair> OBJECT_CATEGORY_COLOR_MAP{
-    { ObjectCategory::Archive, ColorPair{ .Foreground = Color::White, .Background = Color::Black } },
-    { ObjectCategory::AVStrings, ColorPair{ .Foreground = Color::White, .Background = Color::DarkBlue } },
+    { ObjectCategory::Archives, ColorPair{ .Foreground = Color::White, .Background = Color::Black } },
     { ObjectCategory::Cryptographic, ColorPair{ .Foreground = Color::White, .Background = Color::DarkGreen } },
     { ObjectCategory::Executables, ColorPair{ .Foreground = Color::White, .Background = Color::Teal } },
     { ObjectCategory::HtmlObjects, ColorPair{ .Foreground = Color::White, .Background = Color::DarkRed } },
     { ObjectCategory::Image, ColorPair{ .Foreground = Color::White, .Background = Color::Magenta } },
     { ObjectCategory::Multimedia, ColorPair{ .Foreground = Color::White, .Background = Color::Olive } },
     { ObjectCategory::SpecialStrings, ColorPair{ .Foreground = Color::Black, .Background = Color::Silver } },
+};
+
+struct Metadata {
+    const std::string_view name;
+    const std::string_view description;
+    const bool availability;
 };
 
 class IDrop
