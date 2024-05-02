@@ -27,10 +27,13 @@ using namespace GView::GenericPlugins::Droppper::Cryptographic;
 
 namespace GView::GenericPlugins::Droppper
 {
-constexpr std::string_view DEFAULT_INCLUDE_CHARSET{ "\\x00-\\xff" };
-constexpr std::string_view DEFAULT_EXCLUDE_CHARSET{ "" };
-constexpr int32 CHARSET_MATRIX_SIZE{ 256 };
+constexpr std::string_view DEFAULT_BINARY_INCLUDE_CHARSET{ "\\x00-\\xff" };
+constexpr std::string_view DEFAULT_BINARY_EXCLUDE_CHARSET{ "" };
+constexpr int32 BINARY_CHARSET_MATRIX_SIZE{ 256 };
 constexpr int8 HEX_NUMBER_SIZE{ 4 };
+
+constexpr std::string_view DEFAULT_STRINGS_CHARSET{ "\\x20\\:-+<>!@#$%^&*()[]{}0-9A-Za-z" };
+constexpr int32 STRINGS_CHARSET_MATRIX_SIZE{ 256 };
 
 struct PluginClassification {
     ObjectCategory category{};
@@ -47,7 +50,7 @@ class Instance
         std::unique_ptr<IDrop> textDropper{ nullptr };
         bool initialized{ false };
 
-        bool textMatrix[CHARSET_MATRIX_SIZE]{ true };
+        bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE]{ true };
 
         struct Finding {
             uint64 start;
@@ -61,6 +64,8 @@ class Instance
         std::map<std::string_view, uint32> occurences;
 
         std::set<std::filesystem::path> objectPaths;
+
+        bool stringsCharSetMatrix[STRINGS_CHARSET_MATRIX_SIZE]{ true };
     } context;
 
     uint64 objectId{ 0 };

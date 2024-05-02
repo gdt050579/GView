@@ -26,8 +26,8 @@ class DropperUI : public Window
     Reference<RadioBox> computeForSelection;
 
     Reference<TextField> binaryFilename;
-    Reference<TextField> includedCharset;
-    Reference<TextField> excludedCharset;
+    Reference<TextField> binaryIncludedCharset;
+    Reference<TextField> binaryExcludedCharset;
 
     Reference<CheckBox> checkboxOpenDroppedFile;
     Reference<RadioBox> overwriteFile;
@@ -44,6 +44,19 @@ class DropperUI : public Window
     Reference<CheckBox> openLogInView;
     Reference<CheckBox> openDroppedObjects;
     Reference<CheckBox> highlightObjects;
+
+    std::filesystem::path stringsFilename;
+    Reference<TextField> stringsLogFilename;
+    Reference<CheckBox> dropAsciiStrings;
+    Reference<CheckBox> dropUnicodeStrings;
+    Reference<RadioBox> logDumpSimple;
+    Reference<RadioBox> logDumpTabular;
+    Reference<TextField> minimumStringSize;
+    Reference<TextField> maximumStringSize;
+    Reference<TextField> stringsCharset;
+    Reference<CheckBox> identifyStringsArtefacts;
+    Reference<CheckBox> openArtefactsInView;
+    Reference<CheckBox> openStringsLogFile;
 
   private:
     bool DropBinary();

@@ -240,7 +240,7 @@ bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, 
 
     ProgressStatus::Init("Searching...", size);
     LocalString<512> ls;
-    const char* format          = "[%llu/%llu] bytes... Found [%u] objects.";
+    const char* format          = "[%llu/%llu] bytes... Found [%u] object(s).";
     constexpr uint64 CHUNK_SIZE = 10000;
     uint64 chunks               = offset / CHUNK_SIZE;
     uint64 toUpdate             = chunks * CHUNK_SIZE;
@@ -437,7 +437,7 @@ bool Instance::DropBinaryData(
 
             for (int32 i = 0; i < bf.GetLength(); i++) {
                 const auto c = bf[i];
-                if (context.textMatrix[c]) {
+                if (context.binaryCharSetMatrix[c]) {
                     droppedFile << c;
                 }
             }
@@ -450,7 +450,7 @@ bool Instance::DropBinaryData(
             while (bf.IsValid() && !bf.Empty()) {
                 for (int32 i = 0; i < bf.GetLength(); i++) {
                     const auto c = bf[i];
-                    if (context.textMatrix[c]) {
+                    if (context.binaryCharSetMatrix[c]) {
                         droppedFile << c;
                     }
                 }
@@ -495,12 +495,12 @@ static std::optional<int32> HexToByte(std::string_view s)
 
 bool Instance::ProcessBinaryDataCharset(std::string_view include, std::string_view exclude)
 {
-    if (include == DEFAULT_INCLUDE_CHARSET && exclude == DEFAULT_EXCLUDE_CHARSET) {
-        memset(context.textMatrix, true, CHARSET_MATRIX_SIZE);
+    if (include == DEFAULT_BINARY_INCLUDE_CHARSET && exclude == DEFAULT_BINARY_EXCLUDE_CHARSET) {
+        memset(context.binaryCharSetMatrix, true, BINARY_CHARSET_MATRIX_SIZE);
         return true;
     }
 
-    memset(context.textMatrix, false, CHARSET_MATRIX_SIZE);
+    memset(context.binaryCharSetMatrix, false, BINARY_CHARSET_MATRIX_SIZE);
 
     const auto ValidateHex = [](std::string_view s) -> bool {
         CHECK(s[0] == '\\', false, "");
@@ -542,7 +542,7 @@ bool Instance::ProcessBinaryDataCharset(std::string_view include, std::string_vi
                     }
                 }
 
-                memset(context.textMatrix + *v1, value, static_cast<uint64>(*v2) - *v1 + 1);
+                memset(context.binaryCharSetMatrix + *v1, value, static_cast<uint64>(*v2) - *v1 + 1);
             } break;
             default: {
                 const auto v1 = s[i] - '0';
@@ -562,7 +562,7 @@ bool Instance::ProcessBinaryDataCharset(std::string_view include, std::string_vi
                     }
                 }
 
-                memset(context.textMatrix + v1, value, static_cast<uint64>(v2) - v1 + 1);
+                memset(context.binaryCharSetMatrix + v1, value, static_cast<uint64>(v2) - v1 + 1);
             } break;
             }
         }

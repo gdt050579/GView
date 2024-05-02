@@ -21,16 +21,25 @@ constexpr int32 RADIO_GROUP_COMPUTATION = 1;
 constexpr int32 RADIO_ID_FILE           = 1;
 constexpr int32 RADIO_ID_SELECTION      = 2;
 
-constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE         = 1;
-constexpr int32 CHECKBOX_ID_RECURSIVE_OBJECTS         = 2;
-constexpr int32 CHECKBOX_ID_WRITE_LOG_OBJECTS         = 3;
-constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS          = 4;
-constexpr int32 CHECKBOX_ID_OPEN_DROPPED_OBJECTS      = 5;
-constexpr int32 CHECKBOX_ID_HIGHLIGHT_DROPPED_OBJECTS = 6;
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE          = 1;
+constexpr int32 CHECKBOX_ID_RECURSIVE_OBJECTS          = 2;
+constexpr int32 CHECKBOX_ID_WRITE_LOG_OBJECTS          = 3;
+constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS           = 4;
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_OBJECTS       = 5;
+constexpr int32 CHECKBOX_ID_HIGHLIGHT_DROPPED_OBJECTS  = 6;
+constexpr int32 CHECKBOX_ID_DROP_ASCII_STRINGS         = 7;
+constexpr int32 CHECKBOX_ID_DROP_UNICODE_STRINGS       = 8;
+constexpr int32 CHECKBOX_ID_OPEN_STRINGS_LOG_FILE      = 9;
+constexpr int32 CHECKBOX_ID_IDENTIFY_STRINGS_ARTEFACTS = 10;
+constexpr int32 CHECKBOX_ID_OPEN_STRINGS_ARTEFACTS     = 11;
 
 constexpr int32 RADIO_GROUP_BINARY_DATA_FILE = 2;
 constexpr int32 RADIO_ID_OVERWRITE_FILE      = 1;
 constexpr int32 RADIO_ID_APPEND_TO_FILE      = 2;
+
+constexpr int32 RADIO_GROUP_STRING_DUMP_FORMAT = 3;
+constexpr int32 RADIO_ID_STRING_DUMP_SIMPLE    = 1;
+constexpr int32 RADIO_ID_STRING_DUMP_TABULAR   = 2;
 
 constexpr int32 CMD_BINARY_DATA_DROP                    = 1;
 constexpr int32 CMD_BINARY_OBJECTS_DROP                 = 2;
@@ -82,10 +91,10 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     this->binaryFilename = Factory::TextField::Create(tpb, droppedFilename.filename().u16string(), "x:15%,y:3,w:84%");
 
     Factory::Label::Create(tpb, "CharSet to include (a-z,\\x01-\\x05)", "x:2%,y:5,w:97%");
-    this->includedCharset = Factory::TextField::Create(tpb, DEFAULT_INCLUDE_CHARSET, "x:2%,y:6,w:97%");
+    this->binaryIncludedCharset = Factory::TextField::Create(tpb, DEFAULT_BINARY_INCLUDE_CHARSET, "x:2%,y:6,w:97%");
 
     Factory::Label::Create(tpb, "CharSet to exclude (a-z,\\x01-\\x05)", "x:2%,y:8,w:97%");
-    this->excludedCharset = Factory::TextField::Create(tpb, DEFAULT_EXCLUDE_CHARSET, "x:2%,y:9,w:97%");
+    this->binaryExcludedCharset = Factory::TextField::Create(tpb, DEFAULT_BINARY_EXCLUDE_CHARSET, "x:2%,y:9,w:97%");
 
     this->checkboxOpenDroppedFile = Factory::CheckBox::Create(tpb, "Open dro&pped file", "x:2%,y:11,w:96%", CHECKBOX_ID_OPEN_DROPPED_FILE);
     this->overwriteFile = Factory::RadioBox::Create(tpb, "Over&write file", "x:2%,y:13,w:96%", RADIO_GROUP_BINARY_DATA_FILE, RADIO_ID_OVERWRITE_FILE, true);
@@ -208,6 +217,47 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 
     /* end objects tab page area*/
 
+    /* init strings tab page area*/
+
+    stringsFilename = object->GetPath();
+    {
+        std::u16string f = stringsFilename.filename().u16string().append(u".strings");
+        stringsFilename  = stringsFilename.parent_path() / f;
+    }
+
+    Factory::Label::Create(tps, "Description: identify various string(s) and dump them to a file", "x:2%,y:1,w:97%");
+
+    Factory::Label::Create(tps, "Filename", "x:2%,y:3,w:13%");
+    this->stringsLogFilename = Factory::TextField::Create(tps, stringsFilename.filename().u16string(), "x:15%,y:3,w:84%");
+
+    this->dropAsciiStrings   = Factory::CheckBox::Create(tps, "Dr&op ascii strings", "x:2%,y:5,w:28%", CHECKBOX_ID_DROP_ASCII_STRINGS);
+    this->dropUnicodeStrings = Factory::CheckBox::Create(tps, "Drop unicode str&ings", "x:2%,y:6,w:28%", CHECKBOX_ID_DROP_UNICODE_STRINGS);
+    this->dropAsciiStrings->SetChecked(true);
+    this->dropUnicodeStrings->SetChecked(true);
+
+    this->logDumpSimple = Factory::RadioBox::Create(tps, "Dump &simple format", "x:32%,y:5,w:28%", RADIO_GROUP_STRING_DUMP_FORMAT, RADIO_ID_STRING_DUMP_SIMPLE);
+    this->logDumpTabular =
+          Factory::RadioBox::Create(tps, "Dump &tabular format", "x:32%,y:6,w:28%", RADIO_GROUP_STRING_DUMP_FORMAT, RADIO_ID_STRING_DUMP_TABULAR, true);
+
+    Factory::Label::Create(tps, "Min. string size", "x:62%,y:5,w:20%");
+    Factory::Label::Create(tps, "Max. string size", "x:62%,y:6,w:20%");
+
+    Factory::Label::Create(tps, "M&in. string size", "x:62%,y:5,w:20%");
+    Factory::Label::Create(tps, "M&ax. string size", "x:62%,y:6,w:20%");
+    this->minimumStringSize = Factory::TextField::Create(tps, "4", "x:82%,y:5,w:10%");
+    this->maximumStringSize = Factory::TextField::Create(tps, "", "x:82%,y:6,w:10%");
+
+    Factory::Label::Create(tps, "CharSet to use (a-z,\\x01-\\x05)", "x:2%,y:8,w:38%");
+    this->stringsCharset = Factory::TextField::Create(tps, DEFAULT_STRINGS_CHARSET, "x:42%,y:8,w:57%");
+
+    this->openStringsLogFile = Factory::CheckBox::Create(tps, "Open log fi&le", "x:2%,y:10,w:28%", CHECKBOX_ID_OPEN_STRINGS_LOG_FILE);
+
+    this->identifyStringsArtefacts =
+          Factory::CheckBox::Create(tps, "Identify suspicious art&efacts", "x:2%,y:12,w:38%", CHECKBOX_ID_IDENTIFY_STRINGS_ARTEFACTS);
+    this->openArtefactsInView = Factory::CheckBox::Create(tps, "Open artefacts in &list", "x:2%,y:13,w:38%", CHECKBOX_ID_OPEN_STRINGS_ARTEFACTS);
+
+    /* end strings tab page area */
+
     /* init type info tab page area */
 
     // TODO: (optional?) callbacks in type plugins
@@ -264,10 +314,10 @@ const std::vector<PluginClassification> DropperUI::GetActivePlugins()
 
 bool DropperUI::DropBinary()
 {
-    auto include = static_cast<std::string>(this->includedCharset->GetText());
+    auto include = static_cast<std::string>(this->binaryIncludedCharset->GetText());
     include.erase(remove_if(include.begin(), include.end(), isspace), include.end());
 
-    auto exclude = static_cast<std::string>(this->excludedCharset->GetText());
+    auto exclude = static_cast<std::string>(this->binaryExcludedCharset->GetText());
     exclude.erase(remove_if(exclude.begin(), exclude.end(), isspace), exclude.end());
 
     if (instance.DropBinaryData(
