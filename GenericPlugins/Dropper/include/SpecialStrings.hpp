@@ -54,6 +54,7 @@ class IpAddress : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
@@ -64,6 +65,7 @@ class EmailAddress : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
@@ -74,6 +76,7 @@ class Filepath : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
@@ -84,6 +87,7 @@ class URL : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
@@ -94,6 +98,7 @@ class Wallet : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
@@ -104,6 +109,7 @@ class Registry : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 };
@@ -120,6 +126,7 @@ class Text : public SpecialStrings
 
     virtual const std::string_view GetName() const override;
     virtual const std::string_view GetOutputExtension() const override;
+    virtual uint32 GetSubGroup() const override;
 
     virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
 

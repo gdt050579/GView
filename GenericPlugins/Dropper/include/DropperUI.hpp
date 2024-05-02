@@ -20,6 +20,8 @@ class DropperUI : public Window
     Instance instance;
     Reference<Tab> tab;
 
+    std::filesystem::path droppedFilename;
+
     Reference<RadioBox> computeForFile;
     Reference<RadioBox> computeForSelection;
 
@@ -31,17 +33,21 @@ class DropperUI : public Window
     Reference<RadioBox> overwriteFile;
     Reference<RadioBox> appendToFile;
 
+    std::filesystem::path logFilename;
     Reference<ListView> objectsPlugins;
     std::vector<ItemMetadata> objectsMetadata;
     Reference<Label> currentObjectDescription;
     Reference<TextField> objectsFilename;
+    Reference<TextField> objectsLogFilename;
     Reference<CheckBox> checkRecursiveInObjects;
     Reference<CheckBox> writeObjectsLog;
     Reference<CheckBox> openLogInView;
     Reference<CheckBox> openDroppedObjects;
+    Reference<CheckBox> highlightObjects;
 
   private:
     bool DropBinary();
+    const std::vector<PluginClassification> GetActivePlugins();
 
   public:
     DropperUI(Reference<GView::Object> object);

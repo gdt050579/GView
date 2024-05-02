@@ -47,6 +47,11 @@ const std::string_view Text::GetOutputExtension() const
     return "text";
 }
 
+uint32 Text::GetSubGroup() const
+{
+    return static_cast<uint32>(-1); // no actual subgroup for this one
+}
+
 Result Text::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
     CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");

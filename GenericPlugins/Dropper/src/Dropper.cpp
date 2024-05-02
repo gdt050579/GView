@@ -43,11 +43,6 @@ PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 }
 }
 
-Instance::~Instance()
-{
-    UnInitLogs();
-}
-
 bool Instance::Init(Reference<GView::Object> object)
 {
     CHECK(object.IsValid(), false, "");
@@ -83,174 +78,165 @@ bool Instance::Init(Reference<GView::Object> object)
     return true;
 }
 
-void Instance::UnInitLogs()
-{
-    logFile.close();
-
-    for (auto& [_, f] : singleFiles) {
-        f->close();
-    }
-
-    singleFiles.clear();
-}
-
 BufferView Instance::GetPrecachedBuffer(uint64 offset, DataCache& cache)
 {
     return cache.Get(offset, MAX_PRECACHED_BUFFER_SIZE, true);
 }
 
-bool Instance::InitLogFile(const std::vector<std::pair<uint64, uint64>>& areas)
+std::optional<std::ofstream> Instance::InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas)
 {
-    LocalUnicodeStringBuilder<4096> logFilename;
-    logFilename.Add(object->GetPath());
-    logFilename.Add(".dropper.log");
-
-    std::string logFilenameUTF8;
-    logFilename.ToString(logFilenameUTF8);
-
-    logFile.open(logFilenameUTF8, std::ios::out);
-
-    CHECK(logFile.is_open(), false, "");
-
-    std::ostringstream stream;
+    std::ofstream logFile;
+    logFile.open(p, std::ios::out);
+    CHECK(logFile.is_open(), std::nullopt, "");
 
     for (const auto& area : areas) {
-        stream << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.first << std::endl;
-        stream << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.second << std::endl;
+        logFile << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.first << std::endl;
+        logFile << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.second << std::endl;
     }
-    stream << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
+    logFile << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
 
-    logFile << stream.str();
-    CHECK(logFile.good(), false, "");
-
-    return true;
+    return logFile;
 }
 
-bool Instance::WriteSummaryToLog(std::map<std::string_view, uint32>& occurences)
+bool Instance::WriteSummaryToLog(std::ofstream& f, std::map<std::string_view, uint32>& occurences)
 {
-    CHECK(logFile.is_open(), false, "");
+    CHECK(f.is_open(), false, "");
 
-    std::ostringstream stream;
     for (const auto& [k, v] : occurences) {
-        stream << std::setfill(' ') << std::left << std::setw(16) << k << ": " << std::right << std::setw(16) << std::dec << v << std::endl;
+        f << std::setfill(' ') << std::left << std::setw(16) << k << ": " << std::right << std::setw(16) << std::dec << v << std::endl;
     }
-    stream << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
+    f << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
 
-    logFile << stream.str();
-    CHECK(logFile.good(), false, "");
+    CHECK(f.good(), false, "");
 
     return true;
 }
 
-bool Instance::WriteToLog(uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper)
+bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper)
 {
-    CHECK(logFile.is_open(), false, "");
+    CHECK(f.is_open(), false, "");
 
-    std::ostringstream stream;
-    stream << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
-    stream << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
-    stream << std::setfill(' ') << std::setw(16) << dropper->GetName() << "] [";
-    stream << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << "] [";
-    stream << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << "]" << std::endl;
+    f << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
+    f << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
+    f << std::setfill(' ') << std::setw(16) << dropper->GetName() << "] [";
+    f << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << "] [";
+    f << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << "]" << std::endl;
 
-    logFile << stream.str();
-    CHECK(logFile.good(), false, "");
+    CHECK(f.good(), false, "");
 
     return true;
 }
 
-bool Instance::WriteToFile(uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result)
+bool Instance::WriteToFile(std::filesystem::path path, uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result)
 {
     auto bv = object->GetData().Get(start, static_cast<uint32>(end - start), true);
     CHECK(bv.IsValid(), false, "");
 
-    LocalUnicodeStringBuilder<4096> filename;
-
-    std::string_view name = dropper->GetName();
+    auto flags = std::ios::out | std::ios::binary;
     if (dropper->ShouldGroupInOneFile()) {
-        if (!singleFiles.contains(name)) {
-            filename.Add(object->GetPath());
-            filename.Add(".");
-            filename.Add(dropper->GetOutputExtension());
-
-            std::string filenameUTF8;
-            filename.ToString(filenameUTF8);
-
-            auto f = std::make_unique<std::ofstream>();
-            f->open(filenameUTF8, std::ios::out | std::ios::app | std::ios::binary);
-            CHECK(f->is_open(), false, "");
-
-            std::filesystem::resize_file(filenameUTF8, 0);
-            f->seekp(0);
-
-            singleFiles[name] = std::move(f);
-        }
-
-        auto& f = singleFiles.at(name);
-
-        if (result != Result::Unicode) {
-            f->write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
-        } else {
-            for (uint32 i = 0; i < bv.GetLength(); i += 2) {
-                f->write(reinterpret_cast<const char*>(bv.GetData() + i), 1);
-            }
-        }
-        f->write("\n", 1);
+        std::string f = path.filename().string().append(".").append(dropper->GetOutputExtension());
+        path          = path.parent_path() / f;
+        flags |= std::ios::app;
     } else {
-        filename.Add(object->GetPath());
-        filename.Add(".obj.");
-        filename.Add(std::to_string(objectId++));
-        filename.Add(".");
-        filename.Add(dropper->GetOutputExtension());
-
-        std::string filenameUTF8;
-        filename.ToString(filenameUTF8);
-
-        std::ofstream f;
-        f.open(filenameUTF8, std::ios::out | std::ios::binary);
-        CHECK(f.is_open(), false, "");
-        f.write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
-        f.close();
+        std::string f = path.filename().string().append(".obj.").append(std::to_string(objectId++)).append(".").append(dropper->GetOutputExtension());
+        path          = path.parent_path() / f;
     }
+
+    std::ofstream f;
+    f.open(path, flags);
+    CHECK(f.is_open(), false, "");
+
+    if (dropper->ShouldGroupInOneFile()) {
+        if (result == Result::Unicode) {
+            for (uint32 i = 0; i < bv.GetLength(); i += 2) {
+                f.write(reinterpret_cast<const char*>(bv.GetData() + i), 1);
+            }
+        } else {
+            f.write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
+        }
+        f.write("\n", 1);
+    } else {
+        f.write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
+    }
+
+    f.close();
+
+    context.objectPaths.insert(path);
 
     return true;
 }
 
-bool Instance::Process()
+bool Instance::Process(
+      const std::vector<PluginClassification>& plugins,
+      const std::filesystem::path& path,
+      const std::filesystem::path& logPath,
+      bool recursive,
+      bool writeLog,
+      bool highlightObjects)
 {
     CHECK(object.IsValid(), false, "");
 
-    CHECK(InitLogFile(areas), false, "");
+    context.zones.Clear();
+    context.findings.clear();
+    context.occurences.clear();
+    context.objectPaths.clear();
 
     DataCache& cache = object->GetData();
     if (this->computeForFile) {
-        CHECK(ProcessObjects(1, cache.GetSize()), false, "");
+        CHECK(ProcessObjects(plugins, 1, cache.GetSize(), writeLog, recursive), false, "");
     } else {
         for (const auto& zone : selectedZones) {
-            CHECK(ProcessObjects(zone.start, zone.end), false, "");
+            CHECK(ProcessObjects(plugins, zone.start, zone.end, writeLog, recursive), false, "");
         }
     }
 
-    UnInitLogs();
+    if (writeLog) {
+        auto logFile = InitLogFile(logPath, areas);
+        CHECK(logFile.has_value(), false, "");
+        CHECK(logFile->good(), false, "");
+
+        struct Defer {
+            std::ofstream& o;
+            ~Defer()
+            {
+                o.close();
+            }
+        } _{ .o = *logFile };
+
+        WriteSummaryToLog(*logFile, context.occurences);
+        for (const auto& f : context.findings) {
+            for (auto& dropper : context.objectDroppers) {
+                if (dropper->GetName() == f.dropperName) {
+                    CHECK(WriteToLog(*logFile, f.start, f.end, f.result, dropper), false, "");
+                    CHECK(WriteToFile(path, f.start, f.end, dropper, f.result), false, "");
+                    break;
+                }
+            }
+        }
+    }
+
+    if (highlightObjects) {
+        CHECK(SetHighlighting(true), false, "");
+    }
 
     return true;
 }
 
-bool Instance::ProcessObjects(uint64 offset, uint64 size)
+bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool writeLog, bool recursive)
 {
-    struct Data {
-        uint64 start;
-        uint64 end;
-        Result result;
-        std::string_view dropperName;
-    };
-
-    std::vector<Data> findings;
-    std::map<std::string_view, uint32> occurences;
-    GView::Utils::ZonesList zones;
-
     DataCache& cache  = object->GetData();
     uint64 nextOffset = offset;
+
+    std::vector<std::unique_ptr<IDrop>*> whitelistedPlugins;
+    whitelistedPlugins.reserve(context.objectDroppers.size());
+    for (auto& d : context.objectDroppers) {
+        for (const auto& p : plugins) {
+            if (d->GetGroup() == p.category && d->GetSubGroup() == p.subcategory) {
+                whitelistedPlugins.push_back(&d);
+                break;
+            }
+        }
+    }
 
     ProgressStatus::Init("Searching...", size);
     LocalString<512> ls;
@@ -261,7 +247,7 @@ bool Instance::ProcessObjects(uint64 offset, uint64 size)
     while (offset < size) {
         if (offset >= toUpdate) {
             uint32 objectsCount = 0;
-            for (const auto& [_, v] : occurences) {
+            for (const auto& [_, v] : context.occurences) {
                 objectsCount += v;
             }
 
@@ -284,20 +270,23 @@ bool Instance::ProcessObjects(uint64 offset, uint64 size)
                 }
             }
 
-            for (auto& dropper : context.objectDroppers) {
-                if (dropper->GetPriority() != priority) {
+            for (auto& dropper : whitelistedPlugins) {
+                if ((*dropper)->GetPriority() != priority) {
                     continue;
                 }
 
                 uint64 start      = 0;
                 uint64 end        = 0;
-                const auto result = dropper->Check(offset, cache, buffer, start, end);
+                const auto result = (*dropper)->Check(offset, cache, buffer, start, end);
 
                 if (result != Result::NotFound) {
-                    const auto name = dropper->GetName();
-                    occurences[name] += 1;
-                    findings.push_back({ start, end, result, name });
-                    nextOffset = end;
+                    const auto name = (*dropper)->GetName();
+                    context.occurences[name] += 1;
+                    context.findings.push_back({ start, end, result, name });
+
+                    if (recursive) {
+                        nextOffset = end;
+                    }
 
                     // adjust for zones
                     if (result == Result::Unicode) {
@@ -307,7 +296,7 @@ bool Instance::ProcessObjects(uint64 offset, uint64 size)
                     } else {
                         end += 1;
                     }
-                    zones.Add(start, end, OBJECT_CATEGORY_COLOR_MAP.at(dropper->GetGroup()), dropper->GetName());
+                    context.zones.Add(start, end, OBJECT_CATEGORY_COLOR_MAP.at((*dropper)->GetGroup()), (*dropper)->GetName());
 
                     break;
                 }
@@ -318,29 +307,25 @@ bool Instance::ProcessObjects(uint64 offset, uint64 size)
     }
 
     uint32 objectsCount = 0;
-    for (const auto& [_, v] : occurences) {
+    for (const auto& [_, v] : context.occurences) {
         objectsCount += v;
     }
     ProgressStatus::Update(size, ls.Format(format, size, size, objectsCount));
 
-    WriteSummaryToLog(occurences);
-    for (const auto& f : findings) {
-        for (auto& dropper : context.objectDroppers) {
-            if (dropper->GetName() == f.dropperName) {
-                CHECK(WriteToLog(f.start, f.end, f.result, dropper), false, "");
-                CHECK(WriteToFile(f.start, f.end, dropper, f.result), false, "");
-                break;
-            }
-        }
-    }
-
-    CHECK(ToggleHighlighting(true, zones), false, "");
-
     return true;
 }
 
-bool Instance::ToggleHighlighting(bool value, GView::Utils::ZonesList& zones)
+bool Instance::SetHighlighting(bool value, bool warn)
 {
+    if (value) {
+        if (context.zones.GetCount() == 0) {
+            if (warn) {
+                Dialogs::MessageBox::ShowWarning("Object Highlighting", "There are no objects to highlight!");
+            }
+            return true;
+        }
+    }
+
     auto desktop         = AppCUI::Application::GetDesktop();
     const auto windowsNo = desktop->GetChildrenCount();
     for (uint32 i = 0; i < windowsNo; i++) {
@@ -349,7 +334,7 @@ bool Instance::ToggleHighlighting(bool value, GView::Utils::ZonesList& zones)
         auto view      = interface->GetCurrentView();
 
         if (value) {
-            CHECK(view->SetObjectsHighlightingZonesList(zones), false, "");
+            CHECK(view->SetObjectsHighlightingZonesList(context.zones), false, "");
         }
         CHECK(view->OnEvent(
                     nullptr,
@@ -402,6 +387,11 @@ bool Instance::SetComputingFile(bool value)
     }
 
     return true;
+}
+
+const std::set<std::filesystem::path>& Instance::GetObjectsPaths() const
+{
+    return context.objectPaths;
 }
 
 bool Instance::DropBinaryData(

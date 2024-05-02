@@ -25,6 +25,7 @@ class IFrame : public IDrop
 
     virtual const std::string_view GetName() const override;
     virtual ObjectCategory GetGroup() const override;
+    virtual uint32 GetSubGroup() const override;
     virtual const std::string_view GetOutputExtension() const override;
     virtual Priority GetPriority() const override;
     virtual bool ShouldGroupInOneFile() const override;
@@ -38,6 +39,7 @@ class Script : public IDrop
 
     virtual const std::string_view GetName() const override;
     virtual ObjectCategory GetGroup() const override;
+    virtual uint32 GetSubGroup() const override;
     virtual const std::string_view GetOutputExtension() const override;
     virtual Priority GetPriority() const override;
     virtual bool ShouldGroupInOneFile() const override;
@@ -51,6 +53,7 @@ class XML : public IDrop // TODO: maybe a proper XML parser
 
     virtual const std::string_view GetName() const override;
     virtual ObjectCategory GetGroup() const override;
+    virtual uint32 GetSubGroup() const override;
     virtual const std::string_view GetOutputExtension() const override;
     virtual Priority GetPriority() const override;
     virtual bool ShouldGroupInOneFile() const override;

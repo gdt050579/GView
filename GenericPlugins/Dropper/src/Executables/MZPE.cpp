@@ -179,6 +179,11 @@ ObjectCategory MZPE::GetGroup() const
     return ObjectCategory::Executables;
 }
 
+uint32 MZPE::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::MZPE);
+}
+
 const std::string_view MZPE::GetOutputExtension() const
 {
     return "mzpe";

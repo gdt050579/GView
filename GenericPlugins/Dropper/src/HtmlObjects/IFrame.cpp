@@ -15,6 +15,11 @@ ObjectCategory IFrame::GetGroup() const
     return ObjectCategory::HtmlObjects;
 }
 
+uint32 IFrame::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::IFrame);
+}
+
 const std::string_view IFrame::GetOutputExtension() const
 {
     return "iframe";

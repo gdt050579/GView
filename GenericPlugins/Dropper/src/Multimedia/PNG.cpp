@@ -15,6 +15,11 @@ ObjectCategory PNG::GetGroup() const
     return ObjectCategory::Multimedia;
 }
 
+uint32 PNG::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::PNG);
+}
+
 const std::string_view PNG::GetOutputExtension() const
 {
     return "png";

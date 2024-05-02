@@ -27,6 +27,11 @@ const std::string_view IpAddress::GetOutputExtension() const
     return "ip";
 }
 
+uint32 IpAddress::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::IP);
+}
+
 Result IpAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
     CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");

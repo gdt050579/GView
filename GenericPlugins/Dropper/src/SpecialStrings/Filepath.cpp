@@ -27,6 +27,11 @@ const std::string_view Filepath::GetOutputExtension() const
     return "filepath";
 }
 
+uint32 Filepath::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::Filepath);
+}
+
 Result Filepath::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
 {
     CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");

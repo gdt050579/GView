@@ -6,6 +6,7 @@
 #include <sstream>
 #include <iomanip>
 #include <filesystem>
+#include <set>
 
 #include "SpecialStrings.hpp"
 #include "Executables.hpp"
@@ -31,6 +32,11 @@ constexpr std::string_view DEFAULT_EXCLUDE_CHARSET{ "" };
 constexpr int32 CHARSET_MATRIX_SIZE{ 256 };
 constexpr int8 HEX_NUMBER_SIZE{ 4 };
 
+struct PluginClassification {
+    ObjectCategory category{};
+    uint32 subcategory{ 0 };
+};
+
 class Instance
 {
   private:
@@ -42,12 +48,22 @@ class Instance
         bool initialized{ false };
 
         bool textMatrix[CHARSET_MATRIX_SIZE]{ true };
+
+        struct Finding {
+            uint64 start;
+            uint64 end;
+            Result result;
+            std::string_view dropperName;
+        };
+
+        GView::Utils::ZonesList zones;
+        std::vector<Finding> findings;
+        std::map<std::string_view, uint32> occurences;
+
+        std::set<std::filesystem::path> objectPaths;
     } context;
 
-    std::ofstream logFile;
     uint64 objectId{ 0 };
-
-    std::map<std::string_view, std::unique_ptr<std::ofstream>> singleFiles;
 
     std::vector<std::pair<uint64, uint64>> areas;
     std::vector<GView::TypeInterface::SelectionZone> selectedZones;
@@ -60,23 +76,28 @@ class Instance
 
   public:
     Instance() = default;
-    ~Instance();
 
     bool Init(Reference<GView::Object> object);
-    void UnInitLogs();
 
     BufferView GetPrecachedBuffer(uint64 offset, DataCache& cache);
-    bool InitLogFile(const std::vector<std::pair<uint64, uint64>>& areas);
-    bool WriteSummaryToLog(std::map<std::string_view, uint32>& occurences);
-    bool WriteToLog(uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper);
-    bool WriteToFile(uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result);
-    bool Process();
-    bool ProcessObjects(uint64 offset, uint64 size);
-    bool ToggleHighlighting(bool value, GView::Utils::ZonesList& zones);
+    std::optional<std::ofstream> InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas);
+    bool WriteSummaryToLog(std::ofstream& f, std::map<std::string_view, uint32>& occurences);
+    bool WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper);
+    bool WriteToFile(std::filesystem::path path, uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result);
+    bool Process(
+          const std::vector<PluginClassification>& plugins,
+          const std::filesystem::path& path,
+          const std::filesystem::path& logPath,
+          bool recursive,
+          bool writeLog,
+          bool highlightObjects);
+    bool ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool writeLog, bool recursive);
+    bool SetHighlighting(bool value, bool warn = false);
 
     bool HandleComputationAreas();
     bool IsComputingFile() const;
     bool SetComputingFile(bool value);
+    const std::set<std::filesystem::path>& GetObjectsPaths() const;
 
     bool DropBinaryData(
           std::string_view filename,

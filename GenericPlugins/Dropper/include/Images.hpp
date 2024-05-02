@@ -16,7 +16,7 @@ static const std::map<Types, Metadata> TYPES_MAP{
         "JP(E)G (Joint Photographic Experts Group) is a commonly used method of lossy compression for digital images, particularly "
         "for those images produced by digital photography.",
         false } },
-    { Types::PNG, { "PNG", "Portable Network Graphics is a raster-graphics file format that supports lossless data compression.", false } },
+    { Types::PNG, { "PNG", "Portable Network Graphics is a raster-graphics file format that supports lossless data compression.", true } },
     { Types::GIF,
       { "GIF",
         "GIF stands for Graphics Interchange Format. GIF is a raster file format designed for relatively basic images that appear mainly on the internet.",
@@ -31,6 +31,7 @@ class PNG : public IDrop
 
     virtual const std::string_view GetName() const override;
     virtual ObjectCategory GetGroup() const override;
+    virtual uint32 GetSubGroup() const override;
     virtual const std::string_view GetOutputExtension() const override;
     virtual Priority GetPriority() const override;
     virtual bool ShouldGroupInOneFile() const override;

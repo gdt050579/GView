@@ -21,17 +21,22 @@ constexpr int32 RADIO_GROUP_COMPUTATION = 1;
 constexpr int32 RADIO_ID_FILE           = 1;
 constexpr int32 RADIO_ID_SELECTION      = 2;
 
-constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE    = 1;
-constexpr int32 CHECKBOX_ID_RECURSIVE_OBJECTS    = 2;
-constexpr int32 CHECKBOX_ID_WRITE_LOG_OBJECTS    = 3;
-constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS     = 4;
-constexpr int32 CHECKBOX_ID_OPEN_DROPPED_OBJECTS = 5;
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_FILE         = 1;
+constexpr int32 CHECKBOX_ID_RECURSIVE_OBJECTS         = 2;
+constexpr int32 CHECKBOX_ID_WRITE_LOG_OBJECTS         = 3;
+constexpr int32 CHECKBOX_ID_OPEN_LOG_OBJECTS          = 4;
+constexpr int32 CHECKBOX_ID_OPEN_DROPPED_OBJECTS      = 5;
+constexpr int32 CHECKBOX_ID_HIGHLIGHT_DROPPED_OBJECTS = 6;
 
 constexpr int32 RADIO_GROUP_BINARY_DATA_FILE = 2;
 constexpr int32 RADIO_ID_OVERWRITE_FILE      = 1;
 constexpr int32 RADIO_ID_APPEND_TO_FILE      = 2;
 
-constexpr int32 CMD_BINARY_DATA_DROP = 1;
+constexpr int32 CMD_BINARY_DATA_DROP                    = 1;
+constexpr int32 CMD_BINARY_OBJECTS_DROP                 = 2;
+constexpr int32 CMD_BINARY_OBJECTS_HIGHLIGHTING         = 3;
+constexpr int32 CMD_BINARY_OBJECTS_HIGHLIGHTING_ENABLE  = 4;
+constexpr int32 CMD_BINARY_OBJECTS_HIGHLIGHTING_DISABLE = 5;
 
 using namespace AppCUI::Controls;
 
@@ -63,17 +68,18 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     auto tps  = Factory::TabPage::Create(this->tab, STRINGS_PAGE_NAME, TAB_ID_STRINGS);
     auto tpf  = Factory::TabPage::Create(this->tab, FORMAT_INFORMATION_PAGE_NAME, TAB_ID_FORMAT_INFORMATION);
 
-    LocalUnicodeStringBuilder<1024> lusb;
-
     /* init binary tab page area */
 
-    lusb.Set(object->GetName());
-    lusb.Add(".drop");
+    droppedFilename = object->GetPath();
+    {
+        std::u16string f = droppedFilename.filename().u16string().append(u".drop");
+        droppedFilename  = droppedFilename.parent_path() / f;
+    }
 
     Factory::Label::Create(tpb, "Description: drop selection(s) to a file (overwrite or append)", "x:2%,y:1,w:97%");
 
     Factory::Label::Create(tpb, "Filename", "x:2%,y:3,w:13%");
-    this->binaryFilename = Factory::TextField::Create(tpb, lusb, "x:15%,y:3,w:84%");
+    this->binaryFilename = Factory::TextField::Create(tpb, droppedFilename.filename().u16string(), "x:15%,y:3,w:84%");
 
     Factory::Label::Create(tpb, "CharSet to include (a-z,\\x01-\\x05)", "x:2%,y:5,w:97%");
     this->includedCharset = Factory::TextField::Create(tpb, DEFAULT_INCLUDE_CHARSET, "x:2%,y:6,w:97%");
@@ -81,9 +87,9 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     Factory::Label::Create(tpb, "CharSet to exclude (a-z,\\x01-\\x05)", "x:2%,y:8,w:97%");
     this->excludedCharset = Factory::TextField::Create(tpb, DEFAULT_EXCLUDE_CHARSET, "x:2%,y:9,w:97%");
 
-    this->checkboxOpenDroppedFile = Factory::CheckBox::Create(tpb, "Open &dropped file", "x:2%,y:11,w:96%", CHECKBOX_ID_OPEN_DROPPED_FILE);
+    this->checkboxOpenDroppedFile = Factory::CheckBox::Create(tpb, "Open dro&pped file", "x:2%,y:11,w:96%", CHECKBOX_ID_OPEN_DROPPED_FILE);
     this->overwriteFile = Factory::RadioBox::Create(tpb, "Over&write file", "x:2%,y:13,w:96%", RADIO_GROUP_BINARY_DATA_FILE, RADIO_ID_OVERWRITE_FILE, true);
-    this->appendToFile  = Factory::RadioBox::Create(tpb, "&Append to file", "x:2%,y:15,w:96%", RADIO_GROUP_BINARY_DATA_FILE, RADIO_ID_APPEND_TO_FILE);
+    this->appendToFile  = Factory::RadioBox::Create(tpb, "&Append to file", "x:2%,y:14,w:96%", RADIO_GROUP_BINARY_DATA_FILE, RADIO_ID_APPEND_TO_FILE);
 
     /* end binary tab page area */
 
@@ -98,19 +104,28 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     this->objectsPlugins->GetColumn(0).SetWidth(100.0);
 
     this->currentObjectDescription = Factory::Label::Create(tpo, "Object description", "x:42%,y:4,w:56%,h:4");
-    Factory::Label::Create(tpo, "Objects name prefix", "x:42%,y:6,w:20%");
-    this->objectsFilename = Factory::TextField::Create(tpo, lusb, "x:64%,y:6,w:30%");
+    Factory::Label::Create(tpo, "Objects name prefix", "x:42%,y:9,w:20%");
+    this->objectsFilename = Factory::TextField::Create(tpo, droppedFilename.filename().u16string(), "x:64%,y:9,w:30%");
 
-    this->checkRecursiveInObjects = Factory::CheckBox::Create(tpo, "Check recursive&ly in objects", "x:42%,y:8,w:56%", CHECKBOX_ID_RECURSIVE_OBJECTS);
-    this->writeObjectsLog         = Factory::CheckBox::Create(tpo, "Write objec&ts log", "x:42%,y:9,w:56%", CHECKBOX_ID_WRITE_LOG_OBJECTS);
-    this->openLogInView           = Factory::CheckBox::Create(tpo, "Open log as list &view", "x:42%,y:10,w:56%", CHECKBOX_ID_WRITE_LOG_OBJECTS);
-    this->openDroppedObjects      = Factory::CheckBox::Create(tpo, "Open &dropped objects", "x:42%,y:11,w:56%", CHECKBOX_ID_OPEN_DROPPED_OBJECTS);
+    logFilename = object->GetPath();
+    {
+        std::u16string f = logFilename.filename().u16string().append(u".dropper.log");
+        logFilename      = logFilename.parent_path() / f;
+    }
+    Factory::Label::Create(tpo, "Log filename", "x:42%,y:10,w:20%");
+    this->objectsLogFilename = Factory::TextField::Create(tpo, logFilename.filename().u16string(), "x:64%,y:10,w:30%");
+
+    this->checkRecursiveInObjects = Factory::CheckBox::Create(tpo, "Check recursive&ly in objects", "x:42%,y:12,w:56%", CHECKBOX_ID_RECURSIVE_OBJECTS);
+    this->writeObjectsLog         = Factory::CheckBox::Create(tpo, "Write objec&ts log", "x:42%,y:13,w:56%", CHECKBOX_ID_WRITE_LOG_OBJECTS);
+    this->openLogInView           = Factory::CheckBox::Create(tpo, "Open lo&g file", "x:42%,y:14,w:56%", CHECKBOX_ID_WRITE_LOG_OBJECTS);
+    this->openDroppedObjects      = Factory::CheckBox::Create(tpo, "Open dropped ob&jects", "x:42%,y:15,w:56%", CHECKBOX_ID_OPEN_DROPPED_OBJECTS);
+    this->highlightObjects        = Factory::CheckBox::Create(tpo, "&Highlight dropped objects", "x:42%,y:16,w:56%", CHECKBOX_ID_HIGHLIGHT_DROPPED_OBJECTS);
 
     this->checkRecursiveInObjects->SetChecked(true);
     this->writeObjectsLog->SetChecked(true);
 
-    Factory::Button::Create(tpo, "&Select all objects", "x:42%,y:17,w:25%", BUTTON_ID_SELECT_ALL_OBJECTS);
-    Factory::Button::Create(tpo, "&Deselect all objects", "x:69%,y:17,w:25%", BUTTON_ID_DESELECT_ALL_OBJECTS);
+    Factory::Button::Create(tpo, "&Select all objects", "x:42%,y:18,w:25%", BUTTON_ID_SELECT_ALL_OBJECTS);
+    Factory::Button::Create(tpo, "&Deselect all objects", "x:69%,y:18,w:25%", BUTTON_ID_DESELECT_ALL_OBJECTS);
 
     const auto AddSubItem = [this](ListViewItem parent, ObjectCategory category, uint32 subcategory, const Metadata& md) {
         LocalUnicodeStringBuilder<1024> lusb;
@@ -175,6 +190,15 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
         default:
             break;
         }
+
+        bool parentActive{ false };
+        for (const auto& c : metadata.children) {
+            if (c.IsChecked()) {
+                parentActive = true;
+                break;
+            }
+        }
+        item.SetCheck(parentActive);
     }
 
     // we always assume that we have at least one item and it's from a main cateogry
@@ -186,7 +210,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 
     /* init type info tab page area */
 
-    // TODO: (optional?) callbacks in tyoe plugins
+    // TODO: (optional?) callbacks in type plugins
     Factory::Label::Create(tpf, "Description: dump information about a particular file format (text, JSON, etc)", "x:2%,y:1,w:97%");
     Factory::Label::Create(tpf, "Not available at the moment (WIP)!", "x:2%,y:2,w:97%");
 
@@ -209,7 +233,33 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 bool DropperUI::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(AppCUI::Input::Key::F3, "Drop binary data", CMD_BINARY_DATA_DROP);
+    commandBar.SetCommand(AppCUI::Input::Key::F10, "Drop objects", CMD_BINARY_DATA_DROP);
+    commandBar.SetCommand(AppCUI::Input::Key::F4, "Enable highlight objects", CMD_BINARY_OBJECTS_HIGHLIGHTING_ENABLE);
+    commandBar.SetCommand(AppCUI::Input::Key::F5, "Disable highlight objects", CMD_BINARY_OBJECTS_HIGHLIGHTING_DISABLE);
+    commandBar.SetCommand(AppCUI::Input::Key::F11, "Highlight objects", CMD_BINARY_OBJECTS_HIGHLIGHTING);
+
     return false;
+}
+
+const std::vector<PluginClassification> DropperUI::GetActivePlugins()
+{
+    std::vector<PluginClassification> plugins;
+
+    const auto count = objectsPlugins->GetItemsCount();
+    plugins.reserve(count);
+
+    for (uint32 i = 0; i < count; i++) {
+        auto item = objectsPlugins->GetItem(i);
+        auto data = item.GetData<ItemMetadata>();
+
+        if (data->parent.has_value()) { // not a main category
+            if (item.IsChecked()) {
+                plugins.emplace_back(PluginClassification{ data->category, data->subcategory });
+            }
+        }
+    }
+
+    return plugins;
 }
 
 bool DropperUI::DropBinary()
@@ -252,6 +302,26 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
             CHECK(DropBinary(), false, "");
             return true;
         }
+        if (ID == CMD_BINARY_OBJECTS_DROP) {
+            CHECK(instance.Process(this->GetActivePlugins(), this->droppedFilename, this->logFilename, true, true, false), false, "");
+            this->Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        if (ID == CMD_BINARY_OBJECTS_HIGHLIGHTING) {
+            CHECK(instance.Process(this->GetActivePlugins(), this->droppedFilename, this->logFilename, true, false, true), false, "");
+            this->Exit(Dialogs::Result::Ok);
+            return true;
+        }
+        if (ID == CMD_BINARY_OBJECTS_HIGHLIGHTING_ENABLE) {
+            this->Exit(Dialogs::Result::Ok);
+            CHECK(instance.SetHighlighting(true, true), false, "");
+            return true;
+        }
+        if (ID == CMD_BINARY_OBJECTS_HIGHLIGHTING_DISABLE) {
+            this->Exit(Dialogs::Result::Ok);
+            CHECK(instance.SetHighlighting(false, true), false, "");
+            return true;
+        }
         break;
 
     case AppCUI::Controls::Event::WindowClose:
@@ -268,13 +338,34 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
             case TAB_ID_BINARY:
                 CHECK(DropBinary(), false, "");
                 break;
-            case TAB_ID_OBJECTS:
-                if (instance.Process()) {
-                    Dialogs::MessageBox::ShowNotification("Dropper", "Objects extracted.");
+            case TAB_ID_OBJECTS: {
+                if (instance.Process(
+                          this->GetActivePlugins(),
+                          this->droppedFilename,
+                          this->logFilename,
+                          this->checkRecursiveInObjects->IsChecked(),
+                          this->writeObjectsLog->IsChecked(),
+                          this->highlightObjects->IsChecked())) {
+                    if (this->openDroppedObjects->IsChecked()) {
+                        const auto& paths = instance.GetObjectsPaths();
+                        for (const auto& p : paths) {
+                            GView::App::OpenFile(p, GView::App::OpenMethod::BestMatch, "", parentWindow);
+                        }
+                    }
+
+                    if (this->openLogInView->IsChecked()) {
+                        GView::App::OpenFile(this->logFilename, GView::App::OpenMethod::BestMatch, "", parentWindow);
+                    }
+
+                    if (this->openLogInView->IsChecked() || this->openDroppedObjects->IsChecked()) {
+                        this->Exit(Dialogs::Result::Ok);
+                    } else {
+                        Dialogs::MessageBox::ShowNotification("Dropper", "Objects extracted.");
+                    }
                 } else {
                     Dialogs::MessageBox::ShowError("Dropper", "Failed extracting objects!");
                 }
-                break;
+            } break;
             case TAB_ID_STRINGS:
                 break;
             case TAB_ID_FORMAT_INFORMATION:

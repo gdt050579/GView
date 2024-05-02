@@ -15,6 +15,11 @@ ObjectCategory Script::GetGroup() const
     return ObjectCategory::HtmlObjects;
 }
 
+uint32 Script::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::Script);
+}
+
 const std::string_view Script::GetOutputExtension() const
 {
     return "script";

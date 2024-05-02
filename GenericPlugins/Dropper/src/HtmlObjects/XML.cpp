@@ -20,6 +20,11 @@ const std::string_view XML::GetOutputExtension() const
     return "xml";
 }
 
+uint32 XML::GetSubGroup() const
+{
+    return static_cast<uint32>(Types::XML);
+}
+
 Priority XML::GetPriority() const
 {
     return Priority::Text;
