@@ -1,1 +1,9 @@
-target_sources(GViewCore PRIVATE ErrorDialog.cpp GViewApp.cpp FileWindow.cpp FileWindowProperties.cpp Instance.cpp SelectTypeDialog.cpp)
+target_sources(GViewCore PRIVATE 
+    ErrorDialog.cpp 
+    GViewApp.cpp 
+    FileWindow.cpp 
+    FileWindowProperties.cpp 
+    Instance.cpp 
+    SelectTypeDialog.cpp 
+    TutorialWindow.cpp
+)

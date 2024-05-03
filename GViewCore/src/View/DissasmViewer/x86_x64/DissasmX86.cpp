@@ -33,6 +33,7 @@ constexpr uint32 textColumnTextLength               = opCodesGroupsShown;
 constexpr uint32 textColumnSpacesLength             = 4;
 constexpr uint32 textColumnTotalLength              = textColumnTextLength + textColumnSpacesLength;
 constexpr uint32 textColumnIndicatorArrowLinesSpace = 3;
+constexpr uint32 textAndOpCodesTotalLength          = opCodesTotalLength + textColumnTotalLength;
 constexpr uint32 textTotalColumnLength =
       addressTotalLength + textColumnTextLength + opCodesTotalLength + textColumnTotalLength + textColumnIndicatorArrowLinesSpace;
 constexpr uint32 commentPaddingLength   = 10;
@@ -87,12 +88,12 @@ AsmOffsetLine SearchForClosestAsmOffsetLineByOffset(const std::vector<AsmOffsetL
 }
 
 // TODO: to be moved inside plugin for some sort of API for token<->color
-inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg, const AsmData& data)
+inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, DissasmColors& colors, const AsmData& data)
 {
     if (keyword.empty())
-        return cfg.Colors.AsmDefaultColor;
+        return colors.AsmDefaultColor;
     if (keyword[0] == 'j')
-        return cfg.Colors.AsmJumpInstruction;
+        return colors.AsmJumpInstruction;
 
     LocalString<4> holder;
     holder.Set(keyword);
@@ -114,27 +115,21 @@ inline ColorPair GetASMColorPairByKeyword(std::string_view keyword, Config& cfg,
         case 's':
         case 'l':
         case 'h':
-            return cfg.Colors.AsmWorkRegisterColor;
+            return colors.AsmWorkRegisterColor;
         case 'p':
         case 'i':
-            return cfg.Colors.AsmStackRegisterColor;
+            return colors.AsmStackRegisterColor;
         default:
             break;
         }
     }
 
-    return cfg.Colors.AsmDefaultColor;
+    return colors.AsmDefaultColor;
 }
 
 // TODO: to be moved inside plugin for some sort of API for token<->color
 inline void DissasmAddColorsToInstruction(
-      DissasmAsmPreCacheLine& insn,
-      CharacterBuffer& cb,
-      Config& cfg,
-      const LayoutDissasm& layout,
-      AsmData& data,
-      const CodePage& codePage,
-      uint64 addressPadding = 0)
+      DissasmAsmPreCacheLine& insn, CharacterBuffer& cb, Config& cfg, DissasmColors& colors, AsmData& data, const CodePage& codePage, uint64 addressPadding = 0)
 {
     // TODO: replace CharacterBuffer with Canvas;
 
@@ -146,44 +141,47 @@ inline void DissasmAddColorsToInstruction(
     // TODO: in loc de label jmp_address:
     LocalString<128> string;
     string.SetFormat("0x%08" PRIx64 "     ", insn.address + addressPadding);
-    cb.Add(string, cfg.Colors.AsmOffsetColor);
-    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
+    cb.Add(string, colors.AsmOffsetColor);
 
-    for (uint32 i = 0; i < opCodesGroupsShown; i++) {
-        if (i >= insn.size) {
-            string.Clear();
-            const uint32 remaining = opCodesGroupsShown - i;
-            // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
-            string.SetChars(' ', remaining * 3);
-            cb.Add(string, cfg.Colors.AsmDefaultColor);
-            break;
-        }
-        const uint8 byte = insn.bytes[i];
-        string.SetFormat("%02x ", byte);
-        cb.Add(string, cfg.Colors.AsmDefaultColor);
-    }
+    if (!cfg.ShowOnlyDissasm) {
+        cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
 
-    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
-
-    for (uint32 i = 0; i < textColumnTextLength; i++) {
-        if (i >= insn.size) {
-            string.Clear();
-            const uint32 remaining = textColumnTextLength - i - 1;
-            string.SetChars(' ', remaining);
-            cb.Add(string, cfg.Colors.AsmDefaultColor);
-            break;
-        }
-        if (i != textColumnTextLength - 1) {
+        for (uint32 i = 0; i < opCodesGroupsShown; i++) {
+            if (i >= insn.size) {
+                string.Clear();
+                const uint32 remaining = opCodesGroupsShown - i;
+                // const uint32 spaces    = remaining >= 2 ? remaining - 2 : 0;
+                string.SetChars(' ', remaining * 3);
+                cb.Add(string, colors.AsmDefaultColor);
+                break;
+            }
             const uint8 byte = insn.bytes[i];
-            cb.InsertChar(codePage[byte], cb.Len(), cfg.Colors.AsmDefaultColor);
+            string.SetFormat("%02x ", byte);
+            cb.Add(string, colors.AsmDefaultColor);
         }
+
+        cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
+
+        for (uint32 i = 0; i < textColumnTextLength; i++) {
+            if (i >= insn.size) {
+                string.Clear();
+                const uint32 remaining = textColumnTextLength - i - 1;
+                string.SetChars(' ', remaining);
+                cb.Add(string, colors.AsmDefaultColor);
+                break;
+            }
+            if (i != textColumnTextLength - 1) {
+                const uint8 byte = insn.bytes[i];
+                cb.InsertChar(codePage[byte], cb.Len(), colors.AsmDefaultColor);
+            }
+        }
+
+        string.Clear();
+        string.SetChars(' ', textColumnSpacesLength);
+        cb.Add(string, colors.AsmDefaultColor);
     }
 
-    string.Clear();
-    string.SetChars(' ', textColumnSpacesLength);
-    cb.Add(string, cfg.Colors.AsmDefaultColor);
-
-    cb.InsertChar('|', cb.Len(), cfg.Colors.AsmTitleColumnColor);
+    cb.InsertChar('|', cb.Len(), colors.AsmTitleColumnColor);
 
     string.Clear();
     string.SetChars(' ', textColumnIndicatorArrowLinesSpace);
@@ -206,31 +204,31 @@ inline void DissasmAddColorsToInstruction(
         }
     }
 
-    cb.Add(string, cfg.Colors.AsmDefaultColor);
+    cb.Add(string, colors.AsmDefaultColor);
 
     if (insn.size > 0) {
         string.Clear();
         string.SetChars(' ', textPaddingLabelsSpace);
 
-        cb.Add(string, cfg.Colors.AsmDefaultColor);
+        cb.Add(string, colors.AsmDefaultColor);
     }
 
     string.SetFormat("%-6s", insn.mnemonic);
-    const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, cfg, data);
+    const ColorPair color = GetASMColorPairByKeyword(insn.mnemonic, colors, data);
     cb.Add(string, color);
 
     if (insn.op_str) {
         const std::string_view op_str = insn.op_str;
         // TODO: add checks to verify  lambdaBuffer.Set, for x86 it's possible to be fine but not for other languages
         LocalString<32> lambdaBuffer;
-        auto checkValidAndAdd = [&cb, &cfg, &lambdaBuffer, &data](std::string_view token) {
+        auto checkValidAndAdd = [&cb, &colors, &lambdaBuffer, &data](std::string_view token) {
             lambdaBuffer.Clear();
             if (token.length() > 2 && token[0] == '0' && token[1] == 'x') {
-                cb.Add(token.data(), cfg.Colors.AsmOffsetColor);
+                cb.Add(token.data(), colors.AsmOffsetColor);
                 return;
             }
             lambdaBuffer.Set(token.data());
-            const ColorPair color = GetASMColorPairByKeyword(token, cfg, data);
+            const ColorPair color = GetASMColorPairByKeyword(token, colors, data);
             cb.Add(token, color);
         };
 
@@ -253,7 +251,7 @@ inline void DissasmAddColorsToInstruction(
                 if (c != ' ') {
                     const char tmp[3] = { ' ', c, '\0' };
                     const char* start = (c == '[') ? tmp : tmp + 1;
-                    cb.Add(start, cfg.Colors.AsmCompareInstructionColor);
+                    cb.Add(start, colors.AsmCompareInstructionColor);
                 }
                 lastOp = c;
                 continue;
@@ -267,7 +265,7 @@ inline void DissasmAddColorsToInstruction(
     } else {
         if (mappingPtr) {
             string.SetFormat("%s", mappingPtr->name.data());
-            const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? cfg.Colors.AsmLocationInstruction : cfg.Colors.AsmFunctionColor;
+            const ColorPair mapColor = mappingPtr->type == MemoryMappingType::TextMapping ? colors.AsmLocationInstruction : colors.AsmFunctionColor;
             cb.Add(string, mapColor);
         }
         assert(mappingPtr);
@@ -693,6 +691,7 @@ inline bool ExtractCallsToInsertFunctionNames(
     auto data            = instructionData.GetData() + address;
 
     std::vector<std::pair<uint64, std::string>> callsFound;
+    std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
     callsFound.reserve(16);
     bool foundCall     = false;
     uint64 callAddress = 0;
@@ -706,8 +705,14 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (value < offsets[0].offset)
                     value += offsets[0].offset;
                 const char* prefix = isJump ? "offset_0x" : "sub_0x";
-                auto callName      = FormatFunctionName(value, prefix);
+                const auto it      = callsMap.find(value);
+                if (it != callsMap.end()) {
+                    if (isJump == it->second)
+                        continue;
+                }
+                auto callName = FormatFunctionName(value, prefix);
                 callsFound.emplace_back(value, callName.GetText());
+                callsMap.insert({ value, isJump });
             }
         } else {
             const auto mnemonicVal = *(uint32*) insn->mnemonic;
@@ -715,9 +720,15 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
                     if (callAddress < offsets[0].offset)
                         callAddress += offsets[0].offset;
+                    const auto it = callsMap.find(callAddress);
+                    if (it != callsMap.end()) {
+                        if (it->second)
+                            continue;
+                    }
                     const char* prefix = "sub_0x";
                     auto callName      = FormatFunctionName(callAddress, prefix);
                     callsFound.emplace_back(callAddress, callName.GetText());
+                    callsMap.insert({ callAddress, true });
                 }
                 foundCall = false;
             } else {
@@ -747,8 +758,19 @@ inline bool ExtractCallsToInsertFunctionNames(
         return OTHER;
     };
 
-    // TODO: this can be extracted for the user to add / delete its own operations
+    std::vector<uint32> indexesToErase;
+    for (int32 i = static_cast<int32>(callsFound.size()) - 1; i >= 0; i--) {
+        const auto& call = callsFound[i];
+        if (call.first == zone->zoneDetails.entryPoint) {
+            indexesToErase.push_back(i);
+            break;
+        }
+    }
+    for (const auto indexToErase : indexesToErase)
+        callsFound.erase(callsFound.begin() + indexToErase);
+
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+    // TODO: this can be extracted for the user to add / delete its own operations
     std::sort(callsFound.begin(), callsFound.end(), [getLabelType](const auto& a, const auto& b) {
         if (a.first < b.first)
             return true;
@@ -987,9 +1009,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto& mapping_ptr = params.settings->memoryMappings.find(hexVal);
         if (mapping_ptr != params.settings->memoryMappings.end())
             mappingPtr = &mapping_ptr->second;
-        const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
-        if (mapping2 != params.settings->memoryMappings.end())
-            mappingPtr = &mapping2->second;
+        else {
+            const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
+            if (mapping2 != params.settings->memoryMappings.end())
+                mappingPtr = &mapping2->second;
+        }
 
         if (mappingPtr) {
             mapping     = mappingPtr;
@@ -1187,7 +1211,7 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
     if (dli.textLineToDraw == 0) {
         constexpr std::string_view zoneName = "Dissasm zone";
-        chars.Add(zoneName.data(), config.Colors.StructureColor);
+        chars.Add(zoneName.data(), ColorMan.Colors.StructureColor);
 
         HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(zoneName.size()), static_cast<uint32>(zoneName.size()) + Layout.startingTextLineOffset);
 
@@ -1216,41 +1240,43 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
 
     const bool firstLineToDraw = dli.screenLineToDraw == 0;
     if (dli.textLineToDraw == 1 || firstLineToDraw) {
-        const ColorPair titleColumnColor = { config.Colors.AsmTitleColumnColor.Foreground, config.Colors.AsmTitleColor.Background };
+        const ColorPair titleColumnColor = { ColorMan.Colors.AsmTitleColumnColor.Foreground, ColorMan.Colors.AsmTitleColor.Background };
 
         constexpr std::string_view address = "File address";
-        chars.Add(address.data(), config.Colors.AsmTitleColor);
+        chars.Add(address.data(), ColorMan.Colors.AsmTitleColor);
 
         spaces.Clear();
         spaces.SetChars(' ', addressTotalLength - static_cast<uint32>(address.size()) - 1u);
-        chars.Add(spaces, config.Colors.AsmTitleColor);
+        chars.Add(spaces, ColorMan.Colors.AsmTitleColor);
 
         chars.InsertChar('|', chars.Len(), titleColumnColor);
 
-        constexpr std::string_view opCodes = "Op Codes";
-        chars.Add(opCodes.data(), config.Colors.AsmTitleColor);
-        spaces.Clear();
-        spaces.SetChars(' ', opCodesTotalLength - static_cast<uint32>(opCodes.size()) - 1u);
-        chars.Add(spaces, config.Colors.AsmTitleColor);
+        if (!config.ShowOnlyDissasm) {
+            constexpr std::string_view opCodes = "Op Codes";
+            chars.Add(opCodes.data(), ColorMan.Colors.AsmTitleColor);
+            spaces.Clear();
+            spaces.SetChars(' ', opCodesTotalLength - static_cast<uint32>(opCodes.size()) - 1u);
+            chars.Add(spaces, ColorMan.Colors.AsmTitleColor);
 
-        chars.InsertChar('|', chars.Len(), titleColumnColor);
+            chars.InsertChar('|', chars.Len(), titleColumnColor);
 
-        constexpr std::string_view textTitle = "Text";
-        chars.Add(textTitle.data(), config.Colors.AsmTitleColor);
-        spaces.Clear();
-        spaces.SetChars(' ', textColumnTotalLength - static_cast<uint32>(textTitle.size()) - 1u);
-        chars.Add(spaces, config.Colors.AsmTitleColor);
+            constexpr std::string_view textTitle = "Text";
+            chars.Add(textTitle.data(), ColorMan.Colors.AsmTitleColor);
+            spaces.Clear();
+            spaces.SetChars(' ', textColumnTotalLength - static_cast<uint32>(textTitle.size()) - 1u);
+            chars.Add(spaces, ColorMan.Colors.AsmTitleColor);
 
-        chars.InsertChar('|', chars.Len(), titleColumnColor);
+            chars.InsertChar('|', chars.Len(), titleColumnColor);
+        }
 
         constexpr std::string_view dissasmTitle = "Dissasm";
-        chars.Add(dissasmTitle.data(), config.Colors.AsmTitleColor);
+        chars.Add(dissasmTitle.data(), ColorMan.Colors.AsmTitleColor);
         uint32 titleColorRemaining = Layout.totalCharactersPerLine - chars.Len();
         if (chars.Len() > Layout.totalCharactersPerLine)
             titleColorRemaining = 0;
         spaces.Clear();
         spaces.SetChars(' ', titleColorRemaining);
-        chars.Add(spaces, config.Colors.AsmTitleColor);
+        chars.Add(spaces, ColorMan.Colors.AsmTitleColor);
 
         HighlightSelectionAndDrawCursorText(dli, chars.Len() - Layout.startingTextLineOffset, chars.Len());
 
@@ -1311,11 +1337,13 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         RegisterStructureCollapseButton(
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
-    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, Layout, asmData, codePage, zone->cachedCodeOffsets[0].offset);
+    DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset);
     auto& lastZone = zone->types.back().get();
     std::string comment;
     if (lastZone.commentsData.GetComment(currentLine, comment)) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
+        if (config.ShowOnlyDissasm)
+            diffLine -= textAndOpCodesTotalLength;
         if (chars.Len() > diffLine)
             diffLine = commentPaddingLength;
         else
@@ -1323,8 +1351,8 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
         LocalString<DISSAM_MINIMUM_COMMENTS_X> spaces;
         spaces.AddChars(' ', diffLine);
         spaces.AddChars(';', 1);
-        chars.Add(spaces, config.Colors.AsmComment);
-        chars.Add(comment, config.Colors.AsmComment);
+        chars.Add(spaces, ColorMan.Colors.AsmComment);
+        chars.Add(comment, ColorMan.Colors.AsmComment);
     }
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
@@ -1452,8 +1480,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
                     }
                     val++;
                 }
-            } else if (insn->op_str[0] == '0' && insn->op_str[1] == '\0') {
-                computedValue = zone->cachedCodeOffsets[0].offset;
+            } else if (insn->op_str[0] >= '0' && insn->op_str[0] <= '9' && insn->op_str[1] == '\0') {
+                computedValue = zone->cachedCodeOffsets[0].offset + (insn->op_str[0] - '0');
             } else {
                 cs_free(insn, 1);
                 return;
@@ -1893,7 +1921,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     paramsPtr->isCollapsed = currentType.isCollapsed;
     paramsPtr->zoneName    = &currentType.name;
 
-    assert(asmCacheLine.TryGetDataFromInsn(*paramsPtr));
+    const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
+    assert(isValidData);
     lastDrawnLine = asmLine;
 
     // uint32 difflines = 0;
