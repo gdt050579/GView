@@ -4,9 +4,9 @@
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
-ObjectCategory SpecialStrings::GetGroup() const
+Category SpecialStrings::GetGroup() const
 {
-    return ObjectCategory::SpecialStrings;
+    return Category::SpecialStrings;
 }
 
 Priority SpecialStrings::GetPriority() const

@@ -10,14 +10,14 @@ const std::string_view PNG::GetName() const
     return "PNG";
 }
 
-ObjectCategory PNG::GetGroup() const
+Category PNG::GetGroup() const
 {
-    return ObjectCategory::Multimedia;
+    return Category::Multimedia;
 }
 
-uint32 PNG::GetSubGroup() const
+Subcategory PNG::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::PNG);
+    return Subcategory::PNG;
 }
 
 const std::string_view PNG::GetOutputExtension() const

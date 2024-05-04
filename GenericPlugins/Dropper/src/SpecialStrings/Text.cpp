@@ -4,33 +4,6 @@
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
-/*
-        => 32
-    !   => 33
-    ()  => 40-41
-    "   => 42
-    -   => 45
-    .   => 46
-    0-9 => 48-57
-    <   => 60   => ignore
-    >   => 62   => ignore
-    ?   => 63
-    @   => 64
-    A-Z => 65-90
-    _   => 95
-    a-z => 97-122
-    LF  => 10   => ignore
-    CR  => 13   => ignore
-    (32, 33, 40-42, 45, 46, 48-57, 63-90, 95, 97-122)
-*/
-
-// this would rather be a static matrix value <-> bool
-static bool IsValidChar(char c)
-{
-    return (c == 32) || (c == 33) || (c >= 40 && c <= 42) || (c == 45) || (c == 46) || (c >= 48 && c <= 57) || (c >= 63 && c <= 90) || (c == 95) ||
-           (c >= 97 && c <= 122);
-}
-
 Text::Text(bool caseSensitive, bool unicode)
 {
     this->unicode       = unicode;
@@ -47,9 +20,9 @@ const std::string_view Text::GetOutputExtension() const
     return "text";
 }
 
-uint32 Text::GetSubGroup() const
+Subcategory Text::GetSubGroup() const
 {
-    return static_cast<uint32>(-1); // no actual subgroup for this one
+    return Subcategory::Text;
 }
 
 Result Text::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
@@ -120,5 +93,32 @@ bool Text::SetMinLength(uint32 minLength)
     CHECK(minLength < this->maxLength, false, "");
     this->minLength = minLength;
     return true;
+}
+
+bool Text::SetAscii(bool value)
+{
+    if (!value) {
+        CHECK(unicode, false, "");
+    }
+    this->ascii = value;
+    return true;
+}
+bool Text::SetUnicode(bool value)
+{
+    if (!value) {
+        CHECK(ascii, false, "");
+    }
+    this->unicode = value;
+    return true;
+}
+
+void Text::SetMatrix(bool matrix[STRINGS_CHARSET_MATRIX_SIZE])
+{
+    memcpy(this->stringsCharSetMatrix, matrix, STRINGS_CHARSET_MATRIX_SIZE);
+}
+
+bool Text::IsValidChar(char c) const
+{
+    return this->stringsCharSetMatrix[c];
 }
 } // namespace GView::GenericPlugins::Droppper::SpecialStrings

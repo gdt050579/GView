@@ -27,9 +27,9 @@ const std::string_view URL::GetOutputExtension() const
     return "url";
 }
 
-uint32 URL::GetSubGroup() const
+Subcategory URL::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::URL);
+    return Subcategory::URL;
 }
 
 Result URL::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)

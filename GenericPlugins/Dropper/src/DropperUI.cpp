@@ -136,7 +136,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
     Factory::Button::Create(tpo, "&Select all objects", "x:42%,y:18,w:25%", BUTTON_ID_SELECT_ALL_OBJECTS);
     Factory::Button::Create(tpo, "&Deselect all objects", "x:69%,y:18,w:25%", BUTTON_ID_DESELECT_ALL_OBJECTS);
 
-    const auto AddSubItem = [this](ListViewItem parent, ObjectCategory category, uint32 subcategory, const Metadata& md) {
+    const auto AddSubItem = [this](ListViewItem parent, Category category, Subcategory subcategory, const Metadata& md) {
         LocalUnicodeStringBuilder<1024> lusb;
         lusb.Set("  ");
         lusb.Add(md.name);
@@ -157,47 +157,13 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
         auto item = this->objectsPlugins->AddItem(v);
         item.SetCheck(true);
 
-        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = std::nullopt, .category = k, .subcategory = 0 });
+        auto& metadata = this->objectsMetadata.emplace_back(ItemMetadata{ .parent = std::nullopt, .category = k, .subcategory = Subcategory::None });
         item.SetData<ItemMetadata>(&metadata);
 
-        switch (k) {
-        case ObjectCategory::Archives:
-            for (const auto& [kk, vv] : Archives::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        case ObjectCategory::Cryptographic:
-            for (const auto& [kk, vv] : Cryptographic::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        case ObjectCategory::Executables:
-            for (const auto& [kk, vv] : Executables::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        case ObjectCategory::HtmlObjects:
-            for (const auto& [kk, vv] : HtmlObjects::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        case ObjectCategory::Image:
-            for (const auto& [kk, vv] : Images::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        case ObjectCategory::Multimedia:
-            for (const auto& [kk, vv] : Multimedia::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        case ObjectCategory::SpecialStrings:
-            for (const auto& [kk, vv] : SpecialStrings::TYPES_MAP) {
-                metadata.children.emplace_back(AddSubItem(item, k, static_cast<uint32>(kk), vv));
-            }
-            break;
-        default:
-            break;
+        auto& subcategories = CATEGORY_TO_SUBCATEGORY_MAP.at(k);
+        for (const auto& sc : subcategories) {
+            const auto& md = TYPES_MAP.at(sc);
+            metadata.children.emplace_back(AddSubItem(item, k, sc, md));
         }
 
         bool parentActive{ false };
@@ -244,7 +210,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 
     Factory::Label::Create(tps, "M&in. string size", "x:62%,y:5,w:20%");
     Factory::Label::Create(tps, "M&ax. string size", "x:62%,y:6,w:20%");
-    this->minimumStringSize = Factory::TextField::Create(tps, "4", "x:82%,y:5,w:10%");
+    this->minimumStringSize = Factory::TextField::Create(tps, "8", "x:82%,y:5,w:10%");
     this->maximumStringSize = Factory::TextField::Create(tps, "", "x:82%,y:6,w:10%");
 
     Factory::Label::Create(tps, "CharSet to use (a-z,\\x01-\\x05)", "x:2%,y:8,w:38%");
@@ -353,12 +319,12 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
             return true;
         }
         if (ID == CMD_BINARY_OBJECTS_DROP) {
-            CHECK(instance.Process(this->GetActivePlugins(), this->droppedFilename, this->logFilename, true, true, false), false, "");
+            CHECK(instance.DropObjects(this->GetActivePlugins(), this->droppedFilename, this->logFilename, true, true, false), false, "");
             this->Exit(Dialogs::Result::Ok);
             return true;
         }
         if (ID == CMD_BINARY_OBJECTS_HIGHLIGHTING) {
-            CHECK(instance.Process(this->GetActivePlugins(), this->droppedFilename, this->logFilename, true, false, true), false, "");
+            CHECK(instance.DropObjects(this->GetActivePlugins(), this->droppedFilename, this->logFilename, true, false, true), false, "");
             this->Exit(Dialogs::Result::Ok);
             return true;
         }
@@ -389,7 +355,7 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
                 CHECK(DropBinary(), false, "");
                 break;
             case TAB_ID_OBJECTS: {
-                if (instance.Process(
+                if (instance.DropObjects(
                           this->GetActivePlugins(),
                           this->droppedFilename,
                           this->logFilename,
@@ -416,8 +382,35 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
                     Dialogs::MessageBox::ShowError("Dropper", "Failed extracting objects!");
                 }
             } break;
-            case TAB_ID_STRINGS:
-                break;
+            case TAB_ID_STRINGS: {
+                const auto min               = std::stoi(this->minimumStringSize->GetText());
+                const auto max               = this->maximumStringSize->GetText().IsEmpty() ? (uint32) (-1) : std::stoi(this->maximumStringSize->GetText());
+                const auto charSet           = static_cast<std::string>(this->stringsCharset->GetText());
+                const auto ascii             = this->dropAsciiStrings->IsChecked();
+                const auto unicode           = this->dropUnicodeStrings->IsChecked();
+                const auto simpleLogFormat   = this->logDumpSimple->IsChecked();
+                const auto identifyArtefacts = this->identifyStringsArtefacts->IsChecked();
+                if (instance.DropStrings(ascii, unicode, this->stringsFilename, simpleLogFormat, min, max, charSet, identifyArtefacts)) {
+                    bool showDialog{ true };
+
+                    if (this->openStringsLogFile->IsChecked()) {
+                        this->Exit(Dialogs::Result::Ok);
+                        GView::App::OpenFile(this->stringsFilename, GView::App::OpenMethod::BestMatch, "", parentWindow);
+                        showDialog = false;
+                    }
+
+                    if (this->openArtefactsInView) {
+                        showDialog = false;
+                        // TODO
+                    }
+
+                    if (showDialog) {
+                        Dialogs::MessageBox::ShowNotification("Dropper", "Strings extracted.");
+                    }
+                } else {
+                    Dialogs::MessageBox::ShowError("Dropper", "Failed extracting strings!");
+                }
+            } break;
             case TAB_ID_FORMAT_INFORMATION:
                 break;
             default:
@@ -497,37 +490,10 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
         }
 
         if (eventType == Event::ListViewCurrentItemChanged) {
-            if (data->parent.has_value()) {
-                switch (data->category) {
-                case ObjectCategory::Archives:
-                    this->currentObjectDescription->SetText(Archives::TYPES_MAP.at(static_cast<Archives::Types>(data->subcategory)).description);
-                    break;
-                case ObjectCategory::Cryptographic:
-                    this->currentObjectDescription->SetText(Cryptographic::TYPES_MAP.at(static_cast<Cryptographic::Types>(data->subcategory)).description);
-                    break;
-                case ObjectCategory::Executables:
-                    this->currentObjectDescription->SetText(Executables::TYPES_MAP.at(static_cast<Executables::Types>(data->subcategory)).description);
-                    break;
-                case ObjectCategory::HtmlObjects:
-                    this->currentObjectDescription->SetText(HtmlObjects::TYPES_MAP.at(static_cast<HtmlObjects::Types>(data->subcategory)).description);
-                    break;
-                case ObjectCategory::Image:
-                    this->currentObjectDescription->SetText(Images::TYPES_MAP.at(static_cast<Images::Types>(data->subcategory)).description);
-                    break;
-                case ObjectCategory::Multimedia:
-                    this->currentObjectDescription->SetText(Multimedia::TYPES_MAP.at(static_cast<Multimedia::Types>(data->subcategory)).description);
-                    break;
-                case ObjectCategory::SpecialStrings:
-                    this->currentObjectDescription->SetText(SpecialStrings::TYPES_MAP.at(static_cast<SpecialStrings::Types>(data->subcategory)).description);
-                    break;
-                default:
-                    this->currentObjectDescription->SetText("NO DESCRIPTION");
-                    break;
-                }
-            } else {
-                const auto& description = OBJECT_DECRIPTION_MAP.at(this->objectsPlugins->GetCurrentItem().GetData<ItemMetadata>()->category);
-                this->currentObjectDescription->SetText(description);
-            }
+            const auto& description = data->parent.has_value()
+                                            ? TYPES_MAP.at(data->subcategory).description
+                                            : OBJECT_DECRIPTION_MAP.at(this->objectsPlugins->GetCurrentItem().GetData<ItemMetadata>()->category);
+            this->currentObjectDescription->SetText(description);
             return true;
         }
     } break;

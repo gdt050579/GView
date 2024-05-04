@@ -27,9 +27,9 @@ const std::string_view Filepath::GetOutputExtension() const
     return "filepath";
 }
 
-uint32 Filepath::GetSubGroup() const
+Subcategory Filepath::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::Filepath);
+    return Subcategory::Filepath;
 }
 
 Result Filepath::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)

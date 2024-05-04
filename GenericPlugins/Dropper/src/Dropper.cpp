@@ -71,6 +71,8 @@ bool Instance::Init(Reference<GView::Object> object)
 
         // text
         context.textDropper.reset(new Text(isCaseSensitive, useUnicode));
+
+        context.initialized = true;
     }
 
     CHECK(HandleComputationAreas(), false, "");
@@ -112,7 +114,7 @@ bool Instance::WriteSummaryToLog(std::ofstream& f, std::map<std::string_view, ui
     return true;
 }
 
-bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper)
+bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper, bool writeValue)
 {
     CHECK(f.is_open(), false, "");
 
@@ -120,7 +122,34 @@ bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result res
     f << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
     f << std::setfill(' ') << std::setw(16) << dropper->GetName() << "] [";
     f << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << "] [";
-    f << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << "]" << std::endl;
+    f << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << "]";
+
+    if (writeValue) {
+        auto& cache = this->object->GetData();
+        auto bv     = cache.Get(start, static_cast<uint32>(end - start), true);
+        CHECK(bv.IsValid(), false, "");
+
+        f << ": VALUE -> ";
+
+        switch (result) {
+        case GView::GenericPlugins::Droppper::Result::NotFound:
+            break;
+        case GView::GenericPlugins::Droppper::Result::Buffer:
+            break;
+        case GView::GenericPlugins::Droppper::Result::Ascii:
+            f.write(reinterpret_cast<const char*>(bv.GetData()), bv.GetLength());
+            break;
+        case GView::GenericPlugins::Droppper::Result::Unicode:
+            for (uint32 i = 0; i < bv.GetLength(); i += 2) {
+                f.write(reinterpret_cast<const char*>(bv.GetData() + i), 1);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    f << std::endl;
 
     CHECK(f.good(), false, "");
 
@@ -166,7 +195,7 @@ bool Instance::WriteToFile(std::filesystem::path path, uint64 start, uint64 end,
     return true;
 }
 
-bool Instance::Process(
+bool Instance::DropObjects(
       const std::vector<PluginClassification>& plugins,
       const std::filesystem::path& path,
       const std::filesystem::path& logPath,
@@ -174,6 +203,7 @@ bool Instance::Process(
       bool writeLog,
       bool highlightObjects)
 {
+    CHECK(context.initialized, false, "");
     CHECK(object.IsValid(), false, "");
 
     context.zones.Clear();
@@ -183,17 +213,16 @@ bool Instance::Process(
 
     DataCache& cache = object->GetData();
     if (this->computeForFile) {
-        CHECK(ProcessObjects(plugins, 1, cache.GetSize(), writeLog, recursive), false, "");
+        CHECK(ProcessObjects(plugins, 1, cache.GetSize(), recursive), false, "");
     } else {
         for (const auto& zone : selectedZones) {
-            CHECK(ProcessObjects(plugins, zone.start, zone.end, writeLog, recursive), false, "");
+            CHECK(ProcessObjects(plugins, zone.start, zone.end, recursive), false, "");
         }
     }
 
     if (writeLog) {
         auto logFile = InitLogFile(logPath, areas);
         CHECK(logFile.has_value(), false, "");
-        CHECK(logFile->good(), false, "");
 
         struct Defer {
             std::ofstream& o;
@@ -202,6 +231,8 @@ bool Instance::Process(
                 o.close();
             }
         } _{ .o = *logFile };
+
+        CHECK(logFile->good(), false, "");
 
         WriteSummaryToLog(*logFile, context.occurences);
         for (const auto& f : context.findings) {
@@ -222,18 +253,22 @@ bool Instance::Process(
     return true;
 }
 
-bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool writeLog, bool recursive)
+bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool recursive)
 {
     DataCache& cache  = object->GetData();
     uint64 nextOffset = offset;
 
     std::vector<std::unique_ptr<IDrop>*> whitelistedPlugins;
     whitelistedPlugins.reserve(context.objectDroppers.size());
-    for (auto& d : context.objectDroppers) {
-        for (const auto& p : plugins) {
-            if (d->GetGroup() == p.category && d->GetSubGroup() == p.subcategory) {
-                whitelistedPlugins.push_back(&d);
-                break;
+    if (plugins.size() == 1 && context.textDropper->GetGroup() == plugins[0].category && context.textDropper->GetSubGroup() == plugins[0].subcategory) {
+        whitelistedPlugins.push_back(&context.textDropper);
+    } else {
+        for (auto& d : context.objectDroppers) {
+            for (const auto& p : plugins) {
+                if (d->GetGroup() == p.category && d->GetSubGroup() == p.subcategory) {
+                    whitelistedPlugins.push_back(&d);
+                    break;
+                }
             }
         }
     }
@@ -284,7 +319,7 @@ bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, 
                     context.occurences[name] += 1;
                     context.findings.push_back({ start, end, result, name });
 
-                    if (recursive) {
+                    if (!recursive) {
                         nextOffset = end;
                     }
 
@@ -402,6 +437,7 @@ bool Instance::DropBinaryData(
       std::string_view excludedCharSet,
       Reference<Window> parentWindow)
 {
+    CHECK(context.initialized, false, "");
     CHECK(ProcessBinaryDataCharset(includedCharSet, excludedCharSet), false, "");
 
     std::u16string_view fp = object->GetPath();
@@ -493,6 +529,77 @@ static std::optional<int32> HexToByte(std::string_view s)
     return (nibbles[0] << 4) | nibbles[1];
 }
 
+bool Instance::FillCharSetMatrix(bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE], std::string_view s, bool value)
+{
+    const auto static ValidateHex = [](std::string_view s) -> bool {
+        CHECK(s[0] == '\\', false, "");
+        CHECK(s[1] == 'x', false, "");
+        CHECK(s[2] >= '0' && s[2] <= '9' || s[2] >= 'a' && s[2] <= 'z' || s[2] >= 'A' && s[2] <= 'Z', false, "");
+        CHECK(s[3] >= '0' && s[3] <= '9' || s[3] >= 'a' && s[3] <= 'z' || s[3] >= 'A' && s[3] <= 'Z', false, "");
+        return true;
+    };
+
+    const auto includeSize = static_cast<int32>(s.size());
+    for (int32 i = 0; i < includeSize; i++) {
+        switch (s[i]) {
+        case '\\': {
+            const auto delta = includeSize - i;
+            CHECK(delta >= HEX_NUMBER_SIZE, false, "");
+
+            CHECK(ValidateHex(std::string_view{ s.data() + i, HEX_NUMBER_SIZE }), false, "");
+            const auto v1 = HexToByte(std::string_view{ s.data() + i + 2, HEX_NUMBER_SIZE - 2 });
+            CHECK(v1.has_value(), false, "");
+
+            std::optional<int32> v2 = v1;
+
+            i = static_cast<int32>(i + HEX_NUMBER_SIZE);
+
+            if (delta > HEX_NUMBER_SIZE) {
+                auto sep = s[i];
+
+                if (sep == ',') {
+                    // nothing
+                } else if (sep == '-') {
+                    CHECK(ValidateHex(std::string_view{ s.data() + i + 1, HEX_NUMBER_SIZE }), false, "");
+                    v2 = HexToByte(std::string_view{ s.data() + i + 1 + 2, HEX_NUMBER_SIZE - 2 });
+                    CHECK(v2.has_value(), false, "");
+                    CHECK(*v1 <= *v2, false, "");
+                    i = static_cast<int32>(i + HEX_NUMBER_SIZE + 1ULL);
+                } else {
+                    return false;
+                }
+            }
+
+            memset(binaryCharSetMatrix + *v1, value, static_cast<uint64>(*v2) - *v1 + 1);
+        } break;
+        default: {
+            const auto v1 = s[i] - '0';
+            auto v2       = v1;
+
+            if (i < includeSize - 1) {
+                const auto sep = s[i + 1ULL];
+
+                if (sep == ',') {
+                    i = static_cast<int32>(i + 1ULL);
+                } else if (sep == '-') {
+                    v2 = s[i + 2ULL];
+                    CHECK(v1 <= v2, false, "");
+                    i = static_cast<int32>(i + 2ULL);
+                } else {
+                    return false;
+                }
+            }
+
+            memset(binaryCharSetMatrix + v1, value, static_cast<uint64>(v2) - v1 + 1);
+        } break;
+        }
+
+        return true;
+    };
+
+    return true;
+}
+
 bool Instance::ProcessBinaryDataCharset(std::string_view include, std::string_view exclude)
 {
     if (include == DEFAULT_BINARY_INCLUDE_CHARSET && exclude == DEFAULT_BINARY_EXCLUDE_CHARSET) {
@@ -501,77 +608,71 @@ bool Instance::ProcessBinaryDataCharset(std::string_view include, std::string_vi
     }
 
     memset(context.binaryCharSetMatrix, false, BINARY_CHARSET_MATRIX_SIZE);
+    CHECK(FillCharSetMatrix(context.binaryCharSetMatrix, include, true), false, "");
+    CHECK(FillCharSetMatrix(context.binaryCharSetMatrix, exclude, false), false, "");
 
-    const auto ValidateHex = [](std::string_view s) -> bool {
-        CHECK(s[0] == '\\', false, "");
-        CHECK(s[1] == 'x', false, "");
-        CHECK(s[2] >= '0' && s[2] <= '9' || s[2] >= 'a' && s[2] <= 'z' || s[2] >= 'A' && s[2] <= 'Z', false, "");
-        CHECK(s[3] >= '0' && s[3] <= '9' || s[3] >= 'a' && s[3] <= 'z' || s[3] >= 'A' && s[3] <= 'Z', false, "");
-        return true;
-    };
+    return true;
+}
 
-    const auto FillMatrix = [ValidateHex](std::string_view s, bool value) -> bool {
-        const auto includeSize = static_cast<int32>(s.size());
-        for (int32 i = 0; i < includeSize; i++) {
-            switch (s[i]) {
-            case '\\': {
-                const auto delta = includeSize - i;
-                CHECK(delta >= HEX_NUMBER_SIZE, false, "");
+bool Instance::DropStrings(
+      bool dropAscii,
+      bool dropUnicode,
+      const std::filesystem::path& logPath,
+      bool simpleLogFormat,
+      uint32 minimumSize,
+      uint32 maximumSize,
+      std::string_view charSet,
+      bool identifyArtefacts)
+{
+    CHECK(context.initialized, false, "");
+    CHECK(object.IsValid(), false, "");
 
-                CHECK(ValidateHex(std::string_view{ s.data() + i, HEX_NUMBER_SIZE }), false, "");
-                const auto v1 = HexToByte(std::string_view{ s.data() + i + 2, HEX_NUMBER_SIZE - 2 });
-                CHECK(v1.has_value(), false, "");
+    context.zones.Clear();
+    context.findings.clear();
+    context.occurences.clear();
+    context.objectPaths.clear();
 
-                std::optional<int32> v2 = v1;
+    CHECK(dropAscii || dropUnicode, false, "");
 
-                i = static_cast<int32>(i + HEX_NUMBER_SIZE);
+    auto dropper = static_cast<Text*>(context.textDropper.get());
+    CHECK(dropper->SetAscii(dropAscii), false, "");
+    CHECK(dropper->SetUnicode(dropUnicode), false, "");
+    CHECK(dropper->SetMinLength(minimumSize), false, "");
+    CHECK(dropper->SetMaxLength(maximumSize), false, "");
 
-                if (delta > HEX_NUMBER_SIZE) {
-                    auto sep = s[i];
+    memset(context.stringsCharSetMatrix, false, STRINGS_CHARSET_MATRIX_SIZE);
+    CHECK(FillCharSetMatrix(context.stringsCharSetMatrix, charSet, true), false, "");
+    dropper->SetMatrix(context.stringsCharSetMatrix);
 
-                    if (sep == ',') {
-                        // nothing
-                    } else if (sep == '-') {
-                        CHECK(ValidateHex(std::string_view{ s.data() + i + 1, HEX_NUMBER_SIZE }), false, "");
-                        v2 = HexToByte(std::string_view{ s.data() + i + 1 + 2, HEX_NUMBER_SIZE - 2 });
-                        CHECK(v2.has_value(), false, "");
-                        CHECK(*v1 <= *v2, false, "");
-                        i = static_cast<int32>(i + HEX_NUMBER_SIZE + 1ULL);
-                    } else {
-                        return false;
-                    }
-                }
-
-                memset(context.binaryCharSetMatrix + *v1, value, static_cast<uint64>(*v2) - *v1 + 1);
-            } break;
-            default: {
-                const auto v1 = s[i] - '0';
-                auto v2       = v1;
-
-                if (i < includeSize - 1) {
-                    const auto sep = s[i + 1ULL];
-
-                    if (sep == ',') {
-                        i = static_cast<int32>(i + 1ULL);
-                    } else if (sep == '-') {
-                        v2 = s[i + 2ULL];
-                        CHECK(v1 <= v2, false, "");
-                        i = static_cast<int32>(i + 2ULL);
-                    } else {
-                        return false;
-                    }
-                }
-
-                memset(context.binaryCharSetMatrix + v1, value, static_cast<uint64>(v2) - v1 + 1);
-            } break;
-            }
+    DataCache& cache = object->GetData();
+    const std::vector<PluginClassification> plugins{ PluginClassification{ dropper->GetGroup(), dropper->GetSubGroup() } };
+    if (this->computeForFile) {
+        CHECK(ProcessObjects(plugins, 1, cache.GetSize(), false), false, "");
+    } else {
+        for (const auto& zone : selectedZones) {
+            CHECK(ProcessObjects(plugins, zone.start, zone.end, false), false, "");
         }
+    }
 
-        return true;
-    };
+    if (!simpleLogFormat) {
+        auto logFile = InitLogFile(logPath, areas);
+        CHECK(logFile.has_value(), false, "");
 
-    CHECK(FillMatrix(include, true), false, "");
-    CHECK(FillMatrix(exclude, false), false, "");
+        struct Defer {
+            std::ofstream& o;
+            ~Defer()
+            {
+                o.close();
+            }
+        } _{ .o = *logFile };
+
+        CHECK(logFile->good(), false, "");
+
+        WriteSummaryToLog(*logFile, context.occurences);
+        for (const auto& f : context.findings) {
+            CHECK(WriteToLog(*logFile, f.start, f.end, f.result, context.textDropper, true), false, "");
+        }
+    }
 
     return true;
 }

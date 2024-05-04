@@ -7,8 +7,8 @@ namespace GView::GenericPlugins::Droppper
 struct ItemMetadata {
     std::optional<ListViewItem> parent;
     std::vector<ListViewItem> children;
-    ObjectCategory category{ ObjectCategory::Archives };
-    uint32 subcategory{ 0 };
+    Category category{};
+    Subcategory subcategory{};
 };
 
 class DropperUI : public Window

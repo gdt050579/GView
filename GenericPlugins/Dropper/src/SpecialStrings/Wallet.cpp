@@ -29,9 +29,9 @@ const std::string_view Wallet::GetOutputExtension() const
     return "wallet";
 }
 
-uint32 Wallet::GetSubGroup() const
+Subcategory Wallet::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::Wallet);
+    return Subcategory::Wallet;
 }
 
 Result Wallet::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)

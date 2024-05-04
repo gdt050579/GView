@@ -29,9 +29,9 @@ const std::string_view Registry::GetOutputExtension() const
     return "reg";
 }
 
-uint32 Registry::GetSubGroup() const
+Subcategory Registry::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::Registry);
+    return Subcategory::Registry;
 }
 
 Result Registry::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)

@@ -10,14 +10,14 @@ const std::string_view IFrame::GetName() const
     return "IFrame";
 }
 
-ObjectCategory IFrame::GetGroup() const
+Category IFrame::GetGroup() const
 {
-    return ObjectCategory::HtmlObjects;
+    return Category::HtmlObjects;
 }
 
-uint32 IFrame::GetSubGroup() const
+Subcategory IFrame::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::IFrame);
+    return Subcategory::IFrame;
 }
 
 const std::string_view IFrame::GetOutputExtension() const

@@ -32,12 +32,9 @@ constexpr std::string_view DEFAULT_BINARY_EXCLUDE_CHARSET{ "" };
 constexpr int32 BINARY_CHARSET_MATRIX_SIZE{ 256 };
 constexpr int8 HEX_NUMBER_SIZE{ 4 };
 
-constexpr std::string_view DEFAULT_STRINGS_CHARSET{ "\\x20\\:-+<>!@#$%^&*()[]{}0-9A-Za-z" };
-constexpr int32 STRINGS_CHARSET_MATRIX_SIZE{ 256 };
-
 struct PluginClassification {
-    ObjectCategory category{};
-    uint32 subcategory{ 0 };
+    Category category{};
+    Subcategory subcategory{};
 };
 
 class Instance
@@ -50,13 +47,15 @@ class Instance
         std::unique_ptr<IDrop> textDropper{ nullptr };
         bool initialized{ false };
 
-        bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE]{ true };
+        bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE]{};
 
         struct Finding {
             uint64 start;
             uint64 end;
             Result result;
             std::string_view dropperName;
+            Category category;
+            Subcategory subcategory;
         };
 
         GView::Utils::ZonesList zones;
@@ -65,7 +64,7 @@ class Instance
 
         std::set<std::filesystem::path> objectPaths;
 
-        bool stringsCharSetMatrix[STRINGS_CHARSET_MATRIX_SIZE]{ true };
+        bool stringsCharSetMatrix[STRINGS_CHARSET_MATRIX_SIZE]{};
     } context;
 
     uint64 objectId{ 0 };
@@ -78,6 +77,7 @@ class Instance
 
   private:
     bool ProcessBinaryDataCharset(std::string_view include, std::string_view exclude);
+    bool FillCharSetMatrix(bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE], std::string_view s, bool value);
 
   public:
     Instance() = default;
@@ -87,16 +87,16 @@ class Instance
     BufferView GetPrecachedBuffer(uint64 offset, DataCache& cache);
     std::optional<std::ofstream> InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas);
     bool WriteSummaryToLog(std::ofstream& f, std::map<std::string_view, uint32>& occurences);
-    bool WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper);
+    bool WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper, bool writeValue = false);
     bool WriteToFile(std::filesystem::path path, uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result);
-    bool Process(
+    bool DropObjects(
           const std::vector<PluginClassification>& plugins,
           const std::filesystem::path& path,
           const std::filesystem::path& logPath,
           bool recursive,
           bool writeLog,
           bool highlightObjects);
-    bool ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool writeLog, bool recursive);
+    bool ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool recursive);
     bool SetHighlighting(bool value, bool warn = false);
 
     bool HandleComputationAreas();
@@ -111,5 +111,15 @@ class Instance
           std::string_view includedCharSet,
           std::string_view excludedCharSet,
           Reference<Window> parentWindow);
+
+    bool DropStrings(
+          bool dropAscii,
+          bool dropUnicode,
+          const std::filesystem::path& path,
+          bool simpleLogFormat,
+          uint32 minimumSize,
+          uint32 maximumSize,
+          std::string_view charSet,
+          bool identifyArtefacts);
 };
 } // namespace GView::GenericPlugins::Droppper

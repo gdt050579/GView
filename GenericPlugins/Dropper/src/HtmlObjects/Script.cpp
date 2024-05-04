@@ -10,14 +10,14 @@ const std::string_view Script::GetName() const
     return "Script";
 }
 
-ObjectCategory Script::GetGroup() const
+Category Script::GetGroup() const
 {
-    return ObjectCategory::HtmlObjects;
+    return Category::HtmlObjects;
 }
 
-uint32 Script::GetSubGroup() const
+Subcategory Script::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::Script);
+    return Subcategory::Script;
 }
 
 const std::string_view Script::GetOutputExtension() const

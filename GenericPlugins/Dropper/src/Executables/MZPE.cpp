@@ -174,14 +174,14 @@ const std::string_view MZPE::GetName() const
     return "MZPE";
 }
 
-ObjectCategory MZPE::GetGroup() const
+Category MZPE::GetGroup() const
 {
-    return ObjectCategory::Executables;
+    return Category::Executables;
 }
 
-uint32 MZPE::GetSubGroup() const
+Subcategory MZPE::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::MZPE);
+    return Subcategory::MZPE;
 }
 
 const std::string_view MZPE::GetOutputExtension() const

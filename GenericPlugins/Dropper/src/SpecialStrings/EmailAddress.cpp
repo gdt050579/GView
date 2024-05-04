@@ -25,9 +25,9 @@ const std::string_view EmailAddress::GetOutputExtension() const
     return "email";
 }
 
-uint32 EmailAddress::GetSubGroup() const
+Subcategory EmailAddress::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::Email);
+    return Subcategory::Email;
 }
 
 Result EmailAddress::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)

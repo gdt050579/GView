@@ -10,9 +10,9 @@ const std::string_view XML::GetName() const
     return "XML";
 }
 
-ObjectCategory XML::GetGroup() const
+Category XML::GetGroup() const
 {
-    return ObjectCategory::HtmlObjects;
+    return Category::HtmlObjects;
 }
 
 const std::string_view XML::GetOutputExtension() const
@@ -20,9 +20,9 @@ const std::string_view XML::GetOutputExtension() const
     return "xml";
 }
 
-uint32 XML::GetSubGroup() const
+Subcategory XML::GetSubGroup() const
 {
-    return static_cast<uint32>(Types::XML);
+    return Subcategory::XML;
 }
 
 Priority XML::GetPriority() const
