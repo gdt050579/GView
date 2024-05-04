@@ -11,12 +11,12 @@ class MZPE : public IDrop
     MZPE() = default;
 
     virtual const std::string_view GetName() const override;
-    virtual Category GetGroup() const override;
-    virtual Subcategory GetSubGroup() const override;
+    virtual Category GetCategory() const override;
+    virtual Subcategory GetSubcategory() const override;
     virtual const std::string_view GetOutputExtension() const override;
     virtual Priority GetPriority() const override;
     virtual bool ShouldGroupInOneFile() const override;
 
-    virtual Result Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end) override;
+    virtual bool Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Finding& finding) override;
 };
 } // namespace GView::GenericPlugins::Droppper::Executables

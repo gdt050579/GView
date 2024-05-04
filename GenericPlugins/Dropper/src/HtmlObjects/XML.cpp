@@ -10,7 +10,7 @@ const std::string_view XML::GetName() const
     return "XML";
 }
 
-Category XML::GetGroup() const
+Category XML::GetCategory() const
 {
     return Category::HtmlObjects;
 }
@@ -20,7 +20,7 @@ const std::string_view XML::GetOutputExtension() const
     return "xml";
 }
 
-Subcategory XML::GetSubGroup() const
+Subcategory XML::GetSubcategory() const
 {
     return Subcategory::XML;
 }
@@ -35,29 +35,29 @@ bool XML::ShouldGroupInOneFile() const
     return false;
 }
 
-Result XML::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+bool XML::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Finding& finding)
 {
-    CHECK(precachedBuffer.GetLength() >= START.size(), Result::NotFound, "");
-    CHECK(memcmp(precachedBuffer.GetData(), START.data(), START.size()) == 0, Result::NotFound, "");
+    CHECK(precachedBuffer.GetLength() >= START.size(), false, "");
+    CHECK(memcmp(precachedBuffer.GetData(), START.data(), START.size()) == 0, false, "");
 
     auto buffer = file.Get(offset, file.GetCacheSize() / 12, false);
-    CHECK(buffer.GetLength() >= START.size() + END.size(), Result::NotFound, "");
+    CHECK(buffer.GetLength() >= START.size() + END.size(), false, "");
 
-    start = offset;
-    end   = offset;
+    finding.start = offset;
+    finding.end   = offset;
 
     bool foundHeader = false;
     uint64 i         = 0;
     while (buffer.GetLength() >= END.size()) {
-        CHECK(IsAsciiPrintable(buffer.GetData()[i]), Result::NotFound, "");
+        CHECK(IsAsciiPrintable(buffer.GetData()[i]), false, "");
 
         if (memcmp(buffer.GetData() + i, END.data(), END.size()) == 0) {
-            end += END.size();
+            finding.end += END.size();
             foundHeader = true;
             break;
         }
 
-        end += 1;
+        finding.end += 1;
         i++;
 
         if (i + END.size() == buffer.GetLength()) {
@@ -67,7 +67,7 @@ Result XML::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, ui
         }
     }
 
-    CHECK(foundHeader, Result::NotFound, "");
+    CHECK(foundHeader, false, "");
     offset += i + 1;
 
     buffer          = file.Get(offset, file.GetCacheSize() / 12, false);
@@ -80,8 +80,8 @@ Result XML::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, ui
 
         if (inside) {
             if (c == '>') {
-                inside = false;
-                end    = offset + i;
+                inside      = false;
+                finding.end = offset + i;
             } else if (IsAsciiPrintable(c) || c == '\n' || c == '\r') {
                 // nothing
             } else {
@@ -104,6 +104,8 @@ Result XML::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, ui
         }
     }
 
-    return Result::Ascii;
+    finding.result = Result::Ascii;
+
+    return true;
 }
 } // namespace GView::GenericPlugins::Droppper::HtmlObjects

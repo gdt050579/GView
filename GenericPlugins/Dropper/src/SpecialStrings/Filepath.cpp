@@ -27,34 +27,36 @@ const std::string_view Filepath::GetOutputExtension() const
     return "filepath";
 }
 
-Subcategory Filepath::GetSubGroup() const
+Subcategory Filepath::GetSubcategory() const
 {
     return Subcategory::Filepath;
 }
 
-Result Filepath::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+bool Filepath::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Finding& finding)
 {
-    CHECK(precachedBuffer.GetLength() > 0, Result::NotFound, "");
-    CHECK(IsAsciiPrintable(precachedBuffer.GetData()[0]), Result::NotFound, "");
+    CHECK(precachedBuffer.GetLength() > 0, false, "");
+    CHECK(IsAsciiPrintable(precachedBuffer.GetData()[0]), false, "");
 
     auto buffer = file.Get(offset, file.GetCacheSize() / 12, false);
-    CHECK(buffer.GetLength() >= 4, Result::NotFound, "");
+    CHECK(buffer.GetLength() >= 4, false, "");
 
-    if (this->matcherAscii.Match(buffer, start, end)) {
-        start += offset;
-        end += offset;
-        return Result::Ascii;
+    if (this->matcherAscii.Match(buffer, finding.start, finding.end)) {
+        finding.start += offset;
+        finding.end += offset;
+        finding.result = Result::Ascii;
+        return true;
     }
 
-    CHECK(unicode, Result::NotFound, "");
-    CHECK(precachedBuffer.GetData()[1] == 0, Result::NotFound, ""); // we already checked ascii printable
+    CHECK(unicode, false, "");
+    CHECK(precachedBuffer.GetData()[1] == 0, false, ""); // we already checked ascii printable
 
-    if (this->matcherUnicode.Match(buffer, start, end)) {
-        start += offset;
-        end += offset;
-        return Result::Unicode;
+    if (this->matcherUnicode.Match(buffer, finding.start, finding.end)) {
+        finding.start += offset;
+        finding.end += offset;
+        finding.result = Result::Unicode;
+        return true;
     }
 
-    return Result::NotFound;
+    return true;
 }
 } // namespace GView::GenericPlugins::Droppper::SpecialStrings

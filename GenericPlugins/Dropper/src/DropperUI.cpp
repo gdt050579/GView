@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DropperUI.hpp"
+#include "Artefacts.hpp"
 
 constexpr std::string_view BINARY_PAGE_NAME             = "Binary";
 constexpr std::string_view OBJECTS_PAGE_NAME            = "Objects";
@@ -31,7 +32,6 @@ constexpr int32 CHECKBOX_ID_DROP_ASCII_STRINGS         = 7;
 constexpr int32 CHECKBOX_ID_DROP_UNICODE_STRINGS       = 8;
 constexpr int32 CHECKBOX_ID_OPEN_STRINGS_LOG_FILE      = 9;
 constexpr int32 CHECKBOX_ID_IDENTIFY_STRINGS_ARTEFACTS = 10;
-constexpr int32 CHECKBOX_ID_OPEN_STRINGS_ARTEFACTS     = 11;
 
 constexpr int32 RADIO_GROUP_BINARY_DATA_FILE = 2;
 constexpr int32 RADIO_ID_OVERWRITE_FILE      = 1;
@@ -220,7 +220,6 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 
     this->identifyStringsArtefacts =
           Factory::CheckBox::Create(tps, "Identify suspicious art&efacts", "x:2%,y:12,w:38%", CHECKBOX_ID_IDENTIFY_STRINGS_ARTEFACTS);
-    this->openArtefactsInView = Factory::CheckBox::Create(tps, "Open artefacts in &list", "x:2%,y:13,w:38%", CHECKBOX_ID_OPEN_STRINGS_ARTEFACTS);
 
     /* end strings tab page area */
 
@@ -399,9 +398,10 @@ bool DropperUI::OnEvent(Reference<Control> control, Event eventType, int32 ID)
                         showDialog = false;
                     }
 
-                    if (this->openArtefactsInView) {
+                    if (identifyArtefacts) {
                         showDialog = false;
-                        // TODO
+                        this->Exit(Dialogs::Result::Ok);
+                        ArtefactsUI(this->object->GetData(), this->instance.GetFindings()).Show();
                     }
 
                     if (showDialog) {

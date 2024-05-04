@@ -1,4 +1,5 @@
 target_sources(Dropper PRIVATE 
+	Artefacts.cpp
 	Dropper.cpp
 	DropperUI.cpp
 	SpecialStrings/SpecialStrings.cpp 

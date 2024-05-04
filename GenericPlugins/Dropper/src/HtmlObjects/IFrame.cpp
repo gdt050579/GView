@@ -10,12 +10,12 @@ const std::string_view IFrame::GetName() const
     return "IFrame";
 }
 
-Category IFrame::GetGroup() const
+Category IFrame::GetCategory() const
 {
     return Category::HtmlObjects;
 }
 
-Subcategory IFrame::GetSubGroup() const
+Subcategory IFrame::GetSubcategory() const
 {
     return Subcategory::IFrame;
 }
@@ -35,27 +35,28 @@ bool IFrame::ShouldGroupInOneFile() const
     return false;
 }
 
-Result IFrame::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+bool IFrame::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Finding& finding)
 {
-    CHECK(precachedBuffer.GetLength() >= START.size(), Result::NotFound, "");
-    CHECK(memcmp(precachedBuffer.GetData(), START.data(), START.size()) == 0, Result::NotFound, "");
+    CHECK(precachedBuffer.GetLength() >= START.size(), false, "");
+    CHECK(memcmp(precachedBuffer.GetData(), START.data(), START.size()) == 0, false, "");
 
     auto buffer = file.Get(offset, file.GetCacheSize() / 12, false);
-    CHECK(buffer.GetLength() >= START.size() + END.size(), Result::NotFound, "");
+    CHECK(buffer.GetLength() >= START.size() + END.size(), false, "");
 
-    start = offset;
-    end   = offset;
+    finding.start = offset;
+    finding.end   = offset;
 
     uint64 i = 0;
     while (buffer.GetLength() >= END.size()) {
-        CHECK(IsAsciiPrintable(buffer.GetData()[i]), Result::NotFound, "");
+        CHECK(IsAsciiPrintable(buffer.GetData()[i]), false, "");
 
         if (memcmp(buffer.GetData() + i, END.data(), END.size()) == 0) {
-            end += END.size();
-            return Result::Ascii;
+            finding.end += END.size();
+            finding.result = Result::Ascii;
+            return true;
         }
 
-        end += 1;
+        finding.end += 1;
         i++;
 
         if (i + END.size() == buffer.GetLength()) {
@@ -65,6 +66,6 @@ Result IFrame::Check(uint64 offset, DataCache& file, BufferView precachedBuffer,
         }
     }
 
-    return Result::NotFound;
+    return true;
 }
 } // namespace GView::GenericPlugins::Droppper::HtmlObjects

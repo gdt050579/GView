@@ -174,12 +174,12 @@ const std::string_view MZPE::GetName() const
     return "MZPE";
 }
 
-Category MZPE::GetGroup() const
+Category MZPE::GetCategory() const
 {
     return Category::Executables;
 }
 
-Subcategory MZPE::GetSubGroup() const
+Subcategory MZPE::GetSubcategory() const
 {
     return Subcategory::MZPE;
 }
@@ -199,20 +199,20 @@ bool MZPE::ShouldGroupInOneFile() const
     return false;
 }
 
-Result MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+bool MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Finding& finding)
 {
-    CHECK(IsMagicU16(precachedBuffer, IMAGE_DOS_SIGNATURE), Result::NotFound, "");
+    CHECK(IsMagicU16(precachedBuffer, IMAGE_DOS_SIGNATURE), false, "");
 
     auto buffer = file.CopyToBuffer(offset, 0x200, true);
-    CHECK(buffer.IsValid(), Result::NotFound, "");
+    CHECK(buffer.IsValid(), false, "");
 
     auto dos = buffer.GetObject<ImageDOSHeader>();
-    CHECK(dos, Result::NotFound, "");
-    CHECK(dos->e_magic == IMAGE_DOS_SIGNATURE, Result::NotFound, "");
+    CHECK(dos, false, "");
+    CHECK(dos->e_magic == IMAGE_DOS_SIGNATURE, false, "");
 
     auto nth32 = buffer.GetObject<ImageNTHeaders32>(dos->e_lfanew);
-    CHECK(nth32, Result::NotFound, "");
-    CHECK(nth32->Signature == IMAGE_NT_SIGNATURE, Result::NotFound, "");
+    CHECK(nth32, false, "");
+    CHECK(nth32->Signature == IMAGE_NT_SIGNATURE, false, "");
 
     const uint64 count   = nth32->FileHeader.NumberOfSections;
     const auto position  = static_cast<uint64>(dos->e_lfanew) + nth32->FileHeader.SizeOfOptionalHeader + sizeof(nth32->Signature) + sizeof(ImageFileHeader);
@@ -220,11 +220,11 @@ Result MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, u
 
     if (nth32->OptionalHeader.Magic == __IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
         auto nth64 = buffer.GetObject<ImageNTHeaders64>(dos->e_lfanew);
-        CHECK(nth64, Result::NotFound, "");
-        CHECK(nth64->Signature == IMAGE_NT_SIGNATURE, Result::NotFound, "");
+        CHECK(nth64, false, "");
+        CHECK(nth64->Signature == IMAGE_NT_SIGNATURE, false, "");
         dataDirectories = &nth64->OptionalHeader.DataDirectory[0];
     }
-    CHECK(dataDirectories, Result::NotFound, "");
+    CHECK(dataDirectories, false, "");
 
     auto b   = file.Get(offset + position + (count - 1) * sizeof(ImageSectionHeader), sizeof(ImageSectionHeader), true);
     auto obj = b.GetObject<ImageSectionHeader>(0);
@@ -233,9 +233,10 @@ Result MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, u
     const auto computedSize =
           std::max<uint64>(static_cast<uint64>(obj->PointerToRawData) + obj->SizeOfRawData, static_cast<uint64>(sec.VirtualAddress) + sec.Size);
 
-    start = offset;
-    end   = offset + computedSize;
+    finding.start  = offset;
+    finding.end    = offset + computedSize;
+    finding.result = Result::Buffer;
 
-    return Result::Buffer;
+    return true;
 }
 } // namespace GView::GenericPlugins::Droppper::Executables

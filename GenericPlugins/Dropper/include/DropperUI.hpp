@@ -55,7 +55,6 @@ class DropperUI : public Window
     Reference<TextField> maximumStringSize;
     Reference<TextField> stringsCharset;
     Reference<CheckBox> identifyStringsArtefacts;
-    Reference<CheckBox> openArtefactsInView;
     Reference<CheckBox> openStringsLogFile;
 
   private:

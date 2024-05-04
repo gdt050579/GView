@@ -1,5 +1,7 @@
 #include "DropperUI.hpp"
 
+#include "Artefacts.hpp"
+
 #include <array>
 #include <regex>
 #include <charconv>
@@ -85,17 +87,19 @@ BufferView Instance::GetPrecachedBuffer(uint64 offset, DataCache& cache)
     return cache.Get(offset, MAX_PRECACHED_BUFFER_SIZE, true);
 }
 
-std::optional<std::ofstream> Instance::InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas)
+std::optional<std::ofstream> Instance::InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas, bool noHeader)
 {
     std::ofstream logFile;
     logFile.open(p, std::ios::out);
     CHECK(logFile.is_open(), std::nullopt, "");
 
-    for (const auto& area : areas) {
-        logFile << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.first << std::endl;
-        logFile << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.second << std::endl;
+    if (!noHeader) {
+        for (const auto& area : areas) {
+            logFile << "Start Address: " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.first << std::endl;
+            logFile << "End Address  : " << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << area.second << std::endl;
+        }
+        logFile << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
     }
-    logFile << std::setfill('-') << std::setw(SEPARATOR_LENGTH) << '-' << std::endl;
 
     return logFile;
 }
@@ -114,22 +118,30 @@ bool Instance::WriteSummaryToLog(std::ofstream& f, std::map<std::string_view, ui
     return true;
 }
 
-bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper, bool writeValue)
+bool Instance::WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper, bool addValue, bool writeValueOnly)
 {
     CHECK(f.is_open(), false, "");
 
-    f << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
-    f << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
-    f << std::setfill(' ') << std::setw(16) << dropper->GetName() << "] [";
-    f << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << "] [";
-    f << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetGroup()) << "]";
-
-    if (writeValue) {
+    if (!writeValueOnly) {
         auto& cache = this->object->GetData();
         auto bv     = cache.Get(start, static_cast<uint32>(end - start), true);
         CHECK(bv.IsValid(), false, "");
 
-        f << ": VALUE -> ";
+        f << std::setfill('0') << std::setw(8) << std::hex << std::uppercase << start << ": ";
+        f << std::setfill(' ') << std::setw(8) << std::dec << (end - start) << " bytes -> [";
+        f << std::setfill(' ') << std::setw(16) << dropper->GetName() << "] [";
+        f << std::setfill(' ') << std::setw(8) << RESULT_MAP.at(result) << "] [";
+        f << std::setfill(' ') << std::setw(16) << OBJECT_CATEGORY_MAP.at(dropper->GetCategory()) << "]";
+
+        if (addValue) {
+            f << ": VALUE -> ";
+        }
+    }
+
+    if (addValue || writeValueOnly) {
+        auto& cache = this->object->GetData();
+        auto bv     = cache.Get(start, static_cast<uint32>(end - start), true);
+        CHECK(bv.IsValid(), false, "");
 
         switch (result) {
         case GView::GenericPlugins::Droppper::Result::NotFound:
@@ -253,24 +265,28 @@ bool Instance::DropObjects(
     return true;
 }
 
-bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool recursive)
+bool Instance::ProcessObjects(
+      const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool recursive, ArtefactIdentificationCallback identify)
 {
     DataCache& cache  = object->GetData();
     uint64 nextOffset = offset;
 
     std::vector<std::unique_ptr<IDrop>*> whitelistedPlugins;
     whitelistedPlugins.reserve(context.objectDroppers.size());
-    if (plugins.size() == 1 && context.textDropper->GetGroup() == plugins[0].category && context.textDropper->GetSubGroup() == plugins[0].subcategory) {
+    if (plugins.size() == 1 && context.textDropper->GetCategory() == plugins[0].category && context.textDropper->GetSubcategory() == plugins[0].subcategory) {
         whitelistedPlugins.push_back(&context.textDropper);
     } else {
         for (auto& d : context.objectDroppers) {
             for (const auto& p : plugins) {
-                if (d->GetGroup() == p.category && d->GetSubGroup() == p.subcategory) {
+                if (d->GetCategory() == p.category && d->GetSubcategory() == p.subcategory) {
                     whitelistedPlugins.push_back(&d);
                     break;
                 }
             }
         }
+    }
+    if (identify != nullptr && plugins.size() > 1) {
+        whitelistedPlugins.push_back(&context.textDropper);
     }
 
     ProgressStatus::Init("Searching...", size);
@@ -310,28 +326,30 @@ bool Instance::ProcessObjects(const std::vector<PluginClassification>& plugins, 
                     continue;
                 }
 
-                uint64 start      = 0;
-                uint64 end        = 0;
-                const auto result = (*dropper)->Check(offset, cache, buffer, start, end);
+                Finding finding{ .dropperName = (*dropper)->GetName(), .category = (*dropper)->GetCategory(), .subcategory = (*dropper)->GetSubcategory() };
+                const auto result = (*dropper)->Check(offset, cache, buffer, finding);
 
-                if (result != Result::NotFound) {
-                    const auto name = (*dropper)->GetName();
-                    context.occurences[name] += 1;
-                    context.findings.push_back({ start, end, result, name });
+                if (result && finding.result != Result::NotFound) {
+                    auto& f = context.findings.emplace_back(finding);
+                    context.occurences[f.dropperName] += 1;
 
                     if (!recursive) {
-                        nextOffset = end;
+                        nextOffset = f.end;
                     }
 
                     // adjust for zones
-                    if (result == Result::Unicode) {
-                        end -= 2;
-                    } else if (result == Result::Ascii) {
-                        end -= 1;
+                    if (f.result == Result::Unicode) {
+                        f.end -= 2;
+                    } else if (f.result == Result::Ascii) {
+                        f.end -= 1;
                     } else {
-                        end += 1;
+                        f.end += 1;
                     }
-                    context.zones.Add(start, end, OBJECT_CATEGORY_COLOR_MAP.at((*dropper)->GetGroup()), (*dropper)->GetName());
+                    context.zones.Add(f.start, f.end, OBJECT_CATEGORY_COLOR_MAP.at(f.category), f.dropperName);
+
+                    if (identify != nullptr) {
+                        f.artefact = identify(cache, f.subcategory, f.start, f.end, f.result);
+                    }
 
                     break;
                 }
@@ -427,6 +445,11 @@ bool Instance::SetComputingFile(bool value)
 const std::set<std::filesystem::path>& Instance::GetObjectsPaths() const
 {
     return context.objectPaths;
+}
+
+const std::vector<Finding>& Instance::GetFindings() const
+{
+    return context.findings;
 }
 
 bool Instance::DropBinaryData(
@@ -644,34 +667,44 @@ bool Instance::DropStrings(
     CHECK(FillCharSetMatrix(context.stringsCharSetMatrix, charSet, true), false, "");
     dropper->SetMatrix(context.stringsCharSetMatrix);
 
+    ArtefactIdentificationCallback cb = identifyArtefacts ? &IdentifyArtefact : nullptr;
+    std::vector<PluginClassification> plugins{};
+    if (identifyArtefacts) {
+        const auto& subcategories = CATEGORY_TO_SUBCATEGORY_MAP.at(Category::SpecialStrings);
+        for (const auto& v : subcategories) {
+            plugins.emplace_back(PluginClassification{ Category::SpecialStrings, v });
+        }
+    }
+    plugins.emplace_back(PluginClassification{ dropper->GetCategory(), dropper->GetSubcategory() });
+
     DataCache& cache = object->GetData();
-    const std::vector<PluginClassification> plugins{ PluginClassification{ dropper->GetGroup(), dropper->GetSubGroup() } };
     if (this->computeForFile) {
-        CHECK(ProcessObjects(plugins, 1, cache.GetSize(), false), false, "");
+        CHECK(ProcessObjects(plugins, 1, cache.GetSize(), false, cb), false, "");
     } else {
         for (const auto& zone : selectedZones) {
-            CHECK(ProcessObjects(plugins, zone.start, zone.end, false), false, "");
+            CHECK(ProcessObjects(plugins, zone.start, zone.end, false, cb), false, "");
         }
     }
 
-    if (!simpleLogFormat) {
-        auto logFile = InitLogFile(logPath, areas);
-        CHECK(logFile.has_value(), false, "");
+    auto logFile = InitLogFile(logPath, areas, simpleLogFormat);
+    CHECK(logFile.has_value(), false, "");
 
-        struct Defer {
-            std::ofstream& o;
-            ~Defer()
-            {
-                o.close();
-            }
-        } _{ .o = *logFile };
-
-        CHECK(logFile->good(), false, "");
-
-        WriteSummaryToLog(*logFile, context.occurences);
-        for (const auto& f : context.findings) {
-            CHECK(WriteToLog(*logFile, f.start, f.end, f.result, context.textDropper, true), false, "");
+    struct Defer {
+        std::ofstream& o;
+        ~Defer()
+        {
+            o.close();
         }
+    } _{ .o = *logFile };
+
+    CHECK(logFile->good(), false, "");
+
+    if (!simpleLogFormat) {
+        WriteSummaryToLog(*logFile, context.occurences);
+    }
+
+    for (const auto& f : context.findings) {
+        CHECK(WriteToLog(*logFile, f.start, f.end, f.result, context.textDropper, !simpleLogFormat, simpleLogFormat), false, "");
     }
 
     return true;

@@ -10,12 +10,12 @@ const std::string_view PNG::GetName() const
     return "PNG";
 }
 
-Category PNG::GetGroup() const
+Category PNG::GetCategory() const
 {
     return Category::Multimedia;
 }
 
-Subcategory PNG::GetSubGroup() const
+Subcategory PNG::GetSubcategory() const
 {
     return Subcategory::PNG;
 }
@@ -35,30 +35,31 @@ bool PNG::ShouldGroupInOneFile() const
     return false;
 }
 
-Result PNG::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, uint64& start, uint64& end)
+bool PNG::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Finding& finding)
 {
-    CHECK(IsMagicU64(precachedBuffer, IMAGE_PNG_MAGIC), Result::NotFound, "");
+    CHECK(IsMagicU64(precachedBuffer, IMAGE_PNG_MAGIC), false, "");
 
-    start      = offset;
-    end        = offset + sizeof(IMAGE_PNG_MAGIC);
-    auto found = false;
-    auto pos   = end;
+    finding.start = offset;
+    finding.end   = offset + sizeof(IMAGE_PNG_MAGIC);
+    auto found    = false;
+    auto pos      = finding.end;
 
     do {
-        auto buffer = file.CopyToBuffer(end, sizeof(uint32), true);
+        auto buffer = file.CopyToBuffer(finding.end, sizeof(uint32), true);
         CHECKBK(buffer.IsValid(), "");
 
         auto chunk_length = Endian::BigToNative(*reinterpret_cast<uint32*>(buffer.GetData()));
-        end += chunk_length;
-        end += sizeof(uint32) * 3; // length + type + CRC32
+        finding.end += chunk_length;
+        finding.end += sizeof(uint32) * 3; // length + type + CRC32
         found = chunk_length != 0;
     } while (found);
 
-    CHECK(end - start >= 67,
-          Result::NotFound,
-          ""); // https://belkadan.com/blog/2024/01/The-Biggest-Smallest-PNG/#:~:text=The%20smallest%20PNG%20file%20is,or%20a%201x1%20gray%20image.
+    // https://belkadan.com/blog/2024/01/The-Biggest-Smallest-PNG/#:~:text=The%20smallest%20PNG%20file%20is,or%20a%201x1%20gray%20image.
+    CHECK(finding.end - finding.start >= 67, false, "");
 
-    return Result::Buffer;
+    finding.result = Result::Buffer;
+
+    return true;
 }
 
 } // namespace GView::GenericPlugins::Droppper::Images

@@ -49,15 +49,6 @@ class Instance
 
         bool binaryCharSetMatrix[BINARY_CHARSET_MATRIX_SIZE]{};
 
-        struct Finding {
-            uint64 start;
-            uint64 end;
-            Result result;
-            std::string_view dropperName;
-            Category category;
-            Subcategory subcategory;
-        };
-
         GView::Utils::ZonesList zones;
         std::vector<Finding> findings;
         std::map<std::string_view, uint32> occurences;
@@ -85,9 +76,9 @@ class Instance
     bool Init(Reference<GView::Object> object);
 
     BufferView GetPrecachedBuffer(uint64 offset, DataCache& cache);
-    std::optional<std::ofstream> InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas);
+    std::optional<std::ofstream> InitLogFile(const std::filesystem::path& p, const std::vector<std::pair<uint64, uint64>>& areas, bool noHeader = false);
     bool WriteSummaryToLog(std::ofstream& f, std::map<std::string_view, uint32>& occurences);
-    bool WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper, bool writeValue = false);
+    bool WriteToLog(std::ofstream& f, uint64 start, uint64 end, Result result, std::unique_ptr<IDrop>& dropper, bool addValue = false, bool writeValueOnly = false);
     bool WriteToFile(std::filesystem::path path, uint64 start, uint64 end, std::unique_ptr<IDrop>& dropper, Result result);
     bool DropObjects(
           const std::vector<PluginClassification>& plugins,
@@ -96,13 +87,14 @@ class Instance
           bool recursive,
           bool writeLog,
           bool highlightObjects);
-    bool ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool recursive);
+    bool ProcessObjects(const std::vector<PluginClassification>& plugins, uint64 offset, uint64 size, bool recursive, ArtefactIdentificationCallback identify = nullptr);
     bool SetHighlighting(bool value, bool warn = false);
 
     bool HandleComputationAreas();
     bool IsComputingFile() const;
     bool SetComputingFile(bool value);
     const std::set<std::filesystem::path>& GetObjectsPaths() const;
+    const std::vector<Finding>& GetFindings() const;
 
     bool DropBinaryData(
           std::string_view filename,

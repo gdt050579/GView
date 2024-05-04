@@ -4,7 +4,7 @@
 
 namespace GView::GenericPlugins::Droppper::SpecialStrings
 {
-Category SpecialStrings::GetGroup() const
+Category SpecialStrings::GetCategory() const
 {
     return Category::SpecialStrings;
 }
