@@ -72,6 +72,7 @@ Instance::Instance()
     this->mnuWindow         = nullptr;
     this->mnuHelp           = nullptr;
     this->mnuFile           = nullptr;
+    this->lastOpenedFolderLocation = ".";
 }
 bool Instance::LoadSettings()
 {
@@ -457,18 +458,26 @@ bool Instance::AddBufferWindow(
 }
 void Instance::OpenFile()
 {
-    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", ".");
+    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "", this->lastOpenedFolderLocation);
     if (res.has_value()) {
-        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
+        if (!AddFileWindow(res.value(), OpenMethod::BestMatch, "")) {
             ShowErrors();
+        }else {
+            this->lastOpenedFolderLocation = res.value().parent_path().u8string();
+        }
     }
 }
 void Instance::OpenFolder()
 {
-    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "GVIEW:IGNORE-EVERYTHING", ".");
+    auto res = Dialogs::FileDialog::ShowOpenFileWindow("", "GVIEW:IGNORE-EVERYTHING", this->lastOpenedFolderLocation);
     if (res.has_value()) {
-        if (AddFileWindow(res.value(), OpenMethod::BestMatch, "") == false)
-            ShowErrors();
+        {
+            if (!AddFileWindow(res.value(), OpenMethod::BestMatch, ""))
+                ShowErrors();
+            else {
+                this->lastOpenedFolderLocation = res.value().parent_path().u8string();
+            }
+        }
     }
 }
 void Instance::UpdateCommandBar(AppCUI::Application::CommandBar& commandBar)

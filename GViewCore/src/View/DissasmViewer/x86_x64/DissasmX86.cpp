@@ -691,6 +691,7 @@ inline bool ExtractCallsToInsertFunctionNames(
     auto data            = instructionData.GetData() + address;
 
     std::vector<std::pair<uint64, std::string>> callsFound;
+    std::unordered_map<uint64, bool> callsMap; // true for offset, false for sub
     callsFound.reserve(16);
     bool foundCall     = false;
     uint64 callAddress = 0;
@@ -704,8 +705,14 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (value < offsets[0].offset)
                     value += offsets[0].offset;
                 const char* prefix = isJump ? "offset_0x" : "sub_0x";
-                auto callName      = FormatFunctionName(value, prefix);
+                const auto it      = callsMap.find(value);
+                if (it != callsMap.end()) {
+                    if (isJump == it->second)
+                        continue;
+                }
+                auto callName = FormatFunctionName(value, prefix);
                 callsFound.emplace_back(value, callName.GetText());
+                callsMap.insert({ value, isJump });
             }
         } else {
             const auto mnemonicVal = *(uint32*) insn->mnemonic;
@@ -713,9 +720,15 @@ inline bool ExtractCallsToInsertFunctionNames(
                 if (mnemonicVal == movOP && strcmp(insn->op_str, "ebp, esp") == 0) {
                     if (callAddress < offsets[0].offset)
                         callAddress += offsets[0].offset;
+                    const auto it = callsMap.find(callAddress);
+                    if (it != callsMap.end()) {
+                        if (!it->second)
+                            continue;
+                    }
                     const char* prefix = "sub_0x";
                     auto callName      = FormatFunctionName(callAddress, prefix);
                     callsFound.emplace_back(callAddress, callName.GetText());
+                    callsMap.insert({ callAddress, true });
                 }
                 foundCall = false;
             } else {
@@ -745,8 +758,19 @@ inline bool ExtractCallsToInsertFunctionNames(
         return OTHER;
     };
 
-    // TODO: this can be extracted for the user to add / delete its own operations
+    std::vector<uint32> indexesToErase;
+    for (int32 i = static_cast<int32>(callsFound.size()) - 1; i >= 0; i--) {
+        const auto& call = callsFound[i];
+        if (call.first == zone->zoneDetails.entryPoint) {
+            indexesToErase.push_back(i);
+            break;
+        }
+    }
+    for (const auto indexToErase : indexesToErase)
+        callsFound.erase(callsFound.begin() + indexToErase);
+
     callsFound.emplace_back(zone->zoneDetails.entryPoint, "EntryPoint");
+    // TODO: this can be extracted for the user to add / delete its own operations
     std::sort(callsFound.begin(), callsFound.end(), [getLabelType](const auto& a, const auto& b) {
         if (a.first < b.first)
             return true;
@@ -985,9 +1009,11 @@ bool DissasmAsmPreCacheLine::TryGetDataFromInsn(DissasmInsnExtractLineParams& pa
         const auto& mapping_ptr = params.settings->memoryMappings.find(hexVal);
         if (mapping_ptr != params.settings->memoryMappings.end())
             mappingPtr = &mapping_ptr->second;
-        const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
-        if (mapping2 != params.settings->memoryMappings.end())
-            mappingPtr = &mapping2->second;
+        else {
+            const auto& mapping2 = params.settings->memoryMappings.find(hexVal + finalIndex);
+            if (mapping2 != params.settings->memoryMappings.end())
+                mappingPtr = &mapping2->second;
+        }
 
         if (mappingPtr) {
             mapping     = mappingPtr;
@@ -1312,9 +1338,9 @@ bool Instance::DrawDissasmX86AndX64CodeZone(DrawLineInfo& dli, DissasmCodeZone* 
               dli.screenLineToDraw + 1, asmCacheLine->isZoneCollapsed ? SpecialChars::TriangleRight : SpecialChars::TriangleLeft, zone, true);
     }
     DissasmAddColorsToInstruction(*asmCacheLine, chars, config, ColorMan.Colors, asmData, codePage, zone->cachedCodeOffsets[0].offset);
-    auto& lastZone = zone->types.back().get();
     std::string comment;
-    if (lastZone.commentsData.GetComment(currentLine, comment)) {
+    assert(asmCacheLine->parent);
+    if (asmCacheLine->parent && !asmCacheLine->parent->isCollapsed && asmCacheLine->parent->commentsData.GetComment(currentLine, comment)) {
         uint32 diffLine = zone->asmPreCacheData.maxLineSize + textTotalColumnLength + commentPaddingLength;
         if (config.ShowOnlyDissasm)
             diffLine -= textAndOpCodesTotalLength;
@@ -1420,6 +1446,9 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
     uint64 computedValue = 0;
     cs_insn* insn;
     if (!offsetToReach) {
+        if (line <= 1)
+            return;
+
         const decltype(DissasmCodeZone::structureIndex) index = zone->structureIndex;
         decltype(DissasmCodeZone::types) types                = zone->types;
         decltype(DissasmCodeZone::levels) levels              = zone->levels;
@@ -1454,8 +1483,8 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
                     }
                     val++;
                 }
-            } else if (insn->op_str[0] == '0' && insn->op_str[1] == '\0') {
-                computedValue = zone->cachedCodeOffsets[0].offset;
+            } else if (insn->op_str[0] >= '0' && insn->op_str[0] <= '9' && insn->op_str[1] == '\0') {
+                computedValue = zone->cachedCodeOffsets[0].offset + (insn->op_str[0] - '0');
             } else {
                 cs_free(insn, 1);
                 return;
@@ -1519,15 +1548,22 @@ void Instance::DissasmZoneProcessSpaceKey(DissasmCodeZone* zone, uint32 line, ui
 
 void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation operation)
 {
-    if (!selection.HasSelection(0)) {
-        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone!");
+    if (operation == CollapsibleZoneOperation::Add && !selection.HasSelection(0)) {
+        Dialogs::MessageBox::ShowNotification("Warning", "Please make a single selection on a dissasm zone to add a zone!");
         return;
     }
 
-    const auto lineStart = selection.GetSelectionStart(0);
-    const auto lineEnd   = selection.GetSelectionEnd(0);
+    uint32 lineStart;
+    uint32 lineEnd;
+    if (selection.HasSelection(0)) {
+        lineStart = selection.GetSelectionStart(0).line;
+        lineEnd   = selection.GetSelectionEnd(0).line;
+    } else {
+        lineStart = Cursor.lineInView + Cursor.startViewLine;
+        lineEnd   = lineStart + 1;
+    }
 
-    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart.line, lineEnd.line);
+    const auto zonesFound = GetZonesIndexesFromLinePosition(lineStart, lineEnd);
     if (zonesFound.empty() || zonesFound.size() != 1) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please make a selection on a dissasm zone!");
         return;
@@ -1547,7 +1583,7 @@ void Instance::CommandExecuteCollapsibleZoneOperation(CollapsibleZoneOperation o
     auto zone = static_cast<DissasmCodeZone*>(parseZone.get());
 
     const uint32 zoneLineStart  = zonesFound[0].startingLine - 2; // 2 for title and menu -- need to be adjusted
-    const uint32 zoneLinesCount = lineEnd.line - lineStart.line + 1u;
+    const uint32 zoneLinesCount = lineEnd - lineStart + 1u;
     const uint32 zoneLineEnd    = zoneLineStart + zoneLinesCount;
 
     int32 difference          = 0;
@@ -1865,6 +1901,7 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     const DissasmCodeInternalType& currentType = types.back();
 
     DissasmAsmPreCacheLine asmCacheLine{};
+    asmCacheLine.parent = &currentType;
     if (changedLevel && newLevelChangeData.hasName) {
         asmCacheLine.shouldAddButton = true;
         asmCacheLine.isZoneCollapsed = newLevelChangeData.isCollapsed;
@@ -1895,7 +1932,8 @@ DissasmAsmPreCacheLine DissasmCodeZone::GetCurrentAsmLine(uint32 currentLine, Re
     paramsPtr->isCollapsed = currentType.isCollapsed;
     paramsPtr->zoneName    = &currentType.name;
 
-    assert(asmCacheLine.TryGetDataFromInsn(*paramsPtr));
+    const auto isValidData = asmCacheLine.TryGetDataFromInsn(*paramsPtr);
+    assert(isValidData);
     lastDrawnLine = asmLine;
 
     // uint32 difflines = 0;
