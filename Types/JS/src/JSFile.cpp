@@ -717,7 +717,7 @@ uint32 JSFile::TokenizeList(const TextParser& text, TokensList& tokenList, uint3
 }
 uint32 JSFile::TokenizePreprocessDirective(const TextParser& text, TokensList& list, BlocksList& blocks, uint32 pos)
 {
-    auto eol   = text.ParseUntillEndOfLine(pos);
+    auto eol   = text.ParseUntilEndOfLine(pos);
     auto start = pos;
     pos        = text.ParseSpace(pos + 1, SpaceType::SpaceAndTabs);
     if ((CharType::GetCharType(text[pos])) != CharType::Word)
@@ -827,7 +827,7 @@ void JSFile::Tokenize(uint32 start, uint32 end, const TextParser& text, TokensLi
             idx = text.ParseSpace(idx, SpaceType::SpaceAndTabs);
             break;
         case CharType::SingleLineComment:
-            next = text.ParseUntillEndOfLine(idx);
+            next = text.ParseUntilEndOfLine(idx);
             tokenList.Add(
                   TokenType::Comment,
                   idx,
