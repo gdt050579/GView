@@ -63,14 +63,19 @@ bool EMLFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
     EML_Item_Record& itemData = items[itemsIndex];
     TextParser text(unicodeString.ToStringView());
 
+    item.SetText(0, String().Format("%u", itemData.partIndex));
+
     if (itemData.leafNode) {
-        item.SetText(0, contentType);
+        TextParser contentTypeParser(contentType);
+        uint32 typeEnd = contentTypeParser.ParseUntilText(0, ";", false);
+        u16string_view type = contentTypeParser.GetSubString(0, typeEnd);
+        item.SetText(1, type);
     } else {
-        item.SetText(0, ExtractContentType(text, itemData.startIndex, itemData.startIndex + itemData.dataLength));
+        item.SetText(1, ExtractContentType(text, itemData.startOffset, itemData.startOffset + itemData.dataLength));
     }
 
-    item.SetText(1, String().Format("%u", itemData.dataLength));
-    item.SetText(2, String().Format("%u", itemData.startIndex + itemData.parentStartIndex));
+    item.SetText(2, String().Format("%u", itemData.dataLength));
+    item.SetText(3, String().Format("%u", itemData.startOffset));
 
     item.SetData<EML_Item_Record>(&itemData);
 
@@ -83,7 +88,7 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     auto itemData = item.GetData<EML_Item_Record>();
 
     auto bufferView = obj->GetData().GetEntireFile();
-    BufferView itemBufferView(bufferView.GetData() + itemData->startIndex, itemData->dataLength);
+    BufferView itemBufferView(bufferView.GetData() + itemData->startOffset, itemData->dataLength);
 
     if (!itemData->leafNode) {
         GView::App::OpenBuffer(itemBufferView, obj->GetName(), path, GView::App::OpenMethod::ForceType, "eml");
@@ -200,8 +205,7 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
 
             partEnd = text.ParseUntilText(partStart, boundary, false);
 
-            // TODO: get the parent's index
-            items.emplace_back(EML_Item_Record{ .parentStartIndex = 0, .startIndex = partStart, .dataLength = partEnd - partStart, .leafNode = false });
+            items.emplace_back(EML_Item_Record{.startOffset = partStart, .dataLength = partEnd - partStart, .partIndex = (uint32) items.size(), .leafNode = false });
 
             partStart = partEnd;
         } while (partEnd < end);
@@ -210,14 +214,13 @@ void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 star
     }
 
     if (type == u"message") {
-        items.emplace_back(EML_Item_Record{ .parentStartIndex = 0, .startIndex = start, .dataLength = end - start, .leafNode = false });
+        items.emplace_back(EML_Item_Record{.startOffset = start, .dataLength = end - start, .partIndex = (uint32) items.size(), .leafNode = false });
         return;
     }
 
     // base case
     // simple type (text|application|...)
-    items.emplace_back(EML_Item_Record{ .parentStartIndex = 0, .startIndex = start, .dataLength = end - start, .leafNode = true });
-
+    items.emplace_back(EML_Item_Record{ .startOffset = start, .dataLength = end - start, .partIndex = (uint32) items.size(), .leafNode = true });
     return;
 }
 } // namespace GView::Type::EML

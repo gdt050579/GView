@@ -3,9 +3,9 @@
 #include "GView.hpp"
 
 struct EML_Item_Record {
-    uint32 parentStartIndex;
-    uint32 startIndex;
+    uint32 startOffset;
     uint32 dataLength;
+    uint32 partIndex;
     bool leafNode;
 };
 

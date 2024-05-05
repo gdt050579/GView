@@ -15,9 +15,10 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 
     //settings.SetIcon(ISO_ICON);
     settings.SetColumns({
+          "n:&Index,a:r,w:50",
           "n:&Content-Type,a:r,w:50",
           "n:&Size,a:r,w:20",
-          "n:&OffsetInFile,a:r,w:20",
+          "n:&Offset,a:r,w:20",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<EML::EMLFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
