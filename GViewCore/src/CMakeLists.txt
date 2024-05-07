@@ -13,6 +13,7 @@ add_subdirectory(ZIP)
 add_subdirectory(SQLite3)
 add_subdirectory(Regex)
 add_subdirectory(Unpack)
+add_subdirectory(Entropy)
 
 if(NOT DEFINED CMAKE_TESTING_ENABLED)
     target_sources(GViewCore PRIVATE main.cpp)

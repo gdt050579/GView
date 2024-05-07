@@ -771,6 +771,11 @@ namespace Regex
     };
 } // namespace Regex
 
+namespace Entropy
+{
+    CORE_EXPORT double ShannonEntropy(const BufferView& buffer);
+} // namespace Entropy
+
 /*
  * Object can be:
  *   - a file
