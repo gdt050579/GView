@@ -58,7 +58,7 @@ Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95
     }
     {
         Factory::Label::Create(this, "Block size", "x:40,y:0,w:10,h:1");
-        this->blockSizeComboBox = Factory::ComboBox::Create(this, "x:52,y:0,w:15,h:1", "");
+        this->blockSizeComboBox = Factory::ComboBox::Create(this, "x:51,y:0,w:12,h:1", "");
         blockSizeComboBox->SetHotKey('B');
     }
     {
@@ -158,9 +158,15 @@ void Plugin::ResizeLegendCanvas()
     CHECKRET(canvasEntropy.IsValid(), "");
     this->canvasLegend->MoveTo(this->canvasLegend->GetX(), this->canvasEntropy->GetY());
 
-    this->canvasLegend->Resize(this->canvasLegend->GetWidth(), SHANNON_ENTROPY_LEGEND_HEIGHT);
+    uint32 newHeight   = this->canvasLegend->GetHeight();
+    const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
+    if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY) {
+        newHeight = SHANNON_ENTROPY_LEGEND_HEIGHT;
+    }
+
+    this->canvasLegend->Resize(this->canvasLegend->GetWidth(), newHeight);
     auto canvas = this->canvasLegend->GetCanvas();
-    canvas->Resize(this->canvasLegend->GetWidth(), SHANNON_ENTROPY_LEGEND_HEIGHT);
+    canvas->Resize(this->canvasLegend->GetWidth(), newHeight);
 }
 
 bool Plugin::OnEvent(Reference<Control> sender, Event eventType, int controlID)
@@ -171,21 +177,20 @@ bool Plugin::OnEvent(Reference<Control> sender, Event eventType, int controlID)
 
     switch (eventType) {
     case AppCUI::Controls::Event::ComboBoxSelectedItemChanged:
-        /* nothing, is to costly computing entropy each time */
+        /* nothing, it is to costly computing entropy each time / on the fly */
         break;
     case AppCUI::Controls::Event::ComboBoxClosed:
         if (sender == this->entropyComboBox.ToBase<Control>()) {
-            this->DrawShannonEntropy();
-            this->DrawShannonEntropyLegend();
-            return true;
-        }
-        if (sender == this->blockSizeComboBox.ToBase<Control>()) {
-            this->blockSize    = static_cast<uint32>(this->blockSizeComboBox->GetCurrentItemUserData(-1));
             const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
             if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY) {
                 this->DrawShannonEntropy();
                 this->DrawShannonEntropyLegend();
             }
+            return true;
+        }
+        if (sender == this->blockSizeComboBox.ToBase<Control>()) {
+            this->blockSize = static_cast<uint32>(this->blockSizeComboBox->GetCurrentItemUserData(-1));
+            this->entropyComboBox->RaiseEvent(Event::ComboBoxClosed);
             return true;
         }
         break;
