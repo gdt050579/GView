@@ -18,8 +18,7 @@ Settings::Settings()
 
 Settings::~Settings()
 {
-    if (this->data)
-    {
+    if (this->data) {
         delete reinterpret_cast<SettingsData*>(this->data);
         this->data = nullptr;
     }
@@ -30,6 +29,13 @@ void Settings::AddZone(uint64 start, uint64 size, ColorPair col, std::string_vie
     auto* Members = (SettingsData*) (this->data);
     if (size > 0)
         Members->zList.Add(start, start + size - 1, col, name);
+}
+
+void Settings::SetZonesListForObjectHighlighting(const GView::Utils::ZonesList& zones)
+{
+    auto data = reinterpret_cast<SettingsData*>(this->data);
+    CHECKRET(data, "");
+    data->zListObjects = zones;
 }
 
 void Settings::AddBookmark(uint8 bookmarkID, uint64 fileOffset)
@@ -48,8 +54,7 @@ void Settings::SetOffsetTranslationList(std::initializer_list<std::string_view> 
     Members->translationMethods[0].name = "FileOffset";
     Members->translationMethodsCount    = 1;
     Members->offsetTranslateCallback    = cbk;
-    for (auto& i : list)
-    {
+    for (auto& i : list) {
         Members->translationMethods[Members->translationMethodsCount++].name = i;
         if (Members->translationMethodsCount >= sizeof(Members->translationMethods) / sizeof(OffsetTranslationMethod))
             break;

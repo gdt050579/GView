@@ -1,4 +1,4 @@
-#include "Unpackers.hpp"
+#include "Unpacker.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -13,13 +13,10 @@ using namespace GView;
 constexpr int BTN_ID_OK     = 1;
 constexpr int BTN_ID_CANCEL = 2;
 
-constexpr std::string_view VIEW_NAME{ "Buffer View" };
-
 namespace GView::GenericPlugins::Unpackers
 {
 using namespace AppCUI::Graphics;
 using namespace GView::View;
-
 
 constexpr char BASE64_ENCODE_TABLE[] = { 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
                                          'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
@@ -31,8 +28,7 @@ constexpr char BASE64_DECODE_TABLE[] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
                                          10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, -1, 26, 27, 28,
                                          29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51 };
 
-
-Plugin::Plugin() : Window("Unpackers", "d:c,w:140,h:40", WindowFlags::FixedPosition)
+Plugin::Plugin() : Window("Unpacker", "d:c,w:140,h:40", WindowFlags::FixedPosition)
 {
     sync = Factory::CheckBox::Create(this, "&Unpackers", "x:2%,y:1,w:30");
     sync->SetChecked(false);
@@ -54,8 +50,7 @@ Plugin::Plugin() : Window("Unpackers", "d:c,w:140,h:40", WindowFlags::FixedPosit
 
 void Plugin::OnButtonPressed(Reference<Button> button)
 {
-    switch (button->GetControlID())
-    {
+    switch (button->GetControlID()) {
     case BTN_ID_CANCEL:
         this->Exit(Dialogs::Result::Cancel);
         break;
@@ -70,20 +65,19 @@ void Plugin::OnButtonPressed(Reference<Button> button)
 
 void Plugin::Update()
 {
-    if (list.IsValid() == false)
-    {
+    if (list.IsValid() == false) {
         return;
     }
     list->DeleteAllItems();
 
     auto item = list->AddItem({ "Cosmin", "ViewName", "CevaFormat", "Base64" });
 
-    //auto desktop         = AppCUI::Application::GetDesktop();
-    //const auto windowsNo = desktop->GetChildrenCount();
-    //for (uint32 i = 0; i < windowsNo; i++)
+    // auto desktop         = AppCUI::Application::GetDesktop();
+    // const auto windowsNo = desktop->GetChildrenCount();
+    // for (uint32 i = 0; i < windowsNo; i++)
     //{
-    //    auto window    = desktop->GetChild(i);
-    //    auto interface = window.ToObjectRef<GView::View::WindowInterface>();
+    //     auto window    = desktop->GetChild(i);
+    //     auto interface = window.ToObjectRef<GView::View::WindowInterface>();
 
     //    auto currentView           = interface->GetCurrentView();
     //    const auto currentViewName = currentView->GetName();
@@ -125,22 +119,19 @@ void Plugin::Update()
     //}
 }
 
-
 void Plugin::Base64Encode(BufferView view, Buffer& output)
 {
     uint32 sequence      = 0;
     uint32 sequenceIndex = 0;
 
     // TODO: same as before, pass something that doesn't need extra preprocessing
-    for (uint32 i = 0; i < view.GetLength(); i += 2)
-    {
+    for (uint32 i = 0; i < view.GetLength(); i += 2) {
         char decoded = view[i];
 
         sequence |= decoded << ((3 - sequenceIndex) * 8);
         sequenceIndex++;
 
-        if (sequenceIndex % 3 == 0)
-        {
+        if (sequenceIndex % 3 == 0) {
             // get 4 encoded components out of this one
             // 0x3f -> 0b00111111
 
@@ -161,7 +152,6 @@ void Plugin::Base64Encode(BufferView view, Buffer& output)
     output.AddMultipleTimes(string_view("=", 1), (3 - sequenceIndex) % 3);
 }
 
-
 bool Plugin::Base64Decode(BufferView view, Buffer& output)
 {
     uint32 sequence      = 0;
@@ -174,26 +164,21 @@ bool Plugin::Base64Decode(BufferView view, Buffer& output)
         char encoded = view[i];
         CHECK(encoded < sizeof(BASE64_DECODE_TABLE) / sizeof(*BASE64_DECODE_TABLE), false, "");
 
-        if (encoded == '\r' || encoded == '\n')
-        {
+        if (encoded == '\r' || encoded == '\n') {
             continue;
         }
 
-        if (lastEncoded == '=' && sequenceIndex == 0)
-        {
+        if (lastEncoded == '=' && sequenceIndex == 0) {
             AppCUI::Dialogs::MessageBox::ShowError("Warning!", "Ignoring extra bytes after the end of buffer");
             break;
         }
 
         uint32 decoded;
 
-        if (encoded == '=')
-        {
+        if (encoded == '=') {
             // padding
             decoded = 0;
-        }
-        else
-        {
+        } else {
             decoded = BASE64_DECODE_TABLE[encoded];
             CHECK(decoded != -1, false, "");
         }
@@ -201,8 +186,7 @@ bool Plugin::Base64Decode(BufferView view, Buffer& output)
         sequence |= decoded << (2 + (4 - sequenceIndex) * 6);
         sequenceIndex++;
 
-        if (sequenceIndex % 4 == 0)
-        {
+        if (sequenceIndex % 4 == 0) {
             char* buffer = (char*) &sequence;
             output.Add(string_view(buffer + 3, 1));
             output.Add(string_view(buffer + 2, 1));
@@ -222,25 +206,22 @@ bool Plugin::Base64Decode(BufferView view, Buffer& output)
 // but you should lazy initialize it - so make it a pointer
 static std::unique_ptr<GView::GenericPlugins::Unpackers::Plugin> plugin{ nullptr };
 
-extern "C"
+extern "C" {
+PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> currentObject)
 {
-    PLUGIN_EXPORT bool Run(const string_view command, Reference<GView::Object> currentObject)
-    {
-        if (command == "Unpackers")
-        {
-            if (plugin == nullptr)
-            {
-                plugin.reset(new GView::GenericPlugins::Unpackers::Plugin());
-            }
-            plugin->Show();
-            return true;
+    if (command == "Unpackers") {
+        if (plugin == nullptr) {
+            plugin.reset(new GView::GenericPlugins::Unpackers::Plugin());
         }
-        return false;
+        plugin->Show();
+        return true;
     }
+    return false;
+}
 
-    PLUGIN_EXPORT void UpdateSettings(IniSection sect)
-    {
-        sect["command.Unpackers"] = Input::Key::Ctrl | Input::Key::Shift | Input::Key::U;
-    }
+PLUGIN_EXPORT void UpdateSettings(IniSection sect)
+{
+    sect["command.Unpacker"] = Input::Key::Alt | Input::Key::F10;
+}
 }
 } // namespace GView::GenericPlugins::Unpackers

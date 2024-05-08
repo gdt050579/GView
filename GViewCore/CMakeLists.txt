@@ -53,6 +53,9 @@ message(STATUS "SQLITE3_INCLUDE_DIR => ${SQLITE3_INCLUDE_DIR}")
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::sqlite3::sqlite3)
 
+find_package(re2 CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE re2::re2)
+
 if (MSVC)
     add_compile_options(-W3)
 elseif (APPLE)

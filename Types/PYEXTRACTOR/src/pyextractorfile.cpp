@@ -27,11 +27,9 @@ bool PYEXTRACTORFile::HasPanel(Panels::IDs id)
 bool PYEXTRACTORFile::SetCookiePosition()
 {
     const auto buffer = obj->GetData().GetEntireFile();
-    if (buffer.IsValid())
-    {
+    if (buffer.IsValid()) {
         const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
-        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
-        {
+        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos) {
             archive.cookiePosition = index;
             return true;
         }
@@ -43,14 +41,12 @@ bool PYEXTRACTORFile::SetCookiePosition()
     uint64 sizeToRead    = cacheSize;
     uint64 index         = 0;
 
-    do
-    {
+    do {
         const auto buffer = obj->GetData().CopyToBuffer(index, sizeToRead);
         CHECK(buffer.IsValid(), false, "");
 
         const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
-        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
-        {
+        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos) {
             archive.cookiePosition = index;
             return true;
         }
@@ -74,12 +70,9 @@ bool PYEXTRACTORFile::SetInstallerVersion()
     CHECK(bufferView.IsValid(), false, "");
     std::string version{ (char*) bufferView.GetData(), bufferView.GetLength() };
     tolower(version);
-    if (version.find(marker))
-    {
+    if (version.find(marker)) {
         archive.version = PyInstallerVersion::V21Plus;
-    }
-    else
-    {
+    } else {
         archive.version = PyInstallerVersion::V20;
     }
 
@@ -123,8 +116,7 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
 
     uint64 i             = archive.info.tableOfContentPosition;
     const auto maxOffset = archive.info.tableOfContentPosition + archive.info.tableOfContentSize;
-    while (i < maxOffset)
-    {
+    while (i < maxOffset) {
         const auto bufferView = obj->GetData().CopyToBuffer(i, TOC_ENTRY_KNOWN_SIZE);
         CHECK(bufferView.IsValid(), false, "");
 
@@ -134,12 +126,9 @@ bool PYEXTRACTORFile::SetTableOfContentEntries()
 
         const auto nameLen = entry.entrySize - TOC_ENTRY_KNOWN_SIZE;
 
-        if (nameLen != 0)
-        {
+        if (nameLen != 0) {
             entry.name = obj->GetData().CopyToBuffer(i + TOC_ENTRY_KNOWN_SIZE, static_cast<uint32>(nameLen));
-        }
-        else
-        {
+        } else {
             static uint32 countUnnamed = 0;
             LocalString<30> ls;
             ls.Format("unnamed_%u", countUnnamed);
