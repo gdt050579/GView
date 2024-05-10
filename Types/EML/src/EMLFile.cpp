@@ -45,7 +45,7 @@ std::u16string EMLFile::ExtractContentType(TextParser text, uint32 start, uint32
 
 bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
-    auto temp = parent.GetData<EML_Item_Record>();
+    //auto temp = parent.GetData<EML_Item_Record>();
 
     unicodeString.Add(obj->GetData().GetEntireFile());
     TextParser text(unicodeString.ToStringView());
