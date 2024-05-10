@@ -205,7 +205,7 @@ class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
 };
 
 void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
-    {
+{
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
     const auto index = item.GetData(-1);
