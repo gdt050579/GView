@@ -384,6 +384,35 @@ bool GetInfo(std::u16string_view path, Info& info)
         auto& entry = internalInfo->entries.emplace_back();
         ConvertZipFileInfoToEntry(zipFile, entry);
 
+        std::u8string_view filename = entry.filename;
+        if (entry.type == EntryType::Directory && filename[filename.size() - 1] == '/') {
+            filename = { filename.data(), filename.size() - 1 };
+        }
+
+        size_t offset = 0;
+        
+        while (true) {
+            size_t pos = filename.find_first_of('/', offset);
+
+            CHECKBK(pos != std::string::npos, "");
+
+            // add the parent as well if not already present
+            auto parentFilename = entry.filename.substr(0, pos + 1);
+
+            auto it = std::find_if(
+                    internalInfo->entries.begin(), internalInfo->entries.end(), [&](const _Entry& e) -> bool { return e.filename == parentFilename; });
+            if (it == internalInfo->entries.end()) {
+                auto& parentEntry          = internalInfo->entries.emplace_back();
+                parentEntry.filename       = parentFilename;
+                parentEntry.filename_size  = parentFilename.size();
+                parentEntry.type           = EntryType::Directory;
+                parentEntry.version_madeby = entry.version_madeby;
+                parentEntry.version_needed = entry.version_needed;
+            }
+
+            offset = pos + 1;
+        }
+
         CHECKBK(mz_zip_reader_goto_next_entry(internalInfo->reader.value) == MZ_OK, "");
     } while (true);
 

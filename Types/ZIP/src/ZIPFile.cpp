@@ -71,7 +71,7 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
         CHECK(usb.Set(filename), false, "");
 
         const auto sv = usb.ToStringView();
-        if (sv.size() != path.size() && sv.starts_with(path)) {
+        if (sv.size() > path.size() && sv.starts_with(path) && sv[path.size()] == '/') {
             const auto tmpSV = std::u16string_view{ sv.data() + path.size(), sv.size() - path.size() };
             if (tmpSV.find_first_of('/') == tmpSV.find_last_of('/')) {
                 curentChildIndexes.push_back(i);
@@ -205,7 +205,7 @@ class PasswordDialog : public Window, public Handlers::OnButtonPressedInterface
 };
 
 void ZIPFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
-{
+    {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
     const auto index = item.GetData(-1);
