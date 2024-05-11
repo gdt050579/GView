@@ -38,6 +38,9 @@ jobs:
     #     # brew update
     #     brew install pkg-config
     #     brew upgrade
+
+    - name: Install Ninja
+      run: brew install ninja
     
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
