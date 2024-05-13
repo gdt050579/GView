@@ -57,6 +57,7 @@ bool Instance::Init(Reference<GView::Object> object)
 
         // html objects
         context.objectDroppers.emplace_back(std::make_unique<IFrame>());
+        context.objectDroppers.emplace_back(std::make_unique<PHP>());
         context.objectDroppers.emplace_back(std::make_unique<Script>());
         context.objectDroppers.emplace_back(std::make_unique<XML>());
 

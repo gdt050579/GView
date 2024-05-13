@@ -289,6 +289,7 @@ class Instance : public View::ViewControl, public GView::Utils::SelectionZoneInt
     virtual bool GetViewData(ViewData&, uint64) override;
     virtual bool AdvanceStartView(int64) override;
     virtual bool SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones) override;
+    virtual GView::Utils::ZonesList& GetObjectsHighlightingZonesList() override;
 
   public:
     Instance(Reference<GView::Object> obj, Settings* settings);

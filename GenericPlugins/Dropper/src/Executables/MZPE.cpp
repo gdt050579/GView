@@ -203,13 +203,14 @@ bool MZPE::Check(uint64 offset, DataCache& file, BufferView precachedBuffer, Fin
 {
     CHECK(IsMagicU16(precachedBuffer, IMAGE_DOS_SIGNATURE), false, "");
 
-    auto buffer = file.CopyToBuffer(offset, 0x200, true);
+    auto buffer = file.Get(offset, 0x200, true);
     CHECK(buffer.IsValid(), false, "");
 
     auto dos = buffer.GetObject<ImageDOSHeader>();
     CHECK(dos, false, "");
     CHECK(dos->e_magic == IMAGE_DOS_SIGNATURE, false, "");
 
+    buffer     = file.Get(offset, buffer.GetLength() + dos->e_lfanew + sizeof(ImageNTHeaders64), true);
     auto nth32 = buffer.GetObject<ImageNTHeaders32>(dos->e_lfanew);
     CHECK(nth32, false, "");
     CHECK(nth32->Signature == IMAGE_NT_SIGNATURE, false, "");

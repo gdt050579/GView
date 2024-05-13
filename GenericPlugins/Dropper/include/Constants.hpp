@@ -85,6 +85,7 @@ enum class Subcategory : uint32 {
 
     // HTML Objects
     IFrame,
+    PHP,
     Script,
     XML,
 
@@ -230,6 +231,7 @@ static const TypesMap TYPES_MAP{
         "An inline frame (iframe) is a HTML element that loads another HTML page within the document. It essentially puts another webpage within the parent "
         "page.",
         true } },
+    { Subcategory::PHP, { "PHP", "Embedded PHP code snippet.", true } },
     { Subcategory::Script,
       { "Script", "The <script> HTML element is used to embed executable code or data; this is typically used to embed or refer to JavaScript code. ", true } },
     { Subcategory::XML,
@@ -326,7 +328,7 @@ static const std::map<Category, std::vector<Subcategory>> CATEGORY_TO_SUBCATEGOR
             Subcategory::RC6Stub,
       } },
     { Category::Executables, { Subcategory::MZPE, Subcategory::MachO, Subcategory::MachOFat, Subcategory::COFF, Subcategory::ELF } },
-    { Category::HtmlObjects, { Subcategory::IFrame, Subcategory::Script, Subcategory::XML } },
+    { Category::HtmlObjects, { Subcategory::IFrame, Subcategory::PHP, Subcategory::Script, Subcategory::XML } },
     { Category::Image, { Subcategory::BMP, Subcategory::JPG, Subcategory::PNG, Subcategory::GIF } },
     { Category::Multimedia, { Subcategory::RIFF, Subcategory::SWF } },
     { Category::SpecialStrings, { Subcategory::Email, Subcategory::Filepath, Subcategory::IP, Subcategory::Registry, Subcategory::URL, Subcategory::Wallet } },

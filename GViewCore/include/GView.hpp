@@ -897,6 +897,7 @@ namespace View
         virtual bool GetViewData(ViewData&, uint64);
         virtual bool AdvanceStartView(int64);
         virtual bool SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones);
+        virtual GView::Utils::ZonesList& GetObjectsHighlightingZonesList();
 
         ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
             : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)

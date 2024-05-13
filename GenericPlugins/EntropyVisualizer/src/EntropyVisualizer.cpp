@@ -45,14 +45,79 @@ Color Plugin::ShannonEntropyValueToColor(int32 value)
     }
 }
 
+Color Plugin::ShannonEntropyDataTypeValueToColor(double value, double epsilon)
+{
+    if (value >= 8.0 - epsilon && value < 8.0 - epsilon) {
+        return Color::Green;
+    }
+
+    if (value > 6.0 && value < 8.0 - epsilon) {
+        return Color::Red;
+    }
+
+    return Color::Gray;
+}
+
+Color Plugin::ShannonEntropyDataTypeValueToColorName(std::string_view name)
+{
+    if (name == "Plain") {
+        return Color::Gray;
+    } else if (name == "Binary") {
+        return Color::Red;
+    } else if (name == "Encrypted") {
+        return Color::Green;
+    }
+    return Color::Black;
+}
+
+double Plugin::ComputeEpsilon(size_t sample_size)
+{
+    if (sample_size < (1024ULL * 1024)) {
+        return 0.001;
+    }
+    if (sample_size < (1024ULL * 1024 * 64)) {
+        return 0.0001;
+    }
+    if (sample_size < (1024ULL * 1024 * 512)) {
+        return 0.00001;
+    }
+    return 0.000001;
+}
+
+Color Plugin::EmbeddedObjectValueToColor(std::string_view name)
+{
+    if (name == "Archive") {
+        return Color::White;
+    } else if (name == "Cryptographic") {
+        return Color::Silver;
+    } else if (name == "Executable") {
+        return Color::Red;
+    } else if (name == "HTML Object") {
+        return Color::Olive;
+    } else if (name == "Image") {
+        return Color::Yellow;
+    } else if (name == "Multimedia") {
+        return Color::DarkGreen;
+    } else if (name == "Special Strings") {
+        return Color::Aqua;
+    } else {
+        return Color::Gray;
+    }
+}
+
 Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95%,h:95%", WindowFlags::FixedPosition)
 {
+    auto desktop = AppCUI::Application::GetDesktop();
+    this->parent = desktop->GetFocusedChild();
     this->object = object;
     {
         Factory::Label::Create(this, "Entropy type", "x:1, y:0,w:12,h:1");
         this->entropyComboBox = Factory::ComboBox::Create(this, "x:14, y:0,w:25,h:1", "");
         entropyComboBox->SetHotKey('E');
         entropyComboBox->AddItem(SHANNON_ENTROPY_OPTION_NAME, COMBO_BOX_ITEM_SHANNON_ENTROPY);
+        entropyComboBox->AddSeparator();
+        entropyComboBox->AddItem(SHANNON_ENTROPY_DATA_TYPE_OPTION_NAME, COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE);
+        entropyComboBox->AddItem(EMBEDDED_OBJECTS_OPTION_NAME, COMBO_BOX_ITEM_EMBEDDED_OBJECTS);
         // TODO: add the rest
         entropyComboBox->SetCurentItemIndex(0);
     }
@@ -62,13 +127,13 @@ Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95
         blockSizeComboBox->SetHotKey('B');
     }
     {
-        this->canvasEntropy = Factory::CanvasViewer::Create(this, "d:lb,w:90%,h:99%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
+        this->canvasEntropy = Factory::CanvasViewer::Create(this, "d:lb,w:85%,h:99%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
         auto canvas         = this->canvasEntropy->GetCanvas();
         canvas->Resize(this->canvasEntropy->GetWidth(), this->canvasEntropy->GetHeight());
         canvas->SetCursor(0, 0);
     }
     {
-        this->canvasLegend = Factory::CanvasViewer::Create(this, "d:tr,w:10%,h:20%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
+        this->canvasLegend = Factory::CanvasViewer::Create(this, "d:tr,w:15%,h:20%", this->GetWidth(), this->GetHeight(), Controls::ViewerFlags::Border);
         auto canvas        = this->canvasLegend->GetCanvas();
         canvas->Resize(this->canvasLegend->GetWidth(), this->canvasLegend->GetHeight());
     }
@@ -80,8 +145,106 @@ Plugin::Plugin(Reference<Object> object) : Window("EntropyVisualizer", "d:c,w:95
     this->canvasEntropy->SetFocus();
 }
 
-bool Plugin::DrawShannonEntropy()
+bool Plugin::DrawShannonEntropy(bool dataType)
 {
+    CHECK(this->canvasEntropy.IsValid(), false, "");
+    auto canvas = this->canvasEntropy->GetCanvas();
+
+    auto& cache              = object->GetData();
+    const auto size          = cache.GetSize();
+    const auto epsilon       = ComputeEpsilon(size);
+    const uint32 blocksCount = static_cast<uint32>(size / this->blockSize + 1);
+
+    uint32 x         = 0;
+    uint32 y         = 0;
+    uint32 maxX      = canvas->GetWidth();
+    uint32 maxY      = std::max<uint32>(blocksCount / maxX + 1 + 1, canvas->GetHeight());
+    const auto color = ColorPair{ Color::White, this->GetConfig()->Window.Background.Normal };
+    canvas->Resize(maxX, maxY, 'X', color);
+    canvas->ClearEntireSurface('X', color);
+
+    for (uint32 i = 0; i < blocksCount; i++) {
+        auto bf                 = cache.Get(i * static_cast<uint64>(this->blockSize), this->blockSize, false);
+        const auto value        = GView::Entropy::ShannonEntropy(bf);
+        const auto roundedValue = static_cast<uint32>(std::llround(value));
+        const auto fColor       = dataType ? ShannonEntropyDataTypeValueToColor(value, epsilon) : ShannonEntropyValueToColor(roundedValue);
+
+        canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ fColor, CANVAS_ENTROPY_BACKGROUND });
+        if (x == maxX) {
+            x = 0;
+            y++;
+        }
+    }
+
+    return true;
+}
+
+bool Plugin::DrawShannonEntropyLegend(bool dataType)
+{
+    CHECK(this->canvasLegend.IsValid(), false, "");
+    ResizeLegendCanvas();
+
+    auto canvas = this->canvasLegend->GetCanvas();
+
+    const auto color = ColorPair{ Color::White, this->GetConfig()->Window.Background.Normal };
+
+    uint32 x = 0;
+    uint32 y = 0;
+    canvas->Clear(' ', color);
+
+    std::string_view name = dataType ? "Shanon Data Type Legend" : "Shanon Legend [0-8]";
+
+    canvas->WriteSingleLineText(x, y++, name, color);
+    canvas->FillHorizontalLineWithSpecialChar(x, y++, canvas->GetWidth(), SpecialChars::BoxHorizontalSingleLine, color);
+    x = 0;
+
+    if (dataType) {
+        static std::vector<std::string_view> SHANNON_ENTROPY_DATA_TYPES{ "Plain", "Binary", "Encrypted" };
+
+        for (uint32 i = 0; i <= SHANNON_ENTROPY_DATA_TYPE_MAX_VALUE; i++) {
+            const auto& name = SHANNON_ENTROPY_DATA_TYPES.at(i);
+            canvas->WriteSingleLineText(x, y++, name, color);
+
+            while (x < canvas->GetWidth()) {
+                canvas->WriteSpecialCharacter(
+                      x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ ShannonEntropyDataTypeValueToColorName(name), CANVAS_ENTROPY_BACKGROUND });
+            }
+
+            y++;
+            x = 0;
+        }
+    } else {
+        for (uint32 i = 0; i <= SHANNON_ENTROPY_MAX_VALUE; i++) {
+            canvas->WriteCharacter(x++, y, i + '0', color);
+            canvas->WriteCharacter(x++, y, ' ', color);
+            canvas->WriteCharacter(x++, y, '=', color);
+            canvas->WriteCharacter(x++, y, '>', color);
+            canvas->WriteCharacter(x++, y, ' ', color);
+
+            while (x < canvas->GetWidth()) {
+                canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ ShannonEntropyValueToColor(i), CANVAS_ENTROPY_BACKGROUND });
+            }
+            y++;
+            x = 0;
+        }
+    }
+
+    return true;
+}
+
+bool Plugin::DrawEmbeddedObjects()
+{
+    constexpr std::string_view VIEW_NAME{ "Buffer View" };
+
+    auto interface = this->parent.ToObjectRef<GView::View::WindowInterface>();
+
+    auto currentView           = interface->GetCurrentView();
+    const auto currentViewName = currentView->GetName();
+
+    CHECK(currentViewName == VIEW_NAME, true, "");
+
+    const auto& zones = currentView->GetObjectsHighlightingZonesList();
+
     CHECK(this->canvasEntropy.IsValid(), false, "");
     auto canvas = this->canvasEntropy->GetCanvas();
 
@@ -98,22 +261,71 @@ bool Plugin::DrawShannonEntropy()
     canvas->ClearEntireSurface('X', color);
 
     for (uint32 i = 0; i < blocksCount; i++) {
-        auto bf                 = cache.Get(i * static_cast<uint64>(this->blockSize), this->blockSize, false);
-        const auto value        = GView::Entropy::ShannonEntropy(bf);
-        const auto roundedValue = static_cast<uint32>(std::llround(value));
-        const auto fColor       = ShannonEntropyValueToColor(roundedValue);
-
-        canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ fColor, CANVAS_ENTROPY_BACKGROUND });
+        const auto fColor = EmbeddedObjectValueToColor("");
+        canvas->WriteCharacter(x++, y, ' ', ColorPair{ fColor, fColor });
         if (x == maxX) {
             x = 0;
             y++;
+        }
+    }
+    x = 0;
+    y = 0;
+
+    const auto zonesNo = zones.GetCount();
+    for (uint32 i = 0; i < zonesNo; i++) {
+        const auto& zone = zones.GetZone(i);
+        if (zone.has_value()) {
+            const auto blockStart  = zone->interval.low / this->blockSize;
+            const auto blockEnd    = zone->interval.high / this->blockSize;
+            const auto deltaBlocks = blockEnd - blockStart;
+
+            x = blockStart % maxX;
+            y = blockStart / maxX;
+            y = blockStart / maxX;
+
+            // bad.. TODO: change
+            Color c       = EmbeddedObjectValueToColor("Executable");
+            const auto zn = std::string_view{ zone->name };
+            if (zn == "Email Address") {
+                c = EmbeddedObjectValueToColor("Special Strings");
+            } else if (zn == "Filepath") {
+                c = EmbeddedObjectValueToColor("Special Strings");
+            } else if (zn == "IFrame") {
+                c = EmbeddedObjectValueToColor("HTML Object");
+            } else if (zn == "IP Address") {
+                c = EmbeddedObjectValueToColor("Special Strings");
+            } else if (zn == "MZPE") {
+                c = EmbeddedObjectValueToColor("Executable");
+            } else if (zn == "PHP") {
+                c = EmbeddedObjectValueToColor("HTML Object");
+            } else if (zn == "PNG") {
+                c = EmbeddedObjectValueToColor("Image");
+            } else if (zn == "Registry") {
+                c = EmbeddedObjectValueToColor("Special Strings");
+            } else if (zn == "Script") {
+                c = EmbeddedObjectValueToColor("HTML Object");
+            } else if (zn == "URL") {
+                c = EmbeddedObjectValueToColor("Special Strings");
+            } else if (zn == "Wallet") {
+                c = EmbeddedObjectValueToColor("Special Strings");
+            } else if (zn == "XML") {
+                c = EmbeddedObjectValueToColor("HTML Object");
+            }
+
+            for (uint32 j = 0; j <= deltaBlocks; j++) {
+                canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ c, CANVAS_ENTROPY_BACKGROUND });
+                if (x == maxX) {
+                    x = 0;
+                    y++;
+                }
+            }
         }
     }
 
     return true;
 }
 
-bool Plugin::DrawShannonEntropyLegend()
+bool Plugin::DrawEmbeddedObjectsLegend()
 {
     CHECK(this->canvasLegend.IsValid(), false, "");
     ResizeLegendCanvas();
@@ -126,30 +338,52 @@ bool Plugin::DrawShannonEntropyLegend()
     uint32 y = 0;
     canvas->Clear(' ', color);
 
-    canvas->WriteSingleLineText(x, y++, "Shanon Legend [0-8]", color);
+    canvas->WriteSingleLineText(x, y++, "Embedded objects", color);
     canvas->FillHorizontalLineWithSpecialChar(x, y++, canvas->GetWidth(), SpecialChars::BoxHorizontalSingleLine, color);
     x = 0;
 
-    for (uint32 i = 0; i <= SHANNON_ENTROPY_MAX_VALUE; i++) {
-        canvas->WriteCharacter(x++, y, i + '0', color);
-        canvas->WriteCharacter(x++, y, ' ', color);
-        canvas->WriteCharacter(x++, y, '=', color);
-        canvas->WriteCharacter(x++, y, '>', color);
-        canvas->WriteCharacter(x++, y, ' ', color);
+    static std::vector<std::string_view> EMBEDDED_OBJECTS{ "Archive", "Cryptographic", "Executable", "HTML Object", "Image", "Multimedia", "Special Strings" };
+
+    for (uint32 i = 0; i <= EMBEDDED_OBJECTS_MAX_VALUE; i++) {
+        const auto& name = EMBEDDED_OBJECTS.at(i);
+        canvas->WriteSingleLineText(x, y++, name, color);
 
         while (x < canvas->GetWidth()) {
-            canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ ShannonEntropyValueToColor(i), CANVAS_ENTROPY_BACKGROUND });
+            canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ EmbeddedObjectValueToColor(name), CANVAS_ENTROPY_BACKGROUND });
         }
+
         y++;
         x = 0;
+    }
+    canvas->WriteSingleLineText(x, y++, "Unknown", color);
+    while (x < canvas->GetWidth()) {
+        canvas->WriteSpecialCharacter(x++, y, BLOCK_SPECIAL_CHARACTER, ColorPair{ EmbeddedObjectValueToColor(""), CANVAS_ENTROPY_BACKGROUND });
     }
 
     return true;
 }
 
+std::optional<GView::Utils::Zone> Plugin::IsOffsetInZone(const GView::Utils::ZonesList& zones, uint64 offset) const
+{
+    const auto zonesNo = zones.GetCount();
+    for (uint32 i = 0; i < zonesNo; i++) {
+        const auto zone = zones.GetZone(i);
+        if (zone.has_value()) {
+            if (offset >= zone->interval.low && offset <= zone->interval.high) {
+                return zone;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 void Plugin::OnAfterResize(int newWidth, int newHeight)
 {
     ResizeLegendCanvas();
+
+    // this->MoveTo(this->parent->GetX() + 10, this->parent->GetY() + 10);
+    // this->Resize(this->parent->GetWidth() - 10, this->parent->GetHeight() - 10);
 }
 
 void Plugin::ResizeLegendCanvas()
@@ -162,6 +396,10 @@ void Plugin::ResizeLegendCanvas()
     const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
     if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY) {
         newHeight = SHANNON_ENTROPY_LEGEND_HEIGHT;
+    } else if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE) {
+        newHeight = SHANNON_ENTROPY_LEGEND_DATA_TYPE_HEIGHT;
+    } else if (entropy == COMBO_BOX_ITEM_EMBEDDED_OBJECTS) {
+        newHeight = EMBEDDED_OBJECTS_LEGEND_HEIGHT;
     }
 
     this->canvasLegend->Resize(this->canvasLegend->GetWidth(), newHeight);
@@ -183,8 +421,14 @@ bool Plugin::OnEvent(Reference<Control> sender, Event eventType, int controlID)
         if (sender == this->entropyComboBox.ToBase<Control>()) {
             const auto entropy = this->entropyComboBox->GetCurrentItemUserData(-1);
             if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY) {
-                this->DrawShannonEntropy();
-                this->DrawShannonEntropyLegend();
+                this->DrawShannonEntropy(false);
+                this->DrawShannonEntropyLegend(false);
+            } else if (entropy == COMBO_BOX_ITEM_SHANNON_ENTROPY_DATA_TYPE) {
+                this->DrawShannonEntropy(true);
+                this->DrawShannonEntropyLegend(true);
+            } else if (entropy == COMBO_BOX_ITEM_EMBEDDED_OBJECTS) {
+                this->DrawEmbeddedObjects();
+                this->DrawEmbeddedObjectsLegend();
             }
             return true;
         }

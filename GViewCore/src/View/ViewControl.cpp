@@ -66,6 +66,12 @@ bool ViewControl::SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones
     return false;
 }
 
+GView::Utils::ZonesList& ViewControl::GetObjectsHighlightingZonesList()
+{
+    static GView::Utils::ZonesList zl{};
+    return zl;
+}
+
 bool ViewControl::OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode)
 {
     if (this->HasFocus() == false) {

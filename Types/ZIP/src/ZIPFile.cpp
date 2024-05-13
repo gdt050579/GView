@@ -52,7 +52,9 @@ bool ZIPFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
             }
         }
 
-        return currentItemIndex != this->curentChildIndexes.size();
+        if (this->curentChildIndexes.size() > 0) {
+            return currentItemIndex != this->curentChildIndexes.size();
+        }
     }
 
     UnicodeStringBuilder usb;

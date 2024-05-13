@@ -122,6 +122,11 @@ bool Instance::SetObjectsHighlightingZonesList(GView::Utils::ZonesList& zones)
     return this->SetZones(zones);
 }
 
+GView::Utils::ZonesList& Instance::GetObjectsHighlightingZonesList()
+{
+    return this->settings->zListObjects;
+}
+
 void Instance::OpenCurrentSelection()
 {
     uint64 start, end;

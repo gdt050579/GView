@@ -12,6 +12,7 @@ target_sources(Dropper PRIVATE
 	SpecialStrings/Wallet.cpp
 	Executables/MZPE.cpp
 	HtmlObjects/IFrame.cpp
+	HtmlObjects/PHP.cpp
 	HtmlObjects/Script.cpp
 	HtmlObjects/XML.cpp
 	Multimedia/PNG.cpp)

@@ -248,7 +248,7 @@ DropperUI::DropperUI(Reference<GView::Object> object) : Window("Dropper", "d:c,w
 bool DropperUI::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 {
     commandBar.SetCommand(AppCUI::Input::Key::F3, "Drop binary data", CMD_BINARY_DATA_DROP);
-    commandBar.SetCommand(AppCUI::Input::Key::F10, "Drop objects", CMD_BINARY_DATA_DROP);
+    commandBar.SetCommand(AppCUI::Input::Key::F10, "Drop objects", CMD_BINARY_OBJECTS_DROP);
     commandBar.SetCommand(AppCUI::Input::Key::F4, "Enable highlight objects", CMD_BINARY_OBJECTS_HIGHLIGHTING_ENABLE);
     commandBar.SetCommand(AppCUI::Input::Key::F5, "Disable highlight objects", CMD_BINARY_OBJECTS_HIGHLIGHTING_DISABLE);
     commandBar.SetCommand(AppCUI::Input::Key::F11, "Highlight objects", CMD_BINARY_OBJECTS_HIGHLIGHTING);
