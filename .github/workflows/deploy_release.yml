@@ -63,7 +63,7 @@ jobs:
         retention-days: 1
      
   build-macos:
-    runs-on: [macos-latest]
+    runs-on: [macos-13] # avoid ARM for now - https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources 
     steps:
     - uses: actions/checkout@v2
       with:
