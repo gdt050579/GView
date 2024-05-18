@@ -51,11 +51,7 @@ bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeVie
     TextParser text(unicodeString.ToStringView());
 
     itemsIndex = 0;
-    items.clear();
-
-    ParsePart(text, 0, text.Len());
-
-    return items.size() > 0;
+    return true;
 }
 
 bool EMLFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
@@ -87,16 +83,23 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 {
     auto itemData = item.GetData<EML_Item_Record>();
 
+    TextParser text(unicodeString.ToStringView());
+    auto currentContentType = ExtractContentType(text, itemData->startIndex, itemData->startIndex + itemData->dataLength);
+
     auto bufferView = obj->GetData().GetEntireFile();
     BufferView itemBufferView(bufferView.GetData() + itemData->startOffset, itemData->dataLength);
 
     if (!itemData->leafNode) {
-        GView::App::OpenBuffer(itemBufferView, obj->GetName(), path, GView::App::OpenMethod::ForceType, "eml");
+        auto bufferName = GetGViewFileName(currentContentType, itemData->identifier);
+        GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::ForceType, "eml");
     } else {
         const auto& encodingHeader =
               std::find_if(headerFields.begin(), headerFields.end(), [](const auto& item) { return item.first == u"Content-Transfer-Encoding"; });
 
-        if (encodingHeader != headerFields.end() && encodingHeader->second == u"base64") {
+        const auto headerValueName = GetBufferNameFromHeaderFields();
+        const auto bufferName      = GetGViewFileName(headerValueName, itemData->identifier);
+
+        if (encodingHeader != headerFields.end()) {
             Buffer output;
 
             bool hasWarning;
@@ -107,11 +110,11 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
                 }
                 GView::App::OpenBuffer(output, obj->GetName(), path, GView::App::OpenMethod::BestMatch);
             } else {
-                AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
+                GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
             }
 
         } else {
-            GView::App::OpenBuffer(itemBufferView, obj->GetName(), path, GView::App::OpenMethod::BestMatch);
+            GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
         }
     }
 }
@@ -156,6 +159,60 @@ void EMLFile::ParseHeaders(GView::View::LexicalViewer::TextParser text, uint32& 
     }
 
     index = start;
+}
+
+std::optional<std::u16string> EMLFile::TryGetNameQuotes(std::u16string& contentTypeToSearch, bool removeIfFound)
+{
+    auto name_it = contentTypeToSearch.find(u"name=");
+    if (name_it == std::u16string::npos)
+        return { std::nullopt };
+    if (name_it + 5 /*strlen("name=")*/ + 2 /* 2* '"' */ >= contentTypeToSearch.size())
+        return {};
+    name_it += 5; // strlen("name=")
+    const auto actual_name = contentTypeToSearch.substr(name_it + 1, contentTypeToSearch.size() - name_it - 2);
+    auto name_string       = std::u16string(actual_name);
+    if (removeIfFound) {
+        contentTypeToSearch.erase(name_it - 5, 5 + 2 + actual_name.size()); // strlen("name="
+        if (contentTypeToSearch[contentTypeToSearch.size() - 1] == u' ')
+            contentTypeToSearch.erase(contentTypeToSearch.size() - 1, 1);
+        if (contentTypeToSearch[contentTypeToSearch.size() - 1] == u';')
+            contentTypeToSearch.erase(contentTypeToSearch.size() - 1, 1);
+    }
+    return name_string;
+}
+
+std::u16string EMLFile::GetIdentifierFromContentType(std::u16string& contentTypeToChange)
+{
+    auto name_value = TryGetNameQuotes(contentTypeToChange, true);
+    if (name_value.has_value())
+        return name_value.value();
+
+    return u"";
+}
+
+std::u16string EMLFile::GetBufferNameFromHeaderFields()
+{
+    for (auto& header : headerFields) {
+        auto name_value = TryGetNameQuotes(header.second);
+        if (name_value.has_value())
+            return name_value.value();
+    }
+
+    return std::u16string(obj->GetName());
+}
+
+std::u16string EMLFile::GetGViewFileName(const std::u16string& value, const std::u16string& prefix)
+{
+    LocalUnicodeStringBuilder<64> sb = {};
+    if (!prefix.empty()) {
+        sb.Add(prefix);
+        sb.AddChar(':');
+        sb.AddChar(' ');
+    }
+    sb.Add(value);
+    std::u16string output;
+    sb.ToString(output);
+    return output;
 }
 
 void EMLFile::ParsePart(GView::View::LexicalViewer::TextParser text, uint32 start, uint32 end)

@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.330.0"
+#define GVIEW_VERSION "0.337.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -1437,12 +1437,20 @@ namespace App
 
 }; // namespace App
 
-namespace Unpack::Base64
+namespace Unpack
 {
-    CORE_EXPORT void Encode(BufferView view, Buffer& output);
-    CORE_EXPORT bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage);
-    CORE_EXPORT bool Decode(BufferView view, Buffer& output);
-}
+    namespace Base64
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output, bool& hasWarning, String& warningMessage);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace Base64
+    namespace QuotedPrintable
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace QuotedPrintable
+} // namespace Unpack
 }; // namespace GView
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);

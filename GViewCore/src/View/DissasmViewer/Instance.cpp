@@ -14,7 +14,7 @@ Config Instance::config;
 
 constexpr size_t DISSASM_MAX_STORED_JUMPS = 5;
 
-const std::array<AsmFunctionDetails, 8> KNOWN_FUNCTIONS = { {
+const std::array<AsmFunctionDetails, 10> KNOWN_FUNCTIONS = { {
       { "WriteFile",
         { { "hFile", "HANDLE" },
           { "lpBuffer", "LPCVOID" },
@@ -30,8 +30,19 @@ const std::array<AsmFunctionDetails, 8> KNOWN_FUNCTIONS = { {
           { "dwCreationDisposition", "DWORD" },
           { "dwFlagsAndAttributes", "DWORD" },
           { "hTemplateFile", "HANDLE" } } },
+      { "CreateFileA",
+        {
+              { "lpFileName", "LPCSTR" },
+              { "dwDesiredAccess", "DWORD" },
+              { "dwShareMode", "DWORD" },
+              { "lpSecurityAttributes", "LPSECURITY_ATTRIBUTES" },
+              { "dwCreationDisposition", "DWORD" },
+              { "dwFlagsAndAttributes", "DWORD" },
+              { "hTemplateFile", "HANDLE" },
+        } },
       { "MessageBoxA", { { "hWnd", "HWND" }, { "lpText", "LPCTSTR" }, { "lpCaption", "LPCTSTR" }, { "uType", "UINT" } } },
       { "RegOpenKeyExW", { { "hKey", "HKEY" }, { "lpSubKey", "LPCWSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
+      { "RegOpenKeyExA", { { "hKey", "HKEY" }, { "lpSubKey", "LPCSTR" }, { "ulOptions", "DWORD" }, { "samDesired", "REGSAM" }, { "phkResult", "PHKEY" } } },
       { "RegSetValueExW",
         { { "hKey", "HKEY" },
           { "lpValueName", "LPCWSTR" },
@@ -77,6 +88,14 @@ Instance::Instance(Reference<GView::Object> obj, Settings* _settings)
     this->CurrentSelection = {};
 
     this->codePage = CodePageID::DOS_437;
+
+    for (auto& submenu : RIGHT_CLICK_SUB_MENUS_COMMANDS) {
+        submenu.handle = rightClickMenu.AddSubMenu(submenu.name);
+        auto subMenu   = rightClickMenu.GetSubMenu(submenu.handle);
+        for (auto& command : submenu.commands) {
+            command.handle = subMenu->AddCommandItem(command.text, command.commandID);
+        }
+    }
 
     for (auto& menu_command : RIGHT_CLICK_MENU_COMMANDS) {
         menu_command.handle = rightClickMenu.AddCommandItem(menu_command.text, menu_command.commandID);
@@ -253,11 +272,11 @@ void Instance::AddComment()
     }
 
     uint32 startingLine = zonesFound[0].startingLine;
-    if (startingLine == 0 || startingLine == 1) {
+    if (startingLine == 0 || startingLine == 1 || Cursor.startViewLine >= startingLine && Cursor.lineInView == 0) {
         Dialogs::MessageBox::ShowNotification("Warning", "Please add comment inside the region, not on the title!");
         return;
     }
-    startingLine--;
+    startingLine -= 2;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
 
@@ -295,7 +314,7 @@ void Instance::RemoveComment()
         Dialogs::MessageBox::ShowNotification("Warning", "Please remove comment inside the region, not on the title!");
         return;
     }
-    startingLine--;
+    startingLine -= 2;
 
     const auto convertedZone = static_cast<DissasmCodeZone*>(zone.get());
     convertedZone->RemoveComment(startingLine);
@@ -367,8 +386,6 @@ bool Instance::PrepareDrawLineInfo(DrawLineInfo& dli)
                     return DrawDissasmZone(dli, (DissasmCodeZone*) zones[i].get());
                 case DissasmParseZoneType::CollapsibleAndTextZone:
                     return DrawCollapsibleAndTextZone(dli, (CollapsibleAndTextZone*) zones[i].get());
-                case DissasmParseZoneType::JavaBytecodeZone:
-                    return DrawJavaBytecodeZone(dli, (JavaBytecodeZone*) zones[i].get());
                 default:
                     return false;
                 }
@@ -715,14 +732,17 @@ bool Instance::DrawCollapsibleAndTextZone(DrawLineInfo& dli, CollapsibleAndTextZ
 
 bool Instance::DrawDissasmZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
-    // TODO: extend java bytecode struct to be drawn here!!
-    if (zone->zoneDetails.language != DisassemblyLanguage::x86 && zone->zoneDetails.language != DisassemblyLanguage::x64) {
+    switch (zone->zoneDetails.language) {
+    case DisassemblyLanguage::x86:
+    case DisassemblyLanguage::x64:
+        return DrawDissasmX86AndX64CodeZone(dli, zone);
+    case DisassemblyLanguage::JavaByteCode:
+        return DrawDissasmJavaByteCodeZone(dli, zone);
+    default:
         dli.WriteErrorToScreen("Not yet supported language!");
         AdjustZoneExtendedSize(zone, 1);
         return true;
     }
-
-    return DrawDissasmX86AndX64CodeZone(dli, zone);
 }
 
 void Instance::RegisterStructureCollapseButton(uint32 screenLine, SpecialChars c, ParseZone* zone, bool isBullet)
@@ -832,21 +852,7 @@ void Instance::RecomputeDissasmZones()
         mappingData[OffsetToLinePosition(mapping.first).line].push_back({ &mapping.second, DissasmParseZoneType::StructureParseZone });
     }
     for (auto& dissasmZone : settings->disassemblyZones) {
-        // TODO: improve this
-        DissasmParseZoneType zoneType;
-        switch (dissasmZone.second.language) {
-        case DisassemblyLanguage::x86:
-        case DisassemblyLanguage::x64:
-            zoneType = DissasmParseZoneType::DissasmCodeParseZone;
-            break;
-        case DisassemblyLanguage::JavaByteCode:
-            zoneType = DissasmParseZoneType::JavaBytecodeZone;
-            break;
-        default:
-            // unimplemented
-            abort();
-        }
-        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, zoneType });
+        mappingData[OffsetToLinePosition(dissasmZone.first).line].push_back({ &dissasmZone.second, DissasmParseZoneType::DissasmCodeParseZone });
     }
     for (auto& zone : settings->collapsibleAndTextZones) {
         mappingData[OffsetToLinePosition(zone.first).line].push_back({ &zone.second, DissasmParseZoneType::CollapsibleAndTextZone });
@@ -956,24 +962,6 @@ void Instance::RecomputeDissasmZones()
                 // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
                 lastZoneEndingIndex = collapsibleZone->endingLineIndex;
                 settings->parseZones.push_back(std::move(collapsibleZone));
-            } break;
-            case DissasmParseZoneType::JavaBytecodeZone: {
-                const auto convertedData          = static_cast<DisassemblyZone*>(entry.data);
-                auto javaByteCodeZone             = std::make_unique<JavaBytecodeZone>();
-                javaByteCodeZone->zoneDetails     = *convertedData;
-                javaByteCodeZone->startLineIndex  = zoneStartingLine;
-                javaByteCodeZone->isCollapsed     = Layout.structuresInitialCollapsedState;
-                javaByteCodeZone->endingLineIndex = javaByteCodeZone->startLineIndex + 1;
-                javaByteCodeZone->zoneID          = currentIndex++;
-                javaByteCodeZone->zoneType        = DissasmParseZoneType::JavaBytecodeZone;
-                javaByteCodeZone->extendedSize    = DISSASM_INITIAL_EXTENDED_SIZE;
-
-                if (!javaByteCodeZone->isCollapsed)
-                    javaByteCodeZone->endingLineIndex += javaByteCodeZone->extendedSize;
-
-                // lastEndMinusLastOffset = collapsibleZone->endingLineIndex + collapsibleZone->textLinesOffset;
-                lastZoneEndingIndex = javaByteCodeZone->endingLineIndex;
-                settings->parseZones.push_back(std::move(javaByteCodeZone));
             } break;
             }
         }

@@ -4,7 +4,15 @@
 using namespace GView::View::DissasmViewer;
 using namespace GView::View::DissasmViewer::JClass;
 
-bool Instance::DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone)
+inline void PopulateZoneTextToDissasmAsmPreCacheLine(DissasmCodeZone* zone, const char* text, uint32 len)
+{
+    DissasmAsmPreCacheLine line = {};
+    line.op_str                 = strdup(text);
+    line.op_str_size            = len;
+    zone->asmPreCacheData.cachedAsmLines.push_back(std::move(line));
+}
+
+bool Instance::DrawDissasmJavaByteCodeZone(DrawLineInfo& dli, DissasmCodeZone* zone)
 {
     if (!zone->isInit) {
         const auto buffer = this->obj->GetData().GetEntireFile();
@@ -19,21 +27,22 @@ bool Instance::DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone)
 
         auto clazz = creator.create();
         if (clazz) {
-            zone->bytecodeLines.emplace_back("Constant data:");
+            PopulateZoneTextToDissasmAsmPreCacheLine(zone, "Constant data:", strlen("Constant data:"));
             if (parser.constant_data.empty()) {
-                zone->bytecodeLines.emplace_back("No constant data!");
+                PopulateZoneTextToDissasmAsmPreCacheLine(zone, "No constant data!", strlen("No constant data!"));
             }
 
             LocalString<64> line;
             for (auto& constantData : parser.constant_data) {
                 line.SetFormat("    %s", ConstantKindNames[static_cast<uint32>(constantData.kind)]);
-                zone->bytecodeLines.emplace_back(line.GetText());
+                PopulateZoneTextToDissasmAsmPreCacheLine(zone, line.GetText(), line.Len());
             }
-        }else {
-            zone->bytecodeLines.emplace_back("Failed to parse class file, there are still some features in progress!");
+        } else {
+            const char* msg = "Failed to parse class file, there are still some features in progress!";
+            PopulateZoneTextToDissasmAsmPreCacheLine(zone, msg, strlen(msg));
         }
 
-        AdjustZoneExtendedSize(zone, zone->bytecodeLines.size());
+        AdjustZoneExtendedSize(zone, zone->asmPreCacheData.cachedAsmLines.size());
 
         zone->isInit = true;
     }
@@ -62,7 +71,8 @@ bool Instance::DrawJavaBytecodeZone(DrawLineInfo& dli, JavaBytecodeZone* zone)
 
     const uint32 currentLine = dli.textLineToDraw - 1u;
 
-    chars.Add(zone->bytecodeLines[currentLine].c_str(), ColorMan.Colors.AsmJumpInstruction);
+    const char* lineText = zone->asmPreCacheData.cachedAsmLines[currentLine].op_str;
+    chars.Add(lineText, ColorMan.Colors.AsmJumpInstruction);
 
     const auto bufferToDraw = CharacterView{ chars.GetBuffer(), chars.Len() };
     HighlightSelectionAndDrawCursorText(dli, static_cast<uint32>(bufferToDraw.length()), static_cast<uint32>(bufferToDraw.length()));
