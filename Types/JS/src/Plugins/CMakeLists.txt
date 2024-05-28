@@ -3,4 +3,5 @@ target_sources(JS PRIVATE AddStrings.cpp
 		ReplaceConstants.cpp
 		ReverseStrings.cpp
 		RemoveComments.cpp
-		MarkAlwaysTrue.cpp)
+		MarkAlwaysTrue.cpp
+		UnrollLoop.cpp)

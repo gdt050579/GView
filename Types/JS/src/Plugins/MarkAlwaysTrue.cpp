@@ -1,5 +1,4 @@
 #include "js.hpp"
-#include <format>
 
 namespace GView::Type::JS::Plugins
 {

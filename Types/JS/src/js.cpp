@@ -36,6 +36,7 @@ extern "C"
         settings.AddPlugin(&js->plugins.constPropagation);
         settings.AddPlugin(&js->plugins.removeComments);
         settings.AddPlugin(&js->plugins.markAlwaysTrue);
+        settings.AddPlugin(&js->plugins.unrollLoop);
 
         win->CreateViewer(settings);
 
