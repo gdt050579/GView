@@ -71,10 +71,10 @@ extern "C"
                 }
                 else
                 {
-                    const auto filePoz = pe->RVAtoFilePointer(dr->VirtualAddress);
-                    if (filePoz != PE_INVALID_ADDRESS)
+                    const auto FA = pe->RVAToFA(dr->VirtualAddress);
+                    if (FA != PE_INVALID_ADDRESS)
                     {
-                        settings.AddZone(filePoz, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
+                        settings.AddZone(FA, dr->Size, pe->peCols.colDir[tr], PE::PEFile::DirectoryIDToName(tr));
                     }
                 }
             }
@@ -96,51 +96,51 @@ extern "C"
         };
 
         // set entry point
-        if (pe->hdr64)
-            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth64.OptionalHeader.AddressOfEntryPoint));
-        else
-            settings.SetEntryPointOffset(pe->RVAtoFilePointer(pe->nth32.OptionalHeader.AddressOfEntryPoint));
+        const uint32 addressOfEntryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+        settings.SetEntryPointOffset(pe->RVAToFA(addressOfEntryPoint));
 
-        if (pe->hdr64)
+        const uint32 pointerToSymbolTable = pe->hdr64 ? pe->nth64.FileHeader.PointerToSymbolTable : pe->nth32.FileHeader.PointerToSymbolTable;
+        if (pointerToSymbolTable > 0)
         {
-            if (pe->nth64.FileHeader.PointerToSymbolTable > 0)
-            {
-                settings.AddZone(
-                      pe->nth64.FileHeader.PointerToSymbolTable,
-                      (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
-                      pe->peCols.colSectDef,
-                      "SymbolTable");
+            const uint64 numberOfSymbols = (uint64) (pe->hdr64 ? pe->nth64.FileHeader.NumberOfSymbols : pe->nth32.FileHeader.NumberOfSymbols);
+            settings.AddZone(pointerToSymbolTable, numberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL, pe->peCols.colSectDef, "SymbolTable");
 
-                const auto strTableOffset =
-                      pe->nth64.FileHeader.PointerToSymbolTable + (uint64) pe->nth64.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+            const auto stringsTableOffset = pointerToSymbolTable + numberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
+            uint32 stringsTableSize       = 0;
+            pe->obj->GetData().Copy(stringsTableOffset, stringsTableSize);
 
-                uint32 strTableSize = 0;
-                pe->obj->GetData().Copy(strTableOffset, strTableSize);
-
-                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
-            }
-        }
-        else
-        {
-            if (pe->nth32.FileHeader.PointerToSymbolTable > 0)
-            {
-                settings.AddZone(
-                      pe->nth32.FileHeader.PointerToSymbolTable,
-                      (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL,
-                      pe->peCols.colSectDef,
-                      "SymbolTable");
-
-                const auto strTableOffset =
-                      pe->nth32.FileHeader.PointerToSymbolTable + (uint64) pe->nth32.FileHeader.NumberOfSymbols * PE::IMAGE_SIZEOF_SYMBOL;
-
-                uint32 strTableSize = 0;
-                pe->obj->GetData().Copy(strTableOffset, strTableSize);
-
-                settings.AddZone(strTableOffset, strTableSize, pe->peCols.colPE, "StringsTable");
-            }
+            settings.AddZone(stringsTableOffset, stringsTableSize, pe->peCols.colPE, "StringsTable");
         }
 
-        win->CreateViewer("BufferView", settings);
+        switch (static_cast<PE::MachineType>(pe->nth32.FileHeader.Machine))
+        {
+        case PE::MachineType::I386:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x86);
+            settings.SetDesign(GView::Dissasembly::Design::Intel);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
+        case PE::MachineType::IA64:
+        case PE::MachineType::AMD64:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x64);
+            settings.SetDesign(GView::Dissasembly::Design::Intel);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
+        case PE::MachineType::ARM:
+        case PE::MachineType::ARMNT:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x86);
+            settings.SetDesign(GView::Dissasembly::Design::ARM);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
+        case PE::MachineType::ARM64:
+            settings.SetArchitecture(GView::Dissasembly::Architecture::x64);
+            settings.SetDesign(GView::Dissasembly::Design::ARM);
+            settings.SetEndianess(GView::Dissasembly::Endianess::Little);
+            break;
+        default:
+            break;
+        }
+
+        pe->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     void CreateDissasmView(Reference<GView::View::WindowInterface> win, Reference<PE::PEFile> pe)
@@ -156,14 +156,20 @@ extern "C"
                 pe->CopySectionName(tr, temp);
                 if (temp.CompareWith(".text") == 0)
                 {
-                    const uint32 entryPoint =
-                          pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    uint64 entryPoint = pe->hdr64 ? pe->nth64.OptionalHeader.AddressOfEntryPoint : pe->nth32.OptionalHeader.AddressOfEntryPoint;
+                    entryPoint        = pe->RVAToFA(entryPoint);
 
-                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint);
+                    DissasmViewer::DisassemblyLanguage language =
+                          pe->hdr64 ? DissasmViewer::DisassemblyLanguage::x64 : DissasmViewer::DisassemblyLanguage::x86;
+
+                    settings.AddDisassemblyZone(pe->sect[tr].PointerToRawData, pe->sect[tr].SizeOfRawData, entryPoint, language);
                     break;
                 }
             }
         }
+
+        // translation
+        settings.SetOffsetTranslationList({ "RVA", "VA" }, pe.ToBase<GView::View::BufferViewer::OffsetTranslateInterface>());
 
         uint32 typeImageDOSHeader = settings.AddType(
               "ImageDOSHeader",
@@ -197,7 +203,15 @@ UInt16 e_res[4];)");
 
         settings.AddVariable(0, "ImageDOSHeader", typeImageDOSHeader);
 
-        win->CreateViewer("DissasmView", settings);
+        //LocalString<128> processedName;
+
+        for (const auto& [RVA, dllIndex, Name] : pe->impFunc)
+        {
+            //processedName.SetFormat("%s:%s", pe->impDLL[dllIndex].Name.GetText(), Name.GetText());
+            settings.AddMemoryMapping(RVA, Name, DissasmViewer::MemoryMappingType::FunctionMapping);
+        }
+
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)
@@ -205,12 +219,12 @@ UInt16 e_res[4];)");
         auto pe = win->GetObject()->GetContentType<PE::PEFile>();
         pe->Update();
 
-#ifndef DISSASM_DEV
-        CreateBufferView(win, pe);
+#ifdef DISSASM_DEV
         CreateDissasmView(win, pe);
+        CreateBufferView(win, pe);
 #else
-        CreateDissasmView(win, pe);
         CreateBufferView(win, pe);
+        CreateDissasmView(win, pe);
 #endif
 
         if (pe->HasPanel(PE::Panels::IDs::Information))
@@ -247,11 +261,12 @@ UInt16 e_res[4];)");
 
     PLUGIN_EXPORT void UpdateSettings(IniSection sect)
     {
-        sect["Pattern"]                = "magic:4D 5A";
-        sect["Priority"]               = 1;
-        sect["Description"]            = "Portable executable format for Windows OS binaries";
-        sect["OpCodes.Mask"]           = (uint32) GView::Dissasembly::Opcodes::All;
-        sect["Command.CheckSignature"] = Key::F8 | Key::Alt;
+        sect["Pattern"]                  = "magic:4D 5A";
+        sect["Priority"]                 = 1;
+        sect["Description"]              = "Portable executable format for Windows OS binaries";
+        sect["OpCodes.Mask"]             = (uint32) GView::Dissasembly::Opcodes::All;
+        sect["Command.DigitalSignature"] = Key::Alt | Key::F8;
+        sect["Command.AreaHighlighter"]  = Key::Alt | Key::F9;
     }
 }
 

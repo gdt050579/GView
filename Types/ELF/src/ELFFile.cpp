@@ -12,19 +12,6 @@ bool ELFFile::Update()
     panelsMask |= (1ULL << (uint8) Panels::IDs::Segments);
     panelsMask |= (1ULL << (uint8) Panels::IDs::Sections);
 
-    switch (is64 ? header64.e_machine : header32.e_machine)
-    {
-    case EM_386:
-    case EM_486:
-    case EM_860:
-    case EM_960:
-    case EM_8051:
-    case EM_X86_64:
-        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
-    default:
-        break;
-    }
-
     uint64 offset = 0;
     CHECK(obj->GetData().Copy<Elf32_Ehdr>(offset, header32), false, "");
     if (header32.e_ident[EI_CLASS] != ELFCLASS32)
@@ -37,6 +24,19 @@ bool ELFFile::Update()
     else
     {
         offset += sizeof(Elf32_Ehdr);
+    }
+
+    switch (is64 ? header64.e_machine : header32.e_machine)
+    {
+    case EM_386:
+    case EM_486:
+    case EM_860:
+    case EM_960:
+    case EM_8051:
+    case EM_X86_64:
+        panelsMask |= (1ULL << (uint8) Panels::IDs::OpCodes);
+    default:
+        break;
     }
 
     isLittleEndian = (header32.e_ident[EI_DATA] == ELFDATA2LSB);
@@ -85,8 +85,7 @@ bool ELFFile::Update()
             for (auto i = 0; i < segments64.size(); i++)
             {
                 const auto& segment = segments64.at(i);
-                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr &&
-                    entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
                 {
                     segmentIdx = i;
                     break;
@@ -127,8 +126,7 @@ bool ELFFile::Update()
             for (auto i = 0; i < segments32.size(); i++)
             {
                 const auto& segment = segments32.at(i);
-                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr &&
-                    entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
+                if (segment.p_vaddr != 0 && entry.sh_addr >= segment.p_vaddr && entry.sh_addr + entry.sh_size <= segment.p_vaddr + segment.p_filesz)
                 {
                     segmentIdx = i;
                     break;
@@ -200,14 +198,12 @@ bool ELFFile::ParseGoData()
         noteName = std::string((char*) noteBuffer.GetData() + 12, 4);
 
         std::string_view noteNameView{ (char*) noteBuffer.GetData() + 12, 4 };
-        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG &&
-            noteNameView == Golang::ELF_GO_NOTE)
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::ELF_GO_BUILD_ID_TAG && noteNameView == Golang::ELF_GO_NOTE)
         {
             pcLnTab.SetBuildId({ (char*) noteBuffer.GetData() + 16, valSize });
         }
 
-        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG &&
-            noteNameView == Golang::ELF_GNU_NOTE)
+        if (nameSize == 4 && 16ULL + valSize <= noteBuffer.GetLength() && tag == Golang::GNU_BUILD_ID_TAG && noteNameView == Golang::ELF_GNU_NOTE)
         {
             gnuString = std::string((char*) noteBuffer.GetData() + 16, valSize);
         }
@@ -410,8 +406,8 @@ uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
         {
             if (section.sh_offset <= fileOffset && fileOffset <= section.sh_offset + section.sh_size)
             {
-                auto diff     = fileOffset - section.sh_offset;
-                const auto fa = section.sh_addr + diff;
+                const auto diff = fileOffset - section.sh_offset;
+                const auto fa   = section.sh_addr + diff;
                 return fa;
             }
         }
@@ -420,10 +416,10 @@ uint64 ELFFile::FileOffsetToVA(uint64 fileOffset)
     {
         for (const auto& section : sections32)
         {
-            if (section.sh_offset <= fileOffset && fileOffset <= section.sh_offset + section.sh_size)
+            if (section.sh_offset <= fileOffset && fileOffset <= (static_cast<uint64>(section.sh_offset) + section.sh_size))
             {
-                auto diff     = fileOffset - section.sh_offset;
-                const auto fa = section.sh_addr + diff;
+                const auto diff = fileOffset - section.sh_offset;
+                const auto fa   = section.sh_addr + diff;
                 return fa;
             }
         }
@@ -510,127 +506,74 @@ uint64 ELFFile::GetVirtualSize() const
             }
         }
     }
-    return -1;
+    return vSize;
 }
 
 bool ELFFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
-    CHECK(dissasembler.Init(is64, isLittleEndian), false, "");
+    // const auto imageBase = GetImageBase();
+    // const auto vcSize    = GetVirtualSize();
 
-    static auto previousOpcodeMask = showOpcodesMask;
-    static std::map<uint64, GView::View::BufferViewer::BufferColor> cacheBuffer{};
-    static std::map<uint64, bool> cacheDiscard{};
-
-    if (previousOpcodeMask != showOpcodesMask)
+    const auto* p = buf.begin();
+    switch (*p)
     {
-        cacheBuffer.clear();
-        cacheDiscard.clear();
-        previousOpcodeMask = showOpcodesMask;
-    }
-
-    if (cacheBuffer.count(offset) > 0)
-    {
-        result = cacheBuffer.at(offset);
+    case 0xFF:
+        if (buf.GetLength() >= 6)
+        {
+            if (p[1] == 0x15) // possible call to API
+            {
+                // const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
+                // if (addr >= imageBase && addr <= imageBase + vcSize)
+                {
+                    result.start = offset;
+                    result.end   = offset + 5;
+                    result.color = INS_CALL_COLOR;
+                    return true;
+                }
+            }
+            else if (p[1] == 0x25) // possible jump to API
+            {
+                // const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
+                // if (addr >= imageBase && addr <= imageBase + vcSize)
+                {
+                    result.start = offset;
+                    result.end   = offset + 5;
+                    result.color = INS_JUMP_COLOR;
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    case 0xCC: // INT 3
+        result.start = result.end = offset;
+        result.color              = INS_BREAKPOINT_COLOR;
         return true;
-    }
-
-    if (cacheDiscard.count(offset) > 0)
-    {
+    case 0x55:
+        if (buf.GetLength() >= 3)
+        {
+            if (*reinterpret_cast<const uint16_t*>(p + 1) == 0xEC8B) // possible `push EBP` followed by MOV ebp, sep
+            {
+                result.start = offset;
+                result.end   = offset + 2;
+                result.color = START_FUNCTION_COLOR;
+                return true;
+            }
+        }
+        return false;
+    case 0x8B:
+        if (buf.GetLength() >= 4)
+        {
+            if ((*reinterpret_cast<const uint16_t*>(p + 1) == 0x5DE5) && (p[3] == 0xC3)) // possible `MOV esp, EBP` followed by `POP ebp` and `RET`
+            {
+                result.start = offset;
+                result.end   = offset + 3;
+                result.color = END_FUNCTION_COLOR;
+                return true;
+            }
+        }
         return false;
     }
-
-    GView::Dissasembly::Instruction ins{ 0 };
-    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
-    {
-        if (dissasembler.IsCallInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_CALL_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
-    {
-        if (dissasembler.IsLCallInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_LCALL_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
-    {
-        if (dissasembler.IsJmpInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_JUMP_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
-    {
-        if (dissasembler.IsLJmpInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_LJUMP_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
-    {
-        if (dissasembler.IsBreakpointInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_BREAKPOINT_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
-    {
-        GView::Dissasembly::Instruction ins2{ 0 };
-        const auto offset2 = offset + ins.size;
-        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
-
-        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size + ins2.size;
-            result.color        = START_FUNCTION_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
-    {
-        if (dissasembler.IsFunctionEndInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = END_FUNCTION_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    cacheDiscard[offset] = false;
 
     return false;
 }

@@ -4,12 +4,25 @@ cmake_minimum_required(VERSION 3.13)
 project(GViewCore VERSION 1.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-add_library(GViewCore SHARED)
-set_target_properties(GViewCore PROPERTIES PREFIX "lib")
-target_compile_definitions(GViewCore PRIVATE -DBUILD_AS_DYNAMIC_LIB)
-target_compile_definitions(GViewCore PRIVATE -DCORE_EXPORTABLE)
-target_include_directories(GViewCore PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
-target_link_libraries(GViewCore PRIVATE LLVMDemangle)
+
+if(NOT DEFINED CMAKE_TESTING_ENABLED)
+    add_library(${PROJECT_NAME} SHARED)
+else()
+    add_executable(${PROJECT_NAME})
+
+    find_package(Catch2 CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain) # Catch2::Catch2
+
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(${PROJECT_NAME})
+endif()
+
+set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "lib")
+target_compile_definitions(${PROJECT_NAME} PRIVATE -DBUILD_AS_DYNAMIC_LIB)
+target_compile_definitions(${PROJECT_NAME} PRIVATE -DCORE_EXPORTABLE)
+target_include_directories(${PROJECT_NAME} PRIVATE ../3rdPartyLibs/LLVMDemangle/include)
+target_link_libraries(${PROJECT_NAME} PRIVATE LLVMDemangle)
                                                              
 find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
@@ -23,6 +36,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${ZLIB_LIBRARIES})
 
 find_package(capstone CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
+
+find_package(minizip-ng CONFIG REQUIRED)
+message(STATUS "minizip-ng_DIR => ${minizip-ng_DIR}")
+
+# vcpkg directory structure
+get_filename_component(MINIZIP_SHARE_INCLUDE_DIR ${minizip-ng_DIR} DIRECTORY)
+get_filename_component(MINIZIP_PARENT_DIR ${MINIZIP_SHARE_INCLUDE_DIR} DIRECTORY)
+set(MINIZIP_INCLUDE_DIR "${MINIZIP_PARENT_DIR}/include/minizip-ng")
+
+message(STATUS "MINIZIP_INCLUDE_DIR => ${MINIZIP_INCLUDE_DIR}")
+target_include_directories(${PROJECT_NAME} PRIVATE ${MINIZIP_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PRIVATE MINIZIP::minizip-ng)
+
+message(STATUS "SQLITE3_INCLUDE_DIR => ${SQLITE3_INCLUDE_DIR}")
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::sqlite3::sqlite3)
 
 if (MSVC)
     add_compile_options(-W3)
@@ -84,3 +113,20 @@ file(GLOB_RECURSE GVIEWCORE_HEADERS include/*.hpp)
 target_sources(GViewCore PRIVATE ${GVIEWCORE_HEADERS})
 get_target_property(GVIEWCORE_SOURCES GViewCore SOURCES)
 source_group(TREE ${CMAKE_SOURCE_DIR}/GViewCore FILES ${GVIEWCORE_SOURCES} ${GVIEWCORE_HEADERS})
+
+if (APPLE)
+    if (CMAKE_GENERATOR STREQUAL "Xcode")
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
+    endif()
+endif()
+
+if (MSVC)
+    include(windows_resource)
+    add_windows_resource("libGViewCore.dll" "GViewCore.rc")
+endif()

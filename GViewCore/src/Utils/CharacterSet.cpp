@@ -49,17 +49,17 @@ void CharacterSet::Set(uint8 position, bool value)
 }
 bool CharacterSet::Set(std::string_view stringRepresentation, bool value)
 {
-    uint32 start, end;
-    bool startExpr, add;
-    uint8 ch;
+    uint32 start{ 0 };
+    uint32 end{ 0 };
+    bool startExpr{ true };
+
     // parsez stringul
-    startExpr = true;
-    auto p    = stringRepresentation.data();
-    auto e    = p + stringRepresentation.length();
+    auto p = stringRepresentation.data();
+    auto e = p + stringRepresentation.length();
     for (; p < e; p++)
     {
-        ch  = (*p);
-        add = true;
+        uint8 ch = (*p);
+        bool add = true;
 
         switch (ch)
         {
@@ -80,7 +80,7 @@ bool CharacterSet::Set(std::string_view stringRepresentation, bool value)
             case 'X':
             {
                 CHECK(p + 4 <= e, false, "");
-                auto n = Number::ToUInt8(std::string_view{ p+2, (size_t) 2 }, NumberParseFlags::Base16);
+                auto n = Number::ToUInt8(std::string_view{ p + 2, (size_t) 2 }, NumberParseFlags::Base16);
                 CHECK(n.has_value(), false, "");
                 ch = n.value();
                 p += 4;
@@ -131,11 +131,8 @@ bool CharacterSet::Set(std::string_view stringRepresentation, bool value)
 }
 bool CharacterSet::GetStringRepresentation(String& str) const
 {
-    uint32 start, end;
-    uint32 pzz;
+    uint32 start = 0, end;
     // caut pe rand blocurile libere
-    start = 0;
-    pzz   = 0;
     CHECK(str.Set(""), false, "");
     while (start < 256)
     {

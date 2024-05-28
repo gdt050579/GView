@@ -26,20 +26,38 @@ bool PYEXTRACTORFile::HasPanel(Panels::IDs id)
 
 bool PYEXTRACTORFile::SetCookiePosition()
 {
-    const auto fullBuffer = obj->GetData().GetEntireFile();
-    if (fullBuffer.IsValid())
+    const auto buffer = obj->GetData().GetEntireFile();
+    if (buffer.IsValid())
     {
-        const std::string_view fullView{ reinterpret_cast<char*>(const_cast<uint8*>(fullBuffer.GetData())), fullBuffer.GetLength() };
-        if (const auto index = fullView.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
+        const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
+        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
         {
             archive.cookiePosition = index;
             return true;
         }
+        return false;
     }
-    else
+
+    const auto fileSize  = obj->GetData().GetSize();
+    const auto cacheSize = (uint64) obj->GetData().GetCacheSize();
+    uint64 sizeToRead    = cacheSize;
+    uint64 index         = 0;
+
+    do
     {
-        throw std::runtime_error("Not implemented!");
-    }
+        const auto buffer = obj->GetData().CopyToBuffer(index, sizeToRead);
+        CHECK(buffer.IsValid(), false, "");
+
+        const std::string_view view{ reinterpret_cast<char*>(const_cast<uint8*>(buffer.GetData())), buffer.GetLength() };
+        if (const auto index = view.find(PYINSTALLER_MAGIC, 0); index != std::string::npos)
+        {
+            archive.cookiePosition = index;
+            return true;
+        }
+
+        index += sizeToRead;
+        sizeToRead = std::min(fileSize, cacheSize);
+    } while (index < fileSize);
 
     return false;
 }

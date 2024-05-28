@@ -49,6 +49,10 @@ extern "C"
             auto i = 0;
             for (const auto& section : elf->sections64)
             {
+                if (i >= elf->sectionNames.size()) // truncated binaries
+                {
+                    break;
+                }
                 const auto& name = elf->sectionNames.at(i++);
                 settings.AddZone(section.sh_offset, section.sh_size, SHT_CONTENT_COLOR, name.c_str());
             }
@@ -80,6 +84,10 @@ extern "C"
             auto i = 0;
             for (const auto& section : elf->sections32)
             {
+                if (i >= elf->sectionNames.size()) // truncated binaries
+                {
+                    break;
+                }
                 const auto& name = elf->sectionNames.at(i++);
                 settings.AddZone(section.sh_offset, section.sh_size, SHT_CONTENT_COLOR, name.c_str());
             }
@@ -114,7 +122,7 @@ extern "C"
             break;
         };
 
-        win->CreateViewer("BufferView", settings);
+        elf->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

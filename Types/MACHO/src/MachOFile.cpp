@@ -2,8 +2,8 @@
 
 namespace GView::Type::MachO
 {
-MachOFile::MachOFile(Reference<GView::Utils::DataCache> file)
-    : header({}), fatHeader({}), isFat(false), isMacho(false), is64(false), shouldSwapEndianess(false), panelsMask(0)
+MachOFile::MachOFile(Reference<GView::Utils::DataCache>)
+: fatHeader({}), header({}), isMacho(false), isFat(false), shouldSwapEndianess(false), is64(false), panelsMask(0), currentItemIndex(0)
 {
 }
 
@@ -141,12 +141,12 @@ bool MachOFile::HasPanel(Panels::IDs id)
     return (panelsMask & (1ULL << ((uint8_t) id))) != 0;
 }
 
-uint64_t MachOFile::TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex)
+uint64_t MachOFile::TranslateToFileOffset(uint64 value, uint32)
 {
     return value;
 }
 
-uint64_t MachOFile::TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex)
+uint64_t MachOFile::TranslateFromFileOffset(uint64 value, uint32)
 {
     return value;
 }
@@ -159,7 +159,7 @@ bool MachOFile::SetHeaderInfo(uint64& offset)
     isMacho = magic == MAC::MH_MAGIC || magic == MAC::MH_CIGAM || magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64;
     isFat   = magic == MAC::FAT_MAGIC || magic == MAC::FAT_CIGAM || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
 
-    is64 = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
+    is64                = magic == MAC::MH_MAGIC_64 || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_MAGIC_64 || magic == MAC::FAT_CIGAM_64;
     shouldSwapEndianess = magic == MAC::MH_CIGAM || magic == MAC::MH_CIGAM_64 || magic == MAC::FAT_CIGAM || magic == MAC::FAT_CIGAM_64;
 
     return true;
@@ -697,20 +697,16 @@ bool MachOFile::SetCodeSignature()
             }
 
             ProgressStatus::Init(
-                  "Computing code directory slots hashes...",
-                  codeSignature->codeDirectory.nCodeSlots,
-                  ProgressStatus::Flags::DisableDelayedActivation);
+                  "Computing code directory slots hashes...", codeSignature->codeDirectory.nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
 
             codeSignature->cdSlotsHashes.reserve(codeSignature->codeDirectory.nCodeSlots);
 
-            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0U;
+            const auto pageSize = codeSignature->codeDirectory.pageSize ? (1U << codeSignature->codeDirectory.pageSize) : 0x1000U;
             auto remaining      = codeSignature->codeDirectory.codeLimit;
             auto processed      = 0ULL;
             for (auto slot = 0U; slot < codeSignature->codeDirectory.nCodeSlots; slot++)
             {
-                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, codeSignature->codeDirectory.nCodeSlots)) == false,
-                      false,
-                      "");
+                CHECK(ProgressStatus::Update(slot, ls.Format("Hashes %u/%u...", slot, codeSignature->codeDirectory.nCodeSlots)) == false, false, "");
 
                 const auto size             = std::min<>(remaining, pageSize);
                 const auto hashOffset       = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * slot;
@@ -740,8 +736,7 @@ bool MachOFile::SetCodeSignature()
             {
                 const auto hashOffset = codeSignature->codeDirectory.hashOffset + codeSignature->codeDirectory.hashSize * -slot;
 
-                const auto& [it, ok] = codeSignature->specialSlotsHashes.insert(
-                      { static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
+                const auto& [it, ok] = codeSignature->specialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
                 CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
                 auto& [k, v] = *it;
 
@@ -780,8 +775,7 @@ bool MachOFile::SetCodeSignature()
         {
             CHECK(obj->GetData().Copy<MAC::CS_GenericBlob>(csOffset, codeSignature->entitlements.blob), false, "");
             Swap(codeSignature->entitlements.blob);
-            codeSignature->entitlements.data =
-                  obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
+            codeSignature->entitlements.data = obj->GetData().CopyToBuffer(csOffset + sizeof(blob), codeSignature->entitlements.blob.length - sizeof(blob));
         }
         break;
         case MAC::CodeSignMagic::CS_SUPPL_SIGNER_TYPE_TRUSTCACHE:
@@ -797,15 +791,12 @@ bool MachOFile::SetCodeSignature()
 
             CHECKBK(codeSignature->signature.size > 0, "");
 
-            const auto blobBuffer =
-                  obj->GetData().CopyToBuffer(codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
+            const auto blobBuffer = obj->GetData().CopyToBuffer(codeSignature->signature.offset, static_cast<uint32>(codeSignature->signature.size), false);
             codeSignature->signature.errorHumanReadable =
                   !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToHumanReadable(blobBuffer, codeSignature->signature.humanReadable);
-            codeSignature->signature.errorPEMs =
-                  !blobBuffer.IsValid() ||
-                  !GView::DigitalSignature::CMSToPEMCerts(blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
-            codeSignature->signature.errorSig =
-                  !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
+            codeSignature->signature.errorPEMs = !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToPEMCerts(
+                                                                                blobBuffer, codeSignature->signature.PEMs, codeSignature->signature.PEMsCount);
+            codeSignature->signature.errorSig = !blobBuffer.IsValid() || !GView::DigitalSignature::CMSToStructure(blobBuffer, codeSignature->signature.sig);
         }
         break;
         case MAC::CodeSignMagic::CSSLOT_ALTERNATE_CODEDIRECTORIES:
@@ -827,8 +818,7 @@ bool MachOFile::SetCodeSignature()
                 codeSignature->acdHashes.emplace_back(cdHash);
             }
 
-            ProgressStatus::Init(
-                  "Computing alternate code directory slots hashes...", cd.nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
+            ProgressStatus::Init("Computing alternate code directory slots hashes...", cd.nCodeSlots, ProgressStatus::Flags::DisableDelayedActivation);
 
             auto& cdSlotsHashes = codeSignature->acdSlotsHashes.emplace_back();
             cdSlotsHashes.reserve(cd.nCodeSlots);
@@ -870,8 +860,7 @@ bool MachOFile::SetCodeSignature()
             {
                 const auto hashOffset = cd.hashOffset + cd.hashSize * -slot;
 
-                const auto& [it, ok] =
-                      cdSpecialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
+                const auto& [it, ok] = cdSpecialSlotsHashes.insert({ static_cast<MAC::CodeSignMagic>(slot), HashPair{ .found{}, .computed{} } });
                 CHECK(ok, false, "Map insertion failed for slot [%u]!", slot);
                 auto& [k, v] = *it;
 
@@ -890,8 +879,7 @@ bool MachOFile::SetCodeSignature()
         }
     }
 
-    const auto Compute =
-          [&](uint8 hashType, MAC::CodeSignMagic blobType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map)
+    const auto Compute = [&](uint8 hashType, MAC::CodeSignMagic blobType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map)
     {
         auto buffer = obj->GetData().CopyToBuffer(csOffset, blobLength);
         if (ComputeHash(buffer, hashType, map.at(blobType).computed) == false)
@@ -900,8 +888,7 @@ bool MachOFile::SetCodeSignature()
         }
     };
 
-    const auto Process =
-          [&](MAC::CodeSignMagic blobType, uint8 hashType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map)
+    const auto Process = [&](MAC::CodeSignMagic blobType, uint8 hashType, uint64 csOffset, uint32 blobLength, std::map<MAC::CodeSignMagic, HashPair>& map)
     {
         switch (blobType)
         {
@@ -1017,11 +1004,10 @@ bool MachOFile::ParseGoBuild()
     constexpr std::string_view goBuildPrefix{ "\xff Go build ID: \"" };
     constexpr std::string_view goBuildEnd{ "\"\n \xff" };
 
-    const auto fileViewBuildId = obj->GetData().CopyToBuffer(address, size, false);
+    const auto fileViewBuildId = obj->GetData().CopyToBuffer(address, static_cast<uint32>(size), false);
 
     // we should find go build id at the start of the file
-    const std::string_view bufferBuildId{ reinterpret_cast<char*>(fileViewBuildId.GetData()),
-                                          fileViewBuildId.GetLength() }; // force for find
+    const std::string_view bufferBuildId{ reinterpret_cast<char*>(fileViewBuildId.GetData()), fileViewBuildId.GetLength() }; // force for find
     const auto sPos = bufferBuildId.find(goBuildPrefix);
     CHECK(sPos != std::string::npos, false, "");
 
@@ -1042,7 +1028,7 @@ inline static bool GetUVariantSizes(const std::string_view buf, uint64& x, uint3
     constexpr auto MaxVarintLen32 = 5;
     constexpr auto MaxVarintLen64 = 10;
 
-    for (auto i = 0; i < buf.size(); i++)
+    for (auto i = 0u; i < buf.size(); i++)
     {
         const auto b = static_cast<unsigned char>(buf.data()[i]);
         if (i == MaxVarintLen64)
@@ -1109,10 +1095,9 @@ bool MachOFile::ParseGoBuildInfo()
     constexpr uint16 buildInfoAlign{ 16 };
     constexpr uint16 buildInfoSize{ 32 };
 
-    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(address, size, false);
+    const auto fileViewBuildInfo = obj->GetData().CopyToBuffer(address, static_cast<uint32>(size), false);
     CHECK(fileViewBuildInfo.IsValid(), false, "");
-    const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()),
-                                            fileViewBuildInfo.GetLength() }; // force for find
+    const std::string_view bufferBuildInfo{ reinterpret_cast<char*>(fileViewBuildInfo.GetData()), fileViewBuildInfo.GetLength() }; // force for find
     auto sPos = bufferBuildInfo.find(buildInfoMagic);
     CHECK(sPos != std::string::npos, false, "");
 
@@ -1197,13 +1182,12 @@ bool MachOFile::ParseGoBuildInfo()
     const auto strRuntimeBuildVersionFA = VAtoFA(strRuntimeBuildVersionVA);
     const auto strViewRuntimeModInfoFA  = VAtoFA(strViewRuntimeModInfoVA);
 
-    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, strRuntimeBuildVersionLength, false);
+    const auto fileViewRuntimeBuildVersion = obj->GetData().CopyToBuffer(strRuntimeBuildVersionFA, static_cast<uint32>(strRuntimeBuildVersionLength), false);
     CHECK(fileViewRuntimeBuildVersion.IsValid(), false, "");
-    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()),
-                                                strRuntimeBuildVersionLength };
+    const std::string_view runtimeBuildVersion{ reinterpret_cast<char*>(fileViewRuntimeBuildVersion.GetData()), strRuntimeBuildVersionLength };
     pcLnTab.SetRuntimeBuildVersion(runtimeBuildVersion);
 
-    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, strViewRuntimeModInfoLength, false);
+    const auto fileViewRuntimeModInfo = obj->GetData().CopyToBuffer(strViewRuntimeModInfoFA, static_cast<uint32>(strViewRuntimeModInfoLength), false);
     CHECK(fileViewRuntimeModInfo.IsValid(), false, "");
     std::string_view runtimeModInfo{ reinterpret_cast<char*>(fileViewRuntimeModInfo.GetData()), strViewRuntimeModInfoLength };
     if (strViewRuntimeModInfoLength >= 33 && runtimeModInfo[strViewRuntimeModInfoLength - 17] == '\n')
@@ -1292,7 +1276,7 @@ uint64 MachOFile::VAtoFA(uint64 addr)
     return -1;
 }
 
-bool MachOFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
+bool MachOFile::BeginIteration(std::u16string_view, AppCUI::Controls::TreeViewItem)
 {
     currentItemIndex = 0;
     return archs.size() > 0;
@@ -1326,7 +1310,7 @@ bool MachOFile::PopulateItem(TreeViewItem item)
     return currentItemIndex != archs.size();
 }
 
-void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
+void MachOFile::OnOpenItem(std::u16string_view, AppCUI::Controls::TreeViewItem item)
 {
     CHECKRET(item.GetParent().GetHandle() != InvalidItemHandle, "");
 
@@ -1335,124 +1319,77 @@ void MachOFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewI
     const auto length = (uint32) data->size;
 
     const auto buffer = obj->GetData().CopyToBuffer(offset, length);
-    GView::App::OpenBuffer(buffer, data->info.name, GView::App::OpenMethod::BestMatch);
+
+    LocalUnicodeStringBuilder<2048> fullPath;
+    fullPath.Add(this->obj->GetPath());
+    fullPath.AddChar((char16_t) std::filesystem::path::preferred_separator);
+    fullPath.Add(data->info.name);
+
+    GView::App::OpenBuffer(buffer, data->info.name, fullPath, GView::App::OpenMethod::BestMatch);
 }
 
 bool MachOFile::GetColorForBufferIntel(uint64 offset, BufferView buf, GView::View::BufferViewer::BufferColor& result)
 {
-    CHECK(dissasembler.Init(is64, !shouldSwapEndianess), false, "");
-
-    static auto previousOpcodeMask = showOpcodesMask;
-    if (previousOpcodeMask != showOpcodesMask)
+    const auto* p = buf.begin();
+    switch (*p)
     {
-        cacheBuffer.clear();
-        cacheDiscard.clear();
-        previousOpcodeMask = showOpcodesMask;
-    }
-
-    if (cacheBuffer.count(offset) > 0)
-    {
-        result = cacheBuffer.at(offset);
+    case 0xFF:
+        if (buf.GetLength() >= 6)
+        {
+            if (p[1] == 0x15) // possible call to API
+            {
+                // const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
+                // if (addr >= imageBase && addr <= imageBase + vcSize)
+                {
+                    result.start = offset;
+                    result.end   = offset + 5;
+                    result.color = INS_CALL_COLOR;
+                    return true;
+                }
+            }
+            else if (p[1] == 0x25) // possible jump to API
+            {
+                // const uint64 addr = *reinterpret_cast<const uint32_t*>(p + 2);
+                // if (addr >= imageBase && addr <= imageBase + vcSize)
+                {
+                    result.start = offset;
+                    result.end   = offset + 5;
+                    result.color = INS_JUMP_COLOR;
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    case 0xCC: // INT 3
+        result.start = result.end = offset;
+        result.color              = INS_BREAKPOINT_COLOR;
         return true;
-    }
-
-    if (cacheDiscard.count(offset) > 0)
-    {
+    case 0x55:
+        if (buf.GetLength() >= 3)
+        {
+            if (*reinterpret_cast<const uint16_t*>(p + 1) == 0xEC8B) // possible `push EBP` followed by MOV ebp, sep
+            {
+                result.start = offset;
+                result.end   = offset + 2;
+                result.color = START_FUNCTION_COLOR;
+                return true;
+            }
+        }
+        return false;
+    case 0x8B:
+        if (buf.GetLength() >= 4)
+        {
+            if ((*reinterpret_cast<const uint16_t*>(p + 1) == 0x5DE5) && (p[3] == 0xC3)) // possible `MOV esp, EBP` followed by `POP ebp` and `RET`
+            {
+                result.start = offset;
+                result.end   = offset + 3;
+                result.color = END_FUNCTION_COLOR;
+                return true;
+            }
+        }
         return false;
     }
-
-    GView::Dissasembly::Instruction ins{ 0 };
-    CHECK(dissasembler.DissasembleInstruction(buf, offset, ins), false, "");
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Call) == (uint32) GView::Dissasembly::Opcodes::Call))
-    {
-        if (dissasembler.IsCallInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_CALL_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LCall) == (uint32) GView::Dissasembly::Opcodes::LCall))
-    {
-        if (dissasembler.IsLCallInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_LCALL_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Jmp) == (uint32) GView::Dissasembly::Opcodes::Jmp))
-    {
-        if (dissasembler.IsJmpInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_JUMP_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::LJmp) == (uint32) GView::Dissasembly::Opcodes::LJmp))
-    {
-        if (dissasembler.IsLJmpInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_LJUMP_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::Breakpoint) == (uint32) GView::Dissasembly::Opcodes::Breakpoint))
-    {
-        if (dissasembler.IsBreakpointInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = INS_BREAKPOINT_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionStart) == (uint32) GView::Dissasembly::Opcodes::FunctionStart))
-    {
-        GView::Dissasembly::Instruction ins2{ 0 };
-        const auto offset2 = offset + ins.size;
-        CHECK(dissasembler.DissasembleInstruction({ buf.GetData() + ins.size, buf.GetLength() - ins.size }, offset2, ins2), false, "");
-
-        if (dissasembler.AreFunctionStartInstructions(ins, ins2))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size + ins2.size;
-            result.color        = START_FUNCTION_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    if (((showOpcodesMask & (uint32) GView::Dissasembly::Opcodes::FunctionEnd) == (uint32) GView::Dissasembly::Opcodes::FunctionEnd))
-    {
-        if (dissasembler.IsFunctionEndInstruction(ins))
-        {
-            result.start        = offset;
-            result.end          = offset + ins.size;
-            result.color        = END_FUNCTION_COLOR;
-            cacheBuffer[offset] = result;
-            return true;
-        }
-    }
-
-    cacheDiscard[offset] = false;
 
     return false;
 }
@@ -1477,7 +1414,7 @@ bool MachOFile::GetColorForBuffer(uint64 offset, BufferView buf, GView::View::Bu
             {
                 if (buf.GetLength() >= 4)
                 {
-                    if (*(uint32*) p == MAC::MH_MAGIC || *(uint32*) p == MAC::MH_CIGAM)
+                    if (*reinterpret_cast<const uint32*>(p) == MAC::MH_MAGIC || *reinterpret_cast<const uint32*>(p) == MAC::MH_CIGAM)
                     {
                         result.start = offset;
                         result.end   = offset + 3;

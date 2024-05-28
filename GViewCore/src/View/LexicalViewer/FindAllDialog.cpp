@@ -67,7 +67,7 @@ FindAllDialog::FindAllDialog(const TokenObject& currentToken, const std::vector<
             start++;
         }
         item.SetText(1, content);
-        for (auto idx = 0; idx < indexesCount; idx++)
+        for (auto idx = 0u; idx < indexesCount; idx++)
         {
             item.HighlightText(1, indexes[idx], ctokSize);
         }
@@ -80,13 +80,13 @@ FindAllDialog::FindAllDialog(const TokenObject& currentToken, const std::vector<
 
 void FindAllDialog::Validate()
 {
-    selectedTokenIndex = lst->GetCurrentItem().GetData(INVALID_TOKEN_NUMBER);
+    selectedTokenIndex = static_cast<uint32>(lst->GetCurrentItem().GetData(INVALID_TOKEN_NUMBER));
     if (selectedTokenIndex == INVALID_TOKEN_NUMBER)
         return;
     Exit(Dialogs::Result::Ok);
 }
 
-bool FindAllDialog::OnEvent(Reference<Control> control, Event eventType, int ID)
+bool FindAllDialog::OnEvent(Reference<Control>, Event eventType, int ID)
 {
     switch (eventType)
     {

@@ -30,10 +30,12 @@ extern "C"
         settings.AddPlugin(&ini->plugins.removeComments);
         settings.AddPlugin(&ini->plugins.casing);
         settings.AddPlugin(&ini->plugins.valueToString);
-        win->CreateViewer("Lexical", settings);
+        win->CreateViewer(settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
-        win->CreateViewer<BufferViewer::Settings>("Buffer View");
+
+        View::BufferViewer::Settings s{};
+        ini->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new INI::Panels::Information(ini)), true);

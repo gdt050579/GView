@@ -22,11 +22,11 @@ AlwaysBreakTemplateDeclarations               : true
 BinPackArguments                              : false
 BinPackParameters                             : false
 BreakBeforeBinaryOperators                    : None
-BreakBeforeBraces                             : Allman
+BreakBeforeBraces                             : Linux
 BreakBeforeTernaryOperators                   : true
 BreakConstructorInitializersBeforeComma       : false
 BreakStringLiterals                           : true
-ColumnLimit                                   : 140
+ColumnLimit                                   : 160
 CommentPragmas                                : '^ IWYU pragma:'
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ConstructorInitializerIndentWidth             : 4

@@ -10,17 +10,14 @@ namespace View
     {
         using namespace AppCUI;
 
-        struct SettingsData
-        {
+        struct SettingsData {
             static constexpr uint32 MAX_COLUMNS    = 32;
             static constexpr uint32 MAX_PROPERTIES = 32;
-            struct
-            {
+            struct {
                 LocalUnicodeStringBuilder<256> layout;
             } columns[MAX_COLUMNS];
             uint32 columnsCount;
-            struct
-            {
+            struct {
                 AppCUI::Utils::String key;
                 AppCUI::Utils::UnicodeStringBuilder value;
                 ListViewItem::Type itemType;
@@ -29,12 +26,12 @@ namespace View
             AppCUI::Graphics::Image icon;
             Reference<EnumerateInterface> enumInterface;
             Reference<OpenItemInterface> openItemInterface;
-            char16 pathSeparator;
+            char16 pathSeparator{ (char16_t) std::filesystem::path::preferred_separator };
+            String name;
             SettingsData();
         };
 
-        struct Config
-        {
+        struct Config {
             bool Loaded;
 
             static void Update(IniSection sect);
@@ -51,7 +48,6 @@ namespace View
             Reference<AppCUI::Controls::ListView> propList;
             Reference<AppCUI::Controls::TreeView> items;
             Reference<GView::Object> obj;
-            FixSizeString<29> name;
             TreeViewItem root;
             UnicodeStringBuilder currentPath;
             uint32 tempCountRecursiveItems;
@@ -62,7 +58,7 @@ namespace View
             bool PopulateItem(TreeViewItem item);
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             virtual bool OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar) override;
             virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode) override;
@@ -73,7 +69,6 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual std::string_view GetName() override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
 

@@ -28,10 +28,12 @@ extern "C"
         LexicalViewer::Settings settings;
         settings.SetParser(cpp.ToObjectRef<LexicalViewer::ParseInterface>());
         settings.AddPlugin(&cpp->plugins.removeComments);
-        win->CreateViewer("Lexical", settings);
+        win->CreateViewer(settings);
 
-        win->CreateViewer<TextViewer::Settings>("Text View");
-        win->CreateViewer<BufferViewer::Settings>("Buffer View");
+        win->CreateViewer<TextViewer::Settings>();
+
+        View::BufferViewer::Settings s{};
+        cpp->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(s);
 
         // add panels
         win->AddPanel(Pointer<TabPage>(new CPP::Panels::Information(cpp)), true);

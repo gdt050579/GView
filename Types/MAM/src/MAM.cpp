@@ -38,7 +38,7 @@ extern "C"
         settings.AddZone(4, 4, ColorPair{ Color::Magenta, Color::DarkBlue }, "Size Uncompressed");
         settings.AddZone(8, win->GetObject()->GetData().GetSize() - 8, ColorPair{ Color::DarkGreen, Color::DarkBlue }, "Content");
 
-        win->CreateViewer("BufferView", settings);
+        mam->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

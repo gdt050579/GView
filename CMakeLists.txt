@@ -1,11 +1,27 @@
 cmake_minimum_required(VERSION 3.15)
 
+# Uncomment this for Linux ARM architectures.
+# This will require manual installation of ninja (ninja-build).
+# set(ENV{VCPKG_FORCE_SYSTEM_BINARIES} 1)
+
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/AppCUI/vcpkg/scripts/buildsystems/vcpkg.cmake"
   CACHE STRING "Vcpkg toolchain file")
 
 message("CMAKE_TOOLCHAIN_FILE => ${CMAKE_TOOLCHAIN_FILE}")
 
-project(GView VERSION 1.0)
+message("CMAKE_SYSTEM_PROCESSOR => ${CMAKE_SYSTEM_PROCESSOR}")
+message("CMAKE_HOST_SYSTEM_PROCESSOR => ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+message("CMAKE_C_COMPILER_ARCHITECTURE_ID => ${CMAKE_C_COMPILER_ARCHITECTURE_ID}")
+
+option(ENABLE_TESTS "Enable tests" OFF)
+set(CURRENT_PROJECT_NAME GView)
+if (${ENABLE_TESTS})
+    message("ENALBED TESTING")
+    enable_testing()
+    set(CURRENT_PROJECT_NAME GViewTesting)
+endif()
+
+project(${CURRENT_PROJECT_NAME} VERSION 1.0)
 
 include(CheckIPOSupported)
 check_ipo_supported(RESULT supported OUTPUT error)
@@ -22,8 +38,15 @@ file(READ "GViewCore/include/GView.hpp" GView_content)
 string(REGEX MATCH "#define GVIEW_VERSION \"([0-9]+.[0-9]+.[0-9]+)\"" _ ${GView_content})
 set(GVIEW_VERSION ${CMAKE_MATCH_1})
 message("${PROJECT_NAME} version: ${GVIEW_VERSION}")
+string(REPLACE "." "," VERSION_LIST ${GVIEW_VERSION})
+set(GVIEW_VERSION_LIST ${VERSION_LIST},0)
+
+if (MSVC)
+    set(GVIEW_RESOURCE_FILE_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows.rc.in")
+endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(core_testing)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -38,13 +61,24 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
      set(DEBUG_BUILD 1)
 endif()
 
-if (NOT MSVC)
-	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
-	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
+if(NOT DEFINED GVIEW_BINARIES_OUT_DIR)
+    set(GVIEW_BINARIES_OUT_DIR "${CMAKE_SOURCE_DIR}/bin/${CMAKE_BUILD_TYPE}")
 endif()
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}")
+
+if (NOT MSVC)
+	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${GVIEW_BINARIES_OUT_DIR})
+	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${GVIEW_BINARIES_OUT_DIR})
+endif()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${GVIEW_BINARIES_OUT_DIR})
+
+foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+    if (NOT MSVC)
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${GVIEW_BINARIES_OUT_DIR})
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${GVIEW_BINARIES_OUT_DIR})
+    endif()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${GVIEW_BINARIES_OUT_DIR} )
+endforeach()
 
 if (MSVC)
     add_definitions(-DBUILD_FOR_WINDOWS)
@@ -110,6 +144,9 @@ if (NOT DEBUG_BUILD)
     endif()
 endif()
 
+if(DEFINED DISSASM_DEV)
+    add_definitions(-DDISSASM_DEV)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -118,35 +155,60 @@ add_subdirectory(3rdPartyLibs/LLVMDemangle)
 
 add_subdirectory(AppCUI)
 add_subdirectory(GViewCore)
-add_subdirectory(GView)
 
-# Types supported by GView
-add_subdirectory(Types/PE)
-add_subdirectory(Types/ICO)
-add_subdirectory(Types/CSV)
-add_subdirectory(Types/BMP)
-add_subdirectory(Types/MACHO)
-add_subdirectory(Types/ISO)
-add_subdirectory(Types/PREFETCH)
-add_subdirectory(Types/MAM)
-add_subdirectory(Types/LNK)
-add_subdirectory(Types/JOB)
-add_subdirectory(Types/PCAP)
-add_subdirectory(Types/ELF)
-add_subdirectory(Types/JT)
-add_subdirectory(Types/INI)
-add_subdirectory(Types/CPP)
-add_subdirectory(Types/JSON)
-add_subdirectory(Types/VBA)
-add_subdirectory(Types/JS)
-add_subdirectory(Types/PYEXTRACTOR)
+if(NOT DEFINED CMAKE_TESTING_ENABLED)
+    add_subdirectory(GView)
+endif()
 
-# Generic plugins supported by GView
-add_subdirectory(GenericPlugins/CharacterTable)
-add_subdirectory(GenericPlugins/Hashes)
-                                                                
 if (APPLE)
-    	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
-elseif (UNIX)
-	set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
+    if (CMAKE_GENERATOR STREQUAL "Xcode")
+        foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+            string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+            set_target_properties(${PROJECT_NAME} PROPERTIES
+                ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+                LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+                RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "${CMAKE_BINARY_DIR}/../bin/${CMAKE_BUILD_TYPE}"
+            )
+        endforeach()
+    endif()
+endif()
+
+if(NOT DEFINED CMAKE_TESTING_ENABLED)
+    # Types supported by GView
+    add_subdirectory(Types/PE)
+    add_subdirectory(Types/ICO)
+    add_subdirectory(Types/CSV)
+    add_subdirectory(Types/BMP)
+    add_subdirectory(Types/MACHO)
+    add_subdirectory(Types/ISO)
+    add_subdirectory(Types/PREFETCH)
+    add_subdirectory(Types/MAM)
+    add_subdirectory(Types/LNK)
+    add_subdirectory(Types/JOB)
+    add_subdirectory(Types/PCAP)
+    add_subdirectory(Types/ELF)
+    add_subdirectory(Types/JT)
+    add_subdirectory(Types/INI)
+    add_subdirectory(Types/CPP)
+    add_subdirectory(Types/JSON)
+    add_subdirectory(Types/VBA)
+    add_subdirectory(Types/JS)
+    add_subdirectory(Types/PYEXTRACTOR)
+    add_subdirectory(Types/ZIP)
+    add_subdirectory(Types/SQLite)
+    add_subdirectory(Types/JCLASS)
+    add_subdirectory(Types/EML)
+
+    # Generic plugins supported by GView
+    add_subdirectory(GenericPlugins/CharacterTable)
+    add_subdirectory(GenericPlugins/Hashes)
+    add_subdirectory(GenericPlugins/SyncCompare)
+    add_subdirectory(GenericPlugins/DropperStrings)
+    add_subdirectory(GenericPlugins/Unpackers)
+                                                                    
+    if (APPLE)
+            set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "@loader_path")
+    elseif (UNIX)
+        set_property(TARGET "${PROJECT_NAME}" PROPERTY INSTALL_RPATH "$ORIGIN")
+    endif()
 endif()

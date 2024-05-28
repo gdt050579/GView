@@ -30,7 +30,7 @@ constexpr string_view FAT_ICON = "................"  // 1
 
 extern "C"
 {
-    PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view& extension)
+    PLUGIN_EXPORT bool Validate(const BufferView& buf, const std::string_view&)
     {
         auto dword = buf.GetObject<uint32>();
         CHECK(dword != nullptr, false, "");
@@ -64,7 +64,7 @@ extern "C"
 
         if (machO->isMacho)
         {
-            const auto headerSize = sizeof(mach_header) + machO->is64 ? sizeof(mach_header::reserved) : 0;
+            const auto headerSize = sizeof(mach_header) + (machO->is64 ? sizeof(mach_header::reserved) : 0);
             settings.AddZone(0, headerSize, machO->colors.header, "Header");
 
             LocalString<128> tmp;
@@ -146,10 +146,10 @@ extern "C"
             }
         }
 
-        win->CreateViewer("BufferView", settings);
+        machO->selectionZoneInterface = win->GetSelectionZoneInterfaceFromViewerCreation(settings);
     }
 
-    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<MachOFile> machO)
+    void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<MachOFile>)
     {
         ContainerViewer::Settings settings;
 
@@ -169,7 +169,7 @@ extern "C"
         settings.SetOpenItemCallback(
               win->GetObject()->GetContentType<MachO::MachOFile>().ToObjectRef<ContainerViewer::OpenItemInterface>());
 
-        win->CreateViewer("ContainerViewer", settings);
+        win->CreateViewer(settings);
     }
 
     PLUGIN_EXPORT bool PopulateWindow(Reference<GView::View::WindowInterface> win)

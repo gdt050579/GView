@@ -16,6 +16,15 @@ Settings::Settings()
     this->data = new SettingsData();
 }
 
+Settings::~Settings()
+{
+    if (this->data)
+    {
+        delete reinterpret_cast<SettingsData*>(this->data);
+        this->data = nullptr;
+    }
+}
+
 void Settings::AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name)
 {
     auto* Members = (SettingsData*) (this->data);
@@ -52,7 +61,27 @@ void Settings::SetPositionToColorCallback(Reference<PositionToColorInterface> cb
     ((SettingsData*) (this->data))->positionToColorCallback = cbk;
 }
 
-void Settings::SetEntryPointOffset(uint64_t offset)
+void Settings::SetEntryPointOffset(uint64 offset)
 {
     ((SettingsData*) (this->data))->entryPointOffset = offset;
+}
+
+void Settings::SetArchitecture(GView::Dissasembly::Architecture architecture)
+{
+    ((SettingsData*) (this->data))->architecture = architecture;
+}
+
+void Settings::SetDesign(GView::Dissasembly::Design design)
+{
+    ((SettingsData*) (this->data))->design = design;
+}
+
+void Settings::SetEndianess(GView::Dissasembly::Endianess endianess)
+{
+    ((SettingsData*) (this->data))->endianess = endianess;
+}
+
+bool Settings::SetName(std::string_view name)
+{
+    return ((SettingsData*) (this->data))->name.Set(name);
 }

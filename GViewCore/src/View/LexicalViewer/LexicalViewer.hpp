@@ -206,6 +206,7 @@ namespace View
 
         struct SettingsData
         {
+            String name;
             std::vector<Reference<Plugin>> plugins;
             Reference<ParseInterface> parser;
             AppCUI::Graphics::Size maxTokenSize;
@@ -282,7 +283,6 @@ namespace View
         class Instance : public View::ViewControl
         {
             FoldColumn foldColumn;
-            FixSizeString<29> name;
             Utils::Selection selection;
             Pointer<SettingsData> settings;
             Reference<GView::Object> obj;
@@ -362,7 +362,7 @@ namespace View
             std::vector<BlockObject> blocks;
 
           public:
-            Instance(const std::string_view& name, Reference<GView::Object> obj, Settings* settings);
+            Instance(Reference<GView::Object> obj, Settings* settings);
 
             inline uint32 GetUnicodeTextLen() const
             {
@@ -386,13 +386,12 @@ namespace View
             virtual bool ShowGoToDialog() override;
             virtual bool ShowFindDialog() override;
             virtual bool ShowCopyDialog() override;
-            virtual std::string_view GetName() override;
 
             // mouse events
-            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button) override;
-            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction) override;
+            virtual void OnMousePressed(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+            virtual void OnMouseReleased(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseDrag(int x, int y, AppCUI::Input::MouseButton button, Input::Key) override;
+            virtual bool OnMouseWheel(int x, int y, AppCUI::Input::MouseWheel direction, Input::Key) override;
             virtual bool OnMouseOver(int x, int y) override;
 
             virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) override;
@@ -553,7 +552,7 @@ namespace View
         {
             Reference<TextField> txPath;
             Reference<ComboBox> comboEncoding, comboNewLine;
-            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile;
+            Reference<CheckBox> cbOpenInNewWindow, cbBackupOriginalFile,cIgnoreMetadataOnSave;
             void Validate();
             void BrowseForFile();
 
@@ -573,6 +572,10 @@ namespace View
             inline bool ShouldOpenANewWindow()
             {
                 return cbOpenInNewWindow->IsChecked();
+            }
+            inline bool ShouldIgnoreMetadataOnSave()
+            {
+                return cIgnoreMetadataOnSave->IsChecked();
             }
             inline const CharacterBuffer& GetFilePath()
             {

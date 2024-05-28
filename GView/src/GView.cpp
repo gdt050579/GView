@@ -165,8 +165,8 @@ int main(int argc, const char** argv)
 {
     if (argc < 2)
     {
-        ShowHelp();
-        return 0;
+        const char* openCurrentFolderCommand[] = { "."};
+        return ProcessOpenCommand(1, openCurrentFolderCommand, 0);
     }
 
     auto cmdID = GetCommandID(argv[1]);

@@ -10,10 +10,9 @@ constexpr int32 CMD_ID_ZOOMOUT    = 0xBF01;
 constexpr int32 CMD_ID_NEXT_IMAGE = 0xBF02;
 constexpr int32 CMD_ID_PREV_IMAGE = 0xBF03;
 
-Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr)
+Instance::Instance(Reference<GView::Object> _obj, Settings* _settings) : settings(nullptr), ViewControl("Container View")
 {
     this->obj                     = _obj;
-    this->name                    = _name;
     this->tempCountRecursiveItems = 0;
 
     // settings
@@ -32,6 +31,11 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     if (config.Loaded == false)
         config.Initialize();
 
+    if (this->settings->name.Len() > 0)
+    {
+        this->name.Set(this->settings->name);
+    }
+
     this->currentPath.Resize(256);
     this->currentPath.Clear();
 
@@ -41,8 +45,7 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
         imgView->SetImage(this->settings->icon, ImageRenderingMethod::PixelTo16ColorsSmallBlock, ImageScaleMethod::NoScale);
     this->propList = Factory::ListView::Create(this, "l:17,t:0,r:0,h:8", { "n:Field,w:20", "n:Value,w:200" }, ListViewFlags::HideColumns);
 
-    this->items = Factory::TreeView::Create(
-          this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
+    this->items = Factory::TreeView::Create(this, "l:0,t:8,r:0,b:0", {}, TreeViewFlags::DynamicallyPopulateNodeChildren | TreeViewFlags::Searchable);
     this->items->Handlers()->OnItemToggle         = this;
     this->items->Handlers()->OnItemPressed        = this;
     this->items->Handlers()->OnCurrentItemChanged = this;
@@ -63,7 +66,8 @@ Instance::Instance(const std::string_view& _name, Reference<GView::Object> _obj,
     }
     if (settings->enumInterface)
     {
-        this->root = this->items->AddItem("/", true);
+        const std::u16string sep{ char16_t(std::filesystem::path::preferred_separator) };
+        this->root = this->items->AddItem(sep, true);
         this->root.Unfold();
     }
     this->items->Sort(0, SortDirection::Ascendent);
@@ -123,6 +127,15 @@ void Instance::OnTreeViewItemPressed(Reference<TreeView>, TreeViewItem& item)
     if ((item.GetChildrenCount() == 0) && (this->settings->openItemInterface))
     {
         UpdatePathForItem(item);
+
+        // TODO: investigate this:
+        /*
+
+            std::u16string newPath(this->obj->GetPath());
+            newPath.append(u".").append(this->currentPath);
+            this->settings->openItemInterface->OnOpenItem(newPath, item);
+        */
+
         this->settings->openItemInterface->OnOpenItem(this->currentPath, item);
     }
 }
@@ -136,15 +149,10 @@ bool Instance::OnUpdateCommandBar(AppCUI::Application::CommandBar& commandBar)
 }
 bool Instance::OnKeyEvent(AppCUI::Input::Key keyCode, char16 characterCode)
 {
-    return false;
+    return ViewControl::OnKeyEvent(keyCode, characterCode);
 }
 bool Instance::OnEvent(Reference<Control>, Event eventType, int ID)
 {
-    if (eventType != Event::Command)
-        return false;
-    switch (ID)
-    {
-    }
     return false;
 }
 bool Instance::GoTo(uint64 offset)
@@ -167,10 +175,6 @@ bool Instance::ShowCopyDialog()
 {
     NOT_IMPLEMENTED(false);
 }
-std::string_view Instance::GetName()
-{
-    return this->name;
-}
 //======================================================================[Cursor information]==================
 
 void Instance::PaintCursorInformation(AppCUI::Graphics::Renderer& r, uint32 width, uint32 height)
@@ -190,15 +194,14 @@ bool Instance::GetPropertyValue(uint32 id, PropertyValue& value)
 {
     switch (static_cast<PropertyID>(id))
     {
+    default:
+        break;
     }
     return false;
 }
 bool Instance::SetPropertyValue(uint32 id, const PropertyValue& value, String& error)
 {
-    switch (static_cast<PropertyID>(id))
-    {
-    }
-    error.SetFormat("Unknown internat ID: %u", id);
+    CHECK(error.SetFormat("Unknown internat ID: %u", id), false, "");
     return false;
 }
 void Instance::SetCustomPropertyValue(uint32 propertyID)
@@ -210,8 +213,6 @@ bool Instance::IsPropertyValueReadOnly(uint32 propertyID)
 }
 const vector<Property> Instance::GetPropertiesList()
 {
-    return {
-
-    };
+    return {};
 }
 #undef BT

@@ -1,7 +1,7 @@
 #pragma once
 
 // Version MUST be in the following format <Major>.<Minor>.<Patch>
-#define GVIEW_VERSION "0.258.0"
+#define GVIEW_VERSION "0.337.0"
 
 #include <AppCUI/include/AppCUI.hpp>
 
@@ -29,13 +29,24 @@ using namespace AppCUI;
 namespace GView
 {
 class CORE_EXPORT Object;
-struct CORE_EXPORT TypeInterface
-{
-    Object* obj;
+struct CORE_EXPORT TypeInterface {
+    Object* obj{ nullptr };
 
     virtual std::string_view GetTypeName()                = 0;
     virtual void RunCommand(std::string_view commandName) = 0;
     virtual ~TypeInterface(){};
+
+    struct SelectionZone {
+        uint64 start, end;
+    };
+    virtual uint32 GetSelectionZonesCount()
+    {
+        return 0;
+    }
+    virtual SelectionZone GetSelectionZone(uint32)
+    {
+        return { 0, 0 };
+    }
 
     template <typename T>
     Reference<T> To()
@@ -128,8 +139,7 @@ namespace Utils
         bool WriteTo(Reference<AppCUI::OS::DataObject> output, uint64 offset, uint32 size);
     };
 
-    enum class DemangleKind : uint8
-    {
+    enum class DemangleKind : uint8 {
         Auto,
         Microsoft,
         Itanium,
@@ -137,6 +147,10 @@ namespace Utils
     };
     CORE_EXPORT bool Demangle(std::string_view input, String& output, DemangleKind format = DemangleKind::Auto);
 
+    struct CORE_EXPORT SelectionZoneInterface {
+        virtual uint32 GetSelectionZonesCount() const                                    = 0;
+        virtual GView::TypeInterface::SelectionZone GetSelectionZone(uint32 index) const = 0;
+    };
 } // namespace Utils
 
 namespace Hashes
@@ -187,11 +201,7 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    enum class CRC32Type : uint32
-    {
-        JAMCRC   = 0xFFFFFFFF,
-        JAMCRC_0 = 0x00000000
-    };
+    enum class CRC32Type : uint32 { JAMCRC = 0xFFFFFFFF, JAMCRC_0 = 0x00000000 };
 
     class CORE_EXPORT CRC32
     {
@@ -217,11 +227,7 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    enum class CRC64Type : uint64
-    {
-        WE       = 0xFFFFFFFFFFFFFFFF,
-        ECMA_182 = 0x0000000000000000
-    };
+    enum class CRC64Type : uint64 { WE = 0xFFFFFFFFFFFFFFFF, ECMA_182 = 0x0000000000000000 };
 
     class CORE_EXPORT CRC64
     {
@@ -250,8 +256,7 @@ namespace Hashes
         char hexDigest[ResultBytesLength * 2];
     };
 
-    enum class OpenSSLHashKind : uint8
-    {
+    enum class OpenSSLHashKind : uint8 {
         Md5,
         Blake2s256,
         Blake2b512,
@@ -284,7 +289,7 @@ namespace Hashes
 
       private:
         void* handle;
-        uint8 hash[64];
+        uint8 hash[64]{ 0 };
         uint32 size;
 
       private:
@@ -294,8 +299,7 @@ namespace Hashes
 
 namespace DigitalSignature
 {
-    enum class ASN1TYPE
-    {
+    enum class ASN1TYPE {
         EOC               = 0,
         BOOLEAN           = 1,
         INTEGER           = 2,
@@ -326,8 +330,7 @@ namespace DigitalSignature
         BMPSTRING         = 30
     };
 
-    struct CORE_EXPORT Certificate
-    {
+    struct CORE_EXPORT Certificate {
         int32 version;
         String serialNumber;
         String signatureAlgorithm;
@@ -337,37 +340,34 @@ namespace DigitalSignature
         String issuer;
         String subject;
         int32 verify;
-        String errorVerify;
+        String errorVerify{};
 
-        int32 signerVerify; //  compares the certificate cert against the signer identifier si
-        String errorSignerVerify;
+        int32 signerVerify{ 0 }; //  compares the certificate cert against the signer identifier si
+        String errorSignerVerify{};
     };
 
     constexpr auto ERR_SIGNER            = -1;
     constexpr auto MAX_SIZE_IN_CONTAINER = 32U;
 
-    struct CORE_EXPORT SignerAttributes
-    {
-        String name;
-        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
-                                               // V_ASN1_SEQUENCE
-        String contentType;
-        String contentTypeData;
-        int32 count;
+    struct CORE_EXPORT SignerAttributes {
+        String name{};
+        ASN1TYPE types[MAX_SIZE_IN_CONTAINER]{}; // usually one value unless (attribute.contentType == "1.2.840.113635.100.9.2") //
+                                                 // V_ASN1_SEQUENCE
+        String contentType{};
+        String contentTypeData{};
+        int32 count{ 0 };
 
         String CDHashes[MAX_SIZE_IN_CONTAINER]; // optional -> (attribute.contentType == "1.2.840.113635.100.9.2") // V_ASN1_SEQUENCE
     };
 
-    struct CORE_EXPORT Signer
-    {
-        int32 count;
-        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER];
-        uint32 attributesCount;
+    struct CORE_EXPORT Signer {
+        int32 count{ 0 };
+        SignerAttributes attributes[MAX_SIZE_IN_CONTAINER]{};
+        uint32 attributesCount{ 0 };
     };
 
-    struct CORE_EXPORT Signature
-    {
-        int32 isDetached;
+    struct CORE_EXPORT SignatureMachO {
+        int32 isDetached{ 0 };
         String sn;
         Buffer snContent;
 
@@ -382,7 +382,71 @@ namespace DigitalSignature
 
     CORE_EXPORT bool CMSToHumanReadable(const Buffer& buffer, String& ouput);
     CORE_EXPORT bool CMSToPEMCerts(const Buffer& buffer, String output[32], uint32& count);
-    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, Signature& output);
+    CORE_EXPORT bool CMSToStructure(const Buffer& buffer, SignatureMachO& output);
+
+    enum class SignatureType { Unknown = 0, Signature = 1, CounterSignature = 2 };
+
+    enum class CounterSignatureType { Unknown = 0, Authenticode = 1, RFC3161 = 2 };
+
+    struct CORE_EXPORT AuthenticodeMS {
+        struct {
+            bool callSuccessful{ false };
+            uint32 errorCode{ 0 };
+            String errorMessage;
+            uint32 chainErrorCode{ 0 };
+            String chainErrorMessage;
+            uint32 policyErrorCode{ 0 };
+            String policyErrorMessage;
+        } winTrust;
+
+        struct {
+            bool verified{ false };
+            String errorMessage;
+        } openssl;
+
+        struct Data {
+            struct Signature {
+                uint32 statusCode{ 0 };
+                String status;
+
+                struct Signer {
+                    String programName;
+                    String publishLink;
+                    String moreInfoLink;
+                } signer;
+
+                struct Certificate {
+                    uint32 version;
+                    String issuer;
+                    String subject;
+                    String email;
+                    String serialNumber;
+                    String digestAlgorithm;
+                    String notAfter;
+                    String notBefore;
+
+                    String crlPoint;
+
+                    String revocationResult;
+                };
+                std::vector<Certificate> certificates; // if it has bundled certs in counter signature / timestamp
+
+                SignatureType signatureType{ SignatureType ::Unknown };
+
+                // if is counter signature / timestamp
+                String signingTime;
+                CounterSignatureType counterSignatureType{ CounterSignatureType::Unknown };
+            };
+            std::vector<Signature> signatures;
+
+            String humanReadable;
+            std::vector<String> pemCerts;
+        } data;
+    };
+
+    CORE_EXPORT bool AuthenticodeToHumanReadable(const Buffer& buffer, String& output);
+
+    CORE_EXPORT bool VerifyEmbeddedSignature(AuthenticodeMS& data, Utils::DataCache& cache);
 } // namespace DigitalSignature
 
 namespace Golang
@@ -394,8 +458,7 @@ namespace Golang
     constexpr auto ELF_GNU_NOTE = std::string_view("GNU\x00", 4);
 
     // version of the pclntab (Program Counter Line Table) -: https://go.dev/src/debug/gosym/pclntab.go
-    enum class PclntabVersion : int32
-    {
+    enum class PclntabVersion : int32 {
         Unknown = -1,
         _11     = 0,
         _12     = 1,
@@ -410,35 +473,26 @@ namespace Golang
         _118 = 0xfffffff0,
     };
 
-    struct CORE_EXPORT GoFunctionHeader
-    {
+    struct CORE_EXPORT GoFunctionHeader {
         GoMagic magic;
         uint16 padding;
         uint8 instructionSizeQuantum; // (1 for x86, 4 for ARM)
         uint8 sizeOfUintptr;          // in bytes
     };
 
-    enum class Architecture : uint8
-    {
-        Unknown = 0,
-        x86     = 1,
-        x64     = 2
-    };
+    enum class Architecture : uint8 { Unknown = 0, x86 = 1, x64 = 2 };
 
-    struct CORE_EXPORT FstEntry32
-    {
+    struct CORE_EXPORT FstEntry32 {
         uint32 pc;
         uint32 functionOffset;
     };
 
-    struct FstEntry64
-    {
+    struct FstEntry64 {
         uint64 pc;
         uint32 functionOffset;
     };
 
-    struct CORE_EXPORT Func32
-    {
+    struct CORE_EXPORT Func32 {
         uint32 entry;    // start pc
         int32 name;      // name (offset to C string)
         int32 args;      // size of arguments passed to function
@@ -450,8 +504,7 @@ namespace Golang
         int32 npcdata;   // number of entries in pcdata list
     };
 
-    struct CORE_EXPORT Func64
-    {
+    struct CORE_EXPORT Func64 {
         uint64 entry;    // start pc
         int32 name;      // name (offset to C string)
         int32 args;      // size of arguments passed to function
@@ -463,19 +516,16 @@ namespace Golang
         int32 npcdata;   // number of entries in pcdata list
     };
 
-    struct CORE_EXPORT Function
-    {
+    struct CORE_EXPORT Function {
         char* name{ nullptr };
-        Func64 func;
-        union FstEntry
-        {
+        Func64 func{};
+        union FstEntry {
             FstEntry32* _32;
             FstEntry64* _64;
         } fstEntry{ nullptr };
     };
 
-    struct CORE_EXPORT PcLnTab
-    {
+    struct CORE_EXPORT PcLnTab {
       private:
         void* context{ nullptr };
         void Reset();
@@ -506,26 +556,81 @@ namespace ZLIB
     CORE_EXPORT bool Decompress(const Buffer& input, uint64 inputSize, Buffer& output, uint64 outputSize);
 }
 
+namespace ZIP
+{
+    enum class EntryType { Unknown = 0, Directory = 1, Symlink = 2, File = 3 };
+
+    struct CORE_EXPORT Entry {
+        void* context{ nullptr };
+
+        std::u8string_view GetFilename() const;
+        uint16 GetFlags() const;
+        std::string GetFlagNames() const;
+        int64 GetCompressedSize() const;
+        int64 GetUncompressedSize() const;
+        int64 GetCompressionMethod() const;
+        std::string GetCompressionMethodName() const;
+        uint32 GetDiskNumber() const;
+        int64 GetDiskOffset() const;
+        EntryType GetType() const;
+        std::string_view GetTypeName() const;
+        bool IsEncrypted() const;
+    };
+
+    struct CORE_EXPORT Info {
+        void* context{ nullptr };
+
+        uint32 GetCount() const;
+        bool GetEntry(uint32 index, Entry& entry) const;
+        bool Decompress(Buffer& output, uint32 index, const std::string& password) const;
+        bool Decompress(const BufferView& input, Buffer& output, uint32 index, const std::string& password) const;
+
+        Info();
+        ~Info();
+    };
+    CORE_EXPORT bool GetInfo(std::u16string_view path, Info& info);
+    CORE_EXPORT bool GetInfo(Utils::DataCache& cache, Info& info);
+} // namespace ZIP
+
 namespace Dissasembly
 {
-    enum class Opcodes : uint32
+    enum class Opcodes : uint32 { Header = 1, Call = 2, Jmp = 8, Breakpoint = 32, FunctionStart = 64, FunctionEnd = 128, All = 0xFFFFFFFF };
+
+    enum class GroupType : uint8 // this is "inspired" from capstone cs_group_type
     {
-        Header        = 1,
-        Call          = 2,
-        LCall         = 4,
-        Jmp           = 8,
-        LJmp          = 16,
-        Breakpoint    = 32,
-        FunctionStart = 64,
-        FunctionEnd   = 128,
-        All           = 0xFFFFFFFF
+        Invalid        = 0,
+        Jump           = 1,
+        Call           = 2,
+        Ret            = 3,
+        Int            = 4,
+        Iret           = 5,
+        Pivilege       = 6,
+        BranchRelative = 7,
+    };
+
+    enum class Architecture : uint8 {
+        Invalid = 0,
+        x86     = 1,
+        x64     = 2,
+    };
+
+    enum class Design : uint8 {
+        Invalid = 0,
+        Intel   = 1,
+        ARM     = 2,
+    };
+
+    enum class Endianess : uint8 {
+        Invalid = 0,
+        Little  = 1,
+        Big     = 2,
     };
 
     constexpr auto BYTES_SIZE    = 24U;
     constexpr auto MNEMONIC_SIZE = 32U;
     constexpr auto OP_STR_SIZE   = 160U;
 
-    struct CORE_EXPORT Instruction
+    struct CORE_EXPORT Instruction // this is "inspired" from capstone cs_insn & cs_detail
     {
         uint32 id;
         uint64 address;
@@ -533,17 +638,23 @@ namespace Dissasembly
         uint8 bytes[BYTES_SIZE];
         char mnemonic[MNEMONIC_SIZE];
         char opStr[OP_STR_SIZE];
+        GroupType groups[8];
+        uint8 groupsCount;
     };
 
     class CORE_EXPORT DissasemblerIntel
     {
       private:
         size_t handle{ 0 };
-        bool isX64{ false };
+        Design design{ Design::Invalid };
+        Architecture architecture{ Architecture ::Invalid };
+        Endianess endianess{ Endianess::Invalid };
 
       public:
-        bool Init(bool isx64, bool isLittleEndian);
+        bool Init(Design design, Architecture architecture, Endianess endianess);
         bool DissasembleInstruction(BufferView buf, uint64 va, Instruction& instruction);
+        bool DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instruction);
+        std::string_view GetInstructionGroupName(uint8 groupID) const;
         bool IsCallInstruction(const Instruction& instruction) const;
         bool IsLCallInstruction(const Instruction& instruction) const;
         bool IsJmpInstruction(const Instruction& instruction) const;
@@ -555,16 +666,54 @@ namespace Dissasembly
     };
 } // namespace Dissasembly
 
-namespace Compression
+namespace Compression::LZXPRESS::Huffman
 {
-    namespace LZXPRESS
+    CORE_EXPORT bool Decompress(const BufferView& compressed, Buffer& uncompressed);
+} // namespace Compression::LZXPRESS::Huffman
+
+namespace SQLite3
+{
+    class CORE_EXPORT Column
     {
-        namespace Huffman
-        {
-            CORE_EXPORT bool Decompress(const BufferView& compressed, Buffer& uncompressed);
-        }
-    } // namespace LZXPRESS
-} // namespace Compression
+      public:
+        // enum class Type { Integer = SQLITE_INTEGER, Float = SQLITE_FLOAT, Text = SQLITE_TEXT, Blob = SQLITE_BLOB, Null = SQLITE_NULL }
+        enum class Type { Integer = 1, Float = 2, Text = 3, Blob = 4, Null = 5 };
+
+        Type type{ Type::Null };
+        String name;
+        void* values{ nullptr };
+
+        String ValueToString(uint32 index);
+
+        Column();
+        Column(const Column& other);                // copy constructor
+        Column(Column&& other) noexcept;            // move constructor
+        Column& operator=(const Column& other);     // copy assignment
+        Column& operator=(Column&& other) noexcept; // move assignment
+        ~Column();
+    };
+
+    class CORE_EXPORT Database
+    {
+        void* handle{ nullptr };
+        String errorMessage;
+
+      public:
+        Database() = default;
+        Database(const std::u16string_view& filePath);
+        Database& operator=(Database&& other) noexcept;
+        ~Database();
+
+        std::vector<String> GetTables();
+        std::vector<std::vector<String>> GetTableMetadata(std::string_view tableName);
+        AppCUI::int64 GetTableCount(std::string_view tableName);
+        String GetLibraryVersion();
+        std::vector<std::pair<String, String>> GetTableInfo();
+        std::pair<std::vector<String>, std::vector<std::vector<String>>> GetTableData(std::string_view name);
+        std::pair<std::vector<String>, std::vector<std::vector<String>>> GetStatementData(const std::string_view& statement);
+        std::vector<Column> ExecuteQuery(const char* query);
+    };
+} // namespace SQLite3
 
 /*
  * Object can be:
@@ -576,13 +725,7 @@ namespace Compression
 class CORE_EXPORT Object
 {
   public:
-    enum class Type : uint32
-    {
-        File,
-        Folder,
-        MemoryBuffer,
-        Process
-    };
+    enum class Type : uint32 { File, Folder, MemoryBuffer, Process };
 
   private:
     Utils::DataCache cache;
@@ -634,32 +777,87 @@ namespace View
 {
     typedef uint8 MethodID;
 
-    struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface
-    {
+    constexpr int32 VIEW_COMMAND_ACTIVATE_COMPARE{ 0xBF10 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_COMPARE{ 0xBF11 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_SYNC{ 0xBF12 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_SYNC{ 0xBF13 };
+    constexpr int32 VIEW_COMMAND_ACTIVATE_CODE_EXECUTION{ 0xBF14 };
+    constexpr int32 VIEW_COMMAND_DEACTIVATE_CODE_EXECUTION{ 0xBF15 };
+
+    struct ViewData {
+        uint64 viewStartOffset{ GView::Utils::INVALID_OFFSET };
+        uint64 viewSize{ GView::Utils::INVALID_OFFSET };
+        uint64 cursorStartOffset{ GView::Utils::INVALID_OFFSET };
+        unsigned char byte{ 0 };
+    };
+
+    struct CORE_EXPORT BufferColorInterface {
+        virtual bool GetColorForByteAt(uint64 offset, const ViewData& vd, ColorPair& cp) = 0;
+    };
+
+    struct CORE_EXPORT OnStartViewMoveInterface {
+        virtual bool GenerateActionOnMove(Reference<Control> sender, int64 deltaStartView, const ViewData& vd) = 0;
+    };
+
+    struct CORE_EXPORT ViewControl : public AppCUI::Controls::UserControl, public AppCUI::Utils::PropertiesInterface {
       protected:
         const AppCUI::Application::Config& Cfg;
+        String name;
 
       public:
-        virtual bool GoTo(uint64 offset)                                                                       = 0;
-        virtual bool Select(uint64 offset, uint64 size)                                                        = 0;
-        virtual bool ShowGoToDialog()                                                                          = 0;
-        virtual bool ShowFindDialog()                                                                          = 0;
-        virtual bool ShowCopyDialog()                                                                          = 0;
-        virtual std::string_view GetName()                                                                     = 0;
+        virtual bool GoTo(uint64 offset)                = 0;
+        virtual bool Select(uint64 offset, uint64 size) = 0;
+        virtual bool ShowGoToDialog()                   = 0;
+        virtual bool ShowFindDialog()                   = 0;
+        virtual bool ShowCopyDialog()                   = 0;
+
+        inline std::string_view GetName() const
+        {
+            return name.ToStringView();
+        }
+
+        bool SetName(const std::string_view& name)
+        {
+            return this->name.Set(name);
+        }
+
         virtual void PaintCursorInformation(AppCUI::Graphics::Renderer& renderer, uint32 width, uint32 height) = 0;
 
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::string_view value);
         int WriteCursorInfo(AppCUI::Graphics::Renderer& renderer, int x, int y, int width, std::string_view key, std::u16string_view value);
         void WriteCusorInfoLine(AppCUI::Graphics::Renderer& renderer, int x, int y, std::string_view key, const ConstString& value);
 
-        ViewControl(UserControlFlags flags = UserControlFlags::None) : UserControl("d:c", flags), Cfg(this->GetConfig())
+        virtual bool OnKeyEvent(AppCUI::Input::Key keyCode, char16 charCode) override;
+
+        virtual bool SetBufferColorProcessorCallback(Reference<BufferColorInterface>)
+        {
+            return false;
+        }
+
+        virtual bool SetOnStartViewMoveCallback(Reference<OnStartViewMoveInterface>)
+        {
+            return false;
+        }
+
+        virtual bool GetViewData(ViewData&, uint64)
+        {
+            return false;
+        }
+
+        virtual bool AdvanceStartView(int64)
+        {
+            return false;
+        }
+
+        ViewControl(const std::string_view& name, UserControlFlags flags = UserControlFlags::None)
+            : UserControl("d:c", flags), Cfg(this->GetConfig()), name(name)
         {
         }
     };
+
     namespace BufferViewer
     {
-        struct BufferColor
-        {
+        struct BufferColor {
             uint64 start;
             uint64 end;
             ColorPair color;
@@ -676,58 +874,60 @@ namespace View
                 return start == GView::Utils::INVALID_OFFSET;
             }
         };
-        struct CORE_EXPORT PositionToColorInterface
-        {
+
+        struct CORE_EXPORT PositionToColorInterface {
             virtual bool GetColorForBuffer(uint64 offset, BufferView buf, BufferColor& result) = 0;
         };
-        struct CORE_EXPORT OffsetTranslateInterface
-        {
+
+        struct CORE_EXPORT OffsetTranslateInterface {
             virtual uint64_t TranslateToFileOffset(uint64 value, uint32 fromTranslationIndex) = 0;
             virtual uint64_t TranslateFromFileOffset(uint64 value, uint32 toTranslationIndex) = 0;
         };
 
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
 
             Settings();
+            ~Settings();
             void AddZone(uint64 start, uint64 size, ColorPair col, std::string_view name);
             void AddBookmark(uint8 bookmarkID, uint64 fileOffset);
             void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<OffsetTranslateInterface> cbk);
             void SetPositionToColorCallback(Reference<PositionToColorInterface> cbk);
-            void SetEntryPointOffset(uint64_t offset);
+            void SetEntryPointOffset(uint64 offset);
+            bool SetName(std::string_view name);
+
+            // dissasm related settings
+            void SetArchitecture(GView::Dissasembly::Architecture architecture);
+            void SetDesign(GView::Dissasembly::Design design);
+            void SetEndianess(GView::Dissasembly::Endianess endianess);
         };
     }; // namespace BufferViewer
 
     namespace ImageViewer
     {
-        struct CORE_EXPORT LoadImageInterface
-        {
+        struct CORE_EXPORT LoadImageInterface {
             virtual bool LoadImageToObject(Image& img, uint32 index) = 0;
         };
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
 
             Settings();
             void SetLoadImageCallback(Reference<LoadImageInterface> cbk);
             void AddImage(uint64 offset, uint64 size);
+            bool SetName(std::string_view name);
         };
     }; // namespace ImageViewer
 
     namespace ContainerViewer
     {
-        struct CORE_EXPORT EnumerateInterface
-        {
+        struct CORE_EXPORT EnumerateInterface {
             virtual bool BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent) = 0;
             virtual bool PopulateItem(AppCUI::Controls::TreeViewItem item)                               = 0;
         };
-        struct CORE_EXPORT OpenItemInterface
-        {
+        struct CORE_EXPORT OpenItemInterface {
             virtual void OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item) = 0;
         };
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
 
             Settings();
@@ -737,20 +937,19 @@ namespace View
             void SetColumns(std::initializer_list<ConstString> columns);
             void SetEnumerateCallback(Reference<EnumerateInterface> callback);
             void SetOpenItemCallback(Reference<OpenItemInterface> callback);
+            bool SetName(std::string_view name);
         };
     }; // namespace ContainerViewer
 
     namespace TextViewer
     {
-        enum class WrapMethod : uint8
-        {
+        enum class WrapMethod : uint8 {
             None       = 0,
             LeftMargin = 1,
             Padding    = 2,
             Bullets    = 3,
         };
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
 
             Settings();
@@ -758,21 +957,20 @@ namespace View
             void SetTabSize(uint32 tabSize);
             void ShowTabCharacter(bool show);
             void HightlightCurrentLine(bool highlight);
+            bool SetName(std::string_view name);
         };
     }; // namespace TextViewer
 
     namespace LexicalViewer
     {
-        enum class SpaceType : uint8
-        {
+        enum class SpaceType : uint8 {
             All          = 0,
             NewLine      = 1,
             Space        = 2,
             Tabs         = 3,
             SpaceAndTabs = 4,
         };
-        enum class StringFormat : uint32
-        {
+        enum class StringFormat : uint32 {
             SingleQuotes                = 0x00000001, // '...'
             DoubleQuotes                = 0x00000002, // "..."
             Apostrophe                  = 0x00000004, // `...`
@@ -782,8 +980,7 @@ namespace View
             LineContinuityWithBackslash = 0x00000040, // "   \<newline>   "
             All                         = 0xFFFFFFFF, // all possible forms of strings
         };
-        enum class NumberFormat : uint32
-        {
+        enum class NumberFormat : uint32 {
             DecimalOnly           = 0,
             HexFormat0x           = 0x00000001,
             BinFormat0b           = 0x00000002,
@@ -877,25 +1074,17 @@ namespace View
                 return { text, (size_t) size };
             }
         };
-        enum class TokenDataType : uint8
-        {
-            None,
-            String,
-            Number,
-            MetaInformation,
-            Boolean
-        };
-        enum class TokenAlignament : uint32
-        {
+        enum class TokenDataType : uint8 { None, String, Number, MetaInformation, Boolean };
+        enum class TokenAlignament : uint32 {
             None            = 0,
-            AddSpaceBefore  = 0x00000001,    // adds a space on left (except when current token is already at left-most position)
-            AddSpaceAfter   = 0x00000002,    // adds a space on right of the current token
-            NewLineAfter    = 0x00000004,    // adds a new line after the current token
-            NewLineBefore   = 0x00000008,    // makes sure that there is a new (empty) line before previous token and current one
-            StartsOnNewLine = 0x00000010,    // makes sure that current token starts on new line. If already on new line, nothing happens.
-                                             // otherwise adds a new line.
-            AfterPreviousToken = 0x00000020, // make sure that there any space or new line (within the block) between current token
-                                             // and previous token is removed. Both tokens are at on the same line.
+            AddSpaceBefore  = 0x00000001,            // adds a space on left (except when current token is already at left-most position)
+            AddSpaceAfter   = 0x00000002,            // adds a space on right of the current token
+            NewLineAfter    = 0x00000004,            // adds a new line after the current token
+            NewLineBefore   = 0x00000008,            // makes sure that there is a new (empty) line before previous token and current one
+            StartsOnNewLine = 0x00000010,            // makes sure that current token starts on new line. If already on new line, nothing happens.
+                                                     // otherwise adds a new line.
+            AfterPreviousToken = 0x00000020,         // make sure that there any space or new line (within the block) between current token
+                                                     // and previous token is removed. Both tokens are at on the same line.
             IncrementIndentBeforePaint = 0x00000040, // increments the indent of the current line (before painting the token)
             DecrementIndentBeforePaint = 0x00000080, // decrement the indent of the current line (before painting the token)
             ClearIndentBeforePaint     = 0x00000100, // resets current indent to 0 (before painting the token)
@@ -908,8 +1097,7 @@ namespace View
                                          // line and reset the "X" coordonate acording to the block rules.
 
         };
-        enum class TokenColor : uint8
-        {
+        enum class TokenColor : uint8 {
             Comment,
             Number,
             String,
@@ -922,21 +1110,18 @@ namespace View
             Datatype,
             Error,
         };
-        enum class TokenFlags : uint8
-        {
+        enum class TokenFlags : uint8 {
             None                    = 0,
             DisableSimilaritySearch = 0x01,
             Sizeable                = 0x02,
         };
-        enum class BlockAlignament : uint8
-        {
+        enum class BlockAlignament : uint8 {
             ParentBlock,
             ParentBlockWithIndent,
             CurrentToken,
             CurrentTokenWithIndent,
         };
-        enum class BlockFlags : uint16
-        {
+        enum class BlockFlags : uint16 {
             None           = 0,
             EndMarker      = 0x0001,
             ManualCollapse = 0x0002,
@@ -1045,14 +1230,7 @@ namespace View
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenAlignament align);
             Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align);
-            Token Add(
-                  uint32 typeID,
-                  uint32 start,
-                  uint32 end,
-                  TokenColor color,
-                  TokenDataType dataType,
-                  TokenAlignament align,
-                  TokenFlags flags);
+            Token Add(uint32 typeID, uint32 start, uint32 end, TokenColor color, TokenDataType dataType, TokenAlignament align, TokenFlags flags);
             // Token AddErrorToken(uint32 start, uint32 end, ConstString error);
         };
         class CORE_EXPORT BlocksList
@@ -1070,8 +1248,7 @@ namespace View
             Block Add(uint32 start, uint32 end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
             Block Add(Token start, Token end, BlockAlignament align, BlockFlags flags = BlockFlags::None);
         };
-        struct SyntaxManager
-        {
+        struct SyntaxManager {
             const TextParser& text;
             TokensList& tokens;
             BlocksList& blocks;
@@ -1096,16 +1273,14 @@ namespace View
                 return count == 0;
             }
         };
-        struct CORE_EXPORT ParseInterface
-        {
+        struct CORE_EXPORT ParseInterface {
             virtual void GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& str)                         = 0;
             virtual void PreprocessText(TextEditor& editor)                                                            = 0;
             virtual void AnalyzeText(SyntaxManager& syntax)                                                            = 0;
             virtual bool StringToContent(std::u16string_view stringValue, AppCUI::Utils::UnicodeStringBuilder& result) = 0;
             virtual bool ContentToString(std::u16string_view content, AppCUI::Utils::UnicodeStringBuilder& result)     = 0;
         };
-        struct PluginData
-        {
+        struct PluginData {
             TextEditor& editor;
             TokensList& tokens;
             BlocksList& blocks;
@@ -1117,21 +1292,18 @@ namespace View
             {
             }
         };
-        enum class PluginAfterActionRequest
-        {
+        enum class PluginAfterActionRequest {
             None,
             Refresh,
             Rescan,
         };
-        struct CORE_EXPORT Plugin
-        {
+        struct CORE_EXPORT Plugin {
             virtual std::string_view GetName()                         = 0;
             virtual std::string_view GetDescription()                  = 0;
             virtual bool CanBeAppliedOn(const PluginData& data)        = 0;
             virtual PluginAfterActionRequest Execute(PluginData& data) = 0;
         };
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
 
             Settings();
@@ -1140,18 +1312,19 @@ namespace View
             void SetCaseSensitivity(bool ignoreCase);
             void SetMaxWidth(uint32 width);
             void SetMaxTokenSize(Size sz);
+            bool SetName(std::string_view name);
         };
     }; // namespace LexicalViewer
 
     namespace GridViewer
     {
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
 
             Settings();
 
             void SetSeparator(char separator[2]);
+            bool SetName(std::string_view name);
         };
     }; // namespace GridViewer
 
@@ -1159,46 +1332,27 @@ namespace View
     {
         using TypeID = uint32;
 
-        enum class DisassemblyLanguage : uint32
-        {
-            Default,
-            x86,
-            x64,
-            JavaByteCode,
-            IL,
-            Count
-        };
+        enum class DisassemblyLanguage : uint32 { Default, x86, x64, JavaByteCode, Count };
 
-        enum class VariableType : uint32
-        {
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            AsciiZ,
-            Utf16Z,
-            Utf32Z
-        };
+        enum class VariableType : uint32 { UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, AsciiZ, Utf16Z, Utf32Z };
+
+        enum class MemoryMappingType { FunctionMapping, TextMapping };
 
         constexpr TypeID TypeIDError = static_cast<TypeID>(-1);
 
-        struct CORE_EXPORT Settings
-        {
+        struct CORE_EXPORT Settings {
             void* data;
+
+            bool SetName(std::string_view name);
 
             /**
              * \brief Sets the default disassembly language that will be used when an assembly zone will be used with the default option.
              * \param lang The DissasemblyLanguage to use when the Default option will be met.
              */
             void SetDefaultDisassemblyLanguage(DisassemblyLanguage lang);
-            void AddDisassemblyZone(
-                  uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
+            void AddDisassemblyZone(uint64 zoneStart, uint64 zoneSize, uint64 zoneDissasmStartPoint, DisassemblyLanguage lang = DisassemblyLanguage::Default);
 
-            void AddMemoryMapping(uint64 address, std::string_view name);
+            void AddMemoryMapping(uint64 address, std::string_view name, MemoryMappingType mappingType);
             void AddCollapsibleZone(uint64 offset, uint64 size);
 
             /**
@@ -1211,6 +1365,7 @@ namespace View
              * @returns The id of the new data type generated or TypeIDError if there are errors.
              */
             TypeID AddType(std::string_view name, std::string_view definition);
+            void SetOffsetTranslationList(std::initializer_list<std::string_view> list, Reference<BufferViewer::OffsetTranslateInterface> cbk);
 
             // structure view
             void AddVariable(uint64 offset, std::string_view name, VariableType type);
@@ -1231,44 +1386,49 @@ namespace View
         };
     }; // namespace DissasmViewer
 
-    struct CORE_EXPORT WindowInterface
-    {
-        virtual Reference<Object> GetObject()                                                        = 0;
-        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)                                  = 0;
-        virtual bool CreateViewer(const std::string_view& name, BufferViewer::Settings& settings)    = 0;
-        virtual bool CreateViewer(const std::string_view& name, ImageViewer::Settings& settings)     = 0;
-        virtual bool CreateViewer(const std::string_view& name, GridViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(const std::string_view& name, DissasmViewer::Settings& settings)   = 0;
-        virtual bool CreateViewer(const std::string_view& name, TextViewer::Settings& settings)      = 0;
-        virtual bool CreateViewer(const std::string_view& name, ContainerViewer::Settings& settings) = 0;
-        virtual bool CreateViewer(const std::string_view& name, LexicalViewer::Settings& settings)   = 0;
-        virtual Reference<ViewControl> GetCurrentView()                                              = 0;
+    struct CORE_EXPORT WindowInterface {
+        virtual Reference<Object> GetObject()                          = 0;
+        virtual bool AddPanel(Pointer<TabPage> page, bool vertical)    = 0;
+        virtual bool CreateViewer(BufferViewer::Settings& settings)    = 0;
+        virtual bool CreateViewer(ImageViewer::Settings& settings)     = 0;
+        virtual bool CreateViewer(GridViewer::Settings& settings)      = 0;
+        virtual bool CreateViewer(DissasmViewer::Settings& settings)   = 0;
+        virtual bool CreateViewer(TextViewer::Settings& settings)      = 0;
+        virtual bool CreateViewer(ContainerViewer::Settings& settings) = 0;
+        virtual bool CreateViewer(LexicalViewer::Settings& settings)   = 0;
+        virtual Reference<ViewControl> GetCurrentView()                = 0;
+        virtual uint32 GetViewsCount()                                 = 0;
+        virtual Reference<ViewControl> GetViewByIndex(uint32 index)    = 0;
+        virtual bool SetViewByIndex(uint32 index)                      = 0;
 
         template <typename T>
-        inline bool CreateViewer(const std::string_view& name)
+        inline bool CreateViewer(const std::optional<std::string_view> name = {})
         {
-            T settings;
-            return CreateViewer(name, settings);
+            T settings{};
+            if (name.has_value()) {
+                CHECK(settings.SetName(*name), false, "");
+            }
+            return CreateViewer(settings);
         }
+
+        virtual Reference<GView::Utils::SelectionZoneInterface> GetSelectionZoneInterfaceFromViewerCreation(View::BufferViewer::Settings& settings) = 0;
     };
 }; // namespace View
 namespace App
 {
-    enum class OpenMethod
-    {
-        FirstMatch,
-        BestMatch,
-        Select,
-        ForceType
-    };
+    enum class OpenMethod { FirstMatch, BestMatch, Select, ForceType };
     bool CORE_EXPORT Init();
     void CORE_EXPORT Run();
     bool CORE_EXPORT ResetConfiguration();
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "");
-    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName);
-    void CORE_EXPORT OpenBuffer(BufferView buf, const ConstString& name, OpenMethod method, std::string_view typeName = "");
-    void CORE_EXPORT
-    OpenBuffer(BufferView buf, const ConstString& name, const ConstString& path, OpenMethod method, std::string_view typeName = "");
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, OpenMethod method, std::string_view typeName = "", Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenFile(const std::filesystem::path& path, std::string_view typeName, Reference<Window> parent = nullptr);
+    void CORE_EXPORT OpenBuffer(
+          BufferView buf,
+          const ConstString& name,
+          const ConstString& path,
+          OpenMethod method,
+          std::string_view typeName = "",
+          Reference<Window> parent  = nullptr);
     Reference<GView::Object> CORE_EXPORT GetObject(uint32 index);
     uint32 CORE_EXPORT GetObjectsCount();
     std::string_view CORE_EXPORT GetTypePluginName(uint32 index);
@@ -1276,6 +1436,20 @@ namespace App
     uint32 CORE_EXPORT GetTypePluginsCount();
 
 }; // namespace App
+
+namespace Unpack
+{
+    namespace Base64
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace Base64
+    namespace QuotedPrintable
+    {
+        CORE_EXPORT void Encode(BufferView view, Buffer& output);
+        CORE_EXPORT bool Decode(BufferView view, Buffer& output);
+    } // namespace QuotedPrintable
+} // namespace Unpack
 }; // namespace GView
 
 ADD_FLAG_OPERATORS(GView::View::LexicalViewer::StringFormat, AppCUI::uint32);

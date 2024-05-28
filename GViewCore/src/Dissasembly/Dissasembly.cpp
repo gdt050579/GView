@@ -3,19 +3,94 @@
 
 namespace GView::Dissasembly
 {
-bool DissasemblerIntel::Init(bool isx64, bool isLittleEndian)
+void InstructionToInstruction(const cs_insn& insn, Instruction& instruction)
 {
-    if (handle == 0)
-    {
-        this->isX64 = isx64;
-
-        cs_arch arch = CS_ARCH_X86;
-        cs_mode mode = isx64 ? CS_MODE_64 : CS_MODE_32;
-        mode         = (cs_mode) ((uint32) mode | (isLittleEndian ? CS_MODE_LITTLE_ENDIAN : CS_MODE_BIG_ENDIAN));
-
-        const auto result = cs_open(arch, mode, &handle);
-        CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
+    instruction.id      = insn.id;
+    instruction.address = insn.address;
+    instruction.size    = insn.size;
+    memcpy(instruction.bytes, insn.bytes, BYTES_SIZE);
+    memcpy(instruction.mnemonic, insn.mnemonic, MNEMONIC_SIZE);
+    memcpy(instruction.opStr, insn.op_str, OP_STR_SIZE);
+    if (insn.detail != nullptr) {
+        memcpy(instruction.groups, insn.detail->groups, 8);
+        instruction.groupsCount = insn.detail->groups_count;
     }
+}
+
+bool DissasemblerIntel::Init(Design design, Architecture architecture, Endianess endianess)
+{
+    this->design       = design;
+    this->architecture = architecture;
+    this->endianess    = endianess;
+
+    if (handle != 0) {
+        CHECK(cs_close(&handle) == CS_ERR_OK, false, "");
+        handle = 0;
+    }
+
+    cs_arch arch = (cs_arch) 0;
+    cs_mode mode = (cs_mode) 0;
+    switch (design) {
+    case GView::Dissasembly::Design::Intel:
+        arch = CS_ARCH_X86;
+        switch (architecture) {
+        case GView::Dissasembly::Architecture::x86:
+            mode = CS_MODE_32;
+            break;
+        case GView::Dissasembly::Architecture::x64:
+            mode = CS_MODE_64;
+            break;
+        case GView::Dissasembly::Architecture::Invalid:
+        default:
+            break;
+        }
+        switch (endianess) {
+        case GView::Dissasembly::Endianess::Little:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_LITTLE_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Big:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_BIG_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Invalid:
+        default:
+            break;
+        }
+        break;
+    case GView::Dissasembly::Design::ARM:
+        mode = CS_MODE_ARM;
+        switch (architecture) {
+        case GView::Dissasembly::Architecture::x86:
+            arch = CS_ARCH_ARM;
+            break;
+        case GView::Dissasembly::Architecture::x64:
+            arch = CS_ARCH_ARM64;
+            break;
+        case GView::Dissasembly::Architecture::Invalid:
+        default:
+            break;
+        }
+        switch (endianess) {
+        case GView::Dissasembly::Endianess::Little:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_LITTLE_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Big:
+            mode = (cs_mode) (mode | (uint8) CS_MODE_BIG_ENDIAN);
+            break;
+        case GView::Dissasembly::Endianess::Invalid:
+        default:
+            break;
+        }
+        break;
+    case GView::Dissasembly::Design::Invalid:
+    default:
+        break;
+    }
+
+    const auto result = cs_open(arch, mode, &handle);
+    CHECK(result == CS_ERR_OK, false, "Error: %u!", result);
+    const auto resultOption = cs_option(handle, cs_opt_type::CS_OPT_DETAIL, CS_OPT_ON);
+    CHECK(resultOption == CS_ERR_OK, false, "Error: %u!", result);
+
     return true;
 }
 
@@ -23,17 +98,46 @@ bool DissasemblerIntel::DissasembleInstruction(BufferView buf, uint64 va, Instru
 {
     CHECK(handle != 0, false, "");
 
-    cs_insn insn{};
+    cs_detail detail{};
+    cs_insn insn{ .detail = &detail };
 
     auto data   = buf.GetData();
     auto length = buf.GetLength();
 
     uint64 address = va;
     CHECK(cs_disasm_iter(handle, &data, &length, &address, &insn), false, "");
-
-    memcpy(&instruction, &insn, sizeof(instruction));
+    InstructionToInstruction(insn, instruction);
 
     return true;
+}
+
+bool DissasemblerIntel::DissasembleInstructions(BufferView buf, uint64 va, std::vector<Instruction>& instructions)
+{
+    CHECK(handle != 0, false, "");
+
+    cs_detail detail{};
+    cs_insn insn{ .detail = &detail };
+
+    auto data    = buf.GetData();
+    auto length  = buf.GetLength();
+    auto address = va;
+
+    while (cs_disasm_iter(handle, &data, &length, &address, &insn)) {
+        auto& instruction = instructions.emplace_back();
+        InstructionToInstruction(insn, instruction);
+    }
+
+    return true;
+}
+
+std::string_view DissasemblerIntel::GetInstructionGroupName(uint8 groupID) const
+{
+    const auto name = cs_group_name(handle, groupID);
+    if (name == nullptr) {
+        return "";
+    }
+
+    return name;
 }
 
 bool DissasemblerIntel::IsCallInstruction(const Instruction& instruction) const
@@ -62,8 +166,7 @@ bool DissasemblerIntel::IsLJmpInstruction(const Instruction& instruction) const
 
 bool DissasemblerIntel::IsBreakpointInstruction(const Instruction& instruction) const
 {
-    switch (instruction.id)
-    {
+    switch (instruction.id) {
     case X86_INS_INT:
     case X86_INS_INT1:
     case X86_INS_INT3:
@@ -76,27 +179,21 @@ bool DissasemblerIntel::IsBreakpointInstruction(const Instruction& instruction) 
 
 bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruction1, const Instruction& instruction2) const
 {
-    switch (instruction1.id)
-    {
+    switch (instruction1.id) {
     case X86_INS_PUSH:
     case X86_INS_PUSHAW:
     case X86_INS_PUSHAL:
     case X86_INS_PUSHF:
     case X86_INS_PUSHFD:
-    case X86_INS_PUSHFQ:
-    {
+    case X86_INS_PUSHFQ: {
         const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
-        if (this->isX64)
-        {
+        if (architecture == Architecture::x64) {
             CHECK(opStr.starts_with("rsp"), false, "");
-        }
-        else
-        {
+        } else {
             CHECK(opStr.starts_with("esp"), false, "");
         }
 
-        switch (instruction2.id)
-        {
+        switch (instruction2.id) {
         case X86_INS_MOV:
         case X86_INS_MOVABS:
         case X86_INS_MOVAPD:
@@ -151,15 +248,11 @@ bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruct
     case X86_INS_SUBSS:
     case X86_INS_FSUB:
     case X86_INS_FISUB:
-    case X86_INS_FSUBP:
-    {
+    case X86_INS_FSUBP: {
         const std::string_view opStr{ instruction1.opStr, GView::Dissasembly::OP_STR_SIZE };
-        if (this->isX64)
-        {
+        if (architecture == Architecture::x64) {
             CHECK(opStr.starts_with("rsp"), false, "");
-        }
-        else
-        {
+        } else {
             CHECK(opStr.starts_with("esp"), false, "");
         }
 
@@ -167,8 +260,7 @@ bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruct
     }
 
     case X86_INS_ENDBR64:
-    case X86_INS_ENDBR32:
-    {
+    case X86_INS_ENDBR32: {
         CHECK(instruction2.id != X86_INS_RET, false, ""); // function end
         return true;
     }
@@ -179,8 +271,7 @@ bool DissasemblerIntel::AreFunctionStartInstructions(const Instruction& instruct
 
 bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction) const
 {
-    switch (instruction.id)
-    {
+    switch (instruction.id) {
         // case X86_INS_IRET:  // Interrupt return (16-bit operand size).
         // case X86_INS_IRETD: // Interrupt return (32-bit operand size).
         // case X86_INS_IRETQ: // Interrupt return (64-bit operand size).
@@ -199,7 +290,7 @@ bool DissasemblerIntel::IsFunctionEndInstruction(const Instruction& instruction)
 
 DissasemblerIntel::~DissasemblerIntel()
 {
-    CHECKRET(cs_close(&handle), "");
+    CHECKRET(cs_close(&handle) == CS_ERR_OK, "");
     handle = 0;
 }
 } // namespace GView::Dissasembly

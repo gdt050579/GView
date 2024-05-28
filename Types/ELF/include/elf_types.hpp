@@ -475,23 +475,24 @@ constexpr Elf_Word SHN_XINDEX    = 0xFFFF;
 constexpr Elf_Word SHN_HIRESERVE = 0xFFFF;
 
 // Section types
-constexpr Elf_Word SHT_NULL           = 0;
-constexpr Elf_Word SHT_PROGBITS       = 1;
-constexpr Elf_Word SHT_SYMTAB         = 2;
-constexpr Elf_Word SHT_STRTAB         = 3;
-constexpr Elf_Word SHT_RELA           = 4;
-constexpr Elf_Word SHT_HASH           = 5;
-constexpr Elf_Word SHT_DYNAMIC        = 6;
-constexpr Elf_Word SHT_NOTE           = 7;
-constexpr Elf_Word SHT_NOBITS         = 8;
-constexpr Elf_Word SHT_REL            = 9;
-constexpr Elf_Word SHT_SHLIB          = 10;
-constexpr Elf_Word SHT_DYNSYM         = 11;
-constexpr Elf_Word SHT_INIT_ARRAY     = 14;
-constexpr Elf_Word SHT_FINI_ARRAY     = 15;
-constexpr Elf_Word SHT_PREINIT_ARRAY  = 16;
-constexpr Elf_Word SHT_GROUP          = 17;
-constexpr Elf_Word SHT_SYMTAB_SHNDX   = 18;
+constexpr Elf_Word SHT_NULL           = 0;  /* Section header table entry unused */
+constexpr Elf_Word SHT_PROGBITS       = 1;  /* Program data */
+constexpr Elf_Word SHT_SYMTAB         = 2;  /* Symbol table */
+constexpr Elf_Word SHT_STRTAB         = 3;  /* String table */
+constexpr Elf_Word SHT_RELA           = 4;  /* Relocation entries with addends */
+constexpr Elf_Word SHT_HASH           = 5;  /* Symbol hash table */
+constexpr Elf_Word SHT_DYNAMIC        = 6;  /* Dynamic linking information */
+constexpr Elf_Word SHT_NOTE           = 7;  /* Notes */
+constexpr Elf_Word SHT_NOBITS         = 8;  /* Program space with no data (bss) */
+constexpr Elf_Word SHT_REL            = 9;  /* Relocation entries, no addends */
+constexpr Elf_Word SHT_SHLIB          = 10; /* Reserved */
+constexpr Elf_Word SHT_DYNSYM         = 11; /* Dynamic linker symbol table */
+constexpr Elf_Word SHT_INIT_ARRAY     = 14; /* Array of constructors */
+constexpr Elf_Word SHT_FINI_ARRAY     = 15; /* Array of destructors */
+constexpr Elf_Word SHT_PREINIT_ARRAY  = 16; /* Array of pre-constructors */
+constexpr Elf_Word SHT_GROUP          = 17; /* Section group */
+constexpr Elf_Word SHT_SYMTAB_SHNDX   = 18; /* Extended section indices */
+constexpr Elf_Word SHT_RELR           = 19; /* RELR relative relocations */
 constexpr Elf_Word SHT_GNU_ATTRIBUTES = 0x6ffffff5;
 constexpr Elf_Word SHT_GNU_HASH       = 0x6ffffff6;
 constexpr Elf_Word SHT_GNU_LIBLIST    = 0x6ffffff7;
@@ -969,58 +970,61 @@ constexpr Elf_Word PF_NOEMUTRAMP = (1 << 13); /* Disable EMUTRAMP */
 constexpr Elf_Word PF_RANDMMAP   = (1 << 14); /* Enable  RANDMMAP */
 constexpr Elf_Word PF_NORANDMMAP = (1 << 15); /* Disable RANDMMAP */
 
-// Dynamic Array Tags
-constexpr Elf_Word DT_NULL            = 0;
-constexpr Elf_Word DT_NEEDED          = 1;
-constexpr Elf_Word DT_PLTRELSZ        = 2;
-constexpr Elf_Word DT_PLTGOT          = 3;
-constexpr Elf_Word DT_HASH            = 4;
-constexpr Elf_Word DT_STRTAB          = 5;
-constexpr Elf_Word DT_SYMTAB          = 6;
-constexpr Elf_Word DT_RELA            = 7;
-constexpr Elf_Word DT_RELASZ          = 8;
-constexpr Elf_Word DT_RELAENT         = 9;
-constexpr Elf_Word DT_STRSZ           = 10;
-constexpr Elf_Word DT_SYMENT          = 11;
-constexpr Elf_Word DT_INIT            = 12;
-constexpr Elf_Word DT_FINI            = 13;
-constexpr Elf_Word DT_SONAME          = 14;
-constexpr Elf_Word DT_RPATH           = 15;
-constexpr Elf_Word DT_SYMBOLIC        = 16;
-constexpr Elf_Word DT_REL             = 17;
-constexpr Elf_Word DT_RELSZ           = 18;
-constexpr Elf_Word DT_RELENT          = 19;
-constexpr Elf_Word DT_PLTREL          = 20;
-constexpr Elf_Word DT_DEBUG           = 21;
-constexpr Elf_Word DT_TEXTREL         = 22;
-constexpr Elf_Word DT_JMPREL          = 23;
-constexpr Elf_Word DT_BIND_NOW        = 24;
-constexpr Elf_Word DT_INIT_ARRAY      = 25;
-constexpr Elf_Word DT_FINI_ARRAY      = 26;
-constexpr Elf_Word DT_INIT_ARRAYSZ    = 27;
-constexpr Elf_Word DT_FINI_ARRAYSZ    = 28;
-constexpr Elf_Word DT_RUNPATH         = 29;
-constexpr Elf_Word DT_FLAGS           = 30;
-constexpr Elf_Word DT_ENCODING        = 32;
-constexpr Elf_Word DT_PREINIT_ARRAY   = 32;
-constexpr Elf_Word DT_PREINIT_ARRAYSZ = 33;
-constexpr Elf_Word DT_MAXPOSTAGS      = 34;
-constexpr Elf_Word DT_GNU_HASH        = 0x6ffffef5;
+// Dynamic Array Tags (maybe also take a look here: https://sourceware.org/git/?p=glibc.git;a=blob;f=elf/elf.h)
+constexpr Elf_Word DT_NULL            = 0;          /* Marks end of dynamic section */
+constexpr Elf_Word DT_NEEDED          = 1;          /* Name of needed library */
+constexpr Elf_Word DT_PLTRELSZ        = 2;          /* Size in bytes of PLT relocs */
+constexpr Elf_Word DT_PLTGOT          = 3;          /* Processor defined value */
+constexpr Elf_Word DT_HASH            = 4;          /* Address of symbol hash table */
+constexpr Elf_Word DT_STRTAB          = 5;          /* Address of string table */
+constexpr Elf_Word DT_SYMTAB          = 6;          /* Address of symbol table */
+constexpr Elf_Word DT_RELA            = 7;          /* Address of Rela relocs */
+constexpr Elf_Word DT_RELASZ          = 8;          /* Total size of Rela relocs */
+constexpr Elf_Word DT_RELAENT         = 9;          /* Size of one Rela reloc */
+constexpr Elf_Word DT_STRSZ           = 10;         /* Size of string table */
+constexpr Elf_Word DT_SYMENT          = 11;         /* Size of one symbol table entry */
+constexpr Elf_Word DT_INIT            = 12;         /* Address of init function */
+constexpr Elf_Word DT_FINI            = 13;         /* Address of termination function */
+constexpr Elf_Word DT_SONAME          = 14;         /* Name of shared object */
+constexpr Elf_Word DT_RPATH           = 15;         /* Library search path (deprecated) */
+constexpr Elf_Word DT_SYMBOLIC        = 16;         /* Start symbol search here */
+constexpr Elf_Word DT_REL             = 17;         /* Address of Rel relocs */
+constexpr Elf_Word DT_RELSZ           = 18;         /* Total size of Rel relocs */
+constexpr Elf_Word DT_RELENT          = 19;         /* Size of one Rel reloc */
+constexpr Elf_Word DT_PLTREL          = 20;         /* Type of reloc in PLT */
+constexpr Elf_Word DT_DEBUG           = 21;         /* For debugging; unspecified */
+constexpr Elf_Word DT_TEXTREL         = 22;         /* Reloc might modify .text */
+constexpr Elf_Word DT_JMPREL          = 23;         /* Address of PLT relocs */
+constexpr Elf_Word DT_BIND_NOW        = 24;         /* Process relocations of object */
+constexpr Elf_Word DT_INIT_ARRAY      = 25;         /* Array with addresses of init fct */
+constexpr Elf_Word DT_FINI_ARRAY      = 26;         /* Array with addresses of fini fct */
+constexpr Elf_Word DT_INIT_ARRAYSZ    = 27;         /* Size in bytes of DT_INIT_ARRAY */
+constexpr Elf_Word DT_FINI_ARRAYSZ    = 28;         /* Size in bytes of DT_FINI_ARRAY */
+constexpr Elf_Word DT_RUNPATH         = 29;         /* Library search path */
+constexpr Elf_Word DT_FLAGS           = 30;         /* Flags for the object being loaded */
+constexpr Elf_Word DT_ENCODING        = 32;         /* Start of encoded range */
+constexpr Elf_Word DT_PREINIT_ARRAY   = 32;         /* Array with addresses of preinit fct*/
+constexpr Elf_Word DT_PREINIT_ARRAYSZ = 33;         /* size in bytes of DT_PREINIT_ARRAY */
+constexpr Elf_Word DT_SYMTAB_SHNDX    = 34;         /* Address of SYMTAB_SHNDX section */
+constexpr Elf_Word DT_RELRSZ          = 35;         /* Total size of RELR relative relocations */
+constexpr Elf_Word DT_RELR            = 36;         /* Address of RELR relative relocations */
+constexpr Elf_Word DT_RELRENT         = 37;         /* Size of one RELR relative relocaction */
+constexpr Elf_Word DT_NUM             = 38;         /* Number used */
+constexpr Elf_Word DT_GNU_HASH        = 0x6ffffef5; /* GNU-style hash table.  */
 constexpr Elf_Word DT_VERSYM          = 0x6ffffff0;
-constexpr Elf_Word DT_FLAGS_1         = 0x6ffffffb;
-constexpr Elf_Word DT_VERNEED         = 0x6ffffffe;
-constexpr Elf_Word DT_VERNEEDNUM      = 0x6fffffff;
-constexpr Elf_Word DT_LOOS            = 0x6000000D;
-constexpr Elf_Word DT_HIOS            = 0x6ffff000;
-constexpr Elf_Word DT_LOPROC          = 0x70000000;
-constexpr Elf_Word DT_HIPROC          = 0x7FFFFFFF;
+constexpr Elf_Word DT_VERNEED         = 0x6ffffffe; /* Address of table with needed versions */
+constexpr Elf_Word DT_VERNEEDNUM      = 0x6fffffff; /* Number of needed versions */
+constexpr Elf_Word DT_LOOS            = 0x6000000D; /* Start of OS-specific */
+constexpr Elf_Word DT_HIOS            = 0x6ffff000; /* End of OS-specific */
+constexpr Elf_Word DT_LOPROC          = 0x70000000; /* Start of processor-specific */
+constexpr Elf_Word DT_HIPROC          = 0x7FFFFFFF; /* End of processor-specific */
 
 // DT_FLAGS values
-constexpr Elf_Word DF_ORIGIN     = 0x1;
-constexpr Elf_Word DF_SYMBOLIC   = 0x2;
-constexpr Elf_Word DF_TEXTREL    = 0x4;
-constexpr Elf_Word DF_BIND_NOW   = 0x8;
-constexpr Elf_Word DF_STATIC_TLS = 0x10;
+constexpr Elf_Word DF_ORIGIN     = 0x1;  /* Object may use DF_ORIGIN */
+constexpr Elf_Word DF_SYMBOLIC   = 0x2;  /* Symbol resolutions starts here */
+constexpr Elf_Word DF_TEXTREL    = 0x4;  /* Object contains text relocations */
+constexpr Elf_Word DF_BIND_NOW   = 0x8;  /* No lazy binding for this object */
+constexpr Elf_Word DF_STATIC_TLS = 0x10; /* Module uses the static TLS model */
 
 // ELF file header
 struct Elf32_Ehdr
@@ -1030,34 +1034,34 @@ struct Elf32_Ehdr
     Elf_Half e_type;                  /* This member of the structure identifies the object file type */
     Elf_Half e_machine;               /* This member specifies the required architecture for an individual file. */
     Elf_Word e_version;               /* This member identifies the file version. */
-    Elf32_Addr e_entry; /* This member gives the virtual address to which the system first transfers control, thus starting the process. If
-                           the file has no associated entry point, this member holds zero. */
-    Elf32_Off e_phoff;  /* This member holds the program header table's file offset in bytes. If the file has no program header table, this
-                           member holds zero. */
-    Elf32_Off e_shoff;  /* This member holds the section header table's file offset in bytes.  If the file has no section header table, this
-                           member holds zero. */
-    Elf_Word e_flags;   /* This member holds processor-specific flags associated with the file.  Flag names take the form EF_`machine_flag'.
-                           Currently, no flags have been defined. */
-    Elf_Half e_ehsize;  /* This member holds the ELF header's size in bytes. */
-    Elf_Half e_phentsize; /* This member holds the size in bytes of one entry in the file's program header table; all entries are the same
-                             size. */
-    Elf_Half e_phnum; /* This member holds the number of entries in the program header table. Thus the product of e_phentsize and e_phnum
-             gives the table's size in bytes. If a file has no program header, e_phnum holds the value zero. If the number of entries in the
-             program header table is larger than or equal to PN_XNUM (0xffff), this member holds PN_XNUM (0xffff) and the real number of
-             entries in the program header table is held in the sh_info member of the initial entry in section header table.  Otherwise, the
-             sh_info member of the initial entry contains the value zero. */
-    Elf_Half e_shentsize; /* This member holds a sections header's size in bytes. A section header is one entry in the section header table;
-                             all entries are the same size.*/
-    Elf_Half e_shnum;    /* This member holds the number of entries in the section header table. Thus the product of e_shentsize and e_shnum
-                 gives the section header table's size in bytes.  If a file has no section header table, e_shnum holds the value of zero.
-                 If the number of entries in the section header table is larger than or equal to SHN_LORESERVE (0xff00), e_shnum holds the
-                 value zero and the real number of entries in the section header table is held in the sh_size member of the initial entry in
-                 section header table.  Otherwise, the sh_size member of the initial entry in the section header table holds the value zero. */
-    Elf_Half e_shstrndx; /* This member holds the section header table index of the entry associated with the section name string table. If
-              the file has no section name string table, this member holds the value SHN_UNDEF. If the index of section name string table
-              section is larger than or equal to SHN_LORESERVE (0xff00), this member holds SHN_XINDEX (0xffff) and the real index of the
-              section name string table section is held in the sh_link member of the initial entry in section header table. Otherwise, the
-              sh_link member of the initial entry in section header table contains the value zero. */
+    Elf32_Addr e_entry;               /* This member gives the virtual address to which the system first transfers control, thus starting the process. If
+                                         the file has no associated entry point, this member holds zero. */
+    Elf32_Off e_phoff;                /* This member holds the program header table's file offset in bytes. If the file has no program header table, this
+                                         member holds zero. */
+    Elf32_Off e_shoff;                /* This member holds the section header table's file offset in bytes.  If the file has no section header table, this
+                                         member holds zero. */
+    Elf_Word e_flags;                 /* This member holds processor-specific flags associated with the file.  Flag names take the form EF_`machine_flag'.
+                                         Currently, no flags have been defined. */
+    Elf_Half e_ehsize;                /* This member holds the ELF header's size in bytes. */
+    Elf_Half e_phentsize;             /* This member holds the size in bytes of one entry in the file's program header table; all entries are the same
+                                         size. */
+    Elf_Half e_phnum;                 /* This member holds the number of entries in the program header table. Thus the product of e_phentsize and e_phnum
+                             gives the table's size in bytes. If a file has no program header, e_phnum holds the value zero. If the number of entries in the
+                             program header table is larger than or equal to PN_XNUM (0xffff), this member holds PN_XNUM (0xffff) and the real number of
+                             entries in the program header table is held in the sh_info member of the initial entry in section header table.  Otherwise, the
+                             sh_info member of the initial entry contains the value zero. */
+    Elf_Half e_shentsize;             /* This member holds a sections header's size in bytes. A section header is one entry in the section header table;
+                                         all entries are the same size.*/
+    Elf_Half e_shnum;                 /* This member holds the number of entries in the section header table. Thus the product of e_shentsize and e_shnum
+                              gives the section header table's size in bytes.  If a file has no section header table, e_shnum holds the value of zero.
+                              If the number of entries in the section header table is larger than or equal to SHN_LORESERVE (0xff00), e_shnum holds the
+                              value zero and the real number of entries in the section header table is held in the sh_size member of the initial entry in
+                              section header table.  Otherwise, the sh_size member of the initial entry in the section header table holds the value zero. */
+    Elf_Half e_shstrndx;              /* This member holds the section header table index of the entry associated with the section name string table. If
+                           the file has no section name string table, this member holds the value SHN_UNDEF. If the index of section name string table
+                           section is larger than or equal to SHN_LORESERVE (0xff00), this member holds SHN_XINDEX (0xffff) and the real index of the
+                           section name string table section is held in the sh_link member of the initial entry in section header table. Otherwise, the
+                           sh_link member of the initial entry in section header table contains the value zero. */
 };
 
 struct Elf64_Ehdr
@@ -1067,87 +1071,81 @@ struct Elf64_Ehdr
     Elf_Half e_type;                  /* This member of the structure identifies the object file type */
     Elf_Half e_machine;               /* This member specifies the required architecture for an individual file. */
     Elf_Word e_version;               /* This member identifies the file version. */
-    Elf64_Addr e_entry; /* This member gives the virtual address to which the system first transfers control, thus starting the process. If
-                            the file has no associated entry point, this member holds zero. */
-    Elf64_Off e_phoff;  /* This member holds the program header table's file offset in bytes. If the file has no program header table, this
-                           member holds zero. */
-    Elf64_Off e_shoff;  /* This member holds the section header table's file offset in bytes.  If the file has no section header table, this
-                             member holds zero. */
-    Elf_Word e_flags;   /* This member holds processor-specific flags associated with the file.  Flag names take the form EF_`machine_flag'.
-                             Currently, no flags have been defined. */
-    Elf_Half e_ehsize;  /* This member holds the ELF header's size in bytes. */
-    Elf_Half e_phentsize; /* This member holds the size in bytes of one entry in the file's program header table; all entries are the same
-                             size. */
-    Elf_Half e_phnum; /* This member holds the number of entries in the program header table. Thus the product of e_phentsize and e_phnum
-              gives the table's size in bytes. If a file has no program header, e_phnum holds the value zero. If the number of entries in
-              the program header table is larger than or equal to PN_XNUM (0xffff), this member holds PN_XNUM (0xffff) and the real number
-              of entries in the program header table is held in the sh_info member of the initial entry in section header table.  Otherwise,
-              the sh_info member of the initial entry contains the value zero. */
-    Elf_Half e_shentsize; /* This member holds a sections header's size in bytes. A section header is one entry in the section header table;
-                             all entries are the same size.*/
-    Elf_Half
-          e_shnum;       /* This member holds the number of entries in the section header table. Thus the product of e_shentsize and e_shnum
-                  gives the section header table's size in bytes.  If a file has no section header table, e_shnum holds the value of zero.
-                  If the number of entries in the section header table is larger than or equal to SHN_LORESERVE (0xff00), e_shnum holds the
-                  value zero and the real number of entries in the section header table is held in the sh_size member of the initial entry in
-                  section header table.  Otherwise, the sh_size member of the initial entry in the section header table holds the value zero. */
-    Elf_Half e_shstrndx; /* This member holds the section header table index of the entry associated with the section name string table. If
-              the file has no section name string table, this member holds the value SHN_UNDEF. If the index of section name string table
-              section is larger than or equal to SHN_LORESERVE (0xff00), this member holds SHN_XINDEX (0xffff) and the real index of the
-              section name string table section is held in the sh_link member of the initial entry in section header table. Otherwise, the
-              sh_link member of the initial entry in section header table contains the value zero. */
+    Elf64_Addr e_entry;               /* This member gives the virtual address to which the system first transfers control, thus starting the process. If
+                                          the file has no associated entry point, this member holds zero. */
+    Elf64_Off e_phoff;                /* This member holds the program header table's file offset in bytes. If the file has no program header table, this
+                                         member holds zero. */
+    Elf64_Off e_shoff;                /* This member holds the section header table's file offset in bytes.  If the file has no section header table, this
+                                           member holds zero. */
+    Elf_Word e_flags;                 /* This member holds processor-specific flags associated with the file.  Flag names take the form EF_`machine_flag'.
+                                           Currently, no flags have been defined. */
+    Elf_Half e_ehsize;                /* This member holds the ELF header's size in bytes. */
+    Elf_Half e_phentsize;             /* This member holds the size in bytes of one entry in the file's program header table; all entries are the same
+                                         size. */
+    Elf_Half e_phnum;                 /* This member holds the number of entries in the program header table. Thus the product of e_phentsize and e_phnum
+                              gives the table's size in bytes. If a file has no program header, e_phnum holds the value zero. If the number of entries in
+                              the program header table is larger than or equal to PN_XNUM (0xffff), this member holds PN_XNUM (0xffff) and the real number
+                              of entries in the program header table is held in the sh_info member of the initial entry in section header table.  Otherwise,
+                              the sh_info member of the initial entry contains the value zero. */
+    Elf_Half e_shentsize;             /* This member holds a sections header's size in bytes. A section header is one entry in the section header table;
+                                         all entries are the same size.*/
+    Elf_Half e_shnum;                 /* This member holds the number of entries in the section header table. Thus the product of e_shentsize and e_shnum
+                               gives the section header table's size in bytes.  If a file has no section header table, e_shnum holds the value of zero.
+                               If the number of entries in the section header table is larger than or equal to SHN_LORESERVE (0xff00), e_shnum holds the
+                               value zero and the real number of entries in the section header table is held in the sh_size member of the initial entry in
+                               section header table.  Otherwise, the sh_size member of the initial entry in the section header table holds the value zero. */
+    Elf_Half e_shstrndx;              /* This member holds the section header table index of the entry associated with the section name string table. If
+                           the file has no section name string table, this member holds the value SHN_UNDEF. If the index of section name string table
+                           section is larger than or equal to SHN_LORESERVE (0xff00), this member holds SHN_XINDEX (0xffff) and the real index of the
+                           section name string table section is held in the sh_link member of the initial entry in section header table. Otherwise, the
+                           sh_link member of the initial entry in section header table contains the value zero. */
 };
 
 // Section header
 struct Elf32_Shdr
 {
-    Elf_Word sh_name; /* This member specifies the name of the section. Its value is an index into the section header string table section,
-                         giving the location of a null-terminated string. */
-    Elf_Word sh_type; /* This member categorizes the section's contents and semantics. */
-    Elf_Word
-          sh_flags;     /* Sections support one-bit flags that describe miscellaneous attributes. If a flag bit is set in sh_flags, the
-               attribute is "on" for the section.  Otherwise, the attribute is "off" or does not apply. Undefined attributes are set to zero. */
-    Elf32_Addr sh_addr; /* If this section appears in the memory image of a process, this member holds the address at which the section's
-                           first byte should reside. Otherwise, the member contains zero. */
-    Elf32_Off
-          sh_offset;  /* This member's value holds the byte offset from the beginning of the file to the first byte in the section. One
-           section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
-    Elf_Word sh_size; /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
-              bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */
-    Elf_Word sh_link; /* This member holds a section header table index link, whose interpretation depends on the section type. */
-    Elf_Word sh_info; /* This member holds extra information, whose interpretation depends on the section type. */
+    Elf_Word sh_name;      /* This member specifies the name of the section. Its value is an index into the section header string table section,
+                              giving the location of a null-terminated string. */
+    Elf_Word sh_type;      /* This member categorizes the section's contents and semantics. */
+    Elf_Word sh_flags;     /* Sections support one-bit flags that describe miscellaneous attributes. If a flag bit is set in sh_flags, the
+                  attribute is "on" for the section.  Otherwise, the attribute is "off" or does not apply. Undefined attributes are set to zero. */
+    Elf32_Addr sh_addr;    /* If this section appears in the memory image of a process, this member holds the address at which the section's
+                              first byte should reside. Otherwise, the member contains zero. */
+    Elf32_Off sh_offset;   /* This member's value holds the byte offset from the beginning of the file to the first byte in the section. One
+                section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
+    Elf_Word sh_size;      /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
+                   bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */
+    Elf_Word sh_link;      /* This member holds a section header table index link, whose interpretation depends on the section type. */
+    Elf_Word sh_info;      /* This member holds extra information, whose interpretation depends on the section type. */
     Elf_Word sh_addralign; /* Some sections have address alignment constraints. If a section holds a doubleword, the system must ensure
               doubleword alignment for the entire section. That is, the value of sh_addr must be congruent to zero, modulo the value of
               sh_addralign. Only zero and positive integral powers of two are allowed. The value 0 or 1 means that the section has no
               alignment constraints. */
-    Elf_Word sh_entsize; /* Some sections hold a table of fixed-sized entries, such as a symbol table. For such a section, this member gives
-              the size in bytes for each entry. This member contains zero if the section does not hold a table of fixed-size entries. */
+    Elf_Word sh_entsize;   /* Some sections hold a table of fixed-sized entries, such as a symbol table. For such a section, this member gives
+                the size in bytes for each entry. This member contains zero if the section does not hold a table of fixed-size entries. */
 };
 
 struct Elf64_Shdr
 {
-    Elf_Word sh_name; /* This member specifies the name of the section. Its value is an index into the section header string table section,
-                         giving the location of a null-terminated string. */
-    Elf_Word sh_type; /* This member categorizes the section's contents and semantics. */
-    Elf_Xword
-          sh_flags;     /* Sections support one-bit flags that describe miscellaneous attributes. If a flag bit is set in sh_flags, the
-               attribute is "on" for the section.  Otherwise, the attribute is "off" or does not apply. Undefined attributes are set to zero. */
-    Elf64_Addr sh_addr; /* If this section appears in the memory image of a process, this member holds the address at which the section's
-                           first byte should reside. Otherwise, the member contains zero. */
-    Elf64_Off
-          sh_offset;   /* This member's value holds the byte offset from the beginning of the file to the first byte in the section.One
-         section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
-    Elf_Xword sh_size; /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
-              bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */
-    Elf_Word sh_link;  /* This member holds a section header table index link, whose interpretation depends on the section type. */
-    Elf_Word sh_info;  /* This member holds extra information, whose interpretation depends on the section type. */
+    Elf_Word sh_name;       /* This member specifies the name of the section. Its value is an index into the section header string table section,
+                               giving the location of a null-terminated string. */
+    Elf_Word sh_type;       /* This member categorizes the section's contents and semantics. */
+    Elf_Xword sh_flags;     /* Sections support one-bit flags that describe miscellaneous attributes. If a flag bit is set in sh_flags, the
+                   attribute is "on" for the section.  Otherwise, the attribute is "off" or does not apply. Undefined attributes are set to zero. */
+    Elf64_Addr sh_addr;     /* If this section appears in the memory image of a process, this member holds the address at which the section's
+                               first byte should reside. Otherwise, the member contains zero. */
+    Elf64_Off sh_offset;    /* This member's value holds the byte offset from the beginning of the file to the first byte in the section.One
+              section type, SHT_NOBITS, occupies no space in the file, and its sh_offset member locates the conceptual placement in the file. */
+    Elf_Xword sh_size;      /* This member holds the section's size in bytes. Unless the section type is SHT_NOBITS, the section occupies sh_size
+                   bytes in the file. A section of type SHT_NOBITS may have a nonzero size, but it occupies no space in the file. */
+    Elf_Word sh_link;       /* This member holds a section header table index link, whose interpretation depends on the section type. */
+    Elf_Word sh_info;       /* This member holds extra information, whose interpretation depends on the section type. */
     Elf_Xword sh_addralign; /* Some sections have address alignment constraints. If a section holds a doubleword, the system must ensure
               doubleword alignment for the entire section. That is, the value of sh_addr must be congruent to zero, modulo the value of
               sh_addralign. Only zero and positive integral powers of two are allowed. The value 0 or 1 means that the section has no
               alignment constraints. */
-    Elf_Xword
-          sh_entsize; /* Some sections hold a table of fixed-sized entries, such as a symbol table. For such a section, this member gives
-          the size in bytes for each entry. This member contains zero if the section does not hold a table of fixed-size entries. */
+    Elf_Xword sh_entsize;   /* Some sections hold a table of fixed-sized entries, such as a symbol table. For such a section, this member gives
+                the size in bytes for each entry. This member contains zero if the section does not hold a table of fixed-size entries. */
 };
 
 /* Program segment header.  */
