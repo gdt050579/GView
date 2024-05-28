@@ -279,7 +279,25 @@ namespace Type
                 virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
 
+            class ConstPropagation : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
             class RemoveComments : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class MarkAlwaysTrue : public GView::View::LexicalViewer::Plugin
             {
               public:
                 virtual std::string_view GetName() override;
@@ -328,7 +346,9 @@ namespace Type
                 Plugins::AddStrings addStrings;
                 Plugins::ReverseStrings reverseStrings;
                 Plugins::ReplaceConstants replaceConstants;
+                Plugins::ConstPropagation constPropagation;
                 Plugins::RemoveComments removeComments;
+                Plugins::MarkAlwaysTrue markAlwaysTrue;
             } plugins;
             JSFile();
             virtual ~JSFile()

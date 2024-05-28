@@ -1,4 +1,6 @@
 target_sources(JS PRIVATE AddStrings.cpp
+                ConstPropagation.cpp
 		ReplaceConstants.cpp
 		ReverseStrings.cpp
-		RemoveComments.cpp)
+		RemoveComments.cpp
+		MarkAlwaysTrue.cpp)

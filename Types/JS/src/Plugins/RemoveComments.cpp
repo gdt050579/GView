@@ -15,9 +15,9 @@ std::string_view RemoveComments::GetDescription()
 bool RemoveComments::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
 {
     // At least one comment must be present
-    auto len = std::min<>(data.tokens.Len(), data.endIndex);
+    auto end = std::min<>(data.tokens.Len(), data.endIndex);
 
-    for (auto index = data.startIndex; index < len; index++)
+    for (auto index = data.startIndex; index < end; index++)
     {
         if (data.tokens[index].GetTypeID(TokenType::None) == TokenType::Comment)
         {
@@ -28,20 +28,17 @@ bool RemoveComments::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
 }
 GView::View::LexicalViewer::PluginAfterActionRequest RemoveComments::Execute(GView::View::LexicalViewer::PluginData& data)
 {
-    auto len   = std::min<>(data.tokens.Len(), data.endIndex);  
-    auto index = static_cast<int32>(len) - 1;
+    auto end   = std::min<>(data.tokens.Len(), data.endIndex);
+    auto index = static_cast<int32>(end) - 1;
 
-    while (index >= static_cast<int32>(data.startIndex))
-    {
+    while (index >= static_cast<int32>(data.startIndex)) {
         auto token = data.tokens[index];
         if (!token.IsValid())
             break;
-        if (token.GetTypeID(TokenType::None) == TokenType::Comment)
-        {
+        if (token.GetTypeID(TokenType::None) == TokenType::Comment) {
             auto start = token.GetTokenStartOffset();
             auto end   = token.GetTokenEndOffset();
-            if ((start.has_value()) && (end.has_value()))
-            {
+            if ((start.has_value()) && (end.has_value())) {
                 data.editor.Replace(start.value(), end.value() - start.value(), " ");
             }
         }

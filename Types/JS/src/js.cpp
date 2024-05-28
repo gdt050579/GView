@@ -33,9 +33,11 @@ extern "C"
         settings.AddPlugin(&js->plugins.addStrings);
         settings.AddPlugin(&js->plugins.reverseStrings);
         settings.AddPlugin(&js->plugins.replaceConstants);
+        settings.AddPlugin(&js->plugins.constPropagation);
         settings.AddPlugin(&js->plugins.removeComments);
+        settings.AddPlugin(&js->plugins.markAlwaysTrue);
 
-        win->CreateViewer("Lexical", settings);
+        win->CreateViewer(settings);
 
         win->CreateViewer<TextViewer::Settings>("Text View");
         win->CreateViewer<BufferViewer::Settings>("Buffer View");
