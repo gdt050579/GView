@@ -30,6 +30,7 @@ extern "C"
 
         settings.SetMaxTokenSize({ 30u, 5u });
 
+        settings.AddPlugin(&js->plugins.buildAST);
         settings.AddPlugin(&js->plugins.addStrings);
         settings.AddPlugin(&js->plugins.reverseStrings);
         settings.AddPlugin(&js->plugins.replaceConstants);

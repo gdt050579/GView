@@ -1,4 +1,5 @@
-target_sources(JS PRIVATE AddStrings.cpp
+target_sources(JS PRIVATE BuildAST.cpp
+		AddStrings.cpp
                 ConstPropagation.cpp
 		ReplaceConstants.cpp
 		ReverseStrings.cpp
