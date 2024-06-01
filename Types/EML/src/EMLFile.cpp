@@ -8,6 +8,46 @@ EMLFile::EMLFile()
 {
 }
 
+bool EMLFile::ProcessData()
+{
+    unicodeString.Set(obj->GetData().GetEntireFile());
+    TextParser text(unicodeString.ToStringView());
+
+    itemsIndex = 0;
+    items.clear();
+
+    ParsePart(text, 0, text.Len());
+    if (items.empty())
+        return false;
+
+    uint32 modeNr = 1, attachmentsNr = 1;
+    for (auto& itemData : items) {
+        itemData.contentType = itemData.leafNode ? contentType : ExtractContentType(text, itemData.startOffset, itemData.startOffset + itemData.dataLength);
+        itemData.identifier  = GetIdentifierFromContentType(itemData.contentType);
+        if (!itemData.identifier.empty())
+            continue;
+        if (itemData.contentType.starts_with(u"multipart")) {
+            itemData.identifier = u"body message";
+        } else if (itemData.contentType.starts_with(u"application")) {
+            LocalString<32> attachment = {};
+            attachment.SetFormat("attachment %u", attachmentsNr);
+            LocalUnicodeStringBuilder<32> sb = {};
+            sb.Set(attachment.GetText());
+            itemData.identifier = sb.ToStringView();
+            attachmentsNr++;
+        } else {
+            LocalString<32> mode = {};
+            mode.SetFormat("mode %u", modeNr);
+            LocalUnicodeStringBuilder<32> sb = {};
+            sb.Set(mode.GetText());
+            itemData.identifier = sb.ToStringView();
+            modeNr++;
+        }
+    }
+
+    return true;
+}
+
 void EMLFile::ExtractFieldNameAndBody(TextParser text, uint32& start, uint32& end, std::u16string& fieldName, std::u16string& fieldBody)
 {
     // header-field name
@@ -45,11 +85,6 @@ std::u16string EMLFile::ExtractContentType(TextParser text, uint32 start, uint32
 
 bool EMLFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
-    //auto temp = parent.GetData<EML_Item_Record>();
-
-    unicodeString.Add(obj->GetData().GetEntireFile());
-    TextParser text(unicodeString.ToStringView());
-
     itemsIndex = 0;
     return true;
 }
@@ -84,7 +119,7 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     auto itemData = item.GetData<EML_Item_Record>();
 
     TextParser text(unicodeString.ToStringView());
-    auto currentContentType = ExtractContentType(text, itemData->startIndex, itemData->startIndex + itemData->dataLength);
+    auto currentContentType = ExtractContentType(text, itemData->startOffset, itemData->startOffset + itemData->dataLength);
 
     auto bufferView = obj->GetData().GetEntireFile();
     BufferView itemBufferView(bufferView.GetData() + itemData->startOffset, itemData->dataLength);
@@ -101,14 +136,26 @@ void EMLFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
 
         if (encodingHeader != headerFields.end()) {
             Buffer output;
+            
+            if (encodingHeader->second == u"base64") {
+                bool hasWarning;
+                String warningMessage;
 
-            bool hasWarning;
-            String warningMessage;
-            if (GView::Unpack::Base64::Decode(itemBufferView, output, hasWarning, warningMessage)) {
-                if (hasWarning) {
-                    AppCUI::Dialogs::MessageBox::ShowError("Warning!", warningMessage);
+                if (GView::Unpack::Base64::Decode(itemBufferView, output, hasWarning, warningMessage)) {
+                    if (hasWarning) {
+                        AppCUI::Dialogs::MessageBox::ShowError("Warning!", warningMessage);
+                    }
+
+                    GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
+                } else {
+                    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed base64 buffer!");
                 }
-                GView::App::OpenBuffer(output, obj->GetName(), path, GView::App::OpenMethod::BestMatch);
+            } else if (encodingHeader->second == u"quoted-printable") {
+                if (GView::Unpack::QuotedPrintable::Decode(itemBufferView, output)) {
+                    GView::App::OpenBuffer(output, bufferName, path, GView::App::OpenMethod::BestMatch);
+                } else {
+                    AppCUI::Dialogs::MessageBox::ShowError("Error!", "Malformed quoted-printable buffer!");
+                }
             } else {
                 GView::App::OpenBuffer(itemBufferView, bufferName, path, GView::App::OpenMethod::BestMatch);
             }

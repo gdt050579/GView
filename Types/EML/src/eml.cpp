@@ -46,9 +46,6 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 
     const auto& headers = eml->GetHeaders();
     for (const auto& [name, value] : headers) {
-        if (name == u"Cc") // TODO: to be removed when issues https://github.com/gdt050579/GView/issues/301 is fixed
-            continue;
-
         std::string nameStr = toUTF8(name);
         settings.AddProperty(nameStr, value);
     }
