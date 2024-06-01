@@ -63,6 +63,8 @@ GView::View::LexicalViewer::PluginAfterActionRequest BuildAST::Execute(GView::Vi
         i.script->AcceptConst(dump);
     }
 
+    //return PluginAfterActionRequest::None;
+
     ConstFolder folder;
     AST::PluginVisitor visitor(&folder, &data.editor);
 

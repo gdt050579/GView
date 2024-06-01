@@ -1334,11 +1334,11 @@ namespace Type
 
                 DUMP_MEMBER(callee);
 
-                file << ", \"args\": ";
+                file << ", \"args\": [";
 
                 DUMP_LIST(args);
 
-                file << "}";
+                file << "]}";
             }
             void DumpVisitor::VisitLambda(const Lambda* node)
             {
@@ -1409,6 +1409,11 @@ namespace Type
             {
             }
 
+#define SKIP_COMMENTS()                                                                                                                                        \
+    while (GetCurrentType() == TokenType::Comment) {                                                                                                           \
+        ++current;                                                                                                                                             \
+    }
+
 #define ADVANCE_NOCHECK()                                                                                                                                      \
     do {                                                                                                                                                       \
         ++current;                                                                                                                                             \
@@ -1430,6 +1435,8 @@ namespace Type
 
             Block* Parser::ParseBlock()
             {
+                SKIP_COMMENTS();
+
                 auto sourceStart = GetCurrent();
 
                 if (GetCurrentType() == TokenType::BlockOpen) {
@@ -1490,7 +1497,7 @@ namespace Type
                 auto list = new VarDeclList(type);
 
                 while (current < end) {
-                    ADVANCE(); // var/let
+                    ADVANCE(); // var/let/comma
 
                     auto nodeStart = GetCurrent();
 
@@ -1505,7 +1512,8 @@ namespace Type
                     if (type == TokenType::Operator_Assignment) {
                         ADVANCE();
 
-                        expr = ParseExpr();
+                        // Don't parse commas
+                        expr = ParseAssignmentAndMisc();
                     }
 
                     auto decl = new VarDecl(name, expr);
@@ -1513,7 +1521,7 @@ namespace Type
 
                     list->decls.emplace_back(decl);
 
-                    if (type != TokenType::Comma) {
+                    if (GetCurrentType() != TokenType::Comma) {
                         break;
                     }
                 }
@@ -1556,6 +1564,7 @@ namespace Type
 
                 ADVANCE();
                 EXPECT(TokenType::ExpressionOpen);
+                ADVANCE();
 
                 auto expr = ParseExpr();
 
@@ -1650,7 +1659,7 @@ namespace Type
 
             Expr* Parser::ParseExpr()
             {
-                return ParseAssignmentAndMisc();
+                return ParseComma();
             }
 
             Expr* Parser::ParseComma()
@@ -2158,6 +2167,14 @@ namespace Type
                 auto type        = GetCurrentType();
 
                 switch (type) {
+                default: {
+                    if (type < TokenType::Keyword_Clearinterval || type > TokenType::DataType_Long) {
+                        return nullptr;
+                    }
+
+                    // If it's a keyword like 'console', treat it like an identifier
+                    [[fallthrough]];
+                }
                 case TokenType::Word: {
                     auto id = GetCurrent().GetText();
 
@@ -2194,9 +2211,6 @@ namespace Type
                     node->SetSource(sourceStart, GetPrevious());
 
                     return node;
-                }
-                default: {
-                    return nullptr;
                 }
                 }
             }
