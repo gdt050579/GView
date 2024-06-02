@@ -157,8 +157,8 @@ namespace Type
                 virtual Action VisitString(AST::String* node, Expr*& replacement) override;
 
                 private:
-                  void ReplaceNode(Node* parent, Node* child, Node* replacement);
-                  void AdjustSize(Node* node);
+                  void ReplaceNode(Node* parent, Node* child, uint32 oldChildSize, Node* replacement);
+                  void AdjustSize(Node* node, int32 offset);
             };
 
             class DumpVisitor : public ConstVisitor
@@ -261,6 +261,7 @@ namespace Type
 
                 uint32 sourceStart;
                 uint32 sourceSize;
+                int32 sourceOffset = 0;
 
                 void SetSource(Token start, Token end);
                 void SetSourceEnd(Token end);

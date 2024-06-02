@@ -59,7 +59,8 @@ namespace Type
 
             void Node::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
             }
 
             std::string Node::GenSourceCode()
@@ -80,7 +81,8 @@ namespace Type
 
             void VarDeclList::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 for (auto decl : decls) {
                     decl->AdjustSourceStart(offset);
@@ -108,7 +110,8 @@ namespace Type
 
             void VarDecl::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 init->AdjustSourceStart(offset);
             }
@@ -132,7 +135,8 @@ namespace Type
 
             void Block::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 for (auto decl : decls) {
                     decl->AdjustSourceStart(offset);
@@ -162,7 +166,8 @@ namespace Type
 
             void IfStmt::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 cond->AdjustSourceStart(offset);
                 stmtTrue->AdjustSourceStart(offset);
@@ -194,7 +199,8 @@ namespace Type
 
             void WhileStmt::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 cond->AdjustSourceStart(offset);
                 stmt->AdjustSourceStart(offset);
@@ -224,7 +230,8 @@ namespace Type
 
             void ForStmt::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 if (decl) {
                     decl->AdjustSourceStart(offset);
@@ -262,7 +269,8 @@ namespace Type
 
             void ExprStmt::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 if (expr) {
                     expr->AdjustSourceStart(offset);
@@ -290,7 +298,8 @@ namespace Type
 
             void Identifier::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
             }
 
             Action Identifier::Accept(Visitor& visitor, Node*& replacement)
@@ -319,7 +328,8 @@ namespace Type
 
             void Unop::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 expr->AdjustSourceStart(offset);
             }
@@ -351,7 +361,8 @@ namespace Type
 
             void Binop::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 left->AdjustSourceStart(offset);
                 right->AdjustSourceStart(offset);
@@ -385,7 +396,8 @@ namespace Type
 
             void Ternary::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 cond->AdjustSourceStart(offset);
                 exprTrue->AdjustSourceStart(offset);
@@ -422,7 +434,8 @@ namespace Type
 
             void Call::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 callee->AdjustSourceStart(offset);
 
@@ -461,7 +474,8 @@ namespace Type
 
             void Lambda::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 for (auto param : params) {
                     param->AdjustSourceStart(offset);
@@ -494,7 +508,8 @@ namespace Type
 
             void Grouping::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 expr->AdjustSourceStart(offset);
             }
@@ -527,7 +542,8 @@ namespace Type
 
             void CommaList::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 for (auto expr : list) {
                     expr->AdjustSourceStart(offset);
@@ -561,7 +577,8 @@ namespace Type
 
             void MemberAccess::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
 
                 obj->AdjustSourceStart(offset);
                 member->AdjustSourceStart(offset);
@@ -588,7 +605,8 @@ namespace Type
 
             void Number::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
             }
 
             Action Number::Accept(Visitor& visitor, Node*& replacement)
@@ -627,7 +645,8 @@ namespace Type
 
             void AST::String::AdjustSourceStart(int32 offset)
             {
-                sourceStart += offset;
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
             }
 
             Action AST::String::Accept(Visitor& visitor, Node*& replacement)
@@ -919,68 +938,20 @@ namespace Type
                 return Action::None;
             }
 
-            PluginVisitor::PluginVisitor(Plugin* plugin, TextEditor* editor) : plugin(plugin), tokenOffset(0), editor(editor)
+            // Since a child can have its children changed before being replaced,
+            // 
+            // oldChildSize (before visiting the child and its children)
+            // isn't the same as
+            // child->source size (after visiting the child, but before replacement)
+            void PluginVisitor::ReplaceNode(Node* parent, Node* child, uint32 oldChildSize, Node* replacement)
             {
-            }
-
-            Action PluginVisitor::VisitVarDeclList(VarDeclList* node, Decl*& replacement)
-            {
-                return Action::None;
-            }
-            Action PluginVisitor::VisitVarDecl(VarDecl* node, Decl*& replacement)
-            {
-                return Action::None;
-            }
-            Action PluginVisitor::VisitBlock(Block* node, Block*& replacement)
-            {
-                auto action = plugin->OnEnterBlock(node, replacement);
-                if (action != Action::None) {
-                    return action;
-                }
-
-                for (auto stmt : node->decls) {
-                    Node* rep;
-                    auto action = stmt->Accept(*this, rep);
-
-                    switch (action) {
-                    case Action::_UpdateChild: {
-                        node->sourceSize += tokenOffset;
-                        break;
-                    }
-                    default: {
-                        break;
-                    }
-                    }
-                }
-
-                action = plugin->OnExitBlock(node, replacement);
-                if (action != Action::None) {
-                    return action;
-                }
-
-                return Action::None;
-            }
-            Action PluginVisitor::VisitIfStmt(IfStmt* node, Stmt*& replacement)
-            {
-                return Action::None;
-            }
-            Action PluginVisitor::VisitWhileStmt(WhileStmt* node, Stmt*& replacement)
-            {
-                return Action::None;
-            }
-            Action PluginVisitor::VisitForStmt(ForStmt* node, Stmt*& replacement)
-            {
-                return Action::None;
-            }
-            void PluginVisitor::ReplaceNode(Node* parent, Node* child, Node* replacement)
-            {
-                auto oldSize = child->sourceSize;
-
                 // Generate new code
+                auto replacedSize = child->sourceSize;
+
                 auto newSource = replacement->GenSourceCode();
                 auto newSize   = newSource.size();
 
-                int32 diffSize = newSize - oldSize;
+                int32 diffSize = newSize - oldChildSize;
 
                 // Update new node source range
                 replacement->sourceStart = child->sourceStart;
@@ -994,40 +965,104 @@ namespace Type
                 editor->Insert(child->sourceStart, newSource);
 
                 // Adjust offset for the nodes that follow
-                tokenOffset += diffSize;
+                tokenOffset += (newSize - replacedSize);
 
                 // Replace node
                 delete child;
             }
 
-            void PluginVisitor::AdjustSize(Node* node)
+            void PluginVisitor::AdjustSize(Node* node, int32 offset)
             {
-                node->sourceSize += tokenOffset;
+                node->sourceSize += offset;
             }
 
-            Action PluginVisitor::VisitExprStmt(ExprStmt* node, Stmt*& replacement)
+            PluginVisitor::PluginVisitor(Plugin* plugin, TextEditor* editor) : plugin(plugin), tokenOffset(0), editor(editor)
             {
-                // Update node source start if any nodes before it were modified
-                AdjustSize(node);
-                node->expr->AdjustSourceStart(tokenOffset);
+            }
 
-                auto action = plugin->OnEnterExprStmt(node, replacement);
+            Action PluginVisitor::VisitVarDeclList(VarDeclList* node, Decl*& replacement)
+            {
+                return Action::None;
+            }
+            Action PluginVisitor::VisitVarDecl(VarDecl* node, Decl*& replacement)
+            {
+                return Action::None;
+            }
+            Action PluginVisitor::VisitBlock(Block* node, Block*& replacement)
+            {   
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterBlock(node, replacement);
                 if (action != Action::None) {
                     return action;
                 }
 
+                auto dirty = false;
+
+                // Since children can change, the block has to keep updating its size
+                auto offset = tokenOffset;
+
+                for (auto stmt : node->decls) {
+                    Node* rep;
+                    auto action = stmt->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::_UpdateChild: {
+                        node->sourceSize += (tokenOffset - offset);
+                        offset = tokenOffset;
+
+                        dirty = true;
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitBlock(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                return Action::None;
+            }
+            Action PluginVisitor::VisitIfStmt(IfStmt* node, Stmt*& replacement)
+            {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterIfStmt(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                // If a child changes, the other children should also change relative to that
+                //auto offset = tokenOffset;
+                auto size   = node->cond->sourceSize;
+
                 Node* rep;
-                action = node->expr->Accept(*this, rep);
+                action = node->cond->Accept(*this, rep);
 
                 switch (action) {
                 case Action::Replace: {
-                    ReplaceNode(node, node->expr, rep);
-                    node->expr = (Expr*) rep;
+                    ReplaceNode(node, node->cond, size, rep);
+                    node->cond = (Expr*) rep;
 
-                    return Action::_UpdateChild;
+                    dirty = true;
+                    break;
                 }
                 case Action::_UpdateChild: {
-                    AdjustSize(node);
+                    AdjustSize(node, node->cond->sourceSize - size);
+
+                    dirty = true;
                     break;
                 }
                 default: {
@@ -1035,7 +1070,144 @@ namespace Type
                 }
                 }
 
-                return plugin->OnExitExprStmt(node, replacement);
+                if (node->stmtTrue) {
+                    //node->stmtTrue->AdjustSourceStart(node->cond->sourceOffset + node->cond->sourceSize - size);
+                    node->stmtTrue->AdjustSourceStart(tokenOffset);
+                }
+
+                if (node->stmtFalse) {
+                    //node->stmtFalse->AdjustSourceStart(node->cond->sourceOffset + node->cond->sourceSize - size);
+                    node->stmtFalse->AdjustSourceStart(tokenOffset);
+                }
+
+                if (node->stmtTrue) {
+                    size = node->cond->sourceSize;
+
+                    action = node->stmtTrue->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->cond, size, rep);
+                        node->cond = (Expr*) rep;
+
+                        if (node->stmtFalse) {
+                            //node->stmtFalse->AdjustSourceStart(node->stmtTrue->sourceOffset + node->stmtTrue->sourceSize - size);
+                            node->stmtFalse->AdjustSourceStart(tokenOffset);
+                        }
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->stmtTrue->sourceSize - size);
+
+                        if (node->stmtFalse) {
+                            //node->stmtFalse->AdjustSourceStart(node->stmtTrue->sourceOffset + node->stmtTrue->sourceSize - size);
+                            node->stmtFalse->AdjustSourceStart(tokenOffset);
+                        }
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                if (node->stmtFalse) {
+                    size = node->cond->sourceSize;
+
+                    action = node->stmtFalse->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->cond, size, rep);
+                        node->cond = (Expr*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->stmtFalse->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitIfStmt(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
+                return Action::None;
+            }
+            Action PluginVisitor::VisitWhileStmt(WhileStmt* node, Stmt*& replacement)
+            {
+                return Action::None;
+            }
+            Action PluginVisitor::VisitForStmt(ForStmt* node, Stmt*& replacement)
+            {
+                return Action::None;
+            }
+
+            Action PluginVisitor::VisitExprStmt(ExprStmt* node, Stmt*& replacement)
+            {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterExprStmt(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                auto size   = node->expr->sourceSize;
+
+                Node* rep;
+                action = node->expr->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->expr, size, rep);
+                    node->expr = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->expr->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitExprStmt(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
+                return Action::None;
             }
             Action PluginVisitor::VisitIdentifier(Identifier* node, Expr*& replacement)
             {
@@ -1047,26 +1219,29 @@ namespace Type
             }
             Action PluginVisitor::VisitBinop(Binop* node, Expr*& replacement)
             {
+                node->AdjustSourceStart(tokenOffset);
+
                 auto action = plugin->OnEnterBinop(node, replacement);
                 if (action != Action::None) {
                     return action;
                 }
+
+                auto dirty = false;
+                auto size = node->left->sourceSize;
 
                 Node* rep;
                 action = node->left->Accept(*this, rep);
 
                 switch (action) {
                 case Action::Replace: {
-                    ReplaceNode(node, node->left, rep);
+                    ReplaceNode(node, node->left, size, rep);
                     node->left = (Expr*) rep;
 
-                    node->left->AdjustSourceStart(tokenOffset);
-
+                    dirty = true;
                     break;
                 }
                 case Action::_UpdateChild: {
-                    AdjustSize(node);
-                    node->left->AdjustSourceStart(tokenOffset);
+                    AdjustSize(node, node->left->sourceSize - size);
                     break;
                 }
                 default: {
@@ -1074,24 +1249,32 @@ namespace Type
                 }
                 }
 
+                if (node->right) {
+                    //node->right->AdjustSourceStart(node->right->sourceOffset + node->left->sourceSize - size);
+                    node->right->AdjustSourceStart(tokenOffset);
+                }
+
+                size = node->right->sourceSize;
+
+                // TODO: check if null
                 action = node->right->Accept(*this, rep);
 
                 switch (action) {
                 case Action::Replace: {
-                    ReplaceNode(node, node->right, rep);
+                    ReplaceNode(node, node->right, size, rep);
                     node->right = (Expr*) rep;
+
+                    dirty = true;
                     break;
                 }
                 case Action::_UpdateChild: {
-                    AdjustSize(node);
+                    AdjustSize(node, node->right->sourceSize - size);
                     break;
                 }
                 default: {
                     break;
                 }
                 }
-
-                bool shouldUpdate = replacement != nullptr;
 
                 action = plugin->OnExitBinop(node, replacement);
 
@@ -1101,7 +1284,7 @@ namespace Type
                 }
 
                 // Node wasn't altered, but children were
-                if (shouldUpdate) {
+                if (dirty) {
                     return Action::_UpdateChild;
                 }
 
