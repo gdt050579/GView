@@ -404,10 +404,8 @@ bool DOCFile::ParseModuleStream(BufferView bv, MODULE_Record moduleRecord)
 
     DecompressStream(compressed, decompressed);
 
-    // TODO: de vazut tf nu merge VBA plugin
-    //GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::ForceType, "VBA");
-
-    GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::BestMatch, "bin");
+    GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::ForceType, "VBA");
+    //GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::BestMatch, "bin");
 
     return true;
 }
