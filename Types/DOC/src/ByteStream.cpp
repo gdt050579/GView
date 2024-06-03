@@ -16,10 +16,11 @@ BufferView ByteStream::Read(size_t count)
     return view;
 }
 
-void ByteStream::Seek(size_t count)
+ByteStream& ByteStream::Seek(size_t count)
 {
     if (cursor + count > size) {
         count = size - cursor;
     }
     cursor += count;
+    return *this;
 }

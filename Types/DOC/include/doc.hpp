@@ -22,6 +22,7 @@ namespace Type
 
           public:
             ByteStream(void* ptr, size_t size) : ptr(ptr), size(size), cursor(0) {};
+            ByteStream(BufferView view) : ptr((void*) view.GetData()), size(view.GetLength()), cursor(0) {};
 
             BufferView Read(size_t count);
             template <typename T> T ReadAs() {
@@ -34,7 +35,7 @@ namespace Type
                 return value;
             }
 
-            void Seek(size_t count);
+            ByteStream& Seek(size_t count);
 
             size_t GetCursor() {
                 return cursor;

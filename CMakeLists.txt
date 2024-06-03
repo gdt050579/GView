@@ -198,6 +198,7 @@ if(NOT DEFINED CMAKE_TESTING_ENABLED)
     add_subdirectory(Types/SQLite)
     add_subdirectory(Types/JCLASS)
     add_subdirectory(Types/EML)
+    add_subdirectory(Types/DOC)
 
     # Generic plugins supported by GView
     add_subdirectory(GenericPlugins/CharacterTable)

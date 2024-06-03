@@ -10,6 +10,7 @@ using namespace GView::View::LexicalViewer;
 #define FREESECT 0xffffffff
 #define FATSECT 0xfffffffd
 #define DIFSECT 0xfffffffc
+#define NOSTREAM 0xffffffff
 
 
 DOCFile::DOCFile()
@@ -449,11 +450,165 @@ bool ParseModuleStream(BufferView bv)
     return true;
 }
 
+
+#pragma pack(1)
+struct CFDirEntry_Data {
+    uint8 nameUnicode[64];  // the structure starts from here
+    uint16 nameLength;
+    uint8 objectType;
+    uint8 colorFlag;  // 0x00 (red) or 0x01 (black)
+    uint32 leftSiblingId;
+    uint32 rightSiblingId;
+    uint32 childId;
+    uint8 clsid[16];
+    uint32 stateBits;
+    uint64 creationTime;
+    uint64 modifiedTime;
+    uint32 startingSectorLocation;
+    uint64 streamSize;
+};
+
+
+// TODO: move to another file
+class CFDirEntry
+{
+  private:
+    void AppendChildren(uint32 childId)
+    {
+        if (childId == NOSTREAM) {
+            return;
+        }
+
+        CFDirEntry child(directoryData, childId);
+
+        AppendChildren(child.data.leftSiblingId);
+        size_t childIndex = children.size();
+        children.emplace_back();
+        AppendChildren(child.data.rightSiblingId);
+
+        child.BuildStorageTree();
+
+        children[childIndex] = child;
+    };
+
+  public:
+    CFDirEntry() {};
+    CFDirEntry(BufferView _directoryData, uint32 _entryId)
+    {
+        Load(_directoryData, _entryId);
+    };
+
+    bool Load(BufferView _directoryData, uint32 _entryId)
+    {
+        CHECK(!initialized, false, "already initialized");
+        initialized = true;
+
+        directoryData = _directoryData;
+        entryId       = _entryId;
+        data          = ByteStream(directoryData).Seek(entryId * 128).ReadAs<CFDirEntry_Data>();
+        
+        CHECK(data.nameLength % 2 == 0, false, "nameLength");
+        CHECK(data.objectType == 0x00 || data.objectType == 0x01 || data.objectType == 0x02 || data.objectType == 0x05, false, "objectType");
+        CHECK(data.colorFlag == 0x00 || data.colorFlag == 0x01, false, "colorFlag");
+
+        return true;
+    }
+
+    void BuildStorageTree()
+    {
+        if (data.childId == NOSTREAM) {
+            return;
+        }
+
+        // add children
+        AppendChildren(data.childId);
+    }
+
+    bool FindChildByName(std::u16string_view entryName, CFDirEntry& entry)
+    {
+        for (CFDirEntry& child : children) {
+            std::u16string_view childName((char16_t*) child.data.nameUnicode, child.data.nameLength / 2 - 1);
+            if (!entryName.starts_with(childName)) {
+                continue;
+            }
+
+            auto pos = entryName.find_first_of(u'/');
+            if (pos == std::u16string::npos) {
+                entry = child;
+                return true;
+            } else {
+                std::u16string_view newEntryName = entryName.substr(pos + 1);
+                return child.FindChildByName(newEntryName, entry);
+            }
+        }
+        return false;
+    }
+
+  private:
+    BufferView directoryData;
+    bool initialized = false;
+
+  public:
+    uint32 entryId{};
+    CFDirEntry_Data data{};
+    std::vector<CFDirEntry> children;
+};
+
+
+Buffer OpenCFStream(BufferView bv, BufferView fat, uint32 sect, uint16 sectorSize, uint32 size, uint32 offset)
+{
+    Buffer data;
+    uint16 actualNumberOfSectors = ((size + sectorSize - 1) / sectorSize);
+    for (uint32 i = 0; i < actualNumberOfSectors; ++i) {
+        if (sect == ENDOFCHAIN) {
+            // end of sector chain
+            break;
+        }
+
+        BufferView sectorData(bv.GetData() + offset + sectorSize * sect, sectorSize);
+        data.Add(sectorData);
+
+        if (sect >= fat.GetLength()) {
+            return Buffer();
+        }
+        sect = *(((uint32*) fat.GetData()) + sect); // get the next sect
+    }
+
+    if (data.GetLength() > size) {
+        data.Resize(size);
+    }
+
+    return data;
+}
+
+
+void DisplayAllVBAProjectFiles(CFDirEntry& entry, uint32 miniStreamCutoffSize, BufferView bv, BufferView fat, uint32 sectorSize, BufferView miniStream, BufferView miniFat, uint32 miniSectorSize)
+{
+    auto type = entry.data.objectType;
+    char16* name = (char16*) entry.data.nameUnicode;
+
+    if (type == 0x02) {
+        Buffer entryBuffer;
+
+        if (entry.data.streamSize < miniStreamCutoffSize) {
+            entryBuffer = OpenCFStream(miniStream, miniFat, entry.data.startingSectorLocation, miniSectorSize, entry.data.streamSize, 0);
+        } else {
+            entryBuffer = OpenCFStream(bv, fat, entry.data.startingSectorLocation, sectorSize, entry.data.streamSize, sectorSize);
+        }
+
+        GView::App::OpenBuffer(entryBuffer, name, "", GView::App::OpenMethod::BestMatch, "bin");
+    }
+
+    for (auto& child : entry.children) {
+        DisplayAllVBAProjectFiles(child, miniStreamCutoffSize, bv, fat, sectorSize, miniStream, miniFat, miniSectorSize);
+    }
+}
+
+
 bool ParseVBAProject(BufferView bv)
 {
     ByteStream stream((void*) bv.GetData(), bv.GetLength());
 
-    // TODO: extract in outer stuff
     constexpr uint8 headerSignature[] = { 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1 };
     for (uint32 i = 0; i < ARRAY_LEN(headerSignature); ++i) {
         CHECK(stream.ReadAs<uint8>() == headerSignature[i], false, "headerSignature");
@@ -487,7 +642,8 @@ bool ParseVBAProject(BufferView bv)
     auto firstDirectorySectorLocation = stream.ReadAs<uint32>();
     auto transactionSignatureNumber = stream.ReadAs<uint32>();  // incremented every time the file is saved
     
-    CHECK(stream.ReadAs<uint32>() == 0x1000, false, "miniStreamCutoffSize");
+    auto miniStreamCutoffSize = stream.ReadAs<uint32>();
+    CHECK(miniStreamCutoffSize == 0x1000, false, "miniStreamCutoffSize");
 
     auto firstMiniFatSectorLocation = stream.ReadAs<uint32>();
     auto numberOfMiniFatSectors     = stream.ReadAs<uint32>();
@@ -502,21 +658,15 @@ bool ParseVBAProject(BufferView bv)
     }
 
     if (majorVersion == 0x04) {
-        stream.Seek(3584);  // TODO: MUST check if they are all zeros
+        // check if the next 3584 bytes are 0
+        uint32 zeroCheckIndex = 3584;
+        while (zeroCheckIndex--) {
+            CHECK(stream.ReadAs<uint8>() == 0x00, false, "zeroCheck");
+        }
     }
-
-    {  // TODO: remove
-        std::ofstream out("D:\\temp\\ceva", std::ios::binary | std::ios::trunc);
-        auto temp = stream.Read(stream.GetSize());
-        out.write((const char*) temp.GetData(), temp.GetLength());
-    }
-
-    uint16 actualNumberOfSectors = ((bv.GetLength() + sectorSize - 1) / sectorSize) - 1;
 
     // load FAT
-
     Buffer fat;
-
     for (size_t locationIndex = 0; locationIndex < locationsCount; ++locationIndex) {
         uint32 sect = DIFAT[locationIndex];
         if (sect == ENDOFCHAIN || sect == FREESECT) {
@@ -530,15 +680,42 @@ bool ParseVBAProject(BufferView bv)
         fat.Add(sector);
     }
 
+    uint16 actualNumberOfSectors = ((bv.GetLength() + sectorSize - 1) / sectorSize) - 1;
     if (fat.GetLength() > actualNumberOfSectors * sizeof(uint32)) {
         fat.Resize(actualNumberOfSectors * sizeof(uint32));
     }
 
     // load directory
+    Buffer directoryData = OpenCFStream(bv, fat, firstDirectorySectorLocation, sectorSize, bv.GetLength(), sectorSize);
 
-    BufferView view = fat;
+    // parse dir entries
+    // start with root entry
 
-    auto left = stream.GetSize() - stream.GetCursor();
+    CFDirEntry root(directoryData, 0);
+    root.BuildStorageTree();
+
+    uint32 streamSize = numberOfMiniFatSectors * sectorSize;
+    uint16 actualNumberOfMinisectors = (root.data.streamSize + miniSectorSize - 1) / miniSectorSize;
+
+    // load miniFat
+    Buffer miniFat = OpenCFStream(bv, fat, firstMiniFatSectorLocation, sectorSize, streamSize, sectorSize); // will be interpreted as uint32*
+    if (miniFat.GetLength() > actualNumberOfMinisectors * sizeof(uint32)) {
+        miniFat.Resize(actualNumberOfMinisectors * sizeof(uint32));
+    }
+
+    // load ministream
+    uint32 miniStreamSize = root.data.streamSize;
+    Buffer miniStream     = OpenCFStream(bv, fat, root.data.startingSectorLocation, sectorSize, miniStreamSize, sectorSize);
+
+    // find file
+
+    //CFDirEntry found;
+    //CHECK(root.FindChildByName(u"The VBA Project/_VBA_Project/VBA/ThisTerminal", found), false, "");
+    //Buffer foundData = OpenCFStream(miniStream, miniFat, found.data.startingSectorLocation, miniSectorSize, found.data.streamSize, 0);
+
+    //ParseModuleStream(foundData);
+
+    DisplayAllVBAProjectFiles(root, miniStreamCutoffSize, bv, fat, sectorSize, miniStream, miniFat, miniSectorSize);
 
     return true;
 }
