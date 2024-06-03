@@ -10,7 +10,6 @@ using namespace GView::View::LexicalViewer;
 #define FREESECT 0xffffffff
 #define FATSECT 0xfffffffd
 #define DIFSECT 0xfffffffc
-#define NOSTREAM 0xffffffff
 
 
 DOCFile::DOCFile()
@@ -18,7 +17,7 @@ DOCFile::DOCFile()
 
 }
 
-bool DecompressStream(BufferView bv, Buffer& decompressed)
+bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
 {
     // TODO: document the compression algorithm and expose it into the core
 
@@ -91,55 +90,13 @@ bool DecompressStream(BufferView bv, Buffer& decompressed)
         }
     }
 
-    BufferView view(decompressed.GetData(), decompressed.GetLength());
-
-    GView::App::OpenBuffer(decompressed, "decompressed", "", GView::App::OpenMethod::BestMatch, "bin");
-
     return true;
 }
 
 enum SysKind { Win16Bit = 0, Win32Bit, Macintosh, Win64Bit };
 
 
-struct REFERENCECONTROL_Record {
-    uint32 recordIndex;
-    String libidTwiddled;
-    String nameRecordExtended;
-    String libidExtended;
-    BufferView originalTypeLib;
-    uint32 cookie;
-};
-
-struct REFERENCEORIGINAL_Record {
-    uint32 recordIndex;
-    String libidOriginal;
-    REFERENCECONTROL_Record referenceControl;
-};
-
-struct REFERENCEREGISTERED_Record {
-    uint32 recordIndex;
-    String libid;
-};
-
-struct REFERENCEPROJECT_Record {
-    uint32 recordIndex;
-    String libidAbsolute;
-    String libidRelative;
-    uint32 majorVersion;
-    uint16 minorVersion;
-};
-
-
-struct MODULE_Record {
-    String moduleName;
-    String streamName;
-    String docString;
-    uint32 textOffset;
-    uint32 helpContext;
-};
-
-
-bool ParseUncompressedDirStream(BufferView bv)
+bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 {
     ByteStream stream((void*) bv.GetData(), bv.GetLength());
     uint16 check;
@@ -238,7 +195,7 @@ bool ParseUncompressedDirStream(BufferView bv)
         {
             // REFERENCECONTROL Record
 
-            REFERENCECONTROL_Record record;
+            auto& record = referenceControlRecords.emplace_back();
             record.recordIndex = recordIndex;
 
             stream.Seek(sizeof(uint32)); // SizeTwiddled
@@ -274,7 +231,7 @@ bool ParseUncompressedDirStream(BufferView bv)
         case 0x33: {
             // REFERENCEORIGINAL Record
 
-            REFERENCEORIGINAL_Record record;
+            auto& record = referenceOriginalRecords.emplace_back();
             record.recordIndex = recordIndex;
 
             auto sizeOfLibidOriginal = stream.ReadAs<uint32>();
@@ -313,7 +270,7 @@ bool ParseUncompressedDirStream(BufferView bv)
         case 0x0d: {
             // REFERENCEREGISTERED Record
 
-            REFERENCEREGISTERED_Record record;
+            auto& record = referenceRegisteredRecords.emplace_back();
             record.recordIndex = recordIndex;
 
             stream.Seek(sizeof(uint32)); // ignored Size
@@ -329,7 +286,7 @@ bool ParseUncompressedDirStream(BufferView bv)
         case 0x0e: {
             // REFERENCEPROJECT Record
 
-            REFERENCEPROJECT_Record record;
+            auto& record = referenceProjectRecords.emplace_back();
             record.recordIndex = recordIndex;
 
             stream.Seek(sizeof(uint32)); // ignored Size
@@ -357,13 +314,12 @@ bool ParseUncompressedDirStream(BufferView bv)
     CHECK(stream.ReadAs<uint32>() == 0x02, false, "projectCookie_size");
     stream.Seek(sizeof(uint16));  // ignored Cookie
 
-    std::vector<MODULE_Record> moduleRecords(modulesCount);
-
     // array of MODULE records
     for (uint32 moduleIndex = 0; moduleIndex < modulesCount; ++moduleIndex) {
         // TODO: check this - MUST have a corresponding <ProjectModule> specified in PROJECT Stream
 
-        MODULE_Record& moduleRecord = moduleRecords[moduleIndex];
+        // TODO: preallocate them based on modulesCount
+        MODULE_Record& moduleRecord = moduleRecords.emplace_back();
 
         CHECK(stream.ReadAs<uint16>() == 0x19, false, "moduleName_id");
         auto sizeOfModuleName = stream.ReadAs<uint32>();
@@ -434,11 +390,11 @@ bool ParseUncompressedDirStream(BufferView bv)
     return true;
 }
 
-bool ParseModuleStream(BufferView bv)
+bool DOCFile::ParseModuleStream(BufferView bv, MODULE_Record moduleRecord)
 {
-    constexpr size_t moduleTextOffset = 2607;  // TODO: in the future get this from the parsed dir stream
+    size_t moduleTextOffset = moduleRecord.textOffset;
 
-    ByteStream stream((void*) bv.GetData(), bv.GetLength());
+    ByteStream stream(bv);
 
     stream.Seek(moduleTextOffset);
 
@@ -447,128 +403,57 @@ bool ParseModuleStream(BufferView bv)
     Buffer decompressed;
 
     DecompressStream(compressed, decompressed);
+
+    // TODO: de vazut tf nu merge VBA plugin
+    //GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::ForceType, "VBA");
+
+    GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::BestMatch, "bin");
+
     return true;
 }
 
 
-#pragma pack(1)
-struct CFDirEntry_Data {
-    uint8 nameUnicode[64];  // the structure starts from here
-    uint16 nameLength;
-    uint8 objectType;
-    uint8 colorFlag;  // 0x00 (red) or 0x01 (black)
-    uint32 leftSiblingId;
-    uint32 rightSiblingId;
-    uint32 childId;
-    uint8 clsid[16];
-    uint32 stateBits;
-    uint64 creationTime;
-    uint64 modifiedTime;
-    uint32 startingSectorLocation;
-    uint64 streamSize;
-};
-
-
-// TODO: move to another file
-class CFDirEntry
+Buffer DOCFile::OpenCFStream(const CFDirEntry& entry)
 {
-  private:
-    void AppendChildren(uint32 childId)
-    {
-        if (childId == NOSTREAM) {
-            return;
-        }
+    auto sect                    = entry.data.startingSectorLocation;
+    auto size                    = entry.data.streamSize;
+    bool useMiniFAT              = size < miniStreamCutoffSize;
+    
+    return OpenCFStream(sect, size, useMiniFAT);
+}
 
-        CFDirEntry child(directoryData, childId);
-
-        AppendChildren(child.data.leftSiblingId);
-        size_t childIndex = children.size();
-        children.emplace_back();
-        AppendChildren(child.data.rightSiblingId);
-
-        child.BuildStorageTree();
-
-        children[childIndex] = child;
-    };
-
-  public:
-    CFDirEntry() {};
-    CFDirEntry(BufferView _directoryData, uint32 _entryId)
-    {
-        Load(_directoryData, _entryId);
-    };
-
-    bool Load(BufferView _directoryData, uint32 _entryId)
-    {
-        CHECK(!initialized, false, "already initialized");
-        initialized = true;
-
-        directoryData = _directoryData;
-        entryId       = _entryId;
-        data          = ByteStream(directoryData).Seek(entryId * 128).ReadAs<CFDirEntry_Data>();
-        
-        CHECK(data.nameLength % 2 == 0, false, "nameLength");
-        CHECK(data.objectType == 0x00 || data.objectType == 0x01 || data.objectType == 0x02 || data.objectType == 0x05, false, "objectType");
-        CHECK(data.colorFlag == 0x00 || data.colorFlag == 0x01, false, "colorFlag");
-
-        return true;
-    }
-
-    void BuildStorageTree()
-    {
-        if (data.childId == NOSTREAM) {
-            return;
-        }
-
-        // add children
-        AppendChildren(data.childId);
-    }
-
-    bool FindChildByName(std::u16string_view entryName, CFDirEntry& entry)
-    {
-        for (CFDirEntry& child : children) {
-            std::u16string_view childName((char16_t*) child.data.nameUnicode, child.data.nameLength / 2 - 1);
-            if (!entryName.starts_with(childName)) {
-                continue;
-            }
-
-            auto pos = entryName.find_first_of(u'/');
-            if (pos == std::u16string::npos) {
-                entry = child;
-                return true;
-            } else {
-                std::u16string_view newEntryName = entryName.substr(pos + 1);
-                return child.FindChildByName(newEntryName, entry);
-            }
-        }
-        return false;
-    }
-
-  private:
-    BufferView directoryData;
-    bool initialized = false;
-
-  public:
-    uint32 entryId{};
-    CFDirEntry_Data data{};
-    std::vector<CFDirEntry> children;
-};
-
-
-Buffer OpenCFStream(BufferView bv, BufferView fat, uint32 sect, uint16 sectorSize, uint32 size, uint32 offset)
+Buffer DOCFile::OpenCFStream(uint32 sect, uint32 size, bool useMiniFAT)
 {
+    BufferView stream;
+    BufferView fat;
+    uint32 usedSectorSize;
+    uint32 offset;
+
+    if (useMiniFAT) {
+        // use miniFAT
+        stream         = miniStream;
+        fat            = miniFAT;
+        usedSectorSize = miniSectorSize;
+        offset         = 0;
+    } else {
+        // use FAT
+        stream         = vbaProjectBuffer;
+        fat            = FAT;
+        usedSectorSize = sectorSize;
+        offset         = usedSectorSize;
+    }
+
     Buffer data;
-    uint16 actualNumberOfSectors = ((size + sectorSize - 1) / sectorSize);
+    uint16 actualNumberOfSectors = ((size + usedSectorSize - 1) / usedSectorSize);
     for (uint32 i = 0; i < actualNumberOfSectors; ++i) {
         if (sect == ENDOFCHAIN) {
             // end of sector chain
             break;
         }
 
-        BufferView sectorData(bv.GetData() + offset + sectorSize * sect, sectorSize);
-        data.Add(sectorData);
+        data.Add(ByteStream(stream).Seek(offset + usedSectorSize * sect).Read(usedSectorSize));
 
-        if (sect >= fat.GetLength()) {
+        if (sect * sizeof(uint32) >= fat.GetLength()) {
             return Buffer();
         }
         sect = *(((uint32*) fat.GetData()) + sect); // get the next sect
@@ -582,32 +467,26 @@ Buffer OpenCFStream(BufferView bv, BufferView fat, uint32 sect, uint16 sectorSiz
 }
 
 
-void DisplayAllVBAProjectFiles(CFDirEntry& entry, uint32 miniStreamCutoffSize, BufferView bv, BufferView fat, uint32 sectorSize, BufferView miniStream, BufferView miniFat, uint32 miniSectorSize)
+void DOCFile::DisplayAllVBAProjectFiles(CFDirEntry& entry)
 {
     auto type = entry.data.objectType;
     char16* name = (char16*) entry.data.nameUnicode;
 
     if (type == 0x02) {
-        Buffer entryBuffer;
-
-        if (entry.data.streamSize < miniStreamCutoffSize) {
-            entryBuffer = OpenCFStream(miniStream, miniFat, entry.data.startingSectorLocation, miniSectorSize, entry.data.streamSize, 0);
-        } else {
-            entryBuffer = OpenCFStream(bv, fat, entry.data.startingSectorLocation, sectorSize, entry.data.streamSize, sectorSize);
-        }
+        Buffer entryBuffer = DOCFile::OpenCFStream(entry);
 
         GView::App::OpenBuffer(entryBuffer, name, "", GView::App::OpenMethod::BestMatch, "bin");
     }
 
     for (auto& child : entry.children) {
-        DisplayAllVBAProjectFiles(child, miniStreamCutoffSize, bv, fat, sectorSize, miniStream, miniFat, miniSectorSize);
+        DisplayAllVBAProjectFiles(child);
     }
 }
 
 
-bool ParseVBAProject(BufferView bv)
+bool DOCFile::ParseVBAProject()
 {
-    ByteStream stream((void*) bv.GetData(), bv.GetLength());
+    ByteStream stream(vbaProjectBuffer);
 
     constexpr uint8 headerSignature[] = { 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1 };
     for (uint32 i = 0; i < ARRAY_LEN(headerSignature); ++i) {
@@ -624,11 +503,11 @@ bool ParseVBAProject(BufferView bv)
     CHECK(stream.ReadAs<uint16>() == 0xfffe, false, "byteOrder");
     auto sectorShift = stream.ReadAs<uint16>();
     CHECK((majorVersion == 0x03 && sectorShift == 0x09) || (majorVersion == 0x04 && sectorShift == 0x0c), false, "sectorShift");
-    uint16 sectorSize = 1 << sectorShift;
+    sectorSize = 1 << sectorShift;
     
     auto miniSectorShift = stream.ReadAs<uint16>();
     CHECK(miniSectorShift == 0x06, false, "miniSectorShift");
-    uint16 miniSectorSize = 1 << miniSectorShift;
+    miniSectorSize = 1 << miniSectorShift;
 
     CHECK(stream.ReadAs<uint32>() == 0x00, false, "reserved");
     CHECK(stream.ReadAs<uint16>() == 0x00, false, "reserved");
@@ -642,7 +521,7 @@ bool ParseVBAProject(BufferView bv)
     auto firstDirectorySectorLocation = stream.ReadAs<uint32>();
     auto transactionSignatureNumber = stream.ReadAs<uint32>();  // incremented every time the file is saved
     
-    auto miniStreamCutoffSize = stream.ReadAs<uint32>();
+    miniStreamCutoffSize = stream.ReadAs<uint32>();
     CHECK(miniStreamCutoffSize == 0x1000, false, "miniStreamCutoffSize");
 
     auto firstMiniFatSectorLocation = stream.ReadAs<uint32>();
@@ -650,6 +529,7 @@ bool ParseVBAProject(BufferView bv)
     auto firstDifatSectorLocation   = stream.ReadAs<uint32>();
     auto numberOfDifatSectors       = stream.ReadAs<uint32>();
 
+    // TODO: where to use this?
     constexpr size_t locationsCount = 109;
     uint32 DIFAT[locationsCount];  // the first 109 FAT sector locations of the compound file
     {
@@ -666,7 +546,6 @@ bool ParseVBAProject(BufferView bv)
     }
 
     // load FAT
-    Buffer fat;
     for (size_t locationIndex = 0; locationIndex < locationsCount; ++locationIndex) {
         uint32 sect = DIFAT[locationIndex];
         if (sect == ENDOFCHAIN || sect == FREESECT) {
@@ -676,20 +555,19 @@ bool ParseVBAProject(BufferView bv)
 
         // get the sector data
         size_t byteOffset = sectorSize * (sect + 1);
-        BufferView sector(bv.GetData() + byteOffset, sectorSize);
-        fat.Add(sector);
+        BufferView sector(vbaProjectBuffer.GetData() + byteOffset, sectorSize);
+        FAT.Add(sector);
     }
 
-    uint16 actualNumberOfSectors = ((bv.GetLength() + sectorSize - 1) / sectorSize) - 1;
-    if (fat.GetLength() > actualNumberOfSectors * sizeof(uint32)) {
-        fat.Resize(actualNumberOfSectors * sizeof(uint32));
+    uint16 actualNumberOfSectors = ((vbaProjectBuffer.GetLength() + sectorSize - 1) / sectorSize) - 1;
+    if (FAT.GetLength() > actualNumberOfSectors * sizeof(uint32)) {
+        FAT.Resize(actualNumberOfSectors * sizeof(uint32));
     }
 
     // load directory
-    Buffer directoryData = OpenCFStream(bv, fat, firstDirectorySectorLocation, sectorSize, bv.GetLength(), sectorSize);
+    Buffer directoryData = OpenCFStream(firstDirectorySectorLocation, vbaProjectBuffer.GetLength(), false);
 
-    // parse dir entries
-    // start with root entry
+    // parse dir entries, starting with root entry
 
     CFDirEntry root(directoryData, 0);
     root.BuildStorageTree();
@@ -697,32 +575,47 @@ bool ParseVBAProject(BufferView bv)
     uint32 streamSize = numberOfMiniFatSectors * sectorSize;
     uint16 actualNumberOfMinisectors = (root.data.streamSize + miniSectorSize - 1) / miniSectorSize;
 
-    // load miniFat
-    Buffer miniFat = OpenCFStream(bv, fat, firstMiniFatSectorLocation, sectorSize, streamSize, sectorSize); // will be interpreted as uint32*
-    if (miniFat.GetLength() > actualNumberOfMinisectors * sizeof(uint32)) {
-        miniFat.Resize(actualNumberOfMinisectors * sizeof(uint32));
+    // load miniFAT
+    miniFAT = OpenCFStream(firstMiniFatSectorLocation, streamSize, false); // will be interpreted as uint32*
+    if (miniFAT.GetLength() > actualNumberOfMinisectors * sizeof(uint32)) {
+        miniFAT.Resize(actualNumberOfMinisectors * sizeof(uint32));
     }
 
     // load ministream
     uint32 miniStreamSize = root.data.streamSize;
-    Buffer miniStream     = OpenCFStream(bv, fat, root.data.startingSectorLocation, sectorSize, miniStreamSize, sectorSize);
+    miniStream            = OpenCFStream(root.data.startingSectorLocation, miniStreamSize, false);
 
     // find file
 
-    //CFDirEntry found;
-    //CHECK(root.FindChildByName(u"The VBA Project/_VBA_Project/VBA/ThisTerminal", found), false, "");
-    //Buffer foundData = OpenCFStream(miniStream, miniFat, found.data.startingSectorLocation, miniSectorSize, found.data.streamSize, 0);
+    CFDirEntry dir;
+    CHECK(root.FindChildByName(u"The VBA Project/_VBA_Project/VBA/dir", dir), false, "");
+    Buffer dirData = OpenCFStream(dir);
 
-    //ParseModuleStream(foundData);
+    Buffer decompressedDirData;
+    DecompressStream(dirData, decompressedDirData);
+    ParseUncompressedDirStream(decompressedDirData);
 
-    DisplayAllVBAProjectFiles(root, miniStreamCutoffSize, bv, fat, sectorSize, miniStream, miniFat, miniSectorSize);
+    //DisplayAllVBAProjectFiles(root);
+
+    for (auto& moduleRecord : moduleRecords) {
+        UnicodeStringBuilder streamName(moduleRecord.streamName);
+        // TODO: make this more generic
+        std::u16string absoluteStreamName = u"The VBA Project/_VBA_Project/VBA/";
+        absoluteStreamName.append(streamName);
+
+        CFDirEntry moduleEntry;
+        CHECK(root.FindChildByName(absoluteStreamName, moduleEntry), false, "");
+
+        Buffer moduleData = OpenCFStream(moduleEntry);
+        ParseModuleStream(moduleData, moduleRecord);
+    }
 
     return true;
 }
 
 bool DOCFile::ProcessData()
 {
-    BufferView bv = obj->GetData().GetEntireFile();
+    vbaProjectBuffer = obj->GetData().GetEntireFile();
 
     ////// decompress the "dir" stream
     ////Buffer decompressed;
@@ -734,9 +627,7 @@ bool DOCFile::ProcessData()
     //// parse a module file
     //ParseModuleStream(bv);
 
-    // TODO: parse the compound file binary format
-
-    ParseVBAProject(bv);
+    ParseVBAProject();
 
     return true;
 }
