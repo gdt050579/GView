@@ -1,4 +1,4 @@
-target_sources(JS PRIVATE BuildAST.cpp
+target_sources(JS PRIVATE FoldConstants.cpp
 		AddStrings.cpp
                 ConstPropagation.cpp
 		ReplaceConstants.cpp

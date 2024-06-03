@@ -63,9 +63,12 @@ namespace Type
                 sourceOffset = offset;
             }
 
-            std::string Node::GenSourceCode()
+            std::u16string Node::GenSourceCode()
             {
-                return "<NOTHING>";
+                std::u16string str;
+                str += '?' ;
+
+                return str;
             }
 
             VarDeclList::VarDeclList(uint32 type) : type(type)
@@ -113,7 +116,9 @@ namespace Type
                 sourceStart += offset - sourceOffset;
                 sourceOffset = offset;
 
-                init->AdjustSourceStart(offset);
+                if (init) {
+                    init->AdjustSourceStart(offset);
+                }
             }
 
             Action VarDecl::Accept(Visitor& visitor, Node*& replacement)
@@ -619,9 +624,9 @@ namespace Type
                 visitor.VisitNumber(this);
             }
 
-            std::string Number::GenSourceCode()
+            std::u16string Number::GenSourceCode()
             {
-                std::string str;
+                std::u16string str;
                 auto n = value;
 
                 do {
@@ -652,6 +657,16 @@ namespace Type
             Action AST::String::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitString(this, (Expr*&) replacement);
+            }
+
+            std::u16string String::GenSourceCode()
+            {
+                std::u16string str;
+                str += '\"';
+                str += value;
+                str += '\"';
+
+                return str;
             }
 
             ConstType String::GetConstType()
@@ -939,7 +954,7 @@ namespace Type
             }
 
             // Since a child can have its children changed before being replaced,
-            // 
+            //
             // oldChildSize (before visiting the child and its children)
             // isn't the same as
             // child->source size (after visiting the child, but before replacement)
@@ -982,14 +997,108 @@ namespace Type
 
             Action PluginVisitor::VisitVarDeclList(VarDeclList* node, Decl*& replacement)
             {
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterVarDeclList(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+                Node* rep;
+
+                for (size_t i = 0; i < node->decls.size(); ++i) {
+                    auto size = node->decls[i]->sourceSize;
+
+                    // TODO: check if null
+                    action = node->decls[i]->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->decls[i], size, rep);
+                        node->decls[i] = (VarDecl*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->decls[i]->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitVarDeclList(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitVarDecl(VarDecl* node, Decl*& replacement)
             {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterVarDecl(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                if (node->init) {
+                    auto size = node->init->sourceSize;
+
+                    Node* rep;
+                    action = node->init->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->init, size, rep);
+                        node->init = (Expr*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->init->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitVarDecl(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitBlock(Block* node, Block*& replacement)
-            {   
+            {
                 // Update node source start if any nodes before it were modified
                 node->AdjustSourceStart(tokenOffset);
 
@@ -1045,8 +1154,8 @@ namespace Type
                 auto dirty = false;
 
                 // If a child changes, the other children should also change relative to that
-                //auto offset = tokenOffset;
-                auto size   = node->cond->sourceSize;
+                // auto offset = tokenOffset;
+                auto size = node->cond->sourceSize;
 
                 Node* rep;
                 action = node->cond->Accept(*this, rep);
@@ -1071,27 +1180,27 @@ namespace Type
                 }
 
                 if (node->stmtTrue) {
-                    //node->stmtTrue->AdjustSourceStart(node->cond->sourceOffset + node->cond->sourceSize - size);
+                    // node->stmtTrue->AdjustSourceStart(node->cond->sourceOffset + node->cond->sourceSize - size);
                     node->stmtTrue->AdjustSourceStart(tokenOffset);
                 }
 
                 if (node->stmtFalse) {
-                    //node->stmtFalse->AdjustSourceStart(node->cond->sourceOffset + node->cond->sourceSize - size);
+                    // node->stmtFalse->AdjustSourceStart(node->cond->sourceOffset + node->cond->sourceSize - size);
                     node->stmtFalse->AdjustSourceStart(tokenOffset);
                 }
 
                 if (node->stmtTrue) {
-                    size = node->cond->sourceSize;
+                    size = node->stmtTrue->sourceSize;
 
                     action = node->stmtTrue->Accept(*this, rep);
 
                     switch (action) {
                     case Action::Replace: {
-                        ReplaceNode(node, node->cond, size, rep);
-                        node->cond = (Expr*) rep;
+                        ReplaceNode(node, node->stmtTrue, size, rep);
+                        node->stmtTrue = (Stmt*) rep;
 
                         if (node->stmtFalse) {
-                            //node->stmtFalse->AdjustSourceStart(node->stmtTrue->sourceOffset + node->stmtTrue->sourceSize - size);
+                            // node->stmtFalse->AdjustSourceStart(node->stmtTrue->sourceOffset + node->stmtTrue->sourceSize - size);
                             node->stmtFalse->AdjustSourceStart(tokenOffset);
                         }
 
@@ -1102,7 +1211,7 @@ namespace Type
                         AdjustSize(node, node->stmtTrue->sourceSize - size);
 
                         if (node->stmtFalse) {
-                            //node->stmtFalse->AdjustSourceStart(node->stmtTrue->sourceOffset + node->stmtTrue->sourceSize - size);
+                            // node->stmtFalse->AdjustSourceStart(node->stmtTrue->sourceOffset + node->stmtTrue->sourceSize - size);
                             node->stmtFalse->AdjustSourceStart(tokenOffset);
                         }
                         break;
@@ -1114,14 +1223,14 @@ namespace Type
                 }
 
                 if (node->stmtFalse) {
-                    size = node->cond->sourceSize;
+                    size = node->stmtFalse->sourceSize;
 
                     action = node->stmtFalse->Accept(*this, rep);
 
                     switch (action) {
                     case Action::Replace: {
-                        ReplaceNode(node, node->cond, size, rep);
-                        node->cond = (Expr*) rep;
+                        ReplaceNode(node, node->stmtFalse, size, rep);
+                        node->stmtFalse = (Stmt*) rep;
 
                         dirty = true;
                         break;
@@ -1153,10 +1262,229 @@ namespace Type
             }
             Action PluginVisitor::VisitWhileStmt(WhileStmt* node, Stmt*& replacement)
             {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterWhileStmt(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                // If a child changes, the other children should also change relative to that
+                // auto offset = tokenOffset;
+                auto size = node->cond->sourceSize;
+
+                Node* rep;
+                action = node->cond->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->cond, size, rep);
+                    node->cond = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->cond->sourceSize - size);
+
+                    dirty = true;
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                if (node->stmt) {
+                    node->stmt->AdjustSourceStart(tokenOffset);
+                }
+
+                size = node->stmt->sourceSize;
+
+                action = node->stmt->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->stmt, size, rep);
+                    node->stmt = (Stmt*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->stmt->sourceSize - size);
+
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitWhileStmt(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitForStmt(ForStmt* node, Stmt*& replacement)
             {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterForStmt(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                // If a child changes, the other children should also change relative to that
+                // auto offset = tokenOffset;
+                auto size = node->cond->sourceSize;
+
+                Node* rep;
+                action = node->decl->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->decl, size, rep);
+                    node->decl = (VarDeclList*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->decl->sourceSize - size);
+
+                    dirty = true;
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                if (node->cond) {
+                    node->cond->AdjustSourceStart(tokenOffset);
+                }
+
+                if (node->inc) {
+                    node->inc->AdjustSourceStart(tokenOffset);
+                }
+
+                if (node->stmt) {
+                    node->stmt->AdjustSourceStart(tokenOffset);
+                }
+
+                if (node->cond) {
+                    size = node->cond->sourceSize;
+
+                    action = node->cond->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->cond, size, rep);
+                        node->cond = (Expr*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->cond->sourceSize - size);
+
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+
+                    if (node->inc) {
+                        node->inc->AdjustSourceStart(tokenOffset);
+                    }
+
+                    if (node->stmt) {
+                        node->stmt->AdjustSourceStart(tokenOffset);
+                    }
+                }
+
+                if (node->inc) {
+                    size = node->inc->sourceSize;
+
+                    action = node->inc->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->inc, size, rep);
+                        node->inc = (Expr*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->inc->sourceSize - size);
+
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+
+                    if (node->stmt) {
+                        node->stmt->AdjustSourceStart(tokenOffset);
+                    }
+                }
+
+                if (node->stmt) {
+                    size = node->stmt->sourceSize;
+
+                    action = node->stmt->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->stmt, size, rep);
+                        node->stmt = (Stmt*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->stmt->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitForStmt(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
 
@@ -1172,7 +1500,7 @@ namespace Type
 
                 auto dirty = false;
 
-                auto size   = node->expr->sourceSize;
+                auto size = node->expr->sourceSize;
 
                 Node* rep;
                 action = node->expr->Accept(*this, rep);
@@ -1211,10 +1539,64 @@ namespace Type
             }
             Action PluginVisitor::VisitIdentifier(Identifier* node, Expr*& replacement)
             {
-                return Action::None;
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterIdentifier(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                action = plugin->OnExitIdentifier(node, replacement);
+                return action;
             }
             Action PluginVisitor::VisitUnop(Unop* node, Expr*& replacement)
             {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterUnop(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                auto size = node->expr->sourceSize;
+
+                Node* rep;
+                action = node->expr->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->expr, size, rep);
+                    node->expr = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->expr->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitUnop(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitBinop(Binop* node, Expr*& replacement)
@@ -1227,7 +1609,7 @@ namespace Type
                 }
 
                 auto dirty = false;
-                auto size = node->left->sourceSize;
+                auto size  = node->left->sourceSize;
 
                 Node* rep;
                 action = node->left->Accept(*this, rep);
@@ -1250,7 +1632,6 @@ namespace Type
                 }
 
                 if (node->right) {
-                    //node->right->AdjustSourceStart(node->right->sourceOffset + node->left->sourceSize - size);
                     node->right->AdjustSourceStart(tokenOffset);
                 }
 
@@ -1293,35 +1674,449 @@ namespace Type
             }
             Action PluginVisitor::VisitTernary(Ternary* node, Expr*& replacement)
             {
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterTernary(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+                auto size  = node->cond->sourceSize;
+
+                Node* rep;
+                action = node->cond->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->cond, size, rep);
+                    node->cond = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->cond->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                if (node->exprTrue) {
+                    node->exprTrue->AdjustSourceStart(tokenOffset);
+                }
+
+                if (node->exprFalse) {
+                    node->exprFalse->AdjustSourceStart(tokenOffset);
+                }
+
+                size = node->exprTrue->sourceSize;
+
+                // TODO: check if null
+                action = node->exprTrue->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->exprTrue, size, rep);
+                    node->exprTrue = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->exprTrue->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                if (node->exprFalse) {
+                    node->exprFalse->AdjustSourceStart(tokenOffset);
+                }
+
+                size = node->exprFalse->sourceSize;
+
+                // TODO: check if null
+                action = node->exprFalse->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->exprFalse, size, rep);
+                    node->exprFalse = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->exprFalse->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitTernary(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitCall(Call* node, Expr*& replacement)
             {
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterCall(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+                auto size  = node->callee->sourceSize;
+
+                Node* rep;
+                action = node->callee->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->callee, size, rep);
+                    node->callee = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->callee->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                for (size_t i = 0; i < node->args.size(); ++i) {
+                    size = node->args[i]->sourceSize;
+
+                    // TODO: check if null
+                    action = node->args[i]->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->args[i], size, rep);
+                        node->args[i] = (Expr*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->args[i]->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitCall(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitLambda(Lambda* node, Expr*& replacement)
             {
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterLambda(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+                Node* rep;
+
+                for (size_t i = 0; i < node->params.size(); ++i) {
+                    auto size = node->params[i]->sourceSize;
+
+                    // TODO: check if null
+                    action = node->params[i]->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->params[i], size, rep);
+                        node->params[i] = (Identifier*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->params[i]->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                auto size = node->body->sourceSize;
+
+                action = node->body->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->body, size, rep);
+                    node->body = (Stmt*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->body->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitLambda(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitGrouping(Grouping* node, Expr*& replacement)
             {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterGrouping(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                auto size = node->expr->sourceSize;
+
+                Node* rep;
+                action = node->expr->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->expr, size, rep);
+                    node->expr = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->expr->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitGrouping(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitCommaList(CommaList* node, Expr*& replacement)
             {
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterCommaList(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+                Node* rep;
+
+                for (size_t i = 0; i < node->list.size(); ++i) {
+                    auto size = node->list[i]->sourceSize;
+
+                    // TODO: check if null
+                    action = node->list[i]->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Replace: {
+                        ReplaceNode(node, node->list[i], size, rep);
+                        node->list[i] = (Expr*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->list[i]->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitCommaList(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitMemberAccess(MemberAccess* node, Expr*& replacement)
             {
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterMemberAccess(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+
+                auto size = node->obj->sourceSize;
+
+                Node* rep;
+                action = node->obj->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->obj, size, rep);
+                    node->obj = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->obj->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                if (node->member) {
+                    node->member->AdjustSourceStart(tokenOffset);
+                }
+
+                size = node->member->sourceSize;
+
+                action = node->member->Accept(*this, rep);
+
+                switch (action) {
+                case Action::Replace: {
+                    ReplaceNode(node, node->member, size, rep);
+                    node->member = (Expr*) rep;
+
+                    dirty = true;
+                    break;
+                }
+                case Action::_UpdateChild: {
+                    AdjustSize(node, node->member->sourceSize - size);
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+
+                action = plugin->OnExitMemberAccess(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
                 return Action::None;
             }
             Action PluginVisitor::VisitNumber(Number* node, Expr*& replacement)
             {
-                return Action::None;
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterNumber(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                action = plugin->OnExitNumber(node, replacement);
+                return action;
             }
             Action PluginVisitor::VisitString(AST::String* node, Expr*& replacement)
             {
-                return Action::None;
+                // Update node source start if any nodes before it were modified
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterString(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                action = plugin->OnExitString(node, replacement);
+                return action;
             }
 
             DumpVisitor::DumpVisitor(const char* file)

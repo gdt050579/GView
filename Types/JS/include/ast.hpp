@@ -268,7 +268,7 @@ namespace Type
 
                 virtual void AdjustSourceStart(int32 offset);
 
-                virtual std::string GenSourceCode();
+                virtual std::u16string GenSourceCode();
             };
 
             class Decl : public Node
@@ -403,7 +403,7 @@ namespace Type
             class Identifier : public Expr
             {
               public:
-                u16string_view name;
+                std::u16string name;
 
                 Identifier(u16string_view name);
 
@@ -577,7 +577,7 @@ namespace Type
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
 
-                virtual std::string GenSourceCode() override;
+                virtual std::u16string GenSourceCode() override;
 
                 virtual ConstType GetConstType() override;
             };
@@ -585,7 +585,7 @@ namespace Type
             class String : public Constant
             {
               public:
-                u16string_view value;
+                std::u16string value;
 
                 String(u16string_view value);
 
@@ -593,6 +593,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual std::u16string GenSourceCode() override;
 
                 virtual ConstType GetConstType() override;
             };
