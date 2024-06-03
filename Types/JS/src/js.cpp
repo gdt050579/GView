@@ -31,13 +31,14 @@ extern "C"
         settings.SetMaxTokenSize({ 30u, 5u });
 
         settings.AddPlugin(&js->plugins.foldConstants);
-        settings.AddPlugin(&js->plugins.addStrings);
-        settings.AddPlugin(&js->plugins.reverseStrings);
-        settings.AddPlugin(&js->plugins.replaceConstants);
         settings.AddPlugin(&js->plugins.constPropagation);
+        settings.AddPlugin(&js->plugins.removeDeadCode);
         settings.AddPlugin(&js->plugins.removeComments);
         settings.AddPlugin(&js->plugins.markAlwaysTrue);
         settings.AddPlugin(&js->plugins.unrollLoop);
+        settings.AddPlugin(&js->plugins.addStrings);
+        settings.AddPlugin(&js->plugins.reverseStrings);
+        settings.AddPlugin(&js->plugins.replaceConstants);
 
         win->CreateViewer(settings);
 

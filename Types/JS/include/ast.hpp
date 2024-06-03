@@ -23,6 +23,7 @@ namespace Type
             class IfStmt;
             class WhileStmt;
             class ForStmt;
+            class ReturnStmt;
             class ExprStmt;
             class Expr;
             class Identifier;
@@ -38,7 +39,7 @@ namespace Type
             class Number;
             class String;
 
-            enum class Action { None, Update, Replace, Delete, _UpdateChild };
+            enum class Action { None, Update, Replace, Replace_Revisit, Remove, _UpdateChild };
 
             class ConstVisitor
             {
@@ -50,6 +51,7 @@ namespace Type
                 virtual void VisitWhileStmt(const WhileStmt* node);
                 virtual void VisitForStmt(const ForStmt* node);
                 virtual void VisitExprStmt(const ExprStmt* node);
+                virtual void VisitReturnStmt(const ReturnStmt* node);
                 virtual void VisitIdentifier(const Identifier* node);
                 virtual void VisitUnop(const Unop* node);
                 virtual void VisitBinop(const Binop* node);
@@ -73,6 +75,7 @@ namespace Type
                 virtual Action VisitWhileStmt(WhileStmt* node, Stmt*& replacement);
                 virtual Action VisitForStmt(ForStmt* node, Stmt*& replacement);
                 virtual Action VisitExprStmt(ExprStmt* node, Stmt*& replacement);
+                virtual Action VisitReturnStmt(ReturnStmt* node, Stmt*& replacement);
                 virtual Action VisitIdentifier(Identifier* node, Expr*& replacement);
                 virtual Action VisitUnop(Unop* node, Expr*& replacement);
                 virtual Action VisitBinop(Binop* node, Expr*& replacement);
@@ -96,6 +99,7 @@ namespace Type
                 virtual Action OnEnterWhileStmt(WhileStmt* node, Stmt*& replacement);
                 virtual Action OnEnterForStmt(ForStmt* node, Stmt*& replacement);
                 virtual Action OnEnterExprStmt(ExprStmt* node, Stmt*& replacement);
+                virtual Action OnEnterReturnStmt(ReturnStmt* node, Stmt*& replacement);
                 virtual Action OnEnterIdentifier(Identifier* node, Expr*& replacement);
                 virtual Action OnEnterUnop(Unop* node, Expr*& replacement);
                 virtual Action OnEnterBinop(Binop* node, Expr*& replacement);
@@ -115,6 +119,7 @@ namespace Type
                 virtual Action OnExitWhileStmt(WhileStmt* node, Stmt*& replacement);
                 virtual Action OnExitForStmt(ForStmt* node, Stmt*& replacement);
                 virtual Action OnExitExprStmt(ExprStmt* node, Stmt*& replacement);
+                virtual Action OnExitReturnStmt(ReturnStmt* node, Stmt*& replacement);
                 virtual Action OnExitIdentifier(Identifier* node, Expr*& replacement);
                 virtual Action OnExitUnop(Unop* node, Expr*& replacement);
                 virtual Action OnExitBinop(Binop* node, Expr*& replacement);
@@ -144,6 +149,7 @@ namespace Type
                 virtual Action VisitWhileStmt(WhileStmt* node, Stmt*& replacement) override;
                 virtual Action VisitForStmt(ForStmt* node, Stmt*& replacement) override;
                 virtual Action VisitExprStmt(ExprStmt* node, Stmt*& replacement) override;
+                virtual Action VisitReturnStmt(ReturnStmt* node, Stmt*& replacement) override;
                 virtual Action VisitIdentifier(Identifier* node, Expr*& replacement) override;
                 virtual Action VisitUnop(Unop* node, Expr*& replacement) override;
                 virtual Action VisitBinop(Binop* node, Expr*& replacement) override;
@@ -158,6 +164,7 @@ namespace Type
 
                 private:
                   void ReplaceNode(Node* parent, Node* child, uint32 oldChildSize, Node* replacement);
+                  void RemoveNode(Node* parent, Node* child);
                   void AdjustSize(Node* node, int32 offset);
             };
 
@@ -176,6 +183,7 @@ namespace Type
                 virtual void VisitWhileStmt(const WhileStmt* node) override;
                 virtual void VisitForStmt(const ForStmt* node) override;
                 virtual void VisitExprStmt(const ExprStmt* node) override;
+                virtual void VisitReturnStmt(const ReturnStmt* node) override;
                 virtual void VisitIdentifier(const Identifier* node) override;
                 virtual void VisitUnop(const Unop* node) override;
                 virtual void VisitBinop(const Binop* node) override;
@@ -210,6 +218,7 @@ namespace Type
                 WhileStmt* ParseWhileStmt();
                 ForStmt* ParseForStmt();
                 ExprStmt* ParseExprStmt();
+                ReturnStmt* ParseReturnStmt();
 
                 Expr* ParseExpr();
                 Expr* ParseComma();
@@ -259,14 +268,15 @@ namespace Type
                 virtual Action Accept(Visitor& visitor, Node*& replacement) = 0;
                 virtual void AcceptConst(ConstVisitor& visitor) = 0;
 
-                uint32 sourceStart;
-                uint32 sourceSize;
+                uint32 sourceStart = 0;
+                uint32 sourceSize  = 0;
                 int32 sourceOffset = 0;
 
                 void SetSource(Token start, Token end);
                 void SetSourceEnd(Token end);
 
                 virtual void AdjustSourceStart(int32 offset);
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual std::u16string GenSourceCode();
             };
@@ -320,6 +330,7 @@ namespace Type
                 ~Block();
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -337,6 +348,7 @@ namespace Type
                 IfStmt(Expr* cond, Stmt* stmtTrue, Stmt* stmtFalse);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -384,6 +396,21 @@ namespace Type
                 ~ExprStmt();
 
                 ExprStmt(Expr* expr);
+
+                virtual void AdjustSourceStart(int32 offset) override;
+
+                virtual Action Accept(Visitor& visitor, Node*& replacement) override;
+                virtual void AcceptConst(ConstVisitor& visitor) override;
+            };
+
+            class ReturnStmt : public Stmt
+            {
+              public:
+                Expr* expr;
+
+                ~ReturnStmt();
+
+                ReturnStmt(Expr* expr);
 
                 virtual void AdjustSourceStart(int32 offset) override;
 
