@@ -163,6 +163,10 @@ namespace Type
                 virtual Action VisitString(AST::String* node, Expr*& replacement) override;
 
                 private:
+                  void UpdateNode(Node* parent, VarDecl* child);
+                  void UpdateNode(Node* parent, Expr* child);
+                  void UpdateNode(Node* parent, Identifier* child);
+                  void UpdateNode(Node* parent, Node* child);
                   void ReplaceNode(Node* parent, Node* child, uint32 oldChildSize, Node* replacement);
                   void RemoveNode(Node* parent, Node* child);
                   void AdjustSize(Node* node, int32 offset);
@@ -295,6 +299,7 @@ namespace Type
                 ~VarDeclList();
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -303,17 +308,22 @@ namespace Type
             class VarDecl : public Decl
             {
               public:
-                u16string_view name;
+                std::u16string name;
                 Expr* init;
+
+                uint32 nameSize;
 
                 ~VarDecl();
 
                 VarDecl(u16string_view name, Expr* init);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                void SetName(std::u16string& str);
             };
 
             // Function decl
@@ -365,6 +375,7 @@ namespace Type
                 ~WhileStmt();
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -383,6 +394,7 @@ namespace Type
                 ForStmt(VarDeclList* decl, Expr* cond, Expr* inc, Stmt* stmt);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -398,6 +410,7 @@ namespace Type
                 ExprStmt(Expr* expr);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -413,6 +426,7 @@ namespace Type
                 ReturnStmt(Expr* expr);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -432,14 +446,19 @@ namespace Type
               public:
                 std::u16string name;
 
+                uint32 nameSize;
+
                 Identifier(u16string_view name);
 
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                void SetName(std::u16string& str);
             };
 
             class Unop : public Expr
@@ -455,6 +474,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -474,6 +494,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -493,6 +514,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -510,6 +532,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -528,6 +551,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -545,6 +569,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -562,6 +587,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -580,6 +606,7 @@ namespace Type
                 virtual ExprType GetExprType() override;
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -600,6 +627,7 @@ namespace Type
                 Number(int32 value);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
@@ -617,6 +645,7 @@ namespace Type
                 String(u16string_view value);
 
                 virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;

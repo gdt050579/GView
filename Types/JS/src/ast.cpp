@@ -97,6 +97,15 @@ namespace Type
                 }
             }
 
+            void VarDeclList::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                for (auto decl : decls) {
+                    decl->AdjustSourceOffset(offset);
+                }
+            }
+
             Action VarDeclList::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitVarDeclList(this, (Decl*&) replacement);
@@ -107,7 +116,7 @@ namespace Type
                 visitor.VisitVarDeclList(this);
             }
 
-            VarDecl::VarDecl(u16string_view name, Expr* init) : name(name), init(init)
+            VarDecl::VarDecl(u16string_view name, Expr* init) : name(name), init(init), nameSize(name.size())
             {
             }
 
@@ -126,6 +135,15 @@ namespace Type
                 }
             }
 
+            void VarDecl::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                if (init) {
+                    init->AdjustSourceOffset(offset);
+                }
+            }
+
             Action VarDecl::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitVarDecl(this, (Decl*&) replacement);
@@ -134,6 +152,11 @@ namespace Type
             void VarDecl::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitVarDecl(this);
+            }
+
+            void VarDecl::SetName(std::u16string& str) {
+                name = str;
+                nameSize = str.size();
             }
 
             Block::~Block()
@@ -237,6 +260,14 @@ namespace Type
                 stmt->AdjustSourceStart(offset);
             }
 
+            void WhileStmt::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                cond->AdjustSourceOffset(offset);
+                stmt->AdjustSourceOffset(offset);
+            }
+
             Action WhileStmt::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitWhileStmt(this, (Stmt*&) replacement);
@@ -279,6 +310,25 @@ namespace Type
                 stmt->AdjustSourceStart(offset);
             }
 
+            void ForStmt::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                if (decl) {
+                    decl->AdjustSourceOffset(offset);
+                }
+
+                if (cond) {
+                    cond->AdjustSourceOffset(offset);
+                }
+
+                if (inc) {
+                    inc->AdjustSourceOffset(offset);
+                }
+
+                stmt->AdjustSourceOffset(offset);
+            }
+
             Action ForStmt::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitForStmt(this, (Stmt*&) replacement);
@@ -305,6 +355,15 @@ namespace Type
 
                 if (expr) {
                     expr->AdjustSourceStart(offset);
+                }
+            }
+
+            void ExprStmt::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                if (expr) {
+                    expr->AdjustSourceOffset(offset);
                 }
             }
 
@@ -339,6 +398,15 @@ namespace Type
                 }
             }
 
+            void ReturnStmt::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                if (expr) {
+                    expr->AdjustSourceOffset(offset);
+                }
+            }
+
             Action ReturnStmt::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitReturnStmt(this, (Stmt*&) replacement);
@@ -349,7 +417,7 @@ namespace Type
                 visitor.VisitReturnStmt(this);
             }
 
-            Identifier::Identifier(u16string_view name) : name(name)
+            Identifier::Identifier(u16string_view name) : name(name), nameSize(name.size())
             {
             }
 
@@ -364,6 +432,11 @@ namespace Type
                 sourceOffset = offset;
             }
 
+            void Identifier::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+            }
+
             Action Identifier::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitIdentifier(this, (Expr*&) replacement);
@@ -372,6 +445,12 @@ namespace Type
             void Identifier::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitIdentifier(this);
+            }
+
+            void Identifier::SetName(std::u16string& str)
+            {
+                name = str;
+                nameSize = str.size();
             }
 
             Unop::Unop(uint32 type, Expr* expr) : type(type), expr(expr)
@@ -394,6 +473,13 @@ namespace Type
                 sourceOffset = offset;
 
                 expr->AdjustSourceStart(offset);
+            }
+
+            void Unop::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                expr->AdjustSourceOffset(offset);
             }
 
             Action Unop::Accept(Visitor& visitor, Node*& replacement)
@@ -430,6 +516,14 @@ namespace Type
                 right->AdjustSourceStart(offset);
             }
 
+            void Binop::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                left->AdjustSourceOffset(offset);
+                right->AdjustSourceOffset(offset);
+            }
+
             Action Binop::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitBinop(this, (Expr*&) replacement);
@@ -464,6 +558,15 @@ namespace Type
                 cond->AdjustSourceStart(offset);
                 exprTrue->AdjustSourceStart(offset);
                 exprFalse->AdjustSourceStart(offset);
+            }
+
+            void Ternary::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                cond->AdjustSourceOffset(offset);
+                exprTrue->AdjustSourceOffset(offset);
+                exprFalse->AdjustSourceOffset(offset);
             }
 
             Action Ternary::Accept(Visitor& visitor, Node*& replacement)
@@ -506,6 +609,17 @@ namespace Type
                 }
             }
 
+            void Call::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                callee->AdjustSourceOffset(offset);
+
+                for (auto arg : args) {
+                    arg->AdjustSourceOffset(offset);
+                }
+            }
+
             Action Call::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitCall(this, (Expr*&) replacement);
@@ -544,6 +658,15 @@ namespace Type
                 }
             }
 
+            void Lambda::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                for (auto param : params) {
+                    param->AdjustSourceOffset(offset);
+                }
+            }
+
             Action Lambda::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitLambda(this, (Expr*&) replacement);
@@ -574,6 +697,13 @@ namespace Type
                 sourceOffset = offset;
 
                 expr->AdjustSourceStart(offset);
+            }
+
+            void Grouping::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                expr->AdjustSourceOffset(offset);
             }
 
             Action Grouping::Accept(Visitor& visitor, Node*& replacement)
@@ -612,6 +742,15 @@ namespace Type
                 }
             }
 
+            void CommaList::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                for (auto expr : list) {
+                    expr->AdjustSourceOffset(offset);
+                }
+            }
+
             Action CommaList::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitCommaList(this, (Expr*&) replacement);
@@ -646,6 +785,14 @@ namespace Type
                 member->AdjustSourceStart(offset);
             }
 
+            void MemberAccess::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                obj->AdjustSourceOffset(offset);
+                member->AdjustSourceOffset(offset);
+            }
+
             Action MemberAccess::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitMemberAccess(this, (Expr*&) replacement);
@@ -668,6 +815,11 @@ namespace Type
             void Number::AdjustSourceStart(int32 offset)
             {
                 sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
+            }
+
+            void Number::AdjustSourceOffset(int32 offset)
+            {
                 sourceOffset = offset;
             }
 
@@ -708,6 +860,11 @@ namespace Type
             void AST::String::AdjustSourceStart(int32 offset)
             {
                 sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
+            }
+
+            void AST::String::AdjustSourceOffset(int32 offset)
+            {
                 sourceOffset = offset;
             }
 
@@ -1025,6 +1182,84 @@ namespace Type
                 return Action::None;
             }
 
+            void PluginVisitor::UpdateNode(Node* parent, VarDecl* child)
+            {
+                auto oldSize = child->nameSize;
+                auto newSize = child->name.size();
+
+                int32 diffSize = newSize - oldSize;
+
+                // Update parent source range
+                parent->sourceSize += diffSize;
+
+                // Replace in editor
+                editor->Delete(child->sourceStart, child->nameSize);
+                editor->Insert(child->sourceStart, child->name);
+
+                child->nameSize = newSize;
+                child->sourceSize += diffSize;
+
+                // Adjust offset for the nodes that follow
+                tokenOffset += diffSize;
+
+                // The new node should not be re-adjusted in the future
+                child->AdjustSourceOffset(tokenOffset);
+            }
+
+            void PluginVisitor::UpdateNode(Node* parent, Identifier* child)
+            {
+                auto oldSize = child->nameSize;
+                auto newSize = child->name.size();
+
+                int32 diffSize = newSize - oldSize;
+
+                // Update parent source range
+                parent->sourceSize += diffSize;
+
+                // Replace in editor
+                editor->Delete(child->sourceStart, child->nameSize);
+                editor->Insert(child->sourceStart, child->name);
+
+                child->nameSize = newSize;
+                child->sourceSize += diffSize;
+
+                // Adjust offset for the nodes that follow
+                tokenOffset += diffSize;
+
+                // The new node should not be re-adjusted in the future
+                child->AdjustSourceOffset(tokenOffset);
+            }
+
+            void PluginVisitor::UpdateNode(Node* parent, Expr* child)
+            {
+                if (child->GetExprType() == AST::ExprType::Identifier) {
+                    UpdateNode(parent, (Identifier*) child);
+                } else {
+                    UpdateNode(parent, (Node*) child);
+                }
+            }
+
+            void PluginVisitor::UpdateNode(Node* parent, Node* child)
+            {
+                auto newSource = child->GenSourceCode();
+                auto newSize   = newSource.size();
+
+                int32 diffSize = newSize - child->sourceSize;
+
+                // Update parent source range
+                parent->sourceSize += diffSize;
+
+                // Replace in editor
+                editor->Delete(child->sourceStart, child->sourceSize);
+                editor->Insert(child->sourceStart, newSource);
+
+                // Adjust offset for the nodes that follow
+                tokenOffset += diffSize;
+
+                // The new node should not be re-adjusted in the future
+                child->AdjustSourceOffset(tokenOffset);
+            }
+
             // Since a child can have its children changed before being replaced,
             //
             // oldChildSize (before visiting the child and its children)
@@ -1032,7 +1267,6 @@ namespace Type
             // child->source size (after visiting the child, but before replacement)
             void PluginVisitor::ReplaceNode(Node* parent, Node* child, uint32 oldChildSize, Node* replacement)
             {
-                // Generate new code
                 auto replacedSize = child->sourceSize;
 
                 // Source can either be a view or a new string
@@ -1042,7 +1276,8 @@ namespace Type
                     // The replacement is a child of the child which already has everything set up
                     newSource = std::u16string(&(*editor)[replacement->sourceStart], replacement->sourceSize);
                 } else {
-                    newSource = replacement->GenSourceCode();
+                    // Generate new source
+                    newSource               = replacement->GenSourceCode();
                     replacement->sourceSize = newSource.size();
                 }
 
@@ -1113,6 +1348,12 @@ namespace Type
                     action = (*it)->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, *it);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace: {
                         ReplaceNode(node, *it, size, rep);
                         *it = (VarDecl*) rep;
@@ -1186,6 +1427,12 @@ namespace Type
                     action = node->init->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->init);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->init, size, rep);
@@ -1251,6 +1498,10 @@ namespace Type
 
                     switch (action) {
                     case Action::Update: {
+                        UpdateNode(node, *it);
+
+                        dirty = true;
+                        break;
                     }
                     case Action::Replace: {
                         ReplaceNode(node, *it, size, rep);
@@ -1325,6 +1576,12 @@ namespace Type
                 action = node->cond->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->cond);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->cond, size, rep);
@@ -1368,6 +1625,12 @@ namespace Type
                     action = node->stmtTrue->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->stmtTrue);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->stmtTrue, size, rep);
@@ -1408,6 +1671,12 @@ namespace Type
                     action = node->stmtFalse->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->stmtFalse);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->stmtFalse, size, rep);
@@ -1469,6 +1738,12 @@ namespace Type
                 action = node->cond->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->cond);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->cond, size, rep);
@@ -1505,6 +1780,12 @@ namespace Type
                 action = node->stmt->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->stmt);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->stmt, size, rep);
@@ -1566,6 +1847,12 @@ namespace Type
                 action = node->decl->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->decl);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->decl, size, rep);
@@ -1611,6 +1898,12 @@ namespace Type
                     action = node->cond->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->cond);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->cond, size, rep);
@@ -1652,6 +1945,12 @@ namespace Type
                     action = node->inc->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->inc);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->inc, size, rep);
@@ -1689,6 +1988,12 @@ namespace Type
                     action = node->stmt->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->stmt);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->stmt, size, rep);
@@ -1750,6 +2055,12 @@ namespace Type
                     action = node->expr->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->expr);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, node->expr, size, rep);
@@ -1810,6 +2121,12 @@ namespace Type
                 action = node->expr->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->expr);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->expr, size, rep);
@@ -1884,6 +2201,12 @@ namespace Type
                 action = node->expr->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->expr);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->expr, size, rep);
@@ -1939,6 +2262,12 @@ namespace Type
                 action = node->left->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->left);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->left, size, rep);
@@ -1974,6 +2303,12 @@ namespace Type
                 action = node->right->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->right);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->right, size, rep);
@@ -2030,6 +2365,12 @@ namespace Type
                 action = node->cond->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->cond);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->cond, size, rep);
@@ -2069,6 +2410,12 @@ namespace Type
                 action = node->exprTrue->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->exprTrue);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->exprTrue, size, rep);
@@ -2104,6 +2451,12 @@ namespace Type
                 action = node->exprFalse->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->exprFalse);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->exprFalse, size, rep);
@@ -2160,6 +2513,12 @@ namespace Type
                 action = node->callee->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->callee);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->callee, size, rep);
@@ -2194,6 +2553,12 @@ namespace Type
                     action = (*it)->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, *it);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, *it, size, rep);
@@ -2258,6 +2623,12 @@ namespace Type
                     action = (*it)->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, *it);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: { // No point in revisiting an identifier
                         ReplaceNode(node, *it, size, rep);
@@ -2297,6 +2668,12 @@ namespace Type
                 action = node->body->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->body);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->body, size, rep);
@@ -2355,6 +2732,12 @@ namespace Type
                 action = node->expr->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->expr);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->expr, size, rep);
@@ -2416,6 +2799,12 @@ namespace Type
                     action = (*it)->Accept(*this, rep);
 
                     switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, *it);
+
+                        dirty = true;
+                        break;
+                    }
                     case Action::Replace:
                     case Action::Replace_Revisit: {
                         ReplaceNode(node, *it, size, rep);
@@ -2481,6 +2870,12 @@ namespace Type
                 action = node->obj->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->obj);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->obj, size, rep);
@@ -2515,6 +2910,12 @@ namespace Type
                 action = node->member->Accept(*this, rep);
 
                 switch (action) {
+                case Action::Update: {
+                    UpdateNode(node, node->member);
+
+                    dirty = true;
+                    break;
+                }
                 case Action::Replace:
                 case Action::Replace_Revisit: {
                     ReplaceNode(node, node->member, size, rep);

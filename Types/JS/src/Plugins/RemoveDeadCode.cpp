@@ -45,7 +45,7 @@ class DeadCodeRemover : public AST::Plugin
     }
 
   public:
-    AST::Action OnEnterVarDeclList(AST::VarDeclList* nod, AST::Decl*& replacemente)
+    AST::Action OnEnterVarDeclList(AST::VarDeclList* node, AST::Decl*& replacemente)
     {
         return CheckDead();
     }

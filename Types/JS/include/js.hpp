@@ -305,6 +305,15 @@ namespace Type
                 virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
 
+            class ContextAwareRename : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
             class RemoveComments : public GView::View::LexicalViewer::Plugin
             {
               public:
@@ -372,6 +381,7 @@ namespace Type
                 Plugins::FoldConstants foldConstants;
                 Plugins::ConstPropagation constPropagation;
                 Plugins::RemoveDeadCode removeDeadCode;
+                Plugins::ContextAwareRename contextAwareRename;
                 Plugins::RemoveComments removeComments;
                 Plugins::MarkAlwaysTrue markAlwaysTrue;
                 Plugins::UnrollLoop unrollLoop;
