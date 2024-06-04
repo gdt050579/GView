@@ -69,6 +69,9 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 }
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
+    sect["Pattern"]     = "magic:D0 CF 11 E0 A1 B1 1A E1";
+
+    // TODO: not quite right
     sect["Extension"]   = { "doc" };
     sect["Priority"]    = 1;
     sect["Description"] = "Document (*.doc)";

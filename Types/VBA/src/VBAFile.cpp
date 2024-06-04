@@ -19,10 +19,19 @@ void VBAFile::GetTokenIDStringRepresentation(uint32 id, AppCUI::Utils::String& s
 }
 
 
-uint32 ParseUntilSpace(GView::View::LexicalViewer::TextParser text, uint32 index)
+uint32 ParseString(GView::View::LexicalViewer::TextParser text, uint32 index)
 {
-    return text.Parse(index, [](char16 c) { return !isspace(c); });
+    uint32 end = text.Parse(index + 1, [](char16 c) { return c != '"'; });
+    return end + 1;
 }
+
+UnicodeStringBuilder KEYWORDS[] = { UnicodeStringBuilder("Attribute"), UnicodeStringBuilder("Sub"), UnicodeStringBuilder("Private"), UnicodeStringBuilder("As"),        UnicodeStringBuilder("Dim"),  UnicodeStringBuilder("End"),
+                                    UnicodeStringBuilder("ByVal"),     UnicodeStringBuilder("Set"), UnicodeStringBuilder("While"),
+                                    UnicodeStringBuilder("Wend"),      UnicodeStringBuilder("If"),  UnicodeStringBuilder("Then") };
+
+UnicodeStringBuilder KEYWORDS2[] = { UnicodeStringBuilder("True"), UnicodeStringBuilder("False") };
+
+const char operators[] = "=(),._&$+-*/<>#";
 
 void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
@@ -46,36 +55,58 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
             continue;
         }
 
+        bool parseSpace = false;
         if (isalpha(c)) {
             end = syntax.text.Parse(start, [](char16 c) { return (bool) isalnum(c) || c == '_'; });
-            syntax.tokens.Add(1, start, end, TokenColor::Word, presetAlignament | TokenAlignament::AddSpaceAfter);
-            start = syntax.text.ParseSpace(end, SpaceType::Space);
-            presetAlignament = TokenAlignament::None;  // TODO: i hate this
-            continue;
+
+            TokenColor color = TokenColor::Word;
+            for (auto keyword : KEYWORDS) {
+                if (syntax.text.GetSubString(start, end) == keyword) {
+                    color = TokenColor::Keyword;
+                    break;
+                }
+            }
+
+            for (auto keyword : KEYWORDS2) {
+                if (syntax.text.GetSubString(start, end) == keyword) {
+                    color = TokenColor::Keyword2;
+                    break;
+                }
+            }
+
+            syntax.tokens.Add(1, start, end, color, presetAlignament);
+            parseSpace = true;
         }
 
         if (isdigit(c)) {
             end = syntax.text.Parse(start, [](char16 c) { return (bool) isdigit(c); });
-            syntax.tokens.Add(1, start, end, TokenColor::Number, presetAlignament | TokenAlignament::AddSpaceAfter);
-            start = end;
-            continue;
+            syntax.tokens.Add(1, start, end, TokenColor::Number, presetAlignament);
+            parseSpace = true;
         }
 
-        // TODO: check for a range of operators
-        // TODO: fix spacing for certain operators
-        if (c == '=' || c == '(' || c == ')' || c == ',' || c == '.' || c == '_' || c == '&') {
-            end = start + 1;
-            syntax.tokens.Add(1, start, end, TokenColor::Operator, presetAlignament | TokenAlignament::AddSpaceAfter);
-            start = syntax.text.ParseSpace(end, SpaceType::Space);
-            presetAlignament = TokenAlignament::None; // TODO: i hate this
-            continue;
+        for (char op : operators) {
+            if (c == op) {
+                end = start + 1;
+                syntax.tokens.Add(1, start, end, TokenColor::Operator, presetAlignament);
+                parseSpace = true;
+                break;
+            }
         }
 
-        // TODO: account for all types of strings if they are permitted in the language
         if (c == '"') {
-            end = syntax.text.ParseString(start);
-            syntax.tokens.Add(1, start, end, TokenColor::String, presetAlignament | TokenAlignament::AddSpaceAfter);
+            end = ParseString(syntax.text, start);
+            syntax.tokens.Add(1, start, end, TokenColor::String, presetAlignament);
+            parseSpace = true;
+        }
+
+        if (parseSpace) {
             start = syntax.text.ParseSpace(end, SpaceType::Space);
+
+            if (start > end) {
+                presetAlignament = TokenAlignament::AddSpaceBefore;
+            } else {
+                presetAlignament = TokenAlignament::None;
+            }
             continue;
         }
 
@@ -95,9 +126,6 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 
         break;
     }
-
-    //syntax.tokens.Add(1, 0, 5, TokenColor::Keyword);
-    //syntax.tokens.Add(1, 5, 10, TokenColor::String, TokenAlignament::StartsOnNewLine);
 }
 
 bool VBAFile::StringToContent(std::u16string_view string, AppCUI::Utils::UnicodeStringBuilder& result)

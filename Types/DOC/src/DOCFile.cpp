@@ -405,7 +405,13 @@ bool DOCFile::ParseModuleStream(BufferView bv, MODULE_Record moduleRecord)
     DecompressStream(compressed, decompressed);
 
     GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::ForceType, "VBA");
-    //GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::BestMatch, "bin");
+
+    {  // TODO: remove
+        std::string filepath = "D:\\temp\\modules\\";
+        filepath.append(moduleRecord.streamName);
+        std::ofstream out(filepath, std::ios::binary | std::ios::trunc);
+        out.write((const char*) decompressed.GetData(), decompressed.GetLength());
+    }
 
     return true;
 }
@@ -479,6 +485,28 @@ void DOCFile::DisplayAllVBAProjectFiles(CFDirEntry& entry)
     for (auto& child : entry.children) {
         DisplayAllVBAProjectFiles(child);
     }
+}
+
+
+bool DOCFile::FindModulesPath(const CFDirEntry& entry, UnicodeStringBuilder& path)
+{
+    std::u16string_view name((char16*) entry.data.nameUnicode, entry.data.nameLength / 2 - 1); // take into account the null character
+
+    if (!entry.children.size()) {
+        return name == u"dir";
+    }
+
+    for (const CFDirEntry& child : entry.children) {
+        UnicodeStringBuilder pathPart;
+        if (FindModulesPath(child, pathPart)) {
+            path.Add(name);
+            path.Add("/");
+            path.Add(pathPart);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
@@ -585,8 +613,13 @@ bool DOCFile::ParseVBAProject()
 
     // find file
 
+    UnicodeStringBuilder modulesPathUsb;
+    // TODO: no no no [0]
+    CHECK(FindModulesPath(root.children[0], modulesPathUsb), false, "modulesPath");
+    std::u16string modulesPath = modulesPathUsb;
+
     CFDirEntry dir;
-    CHECK(root.FindChildByName(u"The VBA Project/_VBA_Project/VBA/dir", dir), false, "");
+    CHECK(root.FindChildByName(modulesPath + u"dir", dir), false, "");
     Buffer dirData = OpenCFStream(dir);
 
     Buffer decompressedDirData;
@@ -595,10 +628,13 @@ bool DOCFile::ParseVBAProject()
 
     //DisplayAllVBAProjectFiles(root);
 
+    // TODO: remove
+    std::filesystem::remove_all("D:\\temp\\modules\\");
+    std::filesystem::create_directory("D:\\temp\\modules\\");
+
     for (auto& moduleRecord : moduleRecords) {
         UnicodeStringBuilder streamName(moduleRecord.streamName);
-        // TODO: make this more generic
-        std::u16string absoluteStreamName = u"The VBA Project/_VBA_Project/VBA/";
+        std::u16string absoluteStreamName = modulesPath;
         absoluteStreamName.append(streamName);
 
         CFDirEntry moduleEntry;
@@ -614,16 +650,6 @@ bool DOCFile::ParseVBAProject()
 bool DOCFile::ProcessData()
 {
     vbaProjectBuffer = obj->GetData().GetEntireFile();
-
-    ////// decompress the "dir" stream
-    ////Buffer decompressed;
-    ////DecompressStream(bv, decompressed);
-
-    ////// parse the decompressed dir stream
-    ////ParseUncompressedDirStream(decompressed);
-
-    //// parse a module file
-    //ParseModuleStream(bv);
 
     ParseVBAProject();
 

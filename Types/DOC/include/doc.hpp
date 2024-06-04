@@ -206,6 +206,7 @@ namespace Type
             bool DecompressStream(BufferView bv, Buffer& decompressed);
             bool ParseUncompressedDirStream(BufferView bv);
             bool ParseModuleStream(BufferView bv, MODULE_Record moduleRecord);
+            bool FindModulesPath(const CFDirEntry& entry, UnicodeStringBuilder& path);
         };
 
         namespace Panels
