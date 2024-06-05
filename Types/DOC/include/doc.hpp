@@ -119,6 +119,7 @@ namespace Type
             uint16 minorVersion;
         };
 
+        // TODO: add docstring to items in view
         struct MODULE_Record {
             String moduleName;
             String streamName;
@@ -127,10 +128,36 @@ namespace Type
             uint32 helpContext;
         };
 
+        enum SysKind { Win16Bit = 0, Win32Bit, Macintosh, Win64Bit };
+
+
         class DOCFile : public TypeInterface, public View::ContainerViewer::EnumerateInterface, public View::ContainerViewer::OpenItemInterface
         {
           private:
+            constexpr static uint8 CF_HEADER_SIGNATURE[]  = { 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1 };
+            constexpr static size_t DIFAT_LOCATIONS_COUNT = 109;
+            
             friend class Panels::Information;
+
+            // displayed info about the file
+            uint16 cfMinorVersion;
+            uint16 cfMajorVersion;
+            uint32 transactionSignatureNumber;
+            uint32 numberOfFatSectors;
+            uint32 numberOfMiniFatSectors;
+            uint32 numberOfDifatSectors;
+            uint32 firstDirectorySectorLocation;
+            uint32 firstMiniFatSectorLocation;
+            uint32 firstDifatSectorLocation;
+
+            uint32 dirMajorVersion;
+            uint16 dirMinorVersion;
+            SysKind sysKind;
+            String projectName;
+            String docString;
+            String helpFile;
+            String constants;
+            uint16 modulesCount;
 
             // compound files (vbaProject.bin) helper member variables
             AppCUI::Utils::Buffer vbaProjectBuffer;
@@ -138,10 +165,12 @@ namespace Type
             AppCUI::Utils::Buffer miniStream;
             AppCUI::Utils::Buffer miniFAT;
 
+          public:
             uint16 sectorSize{};
             uint16 miniSectorSize{};
             uint16 miniStreamCutoffSize{};
 
+          private:
             std::u16string modulesPath;
             CFDirEntry root;
 
@@ -215,7 +244,11 @@ namespace Type
             {
                 Reference<GView::Type::DOC::DOCFile> doc;
                 Reference<AppCUI::Controls::ListView> general;
-                Reference<AppCUI::Controls::ListView> headers;
+                Reference<AppCUI::Controls::ListView> compoundFileInfo;
+                Reference<AppCUI::Controls::ListView> vbaStreamsInfo;
+
+                inline static const auto dec = NumericFormat{ NumericFormatFlags::None, 10, 3, ',' };
+                inline static const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
 
                 void UpdateGeneralInformation();
                 void UpdateIssues();

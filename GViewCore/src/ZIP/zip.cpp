@@ -375,13 +375,14 @@ bool GetInfo(std::u16string_view path, Info& info)
     CHECK(mz_zip_reader_open_file(internalInfo->reader.value, internalInfo->path.c_str()) == MZ_OK, false, "");
     CHECK(mz_zip_reader_goto_first_entry(internalInfo->reader.value) == MZ_OK, false, "");
 
-    do
-    {
+    do {
         mz_zip_file* zipFile{ nullptr };
         CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
         mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
 
-        auto& entry = internalInfo->entries.emplace_back();
+        size_t entryIndex = internalInfo->entries.size();
+        auto& entry       = internalInfo->entries.emplace_back();
+
         ConvertZipFileInfoToEntry(zipFile, entry);
 
         std::u8string_view filename = entry.filename;
@@ -390,17 +391,18 @@ bool GetInfo(std::u16string_view path, Info& info)
         }
 
         size_t offset = 0;
-        
+
         while (true) {
             size_t pos = filename.find_first_of('/', offset);
 
             CHECKBK(pos != std::string::npos, "");
 
             // add the parent as well if not already present
+            auto& entry         = internalInfo->entries[entryIndex];
             auto parentFilename = entry.filename.substr(0, pos + 1);
 
             auto it = std::find_if(
-                    internalInfo->entries.begin(), internalInfo->entries.end(), [&](const _Entry& e) -> bool { return e.filename == parentFilename; });
+                  internalInfo->entries.begin(), internalInfo->entries.end(), [&](const _Entry& e) -> bool { return e.filename == parentFilename; });
             if (it == internalInfo->entries.end()) {
                 auto& parentEntry          = internalInfo->entries.emplace_back();
                 parentEntry.filename       = parentFilename;

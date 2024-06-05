@@ -26,13 +26,16 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
     while (index < bv.GetLength()) {
         // loop over chunks
 
+        size_t chunkStartIndex = index;
+
         uint16 header = bv[index] + (bv[index + 1] << 8);
         index += 2;
 
         uint16 chunkLength = header & 0x0fff; // + 3, for total size
         bool isCompressed  = header & 0x8000; // most significant bit
 
-        CHECK((header & 0x7000) >> 12 == 0b011, false, ""); // fixed value
+        uint8 headerSignature = (header & 0x7000) >> 12;
+        CHECK(headerSignature == 0b011, false, ""); // fixed value
 
         if (!isCompressed) {
             CHECK(index + 4096 < bv.GetLength(), false, "");
@@ -42,10 +45,11 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
         }
 
         // Token Sequence series
-        while (index < chunkLength + 3) {
+        size_t end = chunkStartIndex + chunkLength + 3;
+        while (index < end) {
             unsigned char flags = bv[index++];
             for (int i = 0; i < 8; ++i) {
-                if (index > chunkLength + 3) {
+                if (index >= end) {
                     break;
                 }
 
@@ -90,9 +94,6 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
     return true;
 }
 
-enum SysKind { Win16Bit = 0, Win32Bit, Macintosh, Win64Bit };
-
-
 bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 {
     ByteStream stream((void*) bv.GetData(), bv.GetLength());
@@ -102,9 +103,17 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
     CHECK(stream.ReadAs<uint16>() == 0x01, false, "projectsyskind_id");
     CHECK(stream.ReadAs<uint32>() == 0x04, false, "projectsyskind_size");
 
-    SysKind sysKind = (SysKind) stream.ReadAs<uint32>();
+    sysKind = (SysKind) stream.ReadAs<uint32>();
 
-    CHECK(stream.ReadAs<uint16>() == 0x02, false, "projectlcid_id");
+    check = stream.ReadAs<uint16>();
+    if (check == 0x4a) {
+        // PROJECTCOMPATVERSION
+        CHECK(stream.ReadAs<uint32>() == 0x04, false, "projectcompat_size");
+        stream.Seek(sizeof(uint32)); // compatVersion skipped for now
+        check = stream.ReadAs<uint16>();
+    }
+
+    CHECK(check == 0x02, false, "projectlcid_id");
     CHECK(stream.ReadAs<uint32>() == 0x04, false, "projectlcid_size");
     CHECK(stream.ReadAs<uint32>() == 0x0409, false, "projectlcid_lcid");
 
@@ -119,12 +128,12 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
     CHECK(stream.ReadAs<uint16>() == 0x04, false, "projectname_id");
     auto projectName_size = stream.ReadAs<uint32>();
     CHECK(projectName_size >= 1 && projectName_size <= 128, false, "projectname_size");
-    String projectName(stream.Read(projectName_size));
+    projectName = String(stream.Read(projectName_size));
     
     CHECK(stream.ReadAs<uint16>() == 0x05, false, "projectdocstring_id");
     auto projectDocString_size = stream.ReadAs<uint32>();
     CHECK(projectDocString_size <= 2000, false, "projectdocstring_size");
-    String docstring(stream.Read(projectDocString_size));  // TODO: decode
+    docString = String(stream.Read(projectDocString_size)); // TODO: decode
 
     CHECK(stream.ReadAs<uint16>() == 0x40, false, "reserved");
     auto projectDocStringUnicode_size = stream.ReadAs<uint32>();
@@ -143,6 +152,8 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
         CHECK(helpFile1[i] == helpFile2[i], false, "helpFiles");
     }
 
+    helpFile = helpFile1;
+
     CHECK(stream.ReadAs<uint16>() == 0x07, false, "projectHelpContext_id");
     CHECK(stream.ReadAs<uint32>() == 0x04, false, "projectHelpContext_size");
     auto projectHelpContext = stream.ReadAs<uint32>();
@@ -153,14 +164,14 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
     CHECK(stream.ReadAs<uint16>() == 0x09, false, "projectVersoin_id");
     CHECK(stream.ReadAs<uint32>() == 0x04, false, "reserved");
-    auto versionMajor = stream.ReadAs<uint32>();
-    auto versionMinor = stream.ReadAs<uint16>();
+    dirMajorVersion = stream.ReadAs<uint32>();
+    dirMinorVersion = stream.ReadAs<uint16>();
 
     CHECK(stream.ReadAs<uint16>() == 0x0c, false, "projectConstants_id");
     auto projectConstants_size = stream.ReadAs<uint32>();
     CHECK(projectConstants_size <= 1015, false, "projectConstants_size");
     
-    String constants(stream.Read(projectConstants_size));  // TODO: decode and ABNF
+    constants = String(stream.Read(projectConstants_size)); // TODO: decode and ABNF
     CHECK(stream.ReadAs<uint16>() == 0x3c, false, "reserved");
 
     auto projectConstantsUnicode_size = stream.ReadAs<uint32>();
@@ -306,7 +317,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
     // PROJECTMODULES
     CHECK(stream.ReadAs<uint32>() == 0x02, false, "size");
-    auto modulesCount = stream.ReadAs<uint16>();
+    modulesCount = stream.ReadAs<uint16>();
     CHECK(stream.ReadAs<uint16>() == 0x13, false, "projectCookie_id");
     CHECK(stream.ReadAs<uint32>() == 0x02, false, "projectCookie_size");
     stream.Seek(sizeof(uint16));  // ignored Cookie
@@ -498,21 +509,20 @@ bool DOCFile::ParseVBAProject()
 {
     ByteStream stream(vbaProjectBuffer);
 
-    constexpr uint8 headerSignature[] = { 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1 };
-    for (uint32 i = 0; i < ARRAY_LEN(headerSignature); ++i) {
-        CHECK(stream.ReadAs<uint8>() == headerSignature[i], false, "headerSignature");
+    for (uint32 i = 0; i < ARRAY_LEN(CF_HEADER_SIGNATURE); ++i) {
+        CHECK(stream.ReadAs<uint8>() == CF_HEADER_SIGNATURE[i], false, "headerSignature");
     }
 
     CHECK(stream.ReadAs<uint64>() == 0, false, "headerCLSID");
     CHECK(stream.ReadAs<uint64>() == 0, false, "headerCLSID");
 
-    auto minorVersion = stream.ReadAs<uint16>();  // TODO: This field SHOULD be set to 0x003E if the major version field is either 0x0003 or 0x0004.
-    auto majorVersion = stream.ReadAs<uint16>();
-    CHECK(majorVersion == 0x03 || majorVersion == 0x04, false, "majorVersion");
+    cfMinorVersion = stream.ReadAs<uint16>();  // TODO: This field SHOULD be set to 0x003E if the major version field is either 0x0003 or 0x0004.
+    cfMajorVersion = stream.ReadAs<uint16>();
+    CHECK(cfMajorVersion == 0x03 || cfMajorVersion == 0x04, false, "majorVersion");
 
     CHECK(stream.ReadAs<uint16>() == 0xfffe, false, "byteOrder");
     auto sectorShift = stream.ReadAs<uint16>();
-    CHECK((majorVersion == 0x03 && sectorShift == 0x09) || (majorVersion == 0x04 && sectorShift == 0x0c), false, "sectorShift");
+    CHECK((cfMajorVersion == 0x03 && sectorShift == 0x09) || (cfMajorVersion == 0x04 && sectorShift == 0x0c), false, "sectorShift");
     sectorSize = 1 << sectorShift;
     
     auto miniSectorShift = stream.ReadAs<uint16>();
@@ -523,40 +533,37 @@ bool DOCFile::ParseVBAProject()
     CHECK(stream.ReadAs<uint16>() == 0x00, false, "reserved");
 
     auto numberOfDirectorySectors = stream.ReadAs<uint32>();
-    if (majorVersion == 0x03) {
+    if (cfMajorVersion == 0x03) {
         CHECK(numberOfDirectorySectors == 0x00, false, "numberOfDirectorySectors");
     }
 
-    auto numberOfFatSectors = stream.ReadAs<uint32>();
-    auto firstDirectorySectorLocation = stream.ReadAs<uint32>();
-    auto transactionSignatureNumber = stream.ReadAs<uint32>();  // incremented every time the file is saved
+    numberOfFatSectors = stream.ReadAs<uint32>();
+    firstDirectorySectorLocation = stream.ReadAs<uint32>();
+    transactionSignatureNumber = stream.ReadAs<uint32>();  // incremented every time the file is saved
     
     miniStreamCutoffSize = stream.ReadAs<uint32>();
     CHECK(miniStreamCutoffSize == 0x1000, false, "miniStreamCutoffSize");
 
-    auto firstMiniFatSectorLocation = stream.ReadAs<uint32>();
-    auto numberOfMiniFatSectors     = stream.ReadAs<uint32>();
-    auto firstDifatSectorLocation   = stream.ReadAs<uint32>();
-    auto numberOfDifatSectors       = stream.ReadAs<uint32>();
+    firstMiniFatSectorLocation = stream.ReadAs<uint32>();
+    numberOfMiniFatSectors     = stream.ReadAs<uint32>();
+    firstDifatSectorLocation   = stream.ReadAs<uint32>();
+    numberOfDifatSectors       = stream.ReadAs<uint32>();
 
-    // TODO: where to use this?
-    constexpr size_t locationsCount = 109;
-    uint32 DIFAT[locationsCount];  // the first 109 FAT sector locations of the compound file
+    uint32 DIFAT[DIFAT_LOCATIONS_COUNT]; // the first DIFAT sector locations of the compound file
     {
-        auto difatBv = stream.Read(locationsCount * sizeof(*DIFAT));
+        auto difatBv = stream.Read(DIFAT_LOCATIONS_COUNT * sizeof(*DIFAT));
         memcpy(DIFAT, (void*) difatBv.GetData(), difatBv.GetLength());
     }
 
-    if (majorVersion == 0x04) {
+    if (cfMajorVersion == 0x04) {
         // check if the next 3584 bytes are 0
-        uint32 zeroCheckIndex = 3584;
-        while (zeroCheckIndex--) {
+        while (stream.GetCursor() < sectorSize) {
             CHECK(stream.ReadAs<uint8>() == 0x00, false, "zeroCheck");
         }
     }
 
     // load FAT
-    for (size_t locationIndex = 0; locationIndex < locationsCount; ++locationIndex) {
+    for (size_t locationIndex = 0; locationIndex < DIFAT_LOCATIONS_COUNT; ++locationIndex) {
         uint32 sect = DIFAT[locationIndex];
         if (sect == ENDOFCHAIN || sect == FREESECT) {
             // end of sector chain
@@ -612,17 +619,8 @@ bool DOCFile::ParseVBAProject()
 
 bool DOCFile::ProcessData()
 {
-    BufferView bv = obj->GetData().GetEntireFile();
-
-    if (bv[0] == 0x50 && bv[1] == 0x4b) {
-        // zip archive - get the vbaProject.bin file if any
-
-    }
-
-    vbaProjectBuffer = bv;
-
+    vbaProjectBuffer = obj->GetData().GetEntireFile();
     CHECK(ParseVBAProject(), false, "");
-
     return true;
 }
 

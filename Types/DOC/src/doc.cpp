@@ -34,6 +34,13 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 {
     ContainerViewer::Settings settings;
 
+    const auto hex = NumericFormat{ NumericFormatFlags::HexPrefix, 16 };
+
+    NumericFormatter nf; // should not use the same numerical formatter for multiple operations, but AddProperty owns the given string so it's fine
+    settings.AddProperty("Sector size", nf.ToString(doc->sectorSize, hex));
+    settings.AddProperty("Mini sector size", nf.ToString(doc->miniSectorSize, hex));
+    settings.AddProperty("Mini stream cutoff", nf.ToString(doc->miniStreamCutoffSize, hex));
+
     settings.SetIcon(DOC_ICON);
     settings.SetColumns({
           "n:&Module name,a:l,w:30",
@@ -74,9 +81,8 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
     sect["Pattern"]     = "magic:D0 CF 11 E0 A1 B1 1A E1";
-    sect["Extension"]   = { "docx", "docm", "xslx", "xslm", "pptx", "pptm" };
     sect["Priority"]    = 1;
-    sect["Description"] = "Office file (*.docx, *.xslx, *.pptx) / vbaProject.bin compound file";
+    sect["Description"] = "Compound file containing VBA macros (vbaProject.bin)";
 }
 }
 
