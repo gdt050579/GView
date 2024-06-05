@@ -31,7 +31,7 @@ UnicodeStringBuilder KEYWORDS[] = { UnicodeStringBuilder("Attribute"), UnicodeSt
 
 UnicodeStringBuilder KEYWORDS2[] = { UnicodeStringBuilder("True"), UnicodeStringBuilder("False") };
 
-const char operators[] = "=(),._&$+-*/<>#";
+const char operators[] = "=(),._&$+-*/<>#:";
 
 void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
@@ -39,7 +39,6 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
     uint32 end   = 0;
 
     TokenAlignament presetAlignament = TokenAlignament::None;
-
 
     while (start < syntax.text.Len()) {
 
@@ -123,7 +122,6 @@ void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
             start = syntax.text.ParseUntillStartOfNextLine(end);
             continue;
         }
-
         break;
     }
 }

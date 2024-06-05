@@ -46,6 +46,7 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
 
         // Token Sequence series
         size_t end = chunkStartIndex + chunkLength + 3;
+        size_t decompressedChunkStart = decompressed.GetLength();
         while (index < end) {
             unsigned char flags = bv[index++];
             for (int i = 0; i < 8; ++i) {
@@ -56,7 +57,7 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
                 if (flags & 0x01) {
                     // 2 bytes (Copy Token)
 
-                    int offsetBits = ceil(log2(decompressed.GetLength())); // number of bits used for the offset value
+                    int offsetBits = ceil(log2(decompressed.GetLength() - decompressedChunkStart)); // number of bits used for the offset value
 
                     if (offsetBits < 4) {
                         offsetBits = 4;
@@ -123,7 +124,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
     CHECK(stream.ReadAs<uint16>() == 0x03, false, "projectcodepage_id");
     CHECK(stream.ReadAs<uint32>() == 0x02, false, "projectcodepage_size");
-    auto codePage = stream.ReadAs<uint16>();  // TODO: what to do with the codec? 
+    auto codePage = stream.ReadAs<uint16>();
 
     CHECK(stream.ReadAs<uint16>() == 0x04, false, "projectname_id");
     auto projectName_size = stream.ReadAs<uint32>();
@@ -133,12 +134,12 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
     CHECK(stream.ReadAs<uint16>() == 0x05, false, "projectdocstring_id");
     auto projectDocString_size = stream.ReadAs<uint32>();
     CHECK(projectDocString_size <= 2000, false, "projectdocstring_size");
-    docString = String(stream.Read(projectDocString_size)); // TODO: decode
+    docString = String(stream.Read(projectDocString_size));
 
     CHECK(stream.ReadAs<uint16>() == 0x40, false, "reserved");
     auto projectDocStringUnicode_size = stream.ReadAs<uint32>();
     CHECK(projectDocStringUnicode_size % 2 == 0, false, "projectDocStringUnicode_size");
-    UnicodeStringBuilder projectDocStringUnicode(stream.Read(projectDocStringUnicode_size));  // TODO: decode
+    UnicodeStringBuilder projectDocStringUnicode(stream.Read(projectDocStringUnicode_size)); 
 
     CHECK(stream.ReadAs<uint16>() == 0x06, false, "helpFile1_id");
     auto helpFile1_size = stream.ReadAs<uint32>();
@@ -171,12 +172,12 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
     auto projectConstants_size = stream.ReadAs<uint32>();
     CHECK(projectConstants_size <= 1015, false, "projectConstants_size");
     
-    constants = String(stream.Read(projectConstants_size)); // TODO: decode and ABNF
+    constants = String(stream.Read(projectConstants_size));
     CHECK(stream.ReadAs<uint16>() == 0x3c, false, "reserved");
 
     auto projectConstantsUnicode_size = stream.ReadAs<uint32>();
     CHECK(projectConstantsUnicode_size % 2 == 0, false, "projectConstantsUnicode_size");
-    UnicodeStringBuilder constantsUnicode(stream.Read(projectConstantsUnicode_size));  // TODO: decode and ABNF
+    UnicodeStringBuilder constantsUnicode(stream.Read(projectConstantsUnicode_size));
 
     uint32 recordIndex = 0;
 
@@ -191,7 +192,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
         CHECK(referenceName_id == 0x16, false, "referenceName_id");
         auto referenceName_size = stream.ReadAs<uint32>();
-        String referenceName(stream.Read(referenceName_size));  // TODO: decode and ABNF
+        String referenceName(stream.Read(referenceName_size));
         CHECK(stream.ReadAs<uint16>() == 0x3e, false, "reserved");
         auto referenceNameUnicode_size = stream.ReadAs<uint32>();
         UnicodeStringBuilder referenceNameUnicode(stream.Read(referenceNameUnicode_size));
@@ -208,7 +209,6 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
             stream.Seek(sizeof(uint32)); // SizeTwiddled
             auto sizeOfLibidTwiddled = stream.ReadAs<uint32>();
-            // TODO: check string - https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ovba/d64485fa-8562-4726-9c5e-11e8f01a81c0
             record.libidTwiddled = String(stream.Read(sizeOfLibidTwiddled));
             CHECK(stream.ReadAs<uint32>() == 0x00, false, "reserved1");
             CHECK(stream.ReadAs<uint16>() == 0x00, false, "reserved2");
@@ -218,7 +218,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
             if (check == 0x16) {
                 // optional NameRecordExtended
                 auto sizeOfName = stream.ReadAs<uint32>();
-                record.nameRecordExtended = String(stream.Read(sizeOfName));  // TODO: decode and ABNF
+                record.nameRecordExtended = String(stream.Read(sizeOfName));
                 CHECK(stream.ReadAs<uint16>() == 0x3e, false, "reserved");
                 auto sizeOfNameUnicode = stream.ReadAs<uint32>();
                 UnicodeStringBuilder nameUnicode(stream.Read(sizeOfNameUnicode));
@@ -228,7 +228,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
             CHECK(check == 0x30, false, "reserved3");
             stream.Seek(sizeof(uint32)); // SizeExtended
             auto sizeOfLibidExtended = stream.ReadAs<uint32>();
-            record.libidExtended = String(stream.Read(sizeOfLibidExtended));  // TODO: decode and ABNF
+            record.libidExtended = String(stream.Read(sizeOfLibidExtended));
             CHECK(stream.ReadAs<uint32>() == 0x00, false, "reserved4");
             CHECK(stream.ReadAs<uint16>() == 0x00, false, "reserved5");
             record.originalTypeLib = BufferView(stream.Read(16));
@@ -243,7 +243,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
             record.recordIndex = recordIndex;
 
             auto sizeOfLibidOriginal = stream.ReadAs<uint32>();
-            record.libidOriginal = String(stream.Read(sizeOfLibidOriginal));  // TODO: decode and ABNF
+            record.libidOriginal = String(stream.Read(sizeOfLibidOriginal));
             CHECK(stream.ReadAs<uint16>() == 0x2f, false, "referenceControl_id");
 
             stream.Seek(sizeof(uint32)); // SizeTwiddled
@@ -257,7 +257,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
             if (check == 0x16) {
                 // optional NameRecordExtended
                 auto sizeOfName = stream.ReadAs<uint32>();
-                record.referenceControl.nameRecordExtended = String(stream.Read(sizeOfName));  // TODO: decode and ABNF
+                record.referenceControl.nameRecordExtended = String(stream.Read(sizeOfName));
                 CHECK(stream.ReadAs<uint16>() == 0x3e, false, "reserved");
                 auto sizeOfNameUnicode = stream.ReadAs<uint32>();
                 UnicodeStringBuilder nameUnicode(stream.Read(sizeOfNameUnicode));
@@ -267,7 +267,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
             CHECK(check == 0x30, false, "reserved3");
             stream.Seek(sizeof(uint32)); // SizeExtended
             auto sizeOfLibidExtended = stream.ReadAs<uint32>();
-            record.referenceControl.libidExtended = String(stream.Read(sizeOfLibidExtended));  // TODO: decode and ABNF
+            record.referenceControl.libidExtended = String(stream.Read(sizeOfLibidExtended));
             CHECK(stream.ReadAs<uint32>() == 0x00, false, "reserved4");
             CHECK(stream.ReadAs<uint16>() == 0x00, false, "reserved5");
             record.referenceControl.originalTypeLib = BufferView(stream.Read(16));
@@ -284,7 +284,7 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
             stream.Seek(sizeof(uint32)); // ignored Size
 
             auto sizeOfLibid = stream.ReadAs<uint32>();
-            record.libid = String(stream.Read(sizeOfLibid));  // TODO: decode and ABNF
+            record.libid = String(stream.Read(sizeOfLibid));
             
             CHECK(stream.ReadAs<uint32>() == 0x00, false, "reserved1");
             CHECK(stream.ReadAs<uint16>() == 0x00, false, "reserved2");
@@ -299,9 +299,9 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
             stream.Seek(sizeof(uint32)); // ignored Size
             auto sizeOfLibidAbsolute = stream.ReadAs<uint32>();
-            record.libidAbsolute = String(stream.Read(sizeOfLibidAbsolute));  // TODO: decode and ABNF
+            record.libidAbsolute = String(stream.Read(sizeOfLibidAbsolute));
             auto sizeOfLibidRelative = stream.ReadAs<uint32>();
-            record.libidRelative = String(stream.Read(sizeOfLibidRelative));  // TODO: decode and ABNF
+            record.libidRelative = String(stream.Read(sizeOfLibidRelative));
 
             record.majorVersion = stream.ReadAs<uint32>();
             record.minorVersion = stream.ReadAs<uint16>();
@@ -331,26 +331,26 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
 
         CHECK(stream.ReadAs<uint16>() == 0x19, false, "moduleName_id");
         auto sizeOfModuleName = stream.ReadAs<uint32>();
-        // TODO: decode and ABNF
+ 
         moduleRecord.moduleName = String(stream.Read(sizeOfModuleName));
 
         CHECK(stream.ReadAs<uint16>() == 0x47, false, "moduleNameUnicode_id");
         auto sizeOfModuleNameUnicode = stream.ReadAs<uint32>();
         CHECK(sizeOfModuleNameUnicode % 2 == 0, false, "sizeOfModuleNameUnicode");
-        UnicodeStringBuilder moduleNameUnicode(stream.Read(sizeOfModuleNameUnicode));  // TODO: decode and ABNF
+        UnicodeStringBuilder moduleNameUnicode(stream.Read(sizeOfModuleNameUnicode));
 
         CHECK(stream.ReadAs<uint16>() == 0x1a, false, "moduleStreamName_id");
         auto sizeOfStreamName = stream.ReadAs<uint32>();
-        moduleRecord.streamName = String(stream.Read(sizeOfStreamName)); // TODO: decode and ABNF
+        moduleRecord.streamName = String(stream.Read(sizeOfStreamName));
         CHECK(stream.ReadAs<uint16>() == 0x32, false, "reserved");
 
         auto sizeOfStreamNameUnicode = stream.ReadAs<uint32>();
         CHECK(sizeOfStreamNameUnicode % 2 == 0, false, "sizeOfStreamNameUnicode");
-        String streamNameUnicode(stream.Read(sizeOfStreamNameUnicode));  // TODO: decode and ABNF
+        String streamNameUnicode(stream.Read(sizeOfStreamNameUnicode));
 
         CHECK(stream.ReadAs<uint16>() == 0x1c, false, "moduleDocString_id");
         auto sizeOfDocString = stream.ReadAs<uint32>();
-        // TODO: decode and ABNF
+ 
         moduleRecord.docString = String(stream.Read(sizeOfDocString));
         CHECK(stream.ReadAs<uint16>() == 0x48, false, "reserved");
         auto sizeOfDocStringUnicode = stream.ReadAs<uint32>();
@@ -404,7 +404,7 @@ bool DOCFile::ParseModuleStream(BufferView bv, const MODULE_Record& moduleRecord
     ByteStream stream(bv);
     stream.Seek(moduleTextOffset);
     auto compressed = stream.Read(stream.GetSize() - stream.GetCursor());
-    DecompressStream(compressed, text);
+    CHECK(DecompressStream(compressed, text), false, "decompress");
 
     return true;
 }
@@ -664,7 +664,9 @@ void DOCFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
     Buffer moduleBuffer = OpenCFStream(moduleEntry);
 
     Buffer decompressed;
-    ParseModuleStream(moduleBuffer, moduleRecord, decompressed);
+    if (!ParseModuleStream(moduleBuffer, moduleRecord, decompressed)) {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Module parse error!");
+    }
     GView::App::OpenBuffer(decompressed, moduleRecord->streamName, "", GView::App::OpenMethod::ForceType, "VBA");
 }
 } // namespace GView::Type::DOC
