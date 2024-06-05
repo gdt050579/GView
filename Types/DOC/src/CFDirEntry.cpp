@@ -59,22 +59,23 @@ void CFDirEntry::BuildStorageTree()
     AppendChildren(data.childId);
 }
 
-
 bool CFDirEntry::FindChildByName(std::u16string_view entryName, CFDirEntry& entry)
 {
-    for (CFDirEntry& child : children) {
-        std::u16string_view childName((char16_t*) child.data.nameUnicode, child.data.nameLength / 2 - 1);
-        if (!entryName.starts_with(childName)) {
-            continue;
-        }
+    std::u16string_view currentEntryName((char16_t*) this->data.nameUnicode, this->data.nameLength / 2 - 1);
+    if (!entryName.starts_with(currentEntryName)) {
+        return false;
+    }
 
-        auto pos = entryName.find_first_of(u'/');
-        if (pos == std::u16string::npos) {
-            entry = child;
+    auto pos = entryName.find_first_of(u'/');
+    if (pos == std::u16string::npos) {
+        entry = *this;
+        return true;
+    }
+
+    for (CFDirEntry& child : children) {
+        std::u16string_view newEntryName = entryName.substr(pos + 1);
+        if (child.FindChildByName(newEntryName, entry)) {
             return true;
-        } else {
-            std::u16string_view newEntryName = entryName.substr(pos + 1);
-            return child.FindChildByName(newEntryName, entry);
         }
     }
     return false;

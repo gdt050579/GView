@@ -1,7 +1,5 @@
 #include "doc.hpp"
 
-#include <fstream>  // TODO: remove
-
 namespace GView::Type::DOC
 {
 using namespace GView::View::LexicalViewer;
@@ -37,7 +35,6 @@ bool DOCFile::DecompressStream(BufferView bv, Buffer& decompressed)
         CHECK((header & 0x7000) >> 12 == 0b011, false, ""); // fixed value
 
         if (!isCompressed) {
-            // TODO: verify
             CHECK(index + 4096 < bv.GetLength(), false, "");
             decompressed.Add(BufferView(bv.GetData() + index, 4096));
             index += 4096;
@@ -314,11 +311,11 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
     CHECK(stream.ReadAs<uint32>() == 0x02, false, "projectCookie_size");
     stream.Seek(sizeof(uint16));  // ignored Cookie
 
+    moduleRecords.reserve(modulesCount);
+
     // array of MODULE records
     for (uint32 moduleIndex = 0; moduleIndex < modulesCount; ++moduleIndex) {
         // TODO: check this - MUST have a corresponding <ProjectModule> specified in PROJECT Stream
-
-        // TODO: preallocate them based on modulesCount
         MODULE_Record& moduleRecord = moduleRecords.emplace_back();
 
         CHECK(stream.ReadAs<uint16>() == 0x19, false, "moduleName_id");
@@ -390,28 +387,13 @@ bool DOCFile::ParseUncompressedDirStream(BufferView bv)
     return true;
 }
 
-bool DOCFile::ParseModuleStream(BufferView bv, MODULE_Record moduleRecord)
+bool DOCFile::ParseModuleStream(BufferView bv, const MODULE_Record& moduleRecord, Buffer& text)
 {
     size_t moduleTextOffset = moduleRecord.textOffset;
-
     ByteStream stream(bv);
-
     stream.Seek(moduleTextOffset);
-
     auto compressed = stream.Read(stream.GetSize() - stream.GetCursor());
-
-    Buffer decompressed;
-
-    DecompressStream(compressed, decompressed);
-
-    GView::App::OpenBuffer(decompressed, moduleRecord.streamName, "", GView::App::OpenMethod::ForceType, "VBA");
-
-    {  // TODO: remove
-        std::string filepath = "D:\\temp\\modules\\";
-        filepath.append(moduleRecord.streamName);
-        std::ofstream out(filepath, std::ios::binary | std::ios::trunc);
-        out.write((const char*) decompressed.GetData(), decompressed.GetLength());
-    }
+    DecompressStream(compressed, text);
 
     return true;
 }
@@ -419,6 +401,8 @@ bool DOCFile::ParseModuleStream(BufferView bv, MODULE_Record moduleRecord)
 
 Buffer DOCFile::OpenCFStream(const CFDirEntry& entry)
 {
+    CHECK(entry.data.objectType == 0x02, Buffer(), "incorrect entry");
+
     auto sect                    = entry.data.startingSectorLocation;
     auto size                    = entry.data.streamSize;
     bool useMiniFAT              = size < miniStreamCutoffSize;
@@ -594,8 +578,7 @@ bool DOCFile::ParseVBAProject()
     Buffer directoryData = OpenCFStream(firstDirectorySectorLocation, vbaProjectBuffer.GetLength(), false);
 
     // parse dir entries, starting with root entry
-
-    CFDirEntry root(directoryData, 0);
+    root = CFDirEntry(directoryData, 0);
     root.BuildStorageTree();
 
     uint32 streamSize = numberOfMiniFatSectors * sectorSize;
@@ -612,61 +595,78 @@ bool DOCFile::ParseVBAProject()
     miniStream            = OpenCFStream(root.data.startingSectorLocation, miniStreamSize, false);
 
     // find file
-
     UnicodeStringBuilder modulesPathUsb;
-    // TODO: no no no [0]
-    CHECK(FindModulesPath(root.children[0], modulesPathUsb), false, "modulesPath");
-    std::u16string modulesPath = modulesPathUsb;
+    CHECK(FindModulesPath(root, modulesPathUsb), false, "modulesPath");
+    modulesPath = modulesPathUsb;
 
     CFDirEntry dir;
     CHECK(root.FindChildByName(modulesPath + u"dir", dir), false, "");
     Buffer dirData = OpenCFStream(dir);
 
     Buffer decompressedDirData;
-    DecompressStream(dirData, decompressedDirData);
-    ParseUncompressedDirStream(decompressedDirData);
-
-    //DisplayAllVBAProjectFiles(root);
-
-    // TODO: remove
-    std::filesystem::remove_all("D:\\temp\\modules\\");
-    std::filesystem::create_directory("D:\\temp\\modules\\");
-
-    for (auto& moduleRecord : moduleRecords) {
-        UnicodeStringBuilder streamName(moduleRecord.streamName);
-        std::u16string absoluteStreamName = modulesPath;
-        absoluteStreamName.append(streamName);
-
-        CFDirEntry moduleEntry;
-        CHECK(root.FindChildByName(absoluteStreamName, moduleEntry), false, "");
-
-        Buffer moduleData = OpenCFStream(moduleEntry);
-        ParseModuleStream(moduleData, moduleRecord);
-    }
+    CHECK(DecompressStream(dirData, decompressedDirData), false, "decompress dir stream");
+    CHECK(ParseUncompressedDirStream(decompressedDirData), false, "parse dir stream");
 
     return true;
 }
 
 bool DOCFile::ProcessData()
 {
-    vbaProjectBuffer = obj->GetData().GetEntireFile();
+    BufferView bv = obj->GetData().GetEntireFile();
 
-    ParseVBAProject();
+    if (bv[0] == 0x50 && bv[1] == 0x4b) {
+        // zip archive - get the vbaProject.bin file if any
+
+    }
+
+    vbaProjectBuffer = bv;
+
+    CHECK(ParseVBAProject(), false, "");
 
     return true;
 }
 
 bool DOCFile::BeginIteration(std::u16string_view path, AppCUI::Controls::TreeViewItem parent)
 {
+    moduleRecordIndex = 0;
     return true;
 }
 
 bool DOCFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
 {
-    return false;
+    MODULE_Record& moduleRecord = moduleRecords[moduleRecordIndex];
+
+    item.SetText(0, moduleRecord.moduleName);
+    item.SetText(1, moduleRecord.streamName);
+
+    std::u16string absoluteStreamName = modulesPath;
+    absoluteStreamName.append(UnicodeStringBuilder(moduleRecord.streamName));
+    CFDirEntry moduleEntry;
+    CHECK(root.FindChildByName(absoluteStreamName, moduleEntry), false, "");
+    Buffer moduleBuffer = OpenCFStream(moduleEntry);
+    Buffer decompressed;
+    ParseModuleStream(moduleBuffer, moduleRecord, decompressed);
+
+    item.SetText(2, String().Format("%u", decompressed.GetLength()));
+
+    item.SetData<MODULE_Record>(&moduleRecord);
+
+    moduleRecordIndex++;
+    return moduleRecordIndex < moduleRecords.size();
 }
 
 void DOCFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewItem item)
 {
+    auto moduleRecord = item.GetData<MODULE_Record>();
+
+    std::u16string absoluteStreamName = modulesPath;
+    absoluteStreamName.append(UnicodeStringBuilder(moduleRecord->streamName));
+    CFDirEntry moduleEntry;
+    CHECKRET(root.FindChildByName(absoluteStreamName, moduleEntry), "");
+    Buffer moduleBuffer = OpenCFStream(moduleEntry);
+
+    Buffer decompressed;
+    ParseModuleStream(moduleBuffer, moduleRecord, decompressed);
+    GView::App::OpenBuffer(decompressed, moduleRecord->streamName, "", GView::App::OpenMethod::ForceType, "VBA");
 }
 } // namespace GView::Type::DOC

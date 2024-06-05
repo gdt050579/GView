@@ -50,9 +50,6 @@ namespace Type
             }
         };
 
-
-        // TODO: move to another file
-
         #pragma pack(1)
         struct CFDirEntry_Data {
             uint8 nameUnicode[64]; // the structure starts from here
@@ -145,6 +142,9 @@ namespace Type
             uint16 miniSectorSize{};
             uint16 miniStreamCutoffSize{};
 
+            std::u16string modulesPath;
+            CFDirEntry root;
+
             // VBA streams helper member variables
             std::vector<REFERENCECONTROL_Record> referenceControlRecords;
             std::vector<REFERENCEORIGINAL_Record> referenceOriginalRecords;
@@ -152,6 +152,7 @@ namespace Type
             std::vector<REFERENCEPROJECT_Record> referenceProjectRecords;
 
             std::vector<MODULE_Record> moduleRecords;
+            uint32 moduleRecordIndex = 0;
 
           public:
             DOCFile();
@@ -199,13 +200,12 @@ namespace Type
             bool ParseVBAProject();
             Buffer OpenCFStream(const CFDirEntry& entry);
             Buffer OpenCFStream(uint32 sect, uint32 size, bool useMiniFAT);
-
             void DisplayAllVBAProjectFiles(CFDirEntry& entry);
 
             // VBA streams helper methods
             bool DecompressStream(BufferView bv, Buffer& decompressed);
             bool ParseUncompressedDirStream(BufferView bv);
-            bool ParseModuleStream(BufferView bv, MODULE_Record moduleRecord);
+            bool ParseModuleStream(BufferView bv, const MODULE_Record& moduleRecord, Buffer& text);
             bool FindModulesPath(const CFDirEntry& entry, UnicodeStringBuilder& path);
         };
 

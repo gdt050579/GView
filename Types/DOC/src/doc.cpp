@@ -36,7 +36,9 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
 
     settings.SetIcon(DOC_ICON);
     settings.SetColumns({
-          "n:&Index,a:r,w:50",
+          "n:&Module name,a:l,w:30",
+          "n:&Stream name,a:c,w:40",
+          "n:&Size,a:c,w:15",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<DOC::DOCFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());
@@ -59,8 +61,10 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 {
     auto doc = win->GetObject()->GetContentType<DOC::DOCFile>();
 
-    // TODO: check return value
-    doc->ProcessData();
+    if (!doc->ProcessData()) {
+        AppCUI::Dialogs::MessageBox::ShowError("Error", "Incorrect format!");
+        return false;
+    }
 
     CreateContainerView(win, doc);
     win->AddPanel(Pointer<TabPage>(new DOC::Panels::Information(doc)), true);
@@ -70,11 +74,9 @@ PLUGIN_EXPORT bool PopulateWindow(Reference<WindowInterface> win)
 PLUGIN_EXPORT void UpdateSettings(IniSection sect)
 {
     sect["Pattern"]     = "magic:D0 CF 11 E0 A1 B1 1A E1";
-
-    // TODO: not quite right
-    sect["Extension"]   = { "doc" };
+    sect["Extension"]   = { "docx", "docm", "xslx", "xslm", "pptx", "pptm" };
     sect["Priority"]    = 1;
-    sect["Description"] = "Document (*.doc)";
+    sect["Description"] = "Office file (*.docx, *.xslx, *.pptx) / vbaProject.bin compound file";
 }
 }
 
