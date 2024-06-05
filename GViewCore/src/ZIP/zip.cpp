@@ -381,7 +381,9 @@ bool GetInfo(std::u16string_view path, Info& info)
         CHECKBK(mz_zip_reader_entry_get_info(internalInfo->reader.value, &zipFile) == MZ_OK, "");
         mz_zip_reader_set_pattern(internalInfo->reader.value, nullptr, 1); // do we need a pattern?
 
-        auto& entry = internalInfo->entries.emplace_back();
+        size_t entryIndex = internalInfo->entries.size();
+        auto& entry       = internalInfo->entries.emplace_back();
+        
         ConvertZipFileInfoToEntry(zipFile, entry);
 
         std::u8string_view filename = entry.filename;
@@ -397,6 +399,7 @@ bool GetInfo(std::u16string_view path, Info& info)
             CHECKBK(pos != std::string::npos, "");
 
             // add the parent as well if not already present
+            auto& entry         = internalInfo->entries[entryIndex];
             auto parentFilename = entry.filename.substr(0, pos + 1);
 
             auto it = std::find_if(
