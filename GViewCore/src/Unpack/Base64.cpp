@@ -49,6 +49,7 @@ bool Decode(BufferView view, Buffer& output)
     uint32 sequence      = 0;
     uint32 sequenceIndex = 0;
     char lastEncoded     = 0;
+    uint8 paddingCount   = 0;
 
     for (uint32 i = 0; i < view.GetLength(); ++i)
     {
@@ -69,6 +70,7 @@ bool Decode(BufferView view, Buffer& output)
         if (encoded == '=') {
             // padding
             decoded = 0;
+            paddingCount++;
         } else {
             decoded = BASE64_DECODE_TABLE[encoded];
             CHECK(decoded != -1, false, "");
@@ -89,6 +91,10 @@ bool Decode(BufferView view, Buffer& output)
 
         lastEncoded = encoded;
     }
+
+    // trim the trailing bytes
+    CHECK(paddingCount < 3, false, "");
+    output.Resize(output.GetLength() - paddingCount);
 
     return true;
 }
