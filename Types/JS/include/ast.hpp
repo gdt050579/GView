@@ -40,7 +40,7 @@ namespace Type
             class Number;
             class String;
 
-            enum class Action { None, Update, Replace, Replace_Revisit, Remove, _UpdateChild };
+            enum class Action { None, Skip, Update, Replace, Replace_Revisit, Remove, _UpdateChild };
 
             class ConstVisitor
             {
