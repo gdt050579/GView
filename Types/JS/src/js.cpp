@@ -38,6 +38,7 @@ extern "C"
         settings.AddPlugin(&js->plugins.removeComments);
         settings.AddPlugin(&js->plugins.markAlwaysTrue);
         settings.AddPlugin(&js->plugins.unrollLoop);
+        settings.AddPlugin(&js->plugins.dumpAST);
         settings.AddPlugin(&js->plugins.addStrings);
         settings.AddPlugin(&js->plugins.reverseStrings);
         settings.AddPlugin(&js->plugins.replaceConstants);

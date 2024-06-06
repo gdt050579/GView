@@ -24,7 +24,7 @@ bool ContextAwareRename::CanBeAppliedOn(const GView::View::LexicalViewer::Plugin
 
 class ContextAwareRenamer : public AST::Plugin
 {
-    enum class Context { Generic, Assignment };
+    enum class Context { Generic, Assignment, FunDecl };
 
     struct RenameInfo {
         std::u16string newName;
@@ -53,6 +53,32 @@ class ContextAwareRenamer : public AST::Plugin
         vars.emplace_back();
     }
 
+    AST::Action OnEnterFunDecl(AST::FunDecl* node, AST::Decl*& replacement)
+    {
+        vars.emplace_back();
+        context = Context::FunDecl;
+        return AST::Action::None;
+    }
+
+    AST::Action OnExitFunDecl(AST::FunDecl* node, AST::Decl*& replacement)
+    {
+        context = Context::Generic;
+        
+        RenameInfo info;
+
+        info.newName     = GetNextFreeName(u"fun");
+        info.initialized = true;
+
+        vars.pop_back();
+
+        vars[vars.size() - 1].map[node->name] = info;
+        vars[vars.size() - 1].taken.insert(info.newName);
+
+        node->name = info.newName;
+
+        return AST::Action::Update;
+    }
+
     AST::Action OnExitVarDecl(AST::VarDecl* node, AST::Decl*& replacement)
     {
         if (node->init) {
@@ -79,6 +105,20 @@ class ContextAwareRenamer : public AST::Plugin
     }
     AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement)
     {
+        if (context == Context::FunDecl) {
+            RenameInfo info;
+
+            info.newName     = GetNextFreeName(u"param");
+            info.initialized = true;
+
+            vars[vars.size() - 1].map[node->name] = info;
+            vars[vars.size() - 1].taken.insert(info.newName);
+
+            node->name = info.newName;
+
+            return AST::Action::Update;
+        }
+
         auto block = GetVariableBlock(node->name);
 
         if (block == nullptr) {
@@ -132,13 +172,18 @@ class ContextAwareRenamer : public AST::Plugin
 
         return AST::Action::None;
     }
-    AST::Action OnEnterBlock(AST::Block* node, AST::Stmt*& replacement)
+    AST::Action OnEnterBlock(AST::Block* node, AST::Block*& replacement)
     {
         vars.emplace_back();
+
+        if (context == Context::FunDecl) {
+            context = Context::Generic;
+        }
+
         return AST::Action::None;
     }
 
-    AST::Action OnExitBlock(AST::Block* node, AST::Stmt*& replacement)
+    AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement)
     {
         vars.pop_back();
         return AST::Action::None;

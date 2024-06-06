@@ -76,10 +76,66 @@ namespace Type
                 return str;
             }
 
-            VarDeclList::VarDeclList(uint32 type) : type(type)
+            FunDecl::FunDecl(std::u16string_view name) : name(name), block(nullptr), nameSize(name.size()), nameOffset(0)
             {
             }
 
+            FunDecl::~FunDecl()
+            {
+                for (auto param : params) {
+                    delete param;
+                }
+
+                delete block;
+            }
+
+            void FunDecl::AdjustSourceStart(int32 offset)
+            {
+                sourceStart += offset - sourceOffset;
+                sourceOffset = offset;
+
+                for (auto param : params) {
+                    param->AdjustSourceStart(offset);
+                }
+
+                block->AdjustSourceStart(offset);
+            }
+
+            void FunDecl::AdjustSourceOffset(int32 offset)
+            {
+                sourceOffset = offset;
+
+                for (auto param : params) {
+                    param->AdjustSourceOffset(offset);
+                }
+
+                block->AdjustSourceOffset(offset);
+            }
+
+            Action FunDecl::Accept(Visitor& visitor, Node*& replacement)
+            {
+                return visitor.VisitFunDecl(this, (Decl*&) replacement);
+            }
+
+            void FunDecl::AcceptConst(ConstVisitor& visitor)
+            {
+                visitor.VisitFunDecl(this);
+            }
+
+            DeclType FunDecl::GetDeclType()
+            {
+                return DeclType::Function;
+            }
+
+            void FunDecl::SetName(std::u16string& str)
+            {
+                name     = str;
+                nameSize = str.size();
+            }
+
+            VarDeclList::VarDeclList(uint32 type) : type(type)
+            {
+            }
             VarDeclList::~VarDeclList()
             {
                 for (auto decl : decls) {
@@ -114,6 +170,11 @@ namespace Type
             void VarDeclList::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitVarDeclList(this);
+            }
+
+            DeclType VarDeclList::GetDeclType()
+            {
+                return DeclType::Var;
             }
 
             VarDecl::VarDecl(u16string_view name, Expr* init) : name(name), init(init), nameSize(name.size())
@@ -154,9 +215,20 @@ namespace Type
                 visitor.VisitVarDecl(this);
             }
 
-            void VarDecl::SetName(std::u16string& str) {
-                name = str;
+            DeclType VarDecl::GetDeclType()
+            {
+                return DeclType::Var;
+            }
+
+            void VarDecl::SetName(std::u16string& str)
+            {
+                name     = str;
                 nameSize = str.size();
+            }
+
+            AST::DeclType Stmt::GetDeclType()
+            {
+                return AST::DeclType::Stmt;
             }
 
             Block::~Block()
@@ -449,7 +521,7 @@ namespace Type
 
             void Identifier::SetName(std::u16string& str)
             {
-                name = str;
+                name     = str;
                 nameSize = str.size();
             }
 
@@ -893,6 +965,9 @@ namespace Type
                 visitor.VisitString(this);
             }
 
+            void ConstVisitor::VisitFunDecl(const FunDecl* node)
+            {
+            }
             void ConstVisitor::VisitVarDeclList(const VarDeclList* node)
             {
             }
@@ -951,6 +1026,10 @@ namespace Type
             {
             }
 
+            Action Visitor::VisitFunDecl(FunDecl* node, Decl*& replacement)
+            {
+                return Action::None;
+            }
             Action Visitor::VisitVarDeclList(VarDeclList* node, Decl*& replacement)
             {
                 return Action::None;
@@ -1028,6 +1107,10 @@ namespace Type
                 return Action::None;
             }
 
+            Action Plugin::OnEnterFunDecl(FunDecl* node, Decl*& replacement)
+            {
+                return Action::None;
+            }
             Action Plugin::OnEnterVarDeclList(VarDeclList* node, Decl*& replacement)
             {
                 return Action::None;
@@ -1105,6 +1188,10 @@ namespace Type
                 return Action::None;
             }
 
+            Action Plugin::OnExitFunDecl(FunDecl* node, Decl*& replacement)
+            {
+                return Action::None;
+            }
             Action Plugin::OnExitVarDeclList(VarDeclList* nod, Decl*& replacemente)
             {
                 return Action::None;
@@ -1182,6 +1269,30 @@ namespace Type
                 return Action::None;
             }
 
+            void PluginVisitor::UpdateNode(Node* parent, FunDecl* child)
+            {
+                auto oldSize = child->nameSize;
+                auto newSize = child->name.size();
+
+                int32 diffSize = newSize - oldSize;
+
+                // Update parent source range
+                parent->sourceSize += diffSize;
+
+                // Replace in editor
+                editor->Delete(child->nameOffset, child->nameSize);
+                editor->Insert(child->nameOffset, child->name);
+
+                child->nameSize = newSize;
+                child->sourceSize += diffSize;
+
+                // Adjust offset for the nodes that follow
+                tokenOffset += diffSize;
+
+                // The new node should not be re-adjusted in the future
+                child->AdjustSourceOffset(tokenOffset);
+            }
+
             void PluginVisitor::UpdateNode(Node* parent, VarDecl* child)
             {
                 auto oldSize = child->nameSize;
@@ -1234,6 +1345,15 @@ namespace Type
             {
                 if (child->GetExprType() == AST::ExprType::Identifier) {
                     UpdateNode(parent, (Identifier*) child);
+                } else {
+                    UpdateNode(parent, (Node*) child);
+                }
+            }
+
+            void PluginVisitor::UpdateNode(Node* parent, Decl* child)
+            {
+                if (child->GetDeclType() == AST::DeclType::Function) {
+                    UpdateNode(parent, (FunDecl*) child);
                 } else {
                     UpdateNode(parent, (Node*) child);
                 }
@@ -1327,6 +1447,124 @@ namespace Type
             {
             }
 
+            Action PluginVisitor::VisitFunDecl(FunDecl* node, Decl*& replacement)
+            {
+                node->AdjustSourceStart(tokenOffset);
+
+                auto action = plugin->OnEnterFunDecl(node, replacement);
+                if (action != Action::None) {
+                    return action;
+                }
+
+                auto dirty = false;
+                Node* rep;
+
+                auto it = node->params.begin();
+
+                while (it != node->params.end()) {
+                    auto size = (*it)->sourceSize;
+
+                    // TODO: check if null
+                    action = (*it)->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, *it);
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::Replace: {
+                        ReplaceNode(node, *it, size, rep);
+                        *it = (Identifier*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::Replace_Revisit: {
+                        ReplaceNode(node, *it, size, rep);
+                        *it = (Identifier*) rep;
+
+                        dirty = true;
+                        continue; // Don't increment it
+                    }
+                    case Action::Remove: {
+                        RemoveNode(node, *it);
+
+                        it = node->params.erase(it);
+
+                        if (it == node->params.begin()) {
+                            // If the first child is deleted, update the parent start offset
+                            node->AdjustSourceStart(tokenOffset);
+                        }
+
+                        dirty = true;
+                        continue;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, (*it)->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+
+                    it++;
+                }
+
+                if (node->block) {
+                    auto size = node->block->sourceSize;
+
+                    action = node->block->Accept(*this, rep);
+
+                    switch (action) {
+                    case Action::Update: {
+                        UpdateNode(node, node->block);
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::Replace:
+                    case Action::Replace_Revisit: {
+                        ReplaceNode(node, node->block, size, rep);
+                        node->block = (Block*) rep;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::Remove: {
+                        RemoveNode(node, node->block);
+                        node->block = nullptr;
+
+                        dirty = true;
+                        break;
+                    }
+                    case Action::_UpdateChild: {
+                        AdjustSize(node, node->block->sourceSize - size);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                    }
+                }
+
+                action = plugin->OnExitFunDecl(node, replacement);
+
+                // Node was altered
+                if (action != Action::None) {
+                    return action;
+                }
+
+                // Node wasn't altered, but children were
+                if (dirty) {
+                    return Action::_UpdateChild;
+                }
+
+                // Node and children weren't altered
+                return Action::None;
+            }
             Action PluginVisitor::VisitVarDeclList(VarDeclList* node, Decl*& replacement)
             {
                 node->AdjustSourceStart(tokenOffset);
@@ -3024,6 +3262,20 @@ namespace Type
         }                                                                                                                                                      \
     } while (false)
 
+            void DumpVisitor::VisitFunDecl(const FunDecl* node)
+            {
+                DUMP("FunDecl");
+
+                file << ", \"name\": \"" << ToString(node->name).GetText() << "\", \"params\": [";
+
+                DUMP_LIST(params);
+
+                file << "], \"block\": ";
+
+                DUMP_MEMBER(block);
+
+                file << "}";
+            }
             void DumpVisitor::VisitVarDeclList(const VarDeclList* node)
             {
                 DUMP("VarDeclList");
@@ -3266,10 +3518,9 @@ namespace Type
         ++current;                                                                                                                                             \
     }
 
-#define ADVANCE_NOCHECK()                                                                                                                                      \
-    do {                                                                                                                                                       \
-        ++current;                                                                                                                                             \
-    } while (GetCurrentType() == TokenType::Comment)
+#define ADVANCE_NOCHECK() ++current;
+
+#define ADVANCE_ONCE() ++current;
 
 #define ADVANCE()                                                                                                                                              \
     do {                                                                                                                                                       \
@@ -3316,6 +3567,9 @@ namespace Type
                 }
 
                 block->SetSource(sourceStart, GetPrevious());
+
+                SKIP_COMMENTS();
+
                 return block;
             }
 
@@ -3323,22 +3577,71 @@ namespace Type
             {
                 auto type = GetCurrentType();
 
-                if (type != TokenType::DataType_Var && type != TokenType::DataType_Let) {
+                switch (type) {
+                case TokenType::DataType_Var:
+                case TokenType::DataType_Let: {
+                    auto sourceStart = GetCurrent();
+
+                    auto decl = ParseVarDecl();
+
+                    if (GetCurrentType() == TokenType::Semicolumn) {
+                        ADVANCE_NOCHECK();
+
+                        // Include ';'
+                        decl->SetSourceEnd(GetPrevious());
+
+                        SKIP_COMMENTS();
+                    }
+
+                    return decl;
+                }
+                case TokenType::Keyword_Function: {
+                    return ParseFunDecl();
+                }
+                default: {
                     return ParseStmt();
                 }
+                }
+            }
 
+            FunDecl* Parser::ParseFunDecl()
+            {
                 auto sourceStart = GetCurrent();
 
-                auto decl = ParseVarDecl();
+                ADVANCE(); // function
 
-                if (GetCurrentType() == TokenType::Semicolumn) {
-                    ADVANCE_NOCHECK();
+                EXPECT(TokenType::Word);
 
-                    // Include ';'
-                    decl->SetSourceEnd(GetPrevious());
+                auto name = GetCurrent().GetText();
+                auto nameOffset = GetCurrentOffset();
+
+                ADVANCE();
+
+                auto fun = new FunDecl(name);
+
+                EXPECT(TokenType::ExpressionOpen);
+
+                while (current < end) {
+                    ADVANCE(); // (/comma
+
+                    auto id = ParseIdentifier();
+
+                    fun->params.emplace_back((Identifier*) id);
+
+                    if (GetCurrentType() != TokenType::Comma) {
+                        break;
+                    }
                 }
 
-                return decl;
+                EXPECT(TokenType::ExpressionClose);
+                ADVANCE();
+
+                fun->block = ParseBlock();
+
+                fun->SetSource(sourceStart, GetPrevious());
+                fun->nameOffset = nameOffset;
+
+                return fun;
             }
 
             VarDeclList* Parser::ParseVarDecl()
@@ -3406,6 +3709,8 @@ namespace Type
 
                         // Include ';'
                         expr->SetSourceEnd(GetPrevious());
+
+                        SKIP_COMMENTS();
                     }
 
                     return expr;
@@ -3515,6 +3820,8 @@ namespace Type
                 }
 
                 node->SetSource(sourceStart, GetPrevious());
+
+                SKIP_COMMENTS();
 
                 return node;
             }
@@ -4090,7 +4397,9 @@ namespace Type
             Expr* Parser::ParseIdentifier()
             {
                 auto sourceStart = GetCurrent();
-                if (GetCurrentType() != TokenType::Word) {
+                auto type        = GetCurrentType();
+
+                if (type != TokenType::Word && type < TokenType::Keyword_Clearinterval && type > TokenType::DataType_Long) {
                     return nullptr;
                 }
 
@@ -4117,6 +4426,17 @@ namespace Type
             uint32 Parser::GetCurrentType()
             {
                 return tokens[current].GetTypeID(TokenType::None);
+            }
+
+            uint32 Parser::GetCurrentOffset()
+            {
+                auto opt = tokens[current].GetTokenStartOffset();
+
+                if (opt.has_value()) {
+                    return opt.value();
+                }
+
+                return 0;
             }
         } // namespace AST
     }     // namespace JS

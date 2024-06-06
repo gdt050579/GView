@@ -6,6 +6,7 @@ target_sources(JS PRIVATE FoldConstants.cpp
 		RemoveComments.cpp
 		MarkAlwaysTrue.cpp
 		UnrollLoop.cpp
+		DumpAST.cpp
 		AddStrings.cpp
 		ReverseStrings.cpp
 		ReplaceConstants.cpp)

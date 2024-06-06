@@ -122,7 +122,7 @@ class ConstFolder : public AST::Plugin
             if (rightVal == 0) {
                 return nullptr;
             }
-            result = leftVal & rightVal;
+            result = leftVal % rightVal;
             break;
         }
         case TokenType::Operator_Exponential: {

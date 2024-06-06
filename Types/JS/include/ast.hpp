@@ -16,6 +16,7 @@ namespace Type
 
             class Node;
             class Decl;
+            class FunDecl;
             class VarDeclList;
             class VarDecl;
             class Stmt;
@@ -44,6 +45,7 @@ namespace Type
             class ConstVisitor
             {
               public:
+                virtual void VisitFunDecl(const FunDecl* node);
                 virtual void VisitVarDeclList(const VarDeclList* node);
                 virtual void VisitVarDecl(const VarDecl* node);
                 virtual void VisitBlock(const Block* node);
@@ -68,6 +70,7 @@ namespace Type
             class Visitor
             {
               public:
+                virtual Action VisitFunDecl(FunDecl* node, Decl*& replacement);
                 virtual Action VisitVarDeclList(VarDeclList* node, Decl*& replacement);
                 virtual Action VisitVarDecl(VarDecl* node, Decl*& replacement);
                 virtual Action VisitBlock(Block* node, Block*& replacement);
@@ -92,6 +95,7 @@ namespace Type
             class Plugin
             {
               public:
+                virtual Action OnEnterFunDecl(FunDecl* node, Decl*& replacement);
                 virtual Action OnEnterVarDeclList(VarDeclList* node, Decl*& replacement);
                 virtual Action OnEnterVarDecl(VarDecl* node, Decl*& replacement);
                 virtual Action OnEnterBlock(Block* node, Block*& replacement);
@@ -112,6 +116,7 @@ namespace Type
                 virtual Action OnEnterNumber(Number* node, Expr*& replacement);
                 virtual Action OnEnterString(AST::String* node, Expr*& replacement);
 
+                virtual Action OnExitFunDecl(FunDecl* node, Decl*& replacement);
                 virtual Action OnExitVarDeclList(VarDeclList* node, Decl*& replacement);
                 virtual Action OnExitVarDecl(VarDecl* node, Decl*& replacement);
                 virtual Action OnExitBlock(Block* node, Block*& replacement);
@@ -142,6 +147,7 @@ namespace Type
 
                 PluginVisitor(Plugin* plugin, TextEditor* editor);
 
+                virtual Action VisitFunDecl(FunDecl* node, Decl*& replacement) override;
                 virtual Action VisitVarDeclList(VarDeclList* node, Decl*& replacement) override;
                 virtual Action VisitVarDecl(VarDecl* node, Decl*& replacement) override;
                 virtual Action VisitBlock(Block* node, Block*& replacement) override;
@@ -163,7 +169,9 @@ namespace Type
                 virtual Action VisitString(AST::String* node, Expr*& replacement) override;
 
                 private:
+                  void UpdateNode(Node* parent, FunDecl* child);
                   void UpdateNode(Node* parent, VarDecl* child);
+                  void UpdateNode(Node* parent, Decl* child);
                   void UpdateNode(Node* parent, Expr* child);
                   void UpdateNode(Node* parent, Identifier* child);
                   void UpdateNode(Node* parent, Node* child);
@@ -180,6 +188,7 @@ namespace Type
                 DumpVisitor(const char* file);
                 ~DumpVisitor();
 
+                virtual void VisitFunDecl(const FunDecl* node) override;
                 virtual void VisitVarDeclList(const VarDeclList* node) override;
                 virtual void VisitVarDecl(const VarDecl* node) override;
                 virtual void VisitBlock(const Block* node) override;
@@ -215,6 +224,7 @@ namespace Type
                 Block* ParseBlock();
 
                 Decl* ParseDecl();
+                FunDecl* ParseFunDecl();
                 VarDeclList* ParseVarDecl();
 
                 Stmt* ParseStmt();
@@ -250,6 +260,7 @@ namespace Type
                 Token GetCurrent();
                 Token GetPrevious();
                 uint32 GetCurrentType();
+                uint32 GetCurrentOffset();
             }; // namespace AST
 
             class Instance
@@ -263,6 +274,10 @@ namespace Type
 
                 ~Instance();
             };
+
+            enum class DeclType { Stmt, Function, Var };
+            enum class ExprType { Unop, Binop, Ternary, Call, Constant, Identifier, Lambda, CommaList, Grouping, MemberAccess };
+            enum class ConstType { Number, String };
 
             class Node
             {
@@ -287,6 +302,32 @@ namespace Type
 
             class Decl : public Node
             {
+              public:
+                virtual DeclType GetDeclType() = 0;
+            };
+
+            class FunDecl : public Decl
+            {
+              public:
+                std::u16string name;
+                std::vector<Identifier*> params;
+                Block* block;
+
+                uint32 nameSize;
+                uint32 nameOffset;
+
+                FunDecl(std::u16string_view name);
+                ~FunDecl();
+
+                virtual void AdjustSourceStart(int32 offset) override;
+                virtual void AdjustSourceOffset(int32 offset);
+
+                virtual Action Accept(Visitor& visitor, Node*& replacement) override;
+                virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual DeclType GetDeclType() override;
+
+                void SetName(std::u16string& str);
             };
 
             class VarDeclList : public Decl
@@ -303,6 +344,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual DeclType GetDeclType() override;
             };
 
             class VarDecl : public Decl
@@ -323,6 +366,8 @@ namespace Type
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
 
+                virtual DeclType GetDeclType() override;
+
                 void SetName(std::u16string& str);
             };
 
@@ -330,6 +375,8 @@ namespace Type
 
             class Stmt : public Decl
             {
+              public:
+                virtual DeclType GetDeclType() override;
             };
 
             class Block : public Stmt
@@ -431,9 +478,6 @@ namespace Type
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
             };
-
-            enum class ExprType { Unop, Binop, Ternary, Call, Constant, Identifier, Lambda, CommaList, Grouping, MemberAccess };
-            enum class ConstType { Number, String };
 
             class Expr : public Node
             {

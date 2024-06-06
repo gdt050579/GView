@@ -25,11 +25,7 @@ bool Emulate::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
 class Emulator : public AST::ConstVisitor
 {
     struct Value {
-        enum class Type {
-            Undefined,
-            Number,
-            String
-        } type;
+        enum class Type { Undefined, Number, String } type;
 
         std::variant<int32, std::u16string> value;
         bool lval;
@@ -88,15 +84,44 @@ class Emulator : public AST::ConstVisitor
     }
     void VisitWhileStmt(const AST::WhileStmt* node)
     {
-        
+        do {
+            node->cond->AcceptConst(*this);
+
+            auto cond = lastResult;
+
+            if (IsTruthy(cond)) {
+                node->stmt->AcceptConst(*this);
+            } else {
+                break;
+            }
+        } while (1);
     }
     void VisitForStmt(const AST::ForStmt* node)
     {
-        
+        if (node->decl) {
+            node->decl->AcceptConst(*this);
+        }
+
+        do {
+            if (node->cond) {
+                node->cond->AcceptConst(*this);
+
+                auto cond = lastResult;
+
+                if (!IsTruthy(cond)) {
+                    break;
+                }
+            }
+
+            node->stmt->AcceptConst(*this);
+
+            if (node->inc) {
+                node->inc->AcceptConst(*this);
+            }
+        } while (1);
     }
     void VisitReturnStmt(const AST::ReturnStmt* node)
     {
-        
     }
     void VisitExprStmt(const AST::ExprStmt* node)
     {
@@ -108,7 +133,6 @@ class Emulator : public AST::ConstVisitor
     }
     void VisitUnop(const AST::Unop* node)
     {
-        
     }
     void VisitBinop(const AST::Binop* node)
     {
@@ -139,37 +163,122 @@ class Emulator : public AST::ConstVisitor
     }
     void VisitTernary(const AST::Ternary* node)
     {
-        
     }
     void VisitCall(const AST::Call* node)
     {
-        
+        auto callee = node->callee;
+
+        if (callee->GetExprType() == AST::ExprType::MemberAccess) {
+            auto access = (AST::MemberAccess*) callee;
+
+            auto objIsId    = (access->obj->GetExprType() == AST::ExprType::Identifier);
+            auto memberIsId = (access->member->GetExprType() == AST::ExprType::Identifier);
+
+            if (memberIsId) {
+                auto member = (AST::Identifier*) access->member;
+
+                if (objIsId) {
+                    auto obj = (AST::Identifier*) access->obj;
+
+                    if (obj->name == u"String") {
+                        if (member->name == u"fromCharCode") {
+                            if (node->args.size() == 1) {
+                                node->args[0]->AcceptConst(*this);
+
+                                if (lastResult.type == Value::Type::Number) {
+                                    EvalStringFromCharCode(std::get<int32>(lastResult.value));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                access->obj->AcceptConst(*this);
+
+                auto left = lastResult;
+
+                // TODO: arr
+                switch (left.type) {
+                case Value::Type::String: {
+                    auto val = std::get<std::u16string>(left.value);
+
+                    if (member->name == u"charCodeAt") {
+                        if (node->args.size() == 1) {
+                            node->args[0]->AcceptConst(*this);
+
+                            EvalStringCharCodeAt(val, std::get<int32>(lastResult.value));
+                        }
+                    }
+                    break;
+                }
+                case Value::Type::Undefined: {
+                    return;
+                }
+                }
+            }
+        }
+
+        // TODO: visit callee and call the function
     }
     void VisitLambda(const AST::Lambda* node)
     {
-        
     }
     void VisitGrouping(const AST::Grouping* node)
     {
-        
     }
     void VisitCommaList(const AST::CommaList* node)
     {
-        
     }
     void VisitMemberAccess(const AST::MemberAccess* node)
     {
-        
+        node->obj->AcceptConst(*this);
+
+        auto obj = lastResult;
+
+        if (obj.type == Value::Type::Undefined) {
+            lastResult = Value();
+            return;
+        }
+
+        if (node->member->GetExprType() == AST::ExprType::Identifier) {
+            auto member = (AST::Identifier*) node->member;
+
+            if (member->name == u"length") {
+                if (obj.type != Value::Type::String) {
+                    lastResult = Value();
+                    return;
+                }
+
+                EvalStringLength(std::get<std::u16string>(obj.value));
+                return;
+            }
+        }
+
+        node->member->AcceptConst(*this);
+
+        auto member = lastResult;
+
+        if (member.type == Value::Type::Undefined) {
+            lastResult = Value();
+            return;
+        }
+
+        // TODO: support for arrays
+        lastResult = Value();
     }
     void VisitNumber(const AST::Number* node)
     {
-        lastResult.type = Value::Type::Number;
+        lastResult.type  = Value::Type::Number;
         lastResult.value = node->value;
     }
     void VisitString(const AST::String* node)
     {
         lastResult.type  = Value::Type::String;
-        lastResult.value = node->value;
+        lastResult.value                = node->value;
+
+        // Process escape sequences
+        ProcessString(std::get<std::u16string>(lastResult.value));
     }
 
     Value GetVarValue(std::u16string_view name)
@@ -194,13 +303,14 @@ class Emulator : public AST::ConstVisitor
         return nullptr;
     }
 
-    private:
+  private:
     std::unordered_map<std::u16string_view, Value>& GetBlockVars()
     {
         return vars[vars.size() - 1];
     }
 
-    bool IsTruthy(Value& val) {
+    bool IsTruthy(Value& val)
+    {
         switch (val.type) {
         case Value::Type::Number: {
             return std::get<int32>(val.value) != 0;
@@ -211,6 +321,72 @@ class Emulator : public AST::ConstVisitor
         }
 
         return false;
+    }
+
+    // TODO: use them from GView Core
+    bool IsHex(char16 ch)
+    {
+        return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
+    }
+
+    char16 HexCharToValue(char16 ch)
+    {
+        if (ch >= '0' && ch <= '9')
+            return (ch - '0');
+        if (ch >= 'A' && ch <= 'F')
+            return (ch + 10 - 'A');
+        if (ch >= 'a' && ch <= 'f')
+            return (ch + 10 - 'a');
+        return 0;
+    }
+
+    void ProcessString(std::u16string& str)
+    {
+        for (auto i = 0u; i < str.size(); i++) {
+            if (str[i] != '\\')
+                continue;
+            if (str[i + 1] == 'x' && IsHex(str[i + 2]) && IsHex(str[i + 3])) {
+                str[i] = HexCharToValue(str[i + 2]) * 0x10 + HexCharToValue(str[i + 3]);
+                str.erase(i + 1, 3);
+                continue;
+            }
+            if (str[i + 1] == 'u' && IsHex(str[i + 2]) && IsHex(str[i + 3]) && IsHex(str[i + 4]) && IsHex(str[i + 5])) {
+                str[i] =
+                      HexCharToValue(str[i + 2]) * 0x1000 + HexCharToValue(str[i + 3]) * 0x100 + HexCharToValue(str[i + 4]) * 0x10 + HexCharToValue(str[i + 5]);
+                str.erase(i + 1, 5);
+                continue;
+            }
+        }
+    }
+
+    void EvalStringLength(std::u16string_view str)
+    {
+        lastResult.type = Value::Type::Number;
+        lastResult.value = (int32) str.size();
+        lastResult.lval  = false;
+    }
+
+    void EvalStringFromCharCode(int32 arg)
+    {
+        std::u16string result;
+        result += (char16_t) arg;
+
+        lastResult.type  = Value::Type::String;
+        lastResult.value = result;
+        lastResult.lval  = false;
+    }
+
+    void EvalStringCharCodeAt(std::u16string_view callee, int32 arg)
+    {
+        if (arg >= callee.size()) {
+            return;
+        }
+
+        auto chr = callee[arg];
+
+        lastResult.type  = Value::Type::Number;
+        lastResult.value = (int32) chr;
+        lastResult.lval  = false;
     }
 
     void EvalAssignment(AST::Identifier* lval, Value right, uint32 op)
@@ -280,16 +456,31 @@ class Emulator : public AST::ConstVisitor
         }
 
         if (extra != 0) {
-            auto& leftVal = std::get<std::u16string>(left.value);
-
-            switch (right.type) {
+            switch (left.type) {
             case Value::Type::Number: {
-                Eval(leftVal, std::get<int32>(right.value), extra);
+                switch (right.type) {
+                case Value::Type::Number: {
+                    Eval(std::get<int32>(left.value), std::get<int32>(right.value), extra);
+                    break;
+                }
+                case Value::Type::String: {
+                    Eval(std::get<int32>(left.value), std::get<std::u16string>(right.value), extra);
+                    break;
+                }
+                }
                 break;
             }
-            case Value::Type::String:
-                {
-                Eval(leftVal, std::get<std::u16string>(right.value), extra);
+            case Value::Type::String: {
+                switch (right.type) {
+                case Value::Type::Number: {
+                    Eval(std::get<std::u16string>(left.value), std::get<int32>(right.value), extra);
+                    break;
+                }
+                case Value::Type::String: {
+                    Eval(std::get<std::u16string>(left.value), std::get<std::u16string>(right.value), extra);
+                    break;
+                }
+                }
                 break;
             }
             }
@@ -306,7 +497,7 @@ class Emulator : public AST::ConstVisitor
             return;
         }
 
-        (*scope)[lval->name] = lastResult;
+        (*scope)[lval->name]      = lastResult;
         (*scope)[lval->name].lval = true;
     }
 
@@ -410,7 +601,7 @@ class Emulator : public AST::ConstVisitor
                 lastResult = Value();
                 return;
             }
-            result = left & right;
+            result = left % right;
             break;
         }
         case TokenType::Operator_Exponential: {
@@ -423,8 +614,9 @@ class Emulator : public AST::ConstVisitor
         }
         }
 
-        lastResult.type = Value::Type::Number;
+        lastResult.type  = Value::Type::Number;
         lastResult.value = result;
+        lastResult.lval  = false;
     }
 
     void Eval(int32 left, std::u16string_view right, uint32 op)
@@ -440,8 +632,9 @@ class Emulator : public AST::ConstVisitor
             std::u16string result;
             builder.ToString(result);
 
-            lastResult.type = Value::Type::String;
+            lastResult.type  = Value::Type::String;
             lastResult.value = result;
+            lastResult.lval  = false;
             return;
         }
         }
@@ -464,6 +657,7 @@ class Emulator : public AST::ConstVisitor
 
             lastResult.type  = Value::Type::String;
             lastResult.value = result;
+            lastResult.lval  = false;
             return;
         }
         }
@@ -475,8 +669,9 @@ class Emulator : public AST::ConstVisitor
     {
         switch (op) {
         case TokenType::Operator_Plus: {
-            lastResult.type = Value::Type::String;
+            lastResult.type  = Value::Type::String;
             lastResult.value = std::u16string();
+            lastResult.lval  = false;
 
             std::get<std::u16string>(lastResult.value) += left;
             std::get<std::u16string>(lastResult.value) += right;
@@ -539,7 +734,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest Emulate::Execute(GView::Vie
     // TODO: instance should also handle the action for the script block
     i.script->AcceptConst(emulator);
 
-    auto val = emulator.GetVarValue(u"z");
+    auto val = emulator.GetVarValue(u"decoded");
 
     {
         AST::DumpVisitor dump("_ast_after.json");
