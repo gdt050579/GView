@@ -46,6 +46,7 @@ void CreateContainerView(Reference<GView::View::WindowInterface> win, Reference<
           "n:&Module name,a:l,w:30",
           "n:&Stream name,a:c,w:40",
           "n:&Size,a:c,w:15",
+          "n:&Doc String,a:c,w:100",
     });
 
     settings.SetEnumerateCallback(win->GetObject()->GetContentType<DOC::DOCFile>().ToObjectRef<ContainerViewer::EnumerateInterface>());

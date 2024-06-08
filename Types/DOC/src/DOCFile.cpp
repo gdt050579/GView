@@ -1,5 +1,7 @@
 #include "doc.hpp"
 
+#include <fstream> // TODO: remove
+
 namespace GView::Type::DOC
 {
 using namespace GView::View::LexicalViewer;
@@ -647,6 +649,8 @@ bool DOCFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
 
     item.SetText(2, String().Format("%u", decompressed.GetLength()));
 
+    item.SetText(3, moduleRecord.docString);
+
     item.SetData<MODULE_Record>(&moduleRecord);
 
     moduleRecordIndex++;
@@ -668,5 +672,8 @@ void DOCFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Module parse error!");
     }
     GView::App::OpenBuffer(decompressed, moduleRecord->streamName, "", GView::App::OpenMethod::ForceType, "VBA");
+
+    std::ofstream out("D:\\work\\bd\\samples\\ceva\\docx\\dropped", std::ios::trunc);
+    out.write((const char*) decompressed.GetData(), decompressed.GetLength());
 }
 } // namespace GView::Type::DOC

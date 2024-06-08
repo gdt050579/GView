@@ -40,7 +40,8 @@ namespace Type
 
             ByteStream& Seek(size_t count);
 
-            size_t GetCursor() {
+            size_t GetCursor()
+            {
                 return cursor;
             };
 
@@ -119,7 +120,6 @@ namespace Type
             uint16 minorVersion;
         };
 
-        // TODO: add docstring to items in view
         struct MODULE_Record {
             String moduleName;
             String streamName;
