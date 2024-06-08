@@ -4,3 +4,4 @@ target_sources(JS PRIVATE
 	PanelInformation.cpp
 	ast.cpp)
 add_subdirectory(Plugins)
+add_subdirectory(Transformers)

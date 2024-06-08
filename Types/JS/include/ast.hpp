@@ -1,3 +1,5 @@
+#pragma once
+
 #include "js.hpp"
 
 #include <fstream>
@@ -276,6 +278,7 @@ namespace Type
             };
 
             enum class DeclType { Stmt, Function, Var };
+            enum class StmtType { Block, If, For, While, Return, Expr };
             enum class ExprType { Unop, Binop, Ternary, Call, Constant, Identifier, Lambda, CommaList, Grouping, MemberAccess };
             enum class ConstType { Number, String };
 
@@ -298,12 +301,16 @@ namespace Type
                 virtual void AdjustSourceOffset(int32 offset);
 
                 virtual std::u16string GenSourceCode();
+
+                virtual Node* Clone() = 0;
             };
 
             class Decl : public Node
             {
               public:
                 virtual DeclType GetDeclType() = 0;
+
+                virtual Decl* Clone() = 0;
             };
 
             class FunDecl : public Decl
@@ -328,6 +335,8 @@ namespace Type
                 virtual DeclType GetDeclType() override;
 
                 void SetName(std::u16string& str);
+
+                virtual FunDecl* Clone() override;
             };
 
             class VarDeclList : public Decl
@@ -346,6 +355,8 @@ namespace Type
                 virtual void AcceptConst(ConstVisitor& visitor) override;
 
                 virtual DeclType GetDeclType() override;
+
+                virtual VarDeclList* Clone() override;
             };
 
             class VarDecl : public Decl
@@ -369,6 +380,8 @@ namespace Type
                 virtual DeclType GetDeclType() override;
 
                 void SetName(std::u16string& str);
+
+                virtual VarDecl* Clone() override;
             };
 
             // Function decl
@@ -377,6 +390,10 @@ namespace Type
             {
               public:
                 virtual DeclType GetDeclType() override;
+
+                virtual StmtType GetStmtType() = 0;
+
+                virtual Stmt* Clone() = 0;
             };
 
             class Block : public Stmt
@@ -391,6 +408,10 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual StmtType GetStmtType() override;
+
+                virtual Block* Clone() override;
             };
 
             class IfStmt : public Stmt
@@ -409,6 +430,10 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual StmtType GetStmtType() override;
+
+                virtual IfStmt* Clone() override;
             };
 
             class WhileStmt : public Stmt
@@ -426,6 +451,10 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual StmtType GetStmtType() override;
+
+                virtual WhileStmt* Clone() override;
             };
 
             class ForStmt : public Stmt
@@ -445,6 +474,10 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual StmtType GetStmtType() override;
+
+                virtual ForStmt* Clone() override;
             };
 
             class ExprStmt : public Stmt
@@ -461,6 +494,10 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual StmtType GetStmtType() override;
+
+                virtual ExprStmt* Clone() override;
             };
 
             class ReturnStmt : public Stmt
@@ -477,12 +514,18 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual StmtType GetStmtType() override;
+
+                virtual ReturnStmt* Clone() override;
             };
 
             class Expr : public Node
             {
               public:
                 virtual ExprType GetExprType() = 0;
+
+                virtual Expr* Clone() = 0;
             };
 
             class Identifier : public Expr
@@ -499,10 +542,14 @@ namespace Type
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
 
+                virtual std::u16string GenSourceCode() override;
+
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
 
                 void SetName(std::u16string& str);
+
+                virtual Identifier* Clone() override;
             };
 
             class Unop : public Expr
@@ -522,6 +569,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual Unop* Clone() override;
             };
 
             class Binop : public Expr
@@ -540,8 +589,12 @@ namespace Type
                 virtual void AdjustSourceStart(int32 offset) override;
                 virtual void AdjustSourceOffset(int32 offset);
 
+                virtual std::u16string GenSourceCode() override;
+
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual Binop* Clone() override;
             };
 
             class Ternary : public Expr
@@ -562,6 +615,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual Ternary* Clone() override;
             };
 
             class Call : public Expr
@@ -580,6 +635,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual Call* Clone() override;
             };
 
             class Lambda : public Expr
@@ -599,6 +656,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual Lambda* Clone() override;
             };
 
             class Grouping : public Expr
@@ -617,6 +676,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual Grouping* Clone() override;
             };
 
             class CommaList : public Expr
@@ -635,6 +696,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual CommaList* Clone() override;
             };
 
             class MemberAccess : public Expr
@@ -654,6 +717,8 @@ namespace Type
 
                 virtual Action Accept(Visitor& visitor, Node*& replacement) override;
                 virtual void AcceptConst(ConstVisitor& visitor) override;
+
+                virtual MemberAccess* Clone() override;
             };
 
             class Constant : public Expr
@@ -661,6 +726,8 @@ namespace Type
               public:
                 virtual ExprType GetExprType() override;
                 virtual ConstType GetConstType() = 0;
+
+                virtual Constant* Clone() = 0;
             };
 
             class Number : public Constant
@@ -679,6 +746,8 @@ namespace Type
                 virtual std::u16string GenSourceCode() override;
 
                 virtual ConstType GetConstType() override;
+
+                virtual Number* Clone() override;
             };
 
             class String : public Constant
@@ -697,6 +766,8 @@ namespace Type
                 virtual std::u16string GenSourceCode() override;
 
                 virtual ConstType GetConstType() override;
+
+                virtual String* Clone() override;
             };
         } // namespace AST
     }     // namespace JS

@@ -1,70 +1,38 @@
-#include "js.hpp"
 #include "ast.hpp"
+#include "Transformers/ConstPropagator.hpp"
 
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <stack>
 
-namespace GView::Type::JS::Plugins
+namespace GView::Type::JS::Transformers
 {
-using namespace GView::View::LexicalViewer;
-
-std::string_view ConstPropagation::GetName()
-{
-    return "Constant Propagation";
-}
-std::string_view ConstPropagation::GetDescription()
-{
-    return "Propagate string constants.";
-}
-bool ConstPropagation::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
-{
-    return true;
-}
-
-class ConstPropagator : public AST::Plugin
-{
-    struct VarInfo {
-        AST::Constant* value = nullptr;
-
-        bool allocated = false;
-        bool dirty     = false;
-
-        void SetValue(AST::Constant* val, bool wasAllocated)
-        {
-            if (value != nullptr && allocated) {
-                delete value;
-            }
-
-            value     = val;
-            allocated = wasAllocated;
+    void ConstPropagator::VarInfo::SetValue(AST::Constant* val, bool wasAllocated)
+    {
+        if (value != nullptr && allocated) {
+            delete value;
         }
 
-        AST::Constant* GetValue()
-        {
-            return value;
-        }
+        value     = val;
+        allocated = wasAllocated;
+    }
 
-        AST::Constant* GetClone()
-        {
-            return ConstPropagator::Clone(value);
-        }
+    AST::Constant* ConstPropagator::VarInfo::GetValue()
+    {
+        return value;
+    }
 
-        ~VarInfo()
-        {
-        }
-    };
+    AST::Constant* ConstPropagator::VarInfo::GetClone()
+    {
+        return ConstPropagator::Clone(value);
+    }
 
-    bool inAssignment = false;
+    ConstPropagator::VarInfo::~VarInfo()
+    {
+    }
 
-    std::vector<std::unordered_map<std::u16string_view, VarInfo>> vars;
-    std::unordered_set<std::u16string_view> dirty;
-
-    AST::IfStmt* uncertainIf = nullptr; // Unknown condition in IfStmt, so don't propagate further
-
-  public:
-    AST::Action OnEnterVarDecl(AST::VarDecl* node, AST::Decl*& replacement)
+    AST::Action ConstPropagator::OnEnterVarDecl(AST::VarDecl* node, AST::Decl*& replacement)
     {
         if (node->init && node->init->GetExprType() == AST::ExprType::Constant) {
             auto& entry = vars[vars.size() - 1][node->name];
@@ -76,7 +44,7 @@ class ConstPropagator : public AST::Plugin
         return AST::Action::None;
     }
 
-    AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement)
+    AST::Action ConstPropagator::OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement)
     {
         if (inAssignment) {
             inAssignment = false;
@@ -93,7 +61,7 @@ class ConstPropagator : public AST::Plugin
         return AST::Action::None;
     }
 
-    AST::Action OnEnterIfStmt(AST::IfStmt* node, AST::Stmt*& replacement)
+    AST::Action ConstPropagator::OnEnterIfStmt(AST::IfStmt* node, AST::Stmt*& replacement)
     {
         if (node->cond->GetExprType() == AST::ExprType::Constant) {
             auto cond = (AST::Constant*) node->cond;
@@ -115,7 +83,7 @@ class ConstPropagator : public AST::Plugin
         return AST::Action::None;
     }
 
-    AST::Action OnExitIfStmt(AST::IfStmt* node, AST::Stmt*& replacement)
+    AST::Action ConstPropagator::OnExitIfStmt(AST::IfStmt* node, AST::Stmt*& replacement)
     {
         if (node == uncertainIf) {
             uncertainIf = nullptr;
@@ -130,28 +98,29 @@ class ConstPropagator : public AST::Plugin
         return AST::Action::None;
     }
 
-    AST::Action OnEnterBlock(AST::Block* node, AST::Block*& replacement)
+    AST::Action ConstPropagator::OnEnterBlock(AST::Block* node, AST::Block*& replacement)
     {
         vars.emplace_back();
         return AST::Action::None;
     }
 
-    AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement)
+    AST::Action ConstPropagator::OnExitBlock(AST::Block* node, AST::Block*& replacement)
     {
         vars.pop_back();
         return AST::Action::None;
     }
 
-    AST::Action OnEnterBinop(AST::Binop* node, AST::Expr*& replacement)
+    AST::Action ConstPropagator::OnEnterBinop(AST::Binop* node, AST::Expr*& replacement)
     {
-        if (node->type >= TokenType::Operator_Assignment && node->type < TokenType::Operator_LogicNullishAssignment && node->left->GetExprType() == AST::ExprType::Identifier) {
+        if (node->type >= TokenType::Operator_Assignment && node->type < TokenType::Operator_LogicNullishAssignment &&
+            node->left->GetExprType() == AST::ExprType::Identifier) {
             inAssignment = true;
         }
 
         return AST::Action::None;
     }
 
-    AST::Action OnExitBinop(AST::Binop* node, AST::Expr*& replacement)
+    AST::Action ConstPropagator::OnExitBinop(AST::Binop* node, AST::Expr*& replacement)
     {
         if (node->left->GetExprType() == AST::ExprType::Identifier && node->right->GetExprType() == AST::ExprType::Constant) {
             auto leftName = ((AST::Identifier*) node->left)->name;
@@ -269,8 +238,7 @@ class ConstPropagator : public AST::Plugin
         return AST::Action::None;
     }
 
-  private:
-    VarInfo* GetVarValue(std::u16string_view name)
+    ConstPropagator::VarInfo* ConstPropagator::GetVarValue(std::u16string_view name)
     {
         for (auto it = vars.rbegin(); it != vars.rend(); ++it) {
             if (it->find(name) != it->end()) {
@@ -281,7 +249,7 @@ class ConstPropagator : public AST::Plugin
         return nullptr;
     }
 
-    std::unordered_map<std::u16string_view, VarInfo>* GetVarScope(std::u16string_view name)
+    std::unordered_map<std::u16string_view, ConstPropagator::VarInfo>* ConstPropagator::GetVarScope(std::u16string_view name)
     {
         for (auto it = vars.rbegin(); it != vars.rend(); ++it) {
             if (it->find(name) != it->end()) {
@@ -292,17 +260,17 @@ class ConstPropagator : public AST::Plugin
         return nullptr;
     }
 
-    static AST::Number* Clone(AST::Number* num)
+    AST::Number* ConstPropagator::Clone(AST::Number* num)
     {
         return new AST::Number(num->value);
     }
 
-    static AST::String* Clone(AST::String* str)
+    AST::String* ConstPropagator::Clone(AST::String* str)
     {
         return new AST::String(str->value);
     }
 
-    static AST::Constant* Clone(AST::Constant* constant)
+    AST::Constant* ConstPropagator::Clone(AST::Constant* constant)
     {
         switch (constant->GetConstType()) {
         case AST::ConstType::Number: {
@@ -316,7 +284,7 @@ class ConstPropagator : public AST::Plugin
         return nullptr;
     }
 
-    uint32 GetOpFromAssignment(uint32 op)
+    uint32 ConstPropagator::GetOpFromAssignment(uint32 op)
     {
         switch (op) {
         case TokenType::Operator_PlusAssignment: {
@@ -366,7 +334,7 @@ class ConstPropagator : public AST::Plugin
         return 0;
     }
 
-    std::optional<int32> Eval(int32 left, int32 right, uint32 op)
+    std::optional<int32> ConstPropagator::Eval(int32 left, int32 right, uint32 op)
     {
         switch (op) {
         case TokenType::Operator_LogicOR: {
@@ -443,7 +411,7 @@ class ConstPropagator : public AST::Plugin
         }
     }
 
-    std::optional<std::u16string> Eval(int32 left, std::u16string_view right, uint32 op)
+    std::optional<std::u16string> ConstPropagator::Eval(int32 left, std::u16string_view right, uint32 op)
     {
         switch (op) {
         case TokenType::Operator_Plus: {
@@ -463,7 +431,7 @@ class ConstPropagator : public AST::Plugin
         return std::nullopt;
     }
 
-    std::optional<std::u16string> Eval(std::u16string_view left, int32 right, uint32 op)
+    std::optional<std::u16string> ConstPropagator::Eval(std::u16string_view left, int32 right, uint32 op)
     {
         switch (op) {
         case TokenType::Operator_Plus: {
@@ -483,7 +451,7 @@ class ConstPropagator : public AST::Plugin
         return std::nullopt;
     }
 
-    std::optional<std::u16string> Eval(std::u16string_view left, std::u16string_view right, uint32 op)
+    std::optional<std::u16string> ConstPropagator::Eval(std::u16string_view left, std::u16string_view right, uint32 op)
     {
         switch (op) {
         case TokenType::Operator_Plus: {
@@ -497,32 +465,4 @@ class ConstPropagator : public AST::Plugin
 
         return std::nullopt;
     }
-};
-
-GView::View::LexicalViewer::PluginAfterActionRequest ConstPropagation::Execute(GView::View::LexicalViewer::PluginData& data)
-{
-    AST::Instance i;
-    i.Create(data.tokens);
-
-    {
-        AST::DumpVisitor dump("_ast.json");
-        i.script->AcceptConst(dump);
-    }
-
-    ConstPropagator propagator;
-
-    // return PluginAfterActionRequest::None;
-
-    AST::PluginVisitor visitor(&propagator, &data.editor);
-
-    AST::Node* _rep;
-    i.script->Accept(visitor, _rep);
-
-    {
-        AST::DumpVisitor dump("_ast_after.json");
-        i.script->AcceptConst(dump);
-    }
-
-    return PluginAfterActionRequest::Rescan;
-}
-} // namespace GView::Type::JS::Plugins
+} // namespace GView::Type::JS::Transformers

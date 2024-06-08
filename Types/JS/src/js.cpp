@@ -35,6 +35,7 @@ extern "C"
         settings.AddPlugin(&js->plugins.removeDeadCode);
         settings.AddPlugin(&js->plugins.contextAwareRename);
         settings.AddPlugin(&js->plugins.emulate);
+        settings.AddPlugin(&js->plugins.inlineFunctions);
         settings.AddPlugin(&js->plugins.removeComments);
         settings.AddPlugin(&js->plugins.markAlwaysTrue);
         settings.AddPlugin(&js->plugins.unrollLoop);

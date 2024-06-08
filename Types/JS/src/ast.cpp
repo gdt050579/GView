@@ -133,6 +133,19 @@ namespace Type
                 nameSize = str.size();
             }
 
+            FunDecl* FunDecl::Clone()
+            {
+                auto clone = new FunDecl(name);
+
+                for (auto& param : params) {
+                    clone->params.emplace_back(param->Clone());
+                }
+
+                clone->block = block->Clone();
+
+                return clone;
+            }
+
             VarDeclList::VarDeclList(uint32 type) : type(type)
             {
             }
@@ -170,6 +183,17 @@ namespace Type
             void VarDeclList::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitVarDeclList(this);
+            }
+
+            VarDeclList* VarDeclList::Clone()
+            {
+                auto clone = new VarDeclList(type);
+
+                for (auto& decl : decls) {
+                    clone->decls.emplace_back(decl->Clone());
+                }
+
+                return clone;
             }
 
             DeclType VarDeclList::GetDeclType()
@@ -226,6 +250,15 @@ namespace Type
                 nameSize = str.size();
             }
 
+            VarDecl* VarDecl::Clone()
+            {
+                auto expr  = (init ? init->Clone() : nullptr);
+
+                auto clone = new VarDecl(name, expr);
+
+                return clone;
+            }
+
             AST::DeclType Stmt::GetDeclType()
             {
                 return AST::DeclType::Stmt;
@@ -265,6 +298,22 @@ namespace Type
             void Block::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitBlock(this);
+            }
+
+            StmtType Block::GetStmtType()
+            {
+                return StmtType::Block;
+            }
+
+            Block* Block::Clone()
+            {
+                auto clone = new Block();
+
+                for (auto& decl : decls) {
+                    clone->decls.emplace_back(decl->Clone());
+                }
+
+                return clone;
             }
 
             IfStmt::~IfStmt()
@@ -313,6 +362,22 @@ namespace Type
                 visitor.VisitIfStmt(this);
             }
 
+            StmtType IfStmt::GetStmtType()
+            {
+                return StmtType::If;
+            }
+
+            IfStmt* IfStmt::Clone()
+            {
+                auto condClone = cond->Clone();
+                auto stmtTrueClone  = stmtTrue->Clone();
+                auto stmtFalseClone = stmtFalse ? stmtFalse->Clone() : nullptr;
+
+                auto clone = new IfStmt(condClone, stmtTrueClone, stmtFalseClone);
+
+                return clone;
+            }
+
             WhileStmt::WhileStmt(Expr* cond, Stmt* stmt) : cond(cond), stmt(stmt)
             {
             }
@@ -348,6 +413,18 @@ namespace Type
             void WhileStmt::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitWhileStmt(this);
+            }
+
+            StmtType WhileStmt::GetStmtType()
+            {
+                return StmtType::While;
+            }
+
+            WhileStmt* WhileStmt::Clone()
+            {
+                auto clone = new WhileStmt(cond->Clone(), stmt->Clone());
+
+                return clone;
             }
 
             ForStmt::~ForStmt()
@@ -411,6 +488,23 @@ namespace Type
                 visitor.VisitForStmt(this);
             }
 
+            StmtType ForStmt::GetStmtType()
+            {
+                return StmtType::For;
+            }
+
+            ForStmt* ForStmt::Clone()
+            {
+                auto declClone = decl ? decl->Clone() : nullptr;
+                auto condClone = cond ? cond->Clone() : nullptr;
+                auto incClone = inc ? inc->Clone() : nullptr;
+                auto stmtClone = stmt->Clone();
+
+                auto clone = new ForStmt(declClone, condClone, incClone, stmtClone);
+
+                return clone;
+            }
+
             ExprStmt::~ExprStmt()
             {
                 delete expr;
@@ -447,6 +541,20 @@ namespace Type
             void ExprStmt::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitExprStmt(this);
+            }
+
+            StmtType ExprStmt::GetStmtType()
+            {
+                return StmtType::Expr;
+            }
+
+            ExprStmt* ExprStmt::Clone()
+            {
+                auto exprClone = expr ? expr->Clone() : nullptr;
+
+                auto clone = new ExprStmt(exprClone);
+
+                return clone;
             }
 
             ReturnStmt::~ReturnStmt()
@@ -489,6 +597,20 @@ namespace Type
                 visitor.VisitReturnStmt(this);
             }
 
+            StmtType ReturnStmt::GetStmtType()
+            {
+                return StmtType::Return;
+            }
+
+            ReturnStmt* ReturnStmt::Clone()
+            {
+                auto exprClone = expr ? expr->Clone() : nullptr;
+
+                auto clone = new ReturnStmt(exprClone);
+
+                return clone;
+            }
+
             Identifier::Identifier(u16string_view name) : name(name), nameSize(name.size())
             {
             }
@@ -509,6 +631,11 @@ namespace Type
                 sourceOffset = offset;
             }
 
+            std::u16string Identifier::GenSourceCode()
+            {
+                return name;
+            }
+
             Action Identifier::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitIdentifier(this, (Expr*&) replacement);
@@ -523,6 +650,13 @@ namespace Type
             {
                 name     = str;
                 nameSize = str.size();
+            }
+
+            Identifier* Identifier::Clone()
+            {
+                auto clone = new Identifier(name);
+
+                return clone;
             }
 
             Unop::Unop(uint32 type, Expr* expr) : type(type), expr(expr)
@@ -564,6 +698,13 @@ namespace Type
                 visitor.VisitUnop(this);
             }
 
+            Unop* Unop::Clone()
+            {
+                auto clone = new Unop(type, expr->Clone());
+
+                return clone;
+            }
+
             Binop::Binop(uint32 type, Expr* left, Expr* right) : type(type), left(left), right(right)
             {
             }
@@ -596,6 +737,111 @@ namespace Type
                 right->AdjustSourceOffset(offset);
             }
 
+            std::u16string Binop::GenSourceCode() {
+                std::u16string str;
+
+                str += left->GenSourceCode();
+
+                switch (type) {
+                case TokenType::Operator_LogicOR: {
+                    str += u" || ";
+                    break;
+                }
+                case TokenType::Operator_LogicAND: {
+                    str += u" && ";
+                    break;
+                }
+                case TokenType::Operator_OR: {
+                    str += u" | ";
+                    break;
+                }
+                case TokenType::Operator_XOR: {
+                    str += u" ^ ";
+                    break;
+                }
+                case TokenType::Operator_AND: {
+                    str += u" & ";
+                    break;
+                }
+                case TokenType::Operator_Equal: {
+                    str += u" == ";
+                    break;
+                }
+                case TokenType::Operator_StrictEqual: {
+                    str += u" === ";
+                    break;
+                }
+                case TokenType::Operator_Different: {
+                    str += u" != ";
+                    break;
+                }
+                case TokenType::Operator_StrictDifferent: {
+                    str += u" !== ";
+                    break;
+                }
+                case TokenType::Operator_Smaller: {
+                    str += u" < ";
+                    break;
+                }
+                case TokenType::Operator_SmallerOrEQ: {
+                    str += u" <= ";
+                    break;
+                }
+                case TokenType::Operator_Bigger: {
+                    str += u" > ";
+                    break;
+                }
+                case TokenType::Operator_BiggerOrEq: {
+                    str += u" >= ";
+                    break;
+                }
+                case TokenType::Operator_LeftShift: {
+                    str += u" << ";
+                    break;
+                }
+                case TokenType::Operator_RightShift: {
+                    str += u" >> ";
+                    break;
+                }
+                case TokenType::Operator_SignRightShift: {
+                    str += u" >>> ";
+                    break;
+                }
+                case TokenType::Operator_Plus: {
+                    str += u" + ";
+                    break;
+                }
+                case TokenType::Operator_Minus: {
+                    str += u" - ";
+                    break;
+                }
+                case TokenType::Operator_Multiply: {
+                    str += u" * ";
+                    break;
+                }
+                case TokenType::Operator_Division: {
+                    str += u" / ";
+                    break;
+                }
+                case TokenType::Operator_Modulo: {
+                    str += u" % ";
+                    break;
+                }
+                case TokenType::Operator_Exponential: {
+                    str += u" ** ";
+                    break;
+                }
+                default: {
+                    str += ' ? ';
+                    break;
+                }
+                }
+
+                str += right->GenSourceCode();
+
+                return str;
+            }
+
             Action Binop::Accept(Visitor& visitor, Node*& replacement)
             {
                 return visitor.VisitBinop(this, (Expr*&) replacement);
@@ -604,6 +850,13 @@ namespace Type
             void Binop::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitBinop(this);
+            }
+
+            Binop* Binop::Clone()
+            {
+                auto clone = new Binop(type, left->Clone(), right->Clone());
+
+                return clone;
             }
 
             Ternary::Ternary(Expr* cond, Expr* exprTrue, Expr* exprFalse) : cond(cond), exprTrue(exprTrue), exprFalse(exprFalse)
@@ -651,6 +904,13 @@ namespace Type
                 visitor.VisitTernary(this);
             }
 
+            Ternary* Ternary::Clone()
+            {
+                auto clone = new Ternary(cond->Clone(), exprTrue->Clone(), exprFalse->Clone());
+
+                return clone;
+            }
+
             Call::Call(Expr* callee, std::vector<Expr*> args) : callee(callee), args(args)
             {
             }
@@ -660,7 +920,9 @@ namespace Type
                 delete callee;
 
                 for (auto arg : args) {
-                    delete arg;
+                    if (arg != nullptr) {
+                        delete arg;
+                    }
                 }
             }
 
@@ -700,6 +962,19 @@ namespace Type
             void Call::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitCall(this);
+            }
+
+            Call* Call::Clone()
+            {
+                std::vector<Expr*> argsClone;
+
+                for (auto& arg : args) {
+                    argsClone.emplace_back(arg->Clone());
+                }
+
+                auto clone = new Call(callee->Clone(), argsClone);
+
+                return clone;
             }
 
             Lambda::Lambda(std::vector<Identifier*> params, Stmt* body) : params(params), body(body)
@@ -749,6 +1024,19 @@ namespace Type
                 visitor.VisitLambda(this);
             }
 
+            Lambda* Lambda::Clone()
+            {
+                std::vector<Identifier*> paramsClone;
+
+                for (auto& param : params) {
+                    paramsClone.emplace_back(param->Clone());
+                }
+
+                auto clone = new Lambda(params, body->Clone());
+
+                return clone;
+            }
+
             Grouping::Grouping(Expr* expr) : expr(expr)
             {
             }
@@ -786,6 +1074,15 @@ namespace Type
             void Grouping::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitGrouping(this);
+            }
+
+            Grouping* Grouping::Clone()
+            {
+                auto exprClone = expr ? expr->Clone() : nullptr;
+
+                auto clone = new Grouping(exprClone);
+
+                return clone;
             }
 
             CommaList::~CommaList()
@@ -833,6 +1130,19 @@ namespace Type
                 visitor.VisitCommaList(this);
             }
 
+            CommaList* CommaList::Clone()
+            {
+                std::vector<Expr*> listClone;
+
+                for (auto& expr : list) {
+                    listClone.emplace_back(expr->Clone());
+                }
+
+                auto clone = new CommaList(listClone);
+
+                return clone;
+            }
+
             MemberAccess::~MemberAccess()
             {
                 delete obj;
@@ -873,6 +1183,13 @@ namespace Type
             void MemberAccess::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitMemberAccess(this);
+            }
+
+            MemberAccess* MemberAccess::Clone()
+            {
+                auto clone = new MemberAccess(obj->Clone(), member->Clone());
+
+                return clone;
             }
 
             ExprType Constant::GetExprType()
@@ -925,6 +1242,13 @@ namespace Type
                 return ConstType::Number;
             }
 
+            Number* Number::Clone()
+            {
+                auto clone = new Number(value);
+
+                return clone;
+            }
+
             AST::String::String(u16string_view value) : value(value)
             {
             }
@@ -963,6 +1287,13 @@ namespace Type
             void AST::String::AcceptConst(ConstVisitor& visitor)
             {
                 visitor.VisitString(this);
+            }
+
+            AST::String* AST::String::Clone()
+            {
+                auto clone = new AST::String(value);
+
+                return clone;
             }
 
             void ConstVisitor::VisitFunDecl(const FunDecl* node)
@@ -1387,6 +1718,10 @@ namespace Type
             // child->source size (after visiting the child, but before replacement)
             void PluginVisitor::ReplaceNode(Node* parent, Node* child, uint32 oldChildSize, Node* replacement)
             {
+                if (editor == nullptr) {
+                    return; // AST-only replacement
+                }
+
                 auto replacedSize = child->sourceSize;
 
                 // Source can either be a view or a new string
@@ -3620,16 +3955,19 @@ namespace Type
                 auto fun = new FunDecl(name);
 
                 EXPECT(TokenType::ExpressionOpen);
+                ADVANCE();
 
-                while (current < end) {
-                    ADVANCE(); // (/comma
+                if (GetCurrentType() != TokenType::ExpressionClose) {
+                    while (current < end) {
+                        auto id = ParseIdentifier();
 
-                    auto id = ParseIdentifier();
+                        fun->params.emplace_back((Identifier*) id);
 
-                    fun->params.emplace_back((Identifier*) id);
+                        if (GetCurrentType() != TokenType::Comma) {
+                            break;
+                        }
 
-                    if (GetCurrentType() != TokenType::Comma) {
-                        break;
+                        ADVANCE();
                     }
                 }
 
