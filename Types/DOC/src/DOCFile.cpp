@@ -672,8 +672,5 @@ void DOCFile::OnOpenItem(std::u16string_view path, AppCUI::Controls::TreeViewIte
         AppCUI::Dialogs::MessageBox::ShowError("Error", "Module parse error!");
     }
     GView::App::OpenBuffer(decompressed, moduleRecord->streamName, "", GView::App::OpenMethod::ForceType, "VBA");
-
-    std::ofstream out("D:\\work\\bd\\samples\\ceva\\docx\\dropped", std::ios::trunc);
-    out.write((const char*) decompressed.GetData(), decompressed.GetLength());
 }
 } // namespace GView::Type::DOC

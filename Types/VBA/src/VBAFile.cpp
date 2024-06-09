@@ -25,13 +25,15 @@ uint32 ParseString(GView::View::LexicalViewer::TextParser text, uint32 index)
     return end + 1;
 }
 
-UnicodeStringBuilder KEYWORDS[] = { UnicodeStringBuilder("Attribute"), UnicodeStringBuilder("Sub"), UnicodeStringBuilder("Private"), UnicodeStringBuilder("As"),        UnicodeStringBuilder("Dim"),  UnicodeStringBuilder("End"),
+UnicodeStringBuilder KEYWORDS[] = { UnicodeStringBuilder("Attribute"), UnicodeStringBuilder("Sub"),   UnicodeStringBuilder("Private"),
+                                    UnicodeStringBuilder("Public"),   UnicodeStringBuilder("As"),    UnicodeStringBuilder("Dim"),
+                                    UnicodeStringBuilder("End"),       UnicodeStringBuilder("Const"),
                                     UnicodeStringBuilder("ByVal"),     UnicodeStringBuilder("Set"), UnicodeStringBuilder("While"),
                                     UnicodeStringBuilder("Wend"),      UnicodeStringBuilder("If"),  UnicodeStringBuilder("Then") };
 
 UnicodeStringBuilder KEYWORDS2[] = { UnicodeStringBuilder("True"), UnicodeStringBuilder("False") };
 
-const char operators[] = "=(),._&$+-*/<>#:";
+const char operators[] = "=(),._&$+-*/<>#\\:";
 
 void VBAFile::AnalyzeText(GView::View::LexicalViewer::SyntaxManager& syntax)
 {
