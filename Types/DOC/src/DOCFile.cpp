@@ -647,6 +647,8 @@ bool DOCFile::PopulateItem(AppCUI::Controls::TreeViewItem item)
     Buffer decompressed;
     ParseModuleStream(moduleBuffer, moduleRecord, decompressed);
 
+    // TODO: add the creation time and modified time of the module stream
+
     item.SetText(2, String().Format("%u", decompressed.GetLength()));
 
     item.SetText(3, moduleRecord.docString);

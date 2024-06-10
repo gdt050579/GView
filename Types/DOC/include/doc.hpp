@@ -33,7 +33,7 @@ namespace Type
                 if (cursor + count > size) {
                     count = size - cursor;
                 }
-                T value      = *(T*) ((uint8*) ptr + cursor);
+                T value = *(T*) ((uint8*) ptr + cursor);
                 cursor += count;
                 return value;
             }
@@ -53,7 +53,7 @@ namespace Type
 
         #pragma pack(1)
         struct CFDirEntry_Data {
-            uint8 nameUnicode[64]; // the structure starts from here
+            uint8 nameUnicode[64];
             uint16 nameLength;
             uint8 objectType;
             uint8 colorFlag; // 0x00 (red) or 0x01 (black)

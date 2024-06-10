@@ -39,7 +39,7 @@ bool CFDirEntry::Load(BufferView _directoryData, uint32 _entryId)
 
     directoryData = _directoryData;
     entryId       = _entryId;
-    data          = ByteStream(directoryData).Seek(entryId * 128).ReadAs<CFDirEntry_Data>();
+    data          = ByteStream(directoryData).Seek(entryId * sizeof(CFDirEntry_Data)).ReadAs<CFDirEntry_Data>();
 
     CHECK(data.nameLength % 2 == 0, false, "nameLength");
     CHECK(data.objectType == 0x00 || data.objectType == 0x01 || data.objectType == 0x02 || data.objectType == 0x05, false, "objectType");
