@@ -16,7 +16,7 @@ std::string_view ConstPropagation::GetName()
 }
 std::string_view ConstPropagation::GetDescription()
 {
-    return "Propagate string constants.";
+    return "Propagate constants.";
 }
 bool ConstPropagation::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data)
 {

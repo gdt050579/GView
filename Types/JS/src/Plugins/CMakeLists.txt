@@ -4,6 +4,7 @@ target_sources(JS PRIVATE FoldConstants.cpp
 		ContextAwareRename.cpp
 		Emulate.cpp
 		InlineFunctions.cpp
+		HoistFunctions.cpp
 		RemoveComments.cpp
 		MarkAlwaysTrue.cpp
 		UnrollLoop.cpp
