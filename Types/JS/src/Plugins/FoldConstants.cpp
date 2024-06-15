@@ -19,6 +19,161 @@ bool FoldConstants::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData&
     return true;
 }
 
+bool IsNumber(AST::Expr* expr)
+{
+    return expr->GetExprType() == AST::ExprType::Constant && ((AST::Constant*) expr)->GetConstType() == AST::ConstType::Number;
+}
+
+bool IsString(AST::Expr* expr)
+{
+    return expr->GetExprType() == AST::ExprType::Constant && ((AST::Constant*) expr)->GetConstType() == AST::ConstType::String;
+}
+
+AST::Expr* EvalWindow(AST::Expr* member)
+{
+    switch (member->GetExprType()) {
+    case AST::ExprType::Identifier: {
+        return new AST::Identifier(((AST::Identifier*) member)->name);
+    }
+    case AST::ExprType::Constant: {
+        if (((AST::Constant*) member)->GetConstType() == AST::ConstType::String) {
+            return new AST::Identifier(((AST::String*) member)->value);
+        }
+        break;
+    }
+    }
+    return nullptr;
+}
+
+AST::Expr* EvalStringFromCharCode(std::vector<AST::Expr*>& args)
+{
+    if (args.size() != 1 || !IsNumber(args[0])) {
+        return nullptr;
+    }
+
+    auto num = ((AST::Number*) args[0])->value;
+
+    std::u16string result;
+    result += (char16_t) num;
+
+    return new AST::String(result);
+}
+
+AST::Expr* EvalMathMin(std::vector<AST::Expr*>& args)
+{
+    if (args.size() == 0 || !IsNumber(args[0])) {
+        return nullptr;
+    }
+
+    auto min = ((AST::Number*) args[0])->value;
+
+    for (auto arg : args) {
+        if (!IsNumber(arg)) {
+            return nullptr;
+        }
+
+        auto val = ((AST::Number*) arg)->value;
+
+        if (val < min) {
+            min = val;
+        }
+    }
+
+    return new AST::Number(min);
+}
+
+AST::Expr* EvalMathMax(std::vector<AST::Expr*>& args)
+{
+    if (args.size() == 0 || !IsNumber(args[0])) {
+        return nullptr;
+    }
+
+    auto max = ((AST::Number*) args[0])->value;
+
+    for (auto arg : args) {
+        if (!IsNumber(arg)) {
+            return nullptr;
+        }
+
+        auto val = ((AST::Number*) arg)->value;
+
+        if (val > max) {
+            max = val;
+        }
+    }
+
+    return new AST::Number(max);
+}
+
+AST::Expr* EvalStringCharCodeAt(AST::String* str, std::vector<AST::Expr*>& args)
+{
+    if (args.size() != 1 || !IsNumber(args[0])) {
+        return nullptr;
+    }
+
+    auto num = ((AST::Number*) args[0])->value;
+
+    if (num < 0 || num >= str->value.size()) {
+        return nullptr;
+    }
+
+    auto result = (int32) str->value[num];
+
+    return new AST::Number(result);
+}
+
+AST::Expr* EvalStringCharAt(AST::String* str, std::vector<AST::Expr*>& args)
+{
+    if (args.size() != 1 || !IsNumber(args[0])) {
+        return nullptr;
+    }
+
+    auto num = ((AST::Number*) args[0])->value;
+
+    if (num < 0 || num >= str->value.size()) {
+        return nullptr;
+    }
+
+    std::u16string result;
+    result += str->value[num];
+
+    return new AST::String(result);
+}
+
+AST::Expr* EvalStringReplaceAll(AST::String* str, std::vector<AST::Expr*>& args)
+{
+    if (args.size() != 2 || !IsString(args[0]) || !IsString(args[1])) {
+        return nullptr;
+    }
+
+    auto old         = ((AST::String*) args[0])->value;
+    auto replacement = ((AST::String*) args[1])->value;
+
+    std::u16string result(str->value);
+
+    size_t start = 0;
+
+    while ((start = result.find(old, start)) != std::u16string::npos) {
+        result.replace(start, old.size(), replacement);
+        start += replacement.size();
+    }
+
+    return new AST::String(result);
+}
+
+typedef AST::Expr* (*MemberAccessFn)(AST::Expr*);
+typedef AST::Expr* (*MemberAccessCallFn)(std::vector<AST::Expr*>&);
+typedef AST::Expr* (*StringMemberAccessCallFn)(AST::String*, std::vector<AST::Expr*>&);
+
+std::unordered_map<std::u16string_view, MemberAccessFn> constMemberAccess{ { u"window", EvalWindow } };
+std::unordered_map<std::u16string_view, std::unordered_map<std::u16string_view, MemberAccessCallFn>> constMemberAccessCall{
+    { u"String", { { u"fromCharCode", EvalStringFromCharCode } } }, { u"Math", { { u"min", EvalMathMin }, { u"max", EvalMathMax } } }
+};
+
+std::unordered_map<std::u16string_view, StringMemberAccessCallFn> constStringMemberAccessCall{ { u"charCodeAt", EvalStringCharCodeAt },
+                                                                                               { u"charAt", EvalStringCharAt },
+                                                                                               { u"replaceAll", EvalStringReplaceAll } };
+
 class ConstFolder : public AST::Plugin
 {
   public:
@@ -30,6 +185,102 @@ class ConstFolder : public AST::Plugin
     virtual AST::Action OnExitBinop(AST::Binop* node, AST::Expr*& replacement) override
     {
         return FoldBinop(node, replacement);
+    }
+
+    virtual AST::Action OnExitMemberAccess(AST::MemberAccess* node, AST::Expr*& replacement) override
+    {
+        auto obj = node->obj;
+
+        if (obj->GetExprType() == AST::ExprType::Identifier) {
+            auto entry = constMemberAccess.find(((AST::Identifier*) obj)->name);
+
+            if (entry != constMemberAccess.end()) {
+                replacement = (*entry).second(node->member);
+
+                if (replacement != nullptr) {
+                    return AST::Action::Replace;
+                }
+
+                return AST::Action::None;
+            }
+        }
+
+        return AST::Action::None;
+    }
+
+    virtual AST::Action OnExitCall(AST::Call* node, AST::Expr*& replacement)
+    {
+        if (node->callee->GetExprType() == AST::ExprType::MemberAccess) {
+            auto access = (AST::MemberAccess*) node->callee;
+
+            std::u16string_view member;
+
+            switch (access->member->GetExprType()) {
+            case AST::ExprType::Identifier: {
+                member = ((AST::Identifier*) access->member)->name;
+                break;
+            }
+            case AST::ExprType::Constant: {
+                if (((AST::Constant*) access->member)->GetConstType() != AST::ConstType::String) {
+                    return AST::Action::None;
+                }
+
+                member = ((AST::String*) access->member)->value;
+                break;
+            }
+            default: {
+                return AST::Action::None;
+            }
+            }
+
+            switch (access->obj->GetExprType()) {
+            case AST::ExprType::Identifier: {
+                auto obj = (AST::Identifier*) access->obj;
+
+                auto entry = constMemberAccessCall.find(obj->name);
+
+                if (entry == constMemberAccessCall.end()) {
+                    return AST::Action::None;
+                }
+
+                auto memberEntry = (*entry).second.find(member);
+
+                if (memberEntry == (*entry).second.end()) {
+                    return AST::Action::None;
+                }
+
+                replacement = (*memberEntry).second(node->args);
+
+                if (replacement != nullptr) {
+                    return AST::Action::Replace;
+                }
+                return AST::Action::None;
+            }
+            case AST::ExprType::Constant: {
+                if (((AST::Constant*) access->obj)->GetConstType() != AST::ConstType::String) {
+                    return AST::Action::None;
+                }
+
+                auto obj = (AST::String*) access->obj;
+
+                auto entry = constStringMemberAccessCall.find(member);
+
+                if (entry == constStringMemberAccessCall.end()) {
+                    return AST::Action::None;
+                }
+
+                replacement = (*entry).second(obj, node->args);
+
+                if (replacement != nullptr) {
+                    return AST::Action::Replace;
+                }
+
+                return AST::Action::None;
+            }
+            }
+        }
+
+        return AST::Action::None;
     }
 
   private:
@@ -129,8 +380,7 @@ class ConstFolder : public AST::Plugin
             result = (int32) pow(leftVal, rightVal);
             break;
         }
-        default: 
-            {
+        default: {
             return nullptr;
         }
         }
@@ -147,7 +397,7 @@ class ConstFolder : public AST::Plugin
         case TokenType::Operator_Plus: {
             AppCUI::Utils::UnicodeStringBuilder builder;
             AppCUI::Utils::NumericFormatter fmt;
-            
+
             builder.Add(fmt.ToDec(leftVal));
             builder.Add(rightVal);
 
