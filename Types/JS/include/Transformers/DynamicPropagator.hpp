@@ -1,3 +1,4 @@
+#pragma once
 #include "ast.hpp"
 
 namespace GView::Type::JS::Transformers

@@ -30,9 +30,11 @@ extern "C"
 
         settings.SetMaxTokenSize({ 30u, 5u });
 
+        settings.AddPlugin(&js->plugins.simplify);
         settings.AddPlugin(&js->plugins.foldConstants);
         settings.AddPlugin(&js->plugins.constPropagation);
         settings.AddPlugin(&js->plugins.removeDeadCode);
+        settings.AddPlugin(&js->plugins.removeDummyCode);
         settings.AddPlugin(&js->plugins.contextAwareRename);
         settings.AddPlugin(&js->plugins.emulate);
         settings.AddPlugin(&js->plugins.inlineFunctions);

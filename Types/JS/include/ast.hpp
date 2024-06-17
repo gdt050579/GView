@@ -152,6 +152,8 @@ namespace Type
                 TextEditor* editor;
                 int32 tokenOffset;
 
+                bool dirty;
+
                 PluginVisitor(Plugin* plugin, TextEditor* editor);
 
                 virtual Action VisitFunDecl(FunDecl* node, Decl*& replacement) override;

@@ -1,5 +1,6 @@
 #include "js.hpp"
 #include "ast.hpp"
+#include "Transformers/FunctionHoister.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -22,91 +23,6 @@ bool HoistFunctions::CanBeAppliedOn(const GView::View::LexicalViewer::PluginData
     return true;
 }
 
-class FunctionHoister : public AST::Plugin
-{
-    std::vector<std::unordered_map<std::u16string_view, AST::VarDecl*>> vars;
-
-    std::stack<AST::FunDecl*> funStack;
-    std::vector<AST::Block*> blocks;
-
-  public:
-    struct FunInfo {
-        AST::Node* anchor = nullptr;
-        size_t anchorLevel   = 0;
-
-        FunInfo() = default;
-    };
-
-    std::unordered_map<AST::FunDecl*, FunInfo> funs;
-
-    AST::Action OnEnterFunDecl(AST::FunDecl* node, AST::Decl*& replacement)
-    {
-        funStack.push(node);
-        funs[node] = {};
-
-        return AST::Action::None;
-    }
-
-    AST::Action OnEnterVarDecl(AST::VarDecl* node, AST::Decl*& replacement)
-    {
-        vars[vars.size() - 1][node->name] = node;
-        return AST::Action::None;
-    }
-
-    AST::Action OnEnterIdentifier(AST::Identifier* node, AST::Expr*& replacement)
-    {
-        auto info = GetVar(node->name);
-
-        if (info.first == nullptr || funStack.empty()) {
-            return AST::Action::None;
-        }
-
-        auto& fun = funs[funStack.top()];
-
-        if (fun.anchor == nullptr || info.second < fun.anchorLevel || blocks[info.second]->sourceStart < fun.anchor->sourceStart) {
-            fun.anchor      = blocks[info.second];
-            fun.anchorLevel = info.second;
-        }
-
-        return AST::Action::None;
-    }
-
-    AST::Action OnExitFunDecl(AST::FunDecl* node, AST::Decl*& replacement)
-    {
-        funStack.pop();
-        return AST::Action::None;
-    }
-
-    AST::Action OnEnterBlock(AST::Block* node, AST::Block*& replacement)
-    {
-        vars.emplace_back();
-        blocks.emplace_back(node);
-        return AST::Action::None;
-    }
-
-    AST::Action OnExitBlock(AST::Block* node, AST::Block*& replacement)
-    {
-        vars.pop_back();
-        blocks.pop_back();
-        return AST::Action::None;
-    }
-
-  private:
-    std::pair<AST::VarDecl*, size_t> GetVar(std::u16string_view name)
-    {
-        size_t level = vars.size();
-        for (auto it = vars.rbegin(); it != vars.rend(); ++it) {
-            if (it->find(name) != it->end()) {
-                return { (*it)[name], level };
-            }
-
-            --level;
-        }
-
-        return { nullptr, 0 };
-    }
-};
-
 GView::View::LexicalViewer::PluginAfterActionRequest HoistFunctions::Execute(GView::View::LexicalViewer::PluginData& data)
 {
     AST::Instance i;
@@ -117,7 +33,7 @@ GView::View::LexicalViewer::PluginAfterActionRequest HoistFunctions::Execute(GVi
         i.script->AcceptConst(dump);
     }
 
-    FunctionHoister hoister;
+    Transformer::FunctionHoister hoister;
 
     AST::PluginVisitor visitor(&hoister, &data.editor);
 

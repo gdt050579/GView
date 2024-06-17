@@ -1808,6 +1808,8 @@ namespace Type
 
                 // The new node should not be re-adjusted in the future
                 child->AdjustSourceOffset(tokenOffset);
+
+                dirty = true;
             }
 
             void PluginVisitor::UpdateNode(Node* parent, VarDecl* child)
@@ -1832,6 +1834,8 @@ namespace Type
 
                 // The new node should not be re-adjusted in the future
                 child->AdjustSourceOffset(tokenOffset);
+
+                dirty = true;
             }
 
             void PluginVisitor::UpdateNode(Node* parent, Identifier* child)
@@ -1856,6 +1860,8 @@ namespace Type
 
                 // The new node should not be re-adjusted in the future
                 child->AdjustSourceOffset(tokenOffset);
+
+                dirty = true;
             }
 
             void PluginVisitor::UpdateNode(Node* parent, Expr* child)
@@ -1895,6 +1901,8 @@ namespace Type
 
                 // The new node should not be re-adjusted in the future
                 child->AdjustSourceOffset(tokenOffset);
+
+                dirty = true;
             }
 
             // Since a child can have its children changed before being replaced,
@@ -1942,6 +1950,8 @@ namespace Type
 
                 // Replace node
                 delete child;
+
+                dirty = true;
             }
 
             void PluginVisitor::RemoveNode(Node* parent, Node* child)
@@ -1957,6 +1967,8 @@ namespace Type
 
                 // Delete node
                 delete child;
+
+                dirty = true;
             }
 
             void PluginVisitor::AdjustSize(Node* node, int32 offset)
@@ -1964,7 +1976,7 @@ namespace Type
                 node->sourceSize += offset;
             }
 
-            PluginVisitor::PluginVisitor(Plugin* plugin, TextEditor* editor) : plugin(plugin), tokenOffset(0), editor(editor)
+            PluginVisitor::PluginVisitor(Plugin* plugin, TextEditor* editor) : plugin(plugin), tokenOffset(0), editor(editor), dirty(false)
             {
             }
 
@@ -3045,6 +3057,7 @@ namespace Type
                 }
                 case Action::_UpdateChild: {
                     AdjustSize(node, node->left->sourceSize - size);
+                    dirty = true;
                     break;
                 }
                 default: {
@@ -3086,6 +3099,7 @@ namespace Type
                 }
                 case Action::_UpdateChild: {
                     AdjustSize(node, node->right->sourceSize - size);
+                    dirty = true;
                     break;
                 }
                 default: {
@@ -3296,6 +3310,7 @@ namespace Type
                 }
                 case Action::_UpdateChild: {
                     AdjustSize(node, node->callee->sourceSize - size);
+                    dirty = true;
                     break;
                 }
                 default: {
@@ -3336,6 +3351,7 @@ namespace Type
                     }
                     case Action::_UpdateChild: {
                         AdjustSize(node, (*it)->sourceSize - size);
+                        dirty = true;
                         break;
                     }
                     default: {
@@ -3653,6 +3669,7 @@ namespace Type
                 }
                 case Action::_UpdateChild: {
                     AdjustSize(node, node->obj->sourceSize - size);
+                    dirty = true;
                     break;
                 }
                 default: {
@@ -3693,6 +3710,7 @@ namespace Type
                 }
                 case Action::_UpdateChild: {
                     AdjustSize(node, node->member->sourceSize - size);
+                    dirty = true;
                     break;
                 }
                 default: {

@@ -252,6 +252,14 @@ namespace Type
 
         namespace Plugins
         {
+            class Simplify : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
             class FoldConstants : public GView::View::LexicalViewer::Plugin
             {
               public:
@@ -305,6 +313,15 @@ namespace Type
                 virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
             };
 
+            class RemoveDummyCode : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
             class ContextAwareRename : public GView::View::LexicalViewer::Plugin
             {
               public:
@@ -333,6 +350,15 @@ namespace Type
             };
 
             class MarkAlwaysTrue : public GView::View::LexicalViewer::Plugin
+            {
+              public:
+                virtual std::string_view GetName() override;
+                virtual std::string_view GetDescription() override;
+                virtual bool CanBeAppliedOn(const GView::View::LexicalViewer::PluginData& data) override;
+                virtual GView::View::LexicalViewer::PluginAfterActionRequest Execute(GView::View::LexicalViewer::PluginData& data) override;
+            };
+
+            class MarkAlwaysFalse : public GView::View::LexicalViewer::Plugin
             {
               public:
                 virtual std::string_view GetName() override;
@@ -411,15 +437,18 @@ namespace Type
           public:
             struct
             {
+                Plugins::Simplify simplify;
                 Plugins::FoldConstants foldConstants;
                 Plugins::ConstPropagation constPropagation;
                 Plugins::RemoveDeadCode removeDeadCode;
+                Plugins::RemoveDummyCode removeDummyCode;
                 Plugins::ContextAwareRename contextAwareRename;
                 Plugins::Emulate emulate;
                 Plugins::InlineFunctions inlineFunctions;
                 Plugins::HoistFunctions hoistFunctions;
                 Plugins::RemoveComments removeComments;
                 Plugins::MarkAlwaysTrue markAlwaysTrue;
+                Plugins::MarkAlwaysFalse markAlwaysFalse;
                 Plugins::UnrollLoop unrollLoop;
                 Plugins::DumpAST dumpAST;
                 Plugins::AddStrings addStrings;
